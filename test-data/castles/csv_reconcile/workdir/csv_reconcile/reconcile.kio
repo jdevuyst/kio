@@ -2,9 +2,9 @@ module csv_reconcile/reconcile;
 
 import csv_reconcile/model as model;
 import csv_reconcile/model(State);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -59,21 +59,21 @@ fn check_line(state: State) -> String {
 }
 
 fn read_amount() -> I32 | . {
-  match! io.read_ascii_line() {
-    (.(line: String) { fmt.string_to_int(line) }, .(_eof: .) { widen_sum!((), I32 | .) })
+  match(io.read_ascii_line()) {
+    (.(line: String) { fmt.string_to_int(line) }, .(_eof: .) { widen_sum((), I32 | .) })
   }
 }
 
 pub rec(loop) fn process(state: State) -> State {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     (
     , .(line: String) {
-        if! text.string_eq(line, "BEGIN") {
+        if(text.string_eq(line, "BEGIN")) {
           let next = model.begin(state);
           println(begin_line(next));
           recur process(next)
-        } else if! text.string_eq(line, "CREDIT") {
-          match! read_amount() {
+        } else if(text.string_eq(line, "CREDIT")) {
+          match(read_amount()) {
             (
             , .(amount: I32) {
                 let next = model.add_credit(state, amount);
@@ -87,11 +87,11 @@ pub rec(loop) fn process(state: State) -> State {
               }
             )
           }
-        } else if! text.string_eq(line, "DEBIT") {
-          match! read_amount() {
+        } else if(text.string_eq(line, "DEBIT")) {
+          match(read_amount()) {
             (
             , .(amount: I32) {
-                if! model.debit_allowed(state, amount) {
+                if(model.debit_allowed(state, amount)) {
                   let next = model.apply_debit(state, amount);
                   println(debit_line(amount, next));
                   recur process(next)
@@ -108,11 +108,11 @@ pub rec(loop) fn process(state: State) -> State {
               }
             )
           }
-        } else if! text.string_eq(line, "CHECK") {
+        } else if(text.string_eq(line, "CHECK")) {
           let next = model.record_check(state);
           println(check_line(next));
           recur process(next)
-        } else if! text.string_eq(line, "END") {
+        } else if(text.string_eq(line, "END")) {
           println(end_line(state));
           state
         } else {

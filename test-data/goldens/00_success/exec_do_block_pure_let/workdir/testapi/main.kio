@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi(default String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -27,7 +27,7 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 //         })
 //     })
 fn run() -> Box(String) {
-  do! box_bind {
+  do(box_bind) {
     let a <- box_pure("hello");
     let b = "world";
     let c <- box_pure(string_concat(a, b));

@@ -1,15 +1,15 @@
 /// Validates ordinary exported headers from untrusted Prime text.
 module testapi/main;
 
-import elab/match(match);
 import loader as l;
 import loader/scan as scan;
+import macros/match(macro match);
 import testapi as t;
 import testapi/io as io;
 import testapi/text as text;
 
 fn describe(source: t.String) -> t.String {
-  match! l.un_load_outcome(scan.load_package(source)) {
+  match(l.un_load_outcome(scan.load_package(source))) {
     (
     , .(_loaded: l.Lr_image) { "accepted"(t.String) }
     , .(rejected: l.Lr_diag) { l.diag_message(l.Lr_diag.get(rejected)) }
@@ -18,10 +18,10 @@ fn describe(source: t.String) -> t.String {
 }
 
 fn signature(source: t.String) -> t.String {
-  match! l.un_load_outcome(scan.load_package(source)) {
+  match(l.un_load_outcome(scan.load_package(source))) {
     (
     , .(loaded: l.Lr_image) {
-        match! l.un_export_infos(l.image_exports(l.Lr_image.get(loaded))) {
+        match(l.un_export_infos(l.image_exports(l.Lr_image.get(loaded)))) {
           (
           , .(entry: l.Export_info, _rest: l.Export_infos) { l.export_info_sig(entry) }
           , .(_empty: .) { "<no export>"(t.String) }

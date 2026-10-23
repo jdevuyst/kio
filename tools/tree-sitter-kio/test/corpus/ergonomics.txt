@@ -781,7 +781,7 @@ module m; fn run() { let .({field as x, other}) = row; let .(<A> packed) = value
 ================================================================================
 structural let_monadic_rich_patterns_and_discard
 ================================================================================
-module m; fn run() { do! (bind) { let _ <- action; let .(x: A) <- action; let .(whole: (left: A, right: A)) = pair; whole } }
+module m; fn run() { do (bind) { let _ <- action; let .(x: A) <- action; let .(whole: (left: A, right: A)) = pair; whole } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -801,7 +801,8 @@ module m; fn run() { do! (bind) { let _ <- action; let .(x: A) <- action; let .(
     (expression_block
       (bracket_lbrace)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path
@@ -961,17 +962,17 @@ module m; fn run() { let x: A = value; x } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (operator_expression
-        (expression_path
-          (identifier))
-        (ERROR
-          (identifier))
-        (operator_builtin)
         (operator_expression
           (expression_path
             (identifier))
+          (ERROR
+            (identifier))
           (operator_builtin)
           (expression_path
-            (identifier))))
+            (identifier)))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
       (separator_semicolon)
       (expression_path
         (identifier))
@@ -1070,19 +1071,19 @@ module m; fn run() { let <A> x = value; x } fn neighbor() { () }
     (expression_block
       (bracket_lbrace)
       (operator_expression
-        (expression_path
-          (identifier))
-        (operator_run)
         (operator_expression
-          (expression_path
-            (identifier))
-          (operator_run)
           (operator_expression
             (expression_path
               (identifier))
-            (operator_builtin)
+            (operator_run)
             (expression_path
-              (identifier)))))
+              (identifier)))
+          (operator_run)
+          (expression_path
+            (identifier)))
+        (operator_builtin)
+        (expression_path
+          (identifier)))
       (separator_semicolon)
       (expression_path
         (identifier))
@@ -1152,7 +1153,7 @@ module m; fn run() { let x <- value; x } fn neighbor() { () }
 ================================================================================
 structural neutral_pure_row_let
 ================================================================================
-module m; fn run() { do! (bind) { let .({field as x}) = row; x } } fn neighbor() { () }
+module m; fn run() { do (bind) { let .({field as x}) = row; x } } fn neighbor() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1172,7 +1173,8 @@ module m; fn run() { do! (bind) { let .({field as x}) = row; x } } fn neighbor()
     (expression_block
       (bracket_lbrace)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path
@@ -1218,7 +1220,7 @@ module m; fn run() { do! (bind) { let .({field as x}) = row; x } } fn neighbor()
 ================================================================================
 structural neutral_pure_existential_let
 ================================================================================
-module m; fn run() { do! (bind) { let .(<A> x) = value; x } } fn neighbor() { () }
+module m; fn run() { do (bind) { let .(<A> x) = value; x } } fn neighbor() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1238,7 +1240,8 @@ module m; fn run() { do! (bind) { let .(<A> x) = value; x } } fn neighbor() { ()
     (expression_block
       (bracket_lbrace)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path
@@ -1822,12 +1825,12 @@ module probe; fn run(x: .) { pub(x); pure(x); fn(x); provider.item.call(x); T.me
           (bracket_rparen)))
       (separator_semicolon)
       (ufcs_expr
-        (call_callee
+        callee: (call_callee
           (identifier)
           (separator_dot)
           (entity_name_function))
         (operator_arrow_ufcs)
-        (expression_path
+        receiver: (expression_path
           (identifier)))
       (bracket_rbrace))))
 
@@ -2338,7 +2341,7 @@ module probe; fn run() { fn neighbor() { () } }
 ================================================================================
 structural body_recovery_neutral_missing
 ================================================================================
-module probe; fn run() { do! (chain) { value; fn neighbor() { () }
+module probe; fn run() { do (chain) { value; fn neighbor() { () }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2359,7 +2362,8 @@ module probe; fn run() { do! (chain) { value; fn neighbor() { () }
       (incomplete_expression_block
         (bracket_lbrace)
         (block_call
-          head: (block_head)
+          head: (call_callee
+            (entity_name_function))
           prefix: (block_value_arguments
             (bracket_lparen)
             (expression_path
@@ -2389,7 +2393,7 @@ module probe; fn run() { do! (chain) { value; fn neighbor() { () }
 ================================================================================
 structural body_recovery_neutral_balanced
 ================================================================================
-module probe; fn run() { do! (chain) { value; fn neighbor() { () } } }
+module probe; fn run() { do (chain) { value; fn neighbor() { () } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2409,7 +2413,8 @@ module probe; fn run() { do! (chain) { value; fn neighbor() { () } } }
     (expression_block
       (bracket_lbrace)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path

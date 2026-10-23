@@ -14,9 +14,9 @@
 /// stack one frame at a time rather than unwinding a call chain.
 module sudoku/search;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import sudoku/constraints as constraints;
 import sudoku/geometry as geo;
 import sudoku/model(
@@ -74,12 +74,12 @@ fn push_frame(work: Work, cell: I32) {
 fn pop_frame(work: Work) {
   let popped_cell = array_pop_back(work.?{stack_cell});
   let _cell =
-    match! popped_cell {
+    match(popped_cell) {
       (.(value: I32) { value }, .(_empty: .) { 0 })
     };
   let popped_digit = array_pop_back(work.?{stack_digit});
   let _digit =
-    match! popped_digit {
+    match(popped_digit) {
       (.(value: I32) { value }, .(_empty: .) { 0 })
     };
   ()
@@ -90,12 +90,12 @@ fn pop_frame(work: Work) {
 /// cell is forced (one candidate) or dead (none) — no later cell can beat
 /// that, so the rest of the scan would be wasted work.
 rec(loop) fn scan(work: Work, cell: I32, best: I32, best_count: I32) -> Pick {
-  if! leq_i32(cell, geo.last_cell()) {
-    if! num.is_zero(array_get(work.?{board}, cell)) {
+  if(leq_i32(cell, geo.last_cell())) {
+    if(num.is_zero(array_get(work.?{board}, cell))) {
       let count = constraints.candidate_count(work, cell);
-      if! num.lt_i32(count, best_count) {
-        if! leq_i32(count, 1) {
-          widen_sum!({pick_cell = cell, pick_count = count})
+      if(num.lt_i32(count, best_count)) {
+        if(leq_i32(count, 1)) {
+          widen_sum({pick_cell = cell, pick_count = count})
         } else {
           recur scan(work, add_i32(cell, 1), cell, count)
         }
@@ -105,10 +105,10 @@ rec(loop) fn scan(work: Work, cell: I32, best: I32, best_count: I32) -> Pick {
     } else {
       recur scan(work, add_i32(cell, 1), best, best_count)
     }
-  } else if! leq_i32(no_candidate_count(), best_count) {
-    widen_sum!({complete=})
+  } else if(leq_i32(no_candidate_count(), best_count)) {
+    widen_sum({complete=})
   } else {
-    widen_sum!({pick_cell = best, pick_count = best_count})
+    widen_sum({pick_cell = best, pick_count = best_count})
   }
 }
 
@@ -135,19 +135,17 @@ rec(loop) fn drive(
 , undone: I32
 , deepest: I32
 ) -> Report {
-  if! leq_i32(budget, steps_taken) {
-    report(widen_sum!({exhausted=}, Outcome), steps_taken, placed, undone, deepest)
-  } else if! descending {
+  if(leq_i32(budget, steps_taken)) {
+    report(widen_sum({exhausted=}, Outcome), steps_taken, placed, undone, deepest)
+  } else if(descending) {
     let taken = add_i32(steps_taken, 1);
-    match! select(work) {
+    match(select(work)) {
       (
-      , .(_done: Complete) {
-          report(widen_sum!({solved=}, Outcome), taken, placed, undone, deepest)
-        }
+      , .(_done: Complete) { report(widen_sum({solved=}, Outcome), taken, placed, undone, deepest) }
       , .(pick: Pick_cell & Pick_count) {
-          if! num.is_zero(pick.?{pick_count}) {
-            if! num.is_zero(depth(work)) {
-              report(widen_sum!({unsolvable=}, Outcome), taken, placed, undone, deepest)
+          if(num.is_zero(pick.?{pick_count})) {
+            if(num.is_zero(depth(work))) {
+              report(widen_sum({unsolvable=}, Outcome), taken, placed, undone, deepest)
             } else {
               recur drive(work, .f, budget, taken, placed, undone, deepest)
             }
@@ -158,8 +156,8 @@ rec(loop) fn drive(
         }
       )
     }
-  } else if! num.is_zero(depth(work)) {
-    report(widen_sum!({unsolvable=}, Outcome), add_i32(steps_taken, 1), placed, undone, deepest)
+  } else if(num.is_zero(depth(work))) {
+    report(widen_sum({unsolvable=}, Outcome), add_i32(steps_taken, 1), placed, undone, deepest)
   } else {
     let taken = add_i32(steps_taken, 1);
     let cell = top_cell(work);
@@ -167,14 +165,14 @@ rec(loop) fn drive(
     // Retract before probing: the digit this frame is holding has to go
     // back into circulation, or the next candidate is judged against a
     // table that still claims the cell.
-    let retracted = if! num.is_zero(tried) {
+    let retracted = if(num.is_zero(tried)) {
       undone
     } else {
       constraints.unplace(work, cell, tried);
       add_i32(undone, 1)
     };
     let next = constraints.first_legal_from(work, cell, add_i32(tried, 1));
-    if! num.is_zero(next) {
+    if(num.is_zero(next)) {
       pop_frame(work);
       recur drive(work, .f, budget, taken, placed, retracted, deepest)
     } else {

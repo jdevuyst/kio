@@ -4340,7 +4340,7 @@ impl GoalStore {
             span,
             ctx,
         )
-        .map_err(|_| Error::elaborator(span, diagnostic))
+        .map_err(|_| Error::macro_error(span, diagnostic))
     }
 
     fn validate_projected_type_relation_without_writes(

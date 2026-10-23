@@ -1,9 +1,9 @@
 /// Long division with remainder, guarded by an explicit failure arm.
 module poly/division;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import poly/arith as arith;
 import poly/core as core;
 import poly/integers as integers;
@@ -33,11 +33,11 @@ fn inexact_step(lead_remainder: I32, lead_divisor: I32) -> String {
 // so the walk reaches `deg(remainder) < deg(divisor)`. The divisor is non-zero here,
 // which is what makes that stopping test reachable at all.
 rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: core.Poly) -> Divmod {
-  if! lt_i32(core.deg(remainder), core.deg(divisor)) {
-    widen_sum!({divided = (quotient, remainder)})
+  if(lt_i32(core.deg(remainder), core.deg(divisor))) {
+    widen_sum({divided = (quotient, remainder)})
   } else {
     let factor = integers.exact_div(core.leading(remainder), core.leading(divisor));
-    match! factor {
+    match(factor) {
       (
       , .(k: I32) {
           let term = core.monomial(k, sub_i32(core.deg(remainder), core.deg(divisor)));
@@ -49,7 +49,7 @@ rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: cor
         }
       , .(_inexact: .) {
           let reason = inexact_step(core.leading(remainder), core.leading(divisor));
-          widen_sum!({not_divisible = reason})
+          widen_sum({not_divisible = reason})
         }
       )
     }
@@ -64,8 +64,8 @@ rec(loop) fn long_divide(quotient: core.Poly, remainder: core.Poly, divisor: cor
 /// monic fixture divides by 1; the successful non-monic fixture divides evenly;
 /// otherwise the workbench refuses the division rather than rounding.
 pub fn divmod(p: core.Poly, divisor: core.Poly) -> Divmod {
-  if! core.is_zero(divisor) {
-    widen_sum!({not_divisible = "divisor is the zero polynomial"})
+  if(core.is_zero(divisor)) {
+    widen_sum({not_divisible = "divisor is the zero polynomial"})
   } else {
     long_divide(core.zero(), p, divisor)
   }

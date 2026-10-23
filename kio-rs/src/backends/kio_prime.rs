@@ -92,7 +92,7 @@ fn embed_module(m: &Module<Prime>) -> Module<Surface> {
 /// self-identifying — a consumer's `testapi.String` and a dependency's
 /// re-rooted `dep/testapi.String` stay distinct under the identity-exact
 /// matcher (see [`crate::normalization`]'s `unfold_qualify_refl_type` and
-/// `specs/prime.md`). That qualified path rides through a user-elaborator's
+/// `specs/prime.md`). That qualified path rides through a user-macro's
 /// reflected type value into the spliced term, so the `Module<Prime>` the
 /// kio-prime backend re-renders carries type arguments like
 /// `__either__(testapi.String, …)`. JS / TS / Rust / Go erase type
@@ -326,7 +326,7 @@ impl Requalifier {
             | Item::Labels(..)
             | Item::LabelForward(..)
             | Item::Equiv(..)
-            | Item::Elaborator(..)
+            | Item::Macro(..)
             | Item::Op(..)
             | Item::VariadicOperator(..) => {}
         }
@@ -506,6 +506,7 @@ impl Requalifier {
                     trailing_trivia: Vec::new(),
                     kind: ImportKind::Selective {
                         items: vec![ImportItem::Name {
+                            macro_span: None,
                             default_span: None,
                             leading_trivia: Vec::new(),
                             name: leaf.to_owned(),
@@ -943,18 +944,18 @@ mod tests {
         assert!(out.contains("fn id_unit"), "expected fn in: {out}");
     }
 
-    /// `if!`/`else` is elaborated before Prime emission; emit_module sees
+    /// `if`/`else` is elaborated before Prime emission; emit_module sees
     /// the `__if_then_else__` intrinsic call already substituted into
-    /// the body. The output contains no `if!` surface call.
+    /// the body. The output contains no `if` surface call.
     #[test]
     fn if_else_replaced_by_intrinsic_call_in_emitted_output() {
-        let src = "module main; import control(if); \
+        let src = "module main; import control(macro if); \
                    default host type Bool role(bool); \
-                   fn pick(c: Bool) -> . { if! c { () } else { () } }";
+                   fn pick(c: Bool) -> . { if (c) { () } else { () } }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let control = parse(include_str!(
-            "../../../test-data/poc/elab/workdir/control.kio"
+            "../../../test-data/poc/macros/workdir/control.kio"
         ))
         .expect("parse control provider");
         let control_path = module_file_path(&control);
@@ -973,7 +974,11 @@ mod tests {
             out.contains("__if_then_else__"),
             "expected __if_then_else__ call: {out}"
         );
-        assert!(!out.contains("if!"), "if! survived: {out}");
+        assert!(
+            !out.split(|ch: char| !ch.is_ascii_alphanumeric() && ch != '_')
+                .any(|token| token == "if"),
+            "the selected macro name survived: {out}"
+        );
         let reparsed =
             parse(&out).unwrap_or_else(|e| panic!("emitted text failed to re-parse: {e:?}\n{out}"));
         crate::prime::lower::lower_module(reparsed)

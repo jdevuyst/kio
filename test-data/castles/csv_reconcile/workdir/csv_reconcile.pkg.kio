@@ -48,6 +48,6 @@ build {
 bridge {
   testapi;
   testapi/**;
-  elab/testapi;
+  macros/testapi;
   csv_reconcile/**
 }

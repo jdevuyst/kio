@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
@@ -13,7 +13,7 @@ import testapi/io(print);
 labels Pair = { first: String, second: String };
 
 fn second_of(p: Pair) -> Second {
-  match! p {
+  match(p) {
     .(_first_slot: First, second_slot: Second) { second_slot }
   }
 }

@@ -1,0 +1,12 @@
+module main;
+
+import macros/match(macro match);
+
+labels { value: ., other: . };
+
+fn run(input: Value) {
+  match(input) {
+    .(_other: Other) { () };
+    .(_value: Value) { () }
+  }
+}

@@ -45,7 +45,7 @@ fn expr_tag(expr: &Expr<Surface>) -> &'static str {
             crate::ast::ElaboratorCall::FieldUpdate { .. } => "field-update",
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { .. } => "bang-call",
+        Expr::UserMacro { .. } => "macro-call",
         Expr::Ufcs { .. } => "ufcs",
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { .. } => "operator",
@@ -79,7 +79,7 @@ fn expr_root_signature(expr: &Expr<Surface>) -> String {
         Expr::Ufcs {
             callee_segments,
             flavor,
-            bang,
+            macro_call,
             ..
         } => format!(
             "ufcs:{}:{}:{}",
@@ -89,7 +89,7 @@ fn expr_root_signature(expr: &Expr<Surface>) -> String {
                 .map(crate::ast::PathSegment::as_str)
                 .collect::<Vec<_>>()
                 .join("."),
-            bang.is_some()
+            macro_call.is_some()
         ),
         _ => expr_tag(expr).to_owned(),
     }
@@ -237,58 +237,58 @@ const EXPR_FORMS: &[ExprForm] = &[
     },
     ExprForm {
         id: "conditional",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        source: "if! form_condition { form_then } else { form_else }",
+        source: "if (form_condition) { form_then } else { form_else }",
         root_tag: "block-call",
     },
     ExprForm {
         id: "scoped-block",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        source: "scope! { form_value }",
+        source: "scope { form_value }",
         root_tag: "block-call",
     },
     ExprForm {
         id: "sequence-block",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        source: "do! form_bind { let form_bound <- form_action; form_bound }",
+        source: "do (form_bind) { let form_bound <- form_action; form_bound }",
         root_tag: "block-call",
     },
     ExprForm {
-        id: "bang-call",
-        grammar: "BangCall",
+        id: "macro-call",
+        grammar: "MacroCall",
         declarations: "",
-        source: "form_elab!(form_arg)",
-        root_tag: "bang-call",
+        source: "form_macro(form_arg)",
+        root_tag: "call",
     },
     ExprForm {
         id: "block-ufcs-receiver-first",
         grammar: "DotSpliceSuffix",
         declarations: "",
-        source: "form_receiver.>form_elab! form_arg { form_body }",
+        source: "form_receiver.>form_macro (form_arg) { form_body }",
         root_tag: "block-call",
     },
     ExprForm {
         id: "block-ufcs-receiver-last",
         grammar: "DotSpliceSuffix",
         declarations: "",
-        source: "form_receiver.>>form_elab! form_arg { form_body }",
+        source: "form_receiver.>>form_macro (form_arg) { form_body }",
         root_tag: "block-call",
     },
     ExprForm {
         id: "block-ufcs-argument-first",
         grammar: "LeftSpliceBlockCallee",
         declarations: "",
-        source: "form_elab! form_arg { form_body }.<<form_receiver",
+        source: "form_macro (form_arg) { form_body }.<<form_receiver",
         root_tag: "block-call",
     },
     ExprForm {
         id: "block-ufcs-argument-last",
         grammar: "LeftSpliceBlockCallee",
         declarations: "",
-        source: "form_elab! form_arg { form_body }.<form_receiver",
+        source: "form_macro (form_arg) { form_body }.<form_receiver",
         root_tag: "block-call",
     },
     ExprForm {
@@ -498,10 +498,10 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         subject: Subject::Function,
     },
     ExprContext {
-        id: "bang-call-argument",
+        id: "macro-call-argument",
         grammar: "CallArgList",
         declarations: "",
-        item: "fn subject() -> . { context_elab!(__EXPR_HOLE__) }",
+        item: "fn subject() -> . { context_macro(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -543,65 +543,65 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     },
     ExprContext {
         id: "if-condition",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        item: "fn subject() -> . { if!(__EXPR_HOLE__) { context_then } else { context_else } }",
+        item: "fn subject() -> . { if(__EXPR_HOLE__) { context_then } else { context_else } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "if-then",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        item: "fn subject() -> . { if! context_condition { __EXPR_HOLE__ } else { context_else } }",
+        item: "fn subject() -> . { if (context_condition) { __EXPR_HOLE__ } else { context_else } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "if-else",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        item: "fn subject() -> . { if! context_condition { context_then } else { __EXPR_HOLE__ } }",
+        item: "fn subject() -> . { if (context_condition) { context_then } else { __EXPR_HOLE__ } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "plain-do-final",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        item: "fn subject() -> . { scope! { __EXPR_HOLE__ } }",
+        item: "fn subject() -> . { scope { __EXPR_HOLE__ } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "monadic-receiver",
-        grammar: "BlockElabCall",
+        grammar: "BlockMacroCall",
         declarations: "",
-        item: "fn subject() -> . { do!(__EXPR_HOLE__) { context_final } }",
+        item: "fn subject() -> . { do(__EXPR_HOLE__) { context_final } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "monadic-bind-rhs",
         grammar: "NeutralBind",
         declarations: "",
-        item: "fn subject() -> . { do! context_bind { let context_bound <- __EXPR_HOLE__; context_bound } }",
+        item: "fn subject() -> . { do (context_bind) { let context_bound <- __EXPR_HOLE__; context_bound } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "monadic-pure-rhs",
         grammar: "LetStmt",
         declarations: "",
-        item: "fn subject() -> . { do! context_bind { let context_bound = __EXPR_HOLE__; context_bound } }",
+        item: "fn subject() -> . { do (context_bind) { let context_bound = __EXPR_HOLE__; context_bound } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "monadic-sequence",
         grammar: "NeutralBlock",
         declarations: "",
-        item: "fn subject() -> . { do! context_bind { __EXPR_HOLE__; context_final } }",
+        item: "fn subject() -> . { do (context_bind) { __EXPR_HOLE__; context_final } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "monadic-final",
         grammar: "NeutralBlock",
         declarations: "",
-        item: "fn subject() -> . { do! context_bind { __EXPR_HOLE__ } }",
+        item: "fn subject() -> . { do (context_bind) { __EXPR_HOLE__ } }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -636,28 +636,28 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         id: "block-ufcs-receiver-first",
         grammar: "DotSpliceSuffix",
         declarations: "",
-        item: "fn subject() -> . { (__EXPR_HOLE__).>context_elab! context_arg { context_body } }",
+        item: "fn subject() -> . { (__EXPR_HOLE__).>context_macro (context_arg) { context_body } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "block-ufcs-receiver-last",
         grammar: "DotSpliceSuffix",
         declarations: "",
-        item: "fn subject() -> . { (__EXPR_HOLE__).>>context_elab! context_arg { context_body } }",
+        item: "fn subject() -> . { (__EXPR_HOLE__).>>context_macro (context_arg) { context_body } }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "block-ufcs-argument-first",
         grammar: "LeftSpliceBlockCallee",
         declarations: "",
-        item: "fn subject() -> . { context_elab! context_arg { context_body }.<<(__EXPR_HOLE__) }",
+        item: "fn subject() -> . { context_macro (context_arg) { context_body }.<<(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "block-ufcs-argument-last",
         grammar: "LeftSpliceBlockCallee",
         declarations: "",
-        item: "fn subject() -> . { context_elab! context_arg { context_body }.<(__EXPR_HOLE__) }",
+        item: "fn subject() -> . { context_macro (context_arg) { context_body }.<(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -761,7 +761,6 @@ fn normalize_topology(value: &mut serde_json::Value) {
                     | "match_id"
                     | "temp_name"
                     | "id"
-                    | "prefix_explicit"
                     | "elided"
                     | "ret_elided"
                     | "semicolon"
@@ -1035,17 +1034,17 @@ const TYPE_CONTEXTS: &[TypeContext] = &[
     TypeContext {
         id: "monadic-bind",
         grammar: "ParamPatternElem",
-        item: "fn subject() -> . { do! context_bind { let .(context_bound: __TYPE_HOLE__) <- context_action; context_bound } }",
+        item: "fn subject() -> . { do (context_bind) { let .(context_bound: __TYPE_HOLE__) <- context_action; context_bound } }",
     },
     TypeContext {
         id: "monadic-pure-let",
         grammar: "ParamPatternElem",
-        item: "fn subject() -> . { do! context_bind { let .(context_bound: __TYPE_HOLE__) = context_value; context_bound } }",
+        item: "fn subject() -> . { do (context_bind) { let .(context_bound: __TYPE_HOLE__) = context_value; context_bound } }",
     },
     TypeContext {
-        id: "elaborator-call-type",
-        grammar: "ElaboratorItem",
-        item: "elab subject : __TYPE_HOLE__ { impl context_value; };",
+        id: "macro-call-type",
+        grammar: "MacroItem",
+        item: "macro subject : __TYPE_HOLE__ { impl context_value; };",
     },
 ];
 
@@ -1100,7 +1099,7 @@ fn type_forms_compose_across_grammar_contexts() {
 }
 
 #[test]
-fn unordered_elaborator_entries_preserve_path_only_boundaries() {
+fn unordered_macro_entries_preserve_path_only_boundaries() {
     for implementation_head in ["impl", "impl(fills)"] {
         let source = |implementation: &str, captures: &str, implementation_first: bool| {
             let implementation = format!("{implementation_head} {implementation};");
@@ -1110,7 +1109,7 @@ fn unordered_elaborator_entries_preserve_path_only_boundaries() {
             } else {
                 format!("{captures} {implementation}")
             };
-            format!("module matrix; elab subject: . {{ {body} }};")
+            format!("module matrix; macro subject: . {{ {body} }};")
         };
         let canonical = parse_eager_and_lazy(
             &source("context_impl", "context_capture", false),
@@ -1354,13 +1353,13 @@ fn unparenthesized_and_tight_context_boundaries_keep_their_topology() {
         (
             "conditional-call-condition",
             "",
-            "if! form_callee(form_arg) { context_then } else { context_else }",
+            "if (form_callee(form_arg)) { context_then } else { context_else }",
             "block-call",
         ),
         (
             "monadic-path-receiver",
             "",
-            "do! form_bind { context_final }",
+            "do (form_bind) { context_final }",
             "block-call",
         ),
     ] {
@@ -1406,11 +1405,11 @@ fn precedence_and_scope_boundaries_accept_only_explicit_composition() {
     }
 
     assert_deferred_body_rejected(
-        "module matrix; fn subject() -> . { do! {context_field = context_value} { context_final } }",
+        "module matrix; fn subject() -> . { do {context_field = context_value} { context_final } }",
         "ungrouped-braced-monadic-receiver",
     );
     let grouped = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { do!({context_field = context_value}) { context_final } }",
+        "module matrix; fn subject() -> . { do({context_field = context_value}) { context_final } }",
         "grouped-braced-monadic-receiver",
     );
     assert!(matches!(
@@ -1683,10 +1682,10 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "LiteralCall",
     "BoolLit",
     "FnExpr",
-    "ElaboratorItem",
-    "ElaboratorBody",
-    "ElaboratorEntry",
-    "ElaboratorImpl",
+    "MacroItem",
+    "MacroBody",
+    "MacroEntry",
+    "MacroImpl",
     "GroupedValuePath",
     "Equiv",
     "FixedOpToken",
@@ -1704,12 +1703,13 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "FieldAccess",
     "FieldUpdate",
     "FieldUpdateLabel",
-    "BlockElabCall",
+    "BlockMacroCall",
     "NeutralBlock",
     "NeutralBinding",
     "NeutralBind",
     "NeutralBinder",
-    "BangCall",
+    "MacroCall",
+    "MacroHead",
     "RecCall",
     "CallArgList",
     "NonemptyCallArgList",
@@ -1733,13 +1733,11 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "BlockExposure",
     "BlockPrefix",
     "BlockValueArgs",
-    "BarePrefixExpr",
     "LabelledBlock",
     "FinalElidedBlock",
 ];
 
 const DIRECT_EXPR_OWNERS: &[&str] = &[
-    "BarePrefixExpr",
     "BlockBody",
     "BlockValueArgs",
     "CallArg",
@@ -1761,13 +1759,13 @@ const DIRECT_EXPR_OWNERS: &[&str] = &[
 
 const DIRECT_TYPE_OWNERS: &[&str] = &[
     "CallArg",
-    "ElaboratorItem",
     "FnDef",
     "FnExpr",
     "FnSignatureParam",
     "HostFnBody",
     "LabelPayload",
     "LiteralCall",
+    "MacroItem",
     "NewtypeAfterVis",
     "ParamPatternElem",
     "RecFnDef",
@@ -1842,16 +1840,16 @@ ExprSuffix += FieldAccess | FieldUpdate
 ExprSuffix += DotSpliceSuffix | OperatorTail
 CallArg ::= Expr | Type
 ExprAtom ::= LiteralCall | '(' ')' | '(' Expr ')' | ValuePath | FnExpr
-ExprAtom += TupleLit | LabelValue | BangCall | BlockElabCall | PlaceholderLambda | RecCall
+ExprAtom += TupleLit | LabelValue | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
 ExprAtom += VariadicLiteral | ClosedFixedOpExpr
 LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '(' Type ')'
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)
 BoolLit ::= '.' ('t' | 'f')
 FnExpr ::= '.' FnSignature ('->' Type)? Block
-ElaboratorItem ::= Vis? 'elab' IDENT ':' Type ElaboratorBody
-ElaboratorBody ::= '{' SemiEntries<ElaboratorEntry> '}'
-ElaboratorEntry ::= ElaboratorCaptures | ElaboratorImpl | TrailingBlockDecl
-ElaboratorImpl ::= 'impl' GroupedValuePath | 'impl' '(' 'fills' ')' GroupedValuePath
+MacroItem ::= Vis? 'macro' IDENT ':' Type MacroBody
+MacroBody ::= '{' SemiEntries<MacroEntry> '}'
+MacroEntry ::= MacroCaptures | MacroImpl | TrailingBlockDecl
+MacroImpl ::= 'impl' GroupedValuePath | 'impl' '(' 'fills' ')' GroupedValuePath
 GroupedValuePath ::= ValuePath | '(' GroupedValuePath ')'
 Equiv ::= 'equiv' IDENT ValueSignature? '{' ';'* Expr (';'+ Expr)+ ';'* '}'
 FixedOpToken ::= OpToken
@@ -1869,23 +1867,24 @@ LabelValueLabel ::= LabelPath ('=' Expr?)?
 FieldAccess ::= '.?' '{' (FieldAccessLabel (',' FieldAccessLabel)* ','?)? '}'
 FieldUpdate ::= '.!' '{' (FieldUpdateLabel (',' FieldUpdateLabel)* ','?)? '}'
 FieldUpdateLabel ::= LabelPath ('=' Expr?)?
-BlockElabCall ::= IDENT '!' BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
+BlockMacroCall ::= MacroHead BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
 NeutralBlock ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
-BangCall ::= IDENT '!' CallArgList
+MacroCall ::= MacroHead CallArgList
+MacroHead ::= IDENT | '(' MacroHead ')'
 RecCall ::= 'recur' RecCallAnnotationList? IDENT CallArgList
 CallArgList ::= '(' (CallArg (',' CallArg)*)? ','? ')'
 NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
 DotPlaceholderIntro ::= '.' IDENT '.'
 PlaceholderLambda ::= DotPlaceholderIntro Block
 PrefixOpExpr ::= FixedOperatorUse
-DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList? | ('.>' | '.>>') BlockElabCall
-DotSpliceCallee ::= GroupedValuePath | IDENT '!'
+DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList? | ('.>' | '.>>') BlockMacroCall
+DotSpliceCallee ::= GroupedValuePath
 LeftCallSplice ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
-LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList? | LeftSpliceBlockCallee
-LeftSpliceBlockCallee ::= BlockElabCall | '(' LeftSpliceBlockCallee ')'
+LeftSpliceCallee ::= LeftSplicePathCallee | LeftSpliceBlockCallee
+LeftSpliceBlockCallee ::= BlockMacroCall | '(' LeftSpliceBlockCallee ')'
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'
 TightCallArg ::= ExprAtom CallArgList*
 OperatorTail ::= FixedOperatorUse
@@ -1896,11 +1895,10 @@ ExistentialLetBinder ::= IDENT | ParamPatternTuple
 RowLet ::= 'let' '.' '(' '{' RowLetEntry (',' RowLetEntry)* ','? '}' ')' '=' Expr ';'
 TrailingBlockDecl ::= 'trailing' BlockExposure IDENT?
 BlockExposure ::= 'product' | 'thunk' | 'sequence'
-BlockPrefix ::= BlockValueArgs | BarePrefixExpr
+BlockPrefix ::= BlockValueArgs
 BlockValueArgs ::= '(' (Expr (',' Expr)*)? ','? ')'
-BarePrefixExpr ::= Expr
 LabelledBlock ::= IDENT NeutralBlock
-FinalElidedBlock ::= IDENT BlockElabCall"#;
+FinalElidedBlock ::= IDENT BlockMacroCall"#;
 
 fn strip_ebnf_comments(line: &str, comment_depth: &mut usize) -> String {
     let chars = line.chars().collect::<Vec<_>>();

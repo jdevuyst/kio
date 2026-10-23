@@ -290,11 +290,11 @@ function copyInstall(id: string) {
       <div class="home-lang-grid">
         <div class="lang-feature">
           <h3>Library-defined control</h3>
-          <code>if! ok { yes() } else { no() }</code>
+          <code>if(ok) { yes() } else { no() }</code>
           <p>
-            Import elaborator macros (elabs) like any other name. They generate typed code using type information:
-            <code>reorder_prod!((a, b), B &amp; A)</code> reorders a product to match the requested
-            type, and familiar control forms such as <code>if!</code> and <code>match!</code>
+            Macros are imported library definitions that generate typed code using type information:
+            <code>reorder_prod((a, b), B &amp; A)</code> reorders a product to match the requested
+            type, and familiar control forms such as <code>if</code> and <code>match</code>
             are library-defined too.
           </p>
         </div>
@@ -332,10 +332,10 @@ function copyInstall(id: string) {
         </div>
         <div class="lang-feature">
           <h3>Library-defined sequencing</h3>
-          <code>do! bind { … }</code>
+          <code>do(bind) { … }</code>
           <p>
             Each <code>let x &lt;- action;</code> step sequences actions with the bind function
-            you supply. <code>do!</code> is imported library code.
+            you supply. <code>do</code> is imported library code.
           </p>
         </div>
       </div>

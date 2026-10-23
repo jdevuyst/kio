@@ -1,9 +1,9 @@
 /// Host-side plumbing for getting an image's text into the loader: read the whole standard input as one string.
 module docs_loader/imageio;
 
-import docs_loader/elab/control(if);
-import docs_loader/elab/match(match);
-import docs_loader/elab/spine_elaborators(widen_sum);
+import docs_loader/macros/control(macro if);
+import docs_loader/macros/match(macro match);
+import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/testapi(default Bool, default I32, default String);
 import docs_loader/testapi/arith(eq_i32);
 import docs_loader/testapi/io(read_ascii_line);
@@ -22,20 +22,20 @@ labels { image_text: String };
 pub fn read_image_stdin() -> String {
   Image_text.get(loop(
   , .(st: I32 & String) {
-      match! st {
+      match(st) {
         .(first: I32, acc: String) {
-          match! read_ascii_line() {
+          match(read_ascii_line()) {
             (
             , .(line: String) {
                 let acc1 =
-                  if! eq_i32(first, 1(I32)) {
+                  if(eq_i32(first, 1(I32))) {
                     line
                   } else {
                     string_concat(acc, string_concat("\n"(String), line))
                   };
-                widen_sum!((0(I32), acc1), (I32 & String) | Image_text)
+                widen_sum((0(I32), acc1), (I32 & String) | Image_text)
               }
-            , .(_eof: .) { widen_sum!({image_text = acc}, (I32 & String) | Image_text) }
+            , .(_eof: .) { widen_sum({image_text = acc}, (I32 & String) | Image_text) }
             )
           }
         }

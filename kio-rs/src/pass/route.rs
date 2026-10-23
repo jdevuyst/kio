@@ -1285,7 +1285,7 @@ impl<'a> Lowerer<'a> {
             Item::Labels(_, ext) => match *ext {},
             Item::LabelForward(_, ext) => match *ext {},
             Item::Equiv(_, ext) => match *ext {},
-            Item::Elaborator(_, ext) => match *ext {},
+            Item::Macro(_, ext) => match *ext {},
             Item::Op(_, ext) => match *ext {},
             Item::VariadicOperator(_, ext) => match *ext {},
             Item::RecGroup(_, ext) => match *ext {},
@@ -1677,7 +1677,7 @@ impl<'a> Lowerer<'a> {
             Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
+            | Expr::UserMacro { ext, .. }
             | Expr::Ufcs { ext, .. } => match *ext {},
             Expr::OpChain { ext, .. } => match *ext {},
             Expr::RecCall { ext, .. } => match *ext {},
@@ -10207,7 +10207,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             )]),
         );
         let mut module_ctx = ModuleCtx::default();
-        for alias in ["ordinary", "_elab_provider__"] {
+        for alias in ["ordinary", "_macro_provider__"] {
             module_ctx.qualified.insert(
                 alias.to_owned(),
                 QualifiedImportKind::CrossModule {
@@ -10236,7 +10236,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         };
 
         let ordinary = type_for("ordinary").expect("ordinary qualified import should resolve");
-        let generated_looking = type_for("_elab_provider__")
+        let generated_looking = type_for("_macro_provider__")
             .expect("generated-looking qualified import should resolve");
         assert_eq!(ordinary, generated_looking);
     }

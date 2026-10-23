@@ -76,7 +76,7 @@ git log --since="3 months ago" --diff-filter=D --name-only -- \
 git log --since="3 months ago" --diff-filter=R --find-renames --name-status -- test-data/goldens/
 ```
 
-For each **deleted** case (`--diff-filter=D`) and each golden **moved into a failure bucket** (a rename whose destination directory is a higher-numbered error tier — `00_success/foo` → `14_type_error/foo`, `40_build_error/`, `15_elaborator_error/`, …):
+For each **deleted** case (`--diff-filter=D`) and each golden **moved into a failure bucket** (a rename whose destination directory is a higher-numbered error tier — `00_success/foo` → `14_type_error/foo`, `40_build_error/`, `15_macro_error/`, …):
 
 - Read the deleting / moving commit. A paired emitter / typer / elaborator fix is **not** a deletion rationale: fixing the bug is why the focused regression must remain. Incidental coverage in a broader case is not a substitute either. A rename or consolidation is admissible only when the same commit preserves equally focused coverage of the exact regression and the history makes that one-to-one replacement explicit. A diagnostic-selection fixture may retire when prior authority removes that selection promise and focused coverage of every constituent defect remains.
 - A deletion whose commit message amounts to "fixed", "case was failing", "flaky on rust", "covered elsewhere", or "no longer needed" without that exact focused replacement is a finding. A case can retire as success coverage only when the effective authorized contract no longer admits the behavior; preserve focused negative coverage of the newly rejected spelling where the language-surface testing contract requires it.
@@ -167,24 +167,24 @@ ordinary documented way, and an `ARTIFACT_SHAPE` script may inspect only its
 durable named fact; those cases still obey the bare-command / inherited-`PATH`
 resource rule.
 
-### 5. elab modules included instead of depended on
+### 5. macro modules included instead of depended on
 
-The shared POC elaborator library — `elaborator_util.kio`, `algebraic_elaborators.kio`, `spine_elaborators.kio`, `match.kio`, `derive.kio` (and the rest of the `elab` package) — has a single canonical home under `test-data/poc/elab/workdir/` (package `elab`). A test case that needs the elaborators **depends on `elab`**: a `<local>.dep.kio` (`dependency elab; source { path "<rel>/elab.pkg.kio"; }`) at the package root, importing the re-rooted modules (`import elab/derive as d;`, `import elab/match(match);`). Depending on elab materializes its modules under an `elab/` tree at the case root, and that re-rooted tree is **committed** (the case ships its dependency's materialized closure). The committed modules are re-rooted derivatives (`module derive;` → `module elab/derive;`), not byte copies of the canonical source — so this section's byte-identical-copy check (b) never flags a committed materialized tree.
+The shared POC macro library — `macro_util.kio`, `algebraic_macros.kio`, `spine_macros.kio`, `match.kio`, `derive.kio` (and the rest of the `macros` package) — has a single canonical home under `test-data/poc/macros/workdir/` (package `macros`). A test case that needs the macros **depends on `macros`**: a `<local>.dep.kio` (`dependency macros; source { path "<rel>/macros.pkg.kio"; }`) at the package root, importing the re-rooted modules (`import macros/derive(macro derive as d);`, `import macros/match(macro match);`). Depending on macros materializes its modules under a `macros/` tree at the case root, and that re-rooted tree is **committed** (the case ships its dependency's materialized closure). The committed modules are re-rooted derivatives (`module derive;` → `module macros/derive;`), not byte copies of the canonical source — so this section's byte-identical-copy check (b) never flags a committed materialized tree.
 
-The two pre-dependency workarounds are forbidden: a tracked filesystem link into `test-data/poc/elab/workdir/`, and a byte-identical real copy of a canonical module. The gate-enforced counterpart is [`ci/checks/repo-lint/golden-reference-deps.sh`](../../../ci/checks/repo-lint/golden-reference-deps.sh), which fails CI on either. This section is the manual backstop and explainer; run it the same way to confirm:
+The two pre-dependency workarounds are forbidden: a tracked filesystem link into `test-data/poc/macros/workdir/`, and a byte-identical real copy of a canonical module. The gate-enforced counterpart is [`ci/checks/repo-lint/golden-reference-deps.sh`](../../../ci/checks/repo-lint/golden-reference-deps.sh), which fails CI on either. This section is the manual backstop and explainer; run it the same way to confirm:
 
 ```bash
 git ls-files -s test-data | awk '$1=="120000"{print $4}' \
-  | while read -r f; do case "$(readlink "$f")" in *elab/workdir*) echo "TRACKED LINK: $f";; esac; done
+  | while read -r f; do case "$(readlink "$f")" in *macros/workdir*) echo "TRACKED LINK: $f";; esac; done
 
-for name in elaborator_util.kio algebraic_elaborators.kio spine_elaborators.kio match.kio derive.kio; do
-  canon="test-data/poc/elab/workdir/$name"
-  find test-data -type f -name "$name" ! -path "test-data/poc/elab/workdir/*" \
+for name in macro_util.kio algebraic_macros.kio spine_macros.kio match.kio derive.kio; do
+  canon="test-data/poc/macros/workdir/$name"
+  find test-data -type f -name "$name" ! -path "test-data/poc/macros/workdir/*" \
     -exec sh -c 'cmp -s "$1" "$2" && echo "BYTE-IDENTICAL COPY: $1"' _ {} "$canon" \;
 done
 ```
 
-Each `TRACKED LINK` / `BYTE-IDENTICAL COPY` hit is a finding: replace it by depending on `elab` and importing the re-rooted module (remove the included file, add `<local>.dep.kio`, an `import elab/<name-stem> ...;` declaration, and a `elab/testapi;` glob to the consumer's `bridge` for the role types the elaborators import). A reference-module-named file that is not byte-identical and not a tracked filesystem link (a genuine purpose-built variant a single case ships) is admissible and not flagged. If you suspect a "variant" is actually stale drift of the canonical module, that is a separate spec/POC-sync concern; record it but do not auto-convert it.
+Each `TRACKED LINK` / `BYTE-IDENTICAL COPY` hit is a finding: replace it by depending on `macros` and importing the re-rooted module (remove the included file, add `<local>.dep.kio`, an `import macros/<name-stem> ...;` declaration, and a `macros/testapi;` glob to the consumer's `bridge` for the role types the macros import). A reference-module-named file that is not byte-identical and not a tracked filesystem link (a genuine purpose-built variant a single case ships) is admissible and not flagged. If you suspect a "variant" is actually stale drift of the canonical module, that is a separate spec/POC-sync concern; record it but do not auto-convert it.
 
 ### 6. No absolute or checkout-local paths, no stray symlinks
 
@@ -202,7 +202,7 @@ Symlinks in the corpus are the other portability hazard. List every tracked syml
 git ls-files -s test-data | awk '$1=="120000"{print $4}'
 ```
 
-Any symlink under `test-data/contrib/` is a finding — the contrib contract forbids symlinks outright (`test-data/contrib/README.md`). A symlink pointing into `elab/workdir/` is a § 5 finding (the pre-dependency reuse workaround). Other symlinks need judgment against the corpus contract.
+Any symlink under `test-data/contrib/` is a finding — the contrib contract forbids symlinks outright (`test-data/contrib/README.md`). A symlink pointing into `macros/workdir/` is a § 5 finding (the pre-dependency reuse workaround). Other symlinks need judgment against the corpus contract.
 
 ### 7. `run.sh` equiv cases that never discharge (`kio test`)
 
@@ -216,7 +216,7 @@ sh ci/checks/repo-lint/equiv-discharge.sh
 
 For each finding the gate reports, the fix is to discharge the equiv in the case's `run.sh` — add a `kio test` line. Worked examples: `00_success/typecheck_onto_collapse_alpha_equiv` (`kio dep fetch` → `kio check` → `kio test`) and `00_success/check_module_tree_file_selector`, whose subject is `kio check`'s selector and which discharges with `"$KIO_BIN" test >/dev/null` so its snapshot stays empty. A case whose subject is another subcommand should still discharge — `kio test` runs fine and is cheap, and the corpus re-discharges freely anyway. If the package's only `equiv` lives in an imported dependency, `kio test` still asserts a clean load with nothing to discharge, so it still belongs. If `kio test` genuinely cannot pass (it fails before discharge), the case belongs in an error-before-discharge bucket, not a reachable one — surface that as a bucket mismatch rather than working around it.
 
-A case whose `expected.exit` is a pre-discharge error (parse / type / elaborator / dependency / …) is exempt automatically; `kio test` can't reach discharge there. This is the golden-corpus form; the POC and castle corpora carry the same obligation through their own `kio test` lines (§ POC 6 actually runs it; § Castle 7's orchestrator runs it).
+A case whose `expected.exit` is a pre-discharge error (parse / type / macro / dependency / …) is exempt automatically; `kio test` can't reach discharge there. This is the golden-corpus form; the POC and castle corpora carry the same obligation through their own `kio test` lines (§ POC 6 actually runs it; § Castle 7's orchestrator runs it).
 
 ### 8. `KNOWN_FAILING` cases are tracked open bugs
 
@@ -464,7 +464,7 @@ A library POC missing the ready-to-drop-in claim, or a worked-example POC missin
 
 ### POC 2. Module `///` documentation
 
-Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `literal`, `newtype`, `labels`, `op`, `varop`, and `elab`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
+Every real root library `*.kio` file under `test-data/poc/*/workdir/` must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: functions (including `pure` and recursive declarations), `type`, `literal`, `newtype`, `labels`, `op`, `varop`, and `macro`. Demo modules, host adapters, `testapi` host-API modules, and materialized dependency roots are exempt from this root-library doc scan (see [`test-data/poc/README.md`](../../../test-data/poc/README.md) § Module documentation).
 
 Private helpers do not need `///`. If an item is not worth documenting for copyable library users, it should not be `pub` unless another module genuinely needs it across the module boundary. Public constructors and projectors inside a documented `newtype` are covered by the `newtype` docs unless they need extra semantic explanation.
 
@@ -498,7 +498,7 @@ for path in sorted(Path("test-data/poc").glob("*/workdir/**/*.kio")):
     seen.add(real)
     paths.append(path)
 
-public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|literal|newtype|labels|op|varop|elab|rec)\b")
+public_decl = re.compile(r"^pub\s+(?:pure\s+)?(?:fn|type|literal|newtype|labels|op|varop|macro|rec)\b")
 failures = []
 
 for path in paths:
@@ -530,9 +530,9 @@ not exempt an exported item.
 
 ### POC 3. No `__intrinsics__` (library POCs)
 
-Library POCs must not import `__intrinsics__` from their own root library or demo-owned modules. Surface forms only — imported `if!`, `scope!`, `do!`, and `match!` block calls, the algebraic palette, the spine palette, and UFCS. The library promise is "copy this into your own code"; an `__intrinsics__` import drags the spec's escape-hatch surface into the user's file, defeating the promise.
+Library POCs must not import `__intrinsics__` from their own root library or demo-owned modules. Surface forms only — imported `if`, `scope`, `do`, and `match` block calls, the algebraic palette, the spine palette, and UFCS. The library promise is "copy this into your own code"; an `__intrinsics__` import drags the spec's escape-hatch surface into the user's file, defeating the promise.
 
-Materialized dependency roots named by `*.dep.kio` are out of scope for this POC-owned scan; those modules are audited at their source package. For example, a library POC may carry a materialized `elab/` dependency whose own worked-example package imports `__intrinsics__`.
+Materialized dependency roots named by `*.dep.kio` are out of scope for this POC-owned scan; those modules are audited at their source package. For example, a library POC may carry a materialized `macros/` dependency whose own worked-example package imports `__intrinsics__`.
 
 ```sh
 python3 - <<'PY'
@@ -669,7 +669,7 @@ Path portability is a shared check (§ 6); its `git grep` covers `test-data/poc`
 
 A POC has one reusable root package under `workdir/` and may have a nested runnable package under `workdir/demo/`. A root package may import another POC only through a committed materialized `*.dep.kio` dependency. Inspect current `import path(names);` and `import path as alias;` declarations, tracing each selected module to the package's own sources or declared materialized dependency closure. A same-spelled sibling directory is not that dependency evidence. The drop-in promise rests on copying the package's own library files plus its declared dependency closure, not on ambient sibling directories.
 
-An import relying directly on ambient cross-POC sources is a finding. Imports through the local name created by a `*.dep.kio` file (`elab/...`, `library/...`) are expected, as are imports of the package's own host-declaration modules. Derive dependency roots from actual declarations rather than a hard-coded name list or an obsolete import-spelling regex.
+An import relying directly on ambient cross-POC sources is a finding. Imports through the local name created by a `*.dep.kio` file (`macros/...`, `library/...`) are expected, as are imports of the package's own host-declaration modules. Derive dependency roots from actual declarations rather than a hard-coded name list or an obsolete import-spelling regex.
 
 ## Castle: composed-program contract
 
@@ -819,7 +819,7 @@ The orchestrator resolves compiler/runner artifacts using the shared tooling and
 
 When a castle exposes a Kio bug, AGENTS.md § Universal rules requires the fix to land in the same change with a **focused regression golden** under `test-data/goldens/` that exercises the bug's shape directly — the castle is never the only coverage for the bug, and the bug is never papered over in the castle source. This is the hardest check to mechanize (it asks about history, not current files), so it is a manual review backed by signals:
 
-- For any castle whose `README.md` § "What this adds to the corpus" names a compiler shape it was the first to stress (e.g. `maze_replay` cites `rec(loop)` recursion in a `match!` clause body), check that a focused golden under `test-data/goldens/00_success/` (or the relevant exit-code bucket) exercises that shape directly. `maze_replay`'s `rec`-in-`match!`-clause shape is pinned by `test-data/goldens/00_success/exec_rec_in_match_clause/`.
+- For any castle whose `README.md` § "What this adds to the corpus" names a compiler shape it was the first to stress (e.g. `maze_replay` cites `rec(loop)` recursion in a `match` clause body), check that a focused golden under `test-data/goldens/00_success/` (or the relevant exit-code bucket) exercises that shape directly. `maze_replay`'s `rec`-in-`match`-clause shape is pinned by `test-data/goldens/00_success/exec_rec_in_match_clause/`.
 - Walk the castle-track commits (`git log -- test-data/castles/`) and confirm any "Fix …" commit that landed alongside a castle also added a `test-data/goldens/` case.
 
 A castle whose composition is known to have surfaced a bug with no corresponding focused golden is a finding — the regression can silently return.

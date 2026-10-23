@@ -4,9 +4,9 @@
 /// cycle, or close one.
 module sheet/recalc;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr, all_addrs, cell_count, mem);
 import sheet/cells(Sheet, Values, blank_content, cycle_value, empty_values);
 import sheet/cells(formula_content, number_content, set_content, set_value);
@@ -23,20 +23,20 @@ pub labels Change = { put_number: I32 } | { put_formula: Expr } | { clear: . };
 pub labels Edit = { edit_at: Addr, edit_kind: Change };
 
 pub fn number_edit(a: Addr, n: I32) -> Edit {
-  {edit_at = a, edit_kind = {put_number = n}.>widen_sum!(Change)}
+  {edit_at = a, edit_kind = {put_number = n}.>widen_sum(Change)}
 }
 
 pub fn formula_edit(a: Addr, e: Expr) -> Edit {
-  {edit_at = a, edit_kind = {put_formula = e}.>widen_sum!(Change)}
+  {edit_at = a, edit_kind = {put_formula = e}.>widen_sum(Change)}
 }
 
-pub fn clear_edit(a: Addr) -> Edit { {edit_at = a, edit_kind = {clear=}.>widen_sum!(Change)} }
+pub fn clear_edit(a: Addr) -> Edit { {edit_at = a, edit_kind = {clear=}.>widen_sum(Change)} }
 
 pub fn edit_addr(e: Edit) -> Addr { e.?{edit_at} }
 
 pub fn fold_edit[R](e: Edit, on_number: I32 -> R, on_formula: Expr -> R, on_clear: R) -> R {
   let change = e.?{edit_kind};
-  match! change {
+  match(change) {
     (
     , .(n: Put_number) { on_number(n.?{put_number}) }
     , .(f: Put_formula) { on_formula(f.?{put_formula}) }
@@ -75,10 +75,10 @@ pub fn plan_order(p: Plan) -> List(Addr) { p.?{plan_order} }
 /// cell reads. A cell on a cycle has no well-founded value to compute, so it
 /// is settled as `#CYCLE` instead.
 rec(loop) fn eval_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), vals: Values) -> Values {
-  match! todo.>List.unpack {
+  match(todo.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
-        if! mem(cyc, a) {
+        if(mem(cyc, a)) {
           recur eval_onto(s, cyc, rest, set_value(vals, a, cycle_value()))
         } else {
           recur eval_onto(s, cyc, rest, set_value(vals, a, eval_cell(s, vals, a)))
@@ -95,10 +95,10 @@ pub fn full_eval(s: Sheet, p: Plan) -> Values {
 }
 
 rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(Addr) {
-  match! frontier.>List.unpack {
+  match(frontier.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
-        if! mem(seen, a) {
+        if(mem(seen, a)) {
           recur close(deps, rest, seen)
         } else {
           recur close(deps, append(rest, deps_of(deps, a)), cons(a, seen))

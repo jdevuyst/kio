@@ -1,9 +1,6 @@
 /// The standard host capabilities `dyn_load_prime` builds over its own `testapi/*` host fns: op dispatch (`serve_default`), literal construction (`make_lit_default`), and the conditional decision (`test_bool_default`).
 module docs_loader/hostrec;
 
-import docs_loader/elab/control(if);
-import docs_loader/elab/match(match);
-import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/host_descriptor(
 , host_fn_eq
 , host_fn_id
@@ -14,6 +11,9 @@ import docs_loader/host_descriptor(
 );
 import docs_loader/host_descriptor(Host_fn, Host_id, Host_type);
 import docs_loader/host_descriptor(host_type_id);
+import docs_loader/macros/control(macro if);
+import docs_loader/macros/match(macro match);
+import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/marshal(loop_op);
 import docs_loader/result(Call_result, call_done, call_stuck);
 import docs_loader/testapi(Scalar, default Bool, default F64, default I32, default String);
@@ -128,18 +128,18 @@ import docs_loader/value(un_value, value_to_scalar, vhost, vunit);
 // Recover the two components of a binary host fn's product domain, or `()`
 // when the domain is not a product (a wrong-arity / wrong-shape call).
 fn prod2(dom: Value) -> . | (Value & Value) {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(p: V_product) {
-        match! V_product.get(p) {
-          .(a: Value, b: Value) { widen_sum!((a, b), . | (Value & Value)) }
+        match(V_product.get(p)) {
+          .(a: Value, b: Value) { widen_sum((a, b), . | (Value & Value)) }
         }
       }
-    , .(_c: V_closure) { widen_sum!((), . | (Value & Value)) }
-    , .(_s: V_sum) { widen_sum!((), . | (Value & Value)) }
-    , .(_u: V_unit) { widen_sum!((), . | (Value & Value)) }
-    , .(_h: V_host) { widen_sum!((), . | (Value & Value)) }
-    , .(_f: V_hostfn) { widen_sum!((), . | (Value & Value)) }
+    , .(_c: V_closure) { widen_sum((), . | (Value & Value)) }
+    , .(_s: V_sum) { widen_sum((), . | (Value & Value)) }
+    , .(_u: V_unit) { widen_sum((), . | (Value & Value)) }
+    , .(_h: V_host) { widen_sum((), . | (Value & Value)) }
+    , .(_f: V_hostfn) { widen_sum((), . | (Value & Value)) }
     )
   }
 }
@@ -155,20 +155,20 @@ fn prod2(dom: Value) -> . | (Value & Value) {
 // host for the typed value. `()` when the value is not a `V_host` or the
 // scalar is the wrong shape (a well-typed guest never triggers either).
 fn value_i32(v: Value) -> . | I32 {
-  match! value_to_scalar(v) {
-    (.(s: Scalar) { scalar_as_i32(s) }, .(_e: .) { widen_sum!((), . | I32) })
+  match(value_to_scalar(v)) {
+    (.(s: Scalar) { scalar_as_i32(s) }, .(_e: .) { widen_sum((), . | I32) })
   }
 }
 
 fn value_str(v: Value) -> . | String {
-  match! value_to_scalar(v) {
-    (.(s: Scalar) { scalar_as_str(s) }, .(_e: .) { widen_sum!((), . | String) })
+  match(value_to_scalar(v)) {
+    (.(s: Scalar) { scalar_as_str(s) }, .(_e: .) { widen_sum((), . | String) })
   }
 }
 
 fn value_f64(v: Value) -> . | F64 {
-  match! value_to_scalar(v) {
-    (.(s: Scalar) { scalar_as_f64(s) }, .(_e: .) { widen_sum!((), . | F64) })
+  match(value_to_scalar(v)) {
+    (.(s: Scalar) { scalar_as_f64(s) }, .(_e: .) { widen_sum((), . | F64) })
   }
 }
 
@@ -193,25 +193,25 @@ fn shape_stuck(identity: String, wanted: String) -> Call_result {
 // Recover the three components of a ternary host fn's right-nested
 // product domain, or `()` on a wrong shape.
 fn prod3(dom: Value) -> . | (Value & Value & Value) {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, rest: Value) {
-            match! prod2(rest) {
+            match(prod2(rest)) {
               (
               , .(inner: Value & Value) {
-                  match! inner {
-                    .(b: Value, c: Value) { widen_sum!((a, (b, c)), . | (Value & Value & Value)) }
+                  match(inner) {
+                    .(b: Value, c: Value) { widen_sum((a, (b, c)), . | (Value & Value & Value)) }
                   }
                 }
-              , .(_n: .) { widen_sum!((), . | (Value & Value & Value)) }
+              , .(_n: .) { widen_sum((), . | (Value & Value & Value)) }
               )
             }
           }
         }
       }
-    , .(_n: .) { widen_sum!((), . | (Value & Value & Value)) }
+    , .(_n: .) { widen_sum((), . | (Value & Value & Value)) }
     )
   }
 }
@@ -219,14 +219,14 @@ fn prod3(dom: Value) -> . | (Value & Value & Value) {
 // Lift an optional host i32 (`I32 | .`) into the guest's sum value —
 // the left arm carries the i32, the right arm the unit.
 fn v_opt_i32(r: I32 | .) -> Value {
-  match! r {
+  match(r) {
     (.(n: I32) { vleft(vi32(n)) }, .(_none: .) { vright(vunit()) })
   }
 }
 
 // Lift an optional host string (`String | .`) the same way.
 fn v_opt_str(r: String | .) -> Value {
-  match! r {
+  match(r) {
     (.(t: String) { vleft(vstr(t)) }, .(_none: .) { vright(vunit()) })
   }
 }
@@ -238,7 +238,7 @@ fn v_opt_str(r: String | .) -> Value {
 // Each applier takes the call's product-domain value (and, for the
 // op-parameterized binary shapes, the host op) and returns the result
 // directly. They return `Call_result`, never a function — a first-order
-// codomain that the module's `match!` elaboration handles. `dispatch`
+// codomain that the module's `match` macro handles. `dispatch`
 // routes each key to its applier. The two i32-binary shapes are
 // op-parameterized (the host op is a function argument); the four fixed
 // shapes name their host op directly.
@@ -246,15 +246,15 @@ fn v_opt_str(r: String | .) -> Value {
 // A binary i32 → i32 host op (add / sub / mul / div / mod): destructure
 // the product, recover both i32 operands, apply, and wrap the result.
 fn bin_i32(identity: String, op: (I32 & I32) -> I32, dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, b: Value) {
-            match! value_i32(a) {
+            match(value_i32(a)) {
               (
               , .(x: I32) {
-                  match! value_i32(b) {
+                  match(value_i32(b)) {
                     (
                     , .(y: I32) { call_done(vi32(op(x, y))) }
                     , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
@@ -277,15 +277,15 @@ fn bin_i32(identity: String, op: (I32 & I32) -> I32, dom: Value) -> Call_result 
 // result. The marshalling is host-side, exactly as the i32 shape — the
 // interpreter only threaded the opaque `V_host` floats.
 fn bin_f64(identity: String, op: (F64 & F64) -> F64, dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, b: Value) {
-            match! value_f64(a) {
+            match(value_f64(a)) {
               (
               , .(x: F64) {
-                  match! value_f64(b) {
+                  match(value_f64(b)) {
                     (
                     , .(y: F64) { call_done(vf64(op(x, y))) }
                     , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
@@ -306,15 +306,15 @@ fn bin_f64(identity: String, op: (F64 & F64) -> F64, dom: Value) -> Call_result 
 // A binary i32 → bool host op (eq / leq / lt): the same product
 // destructuring, yielding a host bool.
 fn cmp_i32(identity: String, op: (I32 & I32) -> Bool, dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, b: Value) {
-            match! value_i32(a) {
+            match(value_i32(a)) {
               (
               , .(x: I32) {
-                  match! value_i32(b) {
+                  match(value_i32(b)) {
                     (
                     , .(y: I32) { call_done(vbool(op(x, y))) }
                     , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
@@ -335,15 +335,15 @@ fn cmp_i32(identity: String, op: (I32 & I32) -> Bool, dom: Value) -> Call_result
 // The binary `string_concat` host op: destructure the product, recover both
 // strings, concatenate.
 fn concat_op(dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, b: Value) {
-            match! value_str(a) {
+            match(value_str(a)) {
               (
               , .(s0: String) {
-                  match! value_str(b) {
+                  match(value_str(b)) {
                     (
                     , .(s1: String) { call_done(vstr(string_concat(s0, s1))) }
                     , .(_n: .) {
@@ -366,15 +366,15 @@ fn concat_op(dom: Value) -> Call_result {
 // The binary `string_eq` host op: destructure the product, recover both
 // strings, compare.
 fn str_eq_op(dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(a: Value, b: Value) {
-            match! value_str(a) {
+            match(value_str(a)) {
               (
               , .(s0: String) {
-                  match! value_str(b) {
+                  match(value_str(b)) {
                     (
                     , .(s1: String) { call_done(vbool(string_eq(s0, s1))) }
                     , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
@@ -395,7 +395,7 @@ fn str_eq_op(dom: Value) -> Call_result {
 // The unary `int_to_string` host op: the argument arrives directly (no
 // product wrapper for one argument); recover the i32 and stringify.
 fn to_string_op(dom: Value) -> Call_result {
-  match! value_i32(dom) {
+  match(value_i32(dom)) {
     (
     , .(n: I32) { call_done(vstr(int_to_string(n))) }
     , .(_x: .) { shape_stuck("int_to_string"(String), "one i32 argument"(String)) }
@@ -406,7 +406,7 @@ fn to_string_op(dom: Value) -> Call_result {
 // Float scalars stay opaque in `Value`; the host capability recovers and
 // stringifies them only at this boundary.
 fn f64_to_string_op(dom: Value) -> Call_result {
-  match! value_f64(dom) {
+  match(value_f64(dom)) {
     (
     , .(n: F64) { call_done(vstr(f64_to_string(n))) }
     , .(_x: .) { shape_stuck("f64_to_string"(String), "one f64 argument"(String)) }
@@ -416,7 +416,7 @@ fn f64_to_string_op(dom: Value) -> Call_result {
 
 // `serve_default` supplies this capability without the evaluator naming it.
 fn string_len_op(dom: Value) -> Call_result {
-  match! value_str(dom) {
+  match(value_str(dom)) {
     (
     , .(s: String) { call_done(vi32(string_len(s))) }
     , .(_x: .) { shape_stuck("string_len"(String), "one string argument"(String)) }
@@ -427,7 +427,7 @@ fn string_len_op(dom: Value) -> Call_result {
 // The unary `print` host op: recover the string argument, print it, and
 // yield the unit value (`print` returns `()`).
 fn print_op(dom: Value) -> Call_result {
-  match! value_str(dom) {
+  match(value_str(dom)) {
     (
     , .(s: String) { print(s); call_done(vunit()) }
     , .(_x: .) { shape_stuck("print"(String), "one string argument"(String)) }
@@ -438,18 +438,18 @@ fn print_op(dom: Value) -> Call_result {
 // The ternary `string_slice` host op: recover the string and both index
 // arguments, slice.
 fn string_slice_op(dom: Value) -> Call_result {
-  match! prod3(dom) {
+  match(prod3(dom)) {
     (
     , .(parts: Value & Value & Value) {
-        match! parts {
+        match(parts) {
           .(sv: Value, av: Value, bv: Value) {
-            match! value_str(sv) {
+            match(value_str(sv)) {
               (
               , .(s0: String) {
-                  match! value_i32(av) {
+                  match(value_i32(av)) {
                     (
                     , .(a0: I32) {
-                        match! value_i32(bv) {
+                        match(value_i32(bv)) {
                           (
                           , .(b0: I32) { call_done(vstr(string_slice(s0, a0, b0))) }
                           , .(_n: .) {
@@ -486,15 +486,15 @@ fn string_slice_op(dom: Value) -> Call_result {
 // The binary `string_code_at` host op: an optional-i32 result crosses to
 // the guest as its `I32 | .` sum.
 fn string_code_at_op(dom: Value) -> Call_result {
-  match! prod2(dom) {
+  match(prod2(dom)) {
     (
     , .(pair: Value & Value) {
-        match! pair {
+        match(pair) {
           .(sv: Value, iv: Value) {
-            match! value_str(sv) {
+            match(value_str(sv)) {
               (
               , .(s0: String) {
-                  match! value_i32(iv) {
+                  match(value_i32(iv)) {
                     (
                     , .(i0: I32) { call_done(v_opt_i32(string_code_at(s0, i0))) }
                     , .(_n: .) {
@@ -516,7 +516,7 @@ fn string_code_at_op(dom: Value) -> Call_result {
 
 // The unary `string_to_int` host op: an optional-i32 result.
 fn string_to_int_op(dom: Value) -> Call_result {
-  match! value_str(dom) {
+  match(value_str(dom)) {
     (
     , .(s0: String) { call_done(v_opt_i32(string_to_int(s0))) }
     , .(_x: .) { shape_stuck("string_to_int"(String), "one string argument"(String)) }
@@ -529,10 +529,10 @@ fn read_ascii_line_op() -> Call_result { call_done(v_opt_str(read_ascii_line()))
 
 // The unary `bool_to_string` host op.
 fn bool_to_string_op(dom: Value) -> Call_result {
-  match! value_to_scalar(dom) {
+  match(value_to_scalar(dom)) {
     (
     , .(sc: Scalar) {
-        match! scalar_as_bool(sc) {
+        match(scalar_as_bool(sc)) {
           (
           , .(b: Bool) { call_done(vstr(bool_to_string(b))) }
           , .(_n: .) { shape_stuck("bool_to_string"(String), "one bool argument"(String)) }
@@ -546,7 +546,7 @@ fn bool_to_string_op(dom: Value) -> Call_result {
 
 // The unary `print_i32` host op.
 fn print_i32_op(dom: Value) -> Call_result {
-  match! value_i32(dom) {
+  match(value_i32(dom)) {
     (
     , .(n: I32) { print_i32(n); call_done(vunit()) }
     , .(_x: .) { shape_stuck("print_i32"(String), "one i32 argument"(String)) }
@@ -581,15 +581,15 @@ fn print_i32_op(dom: Value) -> Call_result {
 // standard `call` capability; an unrelated module with the same leaf is never
 // admitted.
 fn descriptor_is_guest_module(id: Host_id, standard_module: String, local_name: String) -> Bool {
-  if! string_eq(standard_module, "testapi/arith"(String)) {
+  if(string_eq(standard_module, "testapi/arith"(String))) {
     host_id_eq(id, mk_host_id("hostapi/arith"(String), local_name))
-  } else if! string_eq(standard_module, "testapi/text"(String)) {
+  } else if(string_eq(standard_module, "testapi/text"(String))) {
     host_id_eq(id, mk_host_id("hostapi/text"(String), local_name))
-  } else if! string_eq(standard_module, "testapi/fmt"(String)) {
+  } else if(string_eq(standard_module, "testapi/fmt"(String))) {
     host_id_eq(id, mk_host_id("hostapi/fmt"(String), local_name))
-  } else if! string_eq(standard_module, "testapi/io"(String)) {
+  } else if(string_eq(standard_module, "testapi/io"(String))) {
     host_id_eq(id, mk_host_id("hostapi/io"(String), local_name))
-  } else if! string_eq(standard_module, "testapi/iter"(String)) {
+  } else if(string_eq(standard_module, "testapi/iter"(String))) {
     host_id_eq(id, mk_host_id("hostapi/iter"(String), local_name))
   } else {
     .f(Bool)
@@ -599,9 +599,9 @@ fn descriptor_is_guest_module(id: Host_id, standard_module: String, local_name: 
 // Match an exact host-fn declaration identity to its applier.
 fn descriptor_is(descriptor: Host_fn, module_name: String, local_name: String) -> Bool {
   let id = host_fn_id(descriptor);
-  if! host_id_eq(id, mk_host_id(module_name, local_name)) {
+  if(host_id_eq(id, mk_host_id(module_name, local_name))) {
     .t(Bool)
-  } else if! host_id_eq(id, mk_host_id("hostapi"(String), local_name)) {
+  } else if(host_id_eq(id, mk_host_id("hostapi"(String), local_name))) {
     .t(Bool)
   } else {
     descriptor_is_guest_module(id, module_name, local_name)
@@ -617,195 +617,195 @@ fn alpha_print_descriptor() -> Host_fn {
 
 fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_render(host_fn_id(descriptor));
-  if! descriptor_is(descriptor, "testapi/arith"(String), "add_i32"(String)) {
+  if(descriptor_is(descriptor, "testapi/arith"(String), "add_i32"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { add_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub_i32"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { sub_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul_i32"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { mul_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "div_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "div_i32"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { div_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mod_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mod_i32"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { mod_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "eq_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "eq_i32"(String))) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { eq_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "leq_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "leq_i32"(String))) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { leq_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "lt_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "lt_i32"(String))) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { lt_i32(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_concat"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_concat"(String))) {
     concat_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_eq"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_eq"(String))) {
     str_eq_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_len"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_len"(String))) {
     string_len_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "int_to_string"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "int_to_string"(String))) {
     to_string_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "i32_to_string"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "i32_to_string"(String))) {
     to_string_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "add_f64"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "add_f64"(String))) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
-        match! p {
+        match(p) {
           .(x: F64, y: F64) { add_f64(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub_f64"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub_f64"(String))) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
-        match! p {
+        match(p) {
           .(x: F64, y: F64) { sub_f64(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul_f64"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul_f64"(String))) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
-        match! p {
+        match(p) {
           .(x: F64, y: F64) { mul_f64(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "f64_to_string"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "f64_to_string"(String))) {
     f64_to_string_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/io"(String), "print"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/io"(String), "print"(String))) {
     print_op(dom)
-  } else if! host_fn_eq(descriptor, alpha_print_descriptor()) {
+  } else if(host_fn_eq(descriptor, alpha_print_descriptor())) {
     print_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "print_i32"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "print_i32"(String))) {
     print_i32_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "bool_to_string"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "bool_to_string"(String))) {
     bool_to_string_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_slice"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_slice"(String))) {
     string_slice_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/text"(String), "string_code_at"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_code_at"(String))) {
     string_code_at_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/fmt"(String), "string_to_int"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "string_to_int"(String))) {
     string_to_int_op(dom)
-  } else if! descriptor_is(descriptor, "testapi/io"(String), "read_ascii_line"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/io"(String), "read_ascii_line"(String))) {
     read_ascii_line_op()
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "add"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "add"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { add(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "sub"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { sub(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mul"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { mul(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "div"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "div"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { div(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/arith"(String), "mod"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mod"(String))) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
-        match! p {
+        match(p) {
           .(x: I32, y: I32) { mod(x, y) }
         }
       }
     , dom
     )
-  } else if! descriptor_is(descriptor, "testapi/iter"(String), "loop"(String)) {
+  } else if(descriptor_is(descriptor, "testapi/iter"(String), "loop"(String))) {
     loop_op(dom)
   } else {
     call_stuck(string_concat(
@@ -837,41 +837,41 @@ fn id_is(id: Host_id, module_name: String, local_name: String) -> Bool {
 
 fn literal_representation(host_type: Host_type) -> String {
   let id = host_type_id(host_type);
-  if! id_is(id, "testapi"(String), "I32"(String)) {
+  if(id_is(id, "testapi"(String), "I32"(String))) {
     "I32"(String)
-  } else if! id_is(id, "testapi"(String), "Int"(String)) {
+  } else if(id_is(id, "testapi"(String), "Int"(String))) {
     "I32"(String)
-  } else if! id_is(id, "hostapi"(String), "I32"(String)) {
+  } else if(id_is(id, "hostapi"(String), "I32"(String))) {
     "I32"(String)
-  } else if! id_is(id, "textapi"(String), "I32"(String)) {
+  } else if(id_is(id, "textapi"(String), "I32"(String))) {
     // This host deliberately represents textapi.I32 as text. The shared i32
     // role admits its literal syntax; it does not select representation.
     "String"(String)
-  } else if! id_is(id, "left"(String), "Shared"(String)) {
+  } else if(id_is(id, "left"(String), "Shared"(String))) {
     "String"(String)
-  } else if! id_is(id, "right"(String), "Shared"(String)) {
+  } else if(id_is(id, "right"(String), "Shared"(String))) {
     "I32"(String)
-  } else if! id_is(id, "testapi"(String), "String"(String)) {
+  } else if(id_is(id, "testapi"(String), "String"(String))) {
     "String"(String)
-  } else if! id_is(id, "testapi"(String), "Str"(String)) {
+  } else if(id_is(id, "testapi"(String), "Str"(String))) {
     "String"(String)
-  } else if! id_is(id, "hostapi"(String), "String"(String)) {
+  } else if(id_is(id, "hostapi"(String), "String"(String))) {
     "String"(String)
-  } else if! id_is(id, "elab/testapi"(String), "String"(String)) {
+  } else if(id_is(id, "elab/testapi"(String), "String"(String))) {
     "String"(String)
-  } else if! id_is(id, "elab/testapi"(String), "I32"(String)) {
+  } else if(id_is(id, "elab/testapi"(String), "I32"(String))) {
     "I32"(String)
-  } else if! id_is(id, "elab/testapi"(String), "Int"(String)) {
+  } else if(id_is(id, "elab/testapi"(String), "Int"(String))) {
     "I32"(String)
-  } else if! id_is(id, "elab/testapi"(String), "Bool"(String)) {
+  } else if(id_is(id, "elab/testapi"(String), "Bool"(String))) {
     "Bool"(String)
-  } else if! id_is(id, "testapi"(String), "Bool"(String)) {
+  } else if(id_is(id, "testapi"(String), "Bool"(String))) {
     "Bool"(String)
-  } else if! id_is(id, "hostapi"(String), "Bool"(String)) {
+  } else if(id_is(id, "hostapi"(String), "Bool"(String))) {
     "Bool"(String)
-  } else if! id_is(id, "testapi"(String), "F64"(String)) {
+  } else if(id_is(id, "testapi"(String), "F64"(String))) {
     "F64"(String)
-  } else if! id_is(id, "hostapi"(String), "F64"(String)) {
+  } else if(id_is(id, "hostapi"(String), "F64"(String))) {
     "F64"(String)
   } else {
     // Preflight keeps unsupported descriptors from reaching the callback. A
@@ -906,5 +906,5 @@ pub fn make_lit_default(text: String, host_type: Host_type) -> Value {
 /// representation, ignore the descriptor and return `s_right` (then) for true
 /// or `s_left` (else) for false via the host's `scalar_is_true`.
 pub fn test_bool_default(_host_type: Host_type, s: Scalar) -> Side {
-  if! scalar_is_true(s) { s_right() } else { s_left() }
+  if(scalar_is_true(s)) { s_right() } else { s_left() }
 }

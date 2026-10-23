@@ -52,5 +52,5 @@ bridge {
   testapi;
   build_closure_compound_param;
   build_closure_compound_param/**;
-  elab/testapi
+  macros/testapi
 }

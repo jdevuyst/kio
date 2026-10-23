@@ -3,8 +3,8 @@
 /// rows are.
 module query/explain;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import query/list as list;
 import query/plan as plan;
 import query/schema as schema;
@@ -18,10 +18,10 @@ import testapi/iter(loop);
 fn line(depth: I32, body: String) { print(text.cat3(text.spaces(mul_i32(depth, 2)), body, "\n")) }
 
 rec(loop) fn cols_onto(cols: schema.Col_list, acc: String, first: Bool) -> String {
-  match! cols.>list.List.un_list {
+  match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
-        let sep = if! first { "" } else { ", " };
+        let sep = if(first) { "" } else { ", " };
         recur cols_onto(rest, text.cat3(acc, sep, schema.col_name(c)), .f)
       }
     , .(_empty: .) { acc }
@@ -34,7 +34,7 @@ pub fn cols_text(cols: schema.Col_list) -> String { text.cat3("[", cols_onto(col
 /// A predicate reads back the way it was written. Only the branch nodes
 /// take parentheses; a leaf never needs them.
 pub rec(loop) fn pred_text(p: plan.Pred) -> String {
-  match! p.>plan.Pred.un_pred {
+  match(p.>plan.Pred.un_pred) {
     (
     , .(c: plan.Lit_col, o: plan.Lit_op, n: plan.Lit_num) {
         text.cat5(
@@ -78,7 +78,7 @@ pub rec(loop) fn pred_text(p: plan.Pred) -> String {
 }
 
 rec(loop) fn explain_at(p: plan.Plan, depth: I32) {
-  match! p.>plan.Plan.un_plan {
+  match(p.>plan.Plan.un_plan) {
     (
     , .(n: plan.Scan_table) {
         line(depth, text.cat2("Scan ", schema.table_name(plan.scan_table_of(n))))

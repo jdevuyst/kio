@@ -436,7 +436,7 @@ if [ -z "$SELECTED" ]; then
 fi
 
 # Castles may depend on POC packages, and several POCs depend on the
-# elaborator package. Nested-dependency support is materialized-only, but
+# macro package. Nested-dependency support is materialized-only, but
 # a depended-on POC ships its own committed materialized closure, so its
 # nested trees are already present in a clean checkout — no prefetch is
 # needed. The per-unit `dep fetch` (run-tests.sh Step 1.5) re-roots each

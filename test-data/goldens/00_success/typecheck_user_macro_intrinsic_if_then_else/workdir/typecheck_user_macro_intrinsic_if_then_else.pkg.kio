@@ -1,0 +1,21 @@
+package typecheck_user_macro_intrinsic_if_then_else;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  typecheck_user_macro_intrinsic_if_then_else;
+  typecheck_user_macro_intrinsic_if_then_else/**;
+  macros
+}

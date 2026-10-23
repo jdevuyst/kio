@@ -1,6 +1,6 @@
 module planner/deps;
 
-import elab/control(if);
+import macros/control(macro if);
 import planner/bool(both, invert);
 import planner/state(Plan_state, is_done);
 import planner/tasks(
@@ -47,19 +47,19 @@ fn ready_notes(plan: Plan_state) -> Bool {
 }
 
 pub fn is_ready(plan: Plan_state, task: I32) -> Bool {
-  if! eq_i32(task, fetch_sources()) {
+  if(eq_i32(task, fetch_sources())) {
     ready_fetch(plan)
-  } else if! eq_i32(task, inspect_schema()) {
+  } else if(eq_i32(task, inspect_schema())) {
     ready_schema(plan)
-  } else if! eq_i32(task, compile_core()) {
+  } else if(eq_i32(task, compile_core())) {
     ready_core(plan)
-  } else if! eq_i32(task, emit_js()) {
+  } else if(eq_i32(task, emit_js())) {
     ready_js(plan)
-  } else if! eq_i32(task, emit_rust()) {
+  } else if(eq_i32(task, emit_rust())) {
     ready_rust(plan)
-  } else if! eq_i32(task, package_bundle()) {
+  } else if(eq_i32(task, package_bundle())) {
     ready_bundle(plan)
-  } else if! eq_i32(task, release_notes()) {
+  } else if(eq_i32(task, release_notes())) {
     ready_notes(plan)
   } else {
     .f

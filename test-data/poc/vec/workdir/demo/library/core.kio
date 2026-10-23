@@ -2,9 +2,9 @@
 /// A ready-to-use library module for your own Kio package.
 module library/core;
 
-import library/elab/control(scope);
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/control(macro scope);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 
 // `Vec(A)` is a persistent vector — an indexed sequence with O(log n)
 // random access, update, and append — backed by a fanout-2 digit trie: a
@@ -35,12 +35,12 @@ pub rec labels { tree[A]: Leafopt(A) | (Tree(A) & Tree(A)) };
 /// `leaf(m)` builds a leaf carrying the result `m`; `branch(l, r)` pairs
 /// two subtrees. Both are O(1) and pure.
 pub fn leaf[A](m: A | .) -> Tree(A) {
-  {tree = widen_sum!({leafopt = m}, Leafopt(A) | (Tree(A) & Tree(A)))}
+  {tree = widen_sum({leafopt = m}, Leafopt(A) | (Tree(A) & Tree(A)))}
 }
 
 /// Builds an internal vector tree branch from two subtrees.
 pub fn branch[A](l: Tree(A), r: Tree(A)) -> Tree(A) {
-  {tree = widen_sum!((l, r), Leafopt(A) | (Tree(A) & Tree(A)))}
+  {tree = widen_sum((l, r), Leafopt(A) | (Tree(A) & Tree(A)))}
 }
 
 /// `untree(t)` is the pure one-step destructor: the labeled leaf, or the
@@ -51,8 +51,8 @@ pub fn untree[A](t: Tree(A)) -> Leafopt(A) | (Tree(A) & Tree(A)) { Tree.get(t) }
 /// (a branch is never the terminal of an in-bounds path, so this is the
 /// out-of-bounds fallback rather than a reachable case).
 pub fn leaf_value[A](t: Tree(A)) -> A | . {
-  match! untree(t) {
-    (.(_pair: Tree(A) & Tree(A)) { widen_sum!((), A | .) }, .(lo: Leafopt(A)) { Leafopt.get(lo) })
+  match(untree(t)) {
+    (.(_pair: Tree(A) & Tree(A)) { widen_sum((), A | .) }, .(lo: Leafopt(A)) { Leafopt.get(lo) })
   }
 }
 
@@ -65,7 +65,7 @@ pub fn leaf_value[A](t: Tree(A)) -> A | . {
 /// `Dir` is the structural left/right the driver computes from a bit. The
 /// two arms carry *distinct* unit labels (`goleft` / `goright`) rather than
 /// a bare `. | .` - a bare two-unit sum has indistinguishable arms, so
-/// `match!` cannot tell them apart; labeling makes the direction
+/// `match` cannot tell them apart; labeling makes the direction
 /// discriminable. The driver in `vec.kio` computes the bit with host
 /// arithmetic and builds the matching `Dir` via `go_left` / `go_right`.
 pub labels { goleft: . };
@@ -82,7 +82,7 @@ pub type Dir = Goleft | Goright;
 /// two-arm `Bounds` sum directly - no `Dir | Dir`-style collapse. The
 /// `Bool` to structural bridge lives in `vec.kio` (it owns the host
 /// comparison); this file owns the labels the bridge targets and the
-/// `match!` consumes.
+/// `match` consumes.
 pub labels { in_bnd: . };
 
 /// Defines the out-of-bounds marker label.
@@ -102,10 +102,10 @@ pub fn no_bnd() -> Out_bnd { {out_bnd=} }
 /// `bnd_in` / `bnd_out` are the `Bounds`-typed verdicts (the unit labels
 /// widened) - for callers holding a `Bounds`-typed slot rather than the
 /// `if`/`else` bridge's distinct-typed arms.
-pub fn bnd_in() -> Bounds { widen_sum!({in_bnd=}, In_bnd | Out_bnd) }
+pub fn bnd_in() -> Bounds { widen_sum({in_bnd=}, In_bnd | Out_bnd) }
 
 /// Injects the out-of-bounds marker into the `Bounds` sum.
-pub fn bnd_out() -> Bounds { widen_sum!({out_bnd=}, In_bnd | Out_bnd) }
+pub fn bnd_out() -> Bounds { widen_sum({out_bnd=}, In_bnd | Out_bnd) }
 
 /// `select(b, in_val, out_val)` is the `Bounds` eliminator: `in_val` when
 /// the verdict is in-range, `out_val` otherwise. Both arguments are
@@ -113,10 +113,10 @@ pub fn bnd_out() -> Bounds { widen_sum!({out_bnd=}, In_bnd | Out_bnd) }
 /// descent of any index reads *some* leaf without diverging), so passing
 /// the unconditional `at_tree` / `set_tree` result as `in_val` is safe;
 /// the eliminator just discards it on the out-of-range branch. Keeping
-/// this `match!` in the root module is also what lets callers
+/// this `match` in the root module is also what lets callers
 /// consume `Bounds` without matching its imported unit labels themselves.
 pub fn select[R](b: Bounds, in_val: R, out_val: R) -> R {
-  match! b {
+  match(b) {
     (.(_i: In_bnd) { in_val }, .(_o: Out_bnd) { out_val })
   }
 }
@@ -135,15 +135,15 @@ pub fn go_right() -> Goright { {goright=} }
 /// `go_right` widened into the full two-arm `Dir`. The singleton forms are
 /// for the `if`/`else` bridge (where two distinct-typed arms *form* the
 /// `Dir`); these are for callers that already hold a `Dir`-typed slot.
-pub fn dir_left() -> Dir { widen_sum!({goleft=}, Goleft | Goright) }
+pub fn dir_left() -> Dir { widen_sum({goleft=}, Goleft | Goright) }
 
 /// Injects the right direction into the `Dir` sum.
-pub fn dir_right() -> Dir { widen_sum!({goright=}, Goleft | Goright) }
+pub fn dir_right() -> Dir { widen_sum({goright=}, Goleft | Goright) }
 
 /// `flip_dir(dir)` is the opposite direction - the path's sibling side.
 pub fn flip_dir(dir: Dir) -> Dir {
-  match! dir {
-    (.(_l: Goleft) { widen_sum!(go_right(), Dir) }, .(_r: Goright) { widen_sum!(go_left(), Dir) })
+  match(dir) {
+    (.(_l: Goleft) { widen_sum(go_right(), Dir) }, .(_r: Goright) { widen_sum(go_left(), Dir) })
   }
 }
 
@@ -152,12 +152,12 @@ pub fn flip_dir(dir: Dir) -> Dir {
 /// so it returns the leaf untouched (the driver matches `untree` itself to
 /// detect the leaf and stops, so this leaf arm is the safe fallback).
 pub fn descend_step[A](dir: Dir, t: Tree(A)) -> Tree(A) {
-  match! untree(t) {
+  match(untree(t)) {
     (
     , .(pair: Tree(A) & Tree(A)) {
-        match! pair {
+        match(pair) {
           .(l: Tree(A), r: Tree(A)) {
-            match! dir {
+            match(dir) {
               (.(_lft: Goleft) { l }, .(_rgt: Goright) { r })
             }
           }
@@ -197,9 +197,9 @@ pub fn build_frame[A](dir: Dir, sibling: Tree(A)) -> Frame(A) { {frame = (dir, s
 /// and the frame's preserved sibling becomes the other child, in the order
 /// the frame's `Dir` recorded (left means built is the left child).
 pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
-  match! Frame.get(fr) {
+  match(Frame.get(fr)) {
     .(dir: Dir, sibling: Tree(A)) {
-      match! dir {
+      match(dir) {
         (.(_l: Goleft) { branch(built, sibling) }, .(_r: Goright) { branch(sibling, built) })
       }
     }
@@ -212,11 +212,11 @@ pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
 pub rec labels { frames[A]: . | (Frame(A) & Frames(A)) };
 
 /// Builds the empty frame stack.
-pub fn frames_nil[A] -> Frames(A) { {frames = widen_sum!((), . | (Frame(A) & Frames(A)))} }
+pub fn frames_nil[A] -> Frames(A) { {frames = widen_sum((), . | (Frame(A) & Frames(A)))} }
 
 /// Pushes one zipper frame onto a frame stack.
 pub fn frames_push[A](fr: Frame(A), rest: Frames(A)) -> Frames(A) {
-  {frames = widen_sum!((fr, rest), . | (Frame(A) & Frames(A)))}
+  {frames = widen_sum((fr, rest), . | (Frame(A) & Frames(A)))}
 }
 
 /// Projects one frame-stack step as empty or head-tail.
@@ -232,18 +232,18 @@ pub fn unframes[A](fs: Frames(A)) -> . | (Frame(A) & Frames(A)) { Frames.get(fs)
 // operations in `vec.kio` are assembled from, independently of any host's
 // `loop` / arithmetic.
 fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present(value) }, .(_empty: .) { default })
   }
 }
 
 equiv leaf_present_eliminates[A][B](default: B, present: A -> B, value: A) {
-  fold_result(default, present, leaf_value(leaf(widen_sum!(value, A | .))));
+  fold_result(default, present, leaf_value(leaf(widen_sum(value, A | .))));
   present(value)
 }
 
 equiv leaf_absent_eliminates[A][B](default: B, present: A -> B) {
-  fold_result(default, present, leaf_value(leaf(widen_sum!((), A | .))));
+  fold_result(default, present, leaf_value(leaf(widen_sum((), A | .))));
   default
 }
 
@@ -320,9 +320,9 @@ equiv rebuild_right[A](t: Tree(A), s: Tree(A)) {
 // is the round-trip the persistent update relies on - descend (split),
 // then rebuild - proven one level deep on opaque subtrees.
 equiv split_rebuild_left[A](l: Tree(A), r: Tree(A)) {
-  scope! {
+  scope {
     let split_result = split_branch(dir_left(), branch(l, r));
-    match! split_result {
+    match(split_result) {
       .(chosen: Tree(A), sibling: Tree(A)) {
         rebuild_step(chosen, build_frame(dir_left(), sibling))
       }
@@ -332,9 +332,9 @@ equiv split_rebuild_left[A](l: Tree(A), r: Tree(A)) {
 }
 
 equiv split_rebuild_right[A](l: Tree(A), r: Tree(A)) {
-  scope! {
+  scope {
     let split_result = split_branch(dir_right(), branch(l, r));
-    match! split_result {
+    match(split_result) {
       .(chosen: Tree(A), sibling: Tree(A)) {
         rebuild_step(chosen, build_frame(dir_right(), sibling))
       }
@@ -355,7 +355,7 @@ equiv leaf_value_leaf[A](m: A | .) {
 // terminal, so it reads as absent.
 equiv leaf_value_branch[A](l: Tree(A), r: Tree(A)) {
   leaf_value(branch(l, r));
-  widen_sum!((), A | .)
+  widen_sum((), A | .)
 }
 
 // ---- bounds verdict ----

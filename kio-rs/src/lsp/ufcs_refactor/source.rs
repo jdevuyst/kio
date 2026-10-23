@@ -221,7 +221,7 @@ pub(super) fn render(
             callee_span,
             args,
             flavor: actual_flavor,
-            bang: None,
+            macro_call: None,
             ..
         } = parsed
         else {

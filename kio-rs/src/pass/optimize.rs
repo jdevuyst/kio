@@ -92,7 +92,7 @@
 //! "this expression has no host calls and no observable side effects."
 //! The check is intentionally **conservative**: literals, unit, path
 //! references, and lambda literals are pure; calls (other than to known
-//! pure forms), `match!`, `if`/`else`, `let`/`seq` chains involving
+//! pure forms), `match`, `if`/`else`, `let`/`seq` chains involving
 //! sub-expressions of unknown purity, and every Enriched node whose
 //! sub-tree could harbor a host call are not.
 //!
@@ -320,7 +320,7 @@ fn optimize_item(ctx: &OptimizerCtx, item: Item<Enriched>) -> Item<Enriched> {
         | Item::Labels(_, ext)
         | Item::LabelForward(_, ext)
         | Item::Equiv(_, ext)
-        | Item::Elaborator(_, ext)
+        | Item::Macro(_, ext)
         | Item::Op(_, ext)
         | Item::VariadicOperator(_, ext)
         | Item::RecGroup(_, ext) => match ext {},
@@ -1462,7 +1462,7 @@ fn walk_count_free(e: &Expr<Enriched>, name: &str, count: &mut usize) {
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2078,7 +2078,7 @@ fn collect_free_vars(
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2188,7 +2188,7 @@ fn collect_binders<'a>(e: &'a Expr<Enriched>, out: &mut std::collections::HashSe
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2828,7 +2828,7 @@ fn ir_node_count(e: &Expr<Enriched>) -> usize {
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},
@@ -2878,27 +2878,27 @@ mod tests {
         path
     }
 
-    fn elab_support_entries() -> Vec<(PathBuf, crate::ast::Module<crate::ast::Surface>)> {
+    fn macro_support_entries() -> Vec<(PathBuf, crate::ast::Module<crate::ast::Surface>)> {
         [
             (
                 "testapi.kio",
-                include_str!("../../../test-data/poc/elab/workdir/testapi.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/testapi.kio"),
             ),
             (
-                "elaborator_util.kio",
-                include_str!("../../../test-data/poc/elab/workdir/elaborator_util.kio"),
+                "macro_util.kio",
+                include_str!("../../../test-data/poc/macros/workdir/macro_util.kio"),
             ),
             (
-                "spine_elaborators.kio",
-                include_str!("../../../test-data/poc/elab/workdir/spine_elaborators.kio"),
+                "spine_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/spine_macros.kio"),
             ),
             (
                 "match.kio",
-                include_str!("../../../test-data/poc/elab/workdir/match.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/match.kio"),
             ),
             (
                 "control.kio",
-                include_str!("../../../test-data/poc/elab/workdir/control.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/control.kio"),
             ),
         ]
         .into_iter()
@@ -2912,7 +2912,7 @@ mod tests {
     fn optimize_one(module_path: &str, src: &str) -> Module<Enriched> {
         let parsed = parse(src).expect("parse");
         let mut parsed_modules = vec![(module_file_path(module_path), parsed)];
-        parsed_modules.extend(elab_support_entries());
+        parsed_modules.extend(macro_support_entries());
         let (lowered_modules, _) =
             FullPipeline::lower_package(parsed_modules, None).expect("lower_package");
         let package = crate::pass::resolve::Package::build(Path::new(""), lowered_modules, None)
@@ -2934,7 +2934,7 @@ mod tests {
     fn recover_one(module_path: &str, src: &str) -> Module<Enriched> {
         let parsed = parse(src).expect("parse");
         let mut parsed_modules = vec![(module_file_path(module_path), parsed)];
-        parsed_modules.extend(elab_support_entries());
+        parsed_modules.extend(macro_support_entries());
         let (lowered_modules, _) =
             FullPipeline::lower_package(parsed_modules, None).expect("lower_package");
         let package = crate::pass::resolve::Package::build(Path::new(""), lowered_modules, None)
@@ -3502,13 +3502,13 @@ mod tests {
     #[test]
     fn let_fuse_impure_value_stays_outside_deferred_uses() {
         let sources = [
-            "module x/main; import control(if); \
+            "module x/main; import control(macro if); \
              default host type Bool role(bool); \
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn t(cond: Bool, x: I32) -> I32 { \
                let delayed = sub_i32(x, 1(I32)); \
-               if! cond { delayed } else { x } \
+               if (cond) { delayed } else { x } \
              }",
             "module x/main; import __intrinsics__; \
              host type I32 role(i32); \
@@ -3674,20 +3674,20 @@ mod tests {
     fn natural_match_and_user_named_equivalent_recover_one_dispatch() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import match(match, match_checked); \
-             elab choose : [Source] Source -> [Clauses] Clauses -> [Target] Target \
+            "module x/main; import match(macro match, match_checked); \
+             macro choose : [Source] Source -> [Clauses] Clauses -> [Target] Target \
              { trailing product; impl(fills) match_checked } \
              host type Left; host type Middle; host type Right; \
              host fn chosen[A](payload: A) -> .; \
              fn ordinary(value: Left | Middle | Right) { \
-               match! value { \
+               match (value) { \
                  (.(left: Left) { chosen(left) }, \
                   .(middle: Middle) { chosen(middle) }, \
                   .(right: Right) { chosen(right) }) \
                } \
              } \
              fn renamed(value: Left | Middle | Right) { \
-               choose! value { \
+               choose (value) { \
                  (.(left: Left) { chosen(left) }, \
                   .(middle: Middle) { chosen(middle) }, \
                   .(right: Right) { chosen(right) }) \
@@ -3717,11 +3717,11 @@ mod tests {
     #[test]
     fn nested_unit_match_clauses_do_not_survive_as_calls() {
         const MODULE_PATH: &str = "x/main";
-        const SOURCE: &str = "module x/main; import match(match); \
+        const SOURCE: &str = "module x/main; import match(macro match); \
              fn t() -> . { \
-               match! () { .(_u: .) { \
-                 match! () { .(_u: .) { \
-                   match! () { .(_u: .) { () } } \
+               match () { .(_u: .) { \
+                 match () { .(_u: .) { \
+                   match () { .(_u: .) { () } } \
                  } } \
                } } \
              }";
@@ -4146,20 +4146,20 @@ mod tests {
         );
     }
 
-    /// `constant_fold` firing coverage: `if! .t { a } else { b }`
+    /// `constant_fold` firing coverage: `if .t { a } else { b }`
     /// (an `EnrichedConditional(BoolLit(true), …)` — `.t` is the
     /// `role(bool)` true marker) folds to the `then` branch `a`, with
     /// no `EnrichedConditional` remaining. Folding vs. emitting a
-    /// `if! .t { } else { }` print the same value, so a runtime
+    /// `if .t { } else { }` print the same value, so a runtime
     /// golden can't pin the fold.
     #[test]
     fn constant_fold_selects_then_on_literal_true() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; import control(if); \
+            "module x/main; import __intrinsics__; import control(macro if); \
              import testapi(default Bool); \
              fn t[A](a: A, b: A) -> A { \
-               if! .t { a } else { b } \
+               if (.t) { a } else { b } \
              }",
         );
         let body = fn_body(&m, "t");
@@ -4170,16 +4170,16 @@ mod tests {
         assert_selected_branch_value(body, "a");
     }
 
-    /// Symmetric: `if! .f { a } else { b }` folds to the `else`
+    /// Symmetric: `if .f { a } else { b }` folds to the `else`
     /// branch `b`.
     #[test]
     fn constant_fold_selects_else_on_literal_false() {
         let m = optimize_one(
             "x/main",
-            "module x/main; import __intrinsics__; import control(if); \
+            "module x/main; import __intrinsics__; import control(macro if); \
              import testapi(default Bool); \
              fn t[A](a: A, b: A) -> A { \
-               if! .f { a } else { b } \
+               if (.f) { a } else { b } \
              }",
         );
         let body = fn_body(&m, "t");

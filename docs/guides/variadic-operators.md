@@ -12,7 +12,7 @@ bridge {
 
 module kiodoc;
 
-import spine_elaborators(widen_sum);
+import spine_macros(macro widen_sum);
 
 host type I32 role(i32);
 host fn add(a: I32, b: I32) -> I32;
@@ -24,18 +24,18 @@ __INSERT_CODE_HERE__
 
 Here `nil()` constructs an empty list and `cons(head, tail)` prepends an
 element. The host supplies `I32` with `role(i32)` for the integer literals.
-The `widen_sum!` elab constructs the sum payloads; follow the
-[elab-library setup](using-libraries.md#the-elaborator-library) and
-import it with `import elab/spine_elaborators(widen_sum);` when the dependency
-is named `elab`:
+The `widen_sum` macro constructs the sum payloads; follow the
+[macro-library setup](using-libraries.md#the-macro-library) and
+import it with `import macros/spine_macros(macro widen_sum);` when the dependency
+is named `macros`:
 
 ```kio {@collections}
 rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
 
-fn nil[A]() -> List(A) { List.pack(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.pack(widen_sum((), . | (A & List(A)))) }
 
 fn cons[A](head: A, tail: List(A)) -> List(A) {
-  List.pack(widen_sum!((head, tail), . | (A & List(A))))
+  List.pack(widen_sum((head, tail), . | (A & List(A))))
 }
 
 varop [* *] { foldr cons nil }

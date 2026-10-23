@@ -1,11 +1,11 @@
 module flow/report;
 
-import elab/control(if);
 import flow/certificate as cert;
 import flow/fixtures as fixtures;
 import flow/math as math;
 import flow/network as net;
 import flow/solver as solver;
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -23,7 +23,7 @@ fn flag(label: String, value: Bool) {
 }
 
 rec(loop) fn print_history(history: Array(solver.Augmentation), index: I32) {
-  if! math.less(index, ar.array_len(history)) {
+  if(math.less(index, ar.array_len(history))) {
     let step = ar.array_get(history, index);
     io.print("  augment ");
     number(a.add_i32(index, 1));
@@ -41,9 +41,9 @@ rec(loop) fn print_history(history: Array(solver.Augmentation), index: I32) {
 }
 
 rec(loop) fn print_edges(network: net.Network, residual: Array(I32), index: I32) {
-  if! math.less(index, ar.array_len(network.?{net.edges})) {
+  if(math.less(index, ar.array_len(network.?{net.edges}))) {
     let edge = ar.array_get(network.?{net.edges}, index);
-    if! edge.?{net.backward} {
+    if(edge.?{net.backward}) {
       ()
     } else {
       io.print("  link ");
@@ -63,8 +63,8 @@ rec(loop) fn print_edges(network: net.Network, residual: Array(I32), index: I32)
 }
 
 rec(loop) fn print_side(side: Array(Bool), node: I32, separator: String) {
-  if! math.less(node, ar.array_len(side)) {
-    if! ar.array_get(side, node) {
+  if(math.less(node, ar.array_len(side))) {
+    if(ar.array_get(side, node)) {
       io.print(separator);
       number(node);
       recur print_side(side, a.add_i32(node, 1), ",")

@@ -39,7 +39,7 @@
 //!   [`positions::LineIndex`] handles the byte-offset → UTF-16
 //!   `Position` conversion.
 //!
-//! Main loop: a `select!` over the connection's receiver and the
+//! Main loop: a `select` over the connection's receiver and the
 //! worker's result channel. Notifications drive the overlay /
 //! scheduler; results drive `publishDiagnostics`. Shutdown sends a
 //! sentinel to the worker, drains any in-flight result, then joins.
@@ -1921,10 +1921,10 @@ mod tests {
         let consumer_uri = workspace_uri("app.kio");
         let provider_path = workspace_path("provider.kio");
         let provider_uri = workspace_uri("provider.kio");
-        let consumer = "module app; import provider(expand); fn run() { expand!() }";
-        let changed = "module app; import provider(expand); fn run() { ex";
+        let consumer = "module app; import provider(macro expand); fn run() { expand() }";
+        let changed = "module app; import provider(macro expand); fn run() { ex";
         let provider =
-            "module provider; /// Current expansion.\npub elab expand : . -> . { impl build }";
+            "module provider; /// Current expansion.\npub macro expand : . -> . { impl build }";
         let mut analysis = analysis_for_file(&consumer_path, "app", consumer);
         analysis
             .sources
@@ -1968,7 +1968,7 @@ mod tests {
         let expansion = result
             .items
             .iter()
-            .find(|item| item.label == "expand!")
+            .find(|item| item.label == "expand")
             .unwrap_or_else(|| panic!("current selected provider lost: {:?}", result.items));
         assert_eq!(expansion.detail.as_deref(), Some(". -> ."));
         assert!(format!("{:?}", expansion.documentation).contains("Current expansion."));
@@ -2107,13 +2107,13 @@ mod tests {
         let consumer_uri = workspace_uri("app/main.kio");
         let provider_path = workspace_path("provider.kio");
         let provider_uri = workspace_uri("provider.kio");
-        let consumer = "module app/main; import provider(produce, expand, answer); fn f() -> . { let value = produce(); let _ = value; () }";
+        let consumer = "module app/main; import provider(produce, macro expand, answer); fn f() -> . { let value = produce(); let _ = value; () }";
         let provider = |item: &str, body: &str, doc: &str| {
             format!(
                 "module provider; import __comptime__; pub fn produce() -> {item} {{ {body} }}
              pure fn expand_body(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}
              /// {doc}
-             pub elab expand : . -> . {{ impl expand_body; }};
+             pub macro expand : . -> . {{ impl expand_body; }};
              pub literal answer = 1;"
             )
         };
@@ -2197,7 +2197,7 @@ mod tests {
         let current_import = stale
             .items
             .iter()
-            .find(|item| item.label == "expand!")
+            .find(|item| item.label == "expand")
             .unwrap();
         assert!(format!("{:?}", current_import.documentation).contains("Current expansion."));
         state.store_analysis(
@@ -2220,17 +2220,17 @@ mod tests {
             .unwrap();
         assert!(local.detail.is_some());
         assert_ne!(local.detail, old_detail);
-        let elaborator = fresh
+        let macro_def = fresh
             .items
             .iter()
-            .find(|item| item.label == "expand!")
-            .expect("selectively imported elaborator has bang insertion");
+            .find(|item| item.label == "expand")
+            .expect("selectively imported macro keeps its local spelling");
         assert_eq!(
-            elaborator.kind,
+            macro_def.kind,
             Some(lsp_types::CompletionItemKind::FUNCTION)
         );
-        assert_eq!(elaborator.detail.as_deref(), Some(". -> ."));
-        assert!(format!("{:?}", elaborator.documentation).contains("Current expansion."));
+        assert_eq!(macro_def.detail.as_deref(), Some(". -> ."));
+        assert!(format!("{:?}", macro_def.documentation).contains("Current expansion."));
         assert_eq!(
             fresh
                 .items
@@ -2302,7 +2302,7 @@ mod tests {
                 pub type Unit = .;
                 pub labels {{ field: . }};
                 pure fn expand_body(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}
-                pub elab expand : . -> . {{ impl expand_body; }};
+                pub macro expand : . -> . {{ impl expand_body; }};
                 pub op _ {operator} _ {{ impl pair; }};
                 pub varop [{marker} {marker}] {{ foldl pair zero; }};"
             );
@@ -2366,7 +2366,7 @@ mod tests {
             let current = request(&mut state, &consumer_uri).expect("valid consumer context");
             assert!(!current.is_incomplete);
             assert_eq!(current.items.len(), 8);
-            for name in ["pair", "zero", "Unit", "Field", "{field}", "expand"] {
+            for name in ["pair", "zero", "Unit", "Field", "{field}", "macro expand"] {
                 assert!(
                     current.items.iter().any(|item| item.label == name),
                     "{name}"
@@ -3333,10 +3333,10 @@ mod tests {
         let declaration_path = PathBuf::from("declaration.kio");
         let caller_uri = workspace_uri("kio-lsp-transported-origin/caller.kio");
         let declaration_uri = workspace_uri("kio-lsp-transported-origin/declaration.kio");
-        let caller = "// α\n\nfn run() { scope! { () } }\n";
+        let caller = "// α\n\nfn run() { scope { () } }\n";
         let declaration = "// 🦀\n// context\n// é\n/* 🦀 */ Hidden\n";
         let payload = declaration.find("Hidden").expect("payload") as u32;
-        let invocation = caller.find("scope!").expect("invocation") as u32;
+        let invocation = caller.find("scope {").expect("invocation") as u32;
         let nested = LocatedError::new(
             declaration_path.clone(),
             Error::type_(Span::new(payload, payload + 6), "private payload")

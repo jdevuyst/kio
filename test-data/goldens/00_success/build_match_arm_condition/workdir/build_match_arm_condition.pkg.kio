@@ -46,5 +46,5 @@ build {
 
 bridge {
   api;
-  elab/testapi
+  macros/testapi
 }

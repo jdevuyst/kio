@@ -5,7 +5,7 @@ backend emission. When a surface construct behaves differently than you
 expected, emitted Kio' shows the completed, independently checked program that
 the backend will see.
 
-Use this guide for advanced debugging of elab calls, `match!`, tuple
+Use this guide for advanced debugging of macro calls, `match`, tuple
 and sum elaborations, `do` blocks, placeholder lambdas, and backend
 emission surprises. For interactive navigation through names and types,
 start with [`kio repl`](repl.md).
@@ -46,11 +46,11 @@ disappears:
 
 | Surface Kio | What to look for in Kio' |
 | --- | --- |
-| Elab calls such as `fit!`, `widen_sum!`, `narrow_prod!`, `one_prod!` | Explicit intrinsic trees; the elab call itself is gone |
+| Macro calls such as `fit`, `widen_sum`, `narrow_prod`, `one_prod` | Explicit intrinsic trees; the macro call itself is gone |
 | Tuple literals and product projection | `__pair__`, `__fst__`, `__snd__` |
 | Sum construction and branching | `__left__`, `__right__`, `__either__` |
-| Imported `if!` with its `else` block | `__if_then_else__` |
-| `match!` | A decision tree built from intrinsics and let-bound handlers |
+| Imported `if` with its `else` block | `__if_then_else__` |
+| `match` | A decision tree built from intrinsics and let-bound handlers |
 | `do` blocks | Nested calls to the receiver's `bind` |
 | Placeholder lambdas | Explicit lambdas with generated parameters |
 | `labels`, `literal` aliases, operators, `equiv` | Lowered or removed before the Kio' boundary |

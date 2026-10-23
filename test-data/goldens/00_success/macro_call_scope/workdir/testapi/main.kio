@@ -1,0 +1,26 @@
+module testapi/main;
+
+import helpers(macro block, macro keep, macro keep as keep1);
+import testapi(default String);
+import testapi/io(print);
+
+fn ordinary(_value: String) -> String { "ordinary\n" }
+
+fn parameter(keep: String -> String) -> String { keep("ignored") }
+
+fn local() -> String { let keep = keep(ordinary); keep("ignored") }
+
+fn pattern() -> String { let .(keep, _) = (ordinary, ()); keep("ignored") }
+
+fn numbered() -> String { let .keep. = ordinary; keep1("ignored") }
+
+pub fn main() {
+  print(keep("macro\n"));
+  print("forward\n".>keep);
+  print(keep.<"reverse\n");
+  print(parameter(ordinary));
+  print(local());
+  print(pattern());
+  print(numbered());
+  print(block { "block\n" })
+}

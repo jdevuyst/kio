@@ -258,7 +258,7 @@ fn ordinary_candidate(
     slot: CursorSlot,
 ) -> Option<QualifiedCandidate> {
     let (mut label, kind) = match entry {
-        DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) | DocEntry::Elaborator(_) => {
+        DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) | DocEntry::Macro(_) => {
             (entry.name().to_owned(), CandidateKind::Function)
         }
         DocEntry::LiteralAlias(_) => (entry.name().to_owned(), CandidateKind::Constant),
@@ -277,7 +277,7 @@ fn ordinary_candidate(
     {
         return None;
     }
-    if matches!(entry, DocEntry::Elaborator(_)) {
+    if matches!(entry, DocEntry::Macro(_)) {
         label.push('!');
     }
     Some(QualifiedCandidate {
@@ -285,9 +285,7 @@ fn ordinary_candidate(
         kind,
         owner: owner.to_owned(),
         detail: match entry {
-            DocEntry::Elaborator(elaborator) => {
-                Some(crate::pretty::pretty_type(&elaborator.call_ty))
-            }
+            DocEntry::Macro(macro_def) => Some(crate::pretty::pretty_type(&macro_def.call_ty)),
             _ => entry.ty(),
         },
         doc: entry.doc().cloned(),

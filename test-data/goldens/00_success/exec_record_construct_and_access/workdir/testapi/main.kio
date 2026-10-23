@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(Int, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -9,7 +9,7 @@ import testapi/io(print);
 labels { hed: Int, mid: String, tal: Int };
 
 fn show(r: Hed & Mid & Tal) {
-  match! r {
+  match(r) {
     .(h: Hed, m: Mid, t: Tal) {
       print(int_to_string(h.?{hed}));
       print(", ");

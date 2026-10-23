@@ -2,7 +2,7 @@
 
 The reference contributed **library** case: a small Kio module with an
 exported host function and two `equiv` laws about its locally defined
-`scope!` elab's reduction, and no `main`. Its `run.test-only` marker
+`scope` macro's reduction, and no `main`. Its `run.test-only` marker
 tells the harness to run `kio test` (which discharges the `equiv` laws) and
 `kio build`, but never invoke a runner.
 

@@ -3,7 +3,7 @@
 //!
 //! Returns `Ok(())` if the source is syntactically Kio'. Any
 //! deviation — surface sugar (trailing blocks, `labels`,
-//! any `<name>!(…)` elaborator-form syntax, n-ary tuple literals at
+//! macro declarations and tagged macro imports, n-ary tuple literals at
 //! the value level), type-expression naming-rule violations, or any
 //! other parse failure — is reported as `ParseError`.
 //!
@@ -969,8 +969,8 @@ impl Parser {
             )
         } else if self.ident_named("varop") {
             self.err("variadic operator declarations are Kio surface sugar — not in Kio'")
-        } else if self.ident_named("elab") {
-            self.err("`elab` declarations are not in Kio'")
+        } else if self.ident_named("macro") {
+            self.err("`macro` declarations are not in Kio'")
         } else {
             self.err("expected `fn`, `type`, or `newtype`")
         }
@@ -1726,7 +1726,6 @@ impl Parser {
     /// Dotted segments belong only to an identifier-led value path and are
     /// consumed before any call suffix. They are not a generic expression
     /// suffix: `(f).g` and `f().g` are outside both Kio and Kio'. A trailing
-    /// `!` is caught explicitly as a Kio-only elaborator-form rejection.
     fn expr_postfix(&mut self) -> Result<(), ParseError> {
         let identifier_led = matches!(self.peek_kind(), Some(TokenKind::Ident(_)));
         self.expr_atom()?;
@@ -1746,10 +1745,6 @@ impl Parser {
                 }
                 Some(TokenKind::LParen) => {
                     self.call_args()?;
-                }
-                Some(k) if k.is_sym("!") => {
-                    return self
-                        .err("`<name>!(…)` is Kio-surface elaborator-form syntax — not in Kio'");
                 }
                 Some(k)
                     if k.is_sym(".>") || k.is_sym(".>>") || k.is_sym(".<") || k.is_sym(".<<") =>
@@ -2138,7 +2133,7 @@ mod tests {
     }
 
     #[test]
-    fn pure_host_and_elaborator_declarations_rejected() {
+    fn pure_host_and_macro_declarations_rejected() {
         let host_fn = err("module m; pure host fn f() -> .;");
         assert!(
             host_fn.contains("`pure` means that a function does not call host functions"),
@@ -2151,8 +2146,8 @@ mod tests {
             "{host_type}"
         );
 
-        let elaborator = err("module m; pure elab e() -> . { () }");
-        assert!(elaborator.contains("`elab`"), "{elaborator}");
+        let macro_decl = err("module m; pure macro e: . -> . { impl helper }");
+        assert!(macro_decl.contains("`macro`"), "{macro_decl}");
     }
 
     #[test]
@@ -2860,12 +2855,29 @@ mod tests {
     }
 
     #[test]
-    fn rejects_elaborator_bang_call() {
-        // Any `<name>!(…)` shape — iso!, into!, onto!, match, etc.
-        // — uses the elaborator, which Kio' doesn't have. The verifier
-        // rejects all of them with one form-agnostic message.
-        let m = err("module m; fn f() -> . { into!(x) }");
-        assert!(m.contains("elaborator-form"), "msg = {m}");
+    fn rejects_unlowered_operator_calls() {
+        err("module m; fn f() -> . { into!(x) }");
+    }
+
+    #[test]
+    fn macro_imports_erase_while_contextual_names_remain_ordinary() {
+        for selector in ["macro", "macro as local"] {
+            ok(&format!(
+                "module m; import provider({selector}); fn macro() {{ () }}"
+            ));
+        }
+        for selector in [
+            "macro build",
+            "macro build as local",
+            "macro as",
+            "macro as as local",
+        ] {
+            err(&format!(
+                "module m; import provider({selector}); fn run() {{ () }}"
+            ));
+        }
+        err("module m; macro build: . -> . { impl helper }");
+        ok("module m; fn macro() { () } fn run() { macro() }");
     }
 
     #[test]

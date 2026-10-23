@@ -108,6 +108,16 @@ impl Repl {
         }))
     }
 
+    /// Highlight input using the current loaded module's lexical scope.
+    pub fn highlight(&self, input: &str, pos: usize) -> String {
+        kio_lang::repl_core::highlight::highlight_input_in_session(
+            input,
+            pos,
+            browser_palette(),
+            self.names(),
+        )
+    }
+
     /// The completion candidates for the cursor at byte `pos` in `input`
     /// — the browser dropdown's candidate source, matching the terminal
     /// `kio repl`'s completion. Requests share the current session's
@@ -253,8 +263,8 @@ fn startup_module(id: &str, modules: &[String]) -> Option<String> {
         return Some(id.to_owned());
     }
 
-    if id == "elab" && modules.iter().any(|module| module == "spine_elaborators") {
-        return Some("spine_elaborators".to_owned());
+    if id == "macros" && modules.iter().any(|module| module == "spine_macros") {
+        return Some("spine_macros".to_owned());
     }
 
     let demo_testapi_main = "demo/testapi/main";
@@ -474,6 +484,36 @@ mod tests {
     use super::*;
 
     #[test]
+    fn browser_highlight_uses_loaded_module_and_retracts_after_unload() {
+        let root = PathBuf::from("/kio-wasm-tests/macro-highlighting");
+        let mut repl = Repl {
+            poc_id: "macro-highlighting".to_owned(),
+            session: Session::new_in_memory(root.clone(), std::collections::BTreeMap::from([
+                (root.join("app.pkg.kio"), "package app; bridge { app; }".to_owned()),
+                (root.join("app.kio"), "module app; import provider(macro identity as selected);".to_owned()),
+                (root.join("provider.kio"), "module provider; import __comptime__; pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl implementation; };".to_owned()),
+            ])),
+            init_banner: String::new(),
+            completion_names: OnceCell::new(),
+        };
+        repl.run_command(Command::Load("app".to_owned()));
+        let style = Palette::truecolor()
+            .style_for_kind(kio_lang::tokens::TokenKind::EntityNameMacro)
+            .unwrap();
+        let line = ":normalize selected(())";
+        assert!(
+            repl.highlight(line, 0)
+                .contains(&format!("{style}selected"))
+        );
+        repl.run_command(Command::Unload("app".to_owned()));
+        assert!(
+            !repl
+                .highlight(line, 0)
+                .contains(&format!("{style}selected"))
+        );
+    }
+
+    #[test]
     fn numbered_binding_browser_completion_and_normalization() {
         let mut repl = trailing_blocks_repl();
         repl.run_command(Command::Load("app".to_owned()));
@@ -678,10 +718,10 @@ mod tests {
         let mut repl = trailing_blocks_repl();
         repl.run_command(Command::Load("app".to_owned()));
         for source in [
-            "box_bind.>sequence! { box_pure(()) }",
-            "box_bind.>>sequence! { box_pure(()) }",
-            "sequence! { box_pure(()) }.<<box_bind",
-            "sequence! { box_pure(()) }.<box_bind",
+            "box_bind.>sequence { box_pure(()) }",
+            "box_bind.>>sequence { box_pure(()) }",
+            "sequence { box_pure(()) }.<<box_bind",
+            "sequence { box_pure(()) }.<box_bind",
         ] {
             let output = strip_ansi(
                 &repl
@@ -699,7 +739,7 @@ mod tests {
             strip_ansi(&repl.run_command(Command::Load("app".to_owned())).output)
                 .contains("loaded app")
         );
-        for source in ["packet! { () }", "enter! { let value = (); value }"] {
+        for source in ["packet { () }", "enter { let value = (); value }"] {
             let output = strip_ansi(
                 &repl
                     .run_command(Command::Normalize(source.to_owned()))
@@ -708,8 +748,8 @@ mod tests {
             assert_eq!(output.trim(), "()", "{source}: {output}");
         }
         for (source, present, absent) in [
-            ("enter! { let local = (); loc", "local", "other"),
-            ("enter! { let other = (); ", "other", "local"),
+            ("enter { let local = (); loc", "local", "other"),
+            ("enter { let other = (); ", "other", "local"),
         ] {
             let completion = repl.complete_core(source, source.len());
             assert!(
@@ -733,7 +773,7 @@ mod tests {
                 .complete_core("packet", 6)
                 .candidates
                 .iter()
-                .any(|item| item.label == "packet!")
+                .any(|item| item.label == "packet")
         );
     }
 
@@ -741,7 +781,7 @@ mod tests {
     fn recursive_annotations_have_no_owner_in_browser_prompts() {
         let mut repl = trailing_blocks_repl();
         repl.run_command(Command::Load("app".to_owned()));
-        for source in ["recur(", "recur(cont, ", ".() { recur(", "enter! { recur("] {
+        for source in ["recur(", "recur(cont, ", ".() { recur(", "enter { recur("] {
             let result = repl.complete_core(source, source.len());
             assert!(result.candidates.is_empty(), "{source}: {result:?}");
         }
@@ -903,7 +943,7 @@ mod tests {
     fn startup_module_prefers_the_shallowest_main_module() {
         let modules = vec![
             "core".to_owned(),
-            "demo/elab/main".to_owned(),
+            "demo/macros/main".to_owned(),
             "demo/testapi/main".to_owned(),
             "testapi/text".to_owned(),
         ];
@@ -924,15 +964,15 @@ mod tests {
     }
 
     #[test]
-    fn startup_module_prefers_elab_library_module() {
+    fn startup_module_prefers_macro_library_module() {
         let modules = vec![
-            "demo/elab/main".to_owned(),
-            "spine_elaborators".to_owned(),
+            "demo/macros/main".to_owned(),
+            "spine_macros".to_owned(),
             "testapi".to_owned(),
         ];
         assert_eq!(
-            startup_module("elab", &modules),
-            Some("spine_elaborators".to_owned())
+            startup_module("macros", &modules),
+            Some("spine_macros".to_owned())
         );
     }
 

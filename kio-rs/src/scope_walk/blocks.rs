@@ -1,4 +1,4 @@
-use crate::ast::{BlockExposure, ImportItem, ImportKind, Item, Module, Surface, UserElaboratorDef};
+use crate::ast::{BlockExposure, ImportItem, ImportKind, Item, Module, Surface, UserMacroDef};
 
 pub(crate) struct BlockHeader {
     pub(crate) name: String,
@@ -7,7 +7,7 @@ pub(crate) struct BlockHeader {
 }
 
 impl BlockHeader {
-    pub(crate) fn from(declaration: &UserElaboratorDef) -> Self {
+    pub(crate) fn from(declaration: &UserMacroDef) -> Self {
         Self {
             name: declaration.name.clone(),
             public_type: crate::pretty::pretty_type(&declaration.call_ty),
@@ -53,9 +53,15 @@ pub(crate) fn selected_block_header(
     offset: u32,
     mut provider: impl FnMut(&str) -> Option<Module<Surface>>,
 ) -> Option<BlockHeader> {
+    if !matches!(
+        super::in_scope_origin(module, offset, name),
+        Some(super::CandidateOrigin::Declaration(_) | super::CandidateOrigin::Import { .. })
+    ) {
+        return None;
+    }
     let mut selected = None;
     for item in &module.items {
-        if let Item::Elaborator(declaration, _) = item
+        if let Item::Macro(declaration, _) = item
             && declaration.name == name
             && declaration.name_span.start < offset
         {
@@ -74,14 +80,22 @@ pub(crate) fn selected_block_header(
         };
         let Some(source) = items
             .iter()
-            .find(|item| item.as_local_name() == Some(name))
+            .find(|item| {
+                matches!(
+                    item,
+                    ImportItem::Name {
+                        macro_span: Some(_),
+                        ..
+                    }
+                ) && item.as_local_name() == Some(name)
+            })
             .and_then(ImportItem::as_name)
         else {
             continue;
         };
         let provider = provider(&from.segments.join("/"))?;
         for item in &provider.items {
-            if let Item::Elaborator(declaration, _) = item
+            if let Item::Macro(declaration, _) = item
                 && declaration.name == source
                 && crate::pass::resolve::is_visible(&declaration.vis, &module.path)
             {

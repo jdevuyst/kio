@@ -199,54 +199,228 @@
   },
   {
     "name": "block_ufcs_closed_operator_receiver",
-    "source": "module source; import ops(op <| _ |>); fn run() { <|value|>.>outer! { body } }",
+    "source": "module source; import ops(op <| _ |>); fn run() { <|value|>.>outer { body } }",
     "targets": [
-      { "text": ".>", "start": 59, "end": 61, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": "outer!", "start": 61, "end": 67, "kind": "keyword.elaborator", "owners": ["block_call"], "textmate": ["entity.name.function.macro.elaborator.kio"] }
+      {
+        "text": ".>",
+        "start": 59,
+        "end": 61,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": "outer",
+        "start": 61,
+        "end": 66,
+        "kind": "entity.name.function",
+        "owners": [
+          "block_call"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
     ]
   },
   {
     "name": "block_ufcs_field_uses_completed_result",
-    "source": "module source; fn run() { outer! { body }.<receiver.?{field} }",
+    "source": "module source; fn run() { outer { body }.<receiver.?{field} }",
     "targets": [
-      { "text": ".<", "start": 41, "end": 43, "kind": "operator.builtin", "owners": ["block_ufcs_expr", "field_expression"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": ".?", "start": 51, "end": 53, "kind": "operator.user", "owners": ["field_expression"], "textmate": ["keyword.operator.user.kio"] }
+      {
+        "text": ".<",
+        "start": 40,
+        "end": 42,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr",
+          "field_expression"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": ".?",
+        "start": 50,
+        "end": 52,
+        "kind": "operator.user",
+        "owners": [
+          "field_expression"
+        ],
+        "textmate": [
+          "keyword.operator.user.kio"
+        ]
+      }
     ]
   },
   {
     "name": "block_ufcs_all_directions",
-    "source": "module source; fn run() { r.>outer! a { b } next { c }; r.>>outer! a { b } next { c }; outer! a { b } next { c }.<<r; outer! a { b } next { c }.<r }",
+    "source": "module source; fn run() { r.>outer (a) { b } next { c }; r.>>outer (a) { b } next { c }; outer (a) { b } next { c }.<<r; outer (a) { b } next { c }.<r }",
     "targets": [
-      { "text": ".>", "start": 27, "end": 29, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": ".>>", "start": 57, "end": 60, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": ".<<", "start": 112, "end": 115, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": ".<", "start": 143, "end": 145, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] }
+      {
+        "text": ".>",
+        "start": 27,
+        "end": 29,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": ".>>",
+        "start": 58,
+        "end": 61,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": ".<<",
+        "start": 115,
+        "end": 118,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": ".<",
+        "start": 147,
+        "end": 149,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      }
     ]
   },
   {
     "name": "block_ufcs_explicit_outer_suffix",
-    "source": "module source; fn run() { outer! a { b } next { inner! c { d } }.<r }",
+    "source": "module source; fn run() { outer (a) { b } next { inner (c) { d } }.<r }",
     "targets": [
-      { "text": "outer!", "start": 26, "end": 32, "kind": "keyword.elaborator", "owners": ["block_call"], "textmate": ["entity.name.function.macro.elaborator.kio"] },
-      { "text": "inner!", "start": 48, "end": 54, "kind": "keyword.elaborator", "owners": ["labelled_block"], "textmate": ["entity.name.function.macro.elaborator.kio"] },
-      { "text": ".<", "start": 64, "end": 66, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] }
+      {
+        "text": "outer",
+        "start": 26,
+        "end": 31,
+        "kind": "entity.name.function",
+        "owners": [
+          "block_call"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "text": "inner",
+        "start": 49,
+        "end": 54,
+        "kind": "entity.name.function",
+        "owners": [
+          "labelled_block"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      },
+      {
+        "text": ".<",
+        "start": 66,
+        "end": 68,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      }
     ]
   },
   {
     "name": "block_ufcs_braced_child",
-    "source": "module source; fn run() { outer! a { b } next { inner! c { d }.<r } }",
+    "source": "module source; fn run() { outer (a) { b } next { inner (c) { d }.<r } }",
     "targets": [
-      { "text": ".<", "start": 62, "end": 64, "kind": "operator.builtin", "owners": ["labelled_block"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": "inner!", "start": 48, "end": 54, "kind": "keyword.elaborator", "owners": ["block_ufcs_expr"], "textmate": ["entity.name.function.macro.elaborator.kio"] }
+      {
+        "text": ".<",
+        "start": 64,
+        "end": 66,
+        "kind": "operator.builtin",
+        "owners": [
+          "labelled_block"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": "inner",
+        "start": 49,
+        "end": 54,
+        "kind": "entity.name.function",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "entity.name.function.kio"
+        ]
+      }
     ]
   },
   {
     "name": "block_ufcs_grouped_result_chain",
-    "source": "module source; fn run() { ((outer! a { b })).<r(x).>after }",
+    "source": "module source; fn run() { ((outer (a) { b })).<r(x).>after }",
     "targets": [
-      { "text": ".<", "start": 44, "end": 46, "kind": "operator.builtin", "owners": ["block_ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": ".>", "start": 50, "end": 52, "kind": "operator.builtin", "owners": ["ufcs_expr"], "textmate": ["keyword.operator.arrow.kio"] },
-      { "text": "after", "start": 52, "end": 57, "kind": "entity.name.function", "owners": ["ufcs_expr"] }
+      {
+        "text": ".<",
+        "start": 45,
+        "end": 47,
+        "kind": "operator.builtin",
+        "owners": [
+          "block_ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": ".>",
+        "start": 51,
+        "end": 53,
+        "kind": "operator.builtin",
+        "owners": [
+          "ufcs_expr"
+        ],
+        "textmate": [
+          "keyword.operator.arrow.kio"
+        ]
+      },
+      {
+        "text": "after",
+        "start": 53,
+        "end": 58,
+        "kind": "entity.name.function",
+        "owners": [
+          "ufcs_expr"
+        ]
+      }
     ]
   },
   {
@@ -267,14 +441,14 @@
     ]
   },
   {
-    "name": "if_block_elaborator",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if!\n  .t { () } else { () }\n}\n",
+    "name": "if_block_macro",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if\n  (.t) { () } else { () }\n}\n",
     "targets": [
       {
         "start": 41,
-        "end": 44,
-        "text": "if!",
-        "kind": "keyword.elaborator",
+        "end": 43,
+        "text": "if",
+        "kind": "entity.name.function",
         "owners": [
           "expression_block",
           "function_definition",
@@ -282,8 +456,8 @@
         ]
       },
       {
-        "start": 57,
-        "end": 61,
+        "start": 58,
+        "end": 62,
         "text": "else",
         "kind": "keyword.control",
         "owners": [
@@ -313,14 +487,14 @@
     ]
   },
   {
-    "name": "if_block_elaborator_comment",
-    "source": "module source;\nfn choose(if: .) -> . {\n  if! // shared trivia\n  .t { () } else { () }\n}\n",
+    "name": "if_block_macro_comment",
+    "source": "module source;\nfn choose(if: .) -> . {\n  if // shared trivia\n  (.t) { () } else { () }\n}\n",
     "targets": [
       {
         "start": 41,
-        "end": 44,
-        "text": "if!",
-        "kind": "keyword.elaborator",
+        "end": 43,
+        "text": "if",
+        "kind": "entity.name.function",
         "owners": [
           "expression_block",
           "function_definition",
@@ -328,8 +502,8 @@
         ]
       },
       {
-        "start": 74,
-        "end": 78,
+        "start": 75,
+        "end": 79,
         "text": "else",
         "kind": "keyword.control",
         "owners": [

@@ -4,4 +4,4 @@ source {
   path "../../../poc/option/workdir/option.pkg.kio"
 }
 
-rehost option/elab/testapi to testapi;
+rehost option/macros/testapi to testapi;

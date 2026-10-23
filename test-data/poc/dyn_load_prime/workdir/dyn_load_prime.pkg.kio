@@ -69,7 +69,7 @@ bridge {
   loader;
   defaults;
   loader/scan;
-  elab/elaborator_util;
-  elab/match;
-  elab/spine_elaborators
+  macros/macro_util;
+  macros/match;
+  macros/spine_macros
 }

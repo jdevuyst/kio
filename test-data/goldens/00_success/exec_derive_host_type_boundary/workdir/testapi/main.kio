@@ -2,13 +2,13 @@ module testapi/main;
 
 import __intrinsics__;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
 // A value-carrying wrapper and a pair, both kind-`*` brands, each
-// holding a host `String` leaf — so the `derive!` resolver below reflects
+// holding a host `String` leaf — so the `derive` resolver below reflects
 // a host type while it walks the goal and its candidate rules.
 pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
 
@@ -40,7 +40,7 @@ fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
 // The synthesized call tree is `render_pair(render_cell_string(),
 // render_cell_string())` — `render_pair` fires once, the base twice.
 fn run() -> String {
-  let inst = derive!((render_pair, render_cell_string), Render(Pair(Cell(String), Cell(String))));
+  let inst = derive((render_pair, render_cell_string), Render(Pair(Cell(String), Cell(String))));
   let value =
     Pair.mk_pair(
     , Cell(String)

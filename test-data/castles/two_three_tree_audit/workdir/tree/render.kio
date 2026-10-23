@@ -5,7 +5,7 @@
 /// reports as a word is also there to see as a shape.
 module tree/render;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/arith(add_i32);
 import testapi/io(print);
@@ -16,7 +16,7 @@ import tree/text(cat, cat3, cat4, indent, num);
 fn entry(k: I32, v: String) -> String { cat3(num(k), "=", v) }
 
 rec(loop) fn draw(t: Node, level: I32) {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { print(cat3(indent(level), "leaf", "\n")) }
     , .(n: Two) {
@@ -39,7 +39,7 @@ rec(loop) fn draw(t: Node, level: I32) {
 pub fn draw_tree(t: Tree) { draw(root_of(t), 1) }
 
 rec(loop) fn inorder(t: Node, acc: String) -> String {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { acc }
     , .(n: Two) {

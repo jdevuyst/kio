@@ -60,10 +60,10 @@ loader split across focused modules:
   in for the capabilities a real host supplies. A user replaces this
   scaffolding with their own host.
 - Two package [dependencies](../guides/pkg.md#dependency-files),
-  brought in the standard way any package reuses another: `elab.dep.kio`
-  vendors the [`elab` POC](../guides/using-libraries.md) (the
-  `match!` / spine-elab machinery the loader's own sources use,
-  re-rooted under `elab/`), and `list.dep.kio` vendors the `list` POC
+  brought in the standard way any package reuses another: `macros.dep.kio`
+  vendors the [`macros` POC](../guides/using-libraries.md) (the
+  `match` / spine-macro machinery the loader's own sources use,
+  re-rooted under `macros/`), and `list.dep.kio` vendors the `list` POC
   (the generic list library the loader's internals are built on, under
   `list/`). Each dependency's host requirements are rehosted onto the
   package's own capability modules through the small `list_host.kio`
@@ -344,9 +344,9 @@ fn host_double_descriptor() -> Host_fn {
 }
 
 fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
-  match! call {
+  match(call) {
     .(descriptor: Host_fn, dom: Value) {
-      if! host_fn_eq(descriptor, host_double_descriptor()) {
+      if(host_fn_eq(descriptor, host_double_descriptor())) {
         host_double(dom)
       } else {
         serve_default(descriptor, dom)
@@ -433,13 +433,13 @@ signature — the pattern a real host follows. Its `greet` wrapper:
 
 ```text
 fn run_greet[P](surf: Surface(P), who: String) -> String {
-  match! surf.?{lookup}("greet"(String)) {
+  match(surf.?{lookup}("greet"(String))) {
     (
       , .(g: P) {
-          match! surf.?{apply}((g, surf.?{str_in}(who))) {
+          match(surf.?{apply}((g, surf.?{str_in}(who)))) {
             (
               , .(r: P) {
-                  match! surf.?{str_out}(r) {
+                  match(surf.?{str_out}(r)) {
                     (.(s: String) { s }, .(d: Diag) { diag_message(d) })
                   }
                 }
@@ -470,12 +470,12 @@ runtime-value laws — every `un_value . v<arm>` recovers the arm it built:
 ```text
 equiv un_closure(e: Env, t: Term) {
   un_value(vclosure(e, t));
-  widen_sum!({v_closure = (e, t)}, Value_shape)
+  widen_sum({v_closure = (e, t)}, Value_shape)
 }
 
 equiv un_product(a: Value, b: Value) {
   un_value(vproduct(a, b));
-  widen_sum!({v_product = (a, b)}, Value_shape)
+  widen_sum({v_product = (a, b)}, Value_shape)
 }
 ```
 

@@ -1,7 +1,0 @@
-dependency elab;
-
-source {
-  path "../../elab/workdir/elab.pkg.kio"
-}
-
-rehost elab/testapi to list_host;

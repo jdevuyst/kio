@@ -1,0 +1,7 @@
+module main;
+
+import macros/algebraic_macros(macro ease);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+fn duplicate(a: A) -> A & A { ease(a) }

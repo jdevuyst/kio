@@ -14,7 +14,7 @@
 # Reachable-discharge cases only. `kio test` loads + typechecks +
 # discharges, so a case expected to fail before discharge — CLI (2), a
 # non-specific compile error (10), parse (11), use (12), name-resolution
-# (13), type (14), elaborator (15), totality (16), bridge (20), or
+# (13), type (14), macro (15), totality (16), bridge (20), or
 # dependency (30) error — never reaches discharge and is exempt. Everything else reaches it: success (0), a
 # build/emit error (40, typecheck already passed), a discharge failure
 # (50, which IS a discharge), a runtime exit (90), the sig tiers. The

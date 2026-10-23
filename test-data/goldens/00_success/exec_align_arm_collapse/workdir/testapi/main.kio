@@ -1,19 +1,19 @@
 module testapi/main;
 
-import elab/algebraic_elaborators(align);
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/algebraic_macros(macro align);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(default Bool, default String);
 import testapi/io(print);
 
-// The branches explicitly construct `String | String`; `align!`
+// The branches explicitly construct `String | String`; `align`
 // collapses to `String`, payload preserved (only the arm tag is
 // dropped).
 fn pick(b: Bool) -> String {
-  align!(if! b {
-    widen_sum!("collapsed\n", String | String)
+  align(if(b) {
+    widen_sum("collapsed\n", String | String)
   } else {
-    widen_sum!("collapsed\n", String | String)
+    widen_sum("collapsed\n", String | String)
   })
 }
 

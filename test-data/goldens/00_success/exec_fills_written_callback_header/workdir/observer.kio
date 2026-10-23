@@ -10,4 +10,4 @@ pure fn keep_impl(
 , target: __Type__
 ) -> __Checked_term__ & __Fill_ctx__ { (value, __fill__(ct, fills, target, source)) }
 
-pub elab keep : [Source] Source -> [Target] Target { impl(fills) keep_impl }
+pub macro keep : [Source] Source -> [Target] Target { impl(fills) keep_impl }

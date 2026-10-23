@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi/io as io;
 
 type Constant[A] = .;
@@ -8,6 +8,6 @@ type Constant[A] = .;
 fn bind[A][B](value: Constant(A), next: A -> Constant(B)) -> Constant(B) { value }
 
 pub fn main() {
-  do! bind { () };
+  do(bind) { () };
   io.print("constant\n")
 }

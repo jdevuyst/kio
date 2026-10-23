@@ -50,20 +50,20 @@ module m; import ops(op <| _ |>, op _ < _ >); fn run() { <|x|>.>keep; row<key>(a
         (call_callee
           (entity_name_function)))
       (separator_semicolon)
-      (operator_expression
-        (expression_path
-          (identifier))
-        (operator_run)
-        (call_expr
+      (call_expr
+        (operator_expression
           (operator_expression
             (expression_path
               (identifier))
-            (operator_run))
-          (expression_arguments
-            (bracket_lparen)
+            (operator_run)
             (expression_path
-              (identifier))
-            (bracket_rparen))))
+              (identifier)))
+          (operator_run))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
       (bracket_rbrace))))
 
 ================================================================================

@@ -12,7 +12,7 @@ use crate::ast::{Kind, Meta, Phase, Type};
 
 use super::MemoCtx;
 #[cfg(feature = "surface")]
-use super::UserElaboratorArtifactMemo;
+use super::UserMacroArtifactMemo;
 
 pub struct TypeInterner<P>
 where
@@ -186,7 +186,7 @@ where
     #[cfg(feature = "surface")]
     alpha_presentation: Option<Arc<crate::pass::binder_presentation::BinderPresentation>>,
     #[cfg(feature = "surface")]
-    user_elaborator_artifacts: Arc<UserElaboratorArtifactMemo>,
+    user_macro_artifacts: Arc<UserMacroArtifactMemo>,
     identity_alias_newtypes: OnceLock<Arc<crate::pass::resolve::IdentityAliasNewtypeIndex>>,
     #[cfg(feature = "lsp")]
     collect_source_dependencies: bool,
@@ -211,7 +211,7 @@ where
             #[cfg(feature = "surface")]
             alpha_presentation,
             #[cfg(feature = "surface")]
-            user_elaborator_artifacts: Arc::new(UserElaboratorArtifactMemo::default()),
+            user_macro_artifacts: Arc::new(UserMacroArtifactMemo::default()),
             identity_alias_newtypes: OnceLock::new(),
             #[cfg(feature = "lsp")]
             collect_source_dependencies: false,
@@ -228,7 +228,7 @@ where
             #[cfg(feature = "surface")]
             alpha_presentation: self.alpha_presentation.clone(),
             #[cfg(feature = "surface")]
-            user_elaborator_artifacts: self.user_elaborator_artifacts.clone(),
+            user_macro_artifacts: self.user_macro_artifacts.clone(),
             identity_alias_newtypes: self.identity_alias_newtypes.clone(),
             collect_source_dependencies: true,
             collect_refactoring_facts: self.collect_refactoring_facts,
@@ -243,7 +243,7 @@ where
             #[cfg(feature = "surface")]
             alpha_presentation: self.alpha_presentation.clone(),
             #[cfg(feature = "surface")]
-            user_elaborator_artifacts: self.user_elaborator_artifacts.clone(),
+            user_macro_artifacts: self.user_macro_artifacts.clone(),
             identity_alias_newtypes: self.identity_alias_newtypes.clone(),
             collect_source_dependencies: self.collect_source_dependencies,
             collect_refactoring_facts: true,
@@ -497,17 +497,17 @@ where
     }
 
     #[cfg(feature = "surface")]
-    pub(crate) fn user_elaborator_artifacts(&self) -> &Arc<UserElaboratorArtifactMemo> {
-        &self.user_elaborator_artifacts
+    pub(crate) fn user_macro_artifacts(&self) -> &Arc<UserMacroArtifactMemo> {
+        &self.user_macro_artifacts
     }
 
     #[cfg(feature = "cli")]
-    pub(crate) fn user_elaborator_timing_snapshot(&self) -> super::UserElaboratorTimingSnapshot {
-        let snapshot = self.memo().snapshot().user_elaborator_timings;
+    pub(crate) fn user_macro_timing_snapshot(&self) -> super::UserMacroTimingSnapshot {
+        let snapshot = self.memo().snapshot().user_macro_timings;
         #[cfg(feature = "surface")]
         {
             let mut snapshot = snapshot;
-            let artifact = self.user_elaborator_artifacts.snapshot();
+            let artifact = self.user_macro_artifacts.snapshot();
             snapshot.artifact_hits = artifact.hits;
             snapshot.artifact_misses = artifact.misses;
             snapshot.artifact_first_writes = artifact.first_writes;
@@ -1442,12 +1442,12 @@ mod tests {
         assert!(!std::sync::Arc::ptr_eq(first.memo(), second.memo()));
         assert!(std::sync::Arc::ptr_eq(first.memo(), repeated_first.memo()));
         assert!(!std::sync::Arc::ptr_eq(
-            first.user_elaborator_artifacts(),
-            repeated_first.user_elaborator_artifacts(),
+            first.user_macro_artifacts(),
+            repeated_first.user_macro_artifacts(),
         ));
         assert!(!std::sync::Arc::ptr_eq(
-            first.user_elaborator_artifacts(),
-            second.user_elaborator_artifacts(),
+            first.user_macro_artifacts(),
+            second.user_macro_artifacts(),
         ));
 
         let first_type = first.type_interner().intern(&path("Shared"));
@@ -1579,8 +1579,8 @@ mod tests {
         let repeated = revisions.scope_for(&key, &first_version, &first_package);
         assert!(Arc::ptr_eq(first.memo(), repeated.memo()));
         assert!(!Arc::ptr_eq(
-            first.user_elaborator_artifacts(),
-            repeated.user_elaborator_artifacts()
+            first.user_macro_artifacts(),
+            repeated.user_macro_artifacts()
         ));
 
         let changed = revisions.scope_for(&key, &changed_version, &changed_package);

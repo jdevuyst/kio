@@ -6,8 +6,8 @@
 /// collection representation the canvas uses for rows and cells.
 module turtle/command;
 
-import elab/spine_elaborators(widen_sum);
 import list/core as list;
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 
 pub labels { pen_cmd: Bool };
@@ -41,29 +41,27 @@ pub type Command_shape =
 pub fn un_command(c: Command) -> Command_shape { c.?{command} }
 
 /// `pen down` when `down` is set, `pen up` otherwise.
-pub fn pen(down: Bool) -> Command { {command = {pen_cmd = down}.>widen_sum!(Command_shape)} }
+pub fn pen(down: Bool) -> Command { {command = {pen_cmd = down}.>widen_sum(Command_shape)} }
 
 /// Advance `n` cells along the current heading.
-pub fn move(n: I32) -> Command { {command = {move_cmd = n}.>widen_sum!(Command_shape)} }
+pub fn move(n: I32) -> Command { {command = {move_cmd = n}.>widen_sum(Command_shape)} }
 
 /// `turn right` when `right` is set, `turn left` otherwise.
-pub fn turn(right: Bool) -> Command { {command = {turn_cmd = right}.>widen_sum!(Command_shape)} }
+pub fn turn(right: Bool) -> Command { {command = {turn_cmd = right}.>widen_sum(Command_shape)} }
 
 /// Teleport to `(x, y)`.
-pub fn goto(x: I32, y: I32) -> Command {
-  {command = {goto_cmd = (x, y)}.>widen_sum!(Command_shape)}
-}
+pub fn goto(x: I32, y: I32) -> Command { {command = {goto_cmd = (x, y)}.>widen_sum(Command_shape)} }
 
 /// Stamp the current cell with glyph code `code`.
-pub fn mark(code: I32) -> Command { {command = {mark_cmd = code}.>widen_sum!(Command_shape)} }
+pub fn mark(code: I32) -> Command { {command = {mark_cmd = code}.>widen_sum(Command_shape)} }
 
 /// Run `body` `n` times.
 pub fn repeat(n: I32, body: list.List(Command)) -> Command {
-  {command = {repeat_cmd = (n, body)}.>widen_sum!(Command_shape)}
+  {command = {repeat_cmd = (n, body)}.>widen_sum(Command_shape)}
 }
 
 /// A word the parser did not recognise, kept verbatim so the echo can show
 /// exactly what the source said.
 pub fn unknown(word: String) -> Command {
-  {command = {unknown_cmd = word}.>widen_sum!(Command_shape)}
+  {command = {unknown_cmd = word}.>widen_sum(Command_shape)}
 }

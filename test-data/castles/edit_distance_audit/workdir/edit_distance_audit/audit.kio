@@ -3,17 +3,17 @@ module edit_distance_audit/audit;
 import edit_distance_audit/dp as dp;
 import edit_distance_audit/render as render;
 import edit_distance_audit/tokens as tokens;
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/text as text;
 
 fn classify(distance: I32) -> String {
-  if! arith.leq_i32(distance, 1) {
+  if(arith.leq_i32(distance, 1)) {
     "aligned"
-  } else if! arith.leq_i32(distance, 3) {
+  } else if(arith.leq_i32(distance, 3)) {
     "minor drift"
-  } else if! arith.leq_i32(distance, 5) {
+  } else if(arith.leq_i32(distance, 5)) {
     "review"
   } else {
     "major rewrite"

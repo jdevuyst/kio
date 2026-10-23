@@ -6,8 +6,6 @@
 /// reason assembly turned it down.
 module forge/report;
 
-import elab/control(if);
-import elab/match(match);
 import forge/assemble as asm;
 import forge/disasm as d;
 import forge/isa as i;
@@ -18,6 +16,8 @@ import forge/program(Duplicate_label, Image, Items, Macros, Undefined_label, Unk
 import forge/text as t;
 import forge/vm as vm;
 import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, sub_i32);
 import testapi/iter(loop);
@@ -29,10 +29,10 @@ pub type Tally = I32 & I32 & I32;
 pub fn nothing_done() -> Tally { (0, 0, 0) }
 
 rec(loop) fn joined(ws: Words, acc: String, first: Bool) -> String {
-  match! l.un_cons(ws) {
+  match(l.un_cons(ws)) {
     (
     , .(w: I32, rest: Words) {
-        let next = if! first { t.num(w) } else { t.cat3(acc, " ", t.num(w)) };
+        let next = if(first) { t.num(w) } else { t.cat3(acc, " ", t.num(w)) };
         recur joined(rest, next, .f)
       }
     , .(_empty: .) { acc }
@@ -41,7 +41,7 @@ rec(loop) fn joined(ws: Words, acc: String, first: Bool) -> String {
 }
 
 fn words_text(ws: Words) -> String {
-  match! l.un_cons(ws) {
+  match(l.un_cons(ws)) {
     (.(_w: I32, _rest: Words) { joined(ws, "", .t) }, .(_empty: .) { "(none)" })
   }
 }
@@ -59,7 +59,7 @@ fn regs_text(m: Vm) -> String {
 }
 
 fn stop_text(m: Vm, why: Stop) -> String {
-  match! why {
+  match(why) {
     (
     , .(_x: Halted) { "halted" }
     , .(_x: Ran_off) { "ran off the end" }
@@ -112,7 +112,7 @@ fn accepted(items: Items, img: Image, tally: Tally) -> Tally {
 pub fn program(name: String, items: Items, macros: Macros, tally: Tally) -> Tally {
   t.line("");
   t.line(t.cat3("== ", name, " =="));
-  match! asm.build(items, macros) {
+  match(asm.build(items, macros)) {
     (
     , .(img: Image) { accepted(items, img, tally) }
     , .(e: Unknown_macro) {

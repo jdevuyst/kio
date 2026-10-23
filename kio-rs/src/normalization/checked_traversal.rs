@@ -7,7 +7,7 @@ pub(super) fn children<'a>(node: &'a CheckedTermNode, mut visit: impl FnMut(&'a 
         CheckedTermNode::Raw(_)
         | CheckedTermNode::TemplateValue { .. }
         | CheckedTermNode::Local { .. }
-        | CheckedTermNode::ElabError { .. } => {}
+        | CheckedTermNode::MacroError { .. } => {}
         CheckedTermNode::TermLet { value, body, .. } => {
             visit(value);
             visit(body);
@@ -224,7 +224,7 @@ fn expr_head<'a>(
         | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::EnrichedTuple { ext, .. }
@@ -450,11 +450,11 @@ fn node_equal<'a>(
             },
         ) => left == right,
         (
-            ElabError {
+            MacroError {
                 kind: lk,
                 message: lm,
             },
-            ElabError {
+            MacroError {
                 kind: rk,
                 message: rm,
             },
@@ -596,7 +596,7 @@ impl<'a> CanonicalFrame<'a> {
                 1 => true_body,
                 _ => false_body,
             },
-            Raw(_) | TemplateValue { .. } | Local { .. } | ElabError { .. } => {
+            Raw(_) | TemplateValue { .. } | Local { .. } | MacroError { .. } => {
                 unreachable!("leaf terms have no child continuation")
             }
         };
@@ -707,7 +707,7 @@ mod tests {
         assert!(constructed != CheckedTerm::new(changed, constructed.clone_type()));
 
         let error = CheckedTerm::from_node(
-            CheckedTermNode::ElabError {
+            CheckedTermNode::MacroError {
                 kind: CheckedTermErrorKind::Type,
                 message: "diagnostic".into(),
             },

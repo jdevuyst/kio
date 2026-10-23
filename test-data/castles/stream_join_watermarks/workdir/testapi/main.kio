@@ -1,19 +1,19 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import join/engine as engine;
 import join/input as input;
 import join/model as m;
 import join/report as report;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default Bool);
 import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
 rec(loop) fn replay(state: m.State, previous: String | .) {
-  match! input.next() {
+  match(input.next()) {
     .(command: input.Begin) {
       io.print(command.?{input.begin}.>text.string_concat("\n").>>text.string_concat("session "));
       recur replay(engine.empty(), previous)
@@ -49,9 +49,9 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
     .(_command: input.End) {
       report.finish(state);
       let signature = report.signature(state);
-      match! previous {
+      match(previous) {
         .(old: String) {
-          io.print(if! text.string_eq(old, signature) {
+          io.print(if(text.string_eq(old, signature)) {
             "arrival-order agreement: yes\n"
           } else {
             "arrival-order agreement: NO\n"
@@ -59,7 +59,7 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
         };
         .() { () }
       };
-      recur replay(state, signature.>widen_sum!(String | .))
+      recur replay(state, signature.>widen_sum(String | .))
     };
     .() { () }
   }
@@ -67,5 +67,5 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
 
 pub fn main() {
   io.print("Temporal join: equal keys, right time in [left-2,left+3]\n");
-  replay(engine.empty(), ().>widen_sum!(String | .))
+  replay(engine.empty(), ().>widen_sum(String | .))
 }

@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -25,12 +25,12 @@ fn line(label: String, n: I32) {
 fn sum_to(n: I32) -> I32 {
   loop(
   , .(st: I32 & I32) {
-      match! st {
+      match(st) {
         .(i: I32, acc: I32) {
-          if! leq_i32(i, 0(I32)) {
-            widen_sum!(acc, (I32 & I32) | I32)
+          if(leq_i32(i, 0(I32))) {
+            widen_sum(acc, (I32 & I32) | I32)
           } else {
-            widen_sum!((sub_i32(i, 1(I32)), add_i32(acc, i)), (I32 & I32) | I32)
+            widen_sum((sub_i32(i, 1(I32)), add_i32(acc, i)), (I32 & I32) | I32)
           }
         }
       }
@@ -45,12 +45,12 @@ fn sum_to(n: I32) -> I32 {
 fn double_then_sum(n: I32) -> I32 {
   loop(
   , .(st: I32 & I32) {
-      match! st {
+      match(st) {
         .(i: I32, acc: I32) {
-          if! leq_i32(i, 0(I32)) {
-            widen_sum!(acc, (I32 & I32) | I32)
+          if(leq_i32(i, 0(I32))) {
+            widen_sum(acc, (I32 & I32) | I32)
           } else {
-            widen_sum!((sub_i32(i, 1(I32)), add_i32(acc, mul_i32(i, 2(I32)))), (I32 & I32) | I32)
+            widen_sum((sub_i32(i, 1(I32)), add_i32(acc, mul_i32(i, 2(I32)))), (I32 & I32) | I32)
           }
         }
       }
@@ -62,12 +62,12 @@ fn double_then_sum(n: I32) -> I32 {
 fn row_sum(row: I32) -> I32 {
   loop(
   , .(st: I32 & I32) {
-      match! st {
+      match(st) {
         .(col: I32, acc: I32) {
-          if! leq_i32(col, 0(I32)) {
-            widen_sum!(acc, (I32 & I32) | I32)
+          if(leq_i32(col, 0(I32))) {
+            widen_sum(acc, (I32 & I32) | I32)
           } else {
-            widen_sum!((sub_i32(col, 1(I32)), add_i32(acc, mul_i32(row, col))), (I32 & I32) | I32)
+            widen_sum((sub_i32(col, 1(I32)), add_i32(acc, mul_i32(row, col))), (I32 & I32) | I32)
           }
         }
       }
@@ -79,12 +79,12 @@ fn row_sum(row: I32) -> I32 {
 fn grid_sum(n: I32) -> I32 {
   loop(
   , .(st: I32 & I32) {
-      match! st {
+      match(st) {
         .(row: I32, acc: I32) {
-          if! leq_i32(row, 0(I32)) {
-            widen_sum!(acc, (I32 & I32) | I32)
+          if(leq_i32(row, 0(I32))) {
+            widen_sum(acc, (I32 & I32) | I32)
           } else {
-            widen_sum!((sub_i32(row, 1(I32)), add_i32(acc, row_sum(row))), (I32 & I32) | I32)
+            widen_sum((sub_i32(row, 1(I32)), add_i32(acc, row_sum(row))), (I32 & I32) | I32)
           }
         }
       }

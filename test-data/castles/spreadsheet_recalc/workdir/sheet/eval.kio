@@ -5,9 +5,9 @@
 /// downstream of a cycle gets `#CYCLE` by ordinary evaluation.
 module sheet/eval;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr);
 import sheet/cells(Sheet, Value, Values, content_at, cycle_value, fold_content);
 import sheet/cells(fold_value, num_value, value_at, void_value);
@@ -26,12 +26,12 @@ labels Ev = { ok: I32 } | { bad: . };
 /// What one cell contributes to an aggregate.
 labels Slot = { got: I32 } | { none: . } | { err: . };
 
-fn ok(n: I32) -> Ev { {ok = n}.>widen_sum!(Ev) }
+fn ok(n: I32) -> Ev { {ok = n}.>widen_sum(Ev) }
 
-fn bad() -> Ev { {bad=}.>widen_sum!(Ev) }
+fn bad() -> Ev { {bad=}.>widen_sum(Ev) }
 
 fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
-  match! e {
+  match(e) {
     (.(n: Ok) { on_ok(n.?{ok}) }, .(_b: Bad) { on_bad })
   }
 }
@@ -39,9 +39,9 @@ fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
 fn slot_at(vals: Values, a: Addr) -> Slot {
   fold_value(
   , value_at(vals, a)
-  , .(n: I32) { {got = n}.>widen_sum!(Slot) }
-  , {none=}.>widen_sum!(Slot)
-  , {err=}.>widen_sum!(Slot)
+  , .(n: I32) { {got = n}.>widen_sum(Slot) }
+  , {none=}.>widen_sum(Slot)
+  , {err=}.>widen_sum(Slot)
   )
 }
 
@@ -63,10 +63,10 @@ fn bin(left: Ev, right: Ev, op: (I32 & I32) -> I32) -> Ev {
 
 /// `SUM`: blanks contribute nothing, one error poisons the total.
 rec(loop) fn sum_onto(vals: Values, cells: List(Addr), acc: I32) -> Ev {
-  match! cells.>List.unpack {
+  match(cells.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
-        match! slot_at(vals, a) {
+        match(slot_at(vals, a)) {
           (
           , .(g: Got) { recur sum_onto(vals, rest, add_i32(acc, g.?{got})) }
           , .(_n: None) { recur sum_onto(vals, rest, acc) }
@@ -81,14 +81,14 @@ rec(loop) fn sum_onto(vals: Values, cells: List(Addr), acc: I32) -> Ev {
 
 /// `MAX`: blanks are not candidates, and a range with no number is zero.
 rec(loop) fn max_onto(vals: Values, cells: List(Addr), best: I32, seen: Bool) -> Ev {
-  match! cells.>List.unpack {
+  match(cells.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
-        match! slot_at(vals, a) {
+        match(slot_at(vals, a)) {
           (
           , .(g: Got) {
-              if! seen {
-                if! lt_i32(best, g.?{got}) {
+              if(seen) {
+                if(lt_i32(best, g.?{got})) {
                   recur max_onto(vals, rest, g.?{got}, .t)
                 } else {
                   recur max_onto(vals, rest, best, .t)
@@ -103,14 +103,14 @@ rec(loop) fn max_onto(vals: Values, cells: List(Addr), best: I32, seen: Bool) ->
         }
       }
     , .(_empty: .) {
-        if! seen { ok(best) } else { ok(0) }
+        if(seen) { ok(best) } else { ok(0) }
       }
     )
   }
 }
 
 rec(loop) fn eval_expr(vals: Values, e: Expr) -> Ev {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(r: Ref_at) { ev_at(vals, r.?{ref_at}) }
     , .(n: Lit) { ok(n.?{lit}) }
@@ -133,10 +133,10 @@ rec(loop) fn eval_expr(vals: Values, e: Expr) -> Ev {
     , .(lo: Max_lo, hi: Max_hi) { max_onto(vals, range_cells(lo.?{max_lo}, hi.?{max_hi}), 0, .f) }
     , .(cond: If_c, then_arm: If_t, else_arm: If_e) {
         let test = recur(cont) eval_expr(vals, cond.?{if_c});
-        match! test {
+        match(test) {
           (
           , .(n: Ok) {
-              if! eq_i32(n.?{ok}, 0) {
+              if(eq_i32(n.?{ok}, 0)) {
                 recur eval_expr(vals, else_arm.?{if_e})
               } else {
                 recur eval_expr(vals, then_arm.?{if_t})

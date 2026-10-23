@@ -54,6 +54,9 @@ impl ModuleScope {
 }
 
 impl DirectiveScope for ModuleScope {
+    fn module_source(&self) -> Option<String> {
+        Some(crate::pretty::pretty_module(&self.module))
+    }
     fn link_target(&self, term: &str) -> LinkTarget {
         match self.find(term) {
             Some(entry) => LinkTarget::Exact(entry.anchor(&self.module.path.segments.join("/"))),
@@ -67,6 +70,13 @@ impl DirectiveScope for ModuleScope {
 
     fn source(&self, term: &str) -> Option<String> {
         self.find(term).map(|entry| entry.source())
+    }
+
+    fn classified_source(
+        &self,
+        term: &str,
+    ) -> Option<(String, Vec<crate::tokens::ClassifiedToken>)> {
+        classified_source(&self.module, term)
     }
 
     fn ty(&self, term: &str) -> Option<String> {
@@ -164,14 +174,76 @@ impl DirectiveScope for PackageBoundaryScope {
         self.find(term).map(|(_, entry)| entry.source())
     }
 
+    fn classified_source(
+        &self,
+        term: &str,
+    ) -> Option<(String, Vec<crate::tokens::ClassifiedToken>)> {
+        let (module, _) = self.find(term)?;
+        classified_source(module, term)
+    }
+
     fn ty(&self, term: &str) -> Option<String> {
         self.find(term).and_then(|(_, entry)| entry.ty())
     }
 }
 
+fn classified_source(
+    module: &Module,
+    term: &str,
+) -> Option<(String, Vec<crate::tokens::ClassifiedToken>)> {
+    let (index, entry) = module.items.iter().enumerate().find_map(|(index, item)| {
+        documented_entries_for_item(item)
+            .into_iter()
+            .find(|entry| crate::kiodoc::refs::documented_entry_matches_reference(entry, term))
+            .map(|entry| (index, entry))
+    })?;
+    let source = entry.source();
+    let mut prefix_module = module.clone();
+    prefix_module.items.truncate(index);
+    let prefix = format!("{}\n", crate::pretty::pretty_module(&prefix_module));
+    let assembled = format!("{prefix}{source}");
+    let tokens = crate::tokens::dump_range(&assembled, prefix.len(), source.len()).ok()?;
+    Some((source, tokens))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rendered_source_directives_keep_declaration_order_and_local_shadowing() {
+        let scope = ModuleScope::from_source("module app; import provider(macro selected); fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
+        let render = |term: &str| {
+            let markdown = super::super::rewrite::rewrite_with_context(
+                &format!("[`@source {term}`]"),
+                "",
+                ".html",
+                &super::super::site::SymbolIndex::default(),
+                &scope,
+                &std::collections::HashSet::new(),
+            );
+            super::super::markdown::render_html_with_context(
+                &markdown.text,
+                None,
+                &markdown.source_tokens,
+            )
+        };
+        let early = render("early");
+        assert!(!early.contains("kio-entity-name-macro"), "{early}");
+        assert!(
+            early.contains("kio-entity-name-function\">later</span>"),
+            "{early}"
+        );
+        let after = render("after");
+        assert!(
+            after.contains("kio-entity-name-macro\">later</span>"),
+            "{after}"
+        );
+        assert!(
+            after.contains("kio-entity-name-macro\">selected</span>"),
+            "{after}"
+        );
+    }
 
     #[test]
     fn operator_queries_keep_short_spelling_and_complete_identity() {
@@ -330,7 +402,7 @@ mod tests {
              pub newtype Box : . { pub constructor make; projector read; }; \
              pub labels Row = { field: . }; pub labels { other: . }; \
              pub type {forward} = {field}; \
-             pub op _ + _ { impl add; }; pub elab choose : . -> . { impl choose_impl; }; \
+             pub op _ + _ { impl add; }; pub macro choose : . -> . { impl choose_impl; }; \
              host type Text role(str); host fn emit(value: Text) -> .; \
              rec(loop) { pub fn first(x: .) -> . { recur second(x) }; fn second(x: .) -> . { recur first(x) } } \
              rec { pub type Chain = Node; pub newtype Node : . | Chain { constructor wrap; projector unwrap; }; pub labels Markers = { mark: . }; }"

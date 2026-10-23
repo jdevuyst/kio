@@ -1,6 +1,6 @@
 # UFCS calls
 
-UFCS — Uniform Function Call Syntax — is a compact way to put one value into a function or elab call. It is useful when the value you are transforming reads better as the subject of the expression than as one nested argument in a prefix call.
+UFCS — Uniform Function Call Syntax — is a compact way to put one value into a function or macro call. It is useful when the value you are transforming reads better as the subject of the expression than as one nested argument in a prefix call.
 
 The four surface spellings are `.>`, `.>>`, `.<`, and `.<<`. This guide calls those the dot-splice spellings because each one splices a receiver into a value-argument slot.
 
@@ -13,7 +13,7 @@ bridge {
 
 module kiodoc;
 
-import spine_elaborators(narrow_prod);
+import spine_macros(macro narrow_prod);
 
 host type String role(str);
 host fn string_concat(p0: String, p1: String) -> String;
@@ -39,7 +39,7 @@ empty UFCS list such as `x.>f()` is rejected because it is unclear whether the
 writer intended no further argument or the Unit behavior of a direct empty
 call. The diagnostic shows both repairs: remove the list for the bare form, or
 replace it with `(())` to pass Unit explicitly. The same rule applies in every
-direction and to ordinary, member, and bang-call callees:
+direction and to ordinary, member, and macro call callees:
 
 ```kio {@module}
 fn wrap(s: String) -> String { string_concat("[", string_concat(s, "]")) }
@@ -95,7 +95,7 @@ The right side still requires a path; calls such as these are not accepted:
 "a".>>(make_formatter())
 ```
 
-`.<` and `.<<` take the callee on the left and the value on the right. The callee must be a path, a direct path call, or a complete block elab call:
+`.<` and `.<<` take the callee on the left and the value on the right. The callee must be a path, a direct path call, or a complete block macro call:
 
 ```text
 f.<value
@@ -180,90 +180,90 @@ User operators follow the same atom rule. With prefix `! _`, write
 to the result of calling `f`. See [operator grouping](operators.md#choose-how-it-chains).
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="elaborator-calls"></a>
+<a id="macro-calls"></a>
 
-## Elab calls
+## Macro calls
 
-Elab bang-calls participate in the same rule. The typer uses the
-elab's resolved call type, keeps explicit type arguments in type slots,
+Macro calls participate in the same rule. The typer uses the
+macro's resolved call type, keeps explicit type arguments in type slots,
 and inserts the receiver into the selected value slot.
 
-Bang calls also keep a bare receiver-only spelling in each direction:
-`value.>transform!`, `value.>>transform!`, `transform!.<value`, and
-`transform!.<<value`. A post-`!` list, when present, must contain an argument.
+Macro calls also keep a bare receiver-only spelling in each direction:
+`value.>transform`, `value.>>transform`, `transform.<value`, and
+`transform.<<value`. The UFCS argument list, when present, must contain an argument.
 
 ```kio {@module}
-fn drop_unit_right(p: String & .) -> String { p.>narrow_prod!(String) }
+fn drop_unit_right(p: String & .) -> String { p.>narrow_prod(String) }
 
-fn drop_unit_left(p: String & .) -> String { narrow_prod!(String).<<p }
+fn drop_unit_left(p: String & .) -> String { narrow_prod(String).<<p }
 ```
 
-Both functions build the same elab call: `narrow_prod!(p, String)`.
+Both functions build the same macro call: `narrow_prod(p, String)`.
 
 ### Calls with trailing blocks
 
-Trailing blocks stay attached to the elab in every direction. The receiver
+Trailing blocks stay attached to the macro in every direction. The receiver
 becomes the first or last value **before the blocks**, even when you write it
 after them:
 
 | Spelling | Means |
 | --- | --- |
-| `r.>f!(a) { body }` | `f!(r, a) { body }` |
-| `r.>>f!(a) { body }` | `f!(a, r) { body }` |
-| `f!(a) { body }.<<r` | `f!(r, a) { body }` |
-| `f!(a) { body }.<r` | `f!(a, r) { body }` |
+| `r.>f(a) { body }` | `f(r, a) { body }` |
+| `r.>>f(a) { body }` | `f(a, r) { body }` |
+| `f(a) { body }.<<r` | `f(r, a) { body }` |
+| `f(a) { body }.<r` | `f(a, r) { body }` |
 
-Here `f` stands for an imported elab with the corresponding ordinary values
-and trailing block. These are the same quoted elab arguments as in the direct
+Here `f` stands for an imported macro with the corresponding ordinary values
+and trailing block. These are the same quoted macro arguments as in the direct
 call; the notation does not make their contents run eagerly.
 
-For example, the library `match` elab accepts a scrutinee and a clause block.
+For example, the library `match` macro accepts a scrutinee and a clause block.
 Here its module is available as `match`; use your configured dependency path
-when [adopting the library](using-libraries.md#the-elaborator-library).
+when [adopting the library](using-libraries.md#the-macro-library).
 This complete module defines two functions that supply exactly the same arguments:
 
 ```kio {}
 module block_splices;
 
-import match(match);
+import match(macro match);
 
 host type String role(str);
 
 fn receiver_first(value: String) -> String {
-  value.>match! {
+  value.>match {
     .(s: String) { s }
   }
 }
 
 fn receiver_after_blocks(value: String) -> String {
-  match! {
+  match {
     .(s: String) { s }
   }.<value
 }
 ```
 
-Bare prefixes work too: `r.>f! a { body }` and `f! a { body }.<r`.
+Prefix arguments retain their required parentheses: `r.>f(a) { body }` and `f(a) { body }.<r`.
 Put a reverse splice after **all** the labelled blocks, not between the prefix
-and the first block. Grouping the call, as in `((f! a { body })).<r`, does not
+and the first block. Grouping the call, as in `((f(a) { body })).<r`, does not
 change the insertion. Each call takes only one splice; parentheses do not
 allow a second receiver. A following forward splice instead uses the result:
-`f! a { body }.<r.>g` passes the completed result to `g`.
+`f(a) { body }.<r.>g` passes the completed result to `g`.
 
-The right-hand receiver is still tight. In `f! a { body }.<r(x).>g`, it is
+The right-hand receiver is still tight. In `f(a) { body }.<r(x).>g`, it is
 `r(x)`, and `g` receives the completed call's result. Write
-`f! a { body }.<(r.>g)` to insert `g`'s result instead.
+`f(a) { body }.<(r.>g)` to insert `g`'s result instead.
 
 A reverse splice needs explicit braces around that call's final labelled
 child. This unbraced spelling is rejected for both `.<` and `.<<`:
 
 ```text
-outer! a { A } label inner! b { B }.<r
+outer(a) { A } label inner(b) { B }.<r
 ```
 
-Write `outer! a { A } label { inner! b { B } }.<r` to insert `r` into `outer`.
+Write `outer(a) { A } label { inner(b) { B } }.<r` to insert `r` into `outer`.
 The diagnostic offers those braces as a fix; it does not move the receiver.
 To insert into `inner` instead, write
-`outer! a { A } label { inner! b { B }.<r }`. The formatter keeps the label
+`outer(a) { A } label { inner(b) { B }.<r }`. The formatter keeps the label
 braces in both forms. Parentheses around the complete outer call do not make
 the unbraced form valid.
 
@@ -271,7 +271,7 @@ The restriction is local to the reverse-spliced call's own final label.
 Direct calls and forward splices can still use the unbraced shorthand, and
 deeper ordinary chains inside an explicit outer block can use it too.
 
-For example, these two explicit arrangements use the imported `if` elab.
+For example, these two explicit arrangements use the imported `if` macro.
 Both return `value`, but the first inserts the outer condition and the second
 inserts the inner condition. As with `match` above, adjust the module path to
 your configured library dependency:
@@ -279,33 +279,33 @@ your configured library dependency:
 ```kio {}
 module nested_block_splices;
 
-import control(if);
+import control(macro if);
 
 default host type Bool role(bool);
 
 fn outer_splice[A](value: A) -> A {
-  if! {
+  if {
     value
   } else {
-    if! .f(Bool) { value } else { value }
+    if(.f(Bool)) { value } else { value }
   }.<(.t(Bool))
 }
 
 fn inner_splice[A](value: A) -> A {
-  if! .t(Bool) {
+  if(.t(Bool)) {
     value
   } else {
-    if! { value } else { value }.<(.f(Bool))
+    if { value } else { value }.<(.f(Bool))
   }
 }
 ```
 
 Labels cannot continue after a reverse receiver, and a reverse splice does
-not reopen an already applied result such as `f! { body }(x)`.
+not reopen an already applied result such as `f { body }(x)`.
 
-Empty UFCS lists remain errors: `f!() { body }.<r` rejects. Use
-`f! { body }.<r` for no extra prefix argument, or `f!(()) { body }.<r`
-for an extra Unit. Direct `f!() { body }` still passes one Unit prefix.
+Empty UFCS lists remain errors: `f() { body }.<r` rejects. Use
+`f { body }.<r` for no extra prefix argument, or `f(()) { body }.<r`
+for an extra Unit. Direct `f() { body }` still passes one Unit prefix.
 
 ## Choosing a spelling
 
@@ -329,12 +329,12 @@ The inner result fills the last argument of the outer call. Choose a prefix
 call when it shows the roles more clearly; changing a right-nested tree into a
 left-associated chain can change evaluation order or host-visible behavior.
 
-- Use `.>` when the value is the subject and the function naturally follows it: `row.>narrow_prod!(Name)`.
+- Use `.>` when the value is the subject and the function naturally follows it: `row.>narrow_prod(Name)`.
 - Use `.>>` when a pipeline value belongs after already-written arguments: `msg.>>string_concat(prefix)`.
 - Use `.<` when you have written a function call and want to append one value: `pair(left).<right`.
-- Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`, or `narrow_prod!(Target).<<value`.
+- Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`, or `narrow_prod(Target).<<value`.
 
-All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and elab UFCS calls record the same elaboration the equivalent prefix bang-call would produce.
+All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and macro UFCS calls record the same elaboration the equivalent prefix macro call would produce.
 
 ## Converting a nested call in the editor
 
@@ -355,6 +355,6 @@ If both boundary arguments continue the same chain, select one branch instead.
 The action is withheld when it cannot establish the same resolved function and
 argument placement, when a comment between call delimiters has no clear new
 attachment, or while the document or its providers lack current typechecking
-results. Computed callees, explicit staged calls such as `f(a)(b)`, elab
+results. Computed callees, explicit staged calls such as `f(a)(b)`, macro
 calls, and existing UFCS calls are not chain links; they may remain unchanged
 inside a retained argument.

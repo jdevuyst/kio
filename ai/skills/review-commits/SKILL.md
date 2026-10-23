@@ -58,7 +58,12 @@ spelling/grammar/formatting corrections preserving meaning and the post's accoun
 of Kio may remain unannounced. Check meaningful changes, including terminology
 updates and revisions for newer Kio versions, for the owner's dated, italic
 `Edit:` notice. Small code/API updates preserving an example's purpose do not
-waive it; formatting-subject edits can also be substantive. Check exact-text approval
+waive it; formatting-subject edits can also be substantive.
+Check consolidated notices against actual publication boundaries: related
+unpublished changes may share a succinct notice, while published revisions
+must retain accurate timing and material corrections. Signing and Kio release
+dates do not establish when a website revision became public.
+Check exact-text approval
 for post, harness and notice changes from the available authority record;
 neither a small diff nor an added notice grants editing authority. Report
 unavailable history or approval evidence explicitly. Route broader historical

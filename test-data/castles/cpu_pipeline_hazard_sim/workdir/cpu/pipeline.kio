@@ -73,9 +73,9 @@ import cpu/machine(
 import cpu/machine(Cpu, Machine, empty_stage, pipeline_empty, stage_empty, stage_filled);
 import cpu/num(cat, cat3, int_eq);
 import cpu/report(Event, noted, pipeline_row, quiet);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_set);
@@ -93,7 +93,7 @@ labels Ex_out = { ex_value: I32, ex_hits: I32, mem_hits: I32, decision: Redirect
 /// against the cycle that produced it.
 labels Step = { next: Machine, note: Event };
 
-fn straight() -> Redirect { {straight=}.>widen_sum!(Redirect) }
+fn straight() -> Redirect { {straight=}.>widen_sum(Redirect) }
 
 fn ex_out(value_now: I32, ex_hits_now: I32, mem_hits_now: I32, decision: Redirect) -> Ex_out {
   {ex_value = value_now, ex_hits = ex_hits_now, mem_hits = mem_hits_now, decision}
@@ -128,8 +128,8 @@ fn ex_branch(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
   let a = read_source(cpu, m, inst.?{rs});
   let b = read_source(cpu, m, inst.?{rt});
   let decision =
-    if! int_eq(a.?{value}, b.?{value}) {
-      {jump = inst.?{imm}}.>widen_sum!(Redirect)
+    if(int_eq(a.?{value}, b.?{value})) {
+      {jump = inst.?{imm}}.>widen_sum(Redirect)
     } else {
       straight()
     };
@@ -152,7 +152,7 @@ fn ex_store(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
 /// that never happens.
 fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
   let code = inst.?{code};
-  match! code {
+  match(code) {
     (
     , .(_a: Add) {
         ex_alu(cpu, m, inst, .(x, y) { add_i32(x, y) })
@@ -180,14 +180,14 @@ fn execute(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
 /// to detect.
 fn memory(cpu: Cpu, m: Machine) -> I32 {
   let slot = m.?{st_mem};
-  if! stage_empty(slot) {
+  if(stage_empty(slot)) {
     0
   } else {
     let inst = array_get(cpu.?{prog}, slot);
     let carried = m.?{ex_mem};
-    if! is_load(inst) {
+    if(is_load(inst)) {
       array_get(cpu.?{mem}, carried)
-    } else if! is_store(inst) {
+    } else if(is_store(inst)) {
       array_set(cpu.?{mem}, inst.?{imm}, carried);
       carried
     } else {
@@ -201,9 +201,9 @@ fn memory(cpu: Cpu, m: Machine) -> I32 {
 /// about the instruction in WB.
 fn write_back(cpu: Cpu, m: Machine) {
   let slot = m.?{st_wb};
-  if! stage_empty(slot) {
+  if(stage_empty(slot)) {
     ()
-  } else match! dest_of(array_get(cpu.?{prog}, slot)) {
+  } else match(dest_of(array_get(cpu.?{prog}, slot))) {
     (.(d: I32) { array_set(cpu.?{regs}, d, m.?{mem_wb}) }, .(_writes_nothing: .) { () })
   }
 }
@@ -214,8 +214,8 @@ fn write_back(cpu: Cpu, m: Machine) {
 /// cycle's counters are settled. The three endings then differ only in
 /// what they do to the *front* of the pipeline.
 fn carried(m: Machine, ex: Ex_out, latched: I32) -> Machine {
-  let done = if! stage_filled(m.?{st_wb}) { add_i32(m.?{retired}, 1) } else { m.?{retired} };
-  let idle = if! stage_empty(m.?{st_ex}) { add_i32(m.?{bubbles}, 1) } else { m.?{bubbles} };
+  let done = if(stage_filled(m.?{st_wb})) { add_i32(m.?{retired}, 1) } else { m.?{retired} };
+  let idle = if(stage_empty(m.?{st_ex})) { add_i32(m.?{bubbles}, 1) } else { m.?{bubbles} };
   m.!{
   , st_mem = m.?{st_ex}
   , st_wb = m.?{st_mem}
@@ -231,11 +231,11 @@ fn carried(m: Machine, ex: Ex_out, latched: I32) -> Machine {
 fn step(state: Machine, note: Event) -> Step { {next = state, note} }
 
 fn killed(slot: I32) -> I32 {
-  if! stage_filled(slot) { 1 } else { 0 }
+  if(stage_filled(slot)) { 1 } else { 0 }
 }
 
 fn squashed_text(slot: I32) -> String {
-  if! stage_empty(slot) { "" } else { cat(" ", slot_text(slot)) }
+  if(stage_empty(slot)) { "" } else { cat(" ", slot_text(slot)) }
 }
 
 /// A taken branch. The two instructions behind it were fetched from the
@@ -272,9 +272,9 @@ fn stall_step(base: Machine, note: Event) -> Step {
 /// fetches, unless a HALT has already sealed it.
 fn issue_step(cpu: Cpu, base: Machine) -> Step {
   let shut = base.?{sealed};
-  let fetched = if! shut { empty_stage() } else { base.?{pc} };
-  let pc_next = if! shut { base.?{pc} } else { add_i32(base.?{pc}, 1) };
-  let sealed_next = if! shut { .t } else { is_halt(array_get(cpu.?{prog}, base.?{pc})) };
+  let fetched = if(shut) { empty_stage() } else { base.?{pc} };
+  let pc_next = if(shut) { base.?{pc} } else { add_i32(base.?{pc}, 1) };
+  let sealed_next = if(shut) { .t } else { is_halt(array_get(cpu.?{prog}, base.?{pc})) };
   step(
   , base.!{
     , pc = pc_next
@@ -293,7 +293,7 @@ fn issue_step(cpu: Cpu, base: Machine) -> Step {
 /// into the future and miss every hazard.
 fn advance(cpu: Cpu, m: Machine) -> Step {
   let ex =
-    if! stage_filled(m.?{st_ex}) {
+    if(stage_filled(m.?{st_ex})) {
       execute(cpu, m, array_get(cpu.?{prog}, m.?{st_ex}))
     } else {
       ex_quiet(0)
@@ -302,11 +302,11 @@ fn advance(cpu: Cpu, m: Machine) -> Step {
   write_back(cpu, m);
   let base = carried(m, ex, latched);
   let decision = ex.?{decision};
-  match! decision {
+  match(decision) {
     (
     , .(taken: Jump) { squash_step(base, taken.?{jump}) }
     , .(_fell_through: Straight) {
-        match! hazard(cpu, m) {
+        match(hazard(cpu, m)) {
           (
           , .(_go: Proceed) { issue_step(cpu, base) }
           , .(held: Raw_stall) {
@@ -336,7 +336,7 @@ pub rec(loop) fn run(cpu: Cpu, m: Machine) -> Machine {
   let taken = advance(cpu, m);
   pipeline_row(m, taken.?{note});
   let next = taken.?{next};
-  if! pipeline_empty(next) {
+  if(pipeline_empty(next)) {
     next
   } else {
     recur run(cpu, with_cycle(next, add_i32(m.?{cycle}, 1)))

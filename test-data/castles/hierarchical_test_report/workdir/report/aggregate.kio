@@ -1,9 +1,9 @@
 module report/aggregate;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as cells;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
 import report/events as events;
 import report/model as model;
 import testapi(I32, String, default Bool);
@@ -12,7 +12,7 @@ import testapi/fmt as fmt;
 import testapi/text as text;
 
 fn append_closed(state: model.State, closed: model.Suite, rest: cells.List(model.Suite)) -> model.State {
-  match! cells.uncons(rest) {
+  match(cells.uncons(rest)) {
     .(parent: model.Suite, ancestors: cells.List(model.Suite)) {
       state.!{model.stack = cells.cons(model.attach(parent, closed), ancestors)}
     };
@@ -23,12 +23,12 @@ fn append_closed(state: model.State, closed: model.Suite, rest: cells.List(model
 }
 
 fn close(state: model.State, name: String, declared: I32) -> model.State {
-  match! cells.uncons(state.?{model.stack}) {
+  match(cells.uncons(state.?{model.stack})) {
     .(suite: model.Suite, rest: cells.List(model.Suite)) {
-      if! text.string_eq(name, model.suite_name(suite)) {
+      if(text.string_eq(name, model.suite_name(suite))) {
         let actual = model.total(model.suite_counts(suite));
-        let checked = if! arith.leq_i32(actual, declared) {
-          if! arith.leq_i32(declared, actual) {
+        let checked = if(arith.leq_i32(actual, declared)) {
+          if(arith.leq_i32(declared, actual)) {
             state
           } else {
             model.error(state, text.string_concat("count mismatch: ", name))
@@ -52,12 +52,12 @@ fn close(state: model.State, name: String, declared: I32) -> model.State {
 }
 
 fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bool) -> model.State {
-  if! arith.leq_i32(test.?{model.count}, 0) {
+  if(arith.leq_i32(test.?{model.count}, 0)) {
     model.error(state, "test count must be positive")
-  } else match! cells.uncons(state.?{model.stack}) {
+  } else match(cells.uncons(state.?{model.stack})) {
     .(suite: model.Suite, rest: cells.List(model.Suite)) {
       let failures =
-        if! failed { cells.cons(test, model.failures(suite)) } else { model.failures(suite) };
+        if(failed) { cells.cons(test, model.failures(suite)) } else { model.failures(suite) };
       state.!{model.stack = cells.cons(model.add_case(suite, counts, failures), rest)}
     };
     .(_empty: .) {
@@ -67,7 +67,7 @@ fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bo
 }
 
 pub fn accept(state: model.State, event: events.Event) -> model.State {
-  match! event {
+  match(event) {
     .(e: events.Open_suite) {
       state.!{model.stack = cells.cons(
       , model.empty_suite(e.?{events.open_suite})

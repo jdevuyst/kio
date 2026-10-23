@@ -5,9 +5,9 @@
 //! for variants that are inhabited at Prime (`Path`, `Call`, `FnExpr`,
 //! literals, …) have default implementations that clone-and-recurse
 //! via `self.walk_*`. Methods for variants that are uninhabited at
-//! Prime (tuple, conditional, elaborator, UFCS, placeholder, label, recursive,
+//! Prime (tuple, conditional, macro, UFCS, placeholder, label, recursive,
 //! operator, and `do` extensions on expressions; `LabelSugar` / `Infer` on
-//! types; `Labels`, `Equiv`, `Op`, `Fold`, term-level `RecGroup`, elaborator
+//! types; `Labels`, `Equiv`, `Op`, `Fold`, term-level `RecGroup`, macro
 //! declarations, and `LiteralAlias` on items; surface-only import entries)
 //! have **no default** — the implementer must provide one (typically
 //! rejecting the variant with `Error::Parse`). `RowLet` is rejected directly by
@@ -42,7 +42,7 @@ pub struct SurfaceUfcs {
     pub callee_span: Span,
     pub args: Vec<CallArg<Surface>>,
     pub flavor: crate::ast::UfcsFlavor,
-    pub bang: Option<Span>,
+    pub macro_call: Option<Span>,
     pub meta: Meta<Surface>,
 }
 
@@ -99,7 +99,7 @@ pub trait SurfaceToPrime {
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error>;
 
-    fn rewrite_expr_user_elaborator(
+    fn rewrite_expr_user_macro(
         &mut self,
         name: String,
         args: Vec<crate::ast::CallArg<Surface>>,
@@ -136,9 +136,9 @@ pub trait SurfaceToPrime {
 
     fn rewrite_item_rec_group(&mut self, d: RecGroup<Surface>) -> Result<Item<Prime>, Error>;
 
-    fn rewrite_item_elaborator(
+    fn rewrite_item_macro(
         &mut self,
-        d: crate::ast::UserElaboratorDef<Surface>,
+        d: crate::ast::UserMacroDef<Surface>,
     ) -> Result<Item<Prime>, Error>;
 
     /// Reject a `literal` item.
@@ -156,6 +156,9 @@ pub trait SurfaceToPrime {
     /// Reject a braced label import. Label imports are surface-only and the
     /// label elaborator must consume them before Kio'.
     fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error>;
+
+    /// Reject an explicitly selected source macro at the Kio' boundary.
+    fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error>;
 
     /// Consume or reject the compile-time-only builtin import.
     fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error>;
@@ -223,7 +226,15 @@ pub trait SurfaceToPrime {
                         crate::ast::ImportItem::OperatorPattern { span, .. } => {
                             self.rewrite_import_op_pattern(*span)?;
                         }
-                        crate::ast::ImportItem::Name { .. } => {}
+                        crate::ast::ImportItem::Name {
+                            macro_span: Some(span),
+                            ..
+                        } => {
+                            self.rewrite_import_macro(*span)?;
+                        }
+                        crate::ast::ImportItem::Name {
+                            macro_span: None, ..
+                        } => {}
                     }
                 }
             }
@@ -269,7 +280,7 @@ pub trait SurfaceToPrime {
                     meta: crate::ast::convert_meta(&group.meta),
                 }))
             }
-            Item::Elaborator(d, _) => self.rewrite_item_elaborator(d),
+            Item::Macro(d, _) => self.rewrite_item_macro(d),
             // Host items are NOT surface-only: they are inhabited in
             // Kio' as opaque declarations (`h : T`), so `prime::lower`
             // passes them straight through with no rejection.
@@ -650,9 +661,9 @@ pub trait SurfaceToPrime {
                 kind, call, meta, ..
             } => self.rewrite_expr_elaborator(kind, call, meta),
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
-            Expr::UserElaborator {
+            Expr::UserMacro {
                 name, args, meta, ..
-            } => self.rewrite_expr_user_elaborator(name, args, meta),
+            } => self.rewrite_expr_user_macro(name, args, meta),
             Expr::BlockCall { meta, .. } => Err(Error::parse(
                 meta.span,
                 "trailing blocks are not part of Kio'; use `kio` to compile full Kio source",
@@ -663,7 +674,7 @@ pub trait SurfaceToPrime {
                 callee_span,
                 args,
                 flavor,
-                bang,
+                macro_call,
                 meta,
                 ..
             } => self.rewrite_expr_ufcs(SurfaceUfcs {
@@ -672,7 +683,7 @@ pub trait SurfaceToPrime {
                 callee_span,
                 args,
                 flavor,
-                bang,
+                macro_call,
                 meta,
             }),
         }

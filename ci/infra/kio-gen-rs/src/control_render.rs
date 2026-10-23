@@ -39,7 +39,7 @@ fn schedule(seq: &Sequence, depth: usize) -> String {
             Step::Bind(Payload::String(v)) => format!("let value <- effect({event}, {});\n", value(v)),
             Step::Bind(Payload::Unit) => format!("let unit <- effect({event}, ());\n"),
             Step::Action => format!("action({});\n", quoted(&format!("action-{i}:{}", seq.initial))),
-            Step::Nested(inner) => format!("let nested{depth} = do! {} {{ {} }};\nlet observed{depth} = io.print(Box.get(nested{depth}));\n", receiver(inner), schedule(inner, depth + 1)),
+            Step::Nested(inner) => format!("let nested{depth} = do({}) {{ {} }};\nlet observed{depth} = io.print(Box.get(nested{depth}));\n", receiver(inner), schedule(inner, depth + 1)),
         });
     }
     out.push_str(&format!("pure({})", value(&seq.result)));
@@ -95,7 +95,7 @@ fn observe(b: &Block, name: &str) -> String {
 
 fn declaration(name: &str, first: Descriptor, second: Descriptor, label: &str) -> String {
     format!(
-        "pub elab {name} : [Left][Right] ((Left -> Right -> .) & Left & Right) -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
+        "pub macro {name} : [Left][Right] ((Left -> Right -> .) & Left & Right) -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
         descriptor(first),
         descriptor(second)
     )
@@ -200,8 +200,8 @@ pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_
         r#"module kio_gen_control;
 import testapi(default String);
 import testapi/io as io;
-import sequence(Bind, do);
-import kio_gen_control_blocks(probe, nested_probe);
+import sequence(Bind, macro do);
+import kio_gen_control_blocks(macro probe, macro nested_probe);
 
 newtype Box[A] : A { constructor mk; projector get };
 newtype Receiver : Bind(Box) { constructor mk; projector get };
@@ -233,7 +233,7 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
                 "after_unused",
             ));
             runtime.push_str(&format!(
-                "pub fn run() {{ let result = do! {} {{ {} }}; io.print(Box.get(result)) }}\n",
+                "pub fn run() {{ let result = do({}) {{ {} }}; io.print(Box.get(result)) }}\n",
                 receiver(seq),
                 schedule(seq, 0)
             ));
@@ -264,11 +264,11 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
                 runtime.push_str(&observe(b, name));
             }
             if *nested {
-                runtime.push_str("nested_probe! nested_consumer { io.print(\"thunk\\n\"); \"nested-first\\n\" } after_nested { io.print(\"thunk\\n\"); \"nested-second\\n\" };\n");
+                runtime.push_str("nested_probe(nested_consumer) { io.print(\"thunk\\n\"); \"nested-first\\n\" } after_nested { io.print(\"thunk\\n\"); \"nested-second\\n\" };\n");
             }
             runtime.push_str("()\n}\n");
             runtime.push_str(&format!(
-                "pub fn run() {{ probe! consumer {{ {} }} {label} {{ {} }} }}\n",
+                "pub fn run() {{ probe(consumer) {{ {} }} {label} {{ {} }} }}\n",
                 block(first),
                 block(second)
             ));
@@ -279,7 +279,7 @@ fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer
         ("workdir/kio_gen_control_blocks.kio".into(), declarations),
         (
             "workdir/sequence.kio".into(),
-            include_str!("../../../../test-data/poc/elab/workdir/sequence.kio").into(),
+            include_str!("../../../../test-data/poc/macros/workdir/sequence.kio").into(),
         ),
         (
             "workdir/testapi/io.kio".into(),
@@ -438,7 +438,7 @@ fn type_probe(probe: &TypeProbe) -> String {
 
 fn recursion_probe(probe: &RecursionProbe) -> String {
     let mut out = String::from(
-        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(match);\nimport testapi(default String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec newtype Counter : . | Counter { constructor mk; projector get };\nfn identity(value: String) -> String { value }\n",
+        "module kio_gen_recursion;\nimport __intrinsics__;\nimport match(macro match);\nimport testapi(default String);\nimport testapi/io as io;\nimport testapi/iter as iter;\n\nrec newtype Counter : . | Counter { constructor mk; projector get };\nfn identity(value: String) -> String { value }\n",
     );
     let poly = matches!(
         probe.mode,
@@ -467,7 +467,7 @@ fn recursion_probe(probe: &RecursionProbe) -> String {
             "walk"
         };
         out.push_str(&format!(
-            "fn {name}{}(state: Counter, value: {}{}) -> {} {{\nlet current = Counter.get(state);\nmatch! current {{ (\n",
+            "fn {name}{}(state: Counter, value: {}{}) -> {} {{\nlet current = Counter.get(state);\nmatch(current) {{ (\n",
             if poly { "[A]" } else { "" },
             if poly { "A" } else { "String" },
             if poly { ", observe: A -> String" } else { "" },

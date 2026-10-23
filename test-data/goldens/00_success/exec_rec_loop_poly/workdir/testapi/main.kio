@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32, sub_i32);
 import testapi/fmt(i32_to_string);
@@ -8,15 +8,15 @@ import testapi/io(print);
 import testapi/iter(loop);
 
 pub rec(loop) fn countdown[A](n: I32, marker: A) -> I32 {
-  if! leq_i32(n, 0) { n } else { recur(poly) countdown(String, sub_i32(n, 1), "step") }
+  if(leq_i32(n, 0)) { n } else { recur(poly) countdown(String, sub_i32(n, 1), "step") }
 }
 
 rec(loop) {
   pub fn even[A](n: I32, marker: A) -> I32 {
-    if! leq_i32(n, 0) { n } else { recur(poly) odd(String, sub_i32(n, 1), "odd") }
+    if(leq_i32(n, 0)) { n } else { recur(poly) odd(String, sub_i32(n, 1), "odd") }
   };
   fn odd[A](n: I32, marker: A) -> I32 {
-    if! leq_i32(n, 0) { n } else { recur(poly) even(I32, sub_i32(n, 1), 0) }
+    if(leq_i32(n, 0)) { n } else { recur(poly) even(I32, sub_i32(n, 1), 0) }
   }
 }
 

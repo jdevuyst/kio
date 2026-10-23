@@ -3,7 +3,7 @@ use crate::error::{Error, Fix, FixEdit};
 use crate::span::Span;
 
 pub(super) fn missing_marker(mut error: Error, start: u32) -> Error {
-    // Tail position through elaborators and type-changing recursion still need
+    // Tail position through macros and type-changing recursion still need
     // ordinary checking. The editor publishes only candidates that recheck.
     for marker in [
         "recur",

@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/sequence(do);
+import macros/control(macro if);
+import macros/sequence(macro do);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -9,7 +9,7 @@ import testapi/io as io;
 import testapi/iter as iter;
 
 rec(iter.loop_reentry) fn placeholder(remaining: I32) -> I32 -> I32 {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     .value. { value1 }
   } else {
     .value. { recur(escape) placeholder(arith.sub_i32(remaining, 1))(arith.add_i32(value1, 1)) }
@@ -23,9 +23,9 @@ fn chain[A][B](action: Deferred(A), next: A -> Deferred(B)) -> Deferred(B) {
 }
 
 rec(iter.loop_reentry) fn sequenced(remaining: I32) -> Deferred(I32) {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     .() { 41 }
-  } else do! chain {
+  } else do(chain) {
     let _unit <- .() { io.print("bind\n") };
     recur(escape) sequenced(arith.sub_i32(remaining, 1))
   }

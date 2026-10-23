@@ -2,8 +2,8 @@ module egraph/extract;
 
 import egraph/graph as graph;
 import egraph/numbers as n;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as num;
 import testapi/array as arr;
@@ -31,7 +31,7 @@ fn binary_cost(g: graph.Graph, s: Selection, children: I32 & I32) -> I32 {
   let .(a, b) = children;
   let left = cost(g, s, a);
   let right = cost(g, s, b);
-  if! n.both(n.less(left, infinity), n.less(right, infinity)) {
+  if(n.both(n.less(left, infinity), n.less(right, infinity))) {
     n.increment(num.add_i32(left, right))
   } else {
     infinity
@@ -39,7 +39,7 @@ fn binary_cost(g: graph.Graph, s: Selection, children: I32 & I32) -> I32 {
 }
 
 fn node_cost(g: graph.Graph, s: Selection, node: graph.Node) -> I32 {
-  match! node {
+  match(node) {
     .(value: graph.Addition) { binary_cost(g, s, value.?{graph.addition}) };
     .(value: graph.Product) { binary_cost(g, s, value.?{graph.product}) };
     .() { 1 }
@@ -47,13 +47,13 @@ fn node_cost(g: graph.Graph, s: Selection, node: graph.Node) -> I32 {
 }
 
 rec(loop) fn relaxation_pass(g: graph.Graph, s: Selection, i: I32, improvements: I32) -> I32 {
-  if! n.equal(i, graph.size(g)) {
+  if(n.equal(i, graph.size(g))) {
     improvements
   } else {
     let candidate = node_cost(g, s, graph.node(g, i));
     let root = graph.find(g, i);
     let old = arr.array_get(costs(s), root);
-    if! n.less(candidate, old) {
+    if(n.less(candidate, old)) {
       arr.array_set(costs(s), root, candidate);
       arr.array_set(choices(s), root, i);
       recur relaxation_pass(g, s, n.increment(i), n.increment(improvements))
@@ -64,7 +64,7 @@ rec(loop) fn relaxation_pass(g: graph.Graph, s: Selection, i: I32, improvements:
 }
 
 rec(loop) fn relax(g: graph.Graph, s: Selection) -> Selection {
-  if! n.equal(relaxation_pass(g, s, 0, 0), 0) { s } else { recur relax(g, s) }
+  if(n.equal(relaxation_pass(g, s, 0, 0), 0)) { s } else { recur relax(g, s) }
 }
 
 pub fn select(g: graph.Graph) -> Selection {
@@ -85,10 +85,10 @@ fn combine(left: String, op: String, right: String) -> String {
 }
 
 pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
-  match! graph.node(g, chosen(g, s, root)) {
+  match(graph.node(g, chosen(g, s, root))) {
     .(value: graph.Constant) { fmt.int_to_string(value.?{graph.constant}) };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) { "x" } else { "y" }
+      if(n.equal(value.?{graph.variable}, 0)) { "x" } else { "y" }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};
@@ -102,10 +102,10 @@ pub rec(loop) fn render(g: graph.Graph, s: Selection, root: I32) -> String {
 }
 
 pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I32) -> I32 {
-  match! graph.node(g, chosen(g, s, root)) {
+  match(graph.node(g, chosen(g, s, root))) {
     .(value: graph.Constant) { value.?{graph.constant} };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) { x } else { y }
+      if(n.equal(value.?{graph.variable}, 0)) { x } else { y }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};
@@ -120,10 +120,10 @@ pub rec(loop) fn evaluate(g: graph.Graph, s: Selection, root: I32, x: I32, y: I3
 
 // Original fixture nodes retain their acyclic child IDs through class merges.
 pub rec(loop) fn source_value(g: graph.Graph, original: I32, x: I32, y: I32) -> I32 {
-  match! graph.node(g, original) {
+  match(graph.node(g, original)) {
     .(value: graph.Constant) { value.?{graph.constant} };
     .(value: graph.Variable) {
-      if! n.equal(value.?{graph.variable}, 0) { x } else { y }
+      if(n.equal(value.?{graph.variable}, 0)) { x } else { y }
     };
     .(value: graph.Addition) {
       let .(a, b) = value.?{graph.addition};

@@ -255,7 +255,7 @@ A newtype's kind is read from its declared parameter list, not annotated separat
 
 The full Kio surface language extends Kio' with additional tokens, additional contextual keywords, and additional productions on existing non-terminals (plus a few new top-level item shapes). Everything in [§ Kio' grammar](#kio-grammar) carries through unchanged; this section spells out what's *additive*. The `+=` notation below means "add these alternatives to the named production from the Kio' grammar"; `::=` introduces a new production.
 
-Each surface form's prose meaning (what it means, how it desugars) lives in [`language.md`](language.md); the productions here pin *what parses*. For the elab bang-call mechanism — how `IDENT '!'` resolves as a user-defined elab call — see [`language.md` § Elabs are imported, not ambient](language.md#elaborators-are-imported-not-ambient); the reference coercion palettes' per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md).
+Each surface form's prose meaning (what it means, how it desugars) lives in [`language.md`](language.md); the productions here pin *what parses*. For the macro call mechanism — how a direct local named call resolves to a user-defined macro — see [`language.md` § Macros are imported, not ambient](language.md#macros-are-imported-not-ambient); the reference coercion palettes' per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/macros.md`](../docs/poc/macros.md).
 
 ### Lexical structure (Kio surface)
 
@@ -270,19 +270,22 @@ The symbols `< > [ ] = ! : . / -> .? .! .> .>> .< .<<` have fixed native roles i
 
 In addition to Kio''s contextual keywords, Kio surface recognizes:
 
-- `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in an elab declaration.
+- `trailing`, `product`, `thunk`, `sequence` — trailing-block descriptor entries in a macro declaration.
 - `rec` — the recursive-declaration marker. `rec newtype` and bare `rec { ... }` retain their Kio' meanings; `rec labels` and `rec(loop)` are surface additions.
 - `recur` — the surface recursive-call introducer, optionally followed by call annotations and then a group-local callee. Outside that grammatical position it is an ordinary identifier.
-- `labels`, `type`, `literal`, `elab`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec labels`, `pub rec newtype`, or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
-- `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by elab implementations.
+- `labels`, `type`, `literal`, `macro`, `op`, `varop`, `equiv` — top-level item leads (after declaration modifiers where admitted). A singleton recursive declaration admits leading visibility (`pub rec labels`, `pub rec newtype`, or `pub rec(loop) fn`); either braced `rec` group carries no visibility, so visibility stays on each member.
+- `__comptime__` — reserved import target, recognized only inside `import __comptime__;` (see [§ Surface import-clause additions](#surface-import-clause-additions)). Never a regular module name. Surface-only — it supplies the compile-time reflection API used by macro implementations.
 
-Plus the bang-call forms — token sequences (`IDENT` + `Bang`) rather than single keywords; the parser recognizes the conjunction when an identifier is immediately followed by `Bang`. Bang calls resolve as user-defined elab calls through ordinary scoped imports — there are no reserved elab keywords; any `IDENT '!'` whose name is in scope as an imported `elab` declaration is a bang-call. Each call is checked against the imported elab declaration's own call type. The reference distributions ship source-to-target coercion palettes plus `match!` (dispatch), `derive!` (instance deriving), and others, but these are user-defined Kio libraries, not grammar keywords; their per-form semantics are documented as case studies in [`docs/poc/optics.md`](../docs/poc/optics.md) and [`docs/poc/elab.md`](../docs/poc/elab.md), and the call mechanism in [`language.md` § Elabs are imported, not ambient](language.md#elaborators-are-imported-not-ambient).
+Macro calls use ordinary direct call syntax. A scoped `macro` selector or an
+earlier same-module declaration identifies the macro through ordinary lexical
+ownership; the parser does not discover macros by inspecting provider contents.
+See [Macros are imported, not ambient](language.md#macros-are-imported-not-ambient).
 
 ### Surface item additions
 
 ```ebnf
 Item += Labels | RecursiveLabels | LabelForward | LiteralAlias
-      | (ElaboratorItem | Op | VariadicOperator | Equiv | RecItem) ';'?
+      | (MacroItem | Op | VariadicOperator | Equiv | RecItem) ';'?
 
 Labels         ::= Vis? LabelsAfterVis
 RecursiveLabels ::= Vis? 'rec' LabelsAfterVis
@@ -299,12 +302,12 @@ LabelForward   ::= Vis? 'type' '{' IDENT '}' '=' '{' LabelPath '}' ';'
 LiteralAlias   ::= Vis? 'literal' IDENT '=' LiteralAliasValue ';'           (* lowercase name only *)
 LiteralAliasValue ::= INT_LIT | FLOAT_LIT | STR_LIT | BoolLit
 
-ElaboratorItem ::= Vis? 'elab' IDENT ':' Type ElaboratorBody
-ElaboratorBody ::= '{' SemiEntries<ElaboratorEntry> '}'
-ElaboratorEntry ::= ElaboratorCaptures | ElaboratorImpl | TrailingBlockDecl
-ElaboratorImpl ::= 'impl' GroupedValuePath
+MacroItem ::= Vis? 'macro' IDENT ':' Type MacroBody
+MacroBody ::= '{' SemiEntries<MacroEntry> '}'
+MacroEntry ::= MacroCaptures | MacroImpl | TrailingBlockDecl
+MacroImpl ::= 'impl' GroupedValuePath
                  | 'impl' '(' 'fills' ')' GroupedValuePath
-ElaboratorCaptures ::= 'captures' (GroupedCapturePath | '(' GroupedCapturePath (',' GroupedCapturePath)* ','? ')')
+MacroCaptures ::= 'captures' (GroupedCapturePath | '(' GroupedCapturePath (',' GroupedCapturePath)* ','? ')')
 TrailingBlockDecl ::= 'trailing' BlockExposure IDENT?
 BlockExposure  ::= 'product' | 'thunk' | 'sequence'
 CapturePath    ::= IDENT ('.' IDENT)*
@@ -342,7 +345,7 @@ Equiv             ::= 'equiv' IDENT ValueSignature?
                     '{' ';'* Expr (';'+ Expr)+ ';'* '}'                       (* N >= 2 arms *)
 ```
 
-The fixed operator body has exactly one `impl` entry. The elab body has
+The fixed operator body has exactly one `impl` entry. The macro body has
 exactly one implementation entry, at most one captures entry, and zero or more
 trailing-block entries. Entries may be interleaved in any order; the relative
 order of trailing-block entries declares block order. The first descriptor is
@@ -385,23 +388,23 @@ same-module ordinary and host `fn` targets, `rec` members, newtype heads, and
 identity-alias heads must already be in scope. Qualifying or self-importing a
 same-module target does not bypass its source-order rule.
 
-The path in an `ElaboratorBody`'s implementation slot must resolve to a
+The path in a `MacroBody`'s implementation slot must resolve to a
 function whose type matches the ABI selected by that slot. Arbitrary
 expressions, including inline lambdas and calls, are not admitted. Every
-captured item must have visibility equal to or wider than the elab
+captured item must have visibility equal to or wider than the macro
 declaration because captures can survive in the generated runtime term. An
-implementation declared in the elab's defining module may remain
+implementation declared in the macro's defining module may remain
 private, and any implementation may call private helpers in its own module. A
 target declared elsewhere must be ordinarily importable into the defining
-module, but need not meet the elab's outward visibility. The
+module, but need not meet the macro's outward visibility. The
 implementation and every ordinary function it calls during compile-time
-execution must be declared `pure`. See [`language.md` § Elabs are
-imported, not ambient](language.md#elaborators-are-imported-not-ambient).
+execution must be declared `pure`. See [`language.md` § Macros are
+imported, not ambient](language.md#macros-are-imported-not-ambient).
 
-`ElaboratorItem` and both implementation modes are Kio-surface-only.
-The Kio' item grammar has no `elab`, `impl`, or `impl(fills)` production.
+`MacroItem` and both implementation modes are Kio-surface-only.
+The Kio' item grammar has no `macro`, `impl`, or `impl(fills)` production.
 
-`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `elab`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
+`pure` is admitted only on an ordinary `FnDef`, in both Kio and Kio'. It is not admitted on `type`, `newtype`, `labels`, `macro`, `op`, `literal`, `equiv`, `host` declarations, or any `rec` group/member. `pub` and `pure` may appear in either order on a function, but each may appear at most once; `kio fmt` emits `pub pure fn`.
 
 `OpPattern` requires alternating single words and value slots, with at least one of each. Adjacent slots, adjacent words, zero-slot patterns, and pattern parentheses containing slots are rejected. Arbitrary numbers of `_`, `__`, and `___` are admitted subject to [`language.md` § Operators](language.md#operators): every `__` must be useful, and an operand-ending non-prefix pattern cannot have chain permission at both exposed ends. Dots and square brackets are forbidden in quoted and unquoted words. A word contains at most one `/`; comment spellings do not become operator words.
 
@@ -424,7 +427,7 @@ ParamPatternElem  ::= IDENT (':' Type)?                    (* named slot; `: T` 
                     | IDENT ':' ParamPatternTuple          (* nested as-pattern *)
 ```
 
-A bare `IDENT` or `'_'` (no `: T`) is equivalent to `IDENT : _` / `'_' : _` — the slot's type is `Type::Infer`. For an ordinary lambda literal, the typer may resolve it from the surrounding expected function type. A `match!` clause instead determines its dispatch-pattern parameter type independently, so the scrutinee and common match result do not resolve an omitted parameter type. In that position, and in other positions with no expected parameter type (top-level `fn` definitions or `equiv` signatures), an unresolved `_` slot is a type error at the same site that catches an unconstrained `.(x) { … }`.
+A bare `IDENT` or `'_'` (no `: T`) is equivalent to `IDENT : _` / `'_' : _` — the slot's type is `Type::Infer`. For an ordinary lambda literal, the typer may resolve it from the surrounding expected function type. A `match` clause instead determines its dispatch-pattern parameter type independently, so the scrutinee and common match result do not resolve an omitted parameter type. In that position, and in other positions with no expected parameter type (top-level `fn` definitions or `equiv` signatures), an unresolved `_` slot is a type error at the same site that catches an unconstrained `.(x) { … }`.
 
 A `ParamPatternTuple` always carries at least one `ParamPatternElem`; the unary case `(a: A)` is admissible (single-slot product) and shares its leading-`(` and per-element shape with the n-ary form.
 
@@ -437,14 +440,19 @@ This is a surface-only extension. The desugar pass eliminates every destructurin
 ### Surface import-clause additions
 
 Kio surface widens the parenthesized selection list with braced label selectors
-and explicitly tagged operator grammars. An ordinary name selects the value/type
+and explicitly tagged operator grammars and macros. An ordinary name selects the value/type
 namespace; `{field}` selects label syntax. Standalone `op` and `varop` selections
 are ordinary identifiers; a tag introduces an operator only when followed by
-its pattern or delimiter pair. Classification follows from the importing text.
+its pattern or delimiter pair. A complete `macro IDENT` selector selects a
+macro, with an optional ordinary `as IDENT` destination. `macro` alone or
+`macro as local` selects the ordinary identifier named `macro`;
+`macro as` selects a macro named `as`. Classification follows from the
+complete importing text, without consulting provider contents.
 
 ```ebnf
 ImportSelective  ::= 'import' ModulePath '(' ImportItem (',' ImportItem)* ')'
-ImportItem       ::= NamedImport | LabelImport | OperatorImport
+ImportItem       ::= NamedImport | LabelImport | OperatorImport | MacroImport
+MacroImport      ::= 'macro' IDENT ('as' IDENT)?
 LabelImport      ::= '{' IDENT '}'                    (* lowercase label name *)
 OperatorImport   ::= 'op' OpPattern ('as' OpPattern)?
                    | 'varop' VaropHead ('as' VaropHead)?
@@ -522,7 +530,7 @@ as `Foo` and `Foo(T)`. Lowercase labels and braced label forms are value syntax;
 ```ebnf
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)                    (* unannotated literal — surface only *)
 
-ExprAtom += TupleLit | LabelValue | BangCall | BlockElabCall | PlaceholderLambda | RecCall
+ExprAtom += TupleLit | LabelValue | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
 ExprSuffix += FieldAccess | FieldUpdate
 
 TupleLit          ::= '(' Expr ',' Expr (',' Expr)* ','? ')'                  (* n-ary tuple; n >= 2 *)
@@ -534,13 +542,13 @@ FieldAccessLabel  ::= LabelPath
 FieldUpdate       ::= '.!' '{' (FieldUpdateLabel (',' FieldUpdateLabel)* ','?)? '}'
 FieldUpdateLabel  ::= LabelPath ('=' Expr?)?                                  (* bare means local payload; bare `=` means `= ()` *)
 
-BangCall          ::= IDENT '!' CallArgList
-BlockElabCall     ::= IDENT '!' BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
-BlockPrefix       ::= BlockValueArgs | BarePrefixExpr
+MacroHead         ::= IDENT | '(' MacroHead ')'
+MacroCall         ::= MacroHead CallArgList
+BlockMacroCall    ::= MacroHead BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
+BlockPrefix       ::= BlockValueArgs
 BlockValueArgs    ::= '(' (Expr (',' Expr)*)? ','? ')'
-BarePrefixExpr    ::= Expr                                                   (* enclosing direct brace is reserved; see below *)
 LabelledBlock     ::= IDENT NeutralBlock
-FinalElidedBlock  ::= IDENT BlockElabCall
+FinalElidedBlock  ::= IDENT BlockMacroCall
 NeutralBlock      ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding    ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind       ::= 'let' NeutralBinder '<-' Expr ';'
@@ -550,54 +558,43 @@ RecCallAnnotationList ::= '(' RecCallAnnotation (',' RecCallAnnotation)* ','? ')
 RecCallAnnotation ::= 'poly' | 'cont' | 'escape'
 CallArgList       ::= '(' (CallArg (',' CallArg)*)? ','? ')'
 NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
-                                                                             (* BangCall's IDENT is any in-scope user-defined elab name —
-                                                                                there are no reserved elab keywords; see the prose above *)
+                                                                             (* MacroCall's IDENT is any in-scope user-defined macro name —
+                                                                                there are no reserved macro keywords; see the prose above *)
 
 DotPlaceholderIntro ::= '.' IDENT '.'                                        (* adjacent tokens; value-binding stem ending in an ASCII letter *)
 PlaceholderLambda ::= DotPlaceholderIntro Block                              (* source-local numbered references belong to this stem *)
 ```
 
-Every block-call head is a single value-shaped identifier with an adjacent
-`!`; continuation labels are unmarked. The parser records neutral items
-without looking up the elab or its descriptors. `product`, `thunk`,
+Every block-call head is a single value-shaped identifier through transparent
+parentheses; continuation labels are unmarked. The parser records neutral items
+without inspecting the provider or its descriptors. `product`, `thunk`,
 and `sequence` interpretation and descriptor/content validation happen after
-the exact elab declaration is selected. Empty neutral blocks and
+the exact macro declaration is selected. Empty neutral blocks and
 leading, repeated, and trailing semicolons are syntactically admitted; the
 selected exposure determines their meaning or rejection.
 
-A bare prefix contains one value expression and reserves the next direct
-brace for its enclosing block call. This reservation survives ordinary,
-recursive, and greedy operator slots (`_`, `__`, `___`): greediness changes
-operator-chain extent, not brace ownership. Parentheses and explicitly
-delimited operand regions establish an inner expression boundary. Thus
-`outer! left + value { body }` gives the body to `outer!`, while a nested
-block operand is grouped as `outer! left + (inner! value { child }) { body }`.
-An operator slot followed by its pattern's explicit continuation token can
-contain the nested block before that token.
+Every nonempty written prefix is a parenthesized value-argument list, including a
+single name, literal or expression. `outer(value) { body }` has one prefix,
+`outer(a, b) { body }` has two, and `outer((a, b)) { body }` has one product
+prefix. Direct `outer() { body }` has one unit prefix; `outer { body }` has
+none. Type-shaped argument roots are rejected; type arguments inside ordinary
+value expressions such as `outer(f(A)) { body }` remain admissible.
 
-The parenthesized prefix is a value-argument list, not one tuple argument:
-`outer!(a, b) { body }` has two prefixes and `outer!((a, b)) { body }` has
-one. `outer!() { body }` has one unit prefix; `outer! { body }` has none.
-Type-shaped argument roots are rejected; type arguments of ordinary value
-expressions such as `f(A)` remain admissible. An operator-leading prefix
-requires parentheses. A signed numeric token such as `-1` is a literal,
-not an operator-leading prefix.
-
-Inside the enclosing bare-prefix boundary,
-`outer! convert!(value) { body }` contains a blockless `convert!` call.
-Grouping the inner call together with its block makes it a nested block call:
-`outer!(convert!(value) { child }) { body }`. Only the final labelled block
-may elide its braces, and then its whole body is another unspliced block call
-and its parent is not reverse-spliced. This gives
-`if! condition { yes } else if! other { maybe } else { no }` its right-nested
+The prefix list fixes ownership of nested expressions before the following
+block. `outer(convert(value)) { body }` contains a blockless `convert` call;
+`outer(convert(value) { child }) { body }` contains a complete nested block
+call. Operator operands obey their ordinary grouping rules within that list.
+Only the final labelled block may elide its braces, and then its whole body is
+another unspliced block call and its parent is not reverse-spliced. This gives
+`if(condition) { yes } else if(other) { maybe } else { no }` its right-nested
 ownership without reserving `if`, `do`, `else`, or any library name.
 
 Suffix ownership after an elided child remains with the outer call, but a
 reverse splice requires that call's final labelled block to have explicit
-braces. Both `outer! a { A } label inner! b { B }.<r` and its `.<<r`
+braces. Both `outer(a) { A } label inner(b) { B }.<r` and its `.<<r`
 counterpart are parse errors, including when parentheses group the whole call.
-Write `outer! a { A } label { inner! b { B } }.<r` to insert into `outer`,
-or `outer! a { A } label { inner! b { B }.<r }` to insert into `inner`.
+Write `outer(a) { A } label { inner(b) { B } }.<r` to insert into `outer`,
+or `outer(a) { A } label { inner(b) { B }.<r }` to insert into `inner`.
 The restriction concerns only the reverse-spliced call's own final labelled
 block: a deeper ordinary chain inside an explicit block may still elide braces.
 Direct and forward-spliced calls retain ordinary final-label elision.
@@ -619,13 +616,12 @@ ExprSuffix += DotSpliceSuffix | OperatorTail
 ExprPostfix += LeftCallSplice ExprSuffix*
 
 DotSpliceSuffix   ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
-                   | ('.>' | '.>>') BlockElabCall
-DotSpliceCallee   ::= GroupedValuePath | IDENT '!'                          (* path; plain function or T.member; or bang-call elab *)
+                   | ('.>' | '.>>') BlockMacroCall
+DotSpliceCallee   ::= GroupedValuePath                                     (* ordinary path or direct local macro name *)
 LeftCallSplice    ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee  ::= LeftSplicePathCallee
-                   | IDENT '!' NonemptyCallArgList?
                    | LeftSpliceBlockCallee
-LeftSpliceBlockCallee ::= BlockElabCall | '(' LeftSpliceBlockCallee ')'
+LeftSpliceBlockCallee ::= BlockMacroCall | '(' LeftSpliceBlockCallee ')'
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList?
                       | '(' LeftSplicePathCallee ')'                         (* grouping is transparent *)
 TightCallArg      ::= ExprAtom CallArgList*                                   (* stops before another ExprSuffix *)
@@ -633,7 +629,7 @@ TightCallArg      ::= ExprAtom CallArgList*                                   (*
 OperatorTail     ::= FixedOperatorUse                  (* selected non-prefix pattern continues a preceding Expr *)
 ```
 
-Placeholder references use the existing single-segment value-path `IDENT` production, not a token or expression alternative. Inside `.stem. { ... }`, the stem followed by a positive decimal index is owned by that lambda unless shadowed by a body-local authored value binder. Indices have no leading zeroes and fit in `u32`. At least one owned reference is required; the highest index determines arity. Explicit lambdas retain the enclosing owner, while nested placeholder lambdas start fresh owners. Qualified paths, type positions, and dedicated bang/recursive callee positions do not participate. Ordinary UFCS callees do. See [Placeholder lambdas](language.md#placeholder-lambdas) for the complete source-local ownership rule.
+Placeholder references use the existing single-segment value-path `IDENT` production, not a token or expression alternative. Inside `.stem. { ... }`, the stem followed by a positive decimal index is owned by that lambda unless shadowed by a body-local authored value binder. Indices have no leading zeroes and fit in `u32`. At least one owned reference is required; the highest index determines arity. Explicit lambdas retain the enclosing owner, while nested placeholder lambdas start fresh owners. Qualified paths, type positions, and dedicated recursive callee positions do not participate. Ordinary and macro call heads, including UFCS callees, follow the same lexical ownership. See [Placeholder lambdas](language.md#placeholder-lambdas) for the complete source-local ownership rule.
 
 These schematic fixed-operator productions instantiate the complete pattern explicitly declared or imported in scope; they are constrained by the operand, boundary, maximal-extent, and opposing-claim rules in [`language.md` § Operators](language.md#operators). A final fixed word completes an atom; an operand-ending pattern does not. Their words contain neither dots nor brackets. Variadic framing fixes the marker and comma-list region from source before binding lookup; raw types and forall entries cannot be elements. Both forms lower to ordinary calls before Kio'.
 
@@ -661,22 +657,22 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 
 - The surface `LiteralCall` extension makes the trailing `'(' Type ')'` annotation optional — the unannotated literal is admissible in any expression position. The three-tier resolution rule in [`language.md` § Literals](language.md#literals) decides the literal's type from context while checking the Lowered tree. Kio' requires the annotation; the Lowered → Prime substitute pass materializes the typer's recorded resolution, so the Prime artifact is fully annotated.
 - A `LiteralAliasValue` accepts exactly one bare literal token. Adjacent string-literal folding applies to expression literals, not to `literal` declaration bodies; write the complete literal in one string token.
-- The dot-splice forms are one syntax family. `.>` and `.>>` take a path-shaped callee, single-name bang callee, or complete block call on the right; `.<` and `.<<` take a path, single-name bang callee, direct path call, or complete block call on the left and a tight value expression on the right. An omitted UFCS argument list is the receiver-only form. A present UFCS argument list must be nonempty: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are rejected, as are their member- and bang-callee analogues. The argument list immediately adjacent to a UFCS callee belongs to that splice and cannot be reinterpreted as a direct call on the splice result. `TightCallArg` deliberately stops before another suffix: `f.<x.>g` parses as `(f.<x).>g`; use `f.<(x.>g)` when the inserted value is itself a UFCS expression.
+- The dot-splice forms are one syntax family. `.>` and `.>>` take a path-shaped callee, single-name macro callee, or complete block call on the right; `.<` and `.<<` take a path, single-name macro callee, direct path call, or complete block call on the left and a tight value expression on the right. An omitted UFCS argument list is the receiver-only form. A present UFCS argument list must be nonempty: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are rejected, as are their member- and macro callee analogues. The argument list immediately adjacent to a UFCS callee belongs to that splice and cannot be reinterpreted as a direct call on the splice result. `TightCallArg` deliberately stops before another suffix: `f.<x.>g` parses as `(f.<x).>g`; use `f.<(x.>g)` when the inserted value is itself a UFCS expression.
 - A block-call splice inserts its receiver first (`.>` / `.<<`) or last
   (`.>>` / `.<`) among the prefix values, before all projected block arguments.
   Reverse splices follow the complete block chain, not its prefix:
-  `f!(a) { B }.<r` means `f!(a, r) { B }`; `f!(a).<r { B }` is rejected as
-  a same-call arrangement. Bare prefixes and grouping are transparent,
-  including `f! a { B }.<r` and `((f! a { B })).<r`.
+  `f(a) { B }.<r` means `f(a, r) { B }`; `f(a).<r { B }` is rejected as
+  a same-call arrangement. Grouping is transparent,
+  including `((f(a) { B })).<r`.
   One call admits only one splice; grouping does not reset this limit.
   A following forward splice consumes the completed result.
   No further continuation labels attach after a reverse receiver, and a
   reverse splice cannot reopen a block call followed by a result application
-  such as `f! { B }(x)`. A reverse splice inside a bare prefix remains ordinary
-  prefix syntax, as in `f! g.<r { B }`.
+  such as `f { B }(x)`. A reverse splice inside the prefix list remains an ordinary
+  expression, as in `f(g.<r) { B }`.
   Empty prefix lists are rejected for every block-call splice:
-  `f!() { B }.<r` rejects; use `f! { B }.<r` for no additional prefix value,
-  or `f!(()) { B }.<r` for an additional Unit. Direct `f!() { B }` keeps its
+  `f() { B }.<r` rejects; use `f { B }.<r` for no additional prefix value,
+  or `f(()) { B }.<r` for an additional Unit. Direct `f() { B }` keeps its
   ordinary Unit meaning.
 - Non-block dot-splice argument lists use ordinary `CallArg` parsing.
   The typer resolves which surface arguments are type arguments and which are
@@ -684,7 +680,7 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
   first value slot for `.>` / `.<<` or the last value slot for `.>>` /
   `.<`. Declaration parameter groups and callee provenance are not inputs.
   Type slots are never filled by the receiver.
-- A braced label-value prefix is parenthesized, as in `outer!({field = value}) { body }`.
+- A braced label-value prefix is parenthesized, as in `outer({field = value}) { body }`.
 - `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use `rec newtype` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. `rec labels` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
 - An expression's fixed-operator scope contains exactly its written imports and local declarations preceding the enclosing item, including lazily parsed bodies. A leading word without a registered prefix pattern is rejected. Native atom introducers, whole pending following words, and square-frame edges have their source-local roles before custom dispatch. The signed-number rule includes expression-ending `]`, so `[a, b]-1` has subtraction shape and `[-1]` remains a signed-literal frame. Missing variadic bindings never change a frame's marker.
 - A program that parses against the Kio' productions also parses against the full Kio grammar with the same meaning. It needs none of the additional surface productions; the full grammar is a strict superset.

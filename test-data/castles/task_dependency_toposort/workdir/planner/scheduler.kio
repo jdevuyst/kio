@@ -1,6 +1,6 @@
 module planner/scheduler;
 
-import elab/control(if);
+import macros/control(macro if);
 import planner/deps(is_blocked, is_ready);
 import planner/state(Plan_state, completed, empty, mark_done);
 import planner/tasks(total);
@@ -23,19 +23,19 @@ pub labels Plan_result = {
 fn none() -> I32 { sub_i32(0, 1) }
 
 fn increment_if(value: I32, flag: Bool) -> I32 {
-  if! flag { add_i32(value, 1) } else { value }
+  if(flag) { add_i32(value, 1) } else { value }
 }
 
 fn choose(current: I32, candidate: I32, ready: Bool) -> I32 {
-  if! eq_i32(current, none()) {
-    if! ready { candidate } else { current }
+  if(eq_i32(current, none())) {
+    if(ready) { candidate } else { current }
   } else {
     current
   }
 }
 
 fn max_i32(left: I32, right: I32) -> I32 {
-  if! lt_i32(left, right) { right } else { left }
+  if(lt_i32(left, right)) { right } else { left }
 }
 
 fn scan_result(selected_task: I32, ready_seen: I32, blocked_seen: I32) -> Scan_result {
@@ -49,7 +49,7 @@ rec(loop) fn scan(
 , ready_seen: I32
 , blocked_seen: I32
 ) -> Scan_result {
-  if! lt_i32(index, total()) {
+  if(lt_i32(index, total())) {
     let ready = is_ready(plan, index);
     recur scan(
     , plan
@@ -76,14 +76,14 @@ fn plan_result(
 }
 
 rec(loop) fn plan_from(plan: Plan_state, rounds: I32, peak_ready: I32, peak_blocked: I32) -> Plan_result {
-  if! eq_i32(completed(plan), total()) {
+  if(eq_i32(completed(plan), total())) {
     plan_result(plan, rounds, 0, 0, peak_ready, peak_blocked, .f)
   } else {
     let scan_report = scan(plan, 0, none(), 0, 0);
     let ready_seen = scan_report.?{ready_seen};
     let blocked_seen = scan_report.?{blocked_seen};
     let selected_task = scan_report.?{selected_task};
-    if! eq_i32(selected_task, none()) {
+    if(eq_i32(selected_task, none())) {
       plan_result(plan, rounds, ready_seen, blocked_seen, peak_ready, peak_blocked, .t)
     } else {
       recur plan_from(

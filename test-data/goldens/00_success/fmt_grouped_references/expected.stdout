@@ -10,11 +10,11 @@ varop [% %] { foldl1 helpers.step Box.seed }
 
 varop [& &] { foldr1 helpers.step Box.seed }
 
-elab inspect : . -> . { captures (source, Box); impl helpers.inspect }
+macro inspect : . -> . { captures (source, Box); impl helpers.inspect }
 
-elab ordinary : . -> . { impl fills }
+macro ordinary : . -> . { impl fills }
 
-elab scheduled : . -> . { impl(fills) fills }
+macro scheduled : . -> . { impl(fills) fills }
 
 rec(loop) fn keep(x: .) { x }
 

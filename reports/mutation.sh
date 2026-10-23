@@ -2,7 +2,7 @@
 #
 # Layer-(3b) mutation-testing signal for kio-rs core passes.
 #
-# Runs cargo-mutants over the kio-rs semantic core — typer, elaborator
+# Runs cargo-mutants over the kio-rs semantic core — typer, macro
 # registry, substitute pass, normalizer, optimizer, and Prime path; see the
 # charter above MUTATION_TARGETS — with a wall-clock cap. A surviving
 # mutant is a place where the test corpus is too weak to catch a
@@ -51,12 +51,12 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 # under that principle:
 #
 #   - the typer (src/pass/typecheck_core/** + typecheck_full.rs + its
-#     production submodules) and the elaborator registry — the
+#     production submodules) and the macro registry — the
 #     type-soundness core;
 #   - the substitute pass (src/pass/substitute/**) — the
 #     Lowered → Prime elaboration-baking boundary;
 #   - the normalizer (src/normalization.rs) — the reducer behind `equiv`,
-#     `:normalize`, and compile-time elaborator evaluation; the
+#     `:normalize`, and compile-time macro evaluation; the
 #     strong-normalization guarantee lives here;
 #   - the backend-neutral optimizer (src/pass/optimize.rs) — its catalog is
 #     behavior-preserving performance machinery, so private firing must not
@@ -89,13 +89,11 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 # every production source against it, and smoke-reports.sh additionally
 # validates one real combined cargo-mutants manifest when that optional tool is
 # installed. Thus a renamed module, a dropped `/**`, or a candidate exclusion
-# cannot silently shrink coverage (as happened when the built-in elaborator
-# engines were deleted and the directory globs lost their `/**` — the harness
-# quietly mutated only typecheck_full.rs while advertising four passes).
+# cannot silently shrink coverage.
 MUTATION_TARGETS='src/pass/typecheck_core/**
 src/pass/typecheck_full.rs
 src/pass/typecheck_full/**
-src/pass/elaborator_registry.rs
+src/pass/macro_registry.rs
 src/pass/substitute/**
 src/normalization.rs
 src/pass/optimize.rs
@@ -105,7 +103,7 @@ src/prime/**'
 # discovered below, so a new production submodule automatically joins the
 # fail-closed scope check rather than relying on this list being remembered.
 MUTATION_PRODUCTION_FILES='src/pass/typecheck_full.rs
-src/pass/elaborator_registry.rs
+src/pass/macro_registry.rs
 src/normalization.rs
 src/pass/optimize.rs'
 

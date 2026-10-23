@@ -4,13 +4,13 @@ import bdd/apply as engine;
 import bdd/expression as expr;
 import bdd/logic as logic;
 import bdd/store as table;
-import elab/match(match);
+import macros/match(macro match);
 import testapi/iter(loop);
 
 pub rec(loop) fn compile(m: engine.Manager, expression: expr.Expression) ->
   engine.Manager & table.Node_id
    {
-  match! expression {
+  match(expression) {
     .(c: expr.Constant) { (m, table.from_bool(c.?{expr.constant})) };
     .(v: expr.Variable) { engine.intern(m, v.?{expr.variable}, table.false_id(), table.true_id()) };
     .(n: expr.Negation) {

@@ -72,7 +72,7 @@ wait_for_success() {
 
 src="$scratch/dyn-load-prime"
 assembly="$scratch/shared-assembly"
-mkdir -p "$src/list" "$src/loader" "$src/elab" "$scratch/bin"
+mkdir -p "$src/list" "$src/loader" "$src/macros" "$scratch/bin"
 KIO_CI_SCHEDULE_DIR="$scratch/state"
 KIO_CI_SCHEDULE_HELD=
 KIO_CI_SCHEDULE_COMPILER_JOBS=2
@@ -89,7 +89,7 @@ export KIO_TEST_RUNNER_COMPILER_WRAPPER
 printf 'module core;\n' >"$src/core.kio"
 printf 'module list.item;\n' >"$src/list/item.kio"
 printf 'module loader.item;\n' >"$src/loader/item.kio"
-printf 'module elab.item;\n' >"$src/elab/item.kio"
+printf 'module macros.item;\n' >"$src/macros/item.kio"
 
 cat >"$scratch/bin/kio-a" <<'EOF'
 #!/bin/sh

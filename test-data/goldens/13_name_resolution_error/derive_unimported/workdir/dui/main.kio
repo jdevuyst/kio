@@ -1,6 +1,6 @@
 module dui/main;
 
-// `derive!` is used below without importing the imported elaborator; the
+// `derive` is used below without importing the macro; the
 // call site is the standard unresolved-name error.
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
@@ -13,6 +13,6 @@ fn box_monad() -> Monad(Box) {
   Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
 }
 
-fn bad() -> Monad(Box) { derive!(box_monad, Monad(Box)) }
+fn bad() -> Monad(Box) { derive(box_monad, Monad(Box)) }
 
 pub fn main() { () }

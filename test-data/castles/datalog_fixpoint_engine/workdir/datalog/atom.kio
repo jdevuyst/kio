@@ -6,9 +6,9 @@
 module datalog/atom;
 
 import datalog/list as list;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
@@ -21,9 +21,9 @@ pub labels Atom = { a_pred: I32, a_args: Args };
 
 pub type Atoms = list.List(Atom);
 
-pub fn tconst(code: I32) -> Term { {t_const = code}.>widen_sum!(Term) }
+pub fn tconst(code: I32) -> Term { {t_const = code}.>widen_sum(Term) }
 
-pub fn tvar(code: I32) -> Term { {t_var = code}.>widen_sum!(Term) }
+pub fn tvar(code: I32) -> Term { {t_var = code}.>widen_sum(Term) }
 
 pub fn mk_atom(pred: I32, args: Args) -> Atom { {a_pred = pred, a_args = args} }
 
@@ -48,15 +48,15 @@ pub fn fact3(pred: I32, c0: I32, c1: I32, c2: I32) -> Atom {
 }
 
 fn term_eq(x: Term, y: Term) -> Bool {
-  match! x {
+  match(x) {
     (
     , .(k: T_const) {
-        match! y {
+        match(y) {
           (.(j: T_const) { eq_i32(k.?{t_const}, j.?{t_const}) }, .(_w: T_var) { .f })
         }
       }
     , .(v: T_var) {
-        match! y {
+        match(y) {
           (.(_j: T_const) { .f }, .(w: T_var) { eq_i32(v.?{t_var}, w.?{t_var}) })
         }
       }
@@ -65,13 +65,13 @@ fn term_eq(x: Term, y: Term) -> Bool {
 }
 
 rec(loop) fn args_eq(xs: Args, ys: Args) -> Bool {
-  match! xs.>list.List.un_list {
+  match(xs.>list.List.un_list) {
     (
     , .(x: Term, xrest: Args) {
-        match! ys.>list.List.un_list {
+        match(ys.>list.List.un_list) {
           (
           , .(y: Term, yrest: Args) {
-              if! term_eq(x, y) { recur args_eq(xrest, yrest) } else { .f }
+              if(term_eq(x, y)) { recur args_eq(xrest, yrest) } else { .f }
             }
           , .(_empty: .) { .f }
           )
@@ -85,7 +85,7 @@ rec(loop) fn args_eq(xs: Args, ys: Args) -> Bool {
 /// Fact insertion is set-like, and this is the only membership test the
 /// database has.
 pub fn atom_eq(x: Atom, y: Atom) -> Bool {
-  if! eq_i32(pred_of(x), pred_of(y)) { args_eq(args_of(x), args_of(y)) } else { .f }
+  if(eq_i32(pred_of(x), pred_of(y))) { args_eq(args_of(x), args_of(y)) } else { .f }
 }
 
 pub fn count_pred(db: Atoms, pred: I32) -> I32 {

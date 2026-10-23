@@ -32,10 +32,10 @@ bridge {
 
 module kiodoc;
 
-import control(if);
-import match(match);
-import sequence(do);
-import spine_elaborators(widen_sum);
+import control(macro if);
+import match(macro match);
+import sequence(macro do);
+import spine_macros(macro widen_sum);
 
 host type Int role(i32);
 host type String role(str);
@@ -126,8 +126,8 @@ Here the outer call's argument and result information can determine the inner
 factory's `A`. By contrast, two calls appearing in the same function are not
 automatically connected. An already completed inner call contributes only its
 finished type; Kio does not reconsider its body. Lambda bodies still follow
-their own rules, and elab inputs must also satisfy the
-[pre-expansion boundary](#elaborators-need-input-descriptions-before-they-expand).
+their own rules, and macro inputs must also satisfy the
+[pre-expansion boundary](#macros-need-input-descriptions-before-they-expand).
 
 This is local cooperation between expressions you wrote, not a search through
 other functions or a whole-program inference pass.
@@ -224,7 +224,7 @@ boundary rather than relying on later uses to reconstruct it.
 
 ### Sequence blocks: each binding has its own input boundary
 
-In a **sequence block**, such as the block passed to `do!`, semicolons also
+In a **sequence block**, such as the block passed to `do`, semicolons also
 separate clauses. The supplied bind function connects an action of type
 `F(A)` to a continuation receiving its payload `A`:
 
@@ -234,7 +234,7 @@ fn sequence_example[*F](
 , source: F(Int)
 , finish: Int -> F(String)
 ) -> F(String) {
-  do! bind { let value <- source; finish(value) }
+  do(bind) { let value <- source; finish(value) }
 }
 ```
 
@@ -254,12 +254,12 @@ to discard an action's non-unit payload deliberately. The final expression
 instead supplies the block's `F(R)` result. Its trailing `;` does not add
 another bind, discard that result, or insert a lift. Within each source
 expression, nested calls still cooperate under the ordinary call rules.
-See [monadic `do!`](higher-kinded-types.md#monadic-do) for the supplied bind
+See [monadic `do`](higher-kinded-types.md#monadic-do) for the supplied bind
 function and carrier type.
 
 Semicolons are not a universal inference barrier for every kind of block.
-A **product block**, such as the collection of clauses supplied to `match!`,
-provides separate values to the elab; their result types can cooperate
+A **product block**, such as the collection of clauses supplied to `match`,
+provides separate values to the macro; their result types can cooperate
 according to its public contract. It is not an expression or sequence block's
 chain of local bindings and earlier expressions.
 
@@ -293,14 +293,14 @@ that also take type constructors such as a collection type.
 
 ## Alternatives agree on one result
 
-The library's `if!` relates the results of both branches. Neither branch wins
+The library's `if` relates the results of both branches. Neither branch wins
 just because it appears first. The surrounding expected result can guide
 both, or an independently determined branch can supply the common result.
 If they disagree, Kio does not silently invent a sum type:
 
 ```kio {@branches check_exit_code=14}
 fn disagree(flag: Bool, number: Int, text: String) {
-  let result = if! flag { number } else { text };
+  let result = if(flag) { number } else { text };
   ()
 }
 ```
@@ -309,27 +309,27 @@ If a sum is what you intend, declare it and construct the alternatives:
 
 ```kio {@branches}
 fn either_value(flag: Bool, number: Int, text: String) -> Int | String {
-  if! flag { number.>widen_sum! } else { text.>widen_sum! }
+  if(flag) { number.>widen_sum } else { text.>widen_sum }
 }
 ```
 
 The condition is checked before the branch results; those results do not infer
 the condition's type backward. At runtime only the selected branch runs.
 
-These are library-defined elabs, not special meanings attached to the
+These are library-defined macros, not special meanings attached to the
 names `if` or `match`. Their public types and declared elaboration rules
-determine how their arguments cooperate. The same applies to imported `do!`:
+determine how their arguments cooperate. The same applies to imported `do`:
 each action determines its payload before the following binding uses it;
 later uses do not infer an earlier action backward. See
 [higher-kinded types](higher-kinded-types.md) for sequencing.
 
 ### Inferring a match result
 
-Add the [elab library](using-libraries.md#the-elaborator-library) as an
-`elab` dependency, follow the [dependency workflow](using-libraries.md#the-minimal-dependency-workflow)
-to fetch it, and write `import elab/match(match);` in your module.
+Add the [macro library](using-libraries.md#the-macro-library) as an
+`macros` dependency, follow the [dependency workflow](using-libraries.md#the-minimal-dependency-workflow)
+to fetch it, and write `import macros/match(macro match);` in your module.
 
-`match!` follows the same common-result rule. Its clause parameters first
+`match` follows the same common-result rule. Its clause parameters first
 identify the input branches; the clause results then agree on one output type.
 That output can be a function, as in this example:
 
@@ -342,7 +342,7 @@ fn text_handler(_text: String) -> Int_fn { identity(Int) }
 
 fn apply_selected(source: Int | String, value: Int) -> Int {
   let selected =
-    match! source {
+    match(source) {
       .(_number: Int) { identity(_) };
       text_handler
     };
@@ -364,27 +364,27 @@ handle distinct input types. See [matching a sum](sums.md#matching-a-sum).
 The later `selected(value)` call does not provide the missing type: Kio must
 finish the `let` initializer before it reaches that call. If neither clause
 determines the result, give the binding a complete annotation such as
-`let .(selected: Int_fn) = match! source { clauses };`, or return the match
+`let .(selected: Int_fn) = match(source) { clauses };`, or return the match
 directly from a function whose return type supplies the result. If clause
 results disagree, choose the intended common type and construct it in each
 clause; Kio does not automatically combine incompatible results into a sum.
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="elaborators-need-input-descriptions-before-they-expand"></a>
+<a id="macros-need-input-descriptions-before-they-expand"></a>
 
-## Elabs need input descriptions before they expand
+## Macros need input descriptions before they expand
 
-An elab constructs code at compile time. Some elabs, including
-`if!` and `match!`, exchange type information with callback bodies: their
+A macro constructs code at compile time. Some macros, including
+`if` and `match`, exchange type information with callback bodies: their
 declarations use `impl(fills)`. They can use the types and structure already
 available at the call, but cannot ask the compiler to enter an unfinished
 argument body to find information they need to expand. Ordinary `impl`
-elabs instead receive arguments whose checking is already complete.
+macros instead receive arguments whose checking is already complete.
 The distinction can matter to callers, not just library authors.
 
 Computed arguments must have determined types before the expansion starts.
 The call's outside expected result and already known sibling arguments can
-help determine them through the elab's public type. The implementation's
+help determine them through the macro's public type. The implementation's
 later choices cannot. A declared generic parameter still counts as known:
 `Box(A)` inside a function declaring `A` is different from a factory call whose
 type argument has not been chosen. Supply an explicit type argument or a
@@ -395,13 +395,13 @@ For example, suppose an ordinary function has the signature
 `drive[S][R](step: S -> (S | R), seed: S) -> R`. A callback written as
 `.(state: State) -> State | Done { advance(state) }` identifies the call's
 result as `Done` without inspecting the callback body. An `impl(fills)`
-elab receiving that call can use the result type. If the callback omits
+macro receiving that call can use the result type. If the callback omits
 its return annotation and only its body establishes `Done`, the same input needs to finish ordinary
 checking first. Bind the complete `drive(...)` call to a local value before
-passing it to the elab, or supply the callback's result annotation.
+passing it to the macro, or supply the callback's result annotation.
 
 This does not require every argument type to be fully determined in advance.
-For instance, `match!` can relate the results of directly supplied clauses
+For instance, `match` can relate the results of directly supplied clauses
 after their parameter types identify the alternatives they handle. An explicit
 tuple exposes its components for that purpose; an ordinary function returning
 a tuple supplies one computed value instead. Its signature alone does not say
@@ -412,8 +412,8 @@ their result annotations.
 
 These rules keep compile-time expansion from depending on exploratory checks
 of unfinished bodies. They do not excuse checking those bodies: an invalid
-argument is still rejected even when the elab ignores its value. The
-[elab guide](elaborators.md#marked-fills-implementations) explains the
+argument is still rejected even when the macro ignores its value. The
+[macro guide](macros.md#marked-fills-implementations) explains the
 precise input requirements and how library authors declare result relations.
 
 ## Type equality is not automatic conversion
@@ -423,8 +423,8 @@ type. `A & B` and `B & A` have different layouts; a newtype remains distinct
 from its payload type. Transparent type aliases name an existing type without
 creating that distinction.
 
-Kio makes structural rearrangement explicit with elabs such as
-`reorder_prod!` and `widen_sum!`, rather than trying conversions during every
+Kio makes structural rearrangement explicit with macros such as
+`reorder_prod` and `widen_sum`, rather than trying conversions during every
 type comparison. This keeps ordinary checking predictable and makes the
 adaptation visible. Read [products](products.md), [sums](sums.md), and
 [declarations](declarations.md) for the relevant constructions.
@@ -552,11 +552,11 @@ independently of function bodies. Keep the modifier before visibility, as in
 `default pub type Integer = numbers.Int;`.
 
 The Boolean default also determines the condition type of the core branching
-intrinsic and the reference `if!` elab's generated branch operation. A condition
+intrinsic and the reference `if` macro's generated branch operation. A condition
 annotated at a different Boolean type does not override that selection.
 See [the builtin reference](builtin-modules.md).
 
-The fixed `import __comptime__;` used by elab implementations supplies its
+The fixed `import __comptime__;` used by macro implementations supplies its
 own compile-time Boolean and string defaults. They participate in the same
 conflict checks; this is not inheritance of defaults from an ordinary library.
 

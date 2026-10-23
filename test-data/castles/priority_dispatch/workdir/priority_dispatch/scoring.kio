@@ -1,6 +1,6 @@
 module priority_dispatch/scoring;
 
-import elab/control(if);
+import macros/control(macro if);
 import priority_dispatch/model(
 , Choice
 , Job
@@ -29,11 +29,11 @@ import testapi(I32, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 
 pub fn and_bool(left: Bool, right: Bool) -> Bool {
-  if! left { right } else { .f }
+  if(left) { right } else { .f }
 }
 
 pub fn not_bool(value: Bool) -> Bool {
-  if! value { .f } else { .t }
+  if(value) { .f } else { .t }
 }
 
 pub fn all_done(
@@ -62,7 +62,7 @@ pub fn rank_job(job: Job) -> I32 {
 
 pub fn choose_job(job: Job, slot: Slot, done: Bool) -> Choice {
   let eligible = and_bool(not_bool(done), fits(job, slot));
-  let rank = if! eligible { rank_job(job) } else { 0 };
+  let rank = if(eligible) { rank_job(job) } else { 0 };
   choice(
   , job.?{job_id}
   , job.?{job_name}
@@ -79,9 +79,9 @@ pub fn choose_job(job: Job, slot: Slot, done: Bool) -> Choice {
 pub fn better(left: Choice, right: Choice) -> Choice {
   let .({choice_eligible as left_ok, choice_rank as left_rank}) = left;
   let .({choice_eligible as right_ok, choice_rank as right_rank}) = right;
-  if! left_ok {
-    if! right_ok {
-      if! lt_i32(right_rank, left_rank) { left } else { right }
+  if(left_ok) {
+    if(right_ok) {
+      if(lt_i32(right_rank, left_rank)) { left } else { right }
     } else {
       left
     }
@@ -91,5 +91,5 @@ pub fn better(left: Choice, right: Choice) -> Choice {
 }
 
 pub fn blocked_for(job: Job, slot: Slot, done: Bool) -> I32 {
-  if! done { 0 } else if! fits(job, slot) { 0 } else { 1 }
+  if(done) { 0 } else if(fits(job, slot)) { 0 } else { 1 }
 }

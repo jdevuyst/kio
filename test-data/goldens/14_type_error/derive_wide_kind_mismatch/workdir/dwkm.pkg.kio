@@ -17,5 +17,5 @@ build {
 bridge {
   testapi;
   dwkm/**;
-  elab/testapi
+  macros/testapi
 }

@@ -1,9 +1,9 @@
 module robot/report;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as lists;
 import list/list as traversal;
+import macros/control(macro if);
+import macros/match(macro match);
 import robot/engine as engine;
 import robot/memory as memory;
 import robot/model as model;
@@ -14,7 +14,7 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 rec(loop) fn events(messages: lists.List(String)) {
-  match! lists.uncons(messages) {
+  match(lists.uncons(messages)) {
     .(message: String, tail: lists.List(String)) {
       io.print(message.>text.string_concat("\n").>>text.string_concat("  "));
       recur events(tail)
@@ -24,8 +24,8 @@ rec(loop) fn events(messages: lists.List(String)) {
 }
 
 pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) {
-  let hazard = if! world.?{model.hazard} { "hazard" } else { "clear" };
-  let door = if! world.?{model.blocked} { "blocked" } else { "open" };
+  let hazard = if(world.?{model.hazard}) { "hazard" } else { "clear" };
+  let door = if(world.?{model.blocked}) { "blocked" } else { "open" };
   io.print(text.string_concat(
   , "tick "
   , text.string_concat(

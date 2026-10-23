@@ -9,9 +9,9 @@
 /// engine really walked the data it claims to have walked.
 module query/eval;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import query/fixtures as fixtures;
 import query/list as list;
 import query/plan as plan;
@@ -39,19 +39,19 @@ fn scanned(s: Stats, n: I32) -> Stats { s.!{st_scanned = add_i32(s.?{st_scanned}
 fn compared(s: Stats, n: I32) -> Stats { s.!{st_compares = add_i32(s.?{st_compares}, n)} }
 
 fn both(a: Bool, b: Bool) -> Bool {
-  if! a { b } else { .f }
+  if(a) { b } else { .f }
 }
 
 fn either(a: Bool, b: Bool) -> Bool {
-  if! a { .t } else { b }
+  if(a) { .t } else { b }
 }
 
 fn negate(a: Bool) -> Bool {
-  if! a { .f } else { .t }
+  if(a) { .f } else { .t }
 }
 
 fn int_or_zero(m: value.Maybe_int) -> I32 {
-  match! m {
+  match(m) {
     (.(n: value.Some_int) { value.some_int_of(n) }, .(_n: value.No_int) { 0 })
   }
 }
@@ -59,7 +59,7 @@ fn int_or_zero(m: value.Maybe_int) -> I32 {
 /// The host tier supplies `<` and `<=` and nothing above them, so `>` and
 /// `>=` are the same comparisons read from the other side.
 fn apply_op(o: plan.Cmp_op, a: I32, b: I32) -> Bool {
-  match! o {
+  match(o) {
     (
     , .(_o: plan.Op_eq) { eq_i32(a, b) }
     , .(_o: plan.Op_lt) { lt_i32(a, b) }
@@ -71,16 +71,16 @@ fn apply_op(o: plan.Cmp_op, a: I32, b: I32) -> Bool {
 }
 
 fn test_literal(row: rel.Row, c: schema.Col, o: plan.Cmp_op, n: I32) -> Bool {
-  match! rel.row_int(row, c) {
+  match(rel.row_int(row, c)) {
     (.(x: value.Some_int) { apply_op(o, value.some_int_of(x), n) }, .(_x: value.No_int) { .f })
   }
 }
 
 fn test_columns(row: rel.Row, left: schema.Col, o: plan.Cmp_op, right: schema.Col) -> Bool {
-  match! rel.row_int(row, left) {
+  match(rel.row_int(row, left)) {
     (
     , .(x: value.Some_int) {
-        match! rel.row_int(row, right) {
+        match(rel.row_int(row, right)) {
           (
           , .(y: value.Some_int) { apply_op(o, value.some_int_of(x), value.some_int_of(y)) }
           , .(_y: value.No_int) { .f }
@@ -98,7 +98,7 @@ fn test_columns(row: rel.Row, left: schema.Col, o: plan.Cmp_op, right: schema.Co
 /// comparison count a property of the predicate's shape rather than of
 /// the order its rows happen to arrive in.
 rec(loop) fn eval_pred(row: rel.Row, p: plan.Pred, st: Stats) -> Bool & Stats {
-  match! p.>plan.Pred.un_pred {
+  match(p.>plan.Pred.un_pred) {
     (
     , .(c: plan.Lit_col, o: plan.Lit_op, n: plan.Lit_num) {
         (
@@ -131,12 +131,12 @@ rec(loop) fn eval_pred(row: rel.Row, p: plan.Pred, st: Stats) -> Bool & Stats {
 }
 
 rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table & Stats {
-  match! rows.>list.List.un_list {
+  match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(keep: Bool, st1: Stats) = eval_pred(r, p, st);
         let .(tail: rel.Table, st2: Stats) = recur(cont) filter_rows(rest, p, st1);
-        if! keep { (list.cons(r, tail), st2) } else { (tail, st2) }
+        if(keep) { (list.cons(r, tail), st2) } else { (tail, st2) }
       }
     , .(_empty: .) { (list.nil(rel.Row), st) }
     )
@@ -144,7 +144,7 @@ rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table 
 }
 
 rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> rel.Table & Stats {
-  match! rows.>list.List.un_list {
+  match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(tail: rel.Table, st1: Stats) = recur(cont) project_rows(cols, rest, st);
@@ -156,10 +156,10 @@ rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> 
 }
 
 fn keys_match(left: rel.Row, right: rel.Row, lkey: schema.Col, rkey: schema.Col) -> Bool {
-  match! rel.row_int(left, lkey) {
+  match(rel.row_int(left, lkey)) {
     (
     , .(a: value.Some_int) {
-        match! rel.row_int(right, rkey) {
+        match(rel.row_int(right, rkey)) {
           (
           , .(b: value.Some_int) { eq_i32(value.some_int_of(a), value.some_int_of(b)) }
           , .(_b: value.No_int) { .f }
@@ -176,13 +176,13 @@ fn keys_match(left: rel.Row, right: rel.Row, lkey: schema.Col, rkey: schema.Col)
 rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
   rel.Table & Stats
    {
-  match! rs.>list.List.un_list {
+  match(rs.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let hit = keys_match(l, r, lkey, rkey);
         let .(tail: rel.Table, st1: Stats) =
           recur(cont) join_probe(l, rest, lkey, rkey, compared(st, 1));
-        if! hit { (list.cons(rel.row_merge(l, r), tail), st1) } else { (tail, st1) }
+        if(hit) { (list.cons(rel.row_merge(l, r), tail), st1) } else { (tail, st1) }
       }
     , .(_empty: .) { (list.nil(rel.Row), st) }
     )
@@ -196,7 +196,7 @@ rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schem
 rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: schema.Col, st: Stats) ->
   rel.Table & Stats
    {
-  match! ls.>list.List.un_list {
+  match(ls.>list.List.un_list) {
     (
     , .(l: rel.Row, rest: rel.Table) {
         let .(hits: rel.Table, st1: Stats) = join_probe(l, rs, lkey, rkey, st);
@@ -213,13 +213,13 @@ rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: sch
 /// arrival position instead of being ordered against data the host cannot
 /// compare.
 fn sorts_before(a: rel.Row, b: rel.Row, key: schema.Col, d: plan.Dir) -> Bool {
-  match! rel.row_int(a, key) {
+  match(rel.row_int(a, key)) {
     (
     , .(x: value.Some_int) {
-        match! rel.row_int(b, key) {
+        match(rel.row_int(b, key)) {
           (
           , .(y: value.Some_int) {
-              match! d {
+              match(d) {
                 (
                 , .(_d: plan.Dir_asc) { lt_i32(value.some_int_of(x), value.some_int_of(y)) }
                 , .(_d: plan.Dir_desc) { lt_i32(value.some_int_of(y), value.some_int_of(x)) }
@@ -242,12 +242,12 @@ fn sorts_before(a: rel.Row, b: rel.Row, key: schema.Col, d: plan.Dir) -> Bool {
 rec(loop) fn insert_row(r: rel.Row, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
   rel.Table & Stats
    {
-  match! sorted.>list.List.un_list {
+  match(sorted.>list.List.un_list) {
     (
     , .(h: rel.Row, rest: rel.Table) {
         let first = sorts_before(r, h, key, d);
         let st1 = compared(st, 1);
-        if! first {
+        if(first) {
           (list.cons(r, sorted), st1)
         } else {
           let .(tail: rel.Table, st2: Stats) = recur(cont) insert_row(r, key, d, rest, st1);
@@ -264,7 +264,7 @@ rec(loop) fn insert_row(r: rel.Row, key: schema.Col, d: plan.Dir, sorted: rel.Ta
 rec(loop) fn sort_rows(rows: rel.Table, key: schema.Col, d: plan.Dir, sorted: rel.Table, st: Stats) ->
   rel.Table & Stats
    {
-  match! rows.>list.List.un_list {
+  match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(next: rel.Table, st1: Stats) = insert_row(r, key, d, sorted, st);
@@ -281,14 +281,14 @@ labels Agg = { agg_col: schema.Col } | { agg_rows: . };
 
 labels Group = { g_key: I32, g_acc: I32 };
 
-fn summing(c: schema.Col) -> Agg { {agg_col = c}.>widen_sum!(Agg) }
+fn summing(c: schema.Col) -> Agg { {agg_col = c}.>widen_sum(Agg) }
 
-fn counting() -> Agg { {agg_rows=}.>widen_sum!(Agg) }
+fn counting() -> Agg { {agg_rows=}.>widen_sum(Agg) }
 
 fn group(key: I32, acc: I32) -> Group { {g_key = key, g_acc = acc} }
 
 fn delta_of(row: rel.Row, a: Agg) -> I32 {
-  match! a {
+  match(a) {
     (.(c: Agg_col) { int_or_zero(rel.row_int(row, c.?{agg_col})) }, .(_c: Agg_rows) { 1 })
   }
 }
@@ -300,11 +300,11 @@ fn delta_of(row: rel.Row, a: Agg) -> I32 {
 rec(loop) fn bump(groups: list.List(Group), key: I32, delta: I32, st: Stats) ->
   list.List(Group) & Stats
    {
-  match! groups.>list.List.un_list {
+  match(groups.>list.List.un_list) {
     (
     , .(g: Group, rest: list.List(Group)) {
         let st1 = compared(st, 1);
-        if! eq_i32(g.?{g_key}, key) {
+        if(eq_i32(g.?{g_key}, key)) {
           (list.cons(group(key, add_i32(g.?{g_acc}, delta)), rest), st1)
         } else {
           let .(tail: list.List(Group), st2: Stats) = recur(cont) bump(rest, key, delta, st1);
@@ -323,7 +323,7 @@ rec(loop) fn group_rows(
 , groups: list.List(Group)
 , st: Stats
 ) -> list.List(Group) & Stats {
-  match! rows.>list.List.un_list {
+  match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         let .(next: list.List(Group), st1: Stats) =
@@ -336,7 +336,7 @@ rec(loop) fn group_rows(
 }
 
 rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List(Group)) -> rel.Table {
-  match! groups.>list.List.un_list {
+  match(groups.>list.List.un_list) {
     (
     , .(g: Group, rest: list.List(Group)) {
         list.cons(
@@ -356,7 +356,7 @@ rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List
 /// work on their relations - so the tree is consumed bottom-up and the
 /// stats accumulate in the order the work actually happened.
 pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
-  match! p.>plan.Plan.un_plan {
+  match(p.>plan.Plan.un_plan) {
     (
     , .(n: plan.Scan_table) {
         let t = plan.scan_table_of(n);

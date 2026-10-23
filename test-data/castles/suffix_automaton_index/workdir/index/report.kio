@@ -1,10 +1,10 @@
 module index/report;
 
-import elab/control(if);
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
 import index/scan as scan;
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as n;
 import testapi/array as a;
@@ -15,8 +15,8 @@ import testapi/iter(loop);
 fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 
 rec(loop) fn show_symbols(symbols: Array(I32), position: I32) {
-  if! num.less(position, a.array_len(symbols)) {
-    if! num.equal(position, 0) { () } else { io.print(" ") };
+  if(num.less(position, a.array_len(symbols))) {
+    if(num.equal(position, 0)) { () } else { io.print(" ") };
     integer(a.array_get(symbols, position));
     recur show_symbols(symbols, n.add_i32(position, 1))
   } else {

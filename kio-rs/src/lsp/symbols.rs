@@ -184,7 +184,7 @@ fn item_to_symbol(
             e.meta.span,
             e.name_span,
         ),
-        Item::Elaborator(s, _) => (
+        Item::Macro(s, _) => (
             s.name.clone(),
             SymbolKind::FUNCTION,
             s.meta.span,

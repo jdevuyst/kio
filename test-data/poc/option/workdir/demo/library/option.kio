@@ -20,10 +20,10 @@ import library/core(
 , then
 , to_sum
 );
-import library/elab/control(if);
-import library/elab/match(match);
-import library/elab/spine_elaborators(flatten_sum, narrow_sum, widen_sum);
 import library/list/core(uncons);
+import library/macros/control(macro if);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
 import list/core(List);
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
@@ -49,18 +49,18 @@ pub fn string_concat(p0: String, p1: String) -> String {
 fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
   loop(
   , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-      match! state {
+      match(state) {
         .(carry: Acc, rest: List(A)) {
-          match! uncons(rest) {
+          match(uncons(rest)) {
             (
             , .(pair: A & List(A)) {
-                match! pair {
+                match(pair) {
                   .(head: A, tail: List(A)) {
-                    widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
+                    widen_sum((step(carry, head), tail), (Acc & List(A)) | Acc)
                   }
                 }
               }
-            , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+            , .(_empty: .) { widen_sum(carry, (Acc & List(A)) | Acc) }
             )
           }
         }
@@ -108,7 +108,7 @@ pub fn is_none[A](m: Option(A)) -> Bool {
 // Bridges a host `Bool` verdict to an `Option` via the bare sum `A | .`,
 // keeping the `some` label internal to the core.
 fn one_or_none[A](b: Bool, x: A) -> Option(A) {
-  from_sum(if! b { widen_sum!(x, A | .) } else { widen_sum!((), A | .) })
+  from_sum(if(b) { widen_sum(x, A | .) } else { widen_sum((), A | .) })
 }
 
 /// Keeps a present value only when `pred` accepts it.
@@ -148,7 +148,7 @@ pub op _ <?> _ { impl flip_map }
 // =====================================================================
 //
 // The laws below pin the module's algebra. A law that reduces a combinator
-// over an *opaque* option (`map`/`bind`'s `flatten_sum!`+`narrow_sum!` retype
+// over an *opaque* option (`map`/`bind`'s `flatten_sum`+`narrow_sum` retype
 // walks an opaque sum and can't reduce) is stated on concrete spines — the
 // admissible restatement called out in `test-data/poc/README.md`.
 
@@ -296,13 +296,13 @@ equiv then_absent[A][B](n: Option(B)) {
 
 // `to_sum . from_sum ≡ id` on both arms of `A | .`.
 equiv to_from_present[A](x: A) {
-  to_sum(from_sum(widen_sum!(x, A | .)));
-  widen_sum!(x, A | .)
+  to_sum(from_sum(widen_sum(x, A | .)));
+  widen_sum(x, A | .)
 }
 
 equiv to_from_absent[A]() {
-  to_sum(from_sum(widen_sum!((), A | .)));
-  widen_sum!((), A | .)
+  to_sum(from_sum(widen_sum((), A | .)));
+  widen_sum((), A | .)
 }
 
 // `from_sum . to_sum ≡ id` on both arms of `Option(A)`.

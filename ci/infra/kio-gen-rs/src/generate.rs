@@ -19,8 +19,8 @@ use rand::seq::{IteratorRandom, SliceRandom};
 use rand_chacha::ChaCha20Rng;
 
 use kio_gen::ast::{
-    Base, Program, Term, Type, UfcsKind, UfcsSpelling, UserElaboratorCapture,
-    UserElaboratorImplementation, UserElaboratorSpec, UserElaboratorTemplate,
+    Base, Program, Term, Type, UfcsKind, UfcsSpelling, UserMacroCapture, UserMacroImplementation,
+    UserMacroSpec, UserMacroTemplate,
 };
 use kio_gen::render::term_uses_surface_forms;
 
@@ -125,17 +125,17 @@ const RESERVED_NAMES: &[&str] = &[
 ];
 
 /// True iff `a` and `b` work as the two scrutinee-arm types of a
-/// generated `match!` whose clauses are `.(p: a) { … }` and
+/// generated `match` whose clauses are `.(p: a) { … }` and
 /// `.(q: b) { … }` *without one clause covering both DNF
 /// branches*. Per spec § Pattern matching, dispatch is per-branch
-/// via `onto!`, so we need the first clause's parameter type to
+/// via `onto`, so we need the first clause's parameter type to
 /// not cover the second branch (and vice versa). For the simple
 /// types this generator emits (Base / Unit / Nominal / Label / single-
-/// param Box), `onto!`'s only ways to match a non-equal target
+/// param Box), `onto`'s only ways to match a non-equal target
 /// are: (1) two equal types (so `a == b` is bad), and (2) `()`
 /// absorbing every product (so `a` being `Unit` makes the first
 /// clause a catch-all). Outside that, two simple non-equal
-/// non-Unit types are mutually `onto!`-distinct, so each clause
+/// non-Unit types are mutually `onto`-distinct, so each clause
 /// covers exactly its own DNF branch.
 ///
 /// `b` is allowed to be `Unit` — a catch-all *second* clause would
@@ -145,7 +145,7 @@ fn match_disjoint(a: &Type, b: &Type) -> bool {
     a != b && !matches!(a, Type::Unit)
 }
 
-/// Sample two scrutinee-arm types `(a, b)` for the `match!`
+/// Sample two scrutinee-arm types `(a, b)` for the `match`
 /// production that satisfy `match_disjoint(a, b)`. Returns `None`
 /// after a few unsuccessful tries; the caller falls back to the
 /// homogeneous-arm `__either__` production (which has no DNF
@@ -182,12 +182,12 @@ const BODY_DEPTH: u32 = 5;
 #[derive(Debug, Clone, Default)]
 pub struct GenOpts {
     /// When true, restrict emission to Kio'. Surface forms (tuple
-    /// literal sugar, `if!` blocks, `labels`, label-value sugar,
-    /// `match!`, the algebraic elaborators `iso!` / `into!` / `onto!` /
-    /// `align!` / `atom!`, and the spine palette `reorder_sum!` /
-    /// `reorder_prod!` / `narrow_sum!` / `narrow_prod!` /
-    /// `widen_sum!` / `widen_prod!` / `one_sum!` / `one_prod!` /
-    /// `fit!`) are skipped.
+    /// literal sugar, `if` blocks, `labels`, label-value sugar,
+    /// `match`, the algebraic macros `iso` / `into` / `onto` /
+    /// `align` / `atom`, and the spine palette `reorder_sum` /
+    /// `reorder_prod` / `narrow_sum` / `narrow_prod` /
+    /// `widen_sum` / `widen_prod` / `one_sum` / `one_prod` /
+    /// `fit`) are skipped.
     pub prime_only: bool,
 }
 
@@ -222,31 +222,31 @@ pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
     let mut env = wrapper_env(surface_mode);
     env.extend(params.iter().cloned());
     // The fn body is a check position (return-type pinned), so it's
-    // safe to occasionally wrap in any of the surface elaborator forms
-    // (algebraic or spine; see `maybe_wrap_elaborator`).
-    let user_elaborators = if surface_mode {
-        let mut user_elaborator_rng = ChaCha20Rng::seed_from_u64(seed ^ 0xE1AB_0A71_0DEC_0DED);
-        arbitrary_user_elaborators(&mut user_elaborator_rng)
+    // safe to occasionally wrap in any of the surface macro forms
+    // (algebraic or spine; see `maybe_wrap_macro`).
+    let user_macros = if surface_mode {
+        let mut user_macro_rng = ChaCha20Rng::seed_from_u64(seed ^ 0xE1AB_0A71_0DEC_0DED);
+        arbitrary_user_macros(&mut user_macro_rng)
     } else {
         Vec::new()
     };
-    let mut user_elaborator_call_rng = ChaCha20Rng::seed_from_u64(seed ^ 0xCA11_E1AB_0A71_51DE);
+    let mut user_macro_call_rng = ChaCha20Rng::seed_from_u64(seed ^ 0xCA11_E1AB_0A71_51DE);
     let body_inner = gen_at(
         &mut rng,
-        &mut user_elaborator_call_rng,
+        &mut user_macro_call_rng,
         &ret,
         &env,
         BODY_DEPTH,
         surface_mode,
-        &user_elaborators,
+        &user_macros,
     );
     let body = maybe_wrap_check_position(
         &mut rng,
-        &mut user_elaborator_call_rng,
+        &mut user_macro_call_rng,
         body_inner,
         &ret,
         surface_mode,
-        &user_elaborators,
+        &user_macros,
     );
 
     // `uses_surface` is true iff the rendered output actually
@@ -267,7 +267,7 @@ pub fn program_from_seed_opts(seed: u64, opts: &GenOpts) -> Program {
         params,
         ret,
         body,
-        user_elaborators,
+        user_macros,
         uses_surface,
         surface_mode,
     }
@@ -431,37 +431,34 @@ pub fn label_catalog() -> Vec<Type> {
     ]
 }
 
-fn arbitrary_user_elaborators<R: Rng>(rng: &mut R) -> Vec<UserElaboratorSpec> {
+fn arbitrary_user_macros<R: Rng>(rng: &mut R) -> Vec<UserMacroSpec> {
     let count = rng.gen_range(1usize..=3);
     let mut specs: Vec<_> = (0..count)
         .map(|i| {
             let captures = match rng.gen_range(0..4) {
                 0 => Vec::new(),
-                1 => vec![UserElaboratorCapture::TypeAlias],
-                2 => vec![UserElaboratorCapture::ValueFn],
-                _ => vec![
-                    UserElaboratorCapture::TypeAlias,
-                    UserElaboratorCapture::ValueFn,
-                ],
+                1 => vec![UserMacroCapture::TypeAlias],
+                2 => vec![UserMacroCapture::ValueFn],
+                _ => vec![UserMacroCapture::TypeAlias, UserMacroCapture::ValueFn],
             };
-            UserElaboratorSpec {
-                name: format!("kio_gen_elab{i}"),
-                impl_name: format!("kio_gen_elab{i}_impl"),
+            UserMacroSpec {
+                name: format!("kio_gen_macro{i}"),
+                impl_name: format!("kio_gen_macro{i}_impl"),
                 source_param: format!("Kio_gen_source{i}"),
                 target_param: format!("Kio_gen_target{i}"),
-                implementation: UserElaboratorImplementation::Late(
-                    *UserElaboratorTemplate::all().choose(rng).unwrap(),
+                implementation: UserMacroImplementation::Late(
+                    *UserMacroTemplate::all().choose(rng).unwrap(),
                 ),
                 captures,
             }
         })
         .collect();
-    specs.push(UserElaboratorSpec {
+    specs.push(UserMacroSpec {
         name: "kio_gen_fills".to_owned(),
         impl_name: "kio_gen_fills_impl".to_owned(),
         source_param: "Kio_gen_fills_source".to_owned(),
         target_param: "Kio_gen_fills_target".to_owned(),
-        implementation: UserElaboratorImplementation::FillsIdentity,
+        implementation: UserMacroImplementation::FillsIdentity,
         captures: Vec::new(),
     });
     specs
@@ -653,14 +650,14 @@ fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term 
     }
 }
 
-/// Maybe wrap `inner` in one of the surface elaborator forms — the
-/// spine palette (`reorder_sum!`, `reorder_prod!`,
-/// `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`,
-/// `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`, `fit!`)
-/// or the algebraic palette (`iso!`, `into!`, `onto!`, `align!`,
-/// `ease!`, `atom!`).
+/// Maybe wrap `inner` in one of the surface macro forms — the
+/// spine palette (`reorder_sum`, `reorder_prod`,
+/// `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`,
+/// `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`, `fit`)
+/// or the algebraic palette (`iso`, `into`, `onto`, `align`,
+/// `ease`, `atom`).
 ///
-/// Spine forms are the everyday palette (see `docs/poc/elab.md`)
+/// Spine forms are the everyday palette (see `docs/poc/macros.md`)
 /// and dominate the wrap choice; algebraic
 /// forms keep a low non-zero share to exercise the algebraic
 /// codepath without skewing coverage. When the selected subset has no per-form applicability at
@@ -671,7 +668,7 @@ fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term 
 ///
 /// Only fires in surface mode and only as identity coercions, so
 /// the Kio' fallback (passthrough) is sound for every form — the
-/// inner expression's type *is* the result type, and each elaborator
+/// inner expression's type *is* the result type, and each macro
 /// admits identity at every applicable position. Callers must
 /// invoke this at *check positions*, where an expected type makes
 /// the identity target determinate. The generator uses value-arg
@@ -682,34 +679,29 @@ fn maybe_wrap_ufcs<R: Rng>(rng: &mut R, term: Term, surface_mode: bool) -> Term 
 /// shape):
 ///
 /// Spine subset:
-/// - `reorder_sum!` / `narrow_sum!` / `widen_sum!` / `flatten_sum!`:
+/// - `reorder_sum` / `narrow_sum` / `widen_sum` / `flatten_sum`:
 ///   source must be a top-level `Type::Sum`. At identity, the spine
 ///   length is the same on both sides and the rule reduces to
-///   identity (`flatten_sum!` identity-short-circuits whenever the
+///   identity (`flatten_sum` identity-short-circuits whenever the
 ///   source type already equals the target).
-/// - `reorder_prod!` / `narrow_prod!` / `widen_prod!` /
-///   `flatten_prod!`: source must be a top-level `Type::Product`.
+/// - `reorder_prod` / `narrow_prod` / `widen_prod` /
+///   `flatten_prod`: source must be a top-level `Type::Product`.
 ///   Same identity reduction.
-/// - `one_sum!`: emitted only at atomic sources — the degenerate
+/// - `one_sum`: emitted only at atomic sources — the degenerate
 ///   identity case, where source itself is the "single arm".
-/// - `one_prod!`: emitted only at atomic sources — the degenerate
+/// - `one_prod`: emitted only at atomic sources — the degenerate
 ///   identity case, where source itself fills the "one slot".
-/// - `fit!`: source may be any type — `fit!`'s spine walk reduces
+/// - `fit`: source may be any type — `fit`'s spine walk reduces
 ///   to identity at every leaf when source == target.
 ///
 /// Algebraic subset:
-/// - `atom!`: source must be atomic (simple) — its target must
+/// - `atom`: source must be atomic (simple) — its target must
 ///   DNF-normalize to a single arm; only atomic sources qualify as
 ///   degenerate identity.
-/// - `iso!`, `into!`, `onto!`, `align!`, `ease!`: identity is
+/// - `iso`, `into`, `onto`, `align`, `ease`: identity is
 ///   admitted at every type (generated types are monomorphic, so
-///   `ease!`'s polymorphic-source/target rejection never applies).
-fn maybe_wrap_elaborator<R: Rng>(
-    rng: &mut R,
-    inner: Term,
-    inner_ty: &Type,
-    surface_mode: bool,
-) -> Term {
+///   `ease`'s polymorphic-source/target rejection never applies).
+fn maybe_wrap_macro<R: Rng>(rng: &mut R, inner: Term, inner_ty: &Type, surface_mode: bool) -> Term {
     if !surface_mode || !rng.gen_bool(0.5) {
         return inner;
     }
@@ -717,13 +709,13 @@ fn maybe_wrap_elaborator<R: Rng>(
     // exercise the codepath. The wrap rate (50%) compensates for
     // the larger 17-form palette — without it, the per-form share
     // drops below the distribution-test floor for forms with tight
-    // applicability gates (`atom!` requires simple source;
-    // `narrow_sum!` / `widen_prod!` require the matching axis).
+    // applicability gates (`atom` requires simple source;
+    // `narrow_sum` / `widen_prod` require the matching axis).
     //
     // When the rolled subset has no applicable forms at this type,
     // fall through to no wrap (the inner is returned unchanged) —
-    // this is rare in practice because `fit!` (spine) and
-    // `iso!`/`into!`/`onto!`/`align!` (algebraic) all admit
+    // this is rare in practice because `fit` (spine) and
+    // `iso`/`into`/`onto`/`align` (algebraic) all admit
     // identity at every type.
     if rng.gen_bool(0.8) {
         wrap_spine(rng, inner, inner_ty)
@@ -732,23 +724,23 @@ fn maybe_wrap_elaborator<R: Rng>(
     }
 }
 
-fn maybe_wrap_user_elaborator<R: Rng>(
+fn maybe_wrap_user_macro<R: Rng>(
     rng: &mut R,
     inner: Term,
     surface_mode: bool,
-    user_elaborators: &[UserElaboratorSpec],
+    user_macros: &[UserMacroSpec],
 ) -> Term {
-    if !surface_mode || user_elaborators.is_empty() || !rng.gen_bool(0.25) {
+    if !surface_mode || user_macros.is_empty() || !rng.gen_bool(0.25) {
         return inner;
     }
-    let Some(spec) = user_elaborators
+    let Some(spec) = user_macros
         .iter()
-        .filter(|spec| matches!(spec.implementation, UserElaboratorImplementation::Late(_)))
+        .filter(|spec| matches!(spec.implementation, UserMacroImplementation::Late(_)))
         .choose(rng)
     else {
         return inner;
     };
-    Term::UserElaborator {
+    Term::UserMacro {
         name: spec.name.clone(),
         inner: Box::new(inner),
     }
@@ -760,17 +752,17 @@ fn maybe_wrap_check_position<R: Rng>(
     inner: Term,
     inner_ty: &Type,
     surface_mode: bool,
-    user_elaborators: &[UserElaboratorSpec],
+    user_macros: &[UserMacroSpec],
 ) -> Term {
-    let inner = maybe_wrap_elaborator(rng, inner, inner_ty, surface_mode);
-    if is_builtin_elaborator_call(&inner) {
+    let inner = maybe_wrap_macro(rng, inner, inner_ty, surface_mode);
+    if is_builtin_macro_call(&inner) {
         inner
     } else {
-        maybe_wrap_user_elaborator(user_rng, inner, surface_mode, user_elaborators)
+        maybe_wrap_user_macro(user_rng, inner, surface_mode, user_macros)
     }
 }
 
-fn is_builtin_elaborator_call(term: &Term) -> bool {
+fn is_builtin_macro_call(term: &Term) -> bool {
     matches!(
         term,
         Term::Into { .. }
@@ -793,32 +785,32 @@ fn is_builtin_elaborator_call(term: &Term) -> bool {
     )
 }
 
-/// Pick a spine elaborator form whose per-source applicability gate
-/// fires on `inner_ty`. `fit!` always applies (identity reduces to
+/// Pick a spine macro form whose per-source applicability gate
+/// fires on `inner_ty`. `fit` always applies (identity reduces to
 /// identity at every leaf via the spine walk). `reorder_*` /
 /// `narrow_*` / `widen_*` / `flatten_*` are gated on the outermost
 /// shape being the matching axis (sum / product); `flatten_*`
 /// identity-short-circuits whenever source already equals target, so
-/// any nesting is admissible at identity. `one_sum!` / `one_prod!`
+/// any nesting is admissible at identity. `one_sum` / `one_prod`
 /// only fire at atomic sources (the safe degenerate-identity case).
 fn wrap_spine<R: Rng>(rng: &mut R, inner: Term, inner_ty: &Type) -> Term {
     let is_sum = matches!(inner_ty, Type::Sum(_, _));
     let is_prod = matches!(inner_ty, Type::Product(_, _));
     let is_atomic = is_simple_type(inner_ty);
-    // Per-form weights — `fit!` carries a higher weight as the
+    // Per-form weights — `fit` carries a higher weight as the
     // most general spine form.
     let weights: [u32; 11] = [
-        if is_sum { 2 } else { 0 },    // 0: reorder_sum!
-        if is_prod { 2 } else { 0 },   // 1: reorder_prod!
-        if is_sum { 2 } else { 0 },    // 2: narrow_sum!
-        if is_prod { 2 } else { 0 },   // 3: narrow_prod!
-        if is_sum { 2 } else { 0 },    // 4: widen_sum!
-        if is_prod { 2 } else { 0 },   // 5: widen_prod!
-        if is_sum { 2 } else { 0 },    // 6: flatten_sum!
-        if is_prod { 2 } else { 0 },   // 7: flatten_prod!
-        if is_atomic { 1 } else { 0 }, // 8: one_sum!
-        if is_atomic { 1 } else { 0 }, // 9: one_prod!
-        4,                             // 10: fit! (every type)
+        if is_sum { 2 } else { 0 },    // 0: reorder_sum
+        if is_prod { 2 } else { 0 },   // 1: reorder_prod
+        if is_sum { 2 } else { 0 },    // 2: narrow_sum
+        if is_prod { 2 } else { 0 },   // 3: narrow_prod
+        if is_sum { 2 } else { 0 },    // 4: widen_sum
+        if is_prod { 2 } else { 0 },   // 5: widen_prod
+        if is_sum { 2 } else { 0 },    // 6: flatten_sum
+        if is_prod { 2 } else { 0 },   // 7: flatten_prod
+        if is_atomic { 1 } else { 0 }, // 8: one_sum
+        if is_atomic { 1 } else { 0 }, // 9: one_prod
+        4,                             // 10: fit (every type)
     ];
     let total: u32 = weights.iter().sum();
     if total == 0 {
@@ -849,11 +841,11 @@ fn wrap_spine<R: Rng>(rng: &mut R, inner: Term, inner_ty: &Type) -> Term {
     }
 }
 
-/// Pick an algebraic elaborator form whose per-source applicability gate
-/// fires on `inner_ty`. `iso!` / `into!` / `onto!` / `align!` / `ease!`
+/// Pick an algebraic macro form whose per-source applicability gate
+/// fires on `inner_ty`. `iso` / `into` / `onto` / `align` / `ease`
 /// admit identity at every type (the generator's types are monomorphic,
-/// so `ease!`'s polymorphic-source/target rejection never applies);
-/// `atom!` is restricted to atomic sources.
+/// so `ease`'s polymorphic-source/target rejection never applies);
+/// `atom` is restricted to atomic sources.
 fn wrap_algebraic<R: Rng>(rng: &mut R, inner: Term, inner_ty: &Type) -> Term {
     let allow_atom = is_simple_type(inner_ty);
     let upper = if allow_atom { 6 } else { 5 };
@@ -875,7 +867,7 @@ fn gen_at<R: Rng>(
     env: &[(String, Type)],
     depth: u32,
     surface_mode: bool,
-    user_elaborators: &[UserElaboratorSpec],
+    user_macros: &[UserMacroSpec],
 ) -> Term {
     let target_vars: Vec<String> = env
         .iter()
@@ -919,16 +911,16 @@ fn gen_at<R: Rng>(
         if env_fns.is_empty() { 0 } else { 3 },     // 5: call host fn
         if target_simple && depth >= 2 { 1 } else { 0 }, // 6: __fst__
         if target_simple && depth >= 2 { 1 } else { 0 }, // 7: __snd__
-        // Choice 8: __either__ (target_simple) or MatchBang (target
-        // is a `Type::Sum`, exercised by the `match!` rendering).
+        // Choice 8: __either__ (target_simple) or MatchMacro (target
+        // is a `Type::Sum`, exercised by the `match` rendering).
         // Slice 12.8 relaxed kio-rs's call-arg parsing so a sum-typed
-        // type-arg parses fine, so MatchBang's Kio' rendering
+        // type-arg parses fine, so MatchMacro's Kio' rendering
         // (`__either__(_, _, (X | Y), …)`) is admissible.
         if (target_simple || matches!(target, Type::Sum(_, _))) && depth >= 2 {
             1
         } else {
             0
-        }, // 8: __either__ / match!
+        }, // 8: __either__ / match
         if target_simple { 1 } else { 0 }, // 9: const1
         if target_simple { 1 } else { 0 }, // 10: const2
         if !nominal_projectors.is_empty() && depth >= 2 {
@@ -971,7 +963,7 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             );
             let mut e2 = env.to_vec();
             e2.push((n.clone(), bind_ty.clone()));
@@ -986,7 +978,7 @@ fn gen_at<R: Rng>(
                     &e2,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )),
             }
         }
@@ -1000,7 +992,7 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )],
         },
         3 => {
@@ -1015,7 +1007,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )),
             };
             let else_lam = Term::Lambda {
@@ -1028,7 +1020,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )),
             };
             Term::PolyCall {
@@ -1037,30 +1029,12 @@ fn gen_at<R: Rng>(
                 args: vec![cond, then_lam, else_lam],
             }
         }
-        4 => intro(
-            rng,
-            user_rng,
-            target,
-            env,
-            depth,
-            surface_mode,
-            user_elaborators,
-        ),
+        4 => intro(rng, user_rng, target, env, depth, surface_mode, user_macros),
         5 => {
             let (name, args_ty) = env_fns.choose(rng).unwrap().clone();
             let args: Vec<Term> = args_ty
                 .iter()
-                .map(|t| {
-                    gen_at(
-                        rng,
-                        user_rng,
-                        t,
-                        env,
-                        depth - 1,
-                        surface_mode,
-                        user_elaborators,
-                    )
-                })
+                .map(|t| gen_at(rng, user_rng, t, env, depth - 1, surface_mode, user_macros))
                 .collect();
             Term::App(Box::new(Term::Var(name)), args)
         }
@@ -1078,7 +1052,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )],
             }
         }
@@ -1096,7 +1070,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )],
             }
         }
@@ -1114,7 +1088,7 @@ fn gen_at<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     ),
                     gen_at(
                         rng,
@@ -1123,7 +1097,7 @@ fn gen_at<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     ),
                 ],
             }
@@ -1142,7 +1116,7 @@ fn gen_at<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     ),
                     gen_at(
                         rng,
@@ -1151,7 +1125,7 @@ fn gen_at<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     ),
                 ],
             }
@@ -1169,7 +1143,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 )],
             )
         }
@@ -1184,7 +1158,7 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             );
             let rhs = gen_at(
                 rng,
@@ -1193,7 +1167,7 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             );
             Term::OpCall {
                 op_tokens: "<+>".to_string(),
@@ -1215,7 +1189,7 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )],
         ),
         14 => Term::PolyCall {
@@ -1228,39 +1202,39 @@ fn gen_at<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )],
         },
         8 => {
             // Sum eliminator with two-clause structure. When target
             // happens to be a `Type::Sum`, the eliminator can render
-            // as the `match!` elaborator form; both clause bodies still
+            // as the `match` macro form; both clause bodies still
             // produce the same common target type. Otherwise we fall
             // back to the homogeneous-arms `__either__` shape.
             //
-            // For the MatchBang path we restrict the scrutinee's two
-            // arm types to be **`match!`-disjoint** (see
+            // For the MatchMacro path we restrict the scrutinee's two
+            // arm types to be **`match`-disjoint** (see
             // `match_disjoint`) — otherwise the typer would reject
-            // the second clause as unreachable: `match!` dispatch
+            // the second clause as unreachable: `match` dispatch
             // is per-DNF-branch, and if the first clause's parameter
-            // type covers both DNF branches via `onto!` (e.g.,
+            // type covers both DNF branches via `onto` (e.g.,
             // arms are `(I32 | I32)`, or one is `()` which absorbs
             // anything), the second clause never fires. The fallback
             // `__either__` shape isn't subject to that constraint
             // because its arm dispatch is positional, not
-            // `onto!`-driven.
+            // `onto`-driven.
             let l_param = arbitrary_value_name(rng, &format!("l{}", env.len()));
             let r_param = arbitrary_value_name(rng, &format!("r{}", env.len()));
 
-            let want_match_bang = matches!(target, Type::Sum(_, _)) && rng.gen_bool(0.5);
-            let pair = if want_match_bang {
+            let want_match_macro = matches!(target, Type::Sum(_, _)) && rng.gen_bool(0.5);
+            let pair = if want_match_macro {
                 pick_match_disjoint_pair(rng, surface_mode)
             } else {
                 None
             };
 
             if let (Type::Sum(_, _), Some((a, b))) = (target, pair) {
-                // MatchBang path: the scrutinee's two arms are
+                // MatchMacro path: the scrutinee's two arms are
                 // match-disjoint so neither clause ends up
                 // unreachable. Both clause bodies produce the common
                 // target type.
@@ -1272,7 +1246,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
                 let mut l_env = env.to_vec();
                 l_env.push((l_param.clone(), a.clone()));
@@ -1283,7 +1257,7 @@ fn gen_at<R: Rng>(
                     &l_env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
                 let mut r_env = env.to_vec();
                 r_env.push((r_param.clone(), b.clone()));
@@ -1294,9 +1268,9 @@ fn gen_at<R: Rng>(
                     &r_env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
-                Term::MatchBang {
+                Term::MatchMacro {
                     scrutinee: Box::new(sum_term),
                     left_param: l_param,
                     left_ty: a,
@@ -1317,7 +1291,7 @@ fn gen_at<R: Rng>(
                     env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
                 let mut l_env = env.to_vec();
                 l_env.push((l_param.clone(), a.clone()));
@@ -1328,7 +1302,7 @@ fn gen_at<R: Rng>(
                     &l_env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
                 let mut r_env = env.to_vec();
                 r_env.push((r_param.clone(), b.clone()));
@@ -1339,7 +1313,7 @@ fn gen_at<R: Rng>(
                     &r_env,
                     depth - 1,
                     surface_mode,
-                    user_elaborators,
+                    user_macros,
                 );
                 let l_arm = Term::Lambda {
                     params: vec![(l_param, a.clone())],
@@ -1384,7 +1358,7 @@ fn intro<R: Rng>(
     env: &[(String, Type)],
     depth: u32,
     surface_mode: bool,
-    user_elaborators: &[UserElaboratorSpec],
+    user_macros: &[UserMacroSpec],
 ) -> Term {
     match target {
         Type::Base(b) => base_literal_at(rng, *b, surface_mode),
@@ -1402,7 +1376,7 @@ fn intro<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )],
         ),
         Type::Param {
@@ -1419,7 +1393,7 @@ fn intro<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )],
         },
         Type::Label {
@@ -1437,7 +1411,7 @@ fn intro<R: Rng>(
                 env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             )),
         },
         Type::Fun(args, ret) => {
@@ -1487,7 +1461,7 @@ fn intro<R: Rng>(
                 &lam_env,
                 depth - 1,
                 surface_mode,
-                user_elaborators,
+                user_macros,
             );
             wrap_in_id(
                 target,
@@ -1499,37 +1473,21 @@ fn intro<R: Rng>(
             )
         }
         Type::Product(a, b) => Term::PolyCall {
-            // Don't wrap the value-args in `into!` / `onto!`
+            // Don't wrap the value-args in `into` / `onto`
             // here: when surface mode is on, the renderer collapses
             // `__pair__(T1, T2, a, b)` into the surface tuple
             // literal `(a, b)`, where the leading type-args are
             // *inferred* from the value-args' synthesised types. That makes
-            // the value-arg slots synth positions, and `into!` /
-            // `onto!` requires a check position. The fn body
+            // the value-arg slots synth positions, and `into` /
+            // `onto` requires a check position. The fn body
             // and `__left__` / `__right__` value-args (which
             // never collapse to surface sugar) remain valid wrap
             // sites.
             name: "__pair__".to_string(),
             type_args: vec![(**a).clone(), (**b).clone()],
             args: vec![
-                gen_at(
-                    rng,
-                    user_rng,
-                    a,
-                    env,
-                    depth - 1,
-                    surface_mode,
-                    user_elaborators,
-                ),
-                gen_at(
-                    rng,
-                    user_rng,
-                    b,
-                    env,
-                    depth - 1,
-                    surface_mode,
-                    user_elaborators,
-                ),
+                gen_at(rng, user_rng, a, env, depth - 1, surface_mode, user_macros),
+                gen_at(rng, user_rng, b, env, depth - 1, surface_mode, user_macros),
             ],
         },
         Type::Sum(a, b) => {
@@ -1547,22 +1505,14 @@ fn intro<R: Rng>(
             let pick = rng.gen_range(0..3);
             match pick {
                 0 => {
-                    let inner = gen_at(
-                        rng,
-                        user_rng,
-                        a,
-                        env,
-                        depth - 1,
-                        surface_mode,
-                        user_elaborators,
-                    );
+                    let inner = gen_at(rng, user_rng, a, env, depth - 1, surface_mode, user_macros);
                     let inner = maybe_wrap_check_position(
                         rng,
                         user_rng,
                         inner,
                         a,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     );
                     Term::PolyCall {
                         name: "__left__".to_string(),
@@ -1571,22 +1521,14 @@ fn intro<R: Rng>(
                     }
                 }
                 1 => {
-                    let inner = gen_at(
-                        rng,
-                        user_rng,
-                        b,
-                        env,
-                        depth - 1,
-                        surface_mode,
-                        user_elaborators,
-                    );
+                    let inner = gen_at(rng, user_rng, b, env, depth - 1, surface_mode, user_macros);
                     let inner = maybe_wrap_check_position(
                         rng,
                         user_rng,
                         inner,
                         b,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     );
                     Term::PolyCall {
                         name: "__right__".to_string(),
@@ -1603,7 +1545,7 @@ fn intro<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     )),
                     else_: Box::new(gen_at(
                         rng,
@@ -1612,7 +1554,7 @@ fn intro<R: Rng>(
                         env,
                         depth - 1,
                         surface_mode,
-                        user_elaborators,
+                        user_macros,
                     )),
                     then_ty: target.clone(),
                     else_ty: target.clone(),

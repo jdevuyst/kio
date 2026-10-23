@@ -1,9 +1,9 @@
 module catalog/domain;
 
 import dict/dict as dict;
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
 import list/core as lcore;
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import result/result as result;
 import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32, lt_i32);
@@ -51,44 +51,40 @@ pub type Applied = Book_index & Member_index & Hold_list & String;
 
 pub type Outcome = result.Result(Applied, Failure);
 
-pub fn op_checkout(member: I32, call: I32) -> Op { {checkout = (member, call)}.>widen_sum!(Op) }
+pub fn op_checkout(member: I32, call: I32) -> Op { {checkout = (member, call)}.>widen_sum(Op) }
 
 pub fn op_return(member: I32, call: I32, days_late: I32) -> Op {
-  {return = (member, call, days_late)}.>widen_sum!(Op)
+  {return = (member, call, days_late)}.>widen_sum(Op)
 }
 
-pub fn op_hold(member: I32, call: I32) -> Op { {hold = (member, call)}.>widen_sum!(Op) }
+pub fn op_hold(member: I32, call: I32) -> Op { {hold = (member, call)}.>widen_sum(Op) }
 
-pub fn op_report() -> Op { {report=}.>widen_sum!(Op) }
+pub fn op_report() -> Op { {report=}.>widen_sum(Op) }
 
-pub fn fail_unknown_call(call: I32) -> Failure { {unknown_call = call}.>widen_sum!(Failure) }
+pub fn fail_unknown_call(call: I32) -> Failure { {unknown_call = call}.>widen_sum(Failure) }
 
-pub fn fail_unknown_member(member: I32) -> Failure {
-  {unknown_member = member}.>widen_sum!(Failure)
-}
+pub fn fail_unknown_member(member: I32) -> Failure { {unknown_member = member}.>widen_sum(Failure) }
 
-pub fn fail_no_copies(call: I32) -> Failure { {no_copies = call}.>widen_sum!(Failure) }
+pub fn fail_no_copies(call: I32) -> Failure { {no_copies = call}.>widen_sum(Failure) }
 
 pub fn fail_not_held(member: I32, call: I32) -> Failure {
-  {not_held = (member, call)}.>widen_sum!(Failure)
+  {not_held = (member, call)}.>widen_sum(Failure)
 }
 
-pub fn fail_copies_available(call: I32) -> Failure {
-  {copies_available = call}.>widen_sum!(Failure)
-}
+pub fn fail_copies_available(call: I32) -> Failure { {copies_available = call}.>widen_sum(Failure) }
 
 pub fn cat(left: String, right: String) -> String { string_concat(left, right) }
 
 pub fn istr(value: I32) -> String { int_to_string(value) }
 
 pub fn pad2(value: I32) -> String {
-  if! lt_i32(value, 10) { "0".>cat(istr(value)) } else { istr(value) }
+  if(lt_i32(value, 10)) { "0".>cat(istr(value)) } else { istr(value) }
 }
 
 pub fn pad3(value: I32) -> String {
-  if! lt_i32(value, 10) {
+  if(lt_i32(value, 10)) {
     "  ".>cat(istr(value))
-  } else if! lt_i32(value, 100) {
+  } else if(lt_i32(value, 100)) {
     " ".>cat(istr(value))
   } else {
     istr(value)
@@ -98,9 +94,9 @@ pub fn pad3(value: I32) -> String {
 /// Search and insertion share this explicit key order.
 pub fn cmp_i32(pair: I32 & I32) -> dict.Ordering {
   let .(left: I32, right: I32) = pair;
-  if! lt_i32(left, right) {
+  if(lt_i32(left, right)) {
     dict.lt()
-  } else if! eq_i32(left, right) {
+  } else if(eq_i32(left, right)) {
     dict.eq()
   } else {
     dict.gt()

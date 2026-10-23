@@ -1,9 +1,9 @@
 module signal/input;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import signal/codec as codec;
 import testapi(I32, String);
 import testapi/fmt as fmt;
@@ -13,14 +13,14 @@ import testapi/iter(loop);
 pub type Read_result = (codec.Encoder & lists.List(I32)) | String;
 
 rec(loop) fn read(state: codec.Encoder, originals_rev: lists.List(I32)) -> Read_result {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(line: String) {
-      match! fmt.string_to_int(line) {
+      match(fmt.string_to_int(line)) {
         .(value: I32) { recur read(codec.accept(state, value), lists.cons(value, originals_rev)) };
-        .() { line.>widen_sum!(Read_result) }
+        .() { line.>widen_sum(Read_result) }
       }
     };
-    .() { (state, traversal.reverse(originals_rev)).>widen_sum!(Read_result) }
+    .() { (state, traversal.reverse(originals_rev)).>widen_sum(Read_result) }
   }
 }
 

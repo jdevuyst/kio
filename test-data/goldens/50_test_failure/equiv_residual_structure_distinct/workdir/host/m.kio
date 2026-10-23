@@ -1,7 +1,7 @@
 module host/m;
 
-import elab/control(scope);
 import host(T, effect);
+import macros/control(macro scope);
 
 newtype Box : T { pub constructor mk_box; pub projector un_box }
 
@@ -16,6 +16,6 @@ equiv newtype_payload(x: T, y: T) {
 }
 
 equiv effect_inside_newtype(x: T) {
-  Box.mk_box(scope! { effect(x); x });
+  Box.mk_box(scope { effect(x); x });
   Box.mk_box(x)
 }

@@ -10,9 +10,9 @@
 /// that a bad rebalance really can break is those two keys' ascending order.
 module tree/audit;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32);
 import testapi/iter(loop);
@@ -22,20 +22,20 @@ import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of, {three}, {
 /// disagree — the answer that makes a broken rebalance visible.
 labels Depth = { level: I32 } | { ragged: . };
 
-fn level(d: I32) -> Depth { {level = d}.>widen_sum!(Depth) }
+fn level(d: I32) -> Depth { {level = d}.>widen_sum(Depth) }
 
-fn ragged() -> Depth { {ragged=}.>widen_sum!(Depth) }
+fn ragged() -> Depth { {ragged=}.>widen_sum(Depth) }
 
 /// Sibling depths that agree collapse to one; anything else is ragged, and
 /// raggedness spreads to every ancestor.
 fn agree(a: Depth, b: Depth) -> Depth {
-  match! a {
+  match(a) {
     (
     , .(x: Level) {
-        match! b {
+        match(b) {
           (
           , .(y: Level) {
-              if! eq_i32(x.?{level}, y.?{level}) { level(x.?{level}) } else { ragged() }
+              if(eq_i32(x.?{level}, y.?{level})) { level(x.?{level}) } else { ragged() }
             }
           , .(_r: Ragged) { ragged() }
           )
@@ -47,13 +47,13 @@ fn agree(a: Depth, b: Depth) -> Depth {
 }
 
 fn deeper(d: Depth) -> Depth {
-  match! d {
+  match(d) {
     (.(x: Level) { level(add_i32(x.?{level}, 1)) }, .(_r: Ragged) { ragged() })
   }
 }
 
 rec(loop) fn depth_of(t: Node) -> Depth {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { level(0) }
     , .(n: Two) {
@@ -74,7 +74,7 @@ rec(loop) fn depth_of(t: Node) -> Depth {
 }
 
 fn depth_uniform(t: Node) -> Bool {
-  match! depth_of(t) {
+  match(depth_of(t)) {
     (.(_x: Level) { .t }, .(_r: Ragged) { .f })
   }
 }
@@ -85,9 +85,9 @@ labels Seen = { last: I32 } | { unseen: . };
 
 type Order = Seen & Bool;
 
-fn seen(k: I32) -> Seen { {last = k}.>widen_sum!(Seen) }
+fn seen(k: I32) -> Seen { {last = k}.>widen_sum(Seen) }
 
-fn unseen() -> Seen { {unseen=}.>widen_sum!(Seen) }
+fn unseen() -> Seen { {unseen=}.>widen_sum(Seen) }
 
 fn order_start() -> Order { (unseen(), .t) }
 
@@ -95,7 +95,7 @@ fn order_ok(o: Order) -> Bool { let .(_s: Seen, ok: Bool) = o; ok }
 
 fn order_step(o: Order, k: I32) -> Order {
   let .(s: Seen, ok: Bool) = o;
-  match! s {
+  match(s) {
     (.(p: Last) { (seen(k), and(ok, lt_i32(p.?{last}, k))) }, .(_u: Unseen) { (seen(k), ok) })
   }
 }
@@ -103,7 +103,7 @@ fn order_step(o: Order, k: I32) -> Order {
 /// Left subtree, first key, middle subtree, second key, right subtree — the
 /// keys arrive in the order the tree claims to hold them.
 rec(loop) fn order_walk(t: Node, o: Order) -> Order {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { o }
     , .(n: Two) {
@@ -142,7 +142,7 @@ fn shape_node(keys: I32, children: I32, ordered: Bool, below: Shape) -> Shape {
 }
 
 rec(loop) fn shape_walk(t: Node) -> Shape {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { shape_leaf() }
     , .(n: Two) {
@@ -200,10 +200,10 @@ pub fn size_ok(v: Verdict) -> Bool { let .(_d: Bool, _o: Bool, _a: Bool, n: Bool
 /// bug in the rebalancing rather than a fact about the data.
 pub fn verdict_word(v: Verdict) -> String {
   let .(d: Bool, o: Bool, a: Bool, n: Bool) = v;
-  if! d {
-    if! o {
-      if! a {
-        if! n { "ok" } else { "BAD-size" }
+  if(d) {
+    if(o) {
+      if(a) {
+        if(n) { "ok" } else { "BAD-size" }
       } else {
         "BAD-arity"
       }

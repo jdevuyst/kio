@@ -2,8 +2,8 @@
 /// on a reference cycle, and in what order may the rest be evaluated.
 module sheet/graph;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import sheet/addr(Addr, addr_eq, all_addrs, in_grid, mem);
 import sheet/cells(Sheet, content_at, fold_content);
 import sheet/formula(Expr);
@@ -39,7 +39,7 @@ pub fn dependents_of(s: Sheet, a: Addr) -> List(Addr) {
 }
 
 rec(loop) fn deps_onto(s: Sheet, todo: List(Addr), acc: Deps) -> Deps {
-  match! todo.>List.unpack {
+  match(todo.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) { recur deps_onto(s, rest, put(acc, a, dependents_of(s, a))) }
     , .(_empty: .) { acc }
@@ -54,14 +54,14 @@ pub fn deps_of(deps: Deps, a: Addr) -> List(Addr) { get_or(deps, a, nil(Addr)) }
 fn deg_of(degs: Degs, a: Addr) -> I32 { get_or(degs, a, 0) }
 
 rec(loop) fn degs_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), acc: Degs) -> Degs {
-  match! todo.>List.unpack {
+  match(todo.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
         let live =
           filter(
           , cell_precedents(s, a)
           , .(p: Addr) {
-              if! mem(cyc, p) { .f } else { .t }
+              if(mem(cyc, p)) { .f } else { .t }
             }
           );
         recur degs_onto(s, cyc, rest, put(acc, a, len(live)))
@@ -76,12 +76,12 @@ rec(loop) fn degs_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), acc: Degs) -
 pub fn build_degs(s: Sheet, cyc: List(Addr)) -> Degs { degs_onto(s, cyc, all_addrs(), empty(I32)) }
 
 rec(loop) fn walk(s: Sheet, frontier: List(Addr), seen: List(Addr), target: Addr) -> Bool {
-  match! frontier.>List.unpack {
+  match(frontier.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
-        if! addr_eq(a, target) {
+        if(addr_eq(a, target)) {
           .t
-        } else if! mem(seen, a) {
+        } else if(mem(seen, a)) {
           recur walk(s, rest, seen, target)
         } else {
           recur walk(s, append(rest, cell_precedents(s, a)), cons(a, seen), target)
@@ -108,15 +108,15 @@ pub fn cycle_cells(s: Sheet) -> List(Addr) {
 rec(loop) fn release(dependents: List(Addr), degs: Degs, cyc: List(Addr), ready: List(Addr)) ->
   Degs & List(Addr)
    {
-  match! dependents.>List.unpack {
+  match(dependents.>List.unpack) {
     (
     , .(d: Addr, rest: List(Addr)) {
-        if! mem(cyc, d) {
+        if(mem(cyc, d)) {
           recur release(rest, degs, cyc, ready)
         } else {
           let left = sub_i32(deg_of(degs, d), 1);
           let degs2 = put(degs, d, left);
-          if! eq_i32(left, 0) {
+          if(eq_i32(left, 0)) {
             recur release(rest, degs2, cyc, cons(d, ready))
           } else {
             recur release(rest, degs2, cyc, ready)
@@ -129,7 +129,7 @@ rec(loop) fn release(dependents: List(Addr), degs: Degs, cyc: List(Addr), ready:
 }
 
 rec(loop) fn kahn(deps: Deps, degs: Degs, queue: List(Addr), cyc: List(Addr), out: List(Addr)) -> List(Addr) {
-  match! queue.>List.unpack {
+  match(queue.>List.unpack) {
     (
     , .(a: Addr, rest: List(Addr)) {
         let .(degs2: Degs, freed: List(Addr)) = release(deps_of(deps, a), degs, cyc, nil(Addr));
@@ -150,7 +150,7 @@ pub fn topo_order(s: Sheet, deps: Deps, cyc: List(Addr)) -> List(Addr) {
     filter(
     , all_addrs()
     , .(a: Addr) {
-        if! mem(cyc, a) { .f } else { .t }
+        if(mem(cyc, a)) { .f } else { .t }
       }
     );
   let seeds = filter(live, .(a: Addr) { eq_i32(deg_of(degs, a), 0) });

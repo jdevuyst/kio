@@ -45,6 +45,6 @@ build {
 }
 
 bridge {
-  elab_fold;
+  macro_fold;
   fold_calls
 }

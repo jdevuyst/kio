@@ -190,12 +190,12 @@ pub enum Term {
         member: String,
         args: Vec<Term>,
     },
-    /// `if! cond { then } else { else_ }`. Both arms have the same
+    /// `if cond { then } else { else_ }`. Both arms have the same
     /// result type; the whole expression has that type.
     /// Renders two ways depending on `RenderOpts.surface`:
-    /// - surface: an imported `if! <cond> { <then> } else { <else_> }` call.
+    /// - surface: an imported `if <cond> { <then> } else { <else_> }` call.
     /// - Kio': `__if_then_else__(R, cond, .() { then }, .() { else_ })`,
-    ///   matching the ordinary conditional elaborator's result.
+    ///   matching the ordinary conditional macro's result.
     IfElse {
         cond: Box<Term>,
         then: Box<Term>,
@@ -213,15 +213,15 @@ pub enum Term {
         constructor: String,
         payload: Box<Term>,
     },
-    /// `match!(<scrutinee>, (.(p1: A) { <left_body> }, .(p2: B) { <right_body> }))`
+    /// `match(<scrutinee>, (.(p1: A) { <left_body> }, .(p2: B) { <right_body> }))`
     /// — surface pattern matching with two clauses against a sum-
     /// typed scrutinee `(A | B) -> ret_ty`. Both clause bodies have
     /// the same `ret_ty`. Renders two ways:
-    /// - surface: `match!(<scrutinee>, (.(p1: A) { <left> }, .(p2: B) { <right> }))`.
+    /// - surface: `match(<scrutinee>, (.(p1: A) { <left> }, .(p2: B) { <right> }))`.
     /// - Kio': `__either__(A, B, ret_ty, <scrutinee>, .(p1) { <left> }, .(p2) { <right> })`,
     ///   the same shape the typer's match elaboration produces (for
     ///   the simple two-clause case).
-    MatchBang {
+    MatchMacro {
         scrutinee: Box<Term>,
         left_param: String,
         left_ty: Type,
@@ -231,53 +231,53 @@ pub enum Term {
         right_body: Box<Term>,
         ret_ty: Type,
     },
-    /// `into!(<inner>)` — surface elaborator form, total and
+    /// `into(<inner>)` — surface macro form, total and
     /// information-preserving. The generator only emits identity
     /// coercions, so the Kio' fallback is sound: surface mode
-    /// renders `into!(<inner>)`, Kio' mode renders just
-    /// `<inner>`. The elaborator accepts the identity coercion at any
+    /// renders `into(<inner>)`, Kio' mode renders just
+    /// `<inner>`. The macro accepts the identity coercion at any
     /// annotated-target position where source and target types
     /// coincide.
     Into {
         inner: Box<Term>,
     },
-    /// `onto!(<inner>)` — surface elaborator form, total but lossy.
+    /// `onto(<inner>)` — surface macro form, total but lossy.
     /// Same identity-only constraint as `Into`, so Kio' falls back
     /// to `<inner>`.
     Onto {
         inner: Box<Term>,
     },
-    /// `iso!(<inner>)` — bijection-only surface elaborator form. The
+    /// `iso(<inner>)` — bijection-only surface macro form. The
     /// identity coercion is trivially a bijection, so the generator
     /// emits it the same way it emits `Into` / `Onto` (Kio' fallback
     /// renders just the inner).
     Iso {
         inner: Box<Term>,
     },
-    /// `align!(<inner>)` — payload-preserving surface elaborator form.
+    /// `align(<inner>)` — payload-preserving surface macro form.
     /// Identity is a payload-preserving coercion at any type.
     Align {
         inner: Box<Term>,
     },
-    /// `ease!(<inner>)` — no-duplication surface elaborator form, a
-    /// strict superset of `iso!` (adds sum widening, sum collapse, and
+    /// `ease(<inner>)` — no-duplication surface macro form, a
+    /// strict superset of `iso` (adds sum widening, sum collapse, and
     /// product projection; excludes product duplication). Identity maps
     /// every source factor to its own slot, so it is admitted at any
-    /// type — including function types, where `ease!` short-circuits
+    /// type — including function types, where `ease` short-circuits
     /// to the receiver when source and target are already equal. The
-    /// generator emits only monomorphic types, so `ease!`'s
+    /// generator emits only monomorphic types, so `ease`'s
     /// polymorphic-source/target rejection never applies.
     Ease {
         inner: Box<Term>,
     },
-    /// `atom!(<inner>)` — single-arm-pick surface elaborator form. For
-    /// atomic targets `atom!` collapses to a degenerate identity (the
+    /// `atom(<inner>)` — single-arm-pick surface macro form. For
+    /// atomic targets `atom` collapses to a degenerate identity (the
     /// "single arm" is the source itself). The generator only emits
     /// it at atomic targets so the inner-as-result identity holds.
     Atom {
         inner: Box<Term>,
     },
-    /// `reorder_sum!(<inner>)` — sum-axis permutation surface elaborator.
+    /// `reorder_sum(<inner>)` — sum-axis permutation surface macro.
     /// At identity coercion (source == target), the permutation is
     /// the identity permutation, so the Kio' fallback is a
     /// passthrough. The generator emits this only when the source
@@ -286,45 +286,45 @@ pub enum Term {
     ReorderSum {
         inner: Box<Term>,
     },
-    /// `reorder_prod!(<inner>)` — product-axis permutation surface
-    /// elaborator. At identity coercion, the permutation is the identity
+    /// `reorder_prod(<inner>)` — product-axis permutation surface
+    /// macro. At identity coercion, the permutation is the identity
     /// permutation; Kio' fallback is a passthrough. The generator
     /// emits this only when the source's outermost shape is a
     /// product (`Type::Product`).
     ReorderProd {
         inner: Box<Term>,
     },
-    /// `narrow_sum!(<inner>)` — sum-axis codiagonal / capacity-shrink
-    /// surface elaborator. At identity coercion the multiset equality
+    /// `narrow_sum(<inner>)` — sum-axis codiagonal / capacity-shrink
+    /// surface macro. At identity coercion the multiset equality
     /// trivially holds, so the Kio' fallback is a passthrough. The
     /// generator emits this only when the source's outermost shape
     /// is a sum.
     NarrowSum {
         inner: Box<Term>,
     },
-    /// `narrow_prod!(<inner>)` — product-axis truncation surface
-    /// elaborator. At identity coercion target == source so no slots
+    /// `narrow_prod(<inner>)` — product-axis truncation surface
+    /// macro. At identity coercion target == source so no slots
     /// are dropped; Kio' fallback passes the inner through. Emitted
     /// only when source's outermost shape is a product.
     NarrowProd {
         inner: Box<Term>,
     },
-    /// `widen_sum!(<inner>)` — sum-axis capacity-extend surface
-    /// elaborator. At identity coercion no new arms are added; Kio'
+    /// `widen_sum(<inner>)` — sum-axis capacity-extend surface
+    /// macro. At identity coercion no new arms are added; Kio'
     /// fallback passes the inner through. Emitted only when source's
     /// outermost shape is a sum.
     WidenSum {
         inner: Box<Term>,
     },
-    /// `widen_prod!(<inner>)` — product-axis diagonal / capacity-
-    /// extend surface elaborator. At identity coercion no slots are
+    /// `widen_prod(<inner>)` — product-axis diagonal / capacity-
+    /// extend surface macro. At identity coercion no slots are
     /// duplicated; Kio' fallback passes the inner through. Emitted
     /// only when source's outermost shape is a product.
     WidenProd {
         inner: Box<Term>,
     },
-    /// `flatten_sum!(<inner>)` — sum-axis iterative-associativity
-    /// surface elaborator. The form identity-short-circuits whenever
+    /// `flatten_sum(<inner>)` — sum-axis iterative-associativity
+    /// surface macro. The form identity-short-circuits whenever
     /// the source type already equals the target, whatever its
     /// nesting, so at identity coercion the Kio' fallback is a
     /// passthrough. Emitted only when source's outermost shape is a
@@ -332,37 +332,37 @@ pub enum Term {
     FlattenSum {
         inner: Box<Term>,
     },
-    /// `flatten_prod!(<inner>)` — product-axis iterative-associativity
-    /// surface elaborator. Same identity short-circuit as
-    /// `flatten_sum!`; Kio' fallback passes the inner through.
+    /// `flatten_prod(<inner>)` — product-axis iterative-associativity
+    /// surface macro. Same identity short-circuit as
+    /// `flatten_sum`; Kio' fallback passes the inner through.
     /// Emitted only when source's outermost shape is a product.
     FlattenProd {
         inner: Box<Term>,
     },
-    /// `one_sum!(<inner>)` — sum-axis uniform-arm pick surface
-    /// elaborator. At identity-coercion-with-atomic-source the source is
+    /// `one_sum(<inner>)` — sum-axis uniform-arm pick surface
+    /// macro. At identity-coercion-with-atomic-source the source is
     /// the single "arm" and the form is a degenerate identity. The
     /// generator emits it only at atomic sources — the degenerate
     /// identity case, where no arm selection can go wrong.
     OneSum {
         inner: Box<Term>,
     },
-    /// `one_prod!(<inner>)` — product-axis first-matching-slot pick
-    /// surface elaborator. At identity-coercion-with-atomic-source the
+    /// `one_prod(<inner>)` — product-axis first-matching-slot pick
+    /// surface macro. At identity-coercion-with-atomic-source the
     /// source itself fills the "one slot" and the form is a degenerate
     /// identity. The generator emits it only at atomic sources —
     /// the degenerate identity case, where no slot selection can go
-    /// wrong. Renders `one_prod!(<inner>)` in surface mode; Kio'
+    /// wrong. Renders `one_prod(<inner>)` in surface mode; Kio'
     /// fallback is the inner.
     OneProd {
         inner: Box<Term>,
     },
-    /// `fit!(<inner>)` — recursive composer surface elaborator. At
-    /// identity coercion fit! reduces to identity at every leaf (the
+    /// `fit(<inner>)` — recursive composer surface macro. At
+    /// identity coercion fit reduces to identity at every leaf (the
     /// variance walk on `->` and the spine walk on structural types
     /// both bottom out to identity), so the Kio' fallback is a
     /// passthrough. The generator emits this at any target type —
-    /// fit! is the most general of the spine palette.
+    /// fit is the most general of the spine palette.
     Fit {
         inner: Box<Term>,
     },
@@ -415,12 +415,12 @@ pub enum Term {
         lhs: Box<Term>,
         rhs: Box<Term>,
     },
-    /// User-defined elaborator call generated alongside a matching
-    /// `pub elab` declaration. Surface mode renders as
+    /// User-defined macro call generated alongside a matching
+    /// `pub macro` declaration. Surface mode renders as
     /// `<name>!(<inner>, _)`; Kio' mode falls back to `<inner>`.
-    /// Generated definitions are identity-style elaborators, so the
+    /// Generated definitions are identity-style macros, so the
     /// result type is the inner type at every emitted call site.
-    UserElaborator {
+    UserMacro {
         name: String,
         inner: Box<Term>,
     },
@@ -462,10 +462,10 @@ impl UfcsSpelling {
 }
 
 /// Safe reflected-ABI implementation template for a generated
-/// user-defined elaborator. Each template preserves the checked
+/// user-defined macro. Each template preserves the checked
 /// value's type at the call sites the generator emits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum UserElaboratorTemplate {
+pub enum UserMacroTemplate {
     Direct,
     TargetBranch,
     SourceTargetGuard,
@@ -475,9 +475,9 @@ pub enum UserElaboratorTemplate {
     SumRoundTrip,
 }
 
-impl UserElaboratorTemplate {
-    pub fn all() -> &'static [UserElaboratorTemplate] {
-        use UserElaboratorTemplate::*;
+impl UserMacroTemplate {
+    pub fn all() -> &'static [UserMacroTemplate] {
+        use UserMacroTemplate::*;
         &[
             Direct,
             TargetBranch,
@@ -490,34 +490,34 @@ impl UserElaboratorTemplate {
     }
 }
 
-/// The schedule and body family of a generated user elaborator.
+/// The schedule and body family of a generated user macro.
 /// Keeping the marked schedule in the same enum as its fixed body prevents
 /// the generator from pairing `impl(fills)` with a late-only reflected ABI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum UserElaboratorImplementation {
-    Late(UserElaboratorTemplate),
+pub enum UserMacroImplementation {
+    Late(UserMacroTemplate),
     FillsIdentity,
 }
 
-/// Optional capture prefix for a generated user-defined elaborator.
+/// Optional capture prefix for a generated user-defined macro.
 /// Captures exercise the declaration ABI without changing the
 /// generated term's runtime meaning.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum UserElaboratorCapture {
+pub enum UserMacroCapture {
     TypeAlias,
     ValueFn,
 }
 
-/// A generated user-defined elaborator declaration and the
+/// A generated user-defined macro declaration and the
 /// implementation body shape it should render with.
 #[derive(Debug, Clone)]
-pub struct UserElaboratorSpec {
+pub struct UserMacroSpec {
     pub name: String,
     pub impl_name: String,
     pub source_param: String,
     pub target_param: String,
-    pub implementation: UserElaboratorImplementation,
-    pub captures: Vec<UserElaboratorCapture>,
+    pub implementation: UserMacroImplementation,
+    pub captures: Vec<UserMacroCapture>,
 }
 
 /// The fn the generator wraps each program's body in.
@@ -528,10 +528,10 @@ pub struct Program {
     pub params: Vec<(String, Type)>,
     pub ret: Type,
     pub body: Term,
-    pub user_elaborators: Vec<UserElaboratorSpec>,
+    pub user_macros: Vec<UserMacroSpec>,
     /// True when the rendered program uses any surface form beyond
-    /// Kio' (tuple-literal sugar, `if!` blocks, `labels`,
-    /// label-value sugar, `match!`, `into!` / `onto!`). This tracks
+    /// Kio' (tuple-literal sugar, `if` blocks, `labels`,
+    /// label-value sugar, `match`, `into` / `onto`). This tracks
     /// the generated function body's surface usage; whole generated
     /// cases are not Kio' while prog.kio carries the host
     /// mirror needed by current kio-rs.
@@ -540,7 +540,7 @@ pub struct Program {
     /// it may reference generated label types from `prog.util` and may emit
     /// `Term::LabelConstruct` / `Type::Label`). `emit.rs` uses this to
     /// include the package-level declarations and imports that support
-    /// surface programs, including generated user elaborators.
+    /// surface programs, including generated user macros.
     /// `surface_mode` may be true while `uses_surface` is false:
     /// surface_mode is the *generator-time* decision, while
     /// `uses_surface` is the *render-time* signal that a surface

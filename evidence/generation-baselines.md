@@ -207,7 +207,7 @@ isolation, whitespace and newline paths, directory links, cycles, dangling-link
 collisions, and the exact-shape admission guard.
 
 An actual `castles/order_book_matcher` representative exercised its relative
-dependency on the sibling `poc/elab` package. Source dependency preparation
+dependency on the sibling [macro-library package](../test-data/poc/macros/). Source dependency preparation
 preceded copying; the detached case then built without refetching its relocated
 dependency path. The complete source `.kio` inventory was byte-identical before
 and after. This was a compile-only check, not runtime evidence. The representative

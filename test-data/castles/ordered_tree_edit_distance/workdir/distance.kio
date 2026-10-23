@@ -1,7 +1,7 @@
 module distance;
 
-import elab/control(if);
 import forest as forest;
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -29,12 +29,12 @@ fn index(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32) -> I32 {
 rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32) -> I32 {
   let slot = index(problem, a, stop_a, b, stop_b);
   let cached = array.array_get(problem.?{memo}, slot);
-  if! arith.leq_i32(0, cached) {
+  if(arith.leq_i32(0, cached)) {
     cached
   } else {
-    let answer = if! forest.equal(a, stop_a) {
+    let answer = if(forest.equal(a, stop_a)) {
       arith.sub_i32(stop_b, b)
-    } else if! forest.equal(b, stop_b) {
+    } else if(forest.equal(b, stop_b)) {
       arith.sub_i32(stop_a, a)
     } else {
       let deleted = arith.add_i32(
@@ -55,20 +55,20 @@ rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32)
       , after_b
       );
       let siblings = recur(cont) forests(problem, after_a, stop_a, after_b, stop_b);
-      let rename = if! forest.equal(
+      let rename = if(forest.equal(
       , forest.symbol(problem.?{source}, a)
       , forest.symbol(problem.?{target}, b)
-      ) {
+      )) {
         0
       } else {
         1
       };
       let paired = arith.add_i32(rename, arith.add_i32(children, siblings));
-      let best_other = if! arith.leq_i32(deleted, inserted) { deleted } else { inserted };
-      if! arith.leq_i32(paired, best_other) {
+      let best_other = if(arith.leq_i32(deleted, inserted)) { deleted } else { inserted };
+      if(arith.leq_i32(paired, best_other)) {
         array.array_set(problem.?{choice}, slot, 0);
         paired
-      } else if! arith.leq_i32(deleted, inserted) {
+      } else if(arith.leq_i32(deleted, inserted)) {
         array.array_set(problem.?{choice}, slot, 1);
         deleted
       } else {
@@ -89,10 +89,10 @@ rec(loop) fn traceback(
 , b: I32
 , stop_b: I32
 ) {
-  if! forest.less(a, stop_a) {
-    if! forest.less(b, stop_b) {
+  if(forest.less(a, stop_a)) {
+    if(forest.less(b, stop_b)) {
       let choice = array.array_get(problem.?{choice}, index(problem, a, stop_a, b, stop_b));
-      if! forest.equal(choice, 0) {
+      if(forest.equal(choice, 0)) {
         array.array_set(mapping, a, b);
         let after_a = forest.after(problem.?{source}, a);
         let after_b = forest.after(problem.?{target}, b);
@@ -105,7 +105,7 @@ rec(loop) fn traceback(
         , after_b
         );
         recur traceback(problem, mapping, after_a, stop_a, after_b, stop_b)
-      } else if! forest.equal(choice, 1) {
+      } else if(forest.equal(choice, 1)) {
         recur traceback(problem, mapping, arith.add_i32(a, 1), stop_a, b, stop_b)
       } else {
         recur traceback(problem, mapping, a, stop_a, arith.add_i32(b, 1), stop_b)

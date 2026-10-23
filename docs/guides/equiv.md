@@ -11,8 +11,8 @@ round trip. Use a runtime test in your host when the behavior depends on I/O,
 mutation, a backend's emitted representation, or other host-runtime details.
 
 The examples assume a host-provided `String` and `print` operation. The
-`scope!` used for local statements is an imported library elab; see
-[Using libraries](using-libraries.md#the-elaborator-library) for its setup.
+`scope` used for local statements is an imported library macro; see
+[Using libraries](using-libraries.md#the-macro-library) for its setup.
 
 <!--kio {harness=equiv placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -22,7 +22,7 @@ bridge {
 module kiodoc;
 
 import __intrinsics__;
-import control(scope);
+import control(macro scope);
 
 host type String role(str);
 host fn print(value: String);
@@ -47,11 +47,11 @@ equiv id_unfolds[A](value: A) {
 Every value parameter needs a type annotation. Every arm sees the same
 parameters and must have the same type. A disagreement there is an ordinary
 type error before testing starts, not a failed equivalence claim. An arm that
-needs local statements wraps them in a `scope! { ... }` expression:
+needs local statements wraps them in a `scope { ... }` expression:
 
 ```kio {@equiv}
 equiv local_work[A](value: A) {
-  scope! { let copy = value; copy };
+  scope { let copy = value; copy };
   value
 }
 ```
@@ -147,7 +147,7 @@ erase the action:
 
 ```kio {@equiv}
 equiv extra_action_fails() {
-  scope! { print("hello"); print("hello") };
+  scope { print("hello"); print("hello") };
   print("hello")
 }
 ```
@@ -199,7 +199,7 @@ normal form. A three-arm failure can therefore show that arms 1 and 3 agree
 while arm 2 differs, instead of reducing the result to a single boolean.
 
 A failed claim exits with code `50`. Parse, name-resolution, type, and
-elab failures retain their own earlier compile-time exit categories. A
+macro failures retain their own earlier compile-time exit categories. A
 successful run prints one `pass` line per claim and a final passed/total
 summary.
 
@@ -229,7 +229,7 @@ skips dependency claims.
 A passing parameterized `equiv` proves equality, under Kio's documented
 partial-evaluation and α/η relation, for every instantiation of its symbolic
 parameters. It can pin helper unfolding, newtype round trips, structural laws,
-or the result of elab-generated glue.
+or the result of macro-generated glue.
 
 It does not execute host code, establish a host function's mathematical law,
 exercise an emitter, compare performance, or prove arbitrary semantic

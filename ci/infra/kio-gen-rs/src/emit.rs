@@ -17,8 +17,8 @@
 //!     prog.kio           (module prog; `host type` declarations for
 //!                      every base role type, polymorphic helpers +
 //!                      deftypes + fn gen(...))
-//!     *.kio  (elaborator support files when surface
-//!                      elaborator forms may be emitted)
+//!     *.kio  (macro support files when surface
+//!                      macro forms may be emitted)
 //! ```
 //!
 //! Each module file sits at the path its `module <path>;`
@@ -31,8 +31,8 @@ use std::io;
 use std::path::Path;
 
 use kio_gen::ast::{
-    Base, Program, Term, Type, UserElaboratorCapture, UserElaboratorImplementation,
-    UserElaboratorSpec, UserElaboratorTemplate,
+    Base, Program, Term, Type, UserMacroCapture, UserMacroImplementation, UserMacroSpec,
+    UserMacroTemplate,
 };
 use kio_gen::render;
 use rand::SeedableRng;
@@ -153,40 +153,40 @@ pub fn package_lists_bridge_glob(package_file: &str, root: &str) -> bool {
         .any(|line| line == root || line.strip_suffix(';') == Some(root))
 }
 
-const ELABORATOR_IMPORTS: &str = "\
-import algebraic_elaborators(iso, into, onto, align, ease, atom);
-import spine_elaborators(reorder_sum, reorder_prod, narrow_sum, narrow_prod, widen_sum, widen_prod, flatten_sum, flatten_prod, one_sum, one_prod, fit);
-import match(match);
-import control(if, scope);
+const MACRO_IMPORTS: &str = "\
+import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);
+import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);
+import match(macro match);
+import control(macro if, macro scope);
 ";
 
-const ELABORATOR_SUPPORT_FILES: &[(&str, &str)] = &[
+const MACRO_SUPPORT_FILES: &[(&str, &str)] = &[
     (
-        "workdir/elaborator_util.kio",
-        include_str!("../../../../test-data/poc/elab/workdir/elaborator_util.kio"),
+        "workdir/macro_util.kio",
+        include_str!("../../../../test-data/poc/macros/workdir/macro_util.kio"),
     ),
     (
-        "workdir/spine_elaborators.kio",
-        include_str!("../../../../test-data/poc/elab/workdir/spine_elaborators.kio"),
+        "workdir/spine_macros.kio",
+        include_str!("../../../../test-data/poc/macros/workdir/spine_macros.kio"),
     ),
     (
-        "workdir/algebraic_elaborators.kio",
-        include_str!("../../../../test-data/poc/elab/workdir/algebraic_elaborators.kio"),
+        "workdir/algebraic_macros.kio",
+        include_str!("../../../../test-data/poc/macros/workdir/algebraic_macros.kio"),
     ),
     (
         "workdir/match.kio",
-        include_str!("../../../../test-data/poc/elab/workdir/match.kio"),
+        include_str!("../../../../test-data/poc/macros/workdir/match.kio"),
     ),
     (
         "workdir/control.kio",
-        include_str!("../../../../test-data/poc/elab/workdir/control.kio"),
+        include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
     ),
-    // `algebraic_elaborators` / `spine_elaborators` import their host
+    // `algebraic_macros` / `spine_macros` import their host
     // role types (`String` / `I32` / `Int`) from `testapi`, so the
     // bundle must carry a `testapi` module declaring them. The
     // generated program references only those passthrough role types
     // (never `testapi`'s opaque `host type Token;`), so the bundled
-    // module declares exactly the role types the elaborators import —
+    // module declares exactly the role types the macros import —
     // all passthrough, leaving the package boundary free of opaque
     // associated types the default (`empty`-tier) runner host doesn't
     // supply. `testapi` declares `host` items and is reachable from the
@@ -196,7 +196,7 @@ const ELABORATOR_SUPPORT_FILES: &[(&str, &str)] = &[
 ];
 
 // The bundled `testapi` host-type module. Declares only the
-// passthrough role types the bundled elaborator modules import
+// passthrough role types the bundled macro modules import
 // (`String` / `I32` / `Int`); deliberately omits the role-less opaque
 // `host type Token;` of the POC `testapi` so the generated program's
 // host boundary stays free of associated types the `empty`-tier runner
@@ -213,10 +213,10 @@ host type Int role(i32);
 host type Bool role(bool);
 ";
 
-const GENERATED_ELABORATORS_PATH: &str = "workdir/kio_gen_elaborators.kio";
+const GENERATED_MACROS_PATH: &str = "workdir/kio_gen_macros.kio";
 
-pub fn add_elaborator_support_files(files: &mut Vec<(String, String)>) {
-    for (path, content) in ELABORATOR_SUPPORT_FILES {
+pub fn add_macro_support_files(files: &mut Vec<(String, String)>) {
+    for (path, content) in MACRO_SUPPORT_FILES {
         if files.iter().any(|(existing, _)| existing == path) {
             continue;
         }
@@ -353,25 +353,25 @@ pub pure fn kio_gen_type_only_capture[A](value: A) -> A {
     source
 }
 
-fn generated_elaborator_imports(prog: &Program) -> String {
-    if !prog.surface_mode || prog.user_elaborators.is_empty() {
+fn generated_macro_imports(prog: &Program) -> String {
+    if !prog.surface_mode || prog.user_macros.is_empty() {
         return String::new();
     }
-    let names: Vec<&str> = prog
-        .user_elaborators
+    let names: Vec<String> = prog
+        .user_macros
         .iter()
-        .map(|spec| spec.name.as_str())
+        .map(|spec| format!("macro {}", spec.name))
         .collect();
-    format!("import kio_gen_elaborators({});\n", names.join(", "))
+    format!("import kio_gen_macros({});\n", names.join(", "))
 }
 
-fn render_generated_elaborator_module(prog: &Program) -> Option<String> {
-    if !prog.surface_mode || prog.user_elaborators.is_empty() {
+fn render_generated_macro_module(prog: &Program) -> Option<String> {
+    if !prog.surface_mode || prog.user_macros.is_empty() {
         return None;
     }
     let mut out = String::from(
         "\
-module kio_gen_elaborators;
+module kio_gen_macros;
 
 import __intrinsics__;
 
@@ -384,18 +384,18 @@ pub fn kio_gen_capture_value() -> . { () }
 type Target_request = __Type__ | .;
 ",
     );
-    for spec in &prog.user_elaborators {
+    for spec in &prog.user_macros {
         out.push('\n');
-        out.push_str(&render_generated_elaborator_impl(spec));
+        out.push_str(&render_generated_macro_impl(spec));
         out.push('\n');
         out.push('\n');
-        out.push_str(&render_generated_elaborator_decl(spec));
+        out.push_str(&render_generated_macro_decl(spec));
         out.push('\n');
     }
     Some(out)
 }
 
-fn render_generated_elaborator_decl(spec: &UserElaboratorSpec) -> String {
+fn render_generated_macro_decl(spec: &UserMacroSpec) -> String {
     let captures = if spec.captures.is_empty() {
         String::new()
     } else {
@@ -403,18 +403,18 @@ fn render_generated_elaborator_decl(spec: &UserElaboratorSpec) -> String {
             .captures
             .iter()
             .map(|capture| match capture {
-                UserElaboratorCapture::TypeAlias => "Kio_gen_capture",
-                UserElaboratorCapture::ValueFn => "kio_gen_capture_value",
+                UserMacroCapture::TypeAlias => "Kio_gen_capture",
+                UserMacroCapture::ValueFn => "kio_gen_capture_value",
             })
             .collect();
         format!(" captures ({});", names.join(", "))
     };
     let marker = match spec.implementation {
-        UserElaboratorImplementation::Late(_) => "",
-        UserElaboratorImplementation::FillsIdentity => "(fills)",
+        UserMacroImplementation::Late(_) => "",
+        UserMacroImplementation::FillsIdentity => "(fills)",
     };
     format!(
-        "pub elab {} : [{}] {} -> [{}] {} {{{captures} impl{marker} {} }}",
+        "pub macro {} : [{}] {} -> [{}] {} {{{captures} impl{marker} {} }}",
         spec.name,
         spec.source_param,
         spec.source_param,
@@ -424,14 +424,11 @@ fn render_generated_elaborator_decl(spec: &UserElaboratorSpec) -> String {
     )
 }
 
-fn render_generated_elaborator_impl(spec: &UserElaboratorSpec) -> String {
-    if matches!(
-        spec.implementation,
-        UserElaboratorImplementation::FillsIdentity
-    ) {
+fn render_generated_macro_impl(spec: &UserMacroSpec) -> String {
+    if matches!(spec.implementation, UserMacroImplementation::FillsIdentity) {
         assert!(
             spec.captures.is_empty(),
-            "the fixed fills elaborator must remain capture-free"
+            "the fixed fills macro must remain capture-free"
         );
         return format!(
             "pure fn {}(ct: __Comptime__, fills: __Fill_ctx__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ & __Fill_ctx__ {{\n  (value, __fill__(ct, fills, target, source))\n}}",
@@ -439,14 +436,14 @@ fn render_generated_elaborator_impl(spec: &UserElaboratorSpec) -> String {
         );
     }
 
-    let UserElaboratorImplementation::Late(template) = spec.implementation else {
+    let UserMacroImplementation::Late(template) = spec.implementation else {
         unreachable!("the fills implementation returned above")
     };
     let mut params = vec!["ct: __Comptime__"];
     for capture in &spec.captures {
         match capture {
-            UserElaboratorCapture::TypeAlias => params.push("captured_type: __Type__"),
-            UserElaboratorCapture::ValueFn => params.push("captured_value: __Checked_term__"),
+            UserMacroCapture::TypeAlias => params.push("captured_type: __Type__"),
+            UserMacroCapture::ValueFn => params.push("captured_value: __Checked_term__"),
         }
     }
     params.extend([
@@ -456,16 +453,16 @@ fn render_generated_elaborator_impl(spec: &UserElaboratorSpec) -> String {
     ]);
 
     let mut lines = Vec::new();
-    if spec.captures.contains(&UserElaboratorCapture::TypeAlias) {
+    if spec.captures.contains(&UserMacroCapture::TypeAlias) {
         lines.push(
             "let _captured_type_seen = __type_equal__(ct, captured_type, __reflect_type__(ct, Kio_gen_capture));"
                 .to_string(),
         );
     }
-    if spec.captures.contains(&UserElaboratorCapture::ValueFn) {
+    if spec.captures.contains(&UserMacroCapture::ValueFn) {
         lines.push("let _captured_value_type = __term_type__(ct, captured_value);".to_string());
     }
-    lines.push(render_generated_elaborator_body(template));
+    lines.push(render_generated_macro_body(template));
 
     format!(
         "pure fn {}({}) -> __Checked_term__ {{\n{}\n}}",
@@ -476,27 +473,26 @@ fn render_generated_elaborator_impl(spec: &UserElaboratorSpec) -> String {
 }
 
 fn generated_fills_witness(prog: &Program) -> String {
-    let Some(spec) = prog.user_elaborators.iter().find(|spec| {
-        matches!(
-            spec.implementation,
-            UserElaboratorImplementation::FillsIdentity
-        )
-    }) else {
+    let Some(spec) = prog
+        .user_macros
+        .iter()
+        .find(|spec| matches!(spec.implementation, UserMacroImplementation::FillsIdentity))
+    else {
         return String::new();
     };
     format!(
-        "\nfn kio_gen_fills_witness(value: I32) -> I32 {{ {name}!(value, _) }}\n\
-         fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 {{ {name}!(.[B](_ignored: B) {{ value }}, _) }}\n\
+        "\nfn kio_gen_fills_witness(value: I32) -> I32 {{ {name}(value, _) }}\n\
+         fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 {{ {name}(.[B](_ignored: B) {{ value }}, _) }}\n\
          fn kio_gen_callback_apply[A][B](callback: A -> B, value: A) -> B {{ callback(value) }}\n\
-         fn kio_gen_callback_fills_witness(value: I32) -> I32 {{ {name}!(kio_gen_callback_apply(.(input: I32) -> I32 {{ input }}, value), _) }}\n",
+         fn kio_gen_callback_fills_witness(value: I32) -> I32 {{ {name}(kio_gen_callback_apply(.(input: I32) -> I32 {{ input }}, value), _) }}\n",
         name = spec.name
     )
 }
 
-fn render_generated_elaborator_body(template: UserElaboratorTemplate) -> String {
+fn render_generated_macro_body(template: UserMacroTemplate) -> String {
     match template {
-        UserElaboratorTemplate::Direct => "value".to_string(),
-        UserElaboratorTemplate::TargetBranch => "\
+        UserMacroTemplate::Direct => "value".to_string(),
+        UserMacroTemplate::TargetBranch => "\
 __either__(
   , __Type__
   , .
@@ -506,7 +502,7 @@ __either__(
   , .() -> __Checked_term__ { value }
   )"
         .to_string(),
-        UserElaboratorTemplate::SourceTargetGuard => "\
+        UserMacroTemplate::SourceTargetGuard => "\
 __either__(
   , __Type__
   , .
@@ -522,7 +518,7 @@ __either__(
   , .() -> __Checked_term__ { value }
   )"
         .to_string(),
-        UserElaboratorTemplate::TermTypeGuard => "\
+        UserMacroTemplate::TermTypeGuard => "\
 __either__(
   , __Type__
   , .
@@ -538,7 +534,7 @@ __either__(
   , .() -> __Checked_term__ { value }
   )"
         .to_string(),
-        UserElaboratorTemplate::LetIdentity => "\
+        UserMacroTemplate::LetIdentity => "\
 __term_let__(
   , ct
   , source
@@ -546,7 +542,7 @@ __term_let__(
   , .(bound: __Checked_term__) -> __Checked_term__ { bound }
   )"
         .to_string(),
-        UserElaboratorTemplate::PairRoundTrip => "\
+        UserMacroTemplate::PairRoundTrip => "\
 let pair_type = __type_product__(ct, source, __type_unit__(ct));
 __intrinsic_fst__(
   , ct
@@ -554,7 +550,7 @@ __intrinsic_fst__(
   , __intrinsic_pair__(ct, value, __term_unit__(ct))
   )"
         .to_string(),
-        UserElaboratorTemplate::SumRoundTrip => "\
+        UserMacroTemplate::SumRoundTrip => "\
 let sum_type = __type_sum__(ct, source, __type_bottom__(ct));
 __intrinsic_either__(
   , ct
@@ -603,13 +599,13 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     } else {
         ""
     };
-    // Surface-mode programs may emit structural/algebraic elaborator
-    // forms plus `match!`; each call site imports its elaborator from
+    // Surface-mode programs may emit structural/algebraic macro
+    // forms plus `match`; each call site imports its macro from
     // an explicit same-package implementation. Kio'-mode
-    // programs carry no elaborator forms, so these imports and support
+    // programs carry no macro forms, so these imports and support
     // files are surface-only.
-    let elaborator_imports = if prog.surface_mode {
-        format!("{ELABORATOR_IMPORTS}{}", generated_elaborator_imports(prog))
+    let macro_imports = if prog.surface_mode {
+        format!("{MACRO_IMPORTS}{}", generated_macro_imports(prog))
     } else {
         String::new()
     };
@@ -617,9 +613,9 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     // `host` items form the package boundary. The generated root module
     // `prog` always declares host items (the base role types). In
     // surface mode the bundled `testapi` support module also declares
-    // host items and is reachable from `prog` through the elaborator
+    // host items and is reachable from `prog` through the macro
     // imports, so the bridge-completeness check requires bridging it
-    // too; the other elaborator modules carry no host items and need no
+    // too; the other macro modules carry no host items and need no
     // glob.
     let mut package_file = if prog.surface_mode {
         format!(
@@ -681,7 +677,7 @@ import __intrinsics__;
 {}
 {fills_witness}
 {functions}{equiv_block}",
-        elaborator_imports,
+        macro_imports,
         util_kio(prog),
     );
     // Each module's file sits at the path its `module <path>;`
@@ -694,9 +690,9 @@ import __intrinsics__;
         ("workdir/prog.kio".to_string(), root_module),
     ];
     if prog.surface_mode {
-        add_elaborator_support_files(&mut files);
-        if let Some(content) = render_generated_elaborator_module(prog) {
-            files.push((GENERATED_ELABORATORS_PATH.to_string(), content));
+        add_macro_support_files(&mut files);
+        if let Some(content) = render_generated_macro_module(prog) {
+            files.push((GENERATED_MACROS_PATH.to_string(), content));
         }
     }
     if let Some(probe) = &prog.control_probe {
@@ -810,32 +806,32 @@ mod tests {
     use super::*;
     use kio_gen::ast::{Term, Type};
 
-    fn elaborator(captures: Vec<UserElaboratorCapture>) -> UserElaboratorSpec {
-        UserElaboratorSpec {
+    fn macro_spec(captures: Vec<UserMacroCapture>) -> UserMacroSpec {
+        UserMacroSpec {
             name: "generated".to_string(),
             impl_name: "generated_impl".to_string(),
             source_param: "Source".to_string(),
             target_param: "Target".to_string(),
-            implementation: UserElaboratorImplementation::Late(UserElaboratorTemplate::Direct),
+            implementation: UserMacroImplementation::Late(UserMacroTemplate::Direct),
             captures,
         }
     }
 
-    fn program_with(spec: UserElaboratorSpec) -> Program {
+    fn program_with(spec: UserMacroSpec) -> Program {
         Program {
             control_probe: None,
             fn_def_name: "gen".to_string(),
             params: Vec::new(),
             ret: Type::Unit,
             body: Term::UnitLit,
-            user_elaborators: vec![spec],
+            user_macros: vec![spec],
             uses_surface: true,
             surface_mode: true,
         }
     }
 
-    fn module_with(spec: UserElaboratorSpec) -> String {
-        render_generated_elaborator_module(&program_with(spec)).expect("surface elaborator module")
+    fn module_with(spec: UserMacroSpec) -> String {
+        render_generated_macro_module(&program_with(spec)).expect("surface macro module")
     }
 
     #[test]
@@ -927,7 +923,7 @@ build {
 
     #[test]
     fn generated_imports_are_module_first_and_precede_items() {
-        let prog = program_with(elaborator(Vec::new()));
+        let prog = program_with(macro_spec(Vec::new()));
         let files = render_package_files(&prog);
         let root = files
             .iter()
@@ -937,16 +933,16 @@ build {
         let first_item = root.find("host type I8").expect("first host item");
         for import in [
             "import __intrinsics__;",
-            "import algebraic_elaborators(iso, into, onto, align, ease, atom);",
-            "import spine_elaborators(reorder_sum, reorder_prod, narrow_sum, narrow_prod, widen_sum, widen_prod, flatten_sum, flatten_prod, one_sum, one_prod, fit);",
-            "import match(match);",
-            "import control(if, scope);",
-            "import kio_gen_elaborators(generated);",
+            "import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);",
+            "import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);",
+            "import match(macro match);",
+            "import control(macro if, macro scope);",
+            "import kio_gen_macros(macro generated);",
         ] {
             assert_eq!(root.matches(import).count(), 1, "{import}");
             assert!(root.find(import).unwrap() < first_item, "{import}");
         }
-        let generated = module_with(elaborator(Vec::new()));
+        let generated = module_with(macro_spec(Vec::new()));
         let first_item = generated.find("pub type Kio_gen_capture").unwrap();
         for import in ["import __intrinsics__;", "import __comptime__;"] {
             assert_eq!(generated.matches(import).count(), 1);
@@ -955,23 +951,23 @@ build {
     }
 
     #[test]
-    fn public_elaborator_has_private_capture_free_implementation() {
-        let generated = module_with(elaborator(Vec::new()));
+    fn public_macro_has_private_capture_free_implementation() {
+        let generated = module_with(macro_spec(Vec::new()));
 
         assert!(generated.contains("pure fn generated_impl(ct: __Comptime__"));
         assert!(!generated.contains("pub pure fn generated_impl(ct: __Comptime__"));
-        assert!(generated.contains("pub elab generated : [Source] Source -> [Target] Target"));
+        assert!(generated.contains("pub macro generated : [Source] Source -> [Target] Target"));
         assert!(generated.contains(
-            "pub elab generated : [Source] Source -> [Target] Target { impl generated_impl }\n"
+            "pub macro generated : [Source] Source -> [Target] Target { impl generated_impl }\n"
         ));
         assert!(!generated.contains("captures ("));
     }
 
     #[test]
-    fn public_elaborator_has_public_captures_and_private_implementation() {
-        let generated = module_with(elaborator(vec![
-            UserElaboratorCapture::TypeAlias,
-            UserElaboratorCapture::ValueFn,
+    fn public_macro_has_public_captures_and_private_implementation() {
+        let generated = module_with(macro_spec(vec![
+            UserMacroCapture::TypeAlias,
+            UserMacroCapture::ValueFn,
         ]));
 
         assert!(generated.contains("pub type Kio_gen_capture = .;"));
@@ -982,23 +978,22 @@ build {
     }
 
     #[test]
-    fn fills_elaborator_renders_its_exact_marker_abi_body_and_witness() {
-        let spec = UserElaboratorSpec {
+    fn fills_macro_renders_its_exact_marker_abi_body_and_witness() {
+        let spec = UserMacroSpec {
             name: "generated_fills".to_owned(),
             impl_name: "generated_fills_impl".to_owned(),
             source_param: "Source".to_owned(),
             target_param: "Target".to_owned(),
-            implementation: UserElaboratorImplementation::FillsIdentity,
+            implementation: UserMacroImplementation::FillsIdentity,
             captures: Vec::new(),
         };
         let prog = program_with(spec);
-        let generated =
-            render_generated_elaborator_module(&prog).expect("surface elaborator module");
+        let generated = render_generated_macro_module(&prog).expect("surface macro module");
         assert!(generated.contains(
             "pure fn generated_fills_impl(ct: __Comptime__, fills: __Fill_ctx__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ & __Fill_ctx__ {\n  (value, __fill__(ct, fills, target, source))\n}"
         ));
         assert!(generated.contains(
-            "pub elab generated_fills : [Source] Source -> [Target] Target { impl(fills) generated_fills_impl }"
+            "pub macro generated_fills : [Source] Source -> [Target] Target { impl(fills) generated_fills_impl }"
         ));
 
         let files = render_package_files(&prog);
@@ -1007,17 +1002,19 @@ build {
             .find(|(path, _)| path == "workdir/prog.kio")
             .map(|(_, source)| source.as_str())
             .expect("generated root module");
+        assert!(
+            root.contains(
+                "fn kio_gen_fills_witness(value: I32) -> I32 { generated_fills(value, _) }"
+            )
+        );
         assert!(root.contains(
-            "fn kio_gen_fills_witness(value: I32) -> I32 { generated_fills!(value, _) }"
-        ));
-        assert!(root.contains(
-            "fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 { generated_fills!(.[B](_ignored: B) { value }, _) }"
+            "fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 { generated_fills(.[B](_ignored: B) { value }, _) }"
         ));
         assert!(root.contains(
             "fn kio_gen_callback_apply[A][B](callback: A -> B, value: A) -> B { callback(value) }"
         ));
         assert!(root.contains(
-            "fn kio_gen_callback_fills_witness(value: I32) -> I32 { generated_fills!(kio_gen_callback_apply(.(input: I32) -> I32 { input }, value), _) }"
+            "fn kio_gen_callback_fills_witness(value: I32) -> I32 { generated_fills(kio_gen_callback_apply(.(input: I32) -> I32 { input }, value), _) }"
         ));
     }
 
@@ -1029,7 +1026,7 @@ build {
 
     #[test]
     fn runtime_observations_close_core_and_surface_integer_functions() {
-        let mut prog = program_with(elaborator(Vec::new()));
+        let mut prog = program_with(macro_spec(Vec::new()));
         prog.params = vec![(
             "pair".to_owned(),
             Type::Product(Box::new(Type::Base(Base::I32)), Box::new(Type::Unit)),
@@ -1061,13 +1058,13 @@ build {
     }
 
     #[test]
-    fn generated_elaborator_templates_use_unit_as_a_type_only_via_dot() {
+    fn generated_macro_templates_use_unit_as_a_type_only_via_dot() {
         for template in [
-            UserElaboratorTemplate::TargetBranch,
-            UserElaboratorTemplate::SourceTargetGuard,
-            UserElaboratorTemplate::TermTypeGuard,
+            UserMacroTemplate::TargetBranch,
+            UserMacroTemplate::SourceTargetGuard,
+            UserMacroTemplate::TermTypeGuard,
         ] {
-            let generated = render_generated_elaborator_body(template);
+            let generated = render_generated_macro_body(template);
             assert!(
                 generated.contains("__either__(\n  , __Type__\n  , .\n"),
                 "generated template must spell the Unit type as `.`: {generated}"

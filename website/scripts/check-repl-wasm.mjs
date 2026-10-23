@@ -20,10 +20,10 @@ try {
   assert.ok(repl.pocs().some(poc => poc.id === 'list'))
   const banner = output(repl.init_banner())
   assert.ok(banner.includes('fn filter'), banner)
-  assert.ok(banner.includes('if!'), banner)
+  assert.ok(banner.includes('if'), banner)
   const source = output(repl.eval(':source filter'))
   assert.ok(source.includes('fn filter'), source)
-  assert.ok(source.includes('if!'), source)
+  assert.ok(source.includes('if'), source)
   assert.equal(output(repl.eval(':normalize ()')), '()')
 
   for (const prefix of ['', ':t ', ':pure ', ':normalize ']) {
@@ -36,12 +36,16 @@ try {
   }
   assert.equal(output(repl.eval(':t index([1], 0)')), 'index([1], 0) : list.I32 | .')
 
+  const macroHead = '\x1b[38;2;86;182;194mif\x1b[0m'
+  assert.ok(repl.highlight('if(())', 0).includes(macroHead), 'retained imported macro highlights in browser input')
+  assert.ok(!repl.highlight('.(if: . -> .) { if(()) }', 0).includes(macroHead), 'ordinary parameter shadows retained macro')
+  assert.ok(repl.highlight('((if))(())', 0).includes(macroHead), 'transparent grouped macro heads retain browser highlighting')
   const completion = repl.complete('fi', 2)
   assert.deepEqual(Object.keys(completion).sort(), ['candidates', 'replaceEnd', 'replaceStart'])
   assert.equal(completion.replaceStart, 0)
   assert.equal(completion.replaceEnd, 2)
   assert.ok(completion.candidates.some(candidate => candidate.label === 'filter'))
-  const continuationSource = 'if! .t { () } el'
+  const continuationSource = 'if(.t) { () } el'
   const continuation = repl.complete(continuationSource, continuationSource.length)
   assert.equal(continuation.replaceStart, continuationSource.length - 2)
   assert.equal(continuation.replaceEnd, continuationSource.length)

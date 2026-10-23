@@ -8,4 +8,4 @@ pub pure fn identity_impl(
   value: __Checked_term__
   ) -> __Checked_term__ { value }
 
-pub elab identity : [A] A -> A { impl identity_impl }
+pub macro identity : [A] A -> A { impl identity_impl }

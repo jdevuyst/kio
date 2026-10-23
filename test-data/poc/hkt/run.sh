@@ -20,4 +20,4 @@ cd workdir || exit
 "$KIO_BIN" check >/dev/null || exit
 "$KIO_BIN" test >/dev/null || exit
 "$KIO_BIN" build "$KIO_TARGET" || exit
-"$KIO_RUNNER" --protocol testapi-text-elab-int out/"$KIO_TARGET"
+"$KIO_RUNNER" --protocol testapi-text-macro-int out/"$KIO_TARGET"

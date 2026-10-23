@@ -392,9 +392,9 @@ Usage: kio-prime <subcommand> [args]
 
 The kio-prime binary is a Kio'-only compiler: every subcommand parses
 the input as Kio and rejects any surface-only form (tuple literals,
-`if`/`else`, label-value / braced label type forms, `iso!` / `into!` / `onto!` /
-`align!` / `ease!` / `atom!` / `match!` / UFCS, `.stem. { ... }`, `literal`,
-`labels`, `op`, `equiv`) with a parse error. Pass-through Kio' programs
+label-value / braced label type forms, field access / update, macro
+declarations and imports, trailing-block calls, UFCS, `.stem. { ... }`,
+`literal`, `labels`, `op`, `equiv`) with a parse error. Pass-through Kio' programs
 typecheck and build identically to the `kio` binary.
 
 Subcommands:
@@ -421,7 +421,7 @@ See {base}/specs/cli.md for the underlying subcommand behavior.";
 /// because several passes (the recursive-descent parser, structural
 /// recovery, the Kio'-source pretty-printer) recurse once per level of
 /// AST nesting, and a deeply nested but perfectly legal program — e.g. a
-/// `match!` / `if` / `do` body nested hundreds of levels deep — would
+/// `match` / `if` / `do` body nested hundreds of levels deep — would
 /// otherwise overflow a default ~8 MiB stack and abort the process. The
 /// size is virtual address space; only touched pages cost real memory,
 /// so a shallow program pays nothing. Override with

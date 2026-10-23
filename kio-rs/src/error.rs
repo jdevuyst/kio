@@ -331,17 +331,17 @@ pub enum Error {
     /// Type error (mismatch, arity, scheme-in-monomorphic-position) — exit
     /// code 14.
     Type(Diagnostic),
-    /// Elaborator error: `into!` has no valid coercion, or `onto!`
+    /// Macro error: `into` has no valid coercion, or `onto`
     /// has no valid coercion — exit code 15. The structural-coercion
-    /// rules give the elaborator a fixed search space; failure here
+    /// rules give the macro a fixed search space; failure here
     /// means the user asked for a coercion that the rules can't
     /// produce, not that types are ill-formed.
-    Elaborator(Diagnostic),
+    Macro(Diagnostic),
     /// Totality error (strict-positivity violation in a `newtype`
     /// payload, or a `loop` reached through an arrow left-hand side) —
     /// exit code 16. The language's totality contract is what keeps
-    /// Kio' strongly normalizing. `match!` non-exhaustiveness and
-    /// unreachable clauses surface as elaborator errors (code 15),
+    /// Kio' strongly normalizing. `match` non-exhaustiveness and
+    /// unreachable clauses surface as macro errors (code 15),
     /// not here.
     Totality(Diagnostic),
     /// Bridge-contract or signature-changelog error (dead bridge glob,
@@ -392,7 +392,7 @@ impl Error {
             Error::Import(_) => ExitCode::Import,
             Error::NameRes(_) => ExitCode::NameRes,
             Error::Type(_) => ExitCode::Type,
-            Error::Elaborator(_) => ExitCode::Elaborator,
+            Error::Macro(_) => ExitCode::Macro,
             Error::Totality(_) => ExitCode::Totality,
             Error::Bridge(_) => ExitCode::Bridge,
             Error::Dep(_) => ExitCode::Dep,
@@ -407,7 +407,7 @@ impl Error {
             | Error::Import(d)
             | Error::NameRes(d)
             | Error::Type(d)
-            | Error::Elaborator(d)
+            | Error::Macro(d)
             | Error::Totality(d)
             | Error::Bridge(d)
             | Error::Dep(d)
@@ -421,7 +421,7 @@ impl Error {
             | Error::Import(d)
             | Error::NameRes(d)
             | Error::Type(d)
-            | Error::Elaborator(d)
+            | Error::Macro(d)
             | Error::Totality(d)
             | Error::Bridge(d)
             | Error::Dep(d)
@@ -598,8 +598,8 @@ impl Error {
     pub fn type_(span: Span, message: impl Into<String>) -> Self {
         Error::Type(Diagnostic::new(span, message))
     }
-    pub fn elaborator(span: Span, message: impl Into<String>) -> Self {
-        Error::Elaborator(Diagnostic::new(span, message))
+    pub fn macro_error(span: Span, message: impl Into<String>) -> Self {
+        Error::Macro(Diagnostic::new(span, message))
     }
     pub fn totality(span: Span, message: impl Into<String>) -> Self {
         Error::Totality(Diagnostic::new(span, message))

@@ -4,7 +4,7 @@ type `:help` for commands, `:quit` to leave
 references to `truth`:
   demo/a:7:13  in literal truth
   demo/a:24:21  in fn local
-  demo/main:4:37  in module demo/main
+  demo/main:4:43  in module demo/main
   demo/main:7:27  in fn literal_use
 references to `truth`:
   demo/b:7:13  in literal truth
@@ -12,15 +12,15 @@ references to `truth`:
 references to `proof`:
   demo/a:9:7  in equiv proof
 references to `build`:
-  demo/a:22:10  in elaborator build
+  demo/a:22:11  in macro build
   demo/a:30:13  in fn bang
   demo/a:32:19  in fn splice
-  demo/main:4:30  in module demo/main
+  demo/main:4:36  in module demo/main
   demo/main:11:13  in fn bang
   demo/main:13:19  in fn splice
 references to `{field}`:
   demo/a:16:11  in type {field}
-  demo/main:4:45  in module demo/main
+  demo/main:4:51  in module demo/main
   demo/main:15:31  in fn label_use
   demo/main:21:46  in fn update
   demo/main:23:34  in fn access

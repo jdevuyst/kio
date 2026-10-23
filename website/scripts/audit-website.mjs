@@ -39,7 +39,7 @@ function executable(relative) {
 
 function expectedTokenClasses() {
   const source = read('kio-rs/src/tokens.rs')
-  return [...source.matchAll(/=> "(kio-[^"]+)"/g)].map((match) => match[1]).sort()
+  return [...source.matchAll(/=>\s*(?:\{\s*)?"(kio-[^"]+)"/g)].map((match) => match[1]).sort()
 }
 
 function formatterColumnBudget() {

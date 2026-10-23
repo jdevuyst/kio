@@ -254,7 +254,7 @@ fn existential_let_headers_conserve_comments() {
         for neutral in [false, true] {
             let binding = format!("let .({pattern}) = packed; ()");
             let body = if neutral {
-                format!("scope! {{ {binding} }}")
+                format!("scope {{ {binding} }}")
             } else {
                 binding
             };

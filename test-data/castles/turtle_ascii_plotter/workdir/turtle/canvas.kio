@@ -7,10 +7,10 @@
 /// the host would have had to provide.
 module turtle/canvas;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as list;
 import list/list(append, drop, foldl, replicate, take);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32);
 import testapi/io(print);
@@ -30,7 +30,7 @@ pub fn on_canvas(w: I32, h: I32, x: I32, y: I32) -> Bool {
 }
 
 fn update_nth[A](xs: list.List(A), i: I32, f: A -> A) -> list.List(A) {
-  match! list.uncons(drop(i, xs)) {
+  match(list.uncons(drop(i, xs))) {
     (
     , .(x: A, rest: list.List(A)) { append(take(i, xs), list.cons(f(x), rest)) }
     , .(_empty: .) { xs }
@@ -52,7 +52,7 @@ pub fn ink(cv: Canvas, x: I32, y: I32, code: I32) -> Canvas {
 fn count_row(row: list.List(I32)) -> I32 {
   foldl(
   , .(acc: I32, code: I32) {
-      if! glyph.is_inked(code) { add_i32(acc, 1) } else { acc }
+      if(glyph.is_inked(code)) { add_i32(acc, 1) } else { acc }
     }
   , 0
   , row

@@ -4,5 +4,5 @@ source {
   path "../../../list/workdir/list.pkg.kio"
 }
 
-rehost list/elab/testapi to testapi;
 rehost list/list to queue_host;
+rehost list/macros/testapi to testapi;

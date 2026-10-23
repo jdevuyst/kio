@@ -1,0 +1,7 @@
+module a;
+
+import macros/control(macro scope);
+
+pub fn unrelated() {
+  scope { () }
+}

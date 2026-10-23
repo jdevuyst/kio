@@ -204,8 +204,8 @@ suite("Kio extension — activation & highlighting", () => {
     );
     assert.ok(typesFor("pick").includes(11), "ordinary UFCS callee is a function");
     assert.deepStrictEqual(typesFor("member"), [11, 11]);
-    assert.deepStrictEqual(typesFor("transform!"), [1, 1]);
-    assert.deepStrictEqual(typesFor("_transform!"), [1]);
+    assert.deepStrictEqual(typesFor("transform"), [1, 1, 1]);
+    assert.deepStrictEqual(typesFor("_transform"), [1, 1]);
     for (const arrow of [".>", ".>>", ".<", ".<<"]) {
       assert.ok(
         typesFor(arrow).every((type) => type === 4),
@@ -213,6 +213,85 @@ suite("Kio extension — activation & highlighting", () => {
       );
       assert.ok(typesFor(arrow).length > 0, `${arrow} must be tokenized`);
     }
+  });
+
+  test("macro completion snippet omits the optional whole prefix list by default", async () => {
+    for (const prefix of ["", "(value)", "(left, right)"]) {
+      const doc = await vscode.workspace.openTextDocument({ language: "kio", content: "" });
+      const editor = await vscode.window.showTextDocument(doc);
+      try {
+        assert.strictEqual(await editor.insertSnippet(new vscode.SnippetString("record${1} { ${2} }$0")), true);
+        assert.strictEqual(doc.getText(), "record {  }");
+        if (prefix) {
+          assert.strictEqual(await editor.edit((edit) => edit.insert(editor.selection.active, prefix)), true);
+          assert.strictEqual(doc.getText(), `record${prefix} {  }`);
+        }
+      } finally { await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor"); }
+    }
+  });
+
+  test("macro calls follow lexical scope and import edits without a language server", async () => {
+    const source = "module source; import helpers(macro make as choose, macro x1, macro x0); fn run() { choose(()); .(choose: . -> .) { choose(()) }; .x. { x1(()); x0(()) }; ((choose))(()); (,choose,)(()); (,,(choose),,,)(()); x1(()) }";
+    const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
+    await vscode.window.showTextDocument(doc);
+    await vscode.extensions.getExtension("kio-lang.kio")!.activate();
+    const read = async () => {
+      const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens>("vscode.provideDocumentSemanticTokens", doc.uri);
+      assert.ok(tokens);
+      return decodedSemanticTokens(doc, tokens);
+    };
+    const assertKinds = async (macro: number) => {
+      const tokens = await read();
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "{ choose", 2), macro);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "{ choose(()) };", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "((choose", 2), macro);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "(,choose,", 2), macro);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "(,,(choose", 4), macro);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "; x0", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "{ x1", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "; x1", 2), 1);
+    };
+    const replace = async (before: string, after: string) => {
+      const at = doc.getText().indexOf(before);
+      assert.ok(at >= 0);
+      const edit = new vscode.WorkspaceEdit();
+      edit.replace(doc.uri, new vscode.Range(doc.positionAt(at), doc.positionAt(at + before.length)), after);
+      assert.strictEqual(await vscode.workspace.applyEdit(edit), true);
+    };
+    try {
+      await assertKinds(1);
+      await replace("macro make", "      make");
+      const ordinary = await read();
+      assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "{ choose", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "((choose", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "(,choose,", 2), 11);
+      assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "(,,(choose", 4), 11);
+      await replace("      make as choose", "macro make as choose");
+      await assertKinds(1);
+    } finally { await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor"); }
+  });
+
+  test("macro UFCS callees retain their role beside grouped tuple receivers", async () => {
+    const source = `module source; import helpers(macro call);
+fn run(left: ., right: .) {
+ (left, right).>call(()); (left, right).>>call(());
+ call(()).<(left, right); call(()).<<(left, right);
+ ((left, right)).>((call))(())
+}
+fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
+    const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
+    await vscode.window.showTextDocument(doc);
+    await vscode.extensions.getExtension("kio-lang.kio")!.activate();
+    try {
+      const result = await vscode.commands.executeCommand<vscode.SemanticTokens>("vscode.provideDocumentSemanticTokens", doc.uri);
+      assert.ok(result);
+      const tokens = decodedSemanticTokens(doc, result);
+      for (const marker of [".>call", ".>>call", "\n call", "; call", "((call"]) {
+        const offset = marker.indexOf("call");
+        assert.strictEqual(semanticTokenTypeAt(doc, tokens, marker, offset), 1, marker);
+      }
+      assert.strictEqual(semanticTokenTypeAt(doc, tokens, "{ (left, right).>call", 17), 11);
+    } finally { await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor"); }
   });
 
   test("semantic tokens provider handles Kio-family variant files", async () => {
@@ -248,7 +327,7 @@ suite("Kio extension — activation & highlighting", () => {
   const structuralKinds: Record<string, number> = {
     "keyword.control": 0,
     "keyword.declaration": 0,
-    "keyword.elaborator": 1,
+    "entity.name.macro": 1,
     "entity.name.type": 2,
     "identifier": 3,
     "variable.parameter": 9,
@@ -364,7 +443,7 @@ suite("Kio extension — activation & highlighting", () => {
   }
 
   test("semantic tokens retain roles across incremental delimiter and keyword edits", async () => {
-    const source = "module source; fn run() { id([*F] F(.) -> F(.)) }";
+    const source = "module source; import helpers(macro if); fn run() { id([*F] F(.) -> F(.)) }";
     const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
     await vscode.window.showTextDocument(doc);
     const read = async () => {
@@ -383,12 +462,12 @@ suite("Kio extension — activation & highlighting", () => {
     };
     await replace("[*F] F(.) -> F(.)", "[* let(x) *]");
     assert.ok((await read()).some((token) => token.text === "let" && token.type === 11));
-    await replace("let(x)", "if!(x) { x } else { x }");
-    assert.ok((await read()).some((token) => token.text === "if!" && token.type === 1));
+    await replace("let(x)", "if(x) { x } else { x }");
+    assert.ok((await read()).some((token) => token.text === "if" && token.type === 1));
     assert.ok((await read()).some((token) => token.text === "else" && token.type === 0));
-    await replace("if!(x) { x } else { x }", "if(x)");
-    assert.ok((await read()).some((token) => token.text === "if" && token.type === 11));
-    await replace("[* if(x) *]", "[*F] F(.) -> F(.)");
+    await replace("if(x) { x } else { x }", "ordinary(x)");
+    assert.ok((await read()).some((token) => token.text === "ordinary" && token.type === 11));
+    await replace("[* ordinary(x) *]", "[*F] F(.) -> F(.)");
     assert.ok((await read()).some((token) => token.text === "F" && token.type === 9));
     await replace("[*F] F(.) -> F(.)", "recur");
     assert.ok((await read()).some((token) => token.text === "recur" && token.type === 3));

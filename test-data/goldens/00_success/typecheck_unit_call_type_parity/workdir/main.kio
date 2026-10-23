@@ -1,6 +1,6 @@
 module main;
 
-import elaborators(bang_identity, bang_unit);
+import macros(macro bang_identity, macro bang_unit);
 
 host type Token;
 
@@ -89,24 +89,24 @@ pub fn check() {
   consume_unit_function(unit_parameter(.));
   unit_parameter(., ());
   ().>unit_parameter(.);
-  consume_unit_function(bang_identity!(.));
-  consume_unit_alias_function(bang_identity!(Unit_alias));
-  bang_identity!(., ());
-  ().>bang_identity!;
-  ().>>bang_identity!;
-  bang_identity!.<();
-  bang_identity!.<<();
-  ().>bang_identity!(.);
-  ().>>bang_identity!(.);
-  bang_identity!(.).<();
-  bang_identity!(.).<<();
-  ().>bang_identity!(Unit_alias);
-  consume_unit_function(bang_unit!(.));
-  bang_unit!(., ());
-  ().>bang_unit!(.);
-  consume_unit_function(bang_unit!(Token));
-  bang_unit!(Token, ());
-  ().>bang_unit!(Token);
+  consume_unit_function(bang_identity(.));
+  consume_unit_alias_function(bang_identity(Unit_alias));
+  bang_identity(., ());
+  ().>bang_identity;
+  ().>>bang_identity;
+  bang_identity.<();
+  bang_identity.<<();
+  ().>bang_identity(.);
+  ().>>bang_identity(.);
+  bang_identity(.).<();
+  bang_identity(.).<<();
+  ().>bang_identity(Unit_alias);
+  consume_unit_function(bang_unit(.));
+  bang_unit(., ());
+  ().>bang_unit(.);
+  consume_unit_function(bang_unit(Token));
+  bang_unit(Token, ());
+  ().>bang_unit(Token);
   exercise_poly_value(identity);
   exercise_poly_value(host_identity);
   exercise_nil_value(host_nil);
@@ -114,7 +114,7 @@ pub fn check() {
   exercise_unit_value(unit_parameter);
   consume_token_function(identity(Token));
   consume_token_function(host_identity(Token));
-  consume_token_function(bang_identity!(Token));
+  consume_token_function(bang_identity(Token));
   consume_unit_function(identity(_));
   consume_unit_alias_function(identity(_));
   consume_staged_unit_function(staged(.));

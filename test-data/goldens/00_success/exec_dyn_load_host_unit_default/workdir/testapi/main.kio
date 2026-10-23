@@ -1,10 +1,10 @@
 module testapi/main;
 
-import elab/match(match);
 import host_descriptor(host_fn_signature);
 import loader(Hostfn, Hostfns, Lr_diag, Lr_image);
 import loader(hostfn_descriptor, image_hostfns, un_hostfns, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -12,10 +12,10 @@ import testapi/text(string_concat);
 fn show(label: String, declaration: String) {
   let source = string_concat("module api; "(String), declaration);
   let result =
-    match! un_load_outcome(load_package(source)) {
+    match(un_load_outcome(load_package(source))) {
       (
       , .(loaded: Lr_image) {
-          match! un_hostfns(image_hostfns(Lr_image.get(loaded))) {
+          match(un_hostfns(image_hostfns(Lr_image.get(loaded)))) {
             (
             , .(hostfn: Hostfn, _rest: Hostfns) { host_fn_signature(hostfn_descriptor(hostfn)) }
             , .(_empty: .) { "missing host function"(String) }

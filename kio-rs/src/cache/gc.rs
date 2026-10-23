@@ -14,7 +14,7 @@ const TEMP_ENTRY_GRACE_SECS: u64 = 24 * 60 * 60;
 const GC_DIR: &str = ".gc";
 const ACCESS_DIR: &str = "access";
 const STATE_FILE: &str = "state.json";
-const RETIRED_CACHE_FAMILIES: &[&str] = &["user-elaborator"];
+const RETIRED_CACHE_FAMILIES: &[&str] = &["user-macro"];
 
 static PENDING: OnceLock<Mutex<BTreeMap<PathBuf, BTreeSet<CacheFamily>>>> = OnceLock::new();
 static STATE_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -682,9 +682,9 @@ mod tests {
     }
 
     #[test]
-    fn explicit_gc_removes_retired_user_elaborator_layout() {
-        let root = TempRoot(temp_root("retired-user-elaborator"));
-        let legacy_root = root.0.join("user-elaborator");
+    fn explicit_gc_removes_retired_user_macro_layout() {
+        let root = TempRoot(temp_root("retired-user-macro"));
+        let legacy_root = root.0.join("user-macro");
         fs::create_dir_all(&legacy_root).unwrap();
         fs::write(legacy_root.join("template.bin"), b"retired").unwrap();
 
@@ -700,14 +700,14 @@ mod tests {
             .join(CacheFamily::Typed.name())
             .join("pkg/module.full.bin.stamp");
 
-        let legacy_access = root.0.join(GC_DIR).join(ACCESS_DIR).join("user-elaborator");
+        let legacy_access = root.0.join(GC_DIR).join(ACCESS_DIR).join("user-macro");
         fs::create_dir_all(&legacy_access).unwrap();
         fs::write(legacy_access.join("template.stamp"), b"1\n").unwrap();
 
         let mut state = GcState::default();
         state
             .families
-            .entry("user-elaborator".to_owned())
+            .entry("user-macro".to_owned())
             .or_default()
             .last_successful_use = Some(1);
         state
@@ -726,7 +726,7 @@ mod tests {
         assert!(live_typed.is_file());
         assert!(live_access.is_file());
         let state = read_state(&root.0).unwrap();
-        assert!(!state.families.contains_key("user-elaborator"));
+        assert!(!state.families.contains_key("user-macro"));
         assert!(state.families.contains_key(CacheFamily::Typed.name()));
 
         assert_eq!(run_explicit(&root.0).unwrap(), GcSummary::default());

@@ -2,7 +2,7 @@
 
 A product type `A & B` says a value carries both pieces. Label values build on that: a field such as `{name = "ada"}` has a generated nominal type `Name`, and a record-shaped value is just a product of those label types.
 
-Products are Kio's tuple foundation. A tuple value is an element of a finite cartesian product, and Kio represents those products as right-associated binary trees: `(a, b, c)` has type `A & (B & C)`. Parentheses by themselves only group, so `(x)` is `x`, `()` is the zero-component product, and product types use `&`, not commas. This choice keeps tuple values, call arguments, function domains, UFCS insertion, and product elabs on one structural rule.
+Products are Kio's tuple foundation. A tuple value is an element of a finite cartesian product, and Kio represents those products as right-associated binary trees: `(a, b, c)` has type `A & (B & C)`. Parentheses by themselves only group, so `(x)` is `x`, `()` is the zero-component product, and product types use `&`, not commas. This choice keeps tuple values, call arguments, function domains, UFCS insertion, and product macros on one structural rule.
 
 Row-polymorphic records fall out of the same machinery. A function that needs a `Name` field and does not care what else is present writes `(Name & R)`, where `R` is an ordinary type variable.
 
@@ -15,7 +15,7 @@ bridge {
 
 module kiodoc;
 
-import spine_elaborators(reorder_prod);
+import spine_macros(macro reorder_prod);
 
 host type String role(str);
 host fn print(value: String);
@@ -203,20 +203,20 @@ fn add_note(row: Name) -> Note & Name { row.!{note = "new\n"} }
 fn refresh_ready(row: Name & Note & Ready) -> Ready & Name & Note { row.!{ready=} }
 ```
 
-An empty update is valid and returns the row unchanged. If a caller needs a different product order than the update naturally produces, either write an expected return type that names that order (enough when it is only a permutation of the updated row) or call `reorder_prod!` explicitly.
+An empty update is valid and returns the row unchanged. If a caller needs a different product order than the update naturally produces, either write an expected return type that names that order (enough when it is only a permutation of the updated row) or call `reorder_prod` explicitly.
 
 ## Product order
 
-`Name & Note` and `Note & Name` are distinct product types. When a caller has one order and a callee wants the other, use `reorder_prod!`:
+`Name & Note` and `Note & Name` are distinct product types. When a caller has one order and a callee wants the other, use `reorder_prod`:
 
 ```kio {@row}
 fn wants_note_first(_x: Note & Name) { () }
 
-fn call_it(x: Name & Note) { wants_note_first(x.>reorder_prod!(Note & Name)) }
+fn call_it(x: Name & Note) { wants_note_first(x.>reorder_prod(Note & Name)) }
 ```
 
 ## Where this leads
 
 - [The optics library](../poc/optics.md) builds first-class get/set pairs on the same field-access shape.
-- [Using libraries](using-libraries.md) explains how to consume the elab
+- [Using libraries](using-libraries.md) explains how to consume the macro
   library that provides the structural product helpers used by these examples.

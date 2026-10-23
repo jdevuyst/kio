@@ -1,8 +1,6 @@
 module testapi/main;
 
 import library/core(List, head, nil, singleton, tail);
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
 import library/list(
 , append
 , at
@@ -28,6 +26,8 @@ import library/list(
 , to_string
 , varop [] as [* *]
 );
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import testapi(Bool, String, default I32);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -39,7 +39,7 @@ fn show(label: String, value: String) {
 }
 
 fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present(value) }, .(_empty: .) { default })
   }
 }
@@ -58,7 +58,7 @@ fn show_result[A](label: String, result: A | ., render: A -> String) {
 fn show_result_i32(label: String, result: I32 | .) { show_result(label, result, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
-  match! value {
+  match(value) {
     (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
   }
 }
@@ -109,8 +109,8 @@ pub fn main() {
   show_result("head(empty Unit)", head(nil(.)), render_unit);
   show_result("at(unit, 0)", at(0, unit_list), render_unit);
   show_result("at(unit, 1)", at(1, unit_list), render_unit);
-  let nested_number = singleton(widen_sum!(7, I32 | .));
-  let nested_unit = singleton(widen_sum!((), I32 | .));
+  let nested_number = singleton(widen_sum(7, I32 | .));
+  let nested_unit = singleton(widen_sum((), I32 | .));
   show_result("last(nested number)", last(nested_number), render_sum);
   show_result("last(nested unit)", last(nested_unit), render_sum);
   show_result("last(empty nested)", last(nil(I32 | .)), render_sum);

@@ -7,7 +7,7 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 // A guest that applies a lambda immediately at its definition site —
-// `.(x: T) { body }(arg)` — the shape the `match!` elaborator's clause
+// `.(x: T) { body }(arg)` — the shape the `match` macro's clause
 // handlers lower to in emitted Kio'. Running `main` through dyn_load_prime's
 // interpreter resolves the application against the lambda's own binder, so
 // the dyn-load-prime differential agrees with compile-and-run.

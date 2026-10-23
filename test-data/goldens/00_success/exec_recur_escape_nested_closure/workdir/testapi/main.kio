@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import nested_elaborators(invoke_then, keep_callback, mixed_use);
+import macros/control(macro if);
+import macros/match(macro match);
+import nested_elaborators(macro invoke_then, macro keep_callback, macro mixed_use);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -12,10 +12,10 @@ import testapi/iter as iter;
 fn retain[A](value: A) -> A { value }
 
 rec(iter.loop_reentry) fn nested(remaining: I32) -> . -> . -> I32 {
-  match! remaining {
+  match(remaining) {
     .(count: I32) {
       retain(.() {
-        if! arith.leq_i32(count, 0) {
+        if(arith.leq_i32(count, 0)) {
           .() { 43 }
         } else {
           .() { recur(escape) nested(arith.sub_i32(count, 1))()() }
@@ -26,9 +26,9 @@ rec(iter.loop_reentry) fn nested(remaining: I32) -> . -> . -> I32 {
 }
 
 rec(iter.loop_reentry) fn residual(remaining: I32) -> I32 -> . -> I32 {
-  invoke_then!(.() {
+  invoke_then(.() {
     .() {
-      if! arith.leq_i32(remaining, 0) {
+      if(arith.leq_i32(remaining, 0)) {
         47
       } else {
         recur(escape) residual(arith.sub_i32(remaining, 1))(0)()
@@ -38,12 +38,12 @@ rec(iter.loop_reentry) fn residual(remaining: I32) -> I32 -> . -> I32 {
 }
 
 rec(iter.loop_reentry) fn returned(remaining: I32) -> . -> . -> I32 {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     .() {
       .() { 59 }
     }
   } else {
-    keep_callback!(.() {
+    keep_callback(.() {
       io.print("returned outer\n");
       .() { recur(escape) returned(0)()() }
     })
@@ -51,10 +51,10 @@ rec(iter.loop_reentry) fn returned(remaining: I32) -> . -> . -> I32 {
 }
 
 rec(iter.loop_reentry) fn mixed(remaining: I32) -> . -> I32 {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     .() { 61 }
   } else {
-    mixed_use!(.() {
+    mixed_use(.() {
       io.print("mixed outer\n");
       .() { recur(escape) mixed(0)() }
     })

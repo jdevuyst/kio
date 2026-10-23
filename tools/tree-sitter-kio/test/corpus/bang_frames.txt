@@ -1,5 +1,5 @@
 ================================================================================
-structural bang_marker_edges_preserve_native_suffixes
+structural bang_marker_edges_preserve_callable_heads
 ================================================================================
 module bang_frames;
 import ops(varop [! !], varop []);
@@ -9,16 +9,16 @@ fn run(x: .) {
   [![!x!]!];
   ([!x!]);
   [!x.>tail!];
-  [x.>helper!];
-  [,x.>helper!];
-  [!helper!(x)!];
+  [x.>helper];
+  [,x.>helper];
+  [!helper(x)!];
   [!x!
   ];
   [!x! // closing marker
   ];
-  helper!(x);
-  varop!(x);
-  foldl!(x);
+  helper(x);
+  varop(x);
+  foldl(x);
   varop;
   foldl
 }
@@ -136,10 +136,10 @@ fn run(x: .) {
           (operator_builtin)
           (variadic_element
             (ufcs_expr
-              (expression_path
+              receiver: (expression_path
                 (identifier))
               (operator_arrow_ufcs)
-              (call_callee
+              callee: (call_callee
                 (entity_name_function))))
           (operator_builtin))
         (variadic_close
@@ -151,10 +151,11 @@ fn run(x: .) {
         (variadic_elements
           (variadic_element
             (ufcs_expr
-              (expression_path
+              receiver: (expression_path
                 (identifier))
               (operator_arrow_ufcs)
-              (elaborator_name))))
+              callee: (call_callee
+                (entity_name_function)))))
         (variadic_close
           (bracket_rbracket)))
       (separator_semicolon)
@@ -165,10 +166,11 @@ fn run(x: .) {
           (separator_comma)
           (variadic_element
             (ufcs_expr
-              (expression_path
+              receiver: (expression_path
                 (identifier))
               (operator_arrow_ufcs)
-              (elaborator_name))))
+              callee: (call_callee
+                (entity_name_function)))))
         (variadic_close
           (bracket_rbracket)))
       (separator_semicolon)
@@ -179,7 +181,8 @@ fn run(x: .) {
           (operator_builtin)
           (variadic_element
             (call_expr
-              (elaborator_name)
+              (call_callee
+                (entity_name_function))
               (expression_arguments
                 (bracket_lparen)
                 (expression_path
@@ -215,7 +218,8 @@ fn run(x: .) {
           (bracket_rbracket)))
       (separator_semicolon)
       (call_expr
-        (elaborator_name)
+        (call_callee
+          (entity_name_function))
         (expression_arguments
           (bracket_lparen)
           (expression_path
@@ -223,7 +227,8 @@ fn run(x: .) {
           (bracket_rparen)))
       (separator_semicolon)
       (call_expr
-        (elaborator_name)
+        (call_callee
+          (entity_name_function))
         (expression_arguments
           (bracket_lparen)
           (expression_path
@@ -231,7 +236,8 @@ fn run(x: .) {
           (bracket_rparen)))
       (separator_semicolon)
       (call_expr
-        (elaborator_name)
+        (call_callee
+          (entity_name_function))
         (expression_arguments
           (bracket_lparen)
           (expression_path
@@ -252,8 +258,8 @@ x !
 x // gap
 !
 x!? y
-varop!
-foldl!
+varop
+foldl
 varop
 foldl
 --------------------------------------------------------------------------------
@@ -267,7 +273,7 @@ foldl
   (identifier)
   (operator_run)
   (identifier)
-  (elaborator_name)
-  (elaborator_name)
+  (identifier)
+  (identifier)
   (identifier)
   (identifier))

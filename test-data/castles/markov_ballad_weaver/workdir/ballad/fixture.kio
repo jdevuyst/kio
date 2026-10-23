@@ -8,8 +8,8 @@
 module ballad/fixture;
 
 import ballad/list(List, cons, nil, reverse);
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/fmt(string_to_int);
 import testapi/io(read_ascii_line);
@@ -25,10 +25,10 @@ fn is_blank(s: String) -> Bool { string_eq(s, "") }
 /// unparseable text. The checked-in fixture is well formed, so the fallback
 /// only guards a short or malformed one.
 pub fn read_int(fallback: I32) -> I32 {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(s: String) {
-        match! string_to_int(s) {
+        match(string_to_int(s)) {
           (.(n: I32) { n }, .(_bad: .) { fallback })
         }
       }
@@ -41,18 +41,18 @@ pub fn read_int(fallback: I32) -> I32 {
 /// a non-empty phrase is reversed on the way out; a blank run of lines closes
 /// nothing.
 fn close_phrase(words: List(String), acc: List(List(String))) -> List(List(String)) {
-  match! words.>List.un_list {
+  match(words.>List.un_list) {
     (.(_head: String, _rest: List(String)) { cons(reverse(words), acc) }, .(_empty: .) { acc })
   }
 }
 
 rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(List(String)) {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(s: String) {
-        if! string_eq(s, sentinel()) {
+        if(string_eq(s, sentinel())) {
           reverse(close_phrase(words, acc))
-        } else if! is_blank(s) {
+        } else if(is_blank(s)) {
           recur read_onto(nil(String), close_phrase(words, acc))
         } else {
           recur read_onto(cons(s, words), acc)

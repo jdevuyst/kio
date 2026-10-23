@@ -21,7 +21,7 @@
 //! - [`Surface`] — parser output. All surface variants present:
 //!   [`Expr::Tuple`], [`Expr::LabelValue`],
 //!   [`Expr::Elaborator`] (internal elaboration forms produced by
-//!   parser/desugar recovery paths), [`Expr::UserElaborator`],
+//!   parser/desugar recovery paths), [`Expr::UserMacro`],
 //!   [`Expr::Ufcs`], [`Type::LabelSugar`],
 //!   [`Item::Labels`] — plus every common variant.
 //! - [`Desugared`] — post-`desugar`. Early-lowered expression, item, import,
@@ -41,13 +41,13 @@
 //!   shape before standalone validation, and full-Kio substitution constructs
 //!   it before revalidation. On the full-Kio path, `substitute` replaces each
 //!   elaboration site (`Expr::Elaborator`,
-//!   `Expr::UserElaborator`, `Expr::Ufcs`) with its explicit Kio' tree, so every
+//!   `Expr::UserMacro`, `Expr::Ufcs`) with its explicit Kio' tree, so every
 //!   surface-only variant carries [`Never`]:
 //!   - Internal elaboration forms → the chosen rearrangement of
 //!     `__pair__` / `__fst__` / `__snd__` / `__left__` /
 //!     `__right__` / `__either__` calls,
-//!   - user-defined elaborator calls → the checked Kio' tree returned
-//!     by the elaborator implementation.
+//!   - macro calls → the checked Kio' tree returned
+//!     by the macro implementation.
 //!
 //!   The backend-facing pipeline validates the assembled package before
 //!   exposing Prime to backends. The Kio' emitter therefore sees only validated
@@ -67,7 +67,7 @@
 //! Dot-splice calls (`r.>f(args)`, `r.>>f(args)`, `f(args).<r`,
 //! `f(args).<<r`) survive through `Lowered`. The typer resolves the
 //! named callee, inserts the receiver into the resolved value-argument
-//! stream, records the equivalent prefix call or user-elaborator
+//! stream, records the equivalent prefix call or macro
 //! expansion, and `substitute` erases the [`Expr::Ufcs`] before Prime.
 //!
 //! The `Surface` and `Lowered` phases bracket the typer; the
@@ -76,7 +76,7 @@
 //! (so the desugar pass becomes phase-changing); `Lowered` further
 //! tightens the `Labels` / `LabelValue` / `TypeLabelSugar` extensions;
 //! `UncheckedPrime` / `Prime` then tighten the `ExprElab` extension
-//! (covering `Elaborator` / `UserElaborator` / field access
+//! (covering `Elaborator` / `UserMacro` / field access
 //! and update) to [`Never`] after the typer's elaboration substitutes
 //! them out, closing the door on every surface-only variant.
 
@@ -971,7 +971,7 @@ pub trait Phase: Sized {
     /// Witness for the elaboration-bearing `Expr` variants whose
     /// type-checking semantics depend on a side table the typer
     /// records during synthesis: `Expr::Elaborator`,
-    /// and `Expr::UserElaborator`.
+    /// and `Expr::UserMacro`.
     ///
     /// All these variants share the same witness shape per phase:
     /// `NodeId` at `Surface` / `Desugared` / `Lowered` (the side-
@@ -1010,10 +1010,10 @@ pub trait Phase: Sized {
         + serde::Serialize
         + serde::de::DeserializeOwned;
     /// `Expr::Ufcs` (`r.>f(args)`, `r.>>f(args)`, `f(args).<r`,
-    /// `f(args).<<r`, `r.>iso!(T)`) is a dot-splice dispatch form.
+    /// `f(args).<<r`, `r.>iso(T)`) is a dot-splice dispatch form.
     /// Surface, Desugared, and Lowered carry its parser-issued
     /// [`NodeId`] so the typer can record the equivalent prefix call
-    /// or user-elaborator expansion at the Lowered -> Prime boundary.
+    /// or macro expansion at the Lowered -> Prime boundary.
     /// Prime forbids the variant (witness [`Never`]).
     type ExprUfcs: Clone
         + std::fmt::Debug
@@ -1164,11 +1164,11 @@ pub trait Phase: Sized {
         + Eq
         + serde::Serialize
         + serde::de::DeserializeOwned;
-    /// `pub elab name : CallType { impl implementation; };` is
+    /// `pub macro name : CallType { impl implementation; };` is
     /// surface-only compile-time metadata. It survives through
     /// `Lowered` so the typer can validate and use it, then is
     /// filtered before `Prime`.
-    type ItemElaborator: Clone
+    type ItemMacro: Clone
         + std::fmt::Debug
         + PartialEq
         + Eq
@@ -1237,7 +1237,7 @@ pub trait Phase: Sized {
 
     /// Ordinary-function purity. `Surface` through [`Prime`] retain the
     /// modifier so source typing and final Kio' validation enforce the same
-    /// body contract, including after elaborator substitution. [`Enriched`] and
+    /// body contract, including after macro substitution. [`Enriched`] and
     /// [`Routed`] retain the validated marker for conservative effect analysis.
     type FnPurity: Clone
         + std::fmt::Debug
@@ -1250,7 +1250,7 @@ pub trait Phase: Sized {
         + serde::de::DeserializeOwned;
 
     /// Source trivia attached to a single AST position (e.g., the
-    /// run of comments immediately before a `let`, a `match!` clause,
+    /// run of comments immediately before a `let`, a macro clause,
     /// or a `term` keyword). `Vec<crate::pass::lexer::Trivia>` at [`Surface`]
     /// where `kio fmt` reads it; `()` at every later phase, where
     /// no pass needs it. The `Default` bound lets the
@@ -1560,7 +1560,7 @@ impl Phase for Surface {
     type TypeGoal = Never;
     type ItemLabels = ();
     type ItemEquiv = ();
-    type ItemElaborator = ();
+    type ItemMacro = ();
     type ItemOp = ();
     type ItemRecGroup = ();
     type ItemLiteralAlias = ();
@@ -1605,7 +1605,7 @@ impl Phase for Desugared {
     type TypeGoal = Never;
     type ItemLabels = ();
     type ItemEquiv = ();
-    type ItemElaborator = ();
+    type ItemMacro = ();
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -1624,7 +1624,7 @@ impl Phase for Desugared {
 /// the surface AST minus the early-desugar surface forms. Dot-splice
 /// calls survive to the typer. The
 /// elaboration-bearing variants (`Expr::Elaborator`,
-/// `Expr::UserElaborator`) survive into the typer, which substitutes their
+/// `Expr::UserMacro`) survive into the typer, which substitutes their
 /// elaborations during the [`Lowered`] → [`Prime`] transition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Lowered;
@@ -1653,7 +1653,7 @@ impl Phase for Lowered {
     type TypeGoal = ();
     type ItemLabels = Never;
     type ItemEquiv = ();
-    type ItemElaborator = ();
+    type ItemMacro = ();
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -1702,7 +1702,7 @@ impl Phase for UncheckedPrime {
     type TypeGoal = Never;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -1718,9 +1718,9 @@ impl Phase for UncheckedPrime {
 
 /// Strict Kio' shape. The expression extensions for `Tuple`, `FnPlaceholder`,
 /// `OpChain`, `LabelValue`, `RowLet`, `Elaborator` /
-/// `UserElaborator`, `RecCall`, `RecOrder`, and `Ufcs`
+/// `UserMacro`, `RecCall`, `RecOrder`, and `Ufcs`
 /// are uninhabited here, as are `Type::LabelSugar` / `Infer` / internal `Goal`
-/// and `Item::Labels` / `Equiv` / `Elaborator` / `Op` / `VariadicOperator` / `RecGroup` /
+/// and `Item::Labels` / `Equiv` / `Macro` / `Op` / `VariadicOperator` / `RecGroup` /
 /// `LiteralAlias`. Enriched and Low-IR expression extensions are also
 /// uninhabited; parameter-pattern and return-elision metadata has been erased.
 /// The full route removes these forms across operator folding, desugaring,
@@ -1762,7 +1762,7 @@ impl Phase for Prime {
     type TypeGoal = Never;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -1820,7 +1820,7 @@ impl Phase for Enriched {
     type TypeGoal = Never;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -1892,7 +1892,7 @@ impl Phase for Routed {
     type TypeGoal = Never;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -2191,10 +2191,10 @@ pub enum Item<P: Phase = Surface> {
     /// `kio test` runner reads them out of the typed AST and
     /// discharges them via partial evaluation.
     Equiv(Equiv<P>, P::ItemEquiv),
-    /// `pub elab name : CallType { impl implementation; };` — a
-    /// compile-time elaborator declaration. Elaborator items live in
+    /// `pub macro name : CallType { impl implementation; };` — a
+    /// compile-time macro declaration. Macro items live in
     /// their own import/use namespace and are filtered before Kio'.
-    Elaborator(UserElaboratorDef<P>, P::ItemElaborator),
+    Macro(UserMacroDef<P>, P::ItemMacro),
     /// `op _ + _ { impl add; };` — a user-defined operator binding.
     /// **Surface-only:** the desugar pass folds operator usages into
     /// plain `Expr::Call` and drops the `Op` item itself before
@@ -2289,11 +2289,11 @@ pub struct VariadicOperator<P: Phase = Surface> {
     pub doc: Option<DocComment>,
 }
 
-/// User-defined elaborator declaration.
+/// Macro scheduling at compile time.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
 )]
-pub enum ElaboratorSchedule {
+pub enum MacroSchedule {
     #[default]
     Late,
     Fills,
@@ -2373,21 +2373,21 @@ impl AsRef<[PathSegment]> for LexicalCallablePath {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct UserElaboratorDef<P: Phase = Surface> {
+pub struct UserMacroDef<P: Phase = Surface> {
     pub vis: Visibility,
     pub name: String,
     pub name_span: Span,
     pub trailing_blocks: Vec<TrailingBlockDecl<P>>,
     /// Optional compile-time captures prepended to the implementation
-    /// ABI. Each capture is a name/path, resolved in the elaborator's
+    /// ABI. Each capture is a name/path, resolved in the macro's
     /// definition environment.
-    pub captures: Vec<UserElaboratorCapture>,
+    pub captures: Vec<UserMacroCapture>,
     /// Surface call signature. Type slots are reflected as declared
     /// ABI positions; value slots are reflected as checked-term ABI
     /// positions. The implementation parameter type determines whether
     /// a type slot requires `__Type__` or accepts `__Type__ | .`.
     pub call_ty: Type<P>,
-    pub schedule: ElaboratorSchedule,
+    pub schedule: MacroSchedule,
     /// Lexical path naming the implementation function that uses the
     /// `__comptime__` helper surface.
     pub implementation: LexicalCallablePath,
@@ -2395,12 +2395,12 @@ pub struct UserElaboratorDef<P: Phase = Surface> {
     /// them distinct from declaration documentation during formatting.
     pub body_trivia: P::LeadingTrivia,
     pub meta: Meta<P>,
-    /// Doc-comment attached to this elaborator declaration, if any.
+    /// Doc-comment attached to this macro declaration, if any.
     pub doc: Option<DocComment>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct UserElaboratorCapture {
+pub struct UserMacroCapture {
     pub segments: Vec<PathSegment>,
     pub span: Span,
 }
@@ -2420,7 +2420,7 @@ pub struct TrailingBlockDecl<P: Phase = Surface> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum UserElaboratorCallForm {
+pub enum UserMacroCallForm {
     Ordinary,
     TrailingBlocks,
 }
@@ -2689,6 +2689,7 @@ pub enum ImportItem {
     /// `foo`, `Bar` — regular identifier import (function or type).
     Name {
         default_span: Option<Span>,
+        macro_span: Option<Span>,
         name: String,
         span: Span,
         alias: Option<ImportAlias<String>>,
@@ -3663,7 +3664,7 @@ pub struct Param<P: Phase = Surface> {
 /// surface form and [`ParamPatternElem`] for the per-slot shape.
 ///
 /// `match_id` is the [`NodeId`] used by pattern lowering artifacts.
-/// Parameter patterns stamp it onto the generated `match!`; statement
+/// Parameter patterns retain it for generated projections; statement
 /// patterns use it when minting the outer product name. The parser
 /// owns the ID so downstream lowering never mixes parser- and
 /// desugar-minted IDs for the same source pattern.
@@ -4892,7 +4893,6 @@ pub enum Expr<P: Phase = Surface> {
         /// The ordinary prefix, including a UFCS receiver at the edge selected
         /// by `splice`. Projection appends the block arguments after this list.
         prefix: Vec<Expr<P>>,
-        prefix_explicit: bool,
         /// Written UFCS direction; the inserted value remains in `prefix` so
         /// ordinary Surface traversals visit it along with the other arguments.
         splice: Option<UfcsFlavor>,
@@ -5168,8 +5168,8 @@ pub enum Expr<P: Phase = Surface> {
     /// `call` ([`ElaboratorCall::FieldAccess`] /
     /// [`ElaboratorCall::FieldUpdate`]). These are not user-callable
     /// elaborator names — the parser builds them from postfix field
-    /// syntax. (User-written `name!(...)` elaborator calls are carried
-    /// by [`Expr::UserElaborator`] instead.)
+    /// syntax. (Source-selected macro calls are carried
+    /// by [`Expr::UserMacro`] instead.)
     ///
     /// The variant survives into `Lowered`; the typer records its elaboration
     /// in a side table keyed by `NodeId`, and substitution consumes that record
@@ -5205,52 +5205,29 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprRecOrder,
     },
-    /// `name!(args...)` where `name` is imported from a user elaborator
-    /// declaration. The call arguments are interpreted against the
-    /// declaration's `call_ty`; `name` is import-scoped rather than part
-    /// of the compiler's closed [`ElaboratorKind`] enum.
-    UserElaborator {
+    /// A direct call selected as a macro by source-local binding classification.
+    /// Arguments are checked against the declaration's public `call_ty`;
+    /// the macro implementation runs after that call plan is fixed.
+    UserMacro {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
         name: String,
         args: Vec<CallArg<P>>,
         source_trivia: P::SourceDelimitedTrivia,
-        form: UserElaboratorCallForm,
+        form: UserMacroCallForm,
         meta: Meta<P>,
         ext: P::ExprElab,
     },
-    /// `r.>f`, `r.>>f(args)`, `f(args).<r`, `f(args).<<r` — UFCS-style
-    /// syntactic call splices. Also carries bang-call splice forms such as
-    /// `r.>show!` / `show!.<r`: when `bang` is `Some`, the callee path
-    /// is a single segment naming the user-defined elaborator and `args`
-    /// carries the unspliced post-`!` argument list.
+    /// `r.>f`, `r.>>f(args)`, `f(args).<r`, `f(args).<<r` — UFCS call splices.
+    /// The parser retains the written receiver, callee path, and argument list.
+    /// Source-local binding classification marks a direct macro callee with
+    /// `macro_call`; qualified paths always retain ordinary call ownership.
     ///
-    /// **Pre-Prime only**: the typer resolves the callee's actual call
-    /// type, inserts `receiver` into the value-argument stream according
-    /// to [`UfcsFlavor`], records the equivalent prefix call or user
-    /// elaborator expansion, and `substitute` erases the node before
-    /// Prime. Kio' has no UFCS.
+    /// The typer resolves the public call type and places `receiver` according
+    /// to [`UfcsFlavor`]. It records the equivalent prefix call or macro
+    /// expansion, and substitution removes the node before Prime.
     ///
-    /// `callee_segments` is a non-empty path: a single segment
-    /// (`r.>f`) names a free value via the value namespace;
-    /// multiple segments are a qualified path (`r.>m.f` for a
-    /// module alias `m`, `r.>T.member` for a type member). Elaborator-
-    /// UFCS (`bang = Some(_)`) always has exactly one segment, the
-    /// elaborator name.
-    ///
-    /// `flavor` records which surface spelling was written and which
-    /// side receives the inserted value. Elaborator bang-call splices
-    /// use the same flavor rules as ordinary call splices; the
-    /// elaborator's argument contract is checked after the splice builds
-    /// the final argument list.
-    ///
-    /// `bang` is `Some(span)` for elaborator-UFCS (the span of the `!`
-    /// suffix, used by diagnostics) and `None` for regular UFCS.
-    /// The pretty-printer reads this to round-trip the `!` in the
-    /// emitted source.
-    ///
-    /// Per-arg leading trivia flows onto each wrapped element's
-    /// `meta.leading_trivia` per the [`Call`] variant's invariant.
+    /// Per-argument trivia follows the [`Call`] variant's invariant.
     Ufcs {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
@@ -5260,10 +5237,8 @@ pub enum Expr<P: Phase = Surface> {
         args: Vec<CallArg<P>>,
         source_trivia: P::SourceDelimitedTrivia,
         flavor: UfcsFlavor,
-        /// `Some(bang_span)` for the elaborator-UFCS form
-        /// (`r.>iso!(T)` etc.); `None` for regular UFCS
-        /// (`r.>f(args)`).
-        bang: Option<Span>,
+        /// Selected direct macro head span, or `None` for an ordinary callee.
+        macro_call: Option<Span>,
         meta: Meta<P>,
         ext: P::ExprUfcs,
     },
@@ -6277,7 +6252,7 @@ pub struct SigExportFn<P: Phase = Surface> {
 /// `host fn` (already signature-only, the env / contravariant side),
 /// `type`, `newtype`, and a body-less `pub fn f(p0: T) -> R;` export
 /// signature (the export / covariant side). No surface-only forms
-/// (`elab` / `op` / `labels` / `equiv` / `literal`) — they are
+/// (`macro` / `op` / `labels` / `equiv` / `literal`) — they are
 /// not Kio′.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum SigItem<P: Phase = Surface> {
@@ -6858,7 +6833,7 @@ where
 /// Phase-rebrand an [`Expr`] across a phase boundary where every
 /// surface-only variant is statically uninhabited at the source —
 /// every elaboration-bearing variant (`Elaborator` /
-/// `UserElaborator` via `ExprElab`), the pre-typer surface forms (`Tuple` /
+/// `UserMacro` via `ExprElab`), the pre-typer surface forms (`Tuple` /
 /// `FnPlaceholder` / `LabelValue` / `Ufcs`), and any nested
 /// `Type::LabelSugar` discharge via `match *ext {}`.
 ///
@@ -7017,7 +6992,7 @@ where
         Expr::LabelValue { ext, .. } => match *ext {},
         Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } => match *ext {},
         Expr::BlockCall { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
@@ -7277,7 +7252,7 @@ where
             ItemEquiv = Never,
             ItemOp = Never,
             ItemRecGroup = Never,
-            ItemElaborator = Never,
+            ItemMacro = Never,
             ItemLiteralAlias = Never,
         >,
     Q: Phase<ExprResolved = (), FnBody = Expr<Q>>,
@@ -7294,7 +7269,7 @@ where
         Item::Labels(_, ext) => match *ext {},
         Item::LabelForward(_, ext) => match *ext {},
         Item::Equiv(_, ext) => match *ext {},
-        Item::Elaborator(_, ext) => match *ext {},
+        Item::Macro(_, ext) => match *ext {},
         Item::Op(_, ext) => match *ext {},
         Item::VariadicOperator(_, ext) => match *ext {},
         Item::HostType(h) => Item::HostType(convert_host_type::<P, Q>(h)),
@@ -7337,7 +7312,7 @@ impl<P: Phase> Expr<P> {
             | Self::Elaborator { occurrence, .. }
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
-            | Self::UserElaborator { occurrence, .. }
+            | Self::UserMacro { occurrence, .. }
             | Self::BlockCall { occurrence, .. }
             | Self::Ufcs { occurrence, .. }
             | Self::OpChain { occurrence, .. }
@@ -7384,7 +7359,7 @@ impl<P: Phase> Expr<P> {
             | Self::Elaborator { occurrence, .. }
             | Self::RecOrder { occurrence, .. }
             | Self::RecQuote { occurrence, .. }
-            | Self::UserElaborator { occurrence, .. }
+            | Self::UserMacro { occurrence, .. }
             | Self::BlockCall { occurrence, .. }
             | Self::Ufcs { occurrence, .. }
             | Self::OpChain { occurrence, .. }
@@ -7439,7 +7414,7 @@ impl<P: Phase> Expr<P> {
             | Expr::Elaborator { meta, .. }
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
-            | Expr::UserElaborator { meta, .. }
+            | Expr::UserMacro { meta, .. }
             | Expr::BlockCall { meta, .. }
             | Expr::Ufcs { meta, .. }
             | Expr::OpChain { meta, .. }
@@ -7490,7 +7465,7 @@ impl<P: Phase> Expr<P> {
             | Expr::Elaborator { meta, .. }
             | Expr::RecOrder { meta, .. }
             | Expr::RecQuote { meta, .. }
-            | Expr::UserElaborator { meta, .. }
+            | Expr::UserMacro { meta, .. }
             | Expr::BlockCall { meta, .. }
             | Expr::Ufcs { meta, .. }
             | Expr::OpChain { meta, .. }
@@ -7572,7 +7547,7 @@ impl<P: Phase> Item<P> {
             Item::Labels(d, _) => &d.meta,
             Item::LabelForward(d, _) => &d.meta,
             Item::Equiv(e, _) => &e.meta,
-            Item::Elaborator(s, _) => &s.meta,
+            Item::Macro(s, _) => &s.meta,
             Item::Op(d, _) => &d.meta,
             Item::VariadicOperator(d, _) => &d.meta,
             Item::HostType(h) => &h.meta,
@@ -7591,7 +7566,7 @@ impl<P: Phase> Item<P> {
             Item::Labels(d, _) => &mut d.meta,
             Item::LabelForward(d, _) => &mut d.meta,
             Item::Equiv(e, _) => &mut e.meta,
-            Item::Elaborator(s, _) => &mut s.meta,
+            Item::Macro(s, _) => &mut s.meta,
             Item::Op(d, _) => &mut d.meta,
             Item::VariadicOperator(d, _) => &mut d.meta,
             Item::HostType(h) => &mut h.meta,

@@ -9,8 +9,8 @@ module automata/report;
 import automata/dfa as dfa;
 import automata/seq(Ints, List, fold, len);
 import automata/symbol(letter, width);
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -27,11 +27,11 @@ pub fn num(value: I32) -> String { int_to_string(value) }
 pub fn line(text: String) { print(cat(text, "\n")) }
 
 rec(loop) fn blanks(n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) { acc } else { recur blanks(sub_i32(n, 1), cat(" ", acc)) }
+  if(leq_i32(n, 0)) { acc } else { recur blanks(sub_i32(n, 1), cat(" ", acc)) }
 }
 
 rec(loop) fn digits_from(value: I32, limit: I32, acc: I32) -> I32 {
-  if! lt_i32(value, limit) {
+  if(lt_i32(value, limit)) {
     acc
   } else {
     recur digits_from(value, mul_i32(limit, 10), add_i32(acc, 1))
@@ -48,10 +48,10 @@ pub fn cell(value: I32, slot: I32) -> String {
 }
 
 rec(loop) fn set_body(xs: Ints, lead: Bool, acc: String) -> String {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(x: I32, rest: Ints) {
-        let sep = if! lead { "" } else { "," };
+        let sep = if(lead) { "" } else { "," };
         recur set_body(rest, .f, cat3(acc, sep, num(x)))
       }
     , .(_empty: .) { acc }
@@ -72,11 +72,11 @@ pub fn show_word(word: Ints, slot: I32) -> String {
 }
 
 pub fn verdict(ok: Bool) -> String {
-  if! ok { "accept" } else { "reject" }
+  if(ok) { "accept" } else { "reject" }
 }
 
 rec(loop) fn header_from(sym: I32, acc: String) -> String {
-  if! leq_i32(width(), sym) {
+  if(leq_i32(width(), sym)) {
     acc
   } else {
     recur header_from(add_i32(sym, 1), cat3(acc, blanks(5, ""), letter(sym)))
@@ -88,7 +88,7 @@ rec(loop) fn header_from(sym: I32, acc: String) -> String {
 pub fn table_header() -> String { cat("      st", header_from(0, "")) }
 
 rec(loop) fn row_cells(d: dfa.Dfa, state: I32, sym: I32, acc: String) -> String {
-  if! leq_i32(width(), sym) {
+  if(leq_i32(width(), sym)) {
     acc
   } else {
     recur row_cells(d, state, add_i32(sym, 1), cat(acc, cell(dfa.step(d, state, sym), 6)))
@@ -97,8 +97,8 @@ rec(loop) fn row_cells(d: dfa.Dfa, state: I32, sym: I32, acc: String) -> String 
 
 /// `>` marks the start state and `*` an accepting one; a state can be both.
 fn marker(d: dfa.Dfa, state: I32) -> String {
-  let entry = if! eq_i32(dfa.start(d), state) { ">" } else { " " };
-  let final = if! dfa.is_accepting(d, state) { "*" } else { " " };
+  let entry = if(eq_i32(dfa.start(d), state)) { ">" } else { " " };
+  let final = if(dfa.is_accepting(d, state)) { "*" } else { " " };
   cat(entry, final)
 }
 

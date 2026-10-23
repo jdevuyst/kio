@@ -8,10 +8,10 @@ struct HostBox<T> {
 final class Host: OpaqueSubstitutionHost {
     typealias api__Number = Int32
     typealias api__Flag = Bool
-    typealias elab_testapi__String = String
-    typealias elab_testapi__I32 = Int32
-    typealias elab_testapi__Int = Int32
-    typealias elab_testapi__Bool = Bool
+    typealias macros_testapi__String = String
+    typealias macros_testapi__I32 = Int32
+    typealias macros_testapi__Int = Int32
+    typealias macros_testapi__Bool = Bool
 
     var unboxCalls = 0
     var consumed: [(Int32, Bool)] = []

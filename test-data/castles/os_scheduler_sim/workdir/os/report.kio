@@ -7,7 +7,7 @@
 /// anywhere would say so here.
 module os/report;
 
-import elab/control(if);
+import macros/control(macro if);
 import os/config as config;
 import os/fixture as fixture;
 import os/memory as memory;
@@ -47,10 +47,10 @@ fn banner() {
 fn pid_cell(pid: I32) -> String { text.cat(proc.pid_tag(pid), " ") }
 
 rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> String {
-  if! num.geq(i, array_len(program)) {
+  if(num.geq(i, array_len(program))) {
     acc
   } else {
-    let sep = if! num.eq(i, 0) { "" } else { " " };
+    let sep = if(num.eq(i, 0)) { "" } else { " " };
     recur program_text(
     , program
     , add_i32(i, 1)
@@ -60,7 +60,7 @@ rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> St
 }
 
 rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid: I32) {
-  if! leq_i32(config.proc_count(), pid) {
+  if(leq_i32(config.proc_count(), pid)) {
     ()
   } else {
     line(text.cat4(
@@ -80,7 +80,7 @@ fn fixture_table(pcb: proc.Pcb, programs: Array(Array(proc.Phase))) {
 }
 
 rec(loop) fn process_rows(pcb: proc.Pcb, pid: I32) {
-  if! leq_i32(config.proc_count(), pid) {
+  if(leq_i32(config.proc_count(), pid)) {
     ()
   } else {
     line(text.cat4(
@@ -120,14 +120,14 @@ fn process_table(pcb: proc.Pcb) {
 }
 
 rec(loop) fn accounting_ok(pcb: proc.Pcb, pid: I32) -> Bool {
-  if! leq_i32(config.proc_count(), pid) {
+  if(leq_i32(config.proc_count(), pid)) {
     .t
   } else {
     let spent = add_i32(
     , add_i32(proc.cpu_ticks_at(pcb, pid), proc.faults_at(pcb, pid))
     , add_i32(proc.wait_ticks_at(pcb, pid), proc.block_ticks_at(pcb, pid))
     );
-    if! num.eq(spent, proc.turnaround_at(pcb, pid)) {
+    if(num.eq(spent, proc.turnaround_at(pcb, pid))) {
       recur accounting_ok(pcb, add_i32(pid, 1))
     } else {
       .f
@@ -136,10 +136,10 @@ rec(loop) fn accounting_ok(pcb: proc.Pcb, pid: I32) -> Bool {
 }
 
 rec(loop) fn order_text(q: queue.Queues, i: I32, acc: String) -> String {
-  if! num.geq(i, queue.retired_len(q)) {
+  if(num.geq(i, queue.retired_len(q))) {
     acc
   } else {
-    let sep = if! num.eq(i, 0) { "" } else { " " };
+    let sep = if(num.eq(i, 0)) { "" } else { " " };
     recur order_text(q, add_i32(i, 1), text.cat3(acc, sep, proc.pid_tag(queue.retired_at(q, i))))
   }
 }
@@ -161,18 +161,18 @@ fn totals(pcb: proc.Pcb, q: queue.Queues, ticks: I32, idle: I32) {
   line(text.cat("page faults       ", text.pad_num(faults, 4)));
   line(text.cat3("hit ratio         ", text.pad_num(num.permille(hits, refs), 4), " permille"));
   line(text.cat("completion order  ", order_text(q, 0, "")));
-  line(text.cat("accounting        ", if! sound { "ok" } else { "MISMATCH" }))
+  line(text.cat("accounting        ", if(sound) { "ok" } else { "MISMATCH" }))
 }
 
 /// A frame column, right-aligned to five characters like the numbers beside it.
 fn frame_owner_cell(pid: I32) -> String { text.cat("   ", proc.pid_tag(pid)) }
 
 rec(loop) fn frame_rows(mem: memory.Mem, frame: I32) {
-  if! leq_i32(config.frame_count(), frame) {
+  if(leq_i32(config.frame_count(), frame)) {
     ()
   } else {
     let owner = memory.owner_of(mem, frame);
-    let page = if! num.lt(owner, 0) {
+    let page = if(num.lt(owner, 0)) {
       "   --"
     } else {
       text.pad_num(memory.vpage_of(mem, frame), 5)

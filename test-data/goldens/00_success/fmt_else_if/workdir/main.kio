@@ -1,11 +1,11 @@
 module main;
 
-import elab/control(if);
+import macros/control(macro if);
 
 fn pick(b: .) -> . {
-  if! (.t) {
+  if (.t) {
     ()
-  } else if! (.t) {
+  } else if (.t) {
     ()
   } else {
     b

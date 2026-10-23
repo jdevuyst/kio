@@ -12,7 +12,7 @@ pure fn arrange_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
 
-pub elab arrange : [A][B][C] A -> B -> C -> (A & (B & C)) {
+pub macro arrange : [A][B][C] A -> B -> C -> (A & (B & C)) {
   trailing product;
   impl arrange_impl
 }
@@ -26,7 +26,7 @@ pure fn packet_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
 
-pub elab packet : [A][B][C] (A & B) -> C -> ((A & B) & C) {
+pub macro packet : [A][B][C] (A & B) -> C -> ((A & B) & C) {
   trailing product;
   impl packet_impl
 }
@@ -39,9 +39,9 @@ pure fn pair_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
 
-pub elab block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
 
-pub elab pair_prefix : [A][B] A -> B -> (A & B) { impl pair_impl }
+pub macro pair_prefix : [A][B] A -> B -> (A & B) { impl pair_impl }
 
 pure fn discard_impl(
 , ct: __Comptime__
@@ -51,9 +51,9 @@ pure fn discard_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { body }
 
-pub elab discard : [A][B] A -> B -> B { trailing product; impl discard_impl }
+pub macro discard : [A][B] A -> B -> B { trailing product; impl discard_impl }
 
-pub elab last_blocks : [A][B] A -> B -> B {
+pub macro last_blocks : [A][B] A -> B -> B {
   trailing product;
   trailing product after;
   impl discard_impl
@@ -74,7 +74,7 @@ pure fn outer_impl(
   __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, __intrinsic_pair__(ct, body, result)))
 }
 
-pub elab outer : [A][B][C][D] A -> B -> C -> (. -> D) -> (A & (B & (C & D))) {
+pub macro outer : [A][B][C][D] A -> B -> C -> (. -> D) -> (A & (B & (C & D))) {
   trailing product;
   trailing thunk after;
   impl outer_impl
@@ -92,7 +92,7 @@ pure fn sequence_impl(
   (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
 }
 
-pub elab run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result {
+pub macro run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result {
   trailing sequence;
   impl(fills) sequence_impl
 }

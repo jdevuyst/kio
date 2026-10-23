@@ -24,7 +24,7 @@ Properties of type constructors in Kio:
 
 The kind-`*→*` binder `[*F]` in a function signature can stay abstract — code parametric over `[*F]` works against any concrete type constructor. This is how generic combinators (`sequence`, `traverse`, …) abstract over the choice of type constructor without committing to a specific one.
 
-This guide explains the HKT machinery — kind annotations, type-constructor application, polymorphic newtype payloads, and multiple type arguments. The [language reference](../../specs/language.md#higher-kinded-types) defines the precise rules. For a worked, executable walkthrough that builds first-class `Functor` / `Monad` instances over arity-1 brands, consumes them with imported `do!` sequencing, and derives one with `derive!`, see the case study [`docs/poc/hkt.md`](../poc/hkt.md).
+This guide explains the HKT machinery — kind annotations, type-constructor application, polymorphic newtype payloads, and multiple type arguments. The [language reference](../../specs/language.md#higher-kinded-types) defines the precise rules. For a worked, executable walkthrough that builds first-class `Functor` / `Monad` instances over arity-1 brands, consumes them with imported `do` sequencing, and derives one with `derive`, see the case study [`docs/poc/hkt.md`](../poc/hkt.md).
 
 Assumed setup: a module whose host supplies `String` with `role(str)`,
 `print: String -> .`, and `string_concat: (String & String) -> String`.
@@ -39,7 +39,7 @@ bridge {
 
 module kiodoc;
 
-import sequence(do);
+import sequence(macro do);
 
 default host type String role(str);
 host fn print(p0: String);
@@ -168,17 +168,17 @@ explain how a host constructs and uses such values.
 
 Once a value of `Monad(F)` (or `Functor(F)`, `Applicative(F)`, …) is in hand,
 callers project it with `Monad.bind(monad)` and use the result as a receiver —
-including as a `do!` receiver. The full walkthrough — defining concrete
-instances, `do!` sequencing, and combinators generic over the type constructor
+including as a `do` receiver. The full walkthrough — defining concrete
+instances, `do` sequencing, and combinators generic over the type constructor
 — is the case study [`docs/poc/hkt.md`](../poc/hkt.md).
 
-## Monadic `do!`
+## Monadic `do`
 
-`do!` comes from the [elab library](using-libraries.md#the-elaborator-library),
-not a keyword. After adopting that dependency under the name `elab`, import
-it with `import elab/sequence(do);`.
+`do` comes from the [macro library](using-libraries.md#the-macro-library),
+not a keyword. After adopting that dependency under the name `macros`, import
+it with `import macros/sequence(macro do);`.
 
-A monadic `do!` block supplies the bind operation it will sequence with. The
+A monadic `do` block supplies the bind operation it will sequence with. The
 receiver must have the shape `[A][B] (F(A) & (A -> F(B))) -> F(B)`. It is an
 ordinary function value, so the projected operation from a first-class
 `Monad(F)` dictionary works directly:
@@ -192,7 +192,7 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 pub newtype Pure[*F] : [A] A -> F(A) { pub constructor mk_pure; pub projector lift }
 
 fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
-  do! Monad.bind(monad) {
+  do(Monad.bind(monad)) {
     let prefix <- seed;
     let suffix = "!";
     let combined <- Pure.lift(pur)(string_concat(prefix, suffix));
@@ -211,13 +211,13 @@ produce `F(_)`.
 The block carries no ambient `pure` operation. Lifting is explicit through
 `Pure.lift(pur)`, which is why the generic body threads both dictionaries. The
 receiver's declared shape connects each `F(A)` expression to its continuation
-parameter type; the sequence becomes ordinary nested bind calls, and the `do!`
+parameter type; the sequence becomes ordinary nested bind calls, and the `do`
 call is gone before Kio'. The supplied receiver expression is evaluated exactly
 once, even when the block contains no bind steps; each step uses that same
 bind value. Its carrier must be determined by ordinary call and header
 information, not inferred from the block body. For an ordinary scoped
 computation, use the distinct
-imported `scope! { ... }` form, which has no monadic receiver or `<-` statements.
+imported `scope { ... }` form, which has no monadic receiver or `<-` statements.
 
 ## Multi-arity type constructors
 

@@ -59,11 +59,11 @@ pub(crate) mod block_projection;
 #[cfg(feature = "surface")]
 pub mod desugar;
 #[cfg(feature = "surface")]
-pub mod elaborator_registry;
-#[cfg(feature = "surface")]
 pub mod full;
 #[cfg(feature = "surface")]
 pub mod label_elab;
+#[cfg(feature = "surface")]
+pub mod macro_registry;
 #[cfg(feature = "surface")]
 pub mod op_fold;
 #[cfg(feature = "surface")]

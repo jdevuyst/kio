@@ -1,16 +1,16 @@
 /// Exercises delimiter ownership through the public source-text loader.
 module testapi/main;
 
-import elab/match(match);
 import loader(Lr_diag, Lr_image, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
 fn show(label: String, source: String) {
   let result =
-    match! un_load_outcome(load_package(source)) {
+    match(un_load_outcome(load_package(source))) {
       (.(_image: Lr_image) { "loaded\n"(String) }, .(_diag: Lr_diag) { "rejected\n"(String) })
     };
   print(string_concat(label, result))

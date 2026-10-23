@@ -751,7 +751,7 @@ fn unique_newtype_key_by_name(
 /// module's own declaration first, then to one of these imports — never
 /// to a package-global by-leaf table. That keeps newtype-name
 /// resolution **open-world**: a reference `Term_list` in a module that
-/// imports it from `elaborator_util` resolves to `elaborator_util`'s
+/// imports it from `macro_util` resolves to `macro_util`'s
 /// declaration regardless of whether some unrelated module also
 /// declares a `Term_list`. Resolving through a global "unique by leaf"
 /// table instead would silently break this reference the moment a
@@ -1171,7 +1171,7 @@ where
         | Expr::Elaborator { .. }
         | Expr::RecOrder { .. }
         | Expr::RecQuote { .. }
-        | Expr::UserElaborator { .. }
+        | Expr::UserMacro { .. }
         | Expr::Ufcs { .. }
         | Expr::OpChain { .. }
         | Expr::RecCall { .. } => e.clone(),
@@ -7409,7 +7409,7 @@ impl<'a> BodyEmitter<'a> {
             // `Expr::Path` / `Expr::Call` are statically uninhabited at
             // the Routed phase — `route::route_package` classified every
             // such node into a `Low*` variant. The surface-only variants
-            // (`Tuple`, `BlockCall`, `Elaborator`, `UserElaborator`,
+            // (`Tuple`, `BlockCall`, `Elaborator`, `UserMacro`,
             // `Ufcs`, `OpChain`, …) never reach Routed.
             // Discharge each via its `Never`-witness `ext`.
             Expr::Path { ext, .. }
@@ -7421,7 +7421,7 @@ impl<'a> BodyEmitter<'a> {
             | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
+            | Expr::UserMacro { ext, .. }
             | Expr::Ufcs { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::RecCall { ext, .. } => match *ext {},
@@ -14015,7 +14015,7 @@ mod tests {
     fn recursive_state_over_applied_host_nominal_skips_partial_eq() {
         let pkg = build_multi_module_package(
             &[
-                "module main; import control(if); \
+                "module main; import control(macro if); \
              host type Array[A]; \
              default host type Bool role(bool); \
              host type I32 role(i32); \
@@ -14023,9 +14023,9 @@ mod tests {
              labels Array_state = { cells: Array(I32) }; \
              labels Scalar_state = { done: Bool }; \
              rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \
-               if! done { state } else { recur keep_array_once(.t, state, scalar) } \
+               if (done) { state } else { recur keep_array_once(.t, state, scalar) } \
              }",
-                include_str!("../../../../test-data/poc/elab/workdir/control.kio"),
+                include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
             ],
             Some("bridge { main; }"),
         );

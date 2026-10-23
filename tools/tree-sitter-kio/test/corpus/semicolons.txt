@@ -60,9 +60,9 @@ module source; varop [+ +] { ; finalize done; foldl join empty; };
   (separator_semicolon))
 
 ================================================================================
-structural semicolons_elab_edges
+structural semicolons_macro_edges
 ================================================================================
-module source; elab make: . { ; captures(helper); impl run; }
+module source; macro make: . { ; captures(helper); impl run; }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -71,22 +71,22 @@ module source; elab make: . { ; captures(helper); impl run; }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
       (separator_semicolon)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
           (identifier))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (entity_name_function)))
@@ -972,9 +972,9 @@ module source; varop [+ +] { foldl join empty;; finalize done }
       (bracket_rbrace))))
 
 ================================================================================
-structural semicolons_elab_missing
+structural semicolons_macro_missing
 ================================================================================
-module source; elab make: . { captures(helper) impl run }
+module source; macro make: . { captures(helper) impl run }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -989,7 +989,7 @@ module source; elab make: . { captures(helper) impl run }
     (operator_builtin)
     (separator_dot)
     (bracket_lbrace)
-    (elaborator_captures_clause
+    (macro_captures_clause
       (keyword_declaration)
       (bracket_lparen)
       (plain_value_path
@@ -1000,9 +1000,9 @@ module source; elab make: . { captures(helper) impl run }
   (bracket_rbrace))
 
 ================================================================================
-structural semicolons_elab_repeated
+structural semicolons_macro_repeated
 ================================================================================
-module source; elab make: . { captures(helper);; impl run }
+module source; macro make: . { captures(helper);; impl run }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1011,14 +1011,14 @@ module source; elab make: . { captures(helper);; impl run }
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
@@ -1027,7 +1027,7 @@ module source; elab make: . { captures(helper);; impl run }
       (ERROR
         (separator_semicolon))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (entity_name_function)))

@@ -12,9 +12,9 @@
 /// could fall out of step with the array.
 module gc/heap;
 
-import elab/control(if);
 import gc/num(and, int_eq, int_lt);
 import gc/slot(Slot, slot_of);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len, array_make_filled, array_set);
@@ -58,13 +58,13 @@ pub fn in_arena(cells: Array(I32), addr: I32) -> Bool {
 }
 
 pub fn tag_name(tag: I32) -> String {
-  if! int_eq(tag, tag_frame) {
+  if(int_eq(tag, tag_frame)) {
     "frame"
-  } else if! int_eq(tag, tag_pair) {
+  } else if(int_eq(tag, tag_pair)) {
     "pair"
-  } else if! int_eq(tag, tag_vec) {
+  } else if(int_eq(tag, tag_vec)) {
     "vec"
-  } else if! int_eq(tag, tag_box) {
+  } else if(int_eq(tag, tag_box)) {
     "box"
   } else {
     "unknown"
@@ -72,7 +72,7 @@ pub fn tag_name(tag: I32) -> String {
 }
 
 rec(loop) fn fold_from[S](cells: Array(I32), step: (S & I32) -> S, addr: I32, acc: S) -> S {
-  if! int_lt(addr, top(cells)) {
+  if(int_lt(addr, top(cells))) {
     recur fold_from(cells, step, next_object(cells, addr), step(acc, addr))
   } else {
     acc
@@ -95,7 +95,7 @@ rec(loop) fn fold_field_from[S](
 , count: I32
 , acc: S
 ) -> S {
-  if! int_lt(index, count) {
+  if(int_lt(index, count)) {
     recur fold_field_from(cells, addr, step, add_i32(index, 1), count, step(acc, index))
   } else {
     acc

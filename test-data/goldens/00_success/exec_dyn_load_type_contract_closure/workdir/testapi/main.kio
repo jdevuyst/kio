@@ -1,16 +1,16 @@
 /// Checks that every visible type contract closes over exact dependencies.
 module testapi/main;
 
-import elab/match(match);
 import loader(Diag, Image, Load_outcome, Lr_diag, Lr_image);
 import loader(contract_check, contract_cons, contract_nil, diag_message, mk_expect, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
 fn describe(outcome: Load_outcome) -> String {
-  match! un_load_outcome(outcome) {
+  match(un_load_outcome(outcome)) {
     (
     , .(_loaded: Lr_image) { "(loaded)"(String) }
     , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
@@ -24,14 +24,14 @@ fn line(label: String, source: String) -> String {
 
 fn checked_image(image: Image, name: String, signature: String) -> String {
   let contract = contract_cons(mk_expect(name, signature), contract_nil());
-  match! contract_check(image, contract) {
+  match(contract_check(image, contract)) {
     (.(diag: Diag) { diag_message(diag) }, .(_matched: .) { "ok"(String) })
   }
 }
 
 fn contract_line(label: String, source: String, name: String, signature: String) -> String {
   let result =
-    match! un_load_outcome(load_package(source)) {
+    match(un_load_outcome(load_package(source))) {
       (
       , .(loaded: Lr_image) { checked_image(Lr_image.get(loaded), name, signature) }
       , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }

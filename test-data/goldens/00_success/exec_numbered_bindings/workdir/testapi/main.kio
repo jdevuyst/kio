@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(Bind, do);
+import macros/sequence(Bind, macro do);
 import testapi(default String);
 import testapi/io(print);
 
@@ -15,7 +15,7 @@ fn receiver() -> Bind(Box) { print("receiver\n"); bind }
 fn display(value: String) -> Box(.) { print(value); pure(()) }
 
 fn sequence() -> Box(String) {
-  do! receiver() {
+  do(receiver()) {
     let .x. <- pure(("unused", "sequence pair\n"));
     display(x2);
     let .x. <- pure(("unused", "unused", "sequence triple\n"));
@@ -59,7 +59,7 @@ equiv numbered_tail[A][B][C](first: A, second: B, third: C) {
 }
 
 equiv numbered_sequence[A](value: A) {
-  do! bind { let .x. <- pure(value); pure(x1) };
+  do(bind) { let .x. <- pure(value); pure(x1) };
   pure(value)
 }
 

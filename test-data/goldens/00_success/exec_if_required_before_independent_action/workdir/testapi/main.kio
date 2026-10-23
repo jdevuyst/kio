@@ -1,16 +1,16 @@
 module testapi/main;
 
-import actions(finish, identity_target);
-import elab/control(if);
+import actions(macro finish, macro identity_target);
+import macros/control(macro if);
 import testapi(default Bool);
 import testapi/io as io;
 
 fn exercise(condition: Bool) {
   let selected =
-    if! condition {
-      identity_target!(.(value) { value })
+    if(condition) {
+      identity_target(.(value) { value })
     } else {
-      finish!(.(value: .) -> . { value }, _)
+      finish(.(value: .) -> . { value }, _)
     };
   selected(())
 }

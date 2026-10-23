@@ -28,7 +28,7 @@ pub const STYLE_CSS: &str = r#"/* kio doc — default stylesheet */
      One-Dark hues the REPL truecolor palette uses. */
   --kio-tok-keyword-control: #a626a4;
   --kio-tok-keyword-declaration: #a626a4;
-  --kio-tok-keyword-elaborator: #a626a4;
+  --kio-tok-entity-name-macro: #a626a4;
   --kio-tok-identifier: var(--fg);
   --kio-tok-operator-builtin: #0184bc;
   --kio-tok-operator-user: #0184bc;
@@ -48,7 +48,7 @@ pub const STYLE_CSS: &str = r#"/* kio doc — default stylesheet */
 }
 .kio-keyword-control { color: var(--kio-tok-keyword-control); }
 .kio-keyword-declaration { color: var(--kio-tok-keyword-declaration); }
-.kio-keyword-elaborator { color: var(--kio-tok-keyword-elaborator); }
+.kio-entity-name-macro { color: var(--kio-tok-entity-name-macro); }
 .kio-identifier { color: var(--kio-tok-identifier); }
 .kio-operator-builtin { color: var(--kio-tok-operator-builtin); }
 .kio-operator-user { color: var(--kio-tok-operator-user); }
@@ -160,7 +160,7 @@ section.item .sig {
        read identically. */
     --kio-tok-keyword-control: #c678dd;
     --kio-tok-keyword-declaration: #e5c07b;
-    --kio-tok-keyword-elaborator: #56b6c2;
+    --kio-tok-entity-name-macro: #56b6c2;
     --kio-tok-identifier: var(--fg);
     --kio-tok-operator-builtin: #e06c75;
     --kio-tok-operator-user: #e06c75;

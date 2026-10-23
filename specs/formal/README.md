@@ -1,6 +1,6 @@
 # Formal semantics of Kio' and the Kio → Kio' boundary
 
-This directory holds the formal companion to the prose specs in [`../`](../). Most pages here pin Kio'-level meta-theory (typing, reduction, equivalence); [`elaboration.md`](elaboration.md) is the page whose subject is the **surface-to-core boundary** — how a Kio surface program becomes a Kio' tree. The prose pages remain the contract; the pages here pin down the meta-theory the prose claims, as inference rules and proof sketches. The per-form semantics and soundness arguments of the reference coercion-elab libraries (the algebraic and spine palettes, `match!`, `derive!`) are not language meta-theory — they are documented as case studies of the executable proof-of-concept package those libraries live in; see [`../../docs/poc/elab.md`](../../docs/poc/elab.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md).
+This directory holds the formal companion to the prose specs in [`../`](../). Most pages here pin Kio'-level meta-theory (typing, reduction, equivalence); [`elaboration.md`](elaboration.md) is the page whose subject is the **surface-to-core boundary** — how a Kio surface program becomes a Kio' tree. The prose pages remain the contract; the pages here pin down the meta-theory the prose claims, as inference rules and proof sketches. The per-form semantics and soundness arguments of the reference coercion-macro libraries (the algebraic and spine palettes, `match`, `derive`) are not language meta-theory — they are documented as case studies of the executable proof-of-concept package those libraries live in; see [`../../docs/poc/macros.md`](../../docs/poc/macros.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md).
 
 The level of formality is "rigorous enough that a careful PLT reader can re-derive everything." The pages are not mechanized in a proof assistant — existence of a written-down argument is the bar.
 
@@ -9,7 +9,7 @@ The level of formality is "rigorous enough that a careful PLT reader can re-deri
 | Page | Status | Subject |
 |---|---|---|
 | [`prime.md`](prime.md) | **Foundational.** Read first. | Kio' typing, reduction, type safety, strong normalization, decidability. |
-| [`elaboration.md`](elaboration.md) | Builds on `prime.md`. | The bidirectional elaborator from Kio surface to Kio': two modes ⇑ / ⇓, source-bounded exact type-argument inference, shallow skolemization, positional type-args, no let-generalization, shared callable-layer selection for ordinary and user-elab calls, the named-callable registry for ordinary intrinsics, and the IR-preservation contract. Builds on PJ-V-W-S 2007. |
+| [`elaboration.md`](elaboration.md) | Builds on `prime.md`. | The bidirectional elaborator from Kio surface to Kio': two modes ⇑ / ⇓, source-bounded exact type-argument inference, shallow skolemization, positional type-args, no let-generalization, shared callable-layer selection for ordinary and user-macro calls, the named-callable registry for ordinary intrinsics, and the IR-preservation contract. Builds on PJ-V-W-S 2007. |
 | [`equiv.md`](equiv.md) | Builds on `prime.md`. | The reduction strategy and equivalence relation `kio test` uses to discharge `equiv` items. |
 
 ## Reading order

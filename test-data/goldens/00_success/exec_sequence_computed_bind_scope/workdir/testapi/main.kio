@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(Bind, do);
+import macros/sequence(Bind, macro do);
 import testapi(default String);
 import testapi/io as io;
 
@@ -13,6 +13,6 @@ fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(valu
 fn receiver() -> Bind(Box) { io.print("receiver\n"); bind }
 
 pub fn main() {
-  let result = do! receiver() { let value <- pure("retained\n"); pure(value) };
+  let result = do(receiver()) { let value <- pure("retained\n"); pure(value) };
   io.print(Box.un_box(result))
 }

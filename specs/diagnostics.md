@@ -3,7 +3,7 @@
 This document specifies the **structured content** of a Kio compile-time
 diagnostic and the **rendered layout** an implementation produces from
 it. It is a companion to [`exit-codes.md`](exit-codes.md): exit codes
-report the *category* of an error (parse, type, elaborator, …); this page
+report the *category* of an error (parse, type, macro, …); this page
 specifies what a single diagnostic *contains* and how it is drawn.
 
 A diagnostic reports a **user error** — a program the user could fix by
@@ -66,7 +66,7 @@ one without the other.
   implementation-agnostic, so message wording is never the
   cross-implementation oracle (that is the exit code's job).
 - **Secondary labels** are the highest-value enrichment for type and
-  elaborator errors: they point the caret at the *expected-type source* and
+  macro errors: they point the caret at the *expected-type source* and
   the *mismatch site* simultaneously, so the user sees both ends of a
   conflict at once. For name-resolution errors a secondary label points
   at a conflicting prior declaration.
@@ -81,7 +81,7 @@ one without the other.
   ("import a type marked `role(bool)`").
 - A **machine-applicable fix** fires only when a near-miss is mechanically
   detectable (a typo'd name within edit distance of an in-scope name, a
-  wrong elab form whose sibling would succeed, a missing import the
+  wrong macro form whose sibling would succeed, a missing import the
   resolver can name).
 - A **maybe-incorrect fix** is an editor convenience for edits that are
   syntactically plausible but may erase deliberately sequenced

@@ -1,0 +1,8 @@
+package macro_qualified_invocation;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

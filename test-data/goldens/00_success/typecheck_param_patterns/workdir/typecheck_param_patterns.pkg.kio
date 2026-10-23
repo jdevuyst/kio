@@ -48,5 +48,5 @@ bridge {
   testapi;
   testapi/**;
   main;
-  elab/testapi
+  macros/testapi
 }

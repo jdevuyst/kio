@@ -362,7 +362,7 @@ fn render_eval_expr(expr: &EvalAstExpr) -> String {
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::LabelValue { ext, .. }
         | Expr::RowLet { ext, .. }

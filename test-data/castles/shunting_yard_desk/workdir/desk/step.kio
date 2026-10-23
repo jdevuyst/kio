@@ -7,8 +7,8 @@
 module desk/step;
 
 import desk/op(Op, symbol);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 
@@ -19,9 +19,9 @@ pub labels Action = { lit: I32 } | { app: Op };
 /// rather than the RPN slot the `/` happened to land in.
 pub labels Step = { act: Action, spot: I32 };
 
-fn lit_action(n: I32) -> Action { {lit = n}.>widen_sum!(Action) }
+fn lit_action(n: I32) -> Action { {lit = n}.>widen_sum(Action) }
 
-fn app_action(op: Op) -> Action { {app = op}.>widen_sum!(Action) }
+fn app_action(op: Op) -> Action { {app = op}.>widen_sum(Action) }
 
 pub fn lit_step(n: I32, spot: I32) -> Step { {act = lit_action(n), spot} }
 
@@ -32,7 +32,7 @@ pub fn act_of(s: Step) -> Action { s.?{act} }
 pub fn spot_of(s: Step) -> I32 { s.?{spot} }
 
 pub fn step_text(s: Step) -> String {
-  match! act_of(s) {
+  match(act_of(s)) {
     (.(l: Lit) { int_to_string(l.?{lit}) }, .(a: App) { symbol(a.?{app}) })
   }
 }

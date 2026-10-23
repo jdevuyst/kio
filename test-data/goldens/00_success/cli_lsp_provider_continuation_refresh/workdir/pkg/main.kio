@@ -1,7 +1,7 @@
 module pkg/main;
 
-import pkg/provider(choose);
+import pkg/provider(macro choose);
 
 fn run() {
-  choose! { () } fallback { () }
+  choose { () } fallback { () }
 }

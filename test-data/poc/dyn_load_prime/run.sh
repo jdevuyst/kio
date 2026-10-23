@@ -219,7 +219,7 @@ for required in \
   'type_spelling_scan_names(module_typenames(module),initial)' \
   'type_spelling_scan_members(module_members(module),with_names)' \
   'type_spelling_scan_imports(module_imports(module),with_members)' \
-  'if!module_has_type_spelling_overlap(module){widen_sum!(.t(Bool),Modules|Bool)}'
+  'if(module_has_type_spelling_overlap(module)){widen_sum(.t(Bool),Modules|Bool)}'
 do
   required_compact=$(printf '%s' "$required" | tr -d '[:space:]') || exit
   case "$type_overlap_compact" in
@@ -231,14 +231,14 @@ do
   esac
 done
 case "$type_overlap_compact" in
-  *'fntype_spelling_scan_add(scan:Type_spelling_scan,name:String)->Type_spelling_scan{match!scan{.(seen:Type_spelling_presence,count:I32,overlap:Bool){if!overlap{scan}elseif!pnames_has(seen,name){(seen,(count,.t(Bool)))}else{letat_limit=leq_i32(32(I32),count);(pnames_cons(name,seen),(add_i32(count,1(I32)),at_limit))}}}}'*) ;;
+  *'fntype_spelling_scan_add(scan:Type_spelling_scan,name:String)->Type_spelling_scan{match(scan){.(seen:Type_spelling_presence,count:I32,overlap:Bool){if(overlap){scan}elseif(pnames_has(seen,name)){(seen,(count,.t(Bool)))}else{letat_limit=leq_i32(32(I32),count);(pnames_cons(name,seen),(add_i32(count,1(I32)),at_limit))}}}}'*) ;;
   *)
     printf 'dyn_load_prime type-origin overlap predicate must preserve equality and bounded fallback\n' >&2
     exit 1
     ;;
 esac
 case "$type_overlap_compact" in
-  *'fnmodule_has_type_spelling_overlap(module:Module)->Bool{letinitial=(pnames_nil(),(0(I32),.f(Bool)));letwith_names=type_spelling_scan_names(module_typenames(module),initial);letwith_members=type_spelling_scan_members(module_members(module),with_names);match!type_spelling_scan_imports(module_imports(module),with_members){.(_seen:Type_spelling_presence,_count:I32,overlap:Bool){overlap}}}fnmodules_have_type_spelling_overlap(modules:Modules)->Bool{loop(,.(remaining:Modules){match!un_modules(remaining){(,.(module:Module,rest:Modules){if!module_has_type_spelling_overlap(module){widen_sum!(.t(Bool),Modules|Bool)}else{widen_sum!(rest,Modules|Bool)}},.(_empty:.){widen_sum!(.f(Bool),Modules|Bool)})}},modules)}'*) ;;
+  *'fnmodule_has_type_spelling_overlap(module:Module)->Bool{letinitial=(pnames_nil(),(0(I32),.f(Bool)));letwith_names=type_spelling_scan_names(module_typenames(module),initial);letwith_members=type_spelling_scan_members(module_members(module),with_names);match(type_spelling_scan_imports(module_imports(module),with_members)){.(_seen:Type_spelling_presence,_count:I32,overlap:Bool){overlap}}}fnmodules_have_type_spelling_overlap(modules:Modules)->Bool{loop(,.(remaining:Modules){match(un_modules(remaining)){(,.(module:Module,rest:Modules){if(module_has_type_spelling_overlap(module)){widen_sum(.t(Bool),Modules|Bool)}else{widen_sum(rest,Modules|Bool)}},.(_empty:.){widen_sum(.f(Bool),Modules|Bool)})}},modules)}'*) ;;
   *)
     printf 'dyn_load_prime type-origin overlap predicate must preserve firing and no-op arms\n' >&2
     exit 1
@@ -250,14 +250,14 @@ for required in \
   'validate_type_spelling_names(module_typenames(module),owner,empty)' \
   'validate_type_spelling_members(module_members(module),owner,with_names)' \
   'validate_type_spelling_imports(,module_imports(module),owner,index,with_members)' \
-  'if!exact_type_index_has_type_binding(index,provider,import_source(one)){' \
+  'if(exact_type_index_has_type_binding(index,provider,import_source(one))){' \
   'validate_type_spelling_occurrence(seen,owner,name)' \
   'validate_type_spelling_occurrence(seen,owner,member_name(member))' \
   'typeValidated_type_spellings=Exact_key_catalog(Bool);' \
-  'match!exact_key_catalog_find(seen,owner,name){(,.(_prior:Bool){widen_sum!(,mk_diag(string_concat(' \
+  'match(exact_key_catalog_find(seen,owner,name)){(,.(_prior:Bool){widen_sum(,mk_diag(string_concat(' \
   '"`introducesvisibletypebinding`"(String)' \
   'string_concat(name,"`morethanonce"(String))' \
-  '.(_first:.){widen_sum!(exact_key_catalog_insert(seen,owner,name,.t(Bool)),Type_spelling_validation)}'
+  '.(_first:.){widen_sum(exact_key_catalog_insert(seen,owner,name,.t(Bool)),Type_spelling_validation)}'
 do
   case "$projection_compact" in
     *"$required"*) ;;
@@ -305,8 +305,8 @@ do
 done
 for required in \
   'visible_newtypes:Module->(Ntab|Diag)' \
-  'widen_sum!(diag,(Modules&Gdecls)|Gdecls|Diag)' \
-  '.(diag:Diag){widen_sum!(diag,Gdecls|Diag)}'
+  'widen_sum(diag,(Modules&Gdecls)|Gdecls|Diag)' \
+  '.(diag:Diag){widen_sum(diag,Gdecls|Diag)}'
 do
   case "$flatten_compact" in
     *"$required"*) ;;
@@ -318,13 +318,13 @@ do
 done
 for required in \
   'identity_alias_target(alias)' \
-  '.(_target:String){widen_sum!(.t(Bool),Tyaliases|Bool)}' \
-  '.(_not_identity:.){widen_sum!(rest,Tyaliases|Bool)}' \
-  '.(_empty:.){widen_sum!(.f(Bool),Tyaliases|Bool)}' \
-  'if! tyaliases_have_identity_member_namespace(module_tyaliases(module))' \
-  'widen_sum!(.t(Bool),Modules|Bool)' \
-  'widen_sum!(rest,Modules|Bool)' \
-  '.(_empty:.){widen_sum!(.f(Bool),Modules|Bool)}'
+  '.(_target:String){widen_sum(.t(Bool),Tyaliases|Bool)}' \
+  '.(_not_identity:.){widen_sum(rest,Tyaliases|Bool)}' \
+  '.(_empty:.){widen_sum(.f(Bool),Tyaliases|Bool)}' \
+  'if(tyaliases_have_identity_member_namespace(module_tyaliases(module)))' \
+  'widen_sum(.t(Bool),Modules|Bool)' \
+  'widen_sum(rest,Modules|Bool)' \
+  '.(_empty:.){widen_sum(.f(Bool),Modules|Bool)}'
 do
   required_compact=$(printf '%s' "$required" | tr -d '[:space:]') || exit
   case "$identity_shape_compact" in
@@ -336,7 +336,7 @@ do
   esac
 done
 case "$load_compact" in
-  *'letneeds_exact_type_index=if!modules_have_identity_member_namespace(ms){.t(Bool)}else{modules_have_type_spelling_overlap(ms)};if!needs_exact_type_index{lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum!(ntab_for_module(module,ms),Ntab|Diag)}}}'*) ;;
+  *'letneeds_exact_type_index=if(modules_have_identity_member_namespace(ms)){.t(Bool)}else{modules_have_type_spelling_overlap(ms)};if(needs_exact_type_index){lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum(ntab_for_module(module,ms),Ntab|Diag)}}}'*) ;;
   *)
     printf 'dyn_load_prime must build exact type indexes only for aliases or visible type-origin overlap\n' >&2
     exit 1
@@ -349,7 +349,7 @@ esac
 # witness; this private wiring guard keeps the measured reuse arm live.
 for required in \
   'labels{fn_scope_cache:String&I32&Scope}' \
-  'if!local_hostfn_between(modules,owner,saved_cutoff,cutoff){rebuild_fn_scope(processed_rev,g,hostfns,modules)}else{saved_scope}' \
+  'if(local_hostfn_between(modules,owner,saved_cutoff,cutoff)){rebuild_fn_scope(processed_rev,g,hostfns,modules)}else{saved_scope}' \
   'letscope=scope_for_gdecl(processed_rev,cache,g,hostfns,ms);' \
   'advance_scope(g,scope)' \
   'terms_acc_cons(Dr_ok.get(t),acc),next_cache'
@@ -373,10 +373,10 @@ if [ "$load_calls" -ne 1 ] \
   || [ "$callback_calls" -ne 1 ] \
   || [ "$checked_calls" -ne 1 ] \
   || [ "$ordinary_flows" -ne 14 ] \
-  || ! grep -Eq '^[[:space:]]*match![[:space:]]+un_load_outcome\(load_package\(guest_image\(\)\)\)[[:space:]]*[{]$' "$main_source" \
+  || ! grep -Eq '^[[:space:]]*match[[:space:]]*\(un_load_outcome\(load_package\(guest_image\(\)\)\)\)[[:space:]]*[{]$' "$main_source" \
   || ! grep -Eq '^[[:space:]]*let[[:space:]]+default_loaded[[:space:]]*=[[:space:]]*instantiate_default\(image\);$' "$main_source" \
-  || ! grep -Eq '^[[:space:]]*match![[:space:]]+un_inst\(instantiate\($' "$main_source" \
-  || ! grep -Eq '^[[:space:]]*match![[:space:]]+un_inst\(instantiate_checked_default\(image,[[:space:]]*good_contract\(\)\)\)[[:space:]]*[{]$' "$main_source"; then
+  || ! grep -Eq '^[[:space:]]*match[[:space:]]*\(un_inst\(instantiate\($' "$main_source" \
+  || ! grep -Eq '^[[:space:]]*match[[:space:]]*\(un_inst\(instantiate_checked_default\(image,[[:space:]]*good_contract\(\)\)\)\)[[:space:]]*[{]$' "$main_source"; then
   printf 'dyn_load_prime worked example must load once and reuse its three instance paths\n' >&2
   exit 1
 fi

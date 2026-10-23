@@ -1,6 +1,6 @@
 # Builtin Modules
 
-Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by elab implementations. Ordinary source should start with surface forms — tuples, labels, `match!`, and structural elabs — and use `__intrinsics__` only when the core operation itself is the subject.
+Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by macro implementations. Ordinary source should start with surface forms — tuples, labels, `match`, and structural macros — and use `__intrinsics__` only when the core operation itself is the subject.
 
 If you are trying to construct or inspect sums and products in a normal
 program, use the structural guides instead of this reference. The
@@ -103,7 +103,7 @@ The argument must have bottom type `!`; because `!` has no values, a well-typed 
 
 ## `__comptime__`
 
-Compiler-provided block import containing reflected type handles, checked-term constructors, diagnostic text, and compile-time recursion helpers for elab implementations.
+Compiler-provided block import containing reflected type handles, checked-term constructors, diagnostic text, and compile-time recursion helpers for macro implementations.
 
 ```kio {ignore}
 import __comptime__;
@@ -139,7 +139,7 @@ type __Checked_term__
 
 Opaque checked term template. The carried type can be read with `__term_type__`.
 
-The template is already typed Kio' syntax, not source text or an unchecked AST. Constructors verify their component types while building it, and the elab result is checked against the declared call result before substitution. It cannot be manufactured or inspected at runtime.
+The template is already typed Kio' syntax, not source text or an unchecked AST. Constructors verify their component types while building it, and the macro result is checked against the declared call result before substitution. It cannot be manufactured or inspected at runtime.
 
 #### `__Type_var__`
 
@@ -177,9 +177,9 @@ Arity is a compile-time natural number used for kinds and function parameter pac
 type __Diagnostic_text__
 ```
 
-Compile-time text used in elab diagnostics.
+Compile-time text used in macro diagnostics.
 
-Diagnostic text is the only message payload accepted by `__elab_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string.
+Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string.
 
 #### `Comptime_bool`
 
@@ -199,7 +199,7 @@ type Comptime_str
 
 Compile-time string type with `role(str)`. The fixed `__comptime__` block import selects it as the importing module's string default. These builtin selections participate in the ordinary eager conflict checks; another distinct default in either category is not an override.
 
-String literals in an elab implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
+String literals in a macro implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
 
 #### `__Fill_ctx__`
 
@@ -219,9 +219,9 @@ The compiler supplies one fresh context as the second argument of an `impl(fills
 __reflect_type__ : __Comptime__ -> [a] __Type__
 ```
 
-Reflects a type argument into an opaque `__Type__` handle. Elabs use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction.
+Reflects a type argument into an opaque `__Type__` handle. Macros use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction.
 
-The type argument must be solved before the helper runs; the result is its exact reflected handle, including nominal identity and kind. An unsolved elab type slot cannot call this helper and is reported as a type-inference error before evaluation.
+The type argument must be solved before the helper runs; the result is its exact reflected handle, including nominal identity and kind. An unsolved macro type slot cannot call this helper and is reported as a type-inference error before evaluation.
 
 #### `__type_view__`
 
@@ -608,15 +608,15 @@ Concatenates two diagnostic fragments without inserting whitespace or punctuatio
 
 ### Error Sentinels
 
-#### `__elab_error__`
+#### `__macro_error__`
 
 ```kio {ignore}
-__elab_error__ : (__Comptime__ & __Diagnostic_text__) -> __Checked_term__
+__macro_error__ : (__Comptime__ & __Diagnostic_text__) -> __Checked_term__
 ```
 
-Builds a checked-term sentinel that reports an elab diagnostic at the call site.
+Builds a checked-term sentinel that reports a macro diagnostic at the call site.
 
-Returns a checked-term error sentinel carrying the message. When selected as the elab result, the call fails in the elab-error category (exit 15) at the bang-call site. It does not construct a runtime term.
+Returns a checked-term error sentinel carrying the message. When selected as the macro result, the call fails in the macro-error category (exit 15) at the macro call site. It does not construct a runtime term.
 
 #### `__type_error__`
 
@@ -626,7 +626,7 @@ __type_error__ : (__Comptime__ & __Diagnostic_text__) -> __Checked_term__
 
 Builds a checked-term sentinel that reports a type error at the call site.
 
-Returns a checked-term error sentinel carrying the message. When selected as the elab result, the call fails in the ordinary type-error category (exit 14) at the bang-call site. It does not construct a runtime term.
+Returns a checked-term error sentinel carrying the message. When selected as the macro result, the call fails in the ordinary type-error category (exit 14) at the macro call site. It does not construct a runtime term.
 
 ### Compile-Time Recursion
 
@@ -699,7 +699,7 @@ __term_let__ : (__Comptime__ & __Type__ & __Checked_term__ & (__Checked_term__ -
 
 Constructs a checked let term.
 
-Creates a hygienic let binder of `value_type`, checks `value` against it, passes a checked reference to `body`, and returns the body's checked term. A value/type mismatch or non-term callback result makes construction fail and the elab cannot return a valid term.
+Creates a hygienic let binder of `value_type`, checks `value` against it, passes a checked reference to `body`, and returns the body's checked term. A value/type mismatch or non-term callback result makes construction fail and the macro cannot return a valid term.
 
 #### `__term_fn__`
 
@@ -709,7 +709,7 @@ __term_fn__ : (__Comptime__ & __Type__ & (__Checked_term__ -> __Checked_term__))
 
 Constructs a checked function term.
 
-Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function with consistent ABI arity, otherwise construction stays stuck and the elab fails.
+Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function with consistent ABI arity, otherwise construction stays stuck and the macro fails.
 
 ##### Checked example: `__term_fn__`
 

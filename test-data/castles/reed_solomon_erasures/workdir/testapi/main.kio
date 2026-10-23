@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import rs/input as input;
 import rs/report as report;
 import testapi(I32, default Bool);
@@ -12,9 +12,9 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 rec(loop) fn frames(recovered: I32, rejected: I32) {
-  match! input.next() {
+  match(input.next()) {
     .(item: input.Loaded) {
-      if! report.run(item.?{input.loaded}) {
+      if(report.run(item.?{input.loaded})) {
         recur frames(a.add_i32(recovered, 1), rejected)
       } else {
         recur frames(recovered, a.add_i32(rejected, 1))

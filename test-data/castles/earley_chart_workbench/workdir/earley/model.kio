@@ -1,8 +1,8 @@
 module earley/model;
 
 import earley/arrays as numbers;
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as arrays;
@@ -19,9 +19,9 @@ pub type Column = Array(Item);
 
 pub type Chart = Array(Column);
 
-pub fn token(id: I32) -> Symbol { {terminal = id}.>widen_sum! }
+pub fn token(id: I32) -> Symbol { {terminal = id}.>widen_sum }
 
-pub fn category(id: I32) -> Symbol { {nonterminal = id}.>widen_sum! }
+pub fn category(id: I32) -> Symbol { {nonterminal = id}.>widen_sum }
 
 pub fn production(left: I32, right: Array(Symbol)) -> Production { {lhs = left, rhs = right} }
 
@@ -44,8 +44,8 @@ pub fn advance(state: Item) -> Item {
 }
 
 pub fn same(a: Item, b: Item) -> Bool {
-  if! numbers.equal(a.?{production_index}, b.?{production_index}) {
-    if! numbers.equal(a.?{dot}, b.?{dot}) { numbers.equal(a.?{origin}, b.?{origin}) } else { .f }
+  if(numbers.equal(a.?{production_index}, b.?{production_index})) {
+    if(numbers.equal(a.?{dot}, b.?{dot})) { numbers.equal(a.?{origin}, b.?{origin}) } else { .f }
   } else {
     .f
   }

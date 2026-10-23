@@ -162,7 +162,7 @@ types `I32`, `String`, `Bool`, `F64`, and opaque `Scalar`, together with the
 functions declared in its `testapi/arith`, `fmt`, `io`, `iter`, `scalar`, and
 `text` modules. Supply those capabilities through your chosen backend's host
 interface; the [host guides](../README.md#host-integrations) explain that interface.
-The loader's committed list/elab dependencies already route their host
+The loader's committed list/macro dependencies already route their host
 requirements through its own adapters. A consumer using existing capability
 modules can instead apply ordinary [rehost clauses](pkg.md#rehosting-a-dependencys-host-items-with-rehost)
 for the matching declarations. The standard guest adapter in
@@ -176,7 +176,7 @@ module guide/load;
 import docs_loader/loader/scan(load_package);
 import docs_loader/loader(Lr_image, Lr_diag, un_load_outcome);
 import docs_loader/testapi(String);
-import elab/match(match);
+import macros/match(macro match);
 
 fn check_load(image_text: String) {
   __INSERT_CODE_HERE__
@@ -188,7 +188,7 @@ module guide/instantiate;
 
 import docs_loader/defaults(instantiate_default);
 import docs_loader/loader(Image, Loaded, Diag);
-import elab/match(match);
+import macros/match(macro match);
 
 fn check_instantiate(im: Image) {
   __INSERT_CODE_HERE__
@@ -203,7 +203,7 @@ outcome**: a loaded image, or a diagnostic when the text is malformed.
 
 ```kio {@load_image}
 // `image_text` is the emitted tree the host read from out/kio-prime/.
-match! un_load_outcome(load_package(image_text)) {
+match(un_load_outcome(load_package(image_text))) {
   .(im: Lr_image) { () };
   // check and instantiate the loaded image below
   .(d: Lr_diag) { () }
@@ -384,7 +384,7 @@ instantiation; the case study's callback section shows the whole pattern.
 
 ```kio {@instantiate_image}
 // `im` is the loaded image from the load step.
-match! instantiate_default(im) {
+match(instantiate_default(im)) {
   .(handle: Loaded) { () };
   // open the existential and call exports
   .(d: Diag) { () }
@@ -445,11 +445,11 @@ everywhere:
 
 ```text
 fn run_greet[P](surf: Surface(P), who: String) -> String {
-  match! surf.?{lookup}("greet"(String)) {
+  match(surf.?{lookup}("greet"(String))) {
     .(g: P) {
-      match! surf.?{apply}((g, surf.?{str_in}(who))) {
+      match(surf.?{apply}((g, surf.?{str_in}(who)))) {
         .(r: P) {
-          match! surf.?{str_out}(r) {
+          match(surf.?{str_out}(r)) {
             .(s: String) { s };
             .(d: Diag) { diag_message(d) }
           }

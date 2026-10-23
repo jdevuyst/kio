@@ -2060,6 +2060,19 @@ where
         // fn` there. The resolver has already validated the alias.
         if let Some(target) = tcx.env.qualified_imports.get(head) {
             for item in &target.items {
+                if let crate::ast::Item::Macro(def, _) = item
+                    && def.name == member
+                    && crate::pass::resolve::is_visible(&def.vis, &tcx.env.module.path)
+                {
+                    let provider = target.path.segments.join("/");
+                    return Err(Error::type_(
+                        span,
+                        format!("macro `{member}` requires a locally selected name"),
+                    )
+                    .with_help(format!(
+                        "select it with `import {provider}(macro {member});` and call `{member}(...)`"
+                    )));
+                }
                 if let crate::ast::Item::FnDef(d) = item
                     && d.name == member
                     && crate::pass::resolve::is_visible(&d.vis, &tcx.env.module.path)
@@ -3341,7 +3354,7 @@ where
             diagnostic_ty(),
             span,
         ),
-        "__elab_error__" => refl_scheme_from_parts(
+        "__macro_error__" => refl_scheme_from_parts(
             vec![vp("message", diagnostic_ty(), span)],
             checked_term_ty(),
             span,
@@ -3472,7 +3485,7 @@ where
             span,
         ),
         // Reflected intrinsic constructors intentionally mirror `__intrinsics__`
-        // names so the elaborator ABI stays a mechanical mapping.
+        // names so the macro ABI stays a mechanical mapping.
         "__intrinsic_pair__" => refl_scheme_from_parts(
             vec![
                 vp("left", checked_term_ty(), span),

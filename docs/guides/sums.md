@@ -5,23 +5,23 @@ A sum type `A | B` says a value is one of several shapes. Kio has no separate
 creates nominally distinct names for alternatives that carry domain meaning.
 
 Those two forms belong to the language. The convenient operations used below
-are library elabs: `widen_sum!` constructs a chosen arm and `match!`
+are library macros: `widen_sum` constructs a chosen arm and `match`
 builds exhaustive dispatch. They are not keywords or ambient builtins. A real
-module must depend on the library and import their names without the bang:
+module must depend on the library and select their macro declarations explicitly:
 
 ```kio {ignore}
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
-import elab/tuple_elaborators(concat);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import macros/tuple_macros(macro concat);
 ```
 
-Here `elab` is the configured dependency name. Follow
-[Using libraries](using-libraries.md#the-elaborator-library) to adopt it under
+Here `macros` is the configured dependency name. Follow
+[Using libraries](using-libraries.md#the-macro-library) to adopt it under
 that name or adjust the imports to the name you choose.
 
 Assumed setup: a module whose host supplies `Int`, `String`, `Bool`, `int_to_string`, `string_concat`, and `print`. Snippets are module bodies.
 `Int` and `String` are selected defaults for literal inputs whose source type
-must be determined before an elab expands; see
+must be determined before a macro expands; see
 [literal defaults](typechecking.md#literal-types-and-module-local-defaults).
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
@@ -31,9 +31,9 @@ bridge {
 
 module kiodoc;
 
-import match(match);
-import tuple_elaborators(concat);
-import spine_elaborators(widen_sum);
+import match(macro match);
+import tuple_macros(macro concat);
+import spine_macros(macro widen_sum);
 
 default host type Int role(i32);
 default host type String role(str);
@@ -50,25 +50,25 @@ __INSERT_CODE_HERE__
 `String | Int` is the type of a value that is either a `String` or an `Int`. It does not need to be declared:
 
 ```kio {@module}
-fn build_string_sum() -> String | Int { "hello\n".>widen_sum! }
+fn build_string_sum() -> String | Int { "hello\n".>widen_sum }
 
-fn build_int_sum() -> String | Int { 42.>widen_sum! }
+fn build_int_sum() -> String | Int { 42.>widen_sum }
 ```
 
-`widen_sum!` injects the source value into a target sum that contains its type.
-It is an imported user elab, despite how closely its operation follows
+`widen_sum` injects the source value into a target sum that contains its type.
+It is an imported user macro, despite how closely its operation follows
 the `|` structure. When the expected type is not obvious, write the target
 explicitly:
 
 ```kio {@module}
-fn explicit_target() -> String | Int { widen_sum!("hello\n", String | Int) }
+fn explicit_target() -> String | Int { widen_sum("hello\n", String | Int) }
 ```
 
-For a sum-valued source, grouping matters: `widen_sum!` matches the alternatives
+For a sum-valued source, grouping matters: `widen_sum` matches the alternatives
 along the source and target's right-hand chains. With distinct atomic arm types,
 `A | B` can widen to `C | A | B`, but not directly to `(A | B) | C`, whose left
 branch groups the original sum into one slot. A transparent type alias preserves
-that grouping. The [spine palette](../poc/elab.md#two-source-to-target-palettes)
+that grouping. The [spine palette](../poc/macros.md#two-source-to-target-palettes)
 explains how nested sums and products are treated.
 
 ## When branches need names
@@ -78,12 +78,12 @@ Sum branches are positional, and repeated payload types are allowed. If two bran
 ```kio {@module}
 labels Channel = { primary: String } | { fallback: String };
 
-fn primary_channel(s: String) -> Channel { {primary = s}.>widen_sum!(Channel) }
+fn primary_channel(s: String) -> Channel { {primary = s}.>widen_sum(Channel) }
 
-fn fallback_channel(s: String) -> Channel { {fallback = s}.>widen_sum!(Channel) }
+fn fallback_channel(s: String) -> Channel { {fallback = s}.>widen_sum(Channel) }
 
 fn describe_channel(c: Channel) -> String {
-  match! c {
+  match(c) {
     .(p: Primary) { string_concat("primary:", p.?{primary}) };
     .(f: Fallback) { string_concat("fallback:", f.?{fallback}) }
   }
@@ -93,7 +93,7 @@ fn describe_channel(c: Channel) -> String {
 Inside each clause the parameter has one statically known label type:
 `p: Primary` or `f: Fallback`. Field access then uses the ordinary product
 operation `p.?{primary}` or `f.?{fallback}`. The access is not a conditional
-search across the whole sum; `match!` first selects a branch, and `.?{field}`
+search across the whole sum; `match` first selects a branch, and `.?{field}`
 projects a field that the selected clause type guarantees is present.
 
 The same pattern scales to several alternatives:
@@ -102,7 +102,7 @@ The same pattern scales to several alternatives:
 labels Event = { text: String } | { code: Int } | { done: . };
 
 fn describe_event(e: Event) -> String {
-  match! e {
+  match(e) {
     .(t: Text) { string_concat("text:", t.?{text}) };
     .(c: Code) { string_concat("code:", int_to_string(c.?{code})) };
     .(_d: Done) { "done" }
@@ -117,7 +117,7 @@ Use a named `labels` sum when arms need stable names:
 ```kio {@module}
 labels Color = { red: . } | { green: . } | { blue: . };
 
-fn red_color() -> Color { {red=}.>widen_sum!(Color) }
+fn red_color() -> Color { {red=}.>widen_sum(Color) }
 ```
 
 A case with data uses a non-unit payload:
@@ -146,13 +146,13 @@ would be a second declaration, not a reuse.
 
 ## Matching a sum
 
-`match!` is also an imported user elab. Put the scrutinee before its
+`match` is also an imported user macro. Put the scrutinee before its
 block and the clause lambdas inside it. The clause parameter type is the
 branch shape it handles:
 
 ```kio {@module}
 fn describe(v: String | Int) -> String {
-  match! v {
+  match(v) {
     .(s: String) { s };
     .(n: Int) { int_to_string(n) }
   }
@@ -164,11 +164,11 @@ type or a clause whose result is already known can supply that type; see
 [inferring a match result](typechecking.md#inferring-a-match-result) for a
 worked example and where to add an annotation.
 
-Clauses must cover the scrutinee. Leaving out the `Int` branch is an elab error:
+Clauses must cover the scrutinee. Leaving out the `Int` branch is a macro error:
 
 ```kio {@module check_exit_code=15}
 fn incomplete(v: String | Int) -> String {
-  match! v {
+  match(v) {
     .(s: String) { s }
   }
 }
@@ -192,7 +192,7 @@ A clause can name multiple value parameters. That matches a product branch posit
 
 ```kio {@module}
 fn render(v: (String & Int) | String) -> String {
-  match! v {
+  match(v) {
     .(label: String, n: Int) { string_concat(label, int_to_string(n)) };
     .(s: String) { s }
   }
@@ -208,10 +208,10 @@ Anonymous sum types cannot mention themselves. Recursion is grounded at a `newty
 ```kio {@module}
 rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
-fn nil[A] -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A] -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
 
 fn head_or[A](xs: List(A), default: A) -> A {
-  match! xs.>List.un_list {
+  match(xs.>List.un_list) {
     .(x: A, _rest: List(A)) { x };
     .(_empty: .) { default }
   }
@@ -231,7 +231,7 @@ disjunction concise while keeping its cycles nominally grounded:
 ```kio {@module}
 rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list(A) };
 
-fn empty_label_list[A]() -> Label_list(A) { Nil.mk(A, ()).>widen_sum!(Label_list(A)) }
+fn empty_label_list[A]() -> Label_list(A) { Nil.mk(A, ()).>widen_sum(Label_list(A)) }
 ```
 
 `Label_list` remains a transparent alias; the generated `Cons` newtype is the
@@ -249,7 +249,7 @@ newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 fn box_label[A](b: Box(A)) -> String { "boxed\n" }
 
 fn label(p: Box(Int) | Box(String)) -> String {
-  match! p {
+  match(p) {
     .[A](b: Box(A)) { box_label(b) }
   }
 }
@@ -261,18 +261,18 @@ result determines the clause's return type before its body is checked, so the
 clause does not need to repeat that annotation. This omitted result is
 determined before the body is checked and cannot mention the clause's local
 `A`. A result that uses that binder needs a concrete return annotation, such
-as `-> A`, or a complete expected function type. `match!` specializes an
+as `-> A`, or a complete expected function type. `match` specializes an
 annotated result for each compatible source branch; those specialized results
 must still agree on one common result type. See
-[marked elab inputs](elaborators.md#marked-fills-implementations) for
+[marked macro inputs](macros.md#marked-fills-implementations) for
 the annotation and staging rules.
 
 ## Composable clause sets
 
 The clause set is an ordinary product value. A caller can build a common set,
-extend it locally, and pass the composed product to `match!` as one block entry:
+extend it locally, and pass the composed product to `match` as one block entry:
 
-The imported `concat!` helper combines the nested products into the flat
+The imported `concat` helper combines the nested products into the flat
 product of three clause functions shown in its target type. Without that
 step, `(text_clauses(), extra_clause)` would retain the first pair as a nested
 product.
@@ -284,11 +284,11 @@ fn text_clauses() -> (String -> String) & (Int -> String) {
 
 fn describe_extended(v: String | Int | .) -> String {
   let clauses =
-    concat!(
+    concat(
     , (text_clauses(), .(_unit: .) { "unit" })
     , (String -> String) & (Int -> String) & (. -> String)
     );
-  match! v { clauses }
+  match(v) { clauses }
 }
 ```
 
@@ -297,11 +297,11 @@ hidden handler registry.
 
 ## Direct block call
 
-Write `match!` directly with its scrutinee and clause block:
+Write `match` directly with its scrutinee and clause block:
 
 ```kio {@module}
 fn direct(v: String | Int) -> String {
-  match! v {
+  match(v) {
     .(s: String) { s };
     .(n: Int) { int_to_string(n) }
   }
@@ -309,8 +309,8 @@ fn direct(v: String | Int) -> String {
 ```
 
 The block supplies the clauses in source order. You can also put the scrutinee
-first as `v.>match! { clauses }`, or after the complete block as
-`match! { clauses }.<v`. Both insert `v` before the projected clause argument;
+first as `v.>match { clauses }`, or after the complete block as
+`match { clauses }.<v`. Both insert `v` before the projected clause argument;
 see [trailing-block UFCS](ufcs.md#calls-with-trailing-blocks).
 
 ## Where this leads
@@ -321,4 +321,4 @@ see [trailing-block UFCS](ufcs.md#calls-with-trailing-blocks).
   the same structural type system.
 - [UFCS calls](ufcs.md) covers `.>`, `.>>`, `.<`, and `.<<` in detail.
 - [Using libraries](using-libraries.md) covers the dependency workflow and
-  points to the advanced elab library's conditional cross-sum helpers.
+  points to the advanced macro library's conditional cross-sum helpers.

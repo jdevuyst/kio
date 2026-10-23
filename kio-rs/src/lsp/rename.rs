@@ -410,7 +410,7 @@ fn handle_rename_inner(
     validate_new_name_for_binder(new_name, cursor_binder)?;
     if block_label_name_conflicts(cursor_binder, new_name, analysis) {
         return Err(format!(
-            "rename to `{new_name}` would conflict with another trailing label of the same elaborator"
+            "rename to `{new_name}` would conflict with another trailing label of the same macro"
         ));
     }
     if newtype_member_name_conflicts(cursor_binder, new_name, analysis) {
@@ -737,7 +737,7 @@ fn block_label_name_conflicts(
 ) -> bool {
     let ResolvedBinder::BlockLabel {
         module_path,
-        elaborator,
+        macro_name,
         ordinal,
         ..
     } = binder
@@ -746,8 +746,8 @@ fn block_label_name_conflicts(
     };
     analysis.position_index.binders_iter().any(|(_, other)| {
         matches!(other, ResolvedBinder::BlockLabel {
-            module_path: owner, elaborator: head, ordinal: index, name, ..
-        } if owner == module_path && head == elaborator && index != ordinal && name == new_name)
+            module_path: owner, macro_name: head, ordinal: index, name, ..
+        } if owner == module_path && head == macro_name && index != ordinal && name == new_name)
     })
 }
 
@@ -877,7 +877,7 @@ fn collect_module_scope(module: &Module<Surface>, byte_offset: u32, out: &mut Ve
                 }
             }
             Item::Equiv(e, _) => e.name.clone(),
-            Item::Elaborator(s, _) => s.name.clone(),
+            Item::Macro(s, _) => s.name.clone(),
             Item::RecGroup(g, _) => {
                 out.extend(g.members.iter().map(|member| member.name.clone()));
                 continue;
@@ -1410,7 +1410,7 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { args, .. } | Expr::RecCall { args, .. } => {
+        Expr::UserMacro { args, .. } | Expr::RecCall { args, .. } => {
             for arg in args {
                 if let crate::ast::CallArg::Value(value) = arg {
                     walk_rename_expr(value, visit);
@@ -1477,8 +1477,8 @@ mod tests {
     #[test]
     fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
         let root = test_file_path("/virtual/selective-alias-tooling");
-        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub elab identity : [Source] Source -> Source { impl identity_impl }";
-        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve!(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count }";
+        let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
+        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count }";
         let main_file = root.join("main.kio");
         let provider_file = root.join("provider.kio");
         let overlay = crate::package_collection::SourceOverlay::complete(
@@ -1505,7 +1505,7 @@ mod tests {
                 ("foo()", "renamed", 2),
                 ("invoke()", "call", 2),
                 ("Parcel.get", "Package", 3),
-                ("preserve!", "retain", 2),
+                ("preserve", "retain", 2),
             ] {
                 let position = position_of(source, use_site);
                 let references = crate::lsp::references::handle_references(
@@ -1536,7 +1536,7 @@ mod tests {
                 ("Box as Parcel", "Parcel,", "Parcel.get"),
                 ("Int as Number", "Number,", "Number;"),
                 ("token as count", "count,", "count }"),
-                ("identity as preserve", "preserve)", "preserve!"),
+                ("identity as preserve", "preserve)", "preserve"),
             ] {
                 let definitions: Vec<_> = [source_site, destination_site, use_site]
                     .into_iter()
@@ -1738,8 +1738,8 @@ mod tests {
                 2,
             ),
             (
-                "module main; import sequence(do); fn bind[A][B](value: A, next: A -> B) -> B { next(value) } \
-                pub fn run(value: (. -> .) & .) -> . { do! bind { let .x. <- value; let keep = x1; x2 } }",
+                "module main; import sequence(macro do); fn bind[A][B](value: A, next: A -> B) -> B { next(value) } \
+                pub fn run(value: (. -> .) & .) -> . { do(bind) { let .x. <- value; let keep = x1; x2 } }",
                 2,
             ),
             (
@@ -1761,7 +1761,7 @@ mod tests {
                 (root.join("main.kio"), source.to_owned()),
                 (
                     root.join("sequence.kio"),
-                    include_str!("../../../test-data/poc/elab/workdir/sequence.kio").to_owned(),
+                    include_str!("../../../test-data/poc/macros/workdir/sequence.kio").to_owned(),
                 ),
             ]);
             let overlay = crate::package_collection::SourceOverlay::complete(root.clone(), files);
@@ -2924,7 +2924,7 @@ rec(loop) {\n\
     fn numbered_family_rename_observes_whole_family_shadowing() {
         for body in [
             "let .x. = a; print(x1); let .y. = b; pair(x3, y1)",
-            "action! { let .x. <- a; print(x1); let .y. <- b; pair(x3, y1) }",
+            "action { let .x. <- a; print(x1); let .y. <- b; pair(x3, y1) }",
         ] {
             let source = format!("module main; fn run() {{ {body} }}");
             let module = parse_surface_module(&source).unwrap();

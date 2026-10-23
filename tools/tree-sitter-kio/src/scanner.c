@@ -11,7 +11,7 @@ enum {
   PLACEHOLDER_OPEN, EDITOR_EOF,
   DOC_TEXT, DOC_FENCE, DOC_CODE, DOC_REFERENCE, DOC_DIRECTIVE,
   DOC_HEADING, DOC_EMPHASIS, DOC_STRONG, DOC_MARKER, DOC_LINK, DOC_ATTRIBUTE, DOC_KIO_CODE, DOC_KIO_SELF_CODE,
-  DOC_LITERAL_FALLBACK, DOC_LINE_END, ELABORATOR_WORD, TOKEN_COUNT,
+  DOC_LITERAL_FALLBACK, DOC_LINE_END, TOKEN_COUNT,
 };
 
 typedef struct { uint64_t length; uint8_t kind; } DocSegment;
@@ -463,44 +463,6 @@ static bool trivia(int32_t c) {
   return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
-// Leave the bang separate so a surrounding marked frame can own it. A
-// successful scan still authenticates the exact native name-and-word boundary.
-static bool scan_elaborator_word(TSLexer *lexer) {
-  bool letter = false, digits = false, valid = true;
-  size_t underscores = 0;
-  while ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') ||
-         (lexer->lookahead >= 'A' && lexer->lookahead <= 'Z') ||
-         (lexer->lookahead >= '0' && lexer->lookahead <= '9') || lexer->lookahead == '_') {
-    int32_t c = lexer->lookahead;
-    if (c == '_') {
-      if (letter) underscores++;
-      digits = false;
-    } else if (c >= 'a' && c <= 'z') {
-      if ((digits && !underscores) || underscores > 1) valid = false;
-      letter = true;
-      digits = false;
-      underscores = 0;
-    } else if (c >= '0' && c <= '9') {
-      if (!letter || underscores) valid = false;
-      digits = true;
-    } else {
-      valid = false;
-    }
-    lexer->advance(lexer, false);
-  }
-  if (!valid || !letter || lexer->lookahead != '!') return false;
-  lexer->mark_end(lexer);
-  lexer->advance(lexer, false);
-  if (lexer->lookahead == '/') {
-    lexer->advance(lexer, false);
-    if (lexer->lookahead != '/') return false;
-  } else if (symbol(lexer->lookahead)) {
-    return false;
-  }
-  lexer->result_symbol = ELABORATOR_WORD;
-  return true;
-}
-
 // A stopped comment leaves lookahead on its second slash; mark_end remains
 // before the first. The caller can inspect trivia without extending its token.
 static bool next_symbol(TSLexer *lexer, SymbolRun *run) {
@@ -758,10 +720,6 @@ static bool scan(Scanner *state, TSLexer *lexer, const bool *valid) {
   if (state->payload && !lexer->eof(lexer)) return doc_inline(state, lexer, valid);
   while (trivia(lexer->lookahead)) {
     lexer->advance(lexer, true);
-  }
-  if (valid[ELABORATOR_WORD] &&
-      ((lexer->lookahead >= 'a' && lexer->lookahead <= 'z') || lexer->lookahead == '_')) {
-    return scan_elaborator_word(lexer);
   }
   if (valid[EDITOR_EOF] && !(valid[STAR_OPEN] && valid[OPEN] && valid[STAR_CLOSE] && valid[CLOSE]) && lexer->eof(lexer)) {
     lexer->result_symbol = EDITOR_EOF;

@@ -1,0 +1,21 @@
+package user_macro_structural_recur_stuck;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  macros;
+  user_macro_structural_recur_stuck;
+  user_macro_structural_recur_stuck/**
+}

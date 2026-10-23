@@ -25,7 +25,7 @@
 
 use crate::ast::{
     DocComment, FnDef, HostFn, HostType, Item, LabelForward, Labels, LiteralAlias, Module, Newtype,
-    Op, OpBody, OperatorGrammar, PackageFile, Surface, TypeAlias, TypeRecGroup, UserElaboratorDef,
+    Op, OpBody, OperatorGrammar, PackageFile, Surface, TypeAlias, TypeRecGroup, UserMacroDef,
     VariadicOperator,
 };
 
@@ -60,7 +60,7 @@ pub enum DocEntry<'a> {
     Op(&'a Op<Surface>, String),
     /// A variadic operator and its complete tagged import projection.
     VariadicOperator(&'a VariadicOperator<Surface>, String),
-    Elaborator(&'a UserElaboratorDef<Surface>),
+    Macro(&'a UserMacroDef<Surface>),
     HostType(&'a HostType<Surface>),
     HostFn(&'a HostFn<Surface>),
 }
@@ -78,7 +78,7 @@ impl<'a> DocEntry<'a> {
             DocEntry::LabelForward(_, name) => name,
             DocEntry::LabelNominal { name, .. } => name,
             DocEntry::Op(_, name) | DocEntry::VariadicOperator(_, name) => name,
-            DocEntry::Elaborator(e) => &e.name,
+            DocEntry::Macro(e) => &e.name,
             DocEntry::HostType(h) => &h.name,
             DocEntry::HostFn(h) => &h.name,
         }
@@ -98,7 +98,7 @@ impl<'a> DocEntry<'a> {
             DocEntry::LabelForward(forward, _) => forward.doc.as_ref(),
             DocEntry::Op(o, _) => o.doc.as_ref(),
             DocEntry::VariadicOperator(o, _) => o.doc.as_ref(),
-            DocEntry::Elaborator(e) => e.doc.as_ref(),
+            DocEntry::Macro(e) => e.doc.as_ref(),
             DocEntry::HostType(h) => h.doc.as_ref(),
             DocEntry::HostFn(h) => h.doc.as_ref(),
         }
@@ -116,7 +116,7 @@ impl<'a> DocEntry<'a> {
             DocEntry::LabelForward(_, _) => "label",
             DocEntry::Op(_, _) => "op",
             DocEntry::VariadicOperator(_, _) => "varop",
-            DocEntry::Elaborator(_) => "elab",
+            DocEntry::Macro(_) => "macro",
             DocEntry::HostType(_) => "host type",
             DocEntry::HostFn(_) => "host fn",
         }
@@ -176,7 +176,7 @@ impl<'a> DocEntry<'a> {
             Self::LabelForward(forward, _) => &forward.vis,
             Self::Op(op, _) => &op.vis,
             Self::VariadicOperator(op, _) => &op.vis,
-            Self::Elaborator(elaborator) => &elaborator.vis,
+            Self::Macro(macro_def) => &macro_def.vis,
             Self::HostType(_) | Self::HostFn(_) => &crate::ast::Visibility::Public,
         }
     }
@@ -210,7 +210,7 @@ impl<'a> DocEntry<'a> {
             DocEntry::LabelForward(forward, _) => Item::LabelForward((*forward).clone(), ()),
             DocEntry::Op(o, _) => Item::Op(Box::new((*o).clone()), ()),
             DocEntry::VariadicOperator(o, _) => Item::VariadicOperator(Box::new((*o).clone()), ()),
-            DocEntry::Elaborator(e) => Item::Elaborator((*e).clone(), ()),
+            DocEntry::Macro(e) => Item::Macro((*e).clone(), ()),
             DocEntry::HostType(h) => Item::HostType((*h).clone()),
             DocEntry::HostFn(h) => Item::HostFn((*h).clone()),
         }
@@ -257,7 +257,7 @@ pub fn documented_entries_for_item(item: &Item<Surface>) -> Vec<DocEntry<'_>> {
             o,
             OperatorGrammar::variadic(&o.open, &o.spec).render(),
         )],
-        Item::Elaborator(e, _) => vec![DocEntry::Elaborator(e)],
+        Item::Macro(e, _) => vec![DocEntry::Macro(e)],
         Item::HostType(h) => vec![DocEntry::HostType(h)],
         Item::HostFn(h) => vec![DocEntry::HostFn(h)],
         Item::RecGroup(g, _) => g.members.iter().map(DocEntry::RecFn).collect(),
@@ -352,7 +352,7 @@ mod tests {
             "type {forward} = {field};",
             "op _ + _ { impl add; };",
             "varop [* *] { foldl push empty; };",
-            "elab choose : . -> . { impl choose_impl; };",
+            "macro choose : . -> . { impl choose_impl; };",
         ];
         for declaration in declarations {
             for visibility in ["", "pub(api) ", "pub "] {

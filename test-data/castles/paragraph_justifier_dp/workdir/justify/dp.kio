@@ -12,12 +12,12 @@
 /// rest scored `infinite` and were never in the running.
 module justify/dp;
 
-import elab/control(if);
-import elab/match(match);
 import justify/cost as cost;
 import justify/list as list;
 import justify/list(List);
 import justify/word(Word, Words, word_width);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -69,8 +69,8 @@ fn flip(t: Table) -> Table {
 }
 
 fn improve(acc: Cell, candidate: I32, start: I32, fitted: Bool) -> Cell {
-  let counted = if! fitted { add_i32(cell_fits(acc), 1) } else { cell_fits(acc) };
-  if! lt_i32(candidate, cell_score(acc)) {
+  let counted = if(fitted) { add_i32(cell_fits(acc), 1) } else { cell_fits(acc) };
+  if(lt_i32(candidate, cell_score(acc))) {
     make_cell(candidate, start, counted)
   } else {
     make_cell(cell_score(acc), cell_back(acc), counted)
@@ -96,7 +96,7 @@ rec(loop) fn scan(
 , rev_best: List(I32)
 , acc: Cell
 ) -> Cell {
-  match! rev_words.>List.unpack {
+  match(rev_words.>List.unpack) {
     (
     , .(w: Word, rest: Words) {
         let next_used = add_i32(add_i32(used, 1), word_width(w));
@@ -111,7 +111,7 @@ rec(loop) fn scan(
 }
 
 rec(loop) fn fill(j: I32, n: I32, column: I32, rest: Words, rev_words: Words, acc: Table) -> Table {
-  if! lt_i32(n, j) {
+  if(lt_i32(n, j)) {
     flip(acc)
   } else {
     let seed = make_cell(cost.infinite(), -1, 0);

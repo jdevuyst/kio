@@ -31,26 +31,26 @@ if else fn type literal alias
     (entity_name_label)))
 
 ================================================================================
-elaborator bang fusion
+callable words
 ================================================================================
-iso! into! atom!
+iso into atom
 --------------------------------------------------------------------------------
 
 (source_file
-  (elaborator_name)
-  (elaborator_name)
-  (elaborator_name))
+  (identifier)
+  (identifier)
+  (identifier))
 
 ================================================================================
-elaborator bang requires contiguity
+ordinary bang operator adjacency
 ================================================================================
-iso ! foo!
+iso ! foo
 --------------------------------------------------------------------------------
 
 (source_file
   (identifier)
   (operator_builtin)
-  (elaborator_name))
+  (identifier))
 
 ================================================================================
 literals
@@ -141,10 +141,10 @@ r.>f
 r.>>T.member
 f(a).<r
 T.member.<<r
-r.>transform!
-r.>>transform!(x)
-transform!.<r
-transform!(x).<<r
+r.>transform
+r.>>transform(x)
+transform.<r
+transform(x).<<r
 --------------------------------------------------------------------------------
 
 (source_file
@@ -185,24 +185,28 @@ transform!(x).<<r
     (expression_path
       (identifier))
     (operator_arrow_ufcs)
-    (elaborator_name))
+    (call_callee
+      (entity_name_function)))
   (ufcs_expr
     (expression_path
       (identifier))
     (operator_arrow_ufcs)
-    (elaborator_name)
+    (call_callee
+      (entity_name_function))
     (expression_arguments
       (bracket_lparen)
       (expression_path
         (identifier))
       (bracket_rparen)))
   (ufcs_expr
-    (elaborator_name)
+    (call_callee
+      (entity_name_function))
     (operator_arrow_ufcs)
     (expression_path
       (identifier)))
   (ufcs_expr
-    (elaborator_name)
+    (call_callee
+      (entity_name_function))
     (expression_arguments
       (bracket_lparen)
       (expression_path
@@ -632,9 +636,11 @@ import source(Item, item, {item});
     (module_path
       (entity_name_module))
     (bracket_lparen)
-    (identifier)
+    (import_named_item
+      (identifier))
     (separator_comma)
-    (identifier)
+    (import_named_item
+      (identifier))
     (separator_comma)
     (import_label_item
       (bracket_lbrace)
@@ -919,7 +925,7 @@ varop [* *] {
   foldr1 folds.push folds.empty;
   finalize folds.finish;
 };
-elab choose : [A] A -> A {
+macro choose : [A] A -> A {
   captures (values.default, Box.mk);
   impl(fills) impls.choose;
 };
@@ -968,7 +974,7 @@ elab choose : [A] A -> A {
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -985,9 +991,9 @@ elab choose : [A] A -> A {
         (operator_arrow_type)
         (type_path
           (entity_name_type))))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
@@ -1001,7 +1007,7 @@ elab choose : [A] A -> A {
           (identifier))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -1042,14 +1048,14 @@ varop [* *] {
   // initializer terminator
   ;
 };
-elab choose : . -> . {
+macro choose : . -> . {
   impl(fills)
-  // elab target
+  // macro target
   impls
   .
-  // elab callable
+  // macro callable
   choose
-  // elab terminator
+  // macro terminator
   ;
 };
 --------------------------------------------------------------------------------
@@ -1099,7 +1105,7 @@ elab choose : . -> . {
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -1107,9 +1113,9 @@ elab choose : . -> . {
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -1137,7 +1143,7 @@ varop [* *] {
   // after initializer
   ;
 };
-elab filled : . -> . {
+macro filled : . -> . {
   impl
   // before fills
   (
@@ -1148,7 +1154,7 @@ elab filled : . -> . {
   // before filled target
   helper.run;
 };
-elab normal : . -> . {
+macro normal : . -> . {
   impl
   // before normal target
   helper.run;
@@ -1180,7 +1186,7 @@ elab normal : . -> . {
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -1188,9 +1194,9 @@ elab normal : . -> . {
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (comment_line)
         (bracket_lparen)
@@ -1206,7 +1212,7 @@ elab normal : . -> . {
       (separator_semicolon)
       (bracket_rbrace)))
   (separator_semicolon)
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -1214,9 +1220,9 @@ elab normal : . -> . {
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (comment_line)

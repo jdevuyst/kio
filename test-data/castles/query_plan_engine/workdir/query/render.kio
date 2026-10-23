@@ -5,8 +5,8 @@
 /// line is never right-padded, so no line goes out with trailing blanks.
 module query/render;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import query/list as list;
 import query/row as rel;
 import query/schema as schema;
@@ -26,9 +26,9 @@ fn gap() -> String { "  " }
 fn title_text(c: schema.Col, last: Bool) -> String {
   let name = schema.col_name(c);
   let pad = sub_i32(schema.col_width(c), value.value_width(schema.col_title(c)));
-  if! schema.col_numeric(c) {
+  if(schema.col_numeric(c)) {
     text.pad_left(name, pad)
-  } else if! last {
+  } else if(last) {
     name
   } else {
     text.pad_right(name, pad)
@@ -36,11 +36,11 @@ fn title_text(c: schema.Col, last: Bool) -> String {
 }
 
 rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
-  match! cols.>list.List.un_list {
+  match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let last = list.is_empty(rest);
-        let piece = if! last { title_text(c, .t) } else { text.cat2(title_text(c, .f), gap()) };
+        let piece = if(last) { title_text(c, .t) } else { text.cat2(title_text(c, .f), gap()) };
         recur header_onto(rest, text.cat2(acc, piece))
       }
     , .(_empty: .) { acc }
@@ -49,11 +49,11 @@ rec(loop) fn header_onto(cols: schema.Col_list, acc: String) -> String {
 }
 
 rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
-  match! cols.>list.List.un_list {
+  match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let piece =
-          if! list.is_empty(rest) {
+          if(list.is_empty(rest)) {
             text.rule(schema.col_width(c))
           } else {
             text.cat2(text.rule(schema.col_width(c)), gap())
@@ -66,12 +66,12 @@ rec(loop) fn rule_onto(cols: schema.Col_list, acc: String) -> String {
 }
 
 rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> String {
-  match! cols.>list.List.un_list {
+  match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         let v = rel.row_cell(row, c);
         let piece =
-          if! list.is_empty(rest) {
+          if(list.is_empty(rest)) {
             value.value_tail(v, schema.col_width(c))
           } else {
             text.cat2(value.value_cell(v, schema.col_width(c)), gap())
@@ -84,7 +84,7 @@ rec(loop) fn row_onto(cols: schema.Col_list, row: rel.Row, acc: String) -> Strin
 }
 
 rec(loop) fn print_rows(cols: schema.Col_list, rows: rel.Table) {
-  match! rows.>list.List.un_list {
+  match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
         print(text.cat3(margin(), row_onto(cols, r, ""), "\n"));
@@ -100,7 +100,7 @@ pub fn render_relation(r: rel.Relation) {
   let rows = rel.rel_rows_of(r);
   print(text.cat3(margin(), header_onto(cols, ""), "\n"));
   print(text.cat3(margin(), rule_onto(cols, ""), "\n"));
-  if! list.is_empty(rows) {
+  if(list.is_empty(rows)) {
     print(text.cat2(margin(), "(no rows)\n"))
   } else {
     print_rows(cols, rows)

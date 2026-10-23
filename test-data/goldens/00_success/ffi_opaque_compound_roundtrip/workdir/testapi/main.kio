@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi as t;
 import testapi/arith as a;
 
@@ -12,7 +12,7 @@ fn relay[T](value: T) -> T { value }
 fn extract[T](value: t.Box(T)) -> T { a.box_get(relay(value)) }
 
 pub fn read_sum(value: t.Box(t.I32 | .)) -> t.I32 {
-  match! extract(value) {
+  match(extract(value)) {
     (.(number: t.I32) { number }, .() { 0(t.I32) })
   }
 }
@@ -21,9 +21,9 @@ pub fn call(value: t.Box(t.I32 -> t.I32), seed: t.I32) -> t.I32 { extract(value)
 
 pub fn read_nominal(value: t.Box(Wrapped)) -> t.I32 & t.I32 { extract(value).>Wrapped.read_wrapped }
 
-pub fn make_sum() -> t.Box(t.I32 | .) { a.box_make(widen_sum!(23(t.I32), t.I32 | .)) }
+pub fn make_sum() -> t.Box(t.I32 | .) { a.box_make(widen_sum(23(t.I32), t.I32 | .)) }
 
-pub fn make_empty() -> t.Box(t.I32 | .) { a.box_make(widen_sum!((), t.I32 | .)) }
+pub fn make_empty() -> t.Box(t.I32 | .) { a.box_make(widen_sum((), t.I32 | .)) }
 
 pub fn make_callable() -> t.Box(t.I32 -> t.I32) {
   a.box_make(.(number: t.I32) { number })

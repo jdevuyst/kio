@@ -48,5 +48,5 @@ bridge {
   testapi;
   testapi/**;
   gate_symbolic_eval/**;
-  elab/testapi
+  macros/testapi
 }

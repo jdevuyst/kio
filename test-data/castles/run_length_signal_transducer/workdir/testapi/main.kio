@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
 import list/core as lists;
+import macros/match(macro match);
 import signal/codec as codec;
 import signal/decode as decode;
 import signal/input as input;
@@ -10,7 +10,7 @@ import testapi(I32, String);
 import testapi/io as io;
 
 pub fn main() {
-  match! input.consume() {
+  match(input.consume()) {
     .(state: codec.Encoder, original: lists.List(I32)) {
       let runs = codec.finish(state);
       report.encoding(state, runs);

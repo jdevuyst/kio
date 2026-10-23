@@ -1,6 +1,6 @@
 module config/editor;
 
-import elab/match(match);
+import macros/match(macro match);
 import optics/optics(
 , Lens
 , Prism
@@ -193,7 +193,7 @@ fn apply_patch(cfg: Root_config) -> Root_config {
 }
 
 fn show_mode(mode: Mode_state) -> String {
-  match! mode {
+  match(mode) {
     (
     , .(_stable: Stable_mode) { "stable" }
     , .(degraded: Degraded_mode) { cat("degraded:", int_to_string(degraded.?{degraded_mode})) }

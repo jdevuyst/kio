@@ -18,7 +18,7 @@
 ///   to ground level across the gap.
 module skyline/city;
 
-import elab/match(match);
+import macros/match(macro match);
 import skyline/list as lst;
 import skyline/logic as logic;
 import testapi(I32, String);
@@ -58,7 +58,7 @@ rec(loop) {
   /// column count.
   pub fn max_right(bs: lst.List(Building)) -> I32 { recur widest(bs, 0) };
   fn widest(bs: lst.List(Building), best: I32) -> I32 {
-    match! bs.>lst.List.un_list {
+    match(bs.>lst.List.un_list) {
       (
       , .(b: Building, rest: lst.List(Building)) {
           recur widest(rest, logic.max(best, right_of(b)))

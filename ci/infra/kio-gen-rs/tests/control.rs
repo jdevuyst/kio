@@ -133,7 +133,7 @@ fn invoked_control_distribution_covers_semantic_catalog() {
             assert!(runtime.contains(&format!("}} {label} {{")));
             assert!(runtime.contains("fn consumer(first:"));
             if *nested {
-                assert!(runtime.contains("nested_probe! nested_consumer"));
+                assert!(runtime.contains("nested_probe(nested_consumer)"));
                 witness("nested-descriptor".into());
             }
             witness(format!("reverse:{reverse}"));
@@ -337,7 +337,7 @@ fn invoked_type_and_recursion_probes_cover_grammar_cells() {
                 .unwrap()
                 .1;
             assert!(source.contains("{ walk(") || source.contains("; saved()"));
-            assert!(source.contains("match! current { (\n.(rest: Counter)"));
+            assert!(source.contains("match(current) { (\n.(rest: Counter)"));
             assert!(source.contains("},\n.(_unit: .)"));
             assert_eq!(source.contains("fn bounce"), probe.mutual);
             assert_eq!(

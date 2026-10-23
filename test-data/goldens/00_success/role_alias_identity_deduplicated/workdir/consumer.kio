@@ -2,7 +2,7 @@ module consumer;
 
 import __intrinsics__;
 
-import elab/control(if);
+import macros/control(macro if);
 import other as other;
 import provider as provider;
 
@@ -11,7 +11,7 @@ default type First = provider.Bool;
 default type Second = provider.Bool;
 
 fn surface(condition: First) -> Second {
-  if! condition { .t(Second) } else { .f(Second) }
+  if(condition) { .t(Second) } else { .f(Second) }
 }
 
 fn core(condition: First) -> Second {

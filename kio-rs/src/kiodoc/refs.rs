@@ -479,7 +479,7 @@ pub fn module_scope_from_surface_for_boundary(
             | DocEntry::LiteralAlias(_)
             | DocEntry::Op(_, _)
             | DocEntry::VariadicOperator(_, _)
-            | DocEntry::Elaborator(_)
+            | DocEntry::Macro(_)
             | DocEntry::HostFn(_) => None,
         };
         if let Some(kind) = kind {
@@ -707,7 +707,7 @@ fn surface_item_name(item: &crate::ast::Item<crate::ast::Surface>) -> &str {
         crate::ast::Item::TypeAlias(a) => &a.name,
         crate::ast::Item::LiteralAlias(l, _ext) => &l.name,
         crate::ast::Item::Newtype(d) => &d.name,
-        crate::ast::Item::Elaborator(s, _ext) => &s.name,
+        crate::ast::Item::Macro(s, _ext) => &s.name,
         crate::ast::Item::Labels(t, _ext) => t.type_alias_name.as_deref().unwrap_or(""),
         crate::ast::Item::LabelForward(_, _) => "",
         crate::ast::Item::Equiv(e, _ext) => &e.name,

@@ -1,15 +1,15 @@
 /// Loads Kio' image text covering legal `pure fn` modifiers, the trusted-body boundary, and malformed placements.
 module testapi/main;
 
-import elab/match(match);
 import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
 fn show(label: String, outcome: Load_outcome) -> String {
-  match! un_load_outcome(outcome) {
+  match(un_load_outcome(outcome)) {
     (
     , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
     , .(diag: Lr_diag) {

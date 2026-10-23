@@ -8,7 +8,7 @@
 /// afterwards, so its recursive calls are not tail calls: hence `rec(cont)`.
 module seg/ops;
 
-import elab/control(if);
+import macros/control(macro if);
 import seg/agg(Agg, agg_min, agg_sum, combine, leaf_agg, neutral);
 import seg/tree(
 , Tree
@@ -34,9 +34,9 @@ import testapi/iter(loop);
 /// parent can pull up from it. A covered node never looks below itself.
 rec(loop) fn add_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32, x: I32) -> Agg {
   visit(t);
-  if! disjoint(lo, hi, l, r) {
+  if(disjoint(lo, hi, l, r)) {
     node_agg(t, node)
-  } else if! covers(lo, hi, l, r) {
+  } else if(covers(lo, hi, l, r)) {
     apply_tag(t, node, lo, hi, x);
     node_agg(t, node)
   } else {
@@ -55,9 +55,9 @@ rec(loop) fn add_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32, x: I32
 /// correct precisely because `apply_tag` already folded its pending add in.
 rec(loop) fn query_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32) -> Agg {
   visit(t);
-  if! disjoint(lo, hi, l, r) {
+  if(disjoint(lo, hi, l, r)) {
     neutral()
-  } else if! covers(lo, hi, l, r) {
+  } else if(covers(lo, hi, l, r)) {
     node_agg(t, node)
   } else {
     let mid = mid_of(lo, hi);
@@ -72,14 +72,14 @@ rec(loop) fn query_at(t: Tree, node: I32, lo: I32, hi: I32, l: I32, r: I32) -> A
 /// *read*, not visited: the push-down already made its aggregate correct.
 rec(loop) fn set_at(t: Tree, node: I32, lo: I32, hi: I32, i: I32, v: I32) -> Agg {
   visit(t);
-  if! is_leaf(lo, hi) {
+  if(is_leaf(lo, hi)) {
     let cell = leaf_agg(v);
     set_agg(t, node, cell);
     cell
   } else {
     let mid = mid_of(lo, hi);
     push_down(t, node, lo, hi, mid);
-    let pulled = if! leq_i32(i, mid) {
+    let pulled = if(leq_i32(i, mid)) {
       let from_left = recur(cont) set_at(t, left(node), lo, mid, i, v);
       combine(from_left, node_agg(t, right(node)))
     } else {
@@ -96,7 +96,7 @@ rec(loop) fn set_at(t: Tree, node: I32, lo: I32, hi: I32, i: I32, v: I32) -> Agg
 /// still moves (that count is the point), but nothing here counts as a visit:
 /// the drain is a reporting pass, not a scripted operation.
 rec(loop) fn drain_at(t: Tree, node: I32, lo: I32, hi: I32, out: Array(I32)) {
-  if! is_leaf(lo, hi) {
+  if(is_leaf(lo, hi)) {
     array_set(out, lo, agg_sum(node_agg(t, node)))
   } else {
     let mid = mid_of(lo, hi);

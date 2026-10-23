@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io as io;
 
@@ -9,7 +9,7 @@ newtype Box[A] : A { pub constructor make; pub projector unpack }
 labels { tag: . };
 
 fn project(input: Box(String) & Tag) -> String {
-  match! input {
+  match(input) {
     .[A](slot: Box(A)) -> A { slot.>Box.unpack }
   }
 }

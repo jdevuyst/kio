@@ -2,13 +2,13 @@ module testapi/main;
 
 import __intrinsics__;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-// `derive!` composes instances from rules with two levels of nesting —
-// the resolver-recursion shape `specs/language.md` § The `derive!`
+// `derive` composes instances from rules with two levels of nesting —
+// the resolver-recursion shape `specs/language.md` § The `derive`
 // solver walks through, here over a kind-`*` `Render` family of nested
 // products. (The real monad-transformer stack lives in its own golden,
 // `exec_derive_transformer_stack`; this one isolates the resolver's
@@ -48,7 +48,7 @@ fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
 // — `render_pair` fires twice and `render_cell_string` is the base.
 fn run() -> String {
   let inst =
-    derive!(
+    derive(
     , (render_pair, render_cell_string)
     , Render(Pair(Cell(String), Pair(Cell(String), Cell(String))))
     );

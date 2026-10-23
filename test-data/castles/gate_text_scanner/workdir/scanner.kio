@@ -1,6 +1,6 @@
 module scanner;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/text(string_concat, string_eq, string_len, string_slice);
 
@@ -9,7 +9,7 @@ pub fn script() -> String { "OPEN gate\nSET mode=A\nPING 007\nBAD ??\nLOCK gate\
 fn is_script_len(n: I32) -> Bool { string_eq(string_slice(script(), 0, n), script()) }
 
 pub fn script_len_tag() -> String {
-  if! is_script_len(string_len(script())) { "script-58" } else { "script-mismatch" }
+  if(is_script_len(string_len(script()))) { "script-58" } else { "script-mismatch" }
 }
 
 pub fn token(start: I32, end: I32) -> String { string_slice(script(), start, end) }
@@ -20,13 +20,13 @@ fn eq_slice(start: I32, end: I32, expected: String) -> Bool {
 
 pub fn command_tag(start: I32, end: I32) -> String {
   let raw = token(start, end);
-  if! string_eq(raw, "OPEN") {
+  if(string_eq(raw, "OPEN")) {
     "open"
-  } else if! string_eq(raw, "SET") {
+  } else if(string_eq(raw, "SET")) {
     "set"
-  } else if! string_eq(raw, "PING") {
+  } else if(string_eq(raw, "PING")) {
     "ping"
-  } else if! string_eq(raw, "LOCK") {
+  } else if(string_eq(raw, "LOCK")) {
     "lock"
   } else {
     "bad"
@@ -34,17 +34,17 @@ pub fn command_tag(start: I32, end: I32) -> String {
 }
 
 pub fn gate_target(start: I32, end: I32) -> String {
-  if! eq_slice(start, end, "gate") { "gate" } else { token(start, end) }
+  if(eq_slice(start, end, "gate")) { "gate" } else { token(start, end) }
 }
 
 pub fn class_for(mark: String) -> String {
-  if! string_eq(mark, "X") {
+  if(string_eq(mark, "X")) {
     "reject"
-  } else if! string_eq(mark, "P") {
+  } else if(string_eq(mark, "P")) {
     "probe"
-  } else if! string_eq(mark, "A") {
+  } else if(string_eq(mark, "A")) {
     "config"
-  } else if! string_eq(mark, "B") {
+  } else if(string_eq(mark, "B")) {
     "config"
   } else {
     "entry"
@@ -52,9 +52,9 @@ pub fn class_for(mark: String) -> String {
 }
 
 pub fn set_mark(start: I32, end: I32) -> String {
-  if! eq_slice(start, end, "mode=A") {
+  if(eq_slice(start, end, "mode=A")) {
     "A"
-  } else if! eq_slice(start, end, "mode=B") {
+  } else if(eq_slice(start, end, "mode=B")) {
     "B"
   } else {
     "S"

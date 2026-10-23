@@ -279,8 +279,8 @@ fn validate_callable_decls_observed(
                     observe(item_index, &finalize.path, &target.callable);
                 }
             }
-            Item::Elaborator(d, _) => {
-                let description = format!("elaborator `{}`", d.name);
+            Item::Macro(d, _) => {
+                let description = format!("macro `{}`", d.name);
                 let context = ImplValidationContext {
                     module,
                     visible_items: &module.items[..item_index],
@@ -1833,8 +1833,8 @@ fn module_binding_names(module: &Module<Surface>) -> BTreeSet<String> {
             Item::Equiv(equiv, _) => {
                 names.insert(equiv.name.clone());
             }
-            Item::Elaborator(elaborator, _) => {
-                names.insert(elaborator.name.clone());
+            Item::Macro(macro_def, _) => {
+                names.insert(macro_def.name.clone());
             }
             Item::HostType(host) => {
                 names.insert(host.name.clone());
@@ -1910,7 +1910,7 @@ fn fold_item(item: &mut Item<Surface>, scope: &OpScope) -> Result<(), Error> {
         Item::Labels(d, _) => fold_labels(d, scope),
         Item::LabelForward(_, _) => Ok(()),
         Item::Equiv(e, _) => fold_equiv(e, scope),
-        Item::Elaborator(s, _) => {
+        Item::Macro(s, _) => {
             fold_type(&mut s.call_ty, scope)?;
             Ok(())
         }
@@ -2100,7 +2100,7 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { args, .. } => {
+        Expr::UserMacro { args, .. } => {
             for arg in args {
                 match arg {
                     CallArg::Value(value) => fold_expr(value, scope)?,
@@ -2798,7 +2798,7 @@ mod tests {
         let consumer = p("module consumer; import relay as r; \
              op + _ { impl r.Alias.make; }; \
              varop [* *] { foldr r.Alias.open r.Alias.make; }; \
-             elab demo : . -> . { impl r.Alias.make; };");
+             macro demo : . -> . { impl r.Alias.make; };");
         let scope = PackageOpScope::from_modules_named(
             &[
                 (PathBuf::from("origin.kio"), origin),
@@ -2831,11 +2831,11 @@ mod tests {
     }
 
     #[test]
-    fn operator_target_routing_leaves_elaborator_schedules_and_paths_unchanged() {
+    fn operator_target_routing_leaves_macro_schedules_and_paths_unchanged() {
         let mut module = p("module x; \
              pure fn apply(left: ., right: .) -> . { left } \
-             elab late : . -> . { impl apply; }; \
-             elab fills : . -> . { impl(fills) apply; }; \
+             macro late : . -> . { impl apply; }; \
+             macro fills : . -> . { impl(fills) apply; }; \
              op _ + _ { impl apply; }; \
              fn run(apply: .) -> . { () + () }");
         let package =
@@ -2843,25 +2843,19 @@ mod tests {
                 .expect("declaration callables validate");
         fold_module(&mut module, &package).expect("operator lowers");
 
-        let elaborators = module
+        let macros = module
             .items
             .iter()
             .filter_map(|item| match item {
-                Item::Elaborator(elaborator, _) => Some(elaborator),
+                Item::Macro(macro_def, _) => Some(macro_def),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        assert_eq!(elaborators.len(), 2);
-        assert_eq!(
-            elaborators[0].schedule,
-            crate::ast::ElaboratorSchedule::Late
-        );
-        assert_eq!(
-            elaborators[1].schedule,
-            crate::ast::ElaboratorSchedule::Fills
-        );
-        for elaborator in elaborators {
-            assert_eq!(render_callable_path(&elaborator.implementation), "apply");
+        assert_eq!(macros.len(), 2);
+        assert_eq!(macros[0].schedule, crate::ast::MacroSchedule::Late);
+        assert_eq!(macros[1].schedule, crate::ast::MacroSchedule::Fills);
+        for macro_def in macros {
+            assert_eq!(render_callable_path(&macro_def.implementation), "apply");
         }
     }
 
@@ -3218,9 +3212,9 @@ mod tests {
     }
 
     #[test]
-    fn elaborator_rejects_later_newtype_member_implementation() {
+    fn macro_rejects_later_newtype_member_implementation() {
         let consumer = p("module x; \
-             elab demo : . -> . { impl Later.mk; }; \
+             macro demo : . -> . { impl Later.mk; }; \
              newtype Later : . { constructor mk; projector get; };");
         let message = expect_name_error(validate_against_modules(&consumer, &[]));
         assert!(
@@ -3326,8 +3320,8 @@ mod tests {
             "varop [* *] { foldr earlier target; };",
             "varop [* *] { foldr target earlier; };",
             "varop [* *] { foldr earlier earlier; finalize target; };",
-            "elab demo : . -> . { impl target; };",
-            "elab demo : . -> . { impl(fills) target; };",
+            "macro demo : . -> . { impl target; };",
+            "macro demo : . -> . { impl(fills) target; };",
         ] {
             let source =
                 format!("module x; host fn earlier() -> .; {declaration} host fn target() -> .;");
@@ -3353,8 +3347,8 @@ mod tests {
         for declaration in [
             "op + _ { impl target; };",
             "varop [* *] { foldr target target; finalize target; };",
-            "elab demo : . -> . { impl target; };",
-            "elab demo : . -> . { impl(fills) target; };",
+            "macro demo : . -> . { impl target; };",
+            "macro demo : . -> . { impl(fills) target; };",
         ] {
             let prior = p(&format!("module x; host fn target() -> .; {declaration}"));
             validate_against_modules(&prior, &[]).expect("preceding host target resolves");
@@ -3482,7 +3476,7 @@ mod tests {
              labels Tree[A][B] = { branch[A][B]: A & B }; \
              op + _ { impl Tree.mk; }; \
              varop [* *] { foldr Tree.get self_module.Tree.mk; }; \
-             elab demo : . -> . { impl self_module.Tree.mk; };");
+             macro demo : . -> . { impl self_module.Tree.mk; };");
         validate_against_modules(&local, &[])
             .expect("a named one-arm labels alias exposes its generated nominal member");
 
@@ -3597,7 +3591,7 @@ mod tests {
              type Box[A] = imported.Box(A); \
              op + _ { impl Box.make; }; \
              op - _ { impl self_module.Box.make; }; \
-             elab demo : . -> . { impl self_module.Box.make; };");
+             macro demo : . -> . { impl self_module.Box.make; };");
         validate_against_modules(
             &local,
             &[p("module origin; \

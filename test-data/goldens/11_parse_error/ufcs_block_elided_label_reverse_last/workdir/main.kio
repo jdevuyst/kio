@@ -1,5 +1,5 @@
 module main;
 
-import forms(block_pair, combine);
+import forms(macro block_pair, macro combine);
 
-fn subject() -> . & (. & (. & .)) { combine! { () } after block_pair!(()) { () }.<() }
+fn subject() -> . & (. & (. & .)) { combine { () } after block_pair(()) { () }.<() }

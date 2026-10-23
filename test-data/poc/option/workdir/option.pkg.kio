@@ -53,7 +53,7 @@ build {
 bridge {
   core;
   option;
-  elab/testapi;
+  macros/testapi;
   list/core;
-  list/elab/testapi
+  list/macros/testapi
 }

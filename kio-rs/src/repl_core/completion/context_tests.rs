@@ -2,9 +2,9 @@ use super::*;
 
 #[test]
 fn block_ufcs_labels_complete_before_the_receiver_suffix() {
-    let source = "module provider; pub elab choose : (. & . & .) -> . { trailing product; trailing product otherwise; impl implementation }";
+    let source = "module provider; pub macro choose : (. & . & .) -> . { trailing product; trailing product otherwise; impl implementation }";
     let mut names = NameSet {
-        current_module_src: Some("module app; import provider(choose);".to_owned()),
+        current_module_src: Some("module app; import provider(macro choose);".to_owned()),
         expression_provider_sources: std::collections::BTreeMap::from([(
             "provider".to_owned(),
             Arc::from(source),
@@ -12,10 +12,10 @@ fn block_ufcs_labels_complete_before_the_receiver_suffix() {
         ..Default::default()
     };
     for input in [
-        "().>choose! { () } oth { () }",
-        "().>>choose! { () } oth { () }",
-        "choose! { () } oth { () }.<<()",
-        "choose! { () } oth { () }.<()",
+        "().>choose { () } oth { () }",
+        "().>>choose { () } oth { () }",
+        "choose { () } oth { () }.<<()",
+        "choose { () } oth { () }.<()",
     ] {
         let cursor = input.find(" oth ").unwrap() + 4;
         let result = complete(&names, &AstScopeProvider::new(&names), input, cursor);
@@ -33,7 +33,7 @@ fn block_ufcs_labels_complete_before_the_receiver_suffix() {
         "provider".to_owned(),
         Arc::from(source.replace("otherwise;", "alternate;")),
     );
-    let input = "choose! { () } alt { () }.<()";
+    let input = "choose { () } alt { () }.<()";
     let cursor = input.find(" alt ").unwrap() + 4;
     let result = complete(&names, &AstScopeProvider::new(&names), input, cursor);
     assert_eq!(
@@ -49,9 +49,9 @@ fn block_ufcs_labels_complete_before_the_receiver_suffix() {
 
 #[test]
 fn neutral_block_labels_use_only_the_current_selected_header() {
-    let source = "module provider; pub elab choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }";
+    let source = "module provider; pub macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }";
     let mut names = NameSet {
-        current_module_src: Some("module app; import provider(choose);".to_owned()),
+        current_module_src: Some("module app; import provider(macro choose);".to_owned()),
         expression_provider_sources: std::collections::BTreeMap::from([(
             "provider".to_owned(),
             Arc::from(source),
@@ -59,9 +59,9 @@ fn neutral_block_labels_use_only_the_current_selected_header() {
         ..Default::default()
     };
     for (input, expected) in [
-        ("choose! { () } oth", vec!["otherwise"]),
-        ("choose! { () } otherwise { () } ", vec![]),
-        ("unknown! { () } oth", vec![]),
+        ("choose { () } oth", vec!["otherwise"]),
+        ("choose { () } otherwise { () } ", vec![]),
+        ("unknown { () } oth", vec![]),
     ] {
         let completion = complete(&names, &AstScopeProvider::new(&names), input, input.len());
         assert_eq!(
@@ -78,7 +78,7 @@ fn neutral_block_labels_use_only_the_current_selected_header() {
         "provider".to_owned(),
         Arc::from(source.replace("product otherwise;", "product alternate;")),
     );
-    let input = "choose! { () } ";
+    let input = "choose { () } ";
     let completion = complete(&names, &AstScopeProvider::new(&names), input, input.len());
     assert_eq!(
         completion

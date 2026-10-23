@@ -1,10 +1,10 @@
 module interpreter/parser;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import interpreter/syntax as ast;
 import list/core as lists;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
@@ -15,24 +15,24 @@ labels { parsed: ast.Expr & lists.List(String) };
 type Result = Parsed | String;
 
 fn success(expr: ast.Expr, rest: lists.List(String)) -> Result {
-  {parsed = (expr, rest)}.>widen_sum!(Result)
+  {parsed = (expr, rest)}.>widen_sum(Result)
 }
 
-fn failure(message: String) -> Result { message.>widen_sum!(Result) }
+fn failure(message: String) -> Result { message.>widen_sum(Result) }
 
 rec(loop) {
   fn expression(tokens: lists.List(String)) -> Result {
-    match! lists.uncons(tokens) {
+    match(lists.uncons(tokens)) {
       .(token: String, rest: lists.List(String)) {
-        if! text.string_eq(token, "add") {
+        if(text.string_eq(token, "add")) {
           recur binary(rest, ast.add)
-        } else if! text.string_eq(token, "app") {
+        } else if(text.string_eq(token, "app")) {
           recur binary(rest, ast.apply)
-        } else if! text.string_eq(token, "fn") {
-          match! lists.uncons(rest) {
+        } else if(text.string_eq(token, "fn")) {
+          match(lists.uncons(rest)) {
             .(name: String, body_tokens: lists.List(String)) {
               let body = recur(cont) expression(body_tokens);
-              match! body {
+              match(body) {
                 .(parsed_body: Parsed) {
                   let .(expr, remaining) = parsed_body.?{parsed};
                   success(ast.function(name, expr), remaining)
@@ -42,8 +42,8 @@ rec(loop) {
             };
             .() { failure("expected function parameter") }
           }
-        } else if! text.string_eq(token, "let") {
-          match! lists.uncons(rest) {
+        } else if(text.string_eq(token, "let")) {
+          match(lists.uncons(rest)) {
             .(name: String, body_tokens: lists.List(String)) {
               recur binary(
               , body_tokens
@@ -52,14 +52,14 @@ rec(loop) {
             };
             .() { failure("expected binding name") }
           }
-        } else if! text.string_eq(token, "var") {
-          match! lists.uncons(rest) {
+        } else if(text.string_eq(token, "var")) {
+          match(lists.uncons(rest)) {
             .(name: String, remaining: lists.List(String)) {
               success(ast.reference(name), remaining)
             };
             .() { failure("expected variable name") }
           }
-        } else match! fmt.string_to_int(token) {
+        } else match(fmt.string_to_int(token)) {
           .(n: I32) { success(ast.number(n), rest) };
           .() { failure(text.string_concat("unknown token: ", token)) }
         }
@@ -69,11 +69,11 @@ rec(loop) {
   };
   fn binary(tokens: lists.List(String), construct: (ast.Expr & ast.Expr) -> ast.Expr) -> Result {
     let first = recur(cont) expression(tokens);
-    match! first {
+    match(first) {
       .(left: Parsed) {
         let .(left_expr, rest) = left.?{parsed};
         let second = recur(cont) expression(rest);
-        match! second {
+        match(second) {
           .(right: Parsed) {
             let .(right_expr, remaining) = right.?{parsed};
             success(construct(left_expr, right_expr), remaining)
@@ -87,16 +87,16 @@ rec(loop) {
 }
 
 pub fn parse(tokens: lists.List(String)) -> String | ast.Expr {
-  match! expression(tokens) {
+  match(expression(tokens)) {
     .(result: Parsed) {
       let .(expr, rest) = result.?{parsed};
-      match! lists.uncons(rest) {
+      match(lists.uncons(rest)) {
         .(extra: String, _tail: lists.List(String)) {
-          text.string_concat("trailing token: ", extra).>widen_sum!(String | ast.Expr)
+          text.string_concat("trailing token: ", extra).>widen_sum(String | ast.Expr)
         };
-        .() { expr.>widen_sum!(String | ast.Expr) }
+        .() { expr.>widen_sum(String | ast.Expr) }
       }
     };
-    .(error: String) { error.>widen_sum!(String | ast.Expr) }
+    .(error: String) { error.>widen_sum(String | ast.Expr) }
   }
 }

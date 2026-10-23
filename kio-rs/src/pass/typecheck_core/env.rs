@@ -60,8 +60,8 @@ where
     pub type_aliases: HashMap<&'m str, super::AliasDef<'m, P>>,
     pub newtypes: HashMap<&'m str, &'m crate::ast::Newtype<P>>,
     pub fn_defs: HashMap<&'m str, &'m crate::ast::FnDef<P>>,
-    /// User elaborator declarations in this module.
-    pub user_elaborators: HashMap<&'m str, &'m crate::ast::UserElaboratorDef<P>>,
+    /// User macro declarations in this module.
+    pub user_macros: HashMap<&'m str, &'m crate::ast::UserMacroDef<P>>,
     /// Whether `import __intrinsics__;` appears in the module's import list.
     pub intrinsics_in_scope: bool,
     /// Singleton exact-role bindings retained for API consumers. Missing
@@ -83,11 +83,11 @@ where
     /// declaring module, not the caller's — a bare `Meters` in a
     /// dependency's `fn dep_len(m: Meters)` must resolve to that
     /// dependency's `(module, Meters)`, never the consumer's same-named
-    /// type. Mirrors `cross_module_user_elaborator_modules`.
+    /// type. Mirrors `cross_module_user_macro_modules`.
     pub cross_module_fn_def_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
-    /// User elaborator declarations imported for `name!(...)` call sites.
-    pub cross_module_user_elaborators: HashMap<&'m str, &'m crate::ast::UserElaboratorDef<P>>,
-    pub cross_module_user_elaborator_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
+    /// User macro declarations imported for `name!(...)` call sites.
+    pub cross_module_user_macros: HashMap<&'m str, &'m crate::ast::UserMacroDef<P>>,
+    pub cross_module_user_macro_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
     /// Cross-module type-alias imports — `import m(Foo);` where `Foo`
     /// is a `pub type`. Used by `unfold_top` so structural equality
     /// sees through imported aliases just like intra-module ones.
@@ -129,7 +129,7 @@ where
     /// Whether `import __comptime__;` brings compile-time helpers into scope.
     pub comptime_in_scope: bool,
     /// Per-module pool for post-Surface type shapes used by structural
-    /// equality and elaborator callbacks.
+    /// equality and macro callbacks.
     pub type_interner: Arc<TypeInterner<P>>,
     /// Package-check-local state shared by every module in this typecheck.
     #[cfg(feature = "surface")]
@@ -290,7 +290,7 @@ where
             type_aliases: HashMap::new(),
             newtypes: HashMap::new(),
             fn_defs: HashMap::new(),
-            user_elaborators: HashMap::new(),
+            user_macros: HashMap::new(),
             intrinsics_in_scope: false,
             roles_in_scope: HashMap::new(),
             default_candidates: Vec::new(),
@@ -299,8 +299,8 @@ where
             env_fn_defs: HashMap::new(),
             cross_module_fn_defs: HashMap::new(),
             cross_module_fn_def_modules: HashMap::new(),
-            cross_module_user_elaborators: HashMap::new(),
-            cross_module_user_elaborator_modules: HashMap::new(),
+            cross_module_user_macros: HashMap::new(),
+            cross_module_user_macro_modules: HashMap::new(),
             cross_module_type_aliases: HashMap::new(),
             cross_module_newtypes: HashMap::new(),
             cross_module_newtype_modules: HashMap::new(),
@@ -328,8 +328,8 @@ where
                 crate::ast::Item::FnDef(d) => {
                     env.fn_defs.insert(d.name.as_str(), d);
                 }
-                crate::ast::Item::Elaborator(s, _ext) => {
-                    env.user_elaborators.insert(s.name.as_str(), s);
+                crate::ast::Item::Macro(s, _ext) => {
+                    env.user_macros.insert(s.name.as_str(), s);
                 }
                 // Every `Item::TypeAlias` reaching a typer phase is a type.
                 crate::ast::Item::TypeAlias(a) => {
@@ -974,10 +974,9 @@ pub fn populate_cross_module_imports<'m, P>(
                                 .insert((from_path.clone(), name.to_owned()), d);
                             env.cross_module_newtype_modules
                                 .insert((from_path.clone(), name.to_owned()), &target.module);
-                        } else if let Some(s) = declaration.elaborator().filter(|s| s.name == name)
-                        {
-                            env.cross_module_user_elaborators.insert(local, s);
-                            env.cross_module_user_elaborator_modules
+                        } else if let Some(s) = declaration.macro_def().filter(|s| s.name == name) {
+                            env.cross_module_user_macros.insert(local, s);
+                            env.cross_module_user_macro_modules
                                 .insert(local, &target.module);
                         // Host items are ordinary public declarations, so a
                         // selective `import` brings them into scope like any

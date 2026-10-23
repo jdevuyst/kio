@@ -3,9 +3,9 @@
 /// `sheet/eval` interprets the tree.
 module sheet/formula;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import sheet/addr(Addr, add_all, add_unique, addr_name, col_of, make_addr, row_of);
 import sheet/list(List, cons, nil);
 import testapi(I32, String, default Bool);
@@ -27,38 +27,38 @@ rec {
   pub newtype Expr : Expr_node { pub constructor expr; pub projector un_expr }
 }
 
-pub fn cell_ref(a: Addr) -> Expr { Expr.expr({ref_at = a}.>widen_sum!(Expr_node)) }
+pub fn cell_ref(a: Addr) -> Expr { Expr.expr({ref_at = a}.>widen_sum(Expr_node)) }
 
-pub fn lit_num(n: I32) -> Expr { Expr.expr({lit = n}.>widen_sum!(Expr_node)) }
+pub fn lit_num(n: I32) -> Expr { Expr.expr({lit = n}.>widen_sum(Expr_node)) }
 
 pub fn add(left: Expr, right: Expr) -> Expr {
-  Expr.expr({add_l = left, add_r = right}.>widen_sum!(Expr_node))
+  Expr.expr({add_l = left, add_r = right}.>widen_sum(Expr_node))
 }
 
 pub fn sub(left: Expr, right: Expr) -> Expr {
-  Expr.expr({sub_l = left, sub_r = right}.>widen_sum!(Expr_node))
+  Expr.expr({sub_l = left, sub_r = right}.>widen_sum(Expr_node))
 }
 
 pub fn mul(left: Expr, right: Expr) -> Expr {
-  Expr.expr({mul_l = left, mul_r = right}.>widen_sum!(Expr_node))
+  Expr.expr({mul_l = left, mul_r = right}.>widen_sum(Expr_node))
 }
 
 pub fn sum_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr({sum_lo = lo, sum_hi = hi}.>widen_sum!(Expr_node))
+  Expr.expr({sum_lo = lo, sum_hi = hi}.>widen_sum(Expr_node))
 }
 
 pub fn max_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr({max_lo = lo, max_hi = hi}.>widen_sum!(Expr_node))
+  Expr.expr({max_lo = lo, max_hi = hi}.>widen_sum(Expr_node))
 }
 
 pub fn if_else(cond: Expr, then_arm: Expr, else_arm: Expr) -> Expr {
-  Expr.expr({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum!(Expr_node))
+  Expr.expr({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum(Expr_node))
 }
 
 rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
-  if! lt_i32(row, row_of(lo)) {
+  if(lt_i32(row, row_of(lo))) {
     acc
-  } else if! lt_i32(col, col_of(lo)) {
+  } else if(lt_i32(col, col_of(lo))) {
     recur block_onto(lo, hi, sub_i32(row, 1), col_of(hi), acc)
   } else {
     recur block_onto(lo, hi, row, sub_i32(col, 1), cons(make_addr(row, col), acc))
@@ -73,7 +73,7 @@ pub fn range_cells(lo: Addr, hi: Addr) -> List(Addr) {
 /// The cells this formula reads, in first-mention order. Each address lands
 /// once, so an aggregate overlapping an explicit reference is still one edge.
 pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
     , .(_n: Lit) { acc }
@@ -114,7 +114,7 @@ fn aggregate(name: String, lo: Addr, hi: Addr) -> String {
 
 /// The formula as a user would write it.
 pub rec(loop) fn render_expr(e: Expr) -> String {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(r: Ref_at) { addr_name(r.?{ref_at}) }
     , .(n: Lit) { int_to_string(n.?{lit}) }

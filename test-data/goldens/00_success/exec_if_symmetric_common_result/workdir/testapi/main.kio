@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -9,7 +9,7 @@ newtype Const[A] : I32 { constructor mk_const; projector un_const }
 
 fn generic_first(condition: Bool) -> I32 {
   let selected =
-    if! condition {
+    if(condition) {
       print("if generic-first\n");
       Const.mk_const(11)
     } else {
@@ -21,7 +21,7 @@ fn generic_first(condition: Bool) -> I32 {
 
 fn concrete_first(condition: Bool) -> I32 {
   let selected =
-    if! condition {
+    if(condition) {
       print("if concrete-first\n");
       Const.mk_const(I32, 21)
     } else {

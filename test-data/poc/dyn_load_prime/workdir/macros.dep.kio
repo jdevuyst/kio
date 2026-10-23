@@ -1,0 +1,7 @@
+dependency macros;
+
+source {
+  path "../../macros/workdir/macros.pkg.kio"
+}
+
+rehost macros/testapi to list_host;

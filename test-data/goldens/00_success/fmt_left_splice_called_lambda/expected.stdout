@@ -1,9 +1,9 @@
 module main;
 
 fn last() {
-  fit!(id.<(.() { () }()))
+  fit(id.<(.() { () }()))
 }
 
 fn first() {
-  fit!(id.<<(.() { () }()))
+  fit(id.<<(.() { () }()))
 }

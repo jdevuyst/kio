@@ -2,15 +2,15 @@
 ///
 /// Nothing here throws, exits, or traps: a fault is an ordinary sum arm
 /// carrying the 1-based position of the token it failed at, and the driver
-/// dispatches it with `match!` exactly the way it dispatches a success. The
+/// dispatches it with `match` exactly the way it dispatches a success. The
 /// seven arms are the complete failure surface of an integer desk calculator
 /// over this grammar, and the fixture exercises every one of them.
 module desk/outcome;
 
 import desk/list(List, cons, count, nil);
 import desk/num(int_eq);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 
 pub labels Fault_kind =
@@ -28,19 +28,19 @@ pub labels Failure = { fault: Fault_kind, pos: I32 };
 /// What one expression came to: a value, or a failure.
 pub labels Answer = { value: I32 } | { failed: Failure };
 
-pub fn bad_token_fault() -> Fault_kind { {bad_token=}.>widen_sum!(Fault_kind) }
+pub fn bad_token_fault() -> Fault_kind { {bad_token=}.>widen_sum(Fault_kind) }
 
-pub fn unmatched_close_fault() -> Fault_kind { {unmatched_close=}.>widen_sum!(Fault_kind) }
+pub fn unmatched_close_fault() -> Fault_kind { {unmatched_close=}.>widen_sum(Fault_kind) }
 
-pub fn unclosed_open_fault() -> Fault_kind { {unclosed_open=}.>widen_sum!(Fault_kind) }
+pub fn unclosed_open_fault() -> Fault_kind { {unclosed_open=}.>widen_sum(Fault_kind) }
 
-pub fn missing_operand_fault() -> Fault_kind { {missing_operand=}.>widen_sum!(Fault_kind) }
+pub fn missing_operand_fault() -> Fault_kind { {missing_operand=}.>widen_sum(Fault_kind) }
 
-pub fn extra_operand_fault() -> Fault_kind { {extra_operand=}.>widen_sum!(Fault_kind) }
+pub fn extra_operand_fault() -> Fault_kind { {extra_operand=}.>widen_sum(Fault_kind) }
 
-pub fn divide_by_zero_fault() -> Fault_kind { {divide_by_zero=}.>widen_sum!(Fault_kind) }
+pub fn divide_by_zero_fault() -> Fault_kind { {divide_by_zero=}.>widen_sum(Fault_kind) }
 
-pub fn negative_exponent_fault() -> Fault_kind { {negative_exponent=}.>widen_sum!(Fault_kind) }
+pub fn negative_exponent_fault() -> Fault_kind { {negative_exponent=}.>widen_sum(Fault_kind) }
 
 pub fn fault_at(kind: Fault_kind, pos: I32) -> Failure { {fault = kind, pos} }
 
@@ -48,9 +48,9 @@ pub fn fault_of(f: Failure) -> Fault_kind { f.?{fault} }
 
 pub fn pos_of(f: Failure) -> I32 { f.?{pos} }
 
-pub fn value_answer(n: I32) -> Answer { {value = n}.>widen_sum!(Answer) }
+pub fn value_answer(n: I32) -> Answer { {value = n}.>widen_sum(Answer) }
 
-pub fn failed_answer(f: Failure) -> Answer { {failed = f}.>widen_sum!(Answer) }
+pub fn failed_answer(f: Failure) -> Answer { {failed = f}.>widen_sum(Answer) }
 
 /// One row per fault kind: how it prints, and an ordinal. Two sum values
 /// cannot be compared without walking both, so the summary counts a kind by
@@ -59,7 +59,7 @@ pub fn failed_answer(f: Failure) -> Answer { {failed = f}.>widen_sum!(Answer) }
 labels Facts = { code: I32, text: String };
 
 fn facts(kind: Fault_kind) -> Facts {
-  match! kind {
+  match(kind) {
     (
     , .(_b: Bad_token) { {code = 0, text = "bad-token"} }
     , .(_c: Unmatched_close) { {code = 1, text = "unmatched-close"} }

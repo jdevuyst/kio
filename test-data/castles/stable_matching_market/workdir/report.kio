@@ -2,7 +2,7 @@ module report;
 
 import certificate as certificate;
 import deferred as deferred;
-import elab/control(if);
+import macros/control(macro if);
 import market as market;
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
@@ -17,7 +17,7 @@ fn number(label: String, value: I32) {
 }
 
 rec(loop) fn pairs(partners: Array(I32), person: I32) {
-  if! market.less(person, array.array_len(partners)) {
+  if(market.less(person, array.array_len(partners))) {
     io.print(text.string_concat("  L", fmt.int_to_string(person)));
     number("-R", array.array_get(partners, person));
     recur pairs(partners, arith.add_i32(person, 1))
@@ -33,8 +33,8 @@ pub fn certificate_report(
 , holder: Array(I32)
 ) {
   let valid = certificate.valid(partner, holder);
-  io.print(if! valid { "valid matching: yes\n" } else { "valid matching: no\n" });
-  if! valid {
+  io.print(if(valid) { "valid matching: yes\n" } else { "valid matching: no\n" });
+  if(valid) {
     number("blocking pairs: ", certificate.blocking_pairs(left, right, partner, holder));
     number("left rank total: ", certificate.rank_total(left, partner));
     number("right rank total: ", certificate.rank_total(right, holder))
@@ -55,8 +55,8 @@ pub fn outcome(
   number("recipient switches: ", result.?{deferred.switches});
   number("rejected proposals: ", result.?{deferred.rejections});
   let partner =
-    if! right_proposes { result.?{deferred.holder} } else { result.?{deferred.partner} };
-  let holder = if! right_proposes { result.?{deferred.partner} } else { result.?{deferred.holder} };
+    if(right_proposes) { result.?{deferred.holder} } else { result.?{deferred.partner} };
+  let holder = if(right_proposes) { result.?{deferred.partner} } else { result.?{deferred.holder} };
   pairs(partner, 0);
   certificate_report(left, right, partner, holder)
 }

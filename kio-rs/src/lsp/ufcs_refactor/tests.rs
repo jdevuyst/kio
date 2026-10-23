@@ -1,6 +1,6 @@
 use super::*;
 use crate::cmd::check::{
-    LspUserElaboratorMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
+    LspUserMacroMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
 };
 
 fn fixture(
@@ -24,7 +24,7 @@ fn fixture(
         dir.path(),
         &crate::package_collection::SourceOverlay::empty(),
         &crate::lsp::cancel::CancellationToken::new(),
-        &LspUserElaboratorMemos::for_editor(),
+        &LspUserMacroMemos::for_editor(),
     )
     .unwrap()
     .unwrap();
@@ -382,7 +382,7 @@ fn ufcs_refactor_runtime_golden_uses_the_action_output() {
         &root,
         &crate::package_collection::SourceOverlay::empty(),
         &crate::lsp::cancel::CancellationToken::new(),
-        &LspUserElaboratorMemos::for_editor(),
+        &LspUserMacroMemos::for_editor(),
     )
     .unwrap()
     .unwrap();
@@ -484,7 +484,7 @@ fn ufcs_refactor_distinct_same_spelled_identity_full_and_focused() {
         &crate::package_collection::SourceOverlay::empty(),
         &dir.path().join("pkg/main.kio"),
         &crate::lsp::cancel::CancellationToken::new(),
-        &LspUserElaboratorMemos::for_editor(),
+        &LspUserMacroMemos::for_editor(),
     )
     .unwrap()
     .unwrap();

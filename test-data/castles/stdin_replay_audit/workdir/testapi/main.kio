@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
 import testapi/fmt(i32_to_string);
@@ -25,7 +25,7 @@ newtype Audit_state : Phase & Balance & Credit & Debit & Checks & Errors & Lines
   }
 
 fn int_eq(left: I32, right: I32) -> Bool {
-  if! leq_i32(left, right) { leq_i32(right, left) } else { .f }
+  if(leq_i32(left, right)) { leq_i32(right, left) } else { .f }
 }
 
 fn initial() -> Audit_state {
@@ -106,24 +106,24 @@ fn add_debit(st: Audit_state, amount: I32) -> Audit_state {
 }
 
 fn finish_state(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 2) { st } else { add_error(st) }
+  if(is_phase(st, 2)) { st } else { add_error(st) }
 }
 
 fn begin(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 0) { set_phase(st, 1) } else { add_error(st) }
+  if(is_phase(st, 0)) { set_phase(st, 1) } else { add_error(st) }
 }
 
 fn finish(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 1) { set_phase(st, 2) } else { add_error(st) }
+  if(is_phase(st, 1)) { set_phase(st, 2) } else { add_error(st) }
 }
 
 fn checkpoint(st: Audit_state) -> Audit_state {
-  if! is_phase(st, 1) { add_check(st) } else { add_error(st) }
+  if(is_phase(st, 1)) { add_check(st) } else { add_error(st) }
 }
 
 fn amount(st: Audit_state, value: I32) -> Audit_state {
-  if! is_phase(st, 1) {
-    if! lt_i32(value, 0) { add_debit(st, value) } else { add_credit(st, value) }
+  if(is_phase(st, 1)) {
+    if(lt_i32(value, 0)) { add_debit(st, value) } else { add_credit(st, value) }
   } else {
     add_error(st)
   }
@@ -131,17 +131,17 @@ fn amount(st: Audit_state, value: I32) -> Audit_state {
 
 fn apply_line(line: String, st: Audit_state) -> Audit_state {
   let next = add_line(st);
-  if! string_eq(line, "BEGIN") {
+  if(string_eq(line, "BEGIN")) {
     begin(next)
-  } else if! string_eq(line, "END") {
+  } else if(string_eq(line, "END")) {
     finish(next)
-  } else if! string_eq(line, "CHECK") {
+  } else if(string_eq(line, "CHECK")) {
     checkpoint(next)
-  } else if! string_eq(line, "CREDIT 12") {
+  } else if(string_eq(line, "CREDIT 12")) {
     amount(next, 12)
-  } else if! string_eq(line, "DEBIT 5") {
+  } else if(string_eq(line, "DEBIT 5")) {
     amount(next, -5)
-  } else if! string_eq(line, "CREDIT 7") {
+  } else if(string_eq(line, "CREDIT 7")) {
     amount(next, 7)
   } else {
     add_error(next)
@@ -151,7 +151,7 @@ fn apply_line(line: String, st: Audit_state) -> Audit_state {
 rec(loop) fn replay(fields: Phase & Balance & Credit & Debit & Checks & Errors & Lines) ->
   Phase & Balance & Credit & Debit & Checks & Errors & Lines
    {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(line: String) {
         let next = apply_line(line, Audit_state.pack(fields));
@@ -174,8 +174,8 @@ fn print_report(st: Audit_state) {
   print_metric("checks: ", i32_to_string(checks_value(st)));
   print_metric("balance: ", i32_to_string(balance_value(st)));
   print_metric("errors: ", i32_to_string(errors_value(st)));
-  if! is_phase(st, 2) {
-    if! is_clean(st) { print("status: OK\n") } else { print("status: REJECTED\n") }
+  if(is_phase(st, 2)) {
+    if(is_clean(st)) { print("status: OK\n") } else { print("status: REJECTED\n") }
   } else {
     print("status: REJECTED\n")
   }

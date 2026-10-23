@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, default Bool, default I32, default String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
@@ -21,11 +21,11 @@ fn render_array[A](show: A -> String, arr: Array(A)) -> String {
   , String & I32
   , String
   , .(state: String & I32) -> (String & I32) | String {
-      match! state {
+      match(state) {
         .(acc: String, i: I32) {
-          if! leq_i32(i, sub_i32(array_len(arr), 1)) {
-            widen_sum!(
-            , if! leq_i32(i, 0) {
+          if(leq_i32(i, sub_i32(array_len(arr), 1))) {
+            widen_sum(
+            , if(leq_i32(i, 0)) {
                 (show(array_get(arr, i)), add_i32(i, 1))
               } else {
                 (string_concat(acc, string_concat(";", show(array_get(arr, i)))), add_i32(i, 1))
@@ -33,7 +33,7 @@ fn render_array[A](show: A -> String, arr: Array(A)) -> String {
             , (String & I32) | String
             )
           } else {
-            widen_sum!(acc, (String & I32) | String)
+            widen_sum(acc, (String & I32) | String)
           }
         }
       }
@@ -44,28 +44,28 @@ fn render_array[A](show: A -> String, arr: Array(A)) -> String {
 
 // --- Array(I32 & String): product payload. ---
 fn show_pair(p: I32 & String) -> String {
-  match! p {
+  match(p) {
     .(n: I32, s: String) { string_concat(int_to_string(n), string_concat("=", s)) }
   }
 }
 
-// --- Array(I32 | String): sum payload. `match!` dispatches on the
+// --- Array(I32 | String): sum payload. `match` dispatches on the
 // arm that the FFI-crossed value inhabits. ---
 fn show_sum(v: I32 | String) -> String {
-  match! v {
+  match(v) {
     (.(n: I32) { string_concat("i:", int_to_string(n)) }, .(s: String) { string_concat("s:", s) })
   }
 }
 
 // --- Array((I32 & String) & Bool): nested product. ---
 fn show_nested(p: (I32 & String) & Bool) -> String {
-  match! p {
+  match(p) {
     .(inner: I32 & String, flag: Bool) {
-      match! inner {
+      match(inner) {
         .(n: I32, s: String) {
           string_concat(
           , int_to_string(n)
-          , string_concat("/", string_concat(s, if! flag { "/T" } else { "/F" }))
+          , string_concat("/", string_concat(s, if(flag) { "/T" } else { "/F" }))
           )
         }
       }
@@ -77,10 +77,10 @@ fn show_nested(p: (I32 & String) & Bool) -> String {
 // two product arms carry distinct leading components (I32 vs Bool)
 // so they remain distinguishable under product commutativity. ---
 fn show_sum_of_prod(v: (I32 & String) | (Bool & String)) -> String {
-  match! v {
+  match(v) {
     (
     , .(l: I32 & String) {
-        match! l {
+        match(l) {
           .(n: I32, s: String) {
             string_concat(
             , "L<"
@@ -90,11 +90,11 @@ fn show_sum_of_prod(v: (I32 & String) | (Bool & String)) -> String {
         }
       }
     , .(r: Bool & String) {
-        match! r {
+        match(r) {
           .(b: Bool, s: String) {
             string_concat(
             , "R<"
-            , string_concat(if! b { "T" } else { "F" }, string_concat(",", string_concat(s, ">")))
+            , string_concat(if(b) { "T" } else { "F" }, string_concat(",", string_concat(s, ">")))
             )
           }
         }
@@ -113,9 +113,9 @@ pub fn main() {
   print("\n");
   // Array(I32 | String): mixed sum arms.
   let mixed = array_make_empty(I32 | String, ());
-  array_push(mixed, widen_sum!(7, I32 | String));
-  array_push(mixed, widen_sum!("hi", I32 | String));
-  array_push(mixed, widen_sum!(9, I32 | String));
+  array_push(mixed, widen_sum(7, I32 | String));
+  array_push(mixed, widen_sum("hi", I32 | String));
+  array_push(mixed, widen_sum(9, I32 | String));
   print(render_array(show_sum, mixed));
   print("\n");
   // Array((I32 & String) & Bool): nested product.
@@ -126,8 +126,8 @@ pub fn main() {
   print("\n");
   // Array((I32 & String) | (Bool & String)): sum of products.
   let sop = array_make_empty((I32 & String) | (Bool & String), ());
-  array_push(sop, widen_sum!((3, "three"), (I32 & String) | (Bool & String)));
-  array_push(sop, widen_sum!((leq_i32(1, 2), "four"), (I32 & String) | (Bool & String)));
+  array_push(sop, widen_sum((3, "three"), (I32 & String) | (Bool & String)));
+  array_push(sop, widen_sum((leq_i32(1, 2), "four"), (I32 & String) | (Bool & String)));
   print(render_array(show_sum_of_prod, sop));
   print("\n")
 }

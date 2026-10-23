@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/spine_elaborators(narrow_prod);
+import macros/spine_macros(macro narrow_prod);
 import testapi(default String);
 import testapi/io(print);
 
@@ -12,7 +12,7 @@ fn shout(s: String) -> String { s }
 // type `(Tag & String)`. UFCS dispatch is type-equality (whole-
 // receiver vs first-param), so passing the whole pair to
 // `shout: String -> String` is rejected. Narrow first with
-// `narrow_prod!`: bidirectional flow through the UFCS chain pins
+// `narrow_prod`: bidirectional flow through the UFCS chain pins
 // the elided target to the next callee's first-param type
 // (`String`), so the user doesn't write the target explicitly.
-pub fn main() { let pair = (Tag.mk_tag(()), "hello\n"); narrow_prod!(pair).>shout.>print }
+pub fn main() { let pair = (Tag.mk_tag(()), "hello\n"); narrow_prod(pair).>shout.>print }

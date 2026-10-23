@@ -1,9 +1,6 @@
 /// Loads an emitted Prime image and observes its numeric literal boundary.
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import eval(prime_apply, prime_eval);
 import host_descriptor(Host_type, host_id_local, host_id_module, host_type_id);
 import hostrec(make_lit_default, serve_default, test_bool_default);
@@ -11,6 +8,9 @@ import imageio(read_image_stdin);
 import loader(Image, Lr_diag, Lr_image);
 import loader(diag_message, export_term, un_load_outcome);
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import prime(Term);
 import result(Ev_done, Ev_stuck);
 import testapi(F64, Scalar, String, default Bool);
@@ -25,8 +25,8 @@ import value(Value, value_to_scalar, vhost, vunit);
 // The compiler-selected F32 value is exactly representable in that carrier.
 fn make_literal(text: String, typ: Host_type) -> Value {
   let id = host_type_id(typ);
-  if! string_eq(host_id_module(id), "hostapi") {
-    if! string_eq(host_id_local(id), "F32") {
+  if(string_eq(host_id_module(id), "hostapi")) {
+    if(string_eq(host_id_local(id), "F32")) {
       vhost(make_scalar(text, "F64"))
     } else {
       make_lit_default(text, typ)
@@ -47,43 +47,37 @@ fn observe_literal(text: String, typ: Host_type) -> Value {
 }
 
 fn call_export(im: Image, name: String, make_lit: (String & Host_type) -> Value) -> . | Value {
-  match! export_term(im, name) {
+  match(export_term(im, name)) {
     (
     , .(t: Term) {
-        match! prime_eval(serve_default, make_lit, test_bool_default, t) {
+        match(prime_eval(serve_default, make_lit, test_bool_default, t)) {
           (
           , .(v: Ev_done) {
-              match! prime_apply(
-              , serve_default
-              , make_lit
-              , test_bool_default
-              , Ev_done.get(v)
-              , vunit()
-              ) {
+              match(prime_apply(serve_default, make_lit, test_bool_default, Ev_done.get(v), vunit())) {
                 (
-                , .(result: Ev_done) { widen_sum!(Ev_done.get(result), . | Value) }
-                , .(_stuck: Ev_stuck) { widen_sum!((), . | Value) }
+                , .(result: Ev_done) { widen_sum(Ev_done.get(result), . | Value) }
+                , .(_stuck: Ev_stuck) { widen_sum((), . | Value) }
                 )
               }
             }
-          , .(_stuck: Ev_stuck) { widen_sum!((), . | Value) }
+          , .(_stuck: Ev_stuck) { widen_sum((), . | Value) }
           )
         }
       }
-    , .(_absent: .) { widen_sum!((), . | Value) }
+    , .(_absent: .) { widen_sum((), . | Value) }
     )
   }
 }
 
 fn difference(label: String, result: . | Value, expected: F64) {
   print(label);
-  match! result {
+  match(result) {
     (
     , .(v: Value) {
-        match! value_to_scalar(v) {
+        match(value_to_scalar(v)) {
           (
           , .(s: Scalar) {
-              match! scalar_as_f64(s) {
+              match(scalar_as_f64(s)) {
                 (
                 , .(actual: F64) {
                     print(f64_to_string(add_f64(sub_f64(actual, expected), 0.0(F64))))
@@ -103,7 +97,7 @@ fn difference(label: String, result: . | Value, expected: F64) {
 }
 
 pub fn main() {
-  match! un_load_outcome(load_package(read_image_stdin())) {
+  match(un_load_outcome(load_package(read_image_stdin()))) {
     (
     , .(loaded: Lr_image) {
         let im = Lr_image.get(loaded);

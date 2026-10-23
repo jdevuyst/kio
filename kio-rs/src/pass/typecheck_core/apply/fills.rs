@@ -164,7 +164,7 @@ pub(super) struct MarkedProjection<'m> {
     specialization: Option<crate::pass::typecheck_core::IsolatedSpecializationContextBuilder>,
     header_cursor: ProjectedHeaderCursor,
     terminal_result: Option<crate::pass::typecheck_core::ScopedType>,
-    transcript: Option<super::UserElaboratorCallTranscript>,
+    transcript: Option<super::UserMacroCallTranscript>,
     sources: Vec<RetainedProjectedSource<'m>>,
     next_template: u32,
     next_producer: u32,
@@ -241,7 +241,7 @@ impl<'m> MarkedProjection<'m> {
         capabilities_for(&self.seal)
     }
 
-    pub(super) fn retain_transcript(&mut self, transcript: super::UserElaboratorCallTranscript) {
+    pub(super) fn retain_transcript(&mut self, transcript: super::UserMacroCallTranscript) {
         assert!(
             self.transcript.replace(transcript).is_none(),
             "a fills projection retained two completion transcripts"
@@ -544,8 +544,8 @@ impl<'m> MarkedProjection<'m> {
 
     pub(super) fn declared_inputs(
         &mut self,
-        action: &crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
-        transcript: &super::UserElaboratorCallTranscript,
+        action: &crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
+        transcript: &super::UserMacroCallTranscript,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<
@@ -623,7 +623,7 @@ impl<'m> MarkedProjection<'m> {
                 expanded_value_slots = 1;
             }
             call_layers.push(
-                crate::pass::typecheck_full::ProjectedUserElaboratorCallLayerShape {
+                crate::pass::typecheck_full::ProjectedUserMacroCallLayerShape {
                     type_slots,
                     value_layer_consumed: layer.value_layer_consumed,
                     expanded_value_slots,
@@ -632,7 +632,7 @@ impl<'m> MarkedProjection<'m> {
             );
         }
         let plan = action.projected_abi_plan(
-            &crate::pass::typecheck_full::ProjectedUserElaboratorCallShape {
+            &crate::pass::typecheck_full::ProjectedUserMacroCallShape {
                 layers: call_layers,
                 observed_types,
             },
@@ -664,7 +664,7 @@ impl<'m> MarkedProjection<'m> {
         let mut previous_requested_recipe_end = None;
         for slot in plan.slots {
             match slot {
-                crate::pass::typecheck_full::ProjectedUserElaboratorSlot::Type {
+                crate::pass::typecheck_full::ProjectedUserMacroSlot::Type {
                     layer,
                     slot,
                     result_focus,
@@ -722,7 +722,7 @@ impl<'m> MarkedProjection<'m> {
                         )?),
                     )));
                 }
-                crate::pass::typecheck_full::ProjectedUserElaboratorSlot::Value {
+                crate::pass::typecheck_full::ProjectedUserMacroSlot::Value {
                     layer,
                     expanded_start,
                     expanded_width,
@@ -858,9 +858,9 @@ impl<'m> MarkedProjection<'m> {
         let mut usage = vec![DeferredTailUsage::default(); candidates.len()];
         if let ProjectedCheckedResult::Recipe(recipe) = checked {
             if !recipe.ty.seal.matches(&self.seal) {
-                return Err(crate::error::Error::elaborator(
+                return Err(crate::error::Error::macro_error(
                     span,
-                    "elaborator returned a recipe from another invocation",
+                    "macro returned a recipe from another invocation",
                 ));
             }
             DeferredTailClassifier::new(&candidates, &mut usage)
@@ -921,9 +921,9 @@ impl<'m> MarkedProjection<'m> {
         tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<FillAdoption, crate::error::Error> {
         if !self.seal.matches(&context.seal) {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 span,
-                "fills elaborator returned relations from another invocation",
+                "fills macro returned relations from another invocation",
             ));
         }
         #[cfg(test)]
@@ -962,9 +962,9 @@ impl<'m> MarkedProjection<'m> {
             if relation.producers.0.as_ref().is_some_and(|root| {
                 !validate_producers(root, self.next_producer, &mut visited_producers)
             }) {
-                return Err(crate::error::Error::elaborator(
+                return Err(crate::error::Error::macro_error(
                     span,
-                    "fills elaborator returned a relation with an unknown producer",
+                    "fills macro returned a relation with an unknown producer",
                 ));
             }
             let destination = match &relation.destination {
@@ -975,16 +975,16 @@ impl<'m> MarkedProjection<'m> {
                         ty.ty.clone()
                     }
                     ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
-                        return Err(crate::error::Error::elaborator(
+                        return Err(crate::error::Error::macro_error(
                             span,
-                            "fills elaborator returned an unauthenticated destination",
+                            "fills macro returned an unauthenticated destination",
                         ));
                     }
                 },
                 _ => {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
-                        "fills elaborator returned a non-projected destination",
+                        "fills macro returned a non-projected destination",
                     ));
                 }
             };
@@ -992,9 +992,9 @@ impl<'m> MarkedProjection<'m> {
                 Value::Projected(value) => match &value.0 {
                     ProjectedValueKind::Type(ty) if ty.seal.matches(&self.seal) => ty.ty.clone(),
                     ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
-                        return Err(crate::error::Error::elaborator(
+                        return Err(crate::error::Error::macro_error(
                             span,
-                            "fills elaborator returned an unauthenticated type candidate",
+                            "fills macro returned an unauthenticated type candidate",
                         ));
                     }
                 },
@@ -1011,9 +1011,9 @@ impl<'m> MarkedProjection<'m> {
                     )?
                 }
                 _ => {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
-                        "fills elaborator returned a candidate other than `__Type__`",
+                        "fills macro returned a candidate other than `__Type__`",
                     ));
                 }
             };
@@ -1086,7 +1086,7 @@ impl<'m> MarkedProjection<'m> {
                     let (store, _owner, delta, _publication) = frontier.parts_mut();
                     store.require_goal_free_after_delta(delta, source.expected, tcx)?
                 };
-                sources.push(crate::pass::typecheck_full::TypedUserElaboratorCallSource {
+                sources.push(crate::pass::typecheck_full::TypedUserMacroCallSource {
                     source_index: source.source_index,
                     source: source.source,
                     expanded_start: source.expanded_start,
@@ -1094,7 +1094,7 @@ impl<'m> MarkedProjection<'m> {
                     expected: expected.ty().clone(),
                 });
             }
-            layers.push(crate::pass::typecheck_full::TypedUserElaboratorCallLayer {
+            layers.push(crate::pass::typecheck_full::TypedUserMacroCallLayer {
                 type_slots,
                 sources,
                 value_layer_consumed: layer.value_layer_consumed,
@@ -1104,7 +1104,7 @@ impl<'m> MarkedProjection<'m> {
             let (store, _owner, delta, _publication) = frontier.parts_mut();
             store.require_goal_free_after_delta(delta, output, tcx)?
         };
-        let typed = crate::pass::typecheck_full::TypedUserElaboratorCall {
+        let typed = crate::pass::typecheck_full::TypedUserMacroCall {
             layers,
             result_ty: Some(public_residual_result.ty().clone()),
         };
@@ -2004,7 +2004,7 @@ fn install_staged_lambda_expected<'m>(
         tcx,
     )?
     else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             lambda.source.span(),
             "a projected lambda expectation did not expose its complete function spine",
         ));
@@ -2051,7 +2051,7 @@ pub(crate) struct ProjectedTemplateSource {
 }
 
 pub(super) struct ProjectedMaterialization {
-    pub(super) typed: crate::pass::typecheck_full::TypedUserElaboratorCall,
+    pub(super) typed: crate::pass::typecheck_full::TypedUserMacroCall,
     pub(super) checked: crate::normalization::EvalRef<crate::normalization::CheckedTerm>,
     pub(super) quoted_public_recipe: Option<Box<crate::pass::typecheck_full::QuotedPublicRecipe>>,
     pub(super) public_terminal_result:
@@ -2428,7 +2428,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
         diagnostic: &'static str,
     ) -> Result<crate::pass::typecheck_core::ClosedProjectedType, crate::error::Error> {
         ty.structural_child(edge)
-            .ok_or_else(|| crate::error::Error::elaborator(self.span, diagnostic))
+            .ok_or_else(|| crate::error::Error::macro_error(self.span, diagnostic))
     }
 
     fn close_expected(
@@ -2470,7 +2470,7 @@ fn split_closed_function_params(
         param, abi_arity, ..
     } = ty
     else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             span,
             format!("{helper} closed with a non-function type"),
         ));
@@ -2483,7 +2483,7 @@ fn split_closed_function_params(
             break;
         }
         let crate::ast::Type::Product { left, right, .. } = cursor else {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 span,
                 format!("{helper} ABI arity exceeded its parameter product spine"),
             ));
@@ -2500,7 +2500,7 @@ fn closed_projected_value_signature(
     span: crate::span::Span,
 ) -> Result<crate::ast::Signature<crate::ast::UncheckedPrime>, crate::error::Error> {
     if names.len() != params.len() {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             span,
             "__term_fn__ closed with the wrong number of value binders",
         ));
@@ -2604,7 +2604,7 @@ fn prepare_lifted_callback_types<'m>(
                     terminal,
                 ))
             }
-            _ => Err(crate::error::Error::elaborator(
+            _ => Err(crate::error::Error::macro_error(
                 span,
                 "a lifted callback lost its checked signature shape",
             )),
@@ -2687,7 +2687,7 @@ fn prepare_lifted_callback_types<'m>(
         }
         // Recursive lowering records its runtime return before typechecking,
         // so that return still uses the caller's lexical type spellings. The
-        // checked elaborator term, by contrast, carries identity-canonical
+        // checked macro term, by contrast, carries identity-canonical
         // types. Canonicalize each side independently before splicing them;
         // otherwise the mixed function type is incorrectly marked canonical
         // and replay treats a qualified-import alias such as `list.List` as
@@ -2722,7 +2722,7 @@ fn prepare_lifted_callback_types<'m>(
             source_canonical,
         )
         .map_err(|_| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 source.source.span(),
                 "a lifted callback lost its public continuation input",
             )
@@ -2753,7 +2753,7 @@ fn prepare_lifted_callback_types<'m>(
                 runtime_return_canonical,
             )
             .map_err(|_| {
-                crate::error::Error::elaborator(
+                crate::error::Error::macro_error(
                     source.source.span(),
                     "lifted callbacks produced different recursive runtime results",
                 )
@@ -2882,7 +2882,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     ..
                 } = product_type
                 else {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "projected product projection closed with a non-product type",
                     ));
@@ -2942,7 +2942,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     bottom_closed.ty().as_type(),
                     crate::ast::Type::Bottom { .. }
                 ) {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "__intrinsic_absurd__ expected a checked Bottom term",
                     ));
@@ -2982,7 +2982,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     ..
                 } = sum_type
                 else {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "__intrinsic_either__ closed with a non-sum type",
                     ));
@@ -3055,13 +3055,13 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     ..
                 } = closed.ty().as_type()
                 else {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "a projected type function closed with a non-forall type",
                     ));
                 };
                 if closed_param.kind != param.kind {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "a projected type function binder had the wrong kind",
                     ));
@@ -3090,7 +3090,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                 let expected_result = self
                     .instantiate_forall(&term_closed, &argument_closed)?
                     .ok_or_else(|| {
-                        crate::error::Error::elaborator(
+                        crate::error::Error::macro_error(
                             span,
                             "__term_type_app__ closed with an inapplicable type argument",
                         )
@@ -3135,7 +3135,7 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     ..
                 } = sum_type
                 else {
-                    return Err(crate::error::Error::elaborator(
+                    return Err(crate::error::Error::macro_error(
                         span,
                         "projected injection closed with a non-sum type",
                     ));
@@ -3617,32 +3617,32 @@ fn resume_staged_lambda<'m>(
 #[allow(clippy::large_enum_variant)] // the owning fills state is already boxed, so its phase payload stays in that single allocation
 pub(super) enum MarkedCallPhase<'m> {
     Project {
-        action: crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
+        action: crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         call: super::OrdinaryCallContinuation<'m>,
         projection: MarkedProjection<'m>,
     },
     Completed {
-        action: crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
+        action: crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        transcript: super::UserElaboratorCallTranscript,
-        expected_application: super::UserElaboratorExpectedApplication,
+        transcript: super::UserMacroCallTranscript,
+        expected_application: super::UserMacroExpectedApplication,
         projection: MarkedProjection<'m>,
     },
     AdoptingFills {
-        ready: crate::pass::typecheck_full::ReadyProjectedUserElaboratorAction<'m>,
+        ready: crate::pass::typecheck_full::ReadyProjectedUserMacroAction<'m>,
         checked: ProjectedCheckedResult,
         adoption: FillAdoption,
         projection: MarkedProjection<'m>,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: super::UserElaboratorExpectedApplication,
+        expected_application: super::UserMacroExpectedApplication,
     },
     Ready {
-        ready: crate::pass::typecheck_full::ReadyUserElaboratorAction,
+        ready: crate::pass::typecheck_full::ReadyUserMacroAction,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: super::UserElaboratorExpectedApplication,
+        expected_application: super::UserMacroExpectedApplication,
     },
 }
 
@@ -3665,7 +3665,7 @@ impl<'m> MarkedCallState<'m> {
             | MarkedCallPhase::Ready {
                 expected_application,
                 ..
-            } => *expected_application == super::UserElaboratorExpectedApplication::Absent,
+            } => *expected_application == super::UserMacroExpectedApplication::Absent,
         }
     }
 
@@ -3687,7 +3687,7 @@ impl<'m> MarkedCallState<'m> {
             | MarkedCallPhase::Ready {
                 expected_application,
                 ..
-            } => *expected_application = super::UserElaboratorExpectedApplication::Deferred,
+            } => *expected_application = super::UserMacroExpectedApplication::Deferred,
         }
     }
 
@@ -3714,7 +3714,7 @@ impl<'m> MarkedCallState<'m> {
     }
 
     pub(super) fn project(
-        action: crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
+        action: crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         call: super::OrdinaryCallContinuation<'m>,
     ) -> Self {
         Self::project_with(
@@ -3738,7 +3738,7 @@ impl<'m> MarkedCallState<'m> {
     }
 
     pub(super) fn project_with(
-        action: crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
+        action: crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         call: super::OrdinaryCallContinuation<'m>,
         projection: MarkedProjection<'m>,
     ) -> Self {
@@ -3752,10 +3752,10 @@ impl<'m> MarkedCallState<'m> {
     }
 
     pub(super) fn ready(
-        ready: crate::pass::typecheck_full::ReadyUserElaboratorAction,
+        ready: crate::pass::typecheck_full::ReadyUserMacroAction,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: super::UserElaboratorExpectedApplication,
+        expected_application: super::UserMacroExpectedApplication,
     ) -> Self {
         Self {
             phase: MarkedCallPhase::Ready {
@@ -3768,11 +3768,11 @@ impl<'m> MarkedCallState<'m> {
     }
 
     pub(super) fn completed(
-        action: crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>,
+        action: crate::pass::typecheck_full::PreparedUserMacroAction<'m>,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        transcript: super::UserElaboratorCallTranscript,
-        expected_application: super::UserElaboratorExpectedApplication,
+        transcript: super::UserMacroCallTranscript,
+        expected_application: super::UserMacroExpectedApplication,
         projection: MarkedProjection<'m>,
     ) -> Self {
         Self {
@@ -3789,13 +3789,13 @@ impl<'m> MarkedCallState<'m> {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) fn adopting_fills(
-        ready: crate::pass::typecheck_full::ReadyProjectedUserElaboratorAction<'m>,
+        ready: crate::pass::typecheck_full::ReadyProjectedUserMacroAction<'m>,
         checked: ProjectedCheckedResult,
         adoption: FillAdoption,
         projection: MarkedProjection<'m>,
         output: crate::pass::typecheck_core::ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: super::UserElaboratorExpectedApplication,
+        expected_application: super::UserMacroExpectedApplication,
     ) -> Self {
         Self {
             phase: MarkedCallPhase::AdoptingFills {
@@ -3927,9 +3927,9 @@ fn projected_source_range(
         } => (
             selecting
                 .call
-                .user_elaborator_transcript
+                .user_macro_transcript
                 .as_ref()
-                .expect("a projected source lost its elaborator transcript")
+                .expect("a projected source lost its macro transcript")
                 .layers
                 .len(),
             *expanded_start,
@@ -3942,9 +3942,9 @@ fn projected_source_range(
         } => (
             selecting
                 .call
-                .user_elaborator_transcript
+                .user_macro_transcript
                 .as_ref()
-                .expect("a projected source lost its elaborator transcript")
+                .expect("a projected source lost its macro transcript")
                 .layers
                 .len(),
             preselected.expanded_start,
@@ -5258,15 +5258,13 @@ fn reserve_observed_cursor_header<'m>(
                 span,
             )?))
         }
-        super::PlannedOrdinaryValue::UserElaborator(call) => match &mut call.state {
-            super::PlannedUserElaboratorCallState::Advancing(call) => {
+        super::PlannedOrdinaryValue::UserMacro(call) => match &mut call.state {
+            super::PlannedUserMacroCallState::Advancing(call) => {
                 reserve_observed_call_header(call, span, exports, frontier, tcx)
             }
-            super::PlannedUserElaboratorCallState::Completed { output, .. }
-            | super::PlannedUserElaboratorCallState::Ready { output, .. } => {
-                Ok(Some(output.clone()))
-            }
-            super::PlannedUserElaboratorCallState::Fills(state) => {
+            super::PlannedUserMacroCallState::Completed { output, .. }
+            | super::PlannedUserMacroCallState::Ready { output, .. } => Ok(Some(output.clone())),
+            super::PlannedUserMacroCallState::Fills(state) => {
                 reserve_observed_marked_header(state, span, exports, frontier, tcx)
             }
         },
@@ -5372,13 +5370,13 @@ fn install_observed_cursor_header<'m>(
             }
             install_observed_header_edge(&mut receiver.child, exports, span, frontier, tcx)
         }
-        super::PlannedOrdinaryValue::UserElaborator(call) => match &mut call.state {
-            super::PlannedUserElaboratorCallState::Advancing(call) => {
+        super::PlannedOrdinaryValue::UserMacro(call) => match &mut call.state {
+            super::PlannedUserMacroCallState::Advancing(call) => {
                 install_observed_call_header(call, span, exports, frontier, tcx)
             }
-            super::PlannedUserElaboratorCallState::Completed { .. }
-            | super::PlannedUserElaboratorCallState::Ready { .. } => Ok(()),
-            super::PlannedUserElaboratorCallState::Fills(state) => {
+            super::PlannedUserMacroCallState::Completed { .. }
+            | super::PlannedUserMacroCallState::Ready { .. } => Ok(()),
+            super::PlannedUserMacroCallState::Fills(state) => {
                 install_observed_marked_header(state, span, exports, frontier, tcx)
             }
         },
@@ -5672,7 +5670,7 @@ fn reserve_projected_header<'m>(
                     pair.source.span(),
                 )
                 .ok_or_else(|| {
-                    crate::error::Error::elaborator(
+                    crate::error::Error::macro_error(
                         pair.source.span(),
                         "a projected pair header crossed incompatible rigid scopes",
                     )
@@ -5832,7 +5830,7 @@ fn project_operand_recipe_from_header(
                     crate::pass::typecheck_core::ScopedTypeEdge::ProductLeft,
                 )
                 .ok_or_else(|| {
-                    crate::error::Error::elaborator(
+                    crate::error::Error::macro_error(
                         pair.source.span(),
                         "a certified pair projected a non-product header",
                     )
@@ -5842,7 +5840,7 @@ fn project_operand_recipe_from_header(
                     crate::pass::typecheck_core::ScopedTypeEdge::ProductRight,
                 )
                 .ok_or_else(|| {
-                    crate::error::Error::elaborator(
+                    crate::error::Error::macro_error(
                         pair.source.span(),
                         "a certified pair projected a non-product header",
                     )
@@ -6238,7 +6236,7 @@ fn materialize_projected_type_slot<'m>(
     slot: Option<crate::pass::typecheck_core::ScopedType>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
-) -> Result<crate::pass::typecheck_full::TypedUserElaboratorTypeSlot, crate::error::Error> {
+) -> Result<crate::pass::typecheck_full::TypedUserMacroTypeSlot, crate::error::Error> {
     let resolved = match slot {
         Some(slot) => {
             let (store, _owner, delta, _publication) = frontier.parts_mut();
@@ -6250,7 +6248,7 @@ fn materialize_projected_type_slot<'m>(
         }
         None => None,
     };
-    Ok(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+    Ok(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
         occurrence: resolved.clone(),
         resolved,
     })
@@ -6381,7 +6379,7 @@ fn lambda_header_leaves_only_open_result(
 fn projected_source_pre_action_error(span: crate::span::Span) -> crate::error::Error {
     crate::error::Error::type_(
         span,
-        "this value source needs a complete type before an `impl(fills)` elaborator can run",
+        "this value source needs a complete type before an `impl(fills)` macro can run",
     )
     .with_help(
         "add a type argument or annotation, or complete the value in an ordinary `let` first",
@@ -6530,7 +6528,7 @@ fn project_recipe_product_child(
     };
     let product_type = recipe.ty.clone();
     let mut ty = product_type.structural_child(edge).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             recipe.ty.ty.ty().span(),
             "a projected source width exceeded its exact product spine",
         )
@@ -6554,7 +6552,7 @@ fn fold_projected_recipe_packet(
         .expect("a declared projected value slot has nonzero ABI width");
     while let Some(left) = pieces.pop() {
         if !left.ty.seal.matches(&packet.ty.seal) {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 left.ty.ty.ty().span(),
                 "a projected ABI packet crossed invocation ownership",
             ));
@@ -6569,7 +6567,7 @@ fn fold_projected_recipe_packet(
                 span,
             )
             .ok_or_else(|| {
-                crate::error::Error::elaborator(
+                crate::error::Error::macro_error(
                     span,
                     "a projected ABI packet combined incompatible rigid scopes",
                 )
@@ -8073,11 +8071,11 @@ pub(crate) fn projected_term_type(
         ProjectedValueKind::CheckedRecipe(recipe) if recipe.matches_proof(proof) => {
             Ok(ProjectedValue(ProjectedValueKind::Type(recipe.ty.clone())))
         }
-        ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::elaborator(
+        ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::macro_error(
             recipe.ty.ty.ty().span(),
             "__term_type__ received a checked term from another invocation",
         )),
-        ProjectedValueKind::Type(ty) => Err(crate::error::Error::elaborator(
+        ProjectedValueKind::Type(ty) => Err(crate::error::Error::macro_error(
             ty.ty.ty().span(),
             "__term_type__ expected a projected checked term",
         )),
@@ -8089,13 +8087,13 @@ pub(crate) fn projected_type_view(
     value: &ProjectedValue,
 ) -> Result<ProjectedTypeView, crate::error::Error> {
     let ProjectedValueKind::Type(ty) = &value.0 else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__type_view__ expected a projected type",
         ));
     };
     if !ty.matches_proof(proof) {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             ty.ty.ty().span(),
             "__type_view__ received a type from another invocation",
         ));
@@ -8152,13 +8150,13 @@ pub(crate) fn projected_type_view(
             }
         }
         crate::ast::Type::Goal { meta, .. } => {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 meta.span,
                 "__type_view__ inspected an unresolved projected type",
             ));
         }
         crate::ast::Type::Infer { meta, .. } => {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 meta.span,
                 "__type_view__ inspected an unresolved source placeholder",
             ));
@@ -8172,13 +8170,13 @@ pub(crate) fn projected_type_arguments(
     value: &ProjectedValue,
 ) -> Result<Option<Vec<ProjectedValue>>, crate::error::Error> {
     let ProjectedValueKind::Type(ty) = &value.0 else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__type_args_fold__ expected a projected type",
         ));
     };
     if !ty.matches_proof(proof) {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             ty.ty.ty().span(),
             "__type_args_fold__ received a type from another invocation",
         ));
@@ -8195,7 +8193,7 @@ pub(crate) fn projected_type_arguments(
                 .map(ProjectedValueKind::Type)
                 .map(ProjectedValue)
                 .ok_or_else(|| {
-                    crate::error::Error::elaborator(
+                    crate::error::Error::macro_error(
                         ty.ty.ty().span(),
                         "__type_args_fold__ could not preserve projected argument identity",
                     )
@@ -8220,11 +8218,11 @@ fn authenticated_projected_type_operand(
             {
                 Ok(ty.clone())
             }
-            ProjectedValueKind::Type(ty) => Err(crate::error::Error::elaborator(
+            ProjectedValueKind::Type(ty) => Err(crate::error::Error::macro_error(
                 ty.ty.ty().span(),
                 format!("{helper} received a type from another projected invocation"),
             )),
-            ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::elaborator(
+            ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::macro_error(
                 recipe.ty.ty.ty().span(),
                 format!("{helper} expected a projected type"),
             )),
@@ -8250,7 +8248,7 @@ fn authenticated_projected_type_operand(
                 producers: ProducerSet::default(),
             })
         }
-        _ => Err(crate::error::Error::elaborator(
+        _ => Err(crate::error::Error::macro_error(
             peer.ty.ty().span(),
             format!("{helper} expected a reflected type with a same-invocation peer"),
         )),
@@ -8272,11 +8270,11 @@ fn authenticated_projected_recipe_operand(
             {
                 Ok(recipe.clone())
             }
-            ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::elaborator(
+            ProjectedValueKind::CheckedRecipe(recipe) => Err(crate::error::Error::macro_error(
                 recipe.ty.ty.ty().span(),
                 format!("{helper} received a term from another projected invocation"),
             )),
-            ProjectedValueKind::Type(ty) => Err(crate::error::Error::elaborator(
+            ProjectedValueKind::Type(ty) => Err(crate::error::Error::macro_error(
                 ty.ty.ty().span(),
                 format!("{helper} expected a projected checked term"),
             )),
@@ -8309,7 +8307,7 @@ fn authenticated_projected_recipe_operand(
                 node: crate::normalization::EvalRef::new(ProjectedRecipeNode::Closed(term.clone())),
             })
         }
-        _ => Err(crate::error::Error::elaborator(
+        _ => Err(crate::error::Error::macro_error(
             peer.ty.ty().span(),
             format!("{helper} expected a checked term"),
         )),
@@ -8336,7 +8334,7 @@ fn projected_binary_type(
     kind: crate::pass::typecheck_core::ScopedTypeBinaryKind,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([left, right]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             format!("{helper} projected dispatch had no projected operand"),
         )
@@ -8348,7 +8346,7 @@ fn projected_binary_type(
         .ty
         .projected_binary_peer(&right.ty, kind, span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 format!("{helper} received types with incompatible rigid scopes"),
             )
@@ -8357,7 +8355,7 @@ fn projected_binary_type(
         .specialization
         .projected_binary_peer(&right.specialization, kind, span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 format!("{helper} received incompatible specialization snapshots"),
             )
@@ -8455,7 +8453,7 @@ pub(crate) fn projected_type_apply(
     argument: &Value,
 ) -> Result<Option<ProjectedValue>, crate::error::Error> {
     let peer = first_projected_type([head, argument]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__type_apply__ projected dispatch had no projected operand",
         )
@@ -8473,7 +8471,7 @@ pub(crate) fn projected_type_apply(
     }
     let span = head.ty.ty().span();
     let ty = head.ty.projected_path_apply(&argument.ty).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             span,
             "__type_apply__ could not preserve the exact projected path identity",
         )
@@ -8482,7 +8480,7 @@ pub(crate) fn projected_type_apply(
         .specialization
         .projected_path_apply(&argument.specialization)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__type_apply__ received incompatible specialization snapshots",
             )
@@ -8520,7 +8518,7 @@ pub(crate) fn projected_type_instantiate(
     argument: &Value,
 ) -> Result<ProjectedTypeInstantiationOutcome, crate::error::Error> {
     let peer = first_projected_type([scheme, argument]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__type_instantiate__ projected dispatch had no projected operand",
         )
@@ -8548,7 +8546,7 @@ pub(crate) fn projected_type_instantiate(
     }
     let span = scheme.ty.ty().span();
     let Some(ty) = scheme.ty.projected_instantiate_forall(&argument.ty) else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             span,
             "__type_instantiate__ could not preserve the exact projected scope",
         ));
@@ -8557,7 +8555,7 @@ pub(crate) fn projected_type_instantiate(
         .specialization
         .projected_instantiate_forall(&argument.specialization)
     else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             span,
             "__type_instantiate__ could not preserve its specialization snapshot",
         ));
@@ -8600,7 +8598,7 @@ pub(crate) fn projected_type_forall_finish(
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([body]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__type_forall__ projected callback returned no projected type",
         )
@@ -8617,7 +8615,7 @@ pub(crate) fn projected_type_forall_finish(
         .ty
         .projected_forall_abstract(param.clone(), span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__type_forall__ generated a binder that would capture an existing rigid",
             )
@@ -8626,7 +8624,7 @@ pub(crate) fn projected_type_forall_finish(
         .specialization
         .projected_forall_abstract(param.clone(), span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__type_forall__ could not preserve its specialization scope",
             )
@@ -8662,7 +8660,7 @@ pub(crate) fn projected_term_type_app(
     argument: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([term, argument]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_type_app__ projected dispatch had no projected operand",
         )
@@ -8676,7 +8674,7 @@ pub(crate) fn projected_term_type_app(
         .ty
         .projected_instantiate_forall(&argument.ty)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__term_type_app__ expected a forall term and a compatible type argument",
             )
@@ -8686,7 +8684,7 @@ pub(crate) fn projected_term_type_app(
         .specialization
         .projected_instantiate_forall(&argument.specialization)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__term_type_app__ could not preserve its specialization scope",
             )
@@ -8737,7 +8735,7 @@ pub(crate) fn projected_intrinsic_injection(
     left: bool,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([sum_type, value]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "projected sum injection had no projected operand",
         )
@@ -8751,7 +8749,7 @@ pub(crate) fn projected_intrinsic_injection(
             ProjectedTypeEdge::SumRight
         })
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 sum_type.ty.ty().span(),
                 "projected injection expected a sum type",
             )
@@ -8785,7 +8783,7 @@ pub(crate) fn projected_intrinsic_if_then_else(
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer =
         first_projected_type([result_type, condition, true_body, false_body]).ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 crate::span::Span::new(0, 0),
                 "__intrinsic_if_then_else__ projected dispatch had no projected operand",
             )
@@ -8838,7 +8836,7 @@ pub(crate) fn projected_term_local(
     name: String,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([ty, peer]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "a projected local requires a projected type",
         )
@@ -8860,7 +8858,7 @@ pub(crate) fn projected_term_let(
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([value_type, value, body]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_let__ projected dispatch had no projected operand",
         )
@@ -8891,7 +8889,7 @@ fn projected_function_parameter_types(
 ) -> Result<Vec<ProjectedType>, crate::error::Error> {
     let crate::ast::Type::Function { abi_arity, .. } = function_type.specialization.ty().as_type()
     else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             function_type.ty.ty().span(),
             "__term_fn__ expected a function type",
         ));
@@ -8911,7 +8909,7 @@ fn projected_function_parameter_types(
         let left = cursor
             .structural_child(ProjectedTypeEdge::ProductLeft)
             .ok_or_else(|| {
-                crate::error::Error::elaborator(
+                crate::error::Error::macro_error(
                     cursor.ty.ty().span(),
                     "__term_fn__ ABI arity exceeded its exact parameter product spine",
                 )
@@ -8929,7 +8927,7 @@ pub(crate) fn projected_term_fn_parameter_types(
     function_type: &Value,
 ) -> Result<Vec<ProjectedValue>, crate::error::Error> {
     let peer = first_projected_type([function_type]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_fn__ projected parameter preparation had no projected function type",
         )
@@ -8951,7 +8949,7 @@ pub(crate) fn projected_term_fn(
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([function_type, body]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_fn__ projected dispatch had no projected operand",
         )
@@ -8960,7 +8958,7 @@ pub(crate) fn projected_term_fn(
         authenticated_projected_type_operand(proof, function_type, peer, "__term_fn__")?;
     let params = projected_function_parameter_types(&function_type)?;
     if names.len() != params.len() {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             function_type.ty.ty().span(),
             "__term_fn__ generated the wrong number of value binders",
         ));
@@ -8987,7 +8985,7 @@ pub(crate) fn projected_term_type_fn_finish(
     body: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([body]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_type_fn__ projected callback returned no projected term",
         )
@@ -9005,7 +9003,7 @@ pub(crate) fn projected_term_type_fn_finish(
         .ty
         .projected_forall_abstract(param.clone(), span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__term_type_fn__ generated a binder that would capture an existing rigid",
             )
@@ -9015,7 +9013,7 @@ pub(crate) fn projected_term_type_fn_finish(
         .specialization
         .projected_forall_abstract(param.clone(), span)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__term_type_fn__ could not preserve its specialization scope",
             )
@@ -9061,7 +9059,7 @@ pub(crate) fn projected_intrinsic_pair(
     right: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([left, right]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__intrinsic_pair__ projected dispatch had no projected operand",
         )
@@ -9078,7 +9076,7 @@ pub(crate) fn projected_intrinsic_pair(
             span,
         )
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__intrinsic_pair__ received terms with incompatible rigid scopes",
             )
@@ -9092,7 +9090,7 @@ pub(crate) fn projected_intrinsic_pair(
             span,
         )
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 span,
                 "__intrinsic_pair__ received incompatible specialization snapshots",
             )
@@ -9125,7 +9123,7 @@ pub(crate) fn projected_intrinsic_product_projection(
     left: bool,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([product_type, value]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "projected product projection had no projected operand",
         )
@@ -9148,7 +9146,7 @@ pub(crate) fn projected_intrinsic_product_projection(
         ProjectedTypeEdge::ProductRight
     };
     let mut result = product_type.structural_child(edge).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             product_type.ty.ty().span(),
             "projected product projection expected a product type",
         )
@@ -9176,7 +9174,7 @@ pub(crate) fn projected_term_call(
     argument: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([function_type, function, argument]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_call__ projected dispatch had no projected operand",
         )
@@ -9188,7 +9186,7 @@ pub(crate) fn projected_term_call(
     let parameter = function_type
         .structural_child(ProjectedTypeEdge::FunctionParam)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 function_type.ty.ty().span(),
                 "__term_call__ expected a function type",
             )
@@ -9220,7 +9218,7 @@ pub(crate) fn projected_intrinsic_absurd(
     result_type: &Value,
 ) -> Result<ProjectedValue, crate::error::Error> {
     let peer = first_projected_type([bottom, result_type]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__intrinsic_absurd__ projected dispatch had no projected operand",
         )
@@ -9233,7 +9231,7 @@ pub(crate) fn projected_intrinsic_absurd(
         bottom.ty.specialization.ty().as_type(),
         crate::ast::Type::Bottom { .. }
     ) {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             bottom.ty.ty.ty().span(),
             "__intrinsic_absurd__ expected a checked Bottom term",
         ));
@@ -9267,7 +9265,7 @@ pub(crate) fn projected_intrinsic_either_prepare(
     right_name: String,
 ) -> Result<(ProjectedEitherPrepared, ProjectedValue, ProjectedValue), crate::error::Error> {
     let peer = first_projected_type([sum_type, result_type, value]).ok_or_else(|| {
-        crate::error::Error::elaborator(
+        crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__intrinsic_either__ projected dispatch had no projected operand",
         )
@@ -9285,7 +9283,7 @@ pub(crate) fn projected_intrinsic_either_prepare(
     let left_type = sum_type
         .structural_child(ProjectedTypeEdge::SumLeft)
         .ok_or_else(|| {
-            crate::error::Error::elaborator(
+            crate::error::Error::macro_error(
                 sum_type.ty.ty().span(),
                 "__intrinsic_either__ expected a sum type",
             )
@@ -9364,13 +9362,13 @@ pub(crate) fn specialize_projected_term(
     target: &Value,
 ) -> Result<ProjectedSpecializationOutcome, crate::error::Error> {
     let ProjectedValueKind::CheckedRecipe(recipe) = &term.0 else {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             crate::span::Span::new(0, 0),
             "__term_specialize__ expected a projected checked term",
         ));
     };
     if !recipe.matches_proof(proof) {
-        return Err(crate::error::Error::elaborator(
+        return Err(crate::error::Error::macro_error(
             recipe.ty.ty.ty().span(),
             "__term_specialize__ received a checked term from another invocation",
         ));
@@ -9399,7 +9397,7 @@ pub(crate) fn specialize_projected_term(
                     Ok((ty.specialization.clone(), ty.producers.clone()))
                 }
                 ProjectedValueKind::Type(_) | ProjectedValueKind::CheckedRecipe(_) => {
-                    Err(crate::error::Error::elaborator(
+                    Err(crate::error::Error::macro_error(
                         span,
                         "__term_specialize__ received an unauthenticated projected type",
                     ))
@@ -9416,7 +9414,7 @@ pub(crate) fn specialize_projected_term(
                     ProducerSet::default(),
                 ))
             }
-            _ => Err(crate::error::Error::elaborator(
+            _ => Err(crate::error::Error::macro_error(
                 span,
                 "__term_specialize__ expected reflected pattern and target types",
             )),
@@ -10516,8 +10514,8 @@ pub(crate) fn projected_error_recipes_for_test() -> (
         &proof,
         &source,
         &checked_error(
-            crate::normalization::CheckedTermErrorKind::Elaborator,
-            "nested projected elaborator failure",
+            crate::normalization::CheckedTermErrorKind::Macro,
+            "nested projected macro failure",
         ),
     )
     .expect("pair a projected source with a closed checked error");
@@ -10536,8 +10534,8 @@ pub(crate) fn projected_error_recipes_for_test() -> (
         &proof,
         &nested_left,
         &checked_error(
-            crate::normalization::CheckedTermErrorKind::Elaborator,
-            "right projected elaborator failure",
+            crate::normalization::CheckedTermErrorKind::Macro,
+            "right projected macro failure",
         ),
     )
     .expect("retain checked-error traversal order through nested projected pairs");
@@ -14528,7 +14526,13 @@ mod tests {
                 })
                 .unwrap_or_else(|| panic!("projected regular UFCS `{name}` witness"));
             let source = &witness.body;
-            assert!(matches!(source, crate::ast::Expr::Ufcs { bang: None, .. }));
+            assert!(matches!(
+                source,
+                crate::ast::Expr::Ufcs {
+                    macro_call: None,
+                    ..
+                }
+            ));
             let mut elaborations = Elaborations::new();
             let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations).at_item(item_index);
             for parameter in witness.sig.value_params() {
@@ -15345,10 +15349,10 @@ mod tests {
             body: Box::new(path("value")),
             meta: meta(),
         };
-        let bang = Expr::UserElaborator {
+        let macro_call = Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
-            form: crate::ast::UserElaboratorCallForm::Ordinary,
+            form: crate::ast::UserMacroCallForm::Ordinary,
             name: "user".to_owned(),
             args: Vec::new(),
             meta: meta(),
@@ -15381,7 +15385,7 @@ mod tests {
             root(lambda),
             root(let_value),
             root(sequence),
-            root(bang),
+            root(macro_call),
             root(rec_order),
             call(
                 access(path("surface")),
@@ -16194,7 +16198,7 @@ mod tests {
             specialization: None,
             header_cursor: ProjectedHeaderCursor::default(),
             terminal_result: Some(output.clone()),
-            transcript: Some(super::super::UserElaboratorCallTranscript {
+            transcript: Some(super::super::UserMacroCallTranscript {
                 action: crate::ast::NodeId(1),
                 source_span: source.span(),
                 layers: Vec::new(),

@@ -1,6 +1,6 @@
 module minesweeper_frontier/report;
 
-import elab/control(if);
+import macros/control(macro if);
 import minesweeper_frontier/counts(build_counts, sum_revealed_counts);
 import minesweeper_frontier/frontier(
 , build_classes
@@ -68,7 +68,7 @@ fn report_clone(revealed: Array(Bool), best_index: I32) {
 
 fn report_recommendation(counts: Array(I32), classes: Array(I32), revealed: Array(Bool)) {
   let .(best_index: I32, best_count: I32) = find_best_safe(0, classes, counts, cell_count(), 9);
-  if! arith.leq_i32(best_index, last_index()) {
+  if(arith.leq_i32(best_index, last_index())) {
     print("recommend index=");
     print_i32(best_index);
     print(" neighboring_mines=");

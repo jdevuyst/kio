@@ -16,7 +16,7 @@ pub enum ExitCode {
     Import,
     NameRes,
     Type,
-    Elaborator,
+    Macro,
     Totality,
     Bridge,
     /// Dependency / resolution error (non-specific) per
@@ -73,7 +73,7 @@ impl ExitCode {
             ExitCode::Import => 12,
             ExitCode::NameRes => 13,
             ExitCode::Type => 14,
-            ExitCode::Elaborator => 15,
+            ExitCode::Macro => 15,
             ExitCode::Totality => 16,
             ExitCode::Bridge => 20,
             ExitCode::Dep => 30,

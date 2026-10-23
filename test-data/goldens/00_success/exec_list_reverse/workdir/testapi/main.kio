@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(one_sum, widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro one_sum, macro widen_sum);
 import testapi(I32, default String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -10,23 +10,23 @@ import testapi/text(string_concat);
 
 rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
 
 // Reverse a list via fold-with-cons. State is `(remaining, output)`;
 // each step conses the head of `remaining` onto `output` and advances.
 // Exit when `remaining` is empty. The reversed-accumulator approach
 // keeps every step O(1).
 fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
-  match! state {
+  match(state) {
     .(remaining: List(A), output: List(A)) {
-      match! remaining.>List.un_list {
+      match(remaining.>List.un_list) {
         (
         , .(x: A, rest: List(A)) {
-            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+            widen_sum((rest, push(x, output)), (List(A) & List(A)) | List(A))
           }
-        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        , .(_empty: .) { widen_sum(output, (List(A) & List(A)) | List(A)) }
         )
       }
     }
@@ -39,21 +39,21 @@ fn reverse[A](xs: List(A)) -> List(A) {
 
 // Print a list of I32 as comma-separated values followed by a newline.
 fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
-  match! state {
+  match(state) {
     .(xs: List(I32), acc: String) {
-      match! xs.>List.un_list {
+      match(xs.>List.un_list) {
         (
         , .(x: I32, rest: List(I32)) {
             let sep =
-              match! rest.>List.un_list {
+              match(rest.>List.un_list) {
                 (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
               };
-            widen_sum!(
+            widen_sum(
             , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))
             , (List(I32) & String) | .
             )
           }
-        , .(_empty: .) { print(string_concat(acc, "\n")); widen_sum!((), (List(I32) & String) | .) }
+        , .(_empty: .) { print(string_concat(acc, "\n")); widen_sum((), (List(I32) & String) | .) }
         )
       }
     }

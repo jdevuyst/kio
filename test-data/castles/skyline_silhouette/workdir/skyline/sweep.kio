@@ -9,8 +9,8 @@
 /// roof to the next.
 module skyline/sweep;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import skyline/events as events;
 import skyline/list as lst;
 import skyline/logic as logic;
@@ -51,13 +51,13 @@ pub fn x_of(p: Point) -> I32 { p.?{x} }
 pub fn y_of(p: Point) -> I32 { p.?{y} }
 
 pub fn steps_of(t: Trace) -> lst.List(Step) {
-  match! t {
+  match(t) {
     .(s: lst.List(Step), _p: lst.List(Point)) { s }
   }
 }
 
 pub fn points_of(t: Trace) -> lst.List(Point) {
-  match! t {
+  match(t) {
     .(_s: lst.List(Step), p: lst.List(Point)) { p }
   }
 }
@@ -65,7 +65,7 @@ pub fn points_of(t: Trace) -> lst.List(Point) {
 /// A left edge admits its building's roof; a right edge withdraws one roof of
 /// that height — and only one.
 fn apply(e: events.Event, held: ms.Active) -> ms.Active {
-  if! events.is_enter(events.edge_of(e)) {
+  if(events.is_enter(events.edge_of(e))) {
     ms.add(events.level_of(e), held)
   } else {
     ms.drop(events.level_of(e), held)
@@ -88,7 +88,7 @@ rec(loop) {
   , steps: lst.List(Step)
   , points: lst.List(Point)
   ) -> Trace {
-    match! es.>lst.List.un_list {
+    match(es.>lst.List.un_list) {
       (
       , .(e: events.Event, rest: lst.List(events.Event)) {
           let next = apply(e, held);
@@ -96,7 +96,7 @@ rec(loop) {
           let changed = logic.not(logic.eq(top, previous));
           let row = step(events.at_of(e), events.tag_of(e), next, top, changed);
           let marked =
-            if! changed { lst.cons(point(events.at_of(e), top), points) } else { points };
+            if(changed) { lst.cons(point(events.at_of(e), top), points) } else { points };
           recur walk(rest, next, top, lst.cons(row, steps), marked)
         }
       , .(_empty: .) { finish(steps, points) }

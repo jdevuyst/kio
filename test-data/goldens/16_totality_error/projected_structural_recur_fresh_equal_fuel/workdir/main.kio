@@ -1,5 +1,5 @@
 module main;
 
-import elab(guarded);
+import macros(macro guarded);
 
-fn witness() { guarded!(((), ()), .) }
+fn witness() { guarded(((), ()), .) }

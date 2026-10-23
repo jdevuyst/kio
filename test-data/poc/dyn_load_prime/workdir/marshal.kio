@@ -14,7 +14,7 @@ import value(V_closure, V_host, V_hostfn, V_product, V_sum, V_unit, Value);
 /// and returns `Ev_fold(step, init)`. The evaluator's CEK machine owns the
 /// actual fold, so nested guest loops are just nested continuation frames.
 ///
-/// This module stays `match!`-free: the direct intrinsic form keeps recursive
+/// This module stays `match`-free: the direct intrinsic form keeps recursive
 /// `Value` destructuring local to this runtime-call boundary.
 pub fn loop_op(dom: Value) -> Call_result {
   __either__(

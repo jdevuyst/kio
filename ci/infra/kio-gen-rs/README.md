@@ -28,7 +28,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
   workdir/                     # directory where the case commands run
     prog.pkg.kio               # five targets; invoked control probes declare all eight
     prog.kio                   # module prog; generated host mirror + helpers + fn gen(...)
-    *.kio         # elab support files in surface-mode cases
+    *.kio         # macro support files in surface-mode cases
   run.args                     # exact generated core, surface, control, or recursion protocol
   run.sh                       # valid I32 results: capture execution, then kio test
   expected.stdout              # independently modelled control trace, otherwise empty
@@ -36,7 +36,7 @@ Each generated case is a directory mirroring the case-directory shape `ci/run-te
   expected.stderr.ignore       # marker — error-message wording is impl-specific
 ```
 
-`<NN_category>` matches a row in [`specs/exit-codes.md`](../../../specs/exit-codes.md) — `00_success`, `11_parse_error`, `12_import_error`, `13_name_resolution_error`, `14_type_error`, `15_elaborator_error`. Generated cases ship `expected.stderr.ignore` because the generator has no portable stderr oracle (kio-rs's wording is implementation-specific). A generated case ships `IS_KIO_PRIME` exactly when its program is Kio'-shaped end to end: a non-surface-mode program, and for mutants only a mutation that preserves the Kio' grammar. Surface-mode cases (elabs, operators, other sugar) do not carry it. The `host` mirror declarations are ordinary Kio' items and do not disqualify a case.
+`<NN_category>` matches a row in [`specs/exit-codes.md`](../../../specs/exit-codes.md) — `00_success`, `11_parse_error`, `12_import_error`, `13_name_resolution_error`, `14_type_error`, `15_macro_error`. Generated cases ship `expected.stderr.ignore` because the generator has no portable stderr oracle (kio-rs's wording is implementation-specific). A generated case ships `IS_KIO_PRIME` exactly when its program is Kio'-shaped end to end: a non-surface-mode program, and for mutants only a mutation that preserves the Kio' grammar. Surface-mode cases (macros, operators, other sugar) do not carry it. The `host` mirror declarations are ordinary Kio' items and do not disqualify a case.
 
 The batch directory also gets a `README.md` describing the seed, the generator version, the flag set, and an exit-code distribution summary.
 
@@ -99,7 +99,7 @@ This design assumes the oracle is **point-precise**. Both goldens and kio-gen ou
 
 ## Strong oracle for invalid programs
 
-The mutator labels each corruption with the error category it intends to fire (parse / import / name-res / type / elaborator) and asserts the implementation rejects with the matching exit code from [`specs/exit-codes.md`](../../../specs/exit-codes.md). Two reasons to do this strong-from-start:
+The mutator labels each corruption with the error category it intends to fire (parse / import / name-res / type / macro) and asserts the implementation rejects with the matching exit code from [`specs/exit-codes.md`](../../../specs/exit-codes.md). Two reasons to do this strong-from-start:
 
 1. It catches **generator** bugs: a "should be type error" that silently parses-and-runs is a generator failure, not an implementation failure.
 2. It enables the exit-code coverage check below.
@@ -115,7 +115,7 @@ Layer (2) of the self-tests asserts that the corpus hits every **coverable** exi
 - **12 (import error)** — mutator imports an unexported item from a helper module.
 - **13 (name resolution error)** — mutator wraps the body in a `let` referencing an unbound name.
 - **14 (type error)** — mutator wraps the body in a `let` whose RHS has the wrong type.
-- **15 (elaborator error)** — mutator appends a top-level `defn` whose body is `into!("…")` checked against an `I32` return.
+- **15 (macro error)** — mutator appends a top-level `defn` whose body is `into("…")` checked against an `I32` return.
 
 **Non-coverable:**
 
@@ -123,7 +123,7 @@ Layer (2) of the self-tests asserts that the corpus hits every **coverable** exi
 - **2 (CLI usage error)** — about how `kio` is invoked, not Kio source.
 - **10 (non-specific compile error)** — the mutators isolate a more specific compile category.
 - **20 / 40 (bridge / build error)** — the mutator catalog changes module source inside an otherwise valid fixed package and build contract.
-- **16 (totality error)** — the catalog preserves positive recursive types and structural recursion. Non-exhaustive and unreachable `match!` clauses belong to elaborator category 15.
+- **16 (totality error)** — the catalog preserves positive recursive types and structural recursion. Non-exhaustive and unreachable `match` clauses belong to macro category 15.
 
 ## Surface coverage
 
@@ -148,32 +148,32 @@ cells; fixed support declarations supply their explicitly described helpers:
   vary independently. The oracle checks receiver evaluation, replacement
   order, updated and untouched payloads, and named binding results through
   the existing control protocol.
-- `match!` with `.(p: T) { ... }` clauses.
-- The 17 surface elab forms — emitted as identity coercions
+- `match` with `.(p: T) { ... }` clauses.
+- The 17 surface macro forms — emitted as identity coercions
   (the generator picks the surface form; the Kio' fallback
   elaborates to the inner expression for all of them, since
-  identity is admitted by every elab). The emission policy is
+  identity is admitted by every macro). The emission policy is
   **primarily spine, low rate of algebraic** (per
   [`docs/guides/using-libraries.md`](../../../docs/guides/using-libraries.md)):
   within the wrap subset (~10% of expressions), the per-subset
   roll is 80% spine / 20% algebraic. This makes the spine palette
   the everyday material while keeping the algebraic codepath
   exercised on every batch.
-  - **Spine palette** (11 forms): `reorder_sum!`, `reorder_prod!`,
-    `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`,
-    `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`,
-    `fit!`. Per-form applicability is gated by the source's
+  - **Spine palette** (11 forms): `reorder_sum`, `reorder_prod`,
+    `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`,
+    `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`,
+    `fit`. Per-form applicability is gated by the source's
     outermost shape: `reorder_*` / `narrow_*` / `widen_*` /
     `flatten_*` require the matching axis (sum or product) at the
     top level (`flatten_*` identity-short-circuits whenever source
-    already equals target); `one_sum!` / `one_prod!` only fire
+    already equals target); `one_sum` / `one_prod` only fire
     at atomic sources (the safe degenerate-identity case);
-    `fit!` admits identity at every type and carries a higher
+    `fit` admits identity at every type and carries a higher
     per-form weight as the most general spine form.
-  - **Algebraic palette** (6 forms): `iso!`, `into!`, `onto!`,
-    `align!`, `ease!`, `atom!`. `atom!` restricts to atomic targets
+  - **Algebraic palette** (6 forms): `iso`, `into`, `onto`,
+    `align`, `ease`, `atom`. `atom` restricts to atomic targets
     per the spec's single-arm rule; the other five admit identity
-    at every type (the freely composed term domain uses monomorphic targets, so `ease!`'s
+    at every type (the freely composed term domain uses monomorphic targets, so `ease`'s
     polymorphic-source/target rejection never applies).
 - UFCS — all four spellings, `.>`, `.>>`, `.<`, and `.<<`, with bare
   receiver-only forms and nonempty argument tails. Rewrapping a generated
@@ -209,9 +209,9 @@ cells; fixed support declarations supply their explicitly described helpers:
   claims are appended to `prog.kio` for every surface-mode case. The
   standard `run.args` path runs `kio test` before build/run; eligible integer
   cases discharge them together with the observed-result claim after execution.
-- User-defined `elab` declarations — surface-mode cases generate a
-  `kio_gen_elaborators.kio` module with 1-3 ordinary-schedule
-  identity-style `pub elab` declarations plus one capture-free
+- User-defined `macro` declarations — surface-mode cases generate a
+  `kio_gen_macros.kio` module with 1-3 ordinary-schedule
+  identity-style `pub macro` declarations plus one capture-free
   `impl(fills)` identity. Ordinary implementation bodies are randomized
   over a bounded reflected-ABI template catalog
   (`__either__` target requests, `__term_let__`, reflected product /
@@ -222,9 +222,9 @@ cells; fixed support declarations supply their explicitly described helpers:
   Every generated implementation is a `pure fn`, matching the compile-time
   execution contract.
 
-Surface-mode packages import those elabs from same-package
-root module files. The generator writes the POC elab support
-files into each generated case that can mention a bang-call surface form.
+Surface-mode packages import those macros from same-package
+root module files. The generator writes the POC macro support
+files into each generated case that can mention a macro call surface form.
 
 ## Generator self-tests
 

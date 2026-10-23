@@ -1,0 +1,21 @@
+package user_macro_target_placeholder_needs_context;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  user_macro_target_placeholder_needs_context;
+  user_macro_target_placeholder_needs_context/**;
+  macros
+}

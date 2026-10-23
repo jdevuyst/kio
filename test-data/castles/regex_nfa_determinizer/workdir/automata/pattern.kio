@@ -5,9 +5,9 @@
 module automata/pattern;
 
 import automata/symbol(letter);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(lt_i32);
 import testapi/iter(loop);
@@ -24,26 +24,26 @@ rec {
   pub newtype Pattern : Node { constructor pack; pub projector unpack }
 }
 
-pub fn chr(code: I32) -> Pattern { Pattern.pack({chr = code}.>widen_sum!(Node)) }
+pub fn chr(code: I32) -> Pattern { Pattern.pack({chr = code}.>widen_sum(Node)) }
 
 pub fn cat(left: Pattern, right: Pattern) -> Pattern {
-  Pattern.pack({cat = (left, right)}.>widen_sum!(Node))
+  Pattern.pack({cat = (left, right)}.>widen_sum(Node))
 }
 
 pub fn alt(left: Pattern, right: Pattern) -> Pattern {
-  Pattern.pack({alt = (left, right)}.>widen_sum!(Node))
+  Pattern.pack({alt = (left, right)}.>widen_sum(Node))
 }
 
-pub fn star(body: Pattern) -> Pattern { Pattern.pack({star = body}.>widen_sum!(Node)) }
+pub fn star(body: Pattern) -> Pattern { Pattern.pack({star = body}.>widen_sum(Node)) }
 
-pub fn plus(body: Pattern) -> Pattern { Pattern.pack({plus = body}.>widen_sum!(Node)) }
+pub fn plus(body: Pattern) -> Pattern { Pattern.pack({plus = body}.>widen_sum(Node)) }
 
-pub fn opt(body: Pattern) -> Pattern { Pattern.pack({opt = body}.>widen_sum!(Node)) }
+pub fn opt(body: Pattern) -> Pattern { Pattern.pack({opt = body}.>widen_sum(Node)) }
 
 /// How tightly a node binds: alternation loosest, then concatenation, then
 /// the postfix repetitions, with a bare letter tightest.
 fn tightness(p: Pattern) -> I32 {
-  match! p.>Pattern.unpack {
+  match(p.>Pattern.unpack) {
     (
     , .(_x: Chr) { 3 }
     , .(_x: Cat) { 1 }
@@ -60,7 +60,7 @@ fn tightness(p: Pattern) -> I32 {
 /// the whole of why `(a|b)*abb` does not come back out as `((a|b))*(a)(b)(b)`.
 rec(loop) fn show_at(p: Pattern, floor: I32) -> String {
   let text =
-    match! p.>Pattern.unpack {
+    match(p.>Pattern.unpack) {
       (
       , .(x: Chr) { letter(x.?{chr}) }
       , .(x: Cat) {
@@ -79,7 +79,7 @@ rec(loop) fn show_at(p: Pattern, floor: I32) -> String {
       , .(x: Opt) { string_concat(recur(cont) show_at(x.?{opt}, 3), "?") }
       )
     };
-  if! lt_i32(tightness(p), floor) { string_concat("(", string_concat(text, ")")) } else { text }
+  if(lt_i32(tightness(p), floor)) { string_concat("(", string_concat(text, ")")) } else { text }
 }
 
 pub fn show(p: Pattern) -> String { show_at(p, 0) }

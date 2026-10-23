@@ -7,26 +7,26 @@
 module book/order;
 
 import book/num(int_lt);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32);
 
 pub labels Side = { buy: . } | { sell: . };
 
-pub fn buy_side() -> Side { {buy=}.>widen_sum!(Side) }
+pub fn buy_side() -> Side { {buy=}.>widen_sum(Side) }
 
-pub fn sell_side() -> Side { {sell=}.>widen_sum!(Side) }
+pub fn sell_side() -> Side { {sell=}.>widen_sum(Side) }
 
 pub fn is_buy(side: Side) -> Bool {
-  match! side {
+  match(side) {
     (.(_b: Buy) { .t }, .(_s: Sell) { .f })
   }
 }
 
 pub fn side_text(side: Side) -> String {
-  match! side {
+  match(side) {
     (.(_b: Buy) { "buy" }, .(_s: Sell) { "sell" })
   }
 }
@@ -99,20 +99,20 @@ pub fn trade_qty(t: Trade) -> I32 { t.?{tr_qty} }
 /// market order does not.
 pub labels Cap = { capped: I32 } | { uncapped: . };
 
-pub fn price_cap(limit: I32) -> Cap { {capped = limit}.>widen_sum!(Cap) }
+pub fn price_cap(limit: I32) -> Cap { {capped = limit}.>widen_sum(Cap) }
 
-pub fn no_cap() -> Cap { {uncapped=}.>widen_sum!(Cap) }
+pub fn no_cap() -> Cap { {uncapped=}.>widen_sum(Cap) }
 
 /// A buying aggressor crosses a resting ask when it will pay at least
 /// the asking price; a selling aggressor crosses a resting bid when it
 /// will take at most the bid. An uncapped order crosses anything the
 /// book still offers.
 pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
-  match! cap {
+  match(cap) {
     (
     , .(c: Capped) {
         let limit = c.?{capped};
-        if! is_buy(taker) { leq_i32(maker_price, limit) } else { leq_i32(limit, maker_price) }
+        if(is_buy(taker)) { leq_i32(maker_price, limit) } else { leq_i32(limit, maker_price) }
       }
     , .(_u: Uncapped) { .t }
     )
@@ -123,5 +123,5 @@ pub fn crosses(taker: Side, cap: Cap, maker_price: I32) -> Bool {
 /// asks by ascending price. Equal prices tie here on purpose -- the tie
 /// is broken by arrival sequence, and a newcomer always loses it.
 pub fn ranks_ahead(side: Side, price: I32, resting_price: I32) -> Bool {
-  if! is_buy(side) { int_lt(resting_price, price) } else { int_lt(price, resting_price) }
+  if(is_buy(side)) { int_lt(resting_price, price) } else { int_lt(price, resting_price) }
 }

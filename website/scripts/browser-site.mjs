@@ -191,6 +191,27 @@ export async function smokeRepl(page, origin) {
   const echo = rows.indexOf('kio> :normalize ()')
   assert.deepEqual(rows.slice(echo + 1), ['()', 'kio>'], 'normalization must render its standalone result and return the prompt')
   assert.equal(await page.locator('.repl-status[data-state="ready"]').count(), 1, 'REPL did not return to ready')
+  const macroInput = 'if(())'
+  await page.keyboard.type(macroInput)
+  await page.waitForFunction(() => {
+    const row = [...document.querySelectorAll('.xterm-rows > div')].findLast(row => row.textContent.trim() === 'kio> if(())')
+    return row && [...row.querySelectorAll('span')].some(span => span.textContent === 'if' && getComputedStyle(span).color === 'rgb(86, 182, 194)')
+  })
+  for (const _ of macroInput) await page.keyboard.press('Backspace')
+  const shadowedInput = '.(if: . -> .) { if(()) }'
+  await page.keyboard.type(shadowedInput)
+  await page.waitForFunction(input => {
+    const row = [...document.querySelectorAll('.xterm-rows > div')].findLast(row => row.textContent.trim() === `kio> ${input}`)
+    return row && [...row.querySelectorAll('span')].some(span => span.textContent.includes('if')) && ![...row.querySelectorAll('span')].some(span => span.textContent.includes('if') && getComputedStyle(span).color === 'rgb(86, 182, 194)')
+  }, shadowedInput)
+  for (const _ of shadowedInput) await page.keyboard.press('Backspace')
+  await page.keyboard.type(macroInput)
+  await page.waitForFunction(() => {
+    const row = [...document.querySelectorAll('.xterm-rows > div')].findLast(row => row.textContent.trim() === 'kio> if(())')
+    return row && [...row.querySelectorAll('span')].some(span => span.textContent === 'if' && getComputedStyle(span).color === 'rgb(86, 182, 194)')
+  })
+  for (const _ of macroInput) await page.keyboard.press('Backspace')
+
 }
 
 export async function capturePage(page, url, directory, { fullPage = false } = {}) {

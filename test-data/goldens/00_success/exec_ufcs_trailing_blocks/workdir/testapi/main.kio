@@ -1,6 +1,6 @@
 module testapi/main;
 
-import forms(arrange, block_pair, discard, last_blocks, outer, packet, pair_prefix, run_sequence);
+import forms(macro arrange, macro block_pair, macro discard, macro last_blocks, macro outer, macro packet, macro pair_prefix, macro run_sequence);
 import testapi(default String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -34,90 +34,90 @@ fn show_outer(values: String & (String & (String & (String & String)))) {
 }
 
 equiv receiver_first[A][B][C](a: A, b: B, c: C) {
-  a.>arrange!(b) { c };
-  arrange!(a, b) { c };
+  a.>arrange(b) { c };
+  arrange(a, b) { c };
   (a, (b, c))
 }
 
 equiv receiver_last[A][B][C](a: A, b: B, c: C) {
-  a.>>arrange!(b) { c };
-  arrange!(b, a) { c };
+  a.>>arrange(b) { c };
+  arrange(b, a) { c };
   (b, (a, c))
 }
 
 equiv argument_first[A][B][C](a: A, b: B, c: C) {
-  arrange!(b) { c }.<<a;
-  arrange!(a, b) { c };
+  arrange(b) { c }.<<a;
+  arrange(a, b) { c };
   (a, (b, c))
 }
 
 equiv argument_last[A][B][C](a: A, b: B, c: C) {
-  arrange!(b) { c }.<a;
-  arrange!(b, a) { c };
+  arrange(b) { c }.<a;
+  arrange(b, a) { c };
   (b, (a, c))
 }
 
 equiv product_packet[A][B][C](a: A, b: B, c: C) {
-  a.>packet!(b) { c };
-  packet!(b) { c }.<<a;
-  packet!(a, b) { c };
+  a.>packet(b) { c };
+  packet(b) { c }.<<a;
+  packet(a, b) { c };
   ((a, b), c)
 }
 
 equiv direct_empty_prefix[A](a: A) {
-  block_pair!() { a };
-  block_pair!(()) { a };
-  ().>block_pair! { a };
-  block_pair! { a }.<();
+  block_pair() { a };
+  block_pair(()) { a };
+  ().>block_pair { a };
+  block_pair { a }.<();
   ((), a)
 }
 
 equiv explicit_extra_unit[A](a: A) {
-  a.>arrange!(()) {};
-  arrange!(()) {}.<<a;
+  a.>arrange(()) {};
+  arrange(()) {}.<<a;
   (a, ((), ()))
 }
 
 equiv prefix_block_ownership[A][B][C](a: A, b: B, c: C) {
-  block_pair! a.>pair_prefix!(b) { c };
-  block_pair! (a.>block_pair! { b }) { c };
+  block_pair (a.>pair_prefix(b)) { c };
+  block_pair (a.>block_pair { b }) { c };
   ((a, b), c)
 }
 
 equiv reverse_inside_prefix[A][B](a: A, b: B) {
-  block_pair! identity.<a { b };
+  block_pair (identity.<a) { b };
   (a, b)
 }
 
 equiv sequence_projection[A](a: A) {
-  bind.>run_sequence! { let value <- Box.box(a); Box.box(value) };
-  run_sequence! { let value <- Box.box(a); Box.box(value) }.<bind;
+  bind.>run_sequence { let value <- Box.box(a); Box.box(value) };
+  run_sequence { let value <- Box.box(a); Box.box(value) }.<bind;
   Box.box(a)
 }
 
 pub fn main() {
-  line(render("receiver".>arrange!("argument") { "block" }));
-  line(render("receiver".>>arrange!("argument") { "block" }));
-  line(render(arrange!("argument") { "block" }.<<"receiver"));
-  line(render(arrange!("argument") { "block" }.<"receiver"));
-  line(render("bare".>arrange! "argument" { "body" }));
-  line(render(((arrange! "argument" { "body" })).<"grouped"));
-  line(arrange!("left") { "body" }.<suffix("right").>render);
-  line(arrange!("left") { "body" }.<("right".>suffix).>render);
-  line(arrange!("left") { "body" }.<"right".>render.>suffix);
-  show_outer(outer! "left" { "body" } after { block_pair! "inner" { "tail" } }.<"outer");
-  show_outer(outer!("left", "outer") { "body" } after { block_pair! { "tail" }.<"inner" });
-  show_outer(outer! "left" { "body" } after {
-    last_blocks! { "ignored" } after block_pair! "inner" { "tail" }
+  line(render("receiver".>arrange("argument") { "block" }));
+  line(render("receiver".>>arrange("argument") { "block" }));
+  line(render(arrange("argument") { "block" }.<<"receiver"));
+  line(render(arrange("argument") { "block" }.<"receiver"));
+  line(render("bare".>arrange ("argument") { "body" }));
+  line(render(((arrange ("argument") { "body" })).<"grouped"));
+  line(arrange("left") { "body" }.<suffix("right").>render);
+  line(arrange("left") { "body" }.<("right".>suffix).>render);
+  line(arrange("left") { "body" }.<"right".>render.>suffix);
+  show_outer(outer ("left") { "body" } after { block_pair ("inner") { "tail" } }.<"outer");
+  show_outer(outer("left", "outer") { "body" } after { block_pair { "tail" }.<"inner" });
+  show_outer(outer ("left") { "body" } after {
+    last_blocks { "ignored" } after block_pair ("inner") { "tail" }
   }.<"outer");
-  line(mark("discarded-forward").>discard! { mark("kept-forward") });
-  line(discard! { mark("kept-reverse") }.<mark("discarded-reverse"));
-  line(Box.unbox(make_bind().>run_sequence! {
+  line(mark("discarded-forward").>discard { mark("kept-forward") });
+  line(discard { mark("kept-reverse") }.<mark("discarded-reverse"));
+  line(Box.unbox(make_bind().>run_sequence {
     let first <- Box.box(mark("sequence first"));
     let second <- Box.box(mark(string_concat(first, " second")));
     Box.box(second)
   }));
-  line(Box.unbox(run_sequence! {
+  line(Box.unbox(run_sequence {
     let value <- Box.box(mark("reverse sequence body"));
     Box.box(value)
   }.<make_bind()))

@@ -27,7 +27,7 @@ pub fn minimize_body(prog: &Program) -> Program {
         fn_def_name: prog.fn_def_name.clone(),
         params: vec![],
         ret: prog.ret.clone(),
-        user_elaborators: prog.user_elaborators.clone(),
+        user_macros: prog.user_macros.clone(),
         // Recompute the surface flag from the new body — shrunken
         // bodies often drop the construct that triggered the
         // generator's surface-mode decision. `surface_mode` (the

@@ -2,13 +2,13 @@
 module testapi/main;
 
 import defaults(instantiate_default);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import loader(Diag, Loaded, Surface);
 import loader(Lr_diag, Lr_image, un_load_outcome);
 import loader({apply}, {i32_in}, {i32_out}, {lookup}, {str_in}, {str_out});
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -59,21 +59,21 @@ fn guest_image() -> String {
 // surface, reading just the operations it needs by field name; `()` on
 // any failure.
 fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> . | I32 {
-  match! surf.?{lookup}(name) {
+  match(surf.?{lookup}(name)) {
     (
     , .(g: P) {
-        match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+        match(surf.?{apply}((g, surf.?{i32_in}(arg)))) {
           (
           , .(r: P) {
-              match! surf.?{i32_out}(r) {
-                (.(n: I32) { widen_sum!(n, . | I32) }, .(_d: Diag) { widen_sum!((), . | I32) })
+              match(surf.?{i32_out}(r)) {
+                (.(n: I32) { widen_sum(n, . | I32) }, .(_d: Diag) { widen_sum((), . | I32) })
               }
             }
-          , .(_d: Diag) { widen_sum!((), . | I32) }
+          , .(_d: Diag) { widen_sum((), . | I32) }
           )
         }
       }
-    , .(_d: Diag) { widen_sum!((), . | I32) }
+    , .(_d: Diag) { widen_sum((), . | I32) }
     )
   }
 }
@@ -85,26 +85,26 @@ fn call_i32(handle: Loaded, name: String, arg: I32) -> . | I32 {
 }
 
 fn loaded_i32(name: String, arg: I32) -> . | I32 {
-  match! un_load_outcome(load_package(guest_image())) {
+  match(un_load_outcome(load_package(guest_image()))) {
     (
     , .(im: Lr_image) {
-        match! un_inst(instantiate_default(Lr_image.get(im))) {
+        match(un_inst(instantiate_default(Lr_image.get(im)))) {
           (
           , .(handle: Loaded) { call_i32(handle, name, arg) }
-          , .(_d: Diag) { widen_sum!((), . | I32) }
+          , .(_d: Diag) { widen_sum((), . | I32) }
           )
         }
       }
-    , .(_d: Lr_diag) { widen_sum!((), . | I32) }
+    , .(_d: Lr_diag) { widen_sum((), . | I32) }
     )
   }
 }
 
 fn assert_i32(label: String, expected: I32, actual: . | I32) -> String {
-  match! actual {
+  match(actual) {
     (
     , .(n: I32) {
-        if! string_eq(int_to_string(n), int_to_string(expected)) {
+        if(string_eq(int_to_string(n), int_to_string(expected))) {
           string_concat(label, "PASS\n"(String))
         } else {
           string_concat(

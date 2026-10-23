@@ -5,10 +5,10 @@
 /// than the alphabet being rescanned once per symbol.
 module huffman/freq;
 
-import elab/control(if);
-import elab/match(match);
 import huffman/list(List, cons, keep, nil, reverse);
 import huffman/message(alphabet_size);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -18,7 +18,7 @@ pub labels Count = { count_symbol: I32, count_freq: I32 };
 pub fn count(symbol: I32, freq: I32) -> Count { {count_symbol = symbol, count_freq = freq} }
 
 rec(loop) fn zero_counts_onto(symbol: I32, acc: List(Count)) -> List(Count) {
-  if! lt_i32(symbol, 0) {
+  if(lt_i32(symbol, 0)) {
     acc
   } else {
     recur zero_counts_onto(sub_i32(symbol, 1), cons(count(symbol, 0), acc))
@@ -29,11 +29,11 @@ rec(loop) fn zero_counts_onto(symbol: I32, acc: List(Count)) -> List(Count) {
 pub fn zero_counts() -> List(Count) { zero_counts_onto(sub_i32(alphabet_size(), 1), nil(Count)) }
 
 rec(loop) fn bump_onto(counts: List(Count), symbol: I32, acc: List(Count)) -> List(Count) {
-  match! counts.>List.un_list {
+  match(counts.>List.un_list) {
     (
     , .(row: Count, rest: List(Count)) {
         let bumped =
-          if! eq_i32(row.?{count_symbol}, symbol) {
+          if(eq_i32(row.?{count_symbol}, symbol)) {
             count(symbol, add_i32(row.?{count_freq}, 1))
           } else {
             row
@@ -48,7 +48,7 @@ rec(loop) fn bump_onto(counts: List(Count), symbol: I32, acc: List(Count)) -> Li
 fn bump(counts: List(Count), symbol: I32) -> List(Count) { bump_onto(counts, symbol, nil(Count)) }
 
 pub rec(loop) fn tally(symbols: List(I32), counts: List(Count)) -> List(Count) {
-  match! symbols.>List.un_list {
+  match(symbols.>List.un_list) {
     (
     , .(symbol: I32, rest: List(I32)) { recur tally(rest, bump(counts, symbol)) }
     , .(_empty: .) { counts }

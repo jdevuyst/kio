@@ -11,9 +11,9 @@ names matter, and row-shaped when a helper should accept "at least these
 capabilities" without caring what else the caller carries.
 
 The examples form one module whose host supplies `String`, `print`, and
-`string_concat`. They also use `one_prod!` and `narrow_prod!` from the
-[`elab` library](using-libraries.md#the-minimal-dependency-workflow). Materialize
-that dependency under the local name `elab`; the first snippet shows the import
+`string_concat`. They also use `one_prod` and `narrow_prod` from the
+[`macros` library](using-libraries.md#the-minimal-dependency-workflow). Materialize
+that dependency under the local name `macros`; the first snippet shows the import
 and host declarations used throughout.
 
 <!--kio {harness=di placeholder="__INSERT_CODE_HERE__" accumulate}
@@ -32,7 +32,7 @@ A dependency is usually just a function value. If a service needs a logger and
 a configuration loader, write those two function types down and pass them in:
 
 ```kio {@di}
-import elab/spine_elaborators(narrow_prod, one_prod);
+import macros/spine_macros(macro narrow_prod, macro one_prod);
 
 host type String role(str);
 
@@ -42,15 +42,15 @@ host fn string_concat(p0: String, p1: String) -> String;
 
 type Raw_deps = (String -> .) & (. -> String);
 
-fn raw_log(deps: Raw_deps) -> String -> . { deps.>one_prod!(String -> .) }
+fn raw_log(deps: Raw_deps) -> String -> . { deps.>one_prod(String -> .) }
 
-fn raw_config(deps: Raw_deps) -> . -> String { deps.>one_prod!(. -> String) }
+fn raw_config(deps: Raw_deps) -> . -> String { deps.>one_prod(. -> String) }
 
 fn start_raw(deps: Raw_deps) { raw_log(deps)(raw_config(deps)()) }
 ```
 
 This is enough for small private code. The bundle is a product, and
-`one_prod!` projects the dependency whose type you ask for. There is no ambient
+`one_prod` projects the dependency whose type you ask for. There is no ambient
 lookup and no hidden container: the caller chooses the implementation by
 choosing the value it passes.
 
@@ -125,7 +125,7 @@ Read `Log & Rest` as "a `log` dependency first, followed by the remaining
 capabilities." `App_deps` is `Log & Config`, so `call_log_line` passes it with
 `Rest` inferred as `Config`; `log_line` projects out the capability it needs.
 Products are ordered: `Config & Log` does not match this parameter. For a
-different order, import and call `reorder_prod!` explicitly before passing the
+different order, import and call `reorder_prod` explicitly before passing the
 bundle, as shown in [Product order](products.md#product-order).
 
 This keeps dependency parameters narrow without making callers rebuild tiny

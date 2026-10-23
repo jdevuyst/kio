@@ -9,7 +9,7 @@ import bdd/query as query;
 import bdd/report as report;
 import bdd/restrict as restriction;
 import bdd/store as table;
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/io as io;
@@ -55,7 +55,7 @@ fn restrictions(manager: engine.Manager) -> table.Store {
       expr.evaluate(
       , fixtures.shared()
       , .(variable: I32) {
-          if! arith.eq_i32(variable, 2) { .t } else { values(variable) }
+          if(arith.eq_i32(variable, 2)) { .t } else { values(variable) }
         }
       )
     }
@@ -71,7 +71,7 @@ fn restrictions(manager: engine.Manager) -> table.Store {
       expr.evaluate(
       , fixtures.shared()
       , .(variable: I32) {
-          if! arith.eq_i32(variable, 2) { .f } else { values(variable) }
+          if(arith.eq_i32(variable, 2)) { .f } else { values(variable) }
         }
       )
     }

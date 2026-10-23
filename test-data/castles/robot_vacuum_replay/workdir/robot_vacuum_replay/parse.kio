@@ -1,7 +1,7 @@
 module robot_vacuum_replay/parse;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import robot_vacuum_replay/command(
 , Command
 , charge_command
@@ -19,21 +19,21 @@ import testapi/fmt(string_to_int);
 import testapi/text(string_eq);
 
 pub fn parse_command(line: String) -> Command {
-  if! string_eq(line, "START") {
+  if(string_eq(line, "START")) {
     start_command()
-  } else if! string_eq(line, "PAUSE") {
+  } else if(string_eq(line, "PAUSE")) {
     pause_command()
-  } else if! string_eq(line, "LEFT") {
+  } else if(string_eq(line, "LEFT")) {
     left_command()
-  } else if! string_eq(line, "RIGHT") {
+  } else if(string_eq(line, "RIGHT")) {
     right_command()
-  } else if! string_eq(line, "STEP") {
+  } else if(string_eq(line, "STEP")) {
     step_command()
-  } else if! string_eq(line, "CLEAN") {
+  } else if(string_eq(line, "CLEAN")) {
     clean_command()
-  } else if! string_eq(line, "DOCK") {
+  } else if(string_eq(line, "DOCK")) {
     dock_command()
-  } else match! string_to_int(line) {
+  } else match(string_to_int(line)) {
     (.(amount: I32) { charge_command(amount) }, .(_empty: .) { unknown_command(line) })
   }
 }

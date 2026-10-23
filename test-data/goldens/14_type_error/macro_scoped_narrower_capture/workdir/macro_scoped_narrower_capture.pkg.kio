@@ -1,0 +1,14 @@
+package macro_scoped_narrower_capture;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  app/**
+}

@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default I32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -21,13 +21,13 @@ rec newtype Zip[A] : . | (A & Tree(A) & Zip(A)) { pub constructor mk_zip; pub pr
 // regression coverage.
 newtype Done[A] : Tree(A) & Zip(A) { pub constructor mk_done; pub projector un_done }
 
-fn leaf[A]() -> Tree(A) { Tree.mk_tree(widen_sum!((), . | (A & Tree(A) & Tree(A)))) }
+fn leaf[A]() -> Tree(A) { Tree.mk_tree(widen_sum((), . | (A & Tree(A) & Tree(A)))) }
 
 fn node[A](v: A, l: Tree(A), r: Tree(A)) -> Tree(A) {
-  Tree.mk_tree(widen_sum!((v, l, r), . | (A & Tree(A) & Tree(A))))
+  Tree.mk_tree(widen_sum((v, l, r), . | (A & Tree(A) & Tree(A))))
 }
 
-fn top[A]() -> Zip(A) { Zip.mk_zip(widen_sum!((), . | (A & Tree(A) & Zip(A)))) }
+fn top[A]() -> Zip(A) { Zip.mk_zip(widen_sum((), . | (A & Tree(A) & Zip(A)))) }
 
 fn focus[A](t: Tree(A), z: Zip(A)) -> Done(A) { Done.mk_done((t, z)) }
 
@@ -35,9 +35,9 @@ fn focus[A](t: Tree(A), z: Zip(A)) -> Done(A) { Done.mk_done((t, z)) }
 // match binder `(t, _z)` over the bare-product carrier — then read the
 // focused tree's root value.
 fn root_val(d: Done(I32)) -> I32 {
-  match! d.>Done.un_done {
+  match(d.>Done.un_done) {
     .(t: Tree(I32), _z: Zip(I32)) {
-      match! t.>Tree.un_tree {
+      match(t.>Tree.un_tree) {
         (.(v: I32, _l: Tree(I32), _r: Tree(I32)) { v }, .(_e: .) { 0 })
       }
     }

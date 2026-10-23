@@ -1,8 +1,8 @@
 module main;
 
-import elab(invoke);
 import host(loop);
+import macros(macro invoke);
 
 rec(loop) fn run(value: .) {
-  invoke!(.[A](_value: A) { recur run(value) })
+  invoke(.[A](_value: A) { recur run(value) })
 }

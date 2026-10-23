@@ -4,8 +4,8 @@ import egraph/extract as extract;
 import egraph/graph as graph;
 import egraph/numbers as n;
 import egraph/rewrite as rewrite;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(Array, I32, default Bool);
 import testapi/array as arr;
 import testapi/fmt as fmt;
@@ -17,7 +17,7 @@ pub fn number(value: I32) { io.print(fmt.int_to_string(value)) }
 pub fn boolean(value: Bool) { io.print(fmt.bool_to_string(value)) }
 
 pub fn outcome(value: rewrite.Outcome) {
-  match! value {
+  match(value) {
     .(done: rewrite.Saturated) { io.print("saturated rounds="); number(done.?{rewrite.saturated}) };
     .(limited: rewrite.Exhausted) {
       io.print("exhausted rounds=");
@@ -45,13 +45,13 @@ rec(loop) fn values(
 , i: I32
 , agrees: Bool
 ) -> Bool {
-  if! n.equal(i, arr.array_len(samples)) {
+  if(n.equal(i, arr.array_len(samples))) {
     agrees
   } else {
     let .(x, y) = arr.array_get(samples, i);
     let actual = extract.evaluate(g, selection, root, x, y);
     let expected = extract.source_value(g, root, x, y);
-    if! n.equal(i, 0) { () } else { io.print(",") };
+    if(n.equal(i, 0)) { () } else { io.print(",") };
     number(actual);
     recur values(
     , g

@@ -798,8 +798,8 @@ fn collect_module_type_names(module: &Module<Desugared>) -> HashSet<String> {
             // `equiv` decls don't introduce types; nothing to reserve.
             Item::Equiv(_, _) => {}
             Item::LabelForward(_, _) => {}
-            // Elaborator decls are compile-time metadata; no type name.
-            Item::Elaborator(_, _) => {}
+            // Macro decls are compile-time metadata; no type name.
+            Item::Macro(_, _) => {}
             // Statically uninhabited at `Desugared`.
             Item::LiteralAlias(_, ext) => match *ext {},
             Item::Op(_, ext) => match *ext {},
@@ -1093,8 +1093,8 @@ fn module_binding_names(module: &Module<Desugared>) -> BTreeSet<String> {
             Item::Equiv(equiv, _) => {
                 names.insert(equiv.name.clone());
             }
-            Item::Elaborator(elaborator, _) => {
-                names.insert(elaborator.name.clone());
+            Item::Macro(macro_def, _) => {
+                names.insert(macro_def.name.clone());
             }
             Item::HostType(host) => {
                 names.insert(host.name.clone());
@@ -2273,7 +2273,7 @@ impl LabelElabVisitor<'_> {
 
     /// Push every type-parameter binder in a signature onto the
     /// shadow stack. Used by the signature-bearing walker overrides
-    /// (`fn` / `fn` expr / `match!` clause / `equiv`) so a `[A]`
+    /// (`fn` / `fn` expr / `match` clause / `equiv`) so a `[A]`
     /// shadows a same-named label in the param types, return type, and
     /// body.
     fn push_type_params(&mut self, params: &[SignatureParam<Desugared>]) {

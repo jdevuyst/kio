@@ -5,7 +5,7 @@
 //! recorded completions into Prime, and runs standalone Prime validation. The
 //! kio binary's `check.rs` driver dispatches through this implementation.
 //!
-//! This module and its dependents (`desugar`, `elaborator_registry`,
+//! This module and its dependents (`desugar`, `macro_registry`,
 //! `label_elab`, `op_fold`, `substitute`, `typecheck_full`) are gated
 //! behind `#[cfg(feature = "surface")]`, so they don't compile into the
 //! kio-prime binary's slice. The Kio'-only mirror lives under
@@ -83,6 +83,10 @@ fn lower_projected_package_named_observed<T>(
     )>,
     LocatedError,
 > {
+    let macro_calls: std::collections::HashMap<_, _> = modules
+        .iter()
+        .map(|(file, module)| (file.clone(), crate::scope_walk::macro_calls(module)))
+        .collect();
     let block_scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&modules)?;
     // Operator folding and any observer projection share this one validated
     // package scope. Rebuilding it after folding would repeat declaration
@@ -117,11 +121,14 @@ fn lower_projected_package_named_observed<T>(
     };
     let package_literal_aliases = collect_package_literal_aliases(&folded, package_name);
     for (file_path, module) in &mut folded {
-        crate::pass::block_projection::project_module(module, &block_scope).map_err(|error| {
-            LocatedError {
-                file_path: file_path.clone(),
-                error,
-            }
+        crate::pass::block_projection::project_module(
+            module,
+            &block_scope,
+            &macro_calls[file_path],
+        )
+        .map_err(|error| LocatedError {
+            file_path: file_path.clone(),
+            error,
         })?;
     }
     let desugared = desugar_package_with_imports(folded, &package_literal_aliases)?;
@@ -566,16 +573,17 @@ fn lower_surface_module_summary(
     block_scope: &crate::pass::surface_registry::PackageBlockScope,
     literal_aliases: &PackageLiteralAliases,
 ) -> Result<Module<Desugared>, LocatedError> {
+    let macro_calls = crate::scope_walk::macro_calls(&module);
     op_fold::fold_module_in_package(&mut module, package_ops).map_err(|error| LocatedError {
         file_path: file_path.clone(),
         error,
     })?;
-    crate::pass::block_projection::project_module(&mut module, block_scope).map_err(|error| {
-        LocatedError {
+    crate::pass::block_projection::project_module(&mut module, block_scope, &macro_calls).map_err(
+        |error| LocatedError {
             file_path: file_path.clone(),
             error,
-        }
-    })?;
+        },
+    )?;
     desugar_module_with_imports(module, literal_aliases)
         .map_err(|error| LocatedError { file_path, error })
 }
@@ -864,7 +872,7 @@ fn id[A](value: A) -> A { value }
     }
 
     #[test]
-    fn auxiliary_module_stages_imported_elaborator_from_bound_package() {
+    fn auxiliary_module_stages_imported_macro_from_bound_package() {
         let sources = [
             (
                 "helpers.kio",
@@ -891,24 +899,24 @@ pure fn identity_impl(
     keep(_ct, value)
 }
 
-pub elab identity : [Source] Source -> [Target] Target { impl identity_impl; };
+pub macro identity : [Source] Source -> [Target] Target { impl identity_impl; };
 "#,
             ),
             (
                 "adapter.kio",
                 r#"module adapter;
 
-import provider(identity);
+import provider(macro identity);
 
 type Expected = .;
 
 fn adapt() -> . {
-    let inferred = identity!(());
+    let inferred = identity(());
     inferred
 }
 
 fn adapt_expected() -> Expected {
-    identity!(())
+    identity(())
 }
 "#,
             ),
@@ -936,7 +944,7 @@ fn adapt_expected() -> Expected {
             .expect("resolve package bodies");
 
         FullPipeline::typecheck_aux_module(&adapter, &package, None)
-            .expect("the auxiliary module may stage its imported package elaborator");
+            .expect("the auxiliary module may stage its imported package macro");
     }
 
     #[test]

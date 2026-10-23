@@ -103,9 +103,9 @@ fn legacy_materialize<'m>(
     slot: Option<ScopedType>,
     frontier: &mut crate::pass::typecheck_core::apply::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &TypeCtx<'m, '_, Lowered>,
-) -> Result<crate::pass::typecheck_full::TypedUserElaboratorTypeSlot, crate::error::Error> {
+) -> Result<crate::pass::typecheck_full::TypedUserMacroTypeSlot, crate::error::Error> {
     let Some(slot) = slot else {
-        return Ok(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+        return Ok(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
             resolved: None,
             occurrence: None,
         });
@@ -113,7 +113,7 @@ fn legacy_materialize<'m>(
     let (store, _, delta, _) = frontier.parts_mut();
     let occurrence = store.zonk_for_progress(delta, slot.clone(), tcx)?;
     let resolved = store.require_goal_free_after_delta(delta, slot, tcx)?;
-    Ok(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+    Ok(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
         resolved: Some(resolved.ty().clone()),
         occurrence: Some(occurrence.ty().clone()),
     })

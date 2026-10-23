@@ -1,0 +1,2 @@
+newtype member `Box.mk` cannot implement macro `demo` because it does not have the macro ABI
+define a function that accepts the macro's reflected ABI inputs and returns `__Checked_term__`

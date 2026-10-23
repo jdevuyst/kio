@@ -1,6 +1,11 @@
 module fold_calls;
 
-import elab_fold(nested_empty, nested_finalizing, nested_left, nested_nonfinalizing);
+import macro_fold(
+, macro nested_empty
+, macro nested_finalizing
+, macro nested_left
+, macro nested_nonfinalizing
+);
 
 host type I32 role(i32);
 
@@ -65,19 +70,19 @@ fn nested_final_slot() -> Entries(String, Right(I32)) {
 }
 
 fn elaborated_nested_final_slot() -> Entries(String, Right(I32)) {
-  nested_nonfinalizing!([% text("key") => [* one(17), first(18, 19) *] %])
+  nested_nonfinalizing([% text("key") => [* one(17), first(18, 19) *] %])
 }
 
-fn elaborated_nonfinalizing_again() -> Right(I32) { nested_nonfinalizing!([* first(25, 26) *]) }
+fn elaborated_nonfinalizing_again() -> Right(I32) { nested_nonfinalizing([* first(25, 26) *]) }
 
 fn elaborated_compact_triple_nesting() -> Right(Right(Right(I32))) {
-  nested_finalizing!([* [* [* one(20) *] *] *])
+  nested_finalizing([* [* [* one(20) *] *] *])
 }
 
-fn elaborated_finalizing_again() -> I32 { nested_finalizing!(one(27)) }
+fn elaborated_finalizing_again() -> I32 { nested_finalizing(one(27)) }
 
-fn elaborated_empty_implementation() -> I32 { nested_empty!(one(24)) }
+fn elaborated_empty_implementation() -> I32 { nested_empty(one(24)) }
 
-fn elaborated_left_nested_fold() -> Left(I32) { nested_left!([! one(21), first(22, 23) !]) }
+fn elaborated_left_nested_fold() -> Left(I32) { nested_left([! one(21), first(22, 23) !]) }
 
 fn empty_literal() -> After(String) { [+ +] }

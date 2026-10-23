@@ -1,7 +1,7 @@
 module index/automaton;
 
-import elab/control(if);
 import index/numbers as num;
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as n;
 import testapi/array as a;
@@ -36,11 +36,11 @@ fn set_link(states: Array(State), state: I32, link: I32) {
 }
 
 rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32) -> I32 {
-  if! num.less(p, 0) {
+  if(num.less(p, 0)) {
     p
   } else {
     let state = a.array_get(states, p);
-    if! num.less(a.array_get(state.?{transitions}, symbol), 0) {
+    if(num.less(a.array_get(state.?{transitions}, symbol), 0)) {
       a.array_set(state.?{transitions}, symbol, target);
       recur add_missing(states, state.?{suffix}, symbol, target)
     } else {
@@ -50,11 +50,11 @@ rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32)
 }
 
 rec(loop) fn redirect(states: Array(State), p: I32, symbol: I32, old: I32, clone: I32) {
-  if! num.less(p, 0) {
+  if(num.less(p, 0)) {
     ()
   } else {
     let state = a.array_get(states, p);
-    if! num.equal(a.array_get(state.?{transitions}, symbol), old) {
+    if(num.equal(a.array_get(state.?{transitions}, symbol), old)) {
       a.array_set(state.?{transitions}, symbol, clone);
       recur redirect(states, state.?{suffix}, symbol, old, clone)
     } else {
@@ -78,13 +78,13 @@ pub fn append(index: Index, symbol: I32) -> Index {
     }
   );
   let p = add_missing(states, last, symbol, current);
-  if! num.less(p, 0) {
+  if(num.less(p, 0)) {
     {states, last = current, clones}
   } else {
     let q = transition(states, p, symbol);
     let reached = a.array_get(states, q);
     let split_length = n.add_i32(a.array_get(states, p).?{longest}, 1);
-    if! num.equal(split_length, reached.?{longest}) {
+    if(num.equal(split_length, reached.?{longest})) {
       set_link(states, current, q);
       {states, last = current, clones}
     } else {
@@ -109,7 +109,7 @@ pub fn append(index: Index, symbol: I32) -> Index {
 }
 
 rec(loop) fn consume(index: Index, symbols: Array(I32), position: I32) -> Index {
-  if! num.less(position, a.array_len(symbols)) {
+  if(num.less(position, a.array_len(symbols))) {
     recur consume(append(index, a.array_get(symbols, position)), symbols, n.add_i32(position, 1))
   } else {
     index

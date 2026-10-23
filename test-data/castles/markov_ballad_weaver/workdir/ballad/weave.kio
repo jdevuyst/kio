@@ -16,9 +16,9 @@ module ballad/weave;
 import ballad/list(List, cons, nil, of1, reverse);
 import ballad/model(Model, Tally, is_end, starts_of, succs_of, total_weight, {count}, {word});
 import ballad/prng(next, roll, seed_state);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -26,11 +26,11 @@ import testapi/iter(loop);
 /// Why a line stopped.
 pub labels Stop = { by_end_word: . } | { by_word_cap: . } | { by_no_successor: . };
 
-fn stopped_at_end() -> Stop { {by_end_word=}.>widen_sum!(Stop) }
+fn stopped_at_end() -> Stop { {by_end_word=}.>widen_sum(Stop) }
 
-fn stopped_at_cap() -> Stop { {by_word_cap=}.>widen_sum!(Stop) }
+fn stopped_at_cap() -> Stop { {by_word_cap=}.>widen_sum(Stop) }
 
-fn stopped_dry() -> Stop { {by_no_successor=}.>widen_sum!(Stop) }
+fn stopped_dry() -> Stop { {by_no_successor=}.>widen_sum(Stop) }
 
 /// One recorded draw.
 pub labels Step = {
@@ -56,9 +56,9 @@ fn start_label() -> String { "<start>" }
 /// returning it on exhaustion keeps the walk total without inventing a word.
 rec(loop) fn land(head: Tally, rest: List(Tally), r: I32, acc: I32) -> String {
   let upto = add_i32(acc, head.?{count});
-  if! lt_i32(r, upto) {
+  if(lt_i32(r, upto)) {
     head.?{word}
-  } else match! rest.>List.un_list {
+  } else match(rest.>List.un_list) {
     (.(t: Tally, more: List(Tally)) { recur land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
   }
 }
@@ -103,11 +103,11 @@ rec(loop) fn extend(
 , words: List(String)
 , draws: List(Step)
 ) -> Drawn {
-  if! is_end(m, cur) {
+  if(is_end(m, cur)) {
     finish(state, stopped_at_end(), words, draws)
-  } else if! leq_i32(cap, n) {
+  } else if(leq_i32(cap, n)) {
     finish(state, stopped_at_cap(), words, draws)
-  } else match! succs_of(m, cur).>List.un_list {
+  } else match(succs_of(m, cur).>List.un_list) {
     (
     , .(head: Tally, rest: List(Tally)) {
         let d = draw(state, cur, head, rest);
@@ -129,7 +129,7 @@ rec(loop) fn extend(
 /// Open a line with a weighted draw from the corpus's start words, then let it
 /// run. A corpus with no phrases has no start words and weaves an empty line.
 fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
-  match! starts_of(m).>List.un_list {
+  match(starts_of(m).>List.un_list) {
     (
     , .(head: Tally, rest: List(Tally)) {
         let d = draw(state, start_label(), head, rest);
@@ -141,7 +141,7 @@ fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
 }
 
 rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: List(Line)) -> List(Line) {
-  if! leq_i32(remaining, 0) {
+  if(leq_i32(remaining, 0)) {
     reverse(acc)
   } else {
     let d = open_line(m, cap, state);

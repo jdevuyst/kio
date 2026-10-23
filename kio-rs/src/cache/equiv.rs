@@ -565,7 +565,7 @@ fn collect_expr_refs(
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. } => match *ext {},
+        | Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
         Expr::RecCall { ext, .. } => match *ext {},

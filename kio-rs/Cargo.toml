@@ -19,7 +19,7 @@ include = [
 
 # Feature gating for the kio / kio-prime split. The default keeps both
 # binaries building from one `cargo build`. The `surface` feature gates the
-# kio-only modules (desugar, elaborator_registry, full, label_elab, op_fold,
+# kio-only modules (desugar, macro_registry, full, label_elab, op_fold,
 # substitute, typecheck_full); the `prime` feature gates the kio-prime-only
 # `prime` module; the `lsp` feature gates the LSP server (`kio lsp`
 # subcommand and the `lsp` module); the `repl` feature gates the

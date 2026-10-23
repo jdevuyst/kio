@@ -1,6 +1,5 @@
 module grid_firebreak_search/report;
 
-import elab/control(if);
 import grid_firebreak_search/model(
 , Plan
 , {blocked}
@@ -11,6 +10,7 @@ import grid_firebreak_search/model(
 , {spend}
 );
 import grid_firebreak_search/search as search;
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -30,9 +30,9 @@ fn line_bool(label: String, value: I32) {
 }
 
 rec(iter.loop) fn print_cell_list(cursor: I32, cells: Array(I32)) {
-  if! arith.leq_i32(cursor, arith.sub_i32(array.array_len(cells), 1)) {
+  if(arith.leq_i32(cursor, arith.sub_i32(array.array_len(cells), 1))) {
     let cell_text = fmt.int_to_string(array.array_get(cells, cursor));
-    if! arith.leq_i32(cursor, 0) {
+    if(arith.leq_i32(cursor, 0)) {
       io.print(cell_text);
       recur print_cell_list(arith.add_i32(cursor, 1), cells)
     } else {

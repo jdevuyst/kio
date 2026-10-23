@@ -8,7 +8,7 @@
 //! as a generator bug, not an implementation failure.
 //!
 //! Stage-1 coverable mutations: 11 (parse), 12 (import), 13 (name
-//! resolution), 14 (type). Code 15 (elaborator) is gated on Kio surface
+//! resolution), 14 (type). Code 15 (macro) is gated on Kio surface
 //! work and arrives in stage 2.
 
 use rand::Rng;
@@ -30,10 +30,10 @@ pub enum Mutation {
     /// 14 — wrap the body in `let __bug = "wrong"; ...` so the
     /// typechecker rejects the binding.
     Type,
-    /// 15 — append a top-level `fn kio_gen_elaborator_bug() -> I32 {
-    /// into!("…") }` so the elaborator fires at the fn-return check
+    /// 15 — append a top-level `fn kio_gen_macro_bug() -> I32 {
+    /// into("…") }` so the macro fires at the fn-return check
     /// position with no String→I32 coercion available.
-    Elaborator,
+    Macro,
 }
 
 impl Mutation {
@@ -43,7 +43,7 @@ impl Mutation {
             Mutation::Import,
             Mutation::NameRes,
             Mutation::Type,
-            Mutation::Elaborator,
+            Mutation::Macro,
         ]
     }
 
@@ -53,7 +53,7 @@ impl Mutation {
             Mutation::Import => "12_import_error",
             Mutation::NameRes => "13_name_resolution_error",
             Mutation::Type => "14_type_error",
-            Mutation::Elaborator => "15_elaborator_error",
+            Mutation::Macro => "15_macro_error",
         }
     }
 
@@ -63,20 +63,20 @@ impl Mutation {
             Mutation::Import => 12,
             Mutation::NameRes => 13,
             Mutation::Type => 14,
-            Mutation::Elaborator => 15,
+            Mutation::Macro => 15,
         }
     }
 
     /// Whether the mutated source still parses against the formal
     /// Kio' grammar. Parse-error mutations break it by construction
-    /// (a stray `@` token is the whole point), and elaborator mutations
-    /// inject a surface `into!(…)` form that's not in Kio' either.
+    /// (a stray `@` token is the whole point), and macro mutations
+    /// inject a surface `into(…)` form that's not in Kio' either.
     /// Import / name-res / type mutations leave the source grammatical
     /// and only break later compiler passes — those cases keep the
     /// marker.
     pub fn preserves_kio_prime_grammar(self) -> bool {
         match self {
-            Mutation::Parse | Mutation::Elaborator => false,
+            Mutation::Parse | Mutation::Macro => false,
             Mutation::Import | Mutation::NameRes | Mutation::Type => true,
         }
     }
@@ -92,7 +92,7 @@ pub fn apply(prog: &Program, mutation: Mutation) -> (Vec<(String, String)>, u32,
     let mut prog_for_render = match mutation {
         Mutation::NameRes => wrap_with_unbound_let(prog),
         Mutation::Type => wrap_with_type_mismatch_let(prog),
-        Mutation::Parse | Mutation::Import | Mutation::Elaborator => prog.clone(),
+        Mutation::Parse | Mutation::Import | Mutation::Macro => prog.clone(),
     };
     prog_for_render.control_probe = None;
     let mut files = emit::render_package_files(&prog_for_render);
@@ -100,7 +100,7 @@ pub fn apply(prog: &Program, mutation: Mutation) -> (Vec<(String, String)>, u32,
     match mutation {
         Mutation::Parse => corrupt_parse(&mut files),
         Mutation::Import => corrupt_import(&mut files),
-        Mutation::Elaborator => corrupt_elaborator(&mut files),
+        Mutation::Macro => corrupt_macro(&mut files),
         Mutation::NameRes | Mutation::Type => {}
     }
 
@@ -188,55 +188,53 @@ fn corrupt_parse(files: &mut [(String, String)]) {
     source.push_str("\n@\n");
 }
 
-fn corrupt_elaborator(files: &mut Vec<(String, String)>) {
-    // Append a top-level `fn` whose body is `into!("…")` checked
+fn corrupt_macro(files: &mut Vec<(String, String)>) {
+    // Append a top-level `fn` whose body is `into("…")` checked
     // against an `I32` return type. The fn-return position is a
-    // check site for `into!`, and there is no `String → I32`
-    // coercion the elaborator can fall through, so kio-rs reports an
-    // `into!`-no-coercion error and exits 15.
+    // check site for `into`, and there is no `String → I32`
+    // coercion the macro can fall through, so kio-rs reports an
+    // `into`-no-coercion error and exits 15.
     //
     // We pick an `I32` literal whose role type is certain to be in
     // scope — every kio-gen package's host declares all
     // 14 base role types, including I32. The String literal
-    // `"kio_gen_elaborator_bug"` doubles as a load-bearing
+    // `"kio_gen_macro_bug"` doubles as a load-bearing
     // source-search needle.
     //
-    // `into!` must be imported from its same-package implementation.
+    // `into` must be imported from its same-package implementation.
     // The base program is emitted in surface mode only about half the
-    // time, and this mutation appends the `into!` call to the raw text,
+    // time, and this mutation appends the `into` call to the raw text,
     // so inject the import and support files when absent. Otherwise the
     // call would fail before the intended exit 15 no-coercion error.
-    emit::add_elaborator_support_files(files);
+    emit::add_macro_support_files(files);
     // Of the bundled support modules only `testapi` declares `host`
     // items; it is reachable from the bridged `prog` module through the
-    // injected `algebraic_elaborators` import, so the bridge-
+    // injected `algebraic_macros` import, so the bridge-
     // completeness check requires it in the package's bridge globs. The
-    // other elaborator modules carry no host items and need no glob.
+    // other macro modules carry no host items and need no glob.
     admit_root_module(files, "testapi");
     let source = prog_kio_mut(files);
     let string_declaration = source
         .find("\nhost type String role(str);")
         .expect("generated root declares String");
     source.insert_str(string_declaration + 1, "default ");
-    if !source.contains("import algebraic_elaborators(") {
+    if !source.contains("import algebraic_macros(macro ") {
         // Insert the import right after the `import __intrinsics__;` line.
         let anchor = "import __intrinsics__;\n";
         if let Some(pos) = source.find(anchor) {
             let at = pos + anchor.len();
-            source.insert_str(at, "import algebraic_elaborators(into);\n");
+            source.insert_str(at, "import algebraic_macros(macro into);\n");
         } else {
             // No intrinsics line (shouldn't happen for the generated
             // header, but stay robust): prepend after the module line.
             let mlead = "module prog;\n";
             if let Some(pos) = source.find(mlead) {
                 let at = pos + mlead.len();
-                source.insert_str(at, "\nimport algebraic_elaborators(into);\n");
+                source.insert_str(at, "\nimport algebraic_macros(macro into);\n");
             }
         }
     }
-    source.push_str(
-        "\npub fn kio_gen_elaborator_bug() -> I32 {\n  into!(\"kio_gen_elaborator_bug\")\n}\n",
-    );
+    source.push_str("\npub fn kio_gen_macro_bug() -> I32 {\n  into(\"kio_gen_macro_bug\")\n}\n");
 }
 
 fn corrupt_import(files: &mut Vec<(String, String)>) {
@@ -292,7 +290,7 @@ mod tests {
             params: vec![("value".to_owned(), Type::Unit)],
             ret: Type::Unit,
             body: Term::Var("value".to_owned()),
-            user_elaborators: Vec::new(),
+            user_macros: Vec::new(),
             uses_surface: false,
             surface_mode,
         }
@@ -314,7 +312,7 @@ mod tests {
                 let mut original = emit::render_package_files(&candidate);
                 let original_package = package_kio_mut(&mut original);
                 let (prefix, _) = original_package.split_once("bridge {\n").unwrap();
-                for mutation in [Mutation::Import, Mutation::Elaborator] {
+                for mutation in [Mutation::Import, Mutation::Macro] {
                     let (mut files, exit, category) = apply(&candidate, mutation);
                     assert_eq!(
                         (exit, category),
@@ -328,9 +326,7 @@ mod tests {
                             "kio_gen_empty",
                             "bridge {\n  prog;\n  testapi;\n  kio_gen_empty\n}\n",
                         ),
-                        (Mutation::Elaborator, _) => {
-                            ("testapi", "bridge {\n  prog;\n  testapi\n}\n")
-                        }
+                        (Mutation::Macro, _) => ("testapi", "bridge {\n  prog;\n  testapi\n}\n"),
                         _ => unreachable!(),
                     };
                     assert_eq!(package_kio_mut(&mut files), &format!("{prefix}{bridge}"));
@@ -364,17 +360,17 @@ mod tests {
     }
 
     #[test]
-    fn elaborator_mutation_prepares_its_failure_inputs() {
+    fn macro_mutation_prepares_its_failure_inputs() {
         for surface_mode in [false, true] {
             let prog = shrink::minimize_body(&program(surface_mode));
-            let (files, exit, category) = apply(&prog, Mutation::Elaborator);
-            assert_eq!((exit, category), (15, "15_elaborator_error"));
-            assert!(!Mutation::Elaborator.preserves_kio_prime_grammar());
+            let (files, exit, category) = apply(&prog, Mutation::Macro);
+            assert_eq!((exit, category), (15, "15_macro_error"));
+            assert!(!Mutation::Macro.preserves_kio_prime_grammar());
             let source = root(&files);
-            assert_eq!(source.matches("import algebraic_elaborators(").count(), 1);
+            assert_eq!(source.matches("import algebraic_macros(macro ").count(), 1);
             if !surface_mode {
                 assert!(
-                    source.contains("import __intrinsics__;\nimport algebraic_elaborators(into);")
+                    source.contains("import __intrinsics__;\nimport algebraic_macros(macro into);")
                 );
             }
             assert_eq!(
@@ -383,7 +379,7 @@ mod tests {
                     .count(),
                 1
             );
-            assert!(source.contains("into!(\"kio_gen_elaborator_bug\")"));
+            assert!(source.contains("into(\"kio_gen_macro_bug\")"));
         }
     }
 }

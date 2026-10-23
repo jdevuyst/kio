@@ -1,9 +1,9 @@
 module flow/search;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
 import flow/math as math;
 import flow/network as net;
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, default Bool);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -16,7 +16,7 @@ rec(loop) fn reconstruct(
 , node: I32
 , path: Array(I32)
 ) -> Array(I32) {
-  if! math.equal(node, source) {
+  if(math.equal(node, source)) {
     path
   } else {
     let edge_index = ar.array_get(parent, node);
@@ -41,11 +41,11 @@ rec(loop) fn walk(
 , node: I32
 , index: I32
 ) -> Array(I32) | . {
-  if! math.equal(node, sink) {
-    reconstruct(network, parent, source, sink, ar.array_make_empty(I32, ())).>widen_sum!
+  if(math.equal(node, sink)) {
+    reconstruct(network, parent, source, sink, ar.array_make_empty(I32, ())).>widen_sum
   } else {
     let edges = network.?{net.edges};
-    if! math.less(index, ar.array_len(edges)) {
+    if(math.less(index, ar.array_len(edges))) {
       let edge = ar.array_get(edges, index);
       let usable = math.both(
       , math.equal(edge.?{net.from}, node)
@@ -54,15 +54,15 @@ rec(loop) fn walk(
         , math.invert(ar.array_get(seen, edge.?{net.to}))
         )
       );
-      if! usable {
+      if(usable) {
         ar.array_set(parent, edge.?{net.to}, index);
         ar.array_set(seen, edge.?{net.to}, .t);
         recur walk(network, residual, source, sink, parent, seen, edge.?{net.to}, 0)
       } else {
         recur walk(network, residual, source, sink, parent, seen, node, a.add_i32(index, 1))
       }
-    } else if! math.equal(node, source) {
-      ().>widen_sum!
+    } else if(math.equal(node, source)) {
+      ().>widen_sum
     } else {
       let previous = ar.array_get(parent, node);
       recur walk(
@@ -96,15 +96,15 @@ rec(loop) fn scan_reachable(
 , node: I32
 , index: I32
 ) {
-  if! math.less(index, ar.array_len(network.?{net.edges})) {
+  if(math.less(index, ar.array_len(network.?{net.edges}))) {
     let edge = ar.array_get(network.?{net.edges}, index);
-    if! math.both(
+    if(math.both(
     , math.equal(edge.?{net.from}, node)
     , math.both(
       , math.less(0, ar.array_get(residual, index))
       , math.invert(ar.array_get(reached, edge.?{net.to}))
       )
-    ) {
+    )) {
       ar.array_set(reached, edge.?{net.to}, .t);
       ar.array_push(queue, edge.?{net.to})
     } else {
@@ -123,7 +123,7 @@ rec(loop) fn breadth_first(
 , queue: Array(I32)
 , head: I32
 ) -> Array(Bool) {
-  if! math.less(head, ar.array_len(queue)) {
+  if(math.less(head, ar.array_len(queue))) {
     scan_reachable(network, residual, reached, queue, ar.array_get(queue, head), 0);
     recur breadth_first(network, residual, reached, queue, a.add_i32(head, 1))
   } else {

@@ -153,7 +153,7 @@ and after the evaluated change. Instrumenting its generated JS function entries 
 ordinary pure factory invocations falling from 9 to 5; `relay` and the unknown
 callback factory each remained at 1. This is avoided runtime work, not an
 end-to-end runtime-speed claim. A bounded debug-build ABBA comparison of
-`test-data/poc/elab` with `build js --no-cache` measured summed Enriched
+the [macro-library POC](../test-data/poc/macros/) with `build js --no-cache` measured summed Enriched
 preparation at 18.16/22.84/19.97/21.41 ms (baseline/changed/changed/baseline),
 whole-command elapsed time at 37.18/36.05/45.69/53.91 s, and maximum RSS at
 344444/314952/346128/321100 KiB. The runs shared compiler resources with other

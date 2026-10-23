@@ -7,8 +7,8 @@
 /// its recorded bit count).
 module huffman/text;
 
-import elab/control(if);
-import testapi(default Bool, I32, String);
+import macros/control(macro if);
+import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
@@ -23,7 +23,7 @@ pub fn cat4(a: String, b: String, c: String, d: String) -> String { cat(cat3(a, 
 pub fn num(value: I32) -> String { int_to_string(value) }
 
 rec(loop) fn digits_from(value: I32, count: I32, power: I32) -> I32 {
-  if! lt_i32(value, power) {
+  if(lt_i32(value, power)) {
     count
   } else {
     recur digits_from(value, add_i32(count, 1), mul_i32(power, 10))
@@ -35,7 +35,7 @@ rec(loop) fn digits_from(value: I32, count: I32, power: I32) -> I32 {
 fn digits(value: I32) -> I32 { digits_from(value, 1, 10) }
 
 rec(loop) fn repeat_onto(unit: String, times: I32, acc: String) -> String {
-  if! lt_i32(times, 1) { acc } else { recur repeat_onto(unit, sub_i32(times, 1), cat(acc, unit)) }
+  if(lt_i32(times, 1)) { acc } else { recur repeat_onto(unit, sub_i32(times, 1), cat(acc, unit)) }
 }
 
 pub fn repeat(unit: String, times: I32) -> String { repeat_onto(unit, times, "") }

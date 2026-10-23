@@ -1,11 +1,11 @@
 module logic/model;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
 import list_host as numbers;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 
 pub labels Signal = { wire: I32, level: Bool };
@@ -27,7 +27,7 @@ pub labels State = {
 };
 
 pub fn same_bit(a: Bool, b: Bool) -> Bool {
-  if! a { b } else if! b { .f } else { .t }
+  if(a) { b } else if(b) { .f } else { .t }
 }
 
 pub fn initial_wires() -> lists.List(Signal) {
@@ -44,7 +44,7 @@ pub fn initial_wires() -> lists.List(Signal) {
 }
 
 pub fn read_wire(id: I32, wires: lists.List(Signal)) -> Bool {
-  match! traversal.find(.(signal: Signal) { numbers.eq_i32(signal.?{wire}, id) }, wires) {
+  match(traversal.find(.(signal: Signal) { numbers.eq_i32(signal.?{wire}, id) }, wires)) {
     .(signal: Signal) { signal.?{level} };
     .() { .f }
   }
@@ -53,20 +53,20 @@ pub fn read_wire(id: I32, wires: lists.List(Signal)) -> Bool {
 pub fn write_wire(id: I32, bit: Bool, wires: lists.List(Signal)) -> lists.List(Signal) {
   traversal.map(
   , .(signal: Signal) {
-      if! numbers.eq_i32(signal.?{wire}, id) { {wire = id, level = bit} } else { signal }
+      if(numbers.eq_i32(signal.?{wire}, id)) { {wire = id, level = bit} } else { signal }
     }
   , wires
   )
 }
 
 pub fn name(id: I32) -> String {
-  if! numbers.eq_i32(id, 0) {
+  if(numbers.eq_i32(id, 0)) {
     "A"
-  } else if! numbers.eq_i32(id, 1) {
+  } else if(numbers.eq_i32(id, 1)) {
     "slow"
-  } else if! numbers.eq_i32(id, 2) {
+  } else if(numbers.eq_i32(id, 2)) {
     "H"
-  } else if! numbers.eq_i32(id, 3) {
+  } else if(numbers.eq_i32(id, 3)) {
     "T"
   } else {
     "I"
@@ -74,35 +74,35 @@ pub fn name(id: I32) -> String {
 }
 
 pub fn affected(op: Primitive, id: I32) -> Bool {
-  match! op {
+  match(op) {
     .(input: Buffer) { numbers.eq_i32(input.?{buffer}, id) };
     .(inputs: Xor) {
       let .(a, b) = inputs.?{xor};
-      if! numbers.eq_i32(a, id) { .t } else { numbers.eq_i32(b, id) }
+      if(numbers.eq_i32(a, id)) { .t } else { numbers.eq_i32(b, id) }
     }
   }
 }
 
 pub fn evaluate(op: Primitive, wires: lists.List(Signal)) -> Bool {
-  match! op {
+  match(op) {
     .(input: Buffer) { read_wire(input.?{buffer}, wires) };
     .(inputs: Xor) {
       let .(a, b) = inputs.?{xor};
-      if! same_bit(read_wire(a, wires), read_wire(b, wires)) { .f } else { .t }
+      if(same_bit(read_wire(a, wires), read_wire(b, wires))) { .f } else { .t }
     }
   }
 }
 
 pub fn circuit() -> lists.List(Gate) {
   lists.cons(
-  , {output = 1, operation = {buffer = 0}.>widen_sum!(Primitive), delay = 3, inertial = .f}
+  , {output = 1, operation = {buffer = 0}.>widen_sum(Primitive), delay = 3, inertial = .f}
   , lists.cons(
-    , {output = 2, operation = {xor = (0, 1)}.>widen_sum!(Primitive), delay = 1, inertial = .f}
+    , {output = 2, operation = {xor = (0, 1)}.>widen_sum(Primitive), delay = 1, inertial = .f}
     , lists.cons(
-      , {output = 3, operation = {buffer = 2}.>widen_sum!(Primitive), delay = 2, inertial = .f}
+      , {output = 3, operation = {buffer = 2}.>widen_sum(Primitive), delay = 2, inertial = .f}
       , lists.singleton({
         , output = 4
-        , operation = {buffer = 2}.>widen_sum!(Primitive)
+        , operation = {buffer = 2}.>widen_sum(Primitive)
         , delay = 2
         , inertial = .t
         })

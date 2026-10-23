@@ -23,7 +23,7 @@ duplicate branches collapse. See [products](docs/guides/products.md),
 **Spine.** The right-hand chain of a product or sum tree. `A & B & C` means
 `A & (B & C)`; its spine has three components. `(A & B) & C` has a different
 tree, with the grouped product in its first slot. Order and grouping matter to
-ordinary type equality. Library [spine elabs](docs/poc/elab.md#two-source-to-target-palettes)
+ordinary type equality. Library [spine macros](docs/poc/macros.md#two-source-to-target-palettes)
 perform explicit structural transformations.
 
 **Row, record, field, label.** Record-shaped values use ordinary products of
@@ -56,7 +56,7 @@ See [declarations](docs/guides/declarations.md),
 
 **Type equality versus conversion.** The Unit type `.` has the sole value
 `()`, and bottom `!` has no values. `A & .` and `A | !` are distinct from `A`
-under ordinary type equality. An elab can generate a conversion between
+under ordinary type equality. A macro can generate a conversion between
 these shapes when its library contract admits it. The same distinction applies
 to reordering, reassociation, and other isomorphisms: an available conversion
 does not make two types equal. See the
@@ -66,7 +66,7 @@ does not make two types equal. See the
 
 **Kio, Kio', surface, core.** Kio is the full language. Kio' (pronounced
 "Kio prime") is its explicit semantic subset, also called the *core*.
-Surface forms such as tuples, label operations and bang calls are translated
+Surface forms such as tuples, label operations and macro calls are translated
 to that shared subset. A file's Kio' syntax, a compiler AST's Prime shape,
 successful type validation, and successful dynamic loading are different
 claims. In particular, the
@@ -74,24 +74,29 @@ claims. In particular, the
 validates structural and host/export contract edges, trusting precompiled
 function-body typing. See [Kio'](specs/prime.md).
 
-**Elaboration, compiler elaborator; elab, elaborator macro, bang call.**
+**Elaboration, compiler elaborator; macro, macro call.**
 Elaboration is the compiler's process of resolving surface code and type
 information into explicit core code; the *compiler elaborator* performs it.
-An *elab*, short for *elaborator macro*, is a library-defined type-driven macro
-declared with `elab`. Its
-implementation runs while a written bang call, such as `match!`, is checked.
+A *macro* is a library-defined type-driven metaprogram declared with `macro`. Its
+implementation runs while a written macro call, such as `match(value) { clauses }`,
+is checked. Written nonempty prefix arguments use ordinary list parentheses; a
+call with no written prefix, such as `scope { body }`, omits the list. UFCS
+can supply a receiver without a written prefix list.
 It works with reflected types and checked-term recipes and produces checked
 core code for that call site, rather than substituting source text.
-Elabs are declared or imported
+Macros are declared or imported
 explicitly, with ordinary resolution; their names do not make them compiler
 primitives. Reflected terms describe code, rather than its computed runtime
-value. See [defining elabs](docs/guides/elaborators.md) and
-[building elabs](docs/guides/elaborator-authoring.md).
+value. The shared normalizer reduces core terms and executes prepared pure
+macro implementations during elaboration; the surrounding typechecking resumes
+after the replacement is checked. `:normalize` displays a residual normal form,
+and `equiv` compares normal forms under shared binders. See [defining macros](docs/guides/macros.md) and
+[building macros](docs/guides/macro-authoring.md).
 
 **Builtin module, intrinsic, library.** Builtin modules expose the compiler's
 specified primitive interfaces. Intrinsics are reserved operations in
 `__intrinsics__`; `__comptime__` supplies the compile-time reflection interface.
-Ordinary libraries, including those defining `if!`, `match!` and `do!`, use
+Ordinary libraries, including those defining `if`, `match` and `do`, use
 these interfaces without becoming builtins themselves. See
 [builtin modules](docs/guides/builtin-modules.md).
 
@@ -114,7 +119,7 @@ not every possible behavior of host implementations. See
 
 **Pure function.** `pure fn` restricts executable declaration references in a
 function body. It does not classify types or promise that every call is
-effect-free: a supplied callback may have effects. Elab implementations
+effect-free: a supplied callback may have effects. Macro implementations
 execute under the pure-function rules. See
 [function purity](specs/language.md#module-system).
 

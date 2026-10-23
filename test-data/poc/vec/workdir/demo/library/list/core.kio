@@ -2,8 +2,8 @@
 /// A ready-to-use library module for your own Kio package.
 module library/list/core;
 
-import library/list/elab/match(match);
-import library/list/elab/spine_elaborators(widen_sum);
+import library/list/macros/match(macro match);
+import library/list/macros/spine_macros(macro widen_sum);
 import list/core as _rehost_gmgjhdhecpgdgphcgf;
 
 // Kio' is strongly normalizing — no in-language recursion — so iteration
@@ -30,11 +30,11 @@ pub type List[A] = _rehost_gmgjhdhecpgdgphcgf.List(A);
 /// `nil(A)` is the empty list; `cons(head, tail)` prepends one element;
 /// `singleton(x)` is the one-element list. All three are O(1) and
 /// pure.
-pub fn nil[A] -> List(A) { List.cons_cell(widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.cons_cell(widen_sum((), . | (A & List(A)))) }
 
 /// Prepends one element to a cons-list spine in O(1).
 pub fn cons[A](head: A, tail: List(A)) -> List(A) {
-  List.cons_cell(widen_sum!((head, tail), . | (A & List(A))))
+  List.cons_cell(widen_sum((head, tail), . | (A & List(A))))
 }
 
 /// Builds the one-element structure while preserving the module representation invariant.
@@ -58,24 +58,24 @@ pub fn uncons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(xs) }
 /// list (a total tail — the common library convention). Both are O(1):
 /// they look only at the outermost cell.
 pub fn head[A](xs: List(A)) -> A | . {
-  match! uncons(xs) {
+  match(uncons(xs)) {
     (
     , .(pair: A & List(A)) {
-        match! pair {
-          .(h: A, _t: List(A)) { widen_sum!(h, A | .) }
+        match(pair) {
+          .(h: A, _t: List(A)) { widen_sum(h, A | .) }
         }
       }
-    , .(_empty: .) { widen_sum!((), A | .) }
+    , .(_empty: .) { widen_sum((), A | .) }
     )
   }
 }
 
 /// Drops the first list element, returning empty when the input is empty.
 pub fn tail[A](xs: List(A)) -> List(A) {
-  match! uncons(xs) {
+  match(uncons(xs)) {
     (
     , .(pair: A & List(A)) {
-        match! pair {
+        match(pair) {
           .(_h: A, t: List(A)) { t }
         }
       }
@@ -125,23 +125,23 @@ pub fn append_step[A](carry: List(A), x: A) -> List(A) { cons(x, carry) }
 // `uncons(nil) ≡ ()` — the empty list uncons-es to the absent arm.
 equiv uncons_nil[A]() {
   uncons(nil(A));
-  widen_sum!((), . | (A & List(A)))
+  widen_sum((), . | (A & List(A)))
 }
 
 // `uncons(cons(x, xs)) ≡ (x, xs)` — a cons cell uncons-es to its pair.
 equiv uncons_cons[A](x: A, xs: List(A)) {
   uncons(cons(x, xs));
-  widen_sum!((x, xs), . | (A & List(A)))
+  widen_sum((x, xs), . | (A & List(A)))
 }
 
 equiv head_cons[A](x: A, xs: List(A)) {
   head(cons(x, xs));
-  widen_sum!(x, A | .)
+  widen_sum(x, A | .)
 }
 
 equiv head_nil[A]() {
   head(nil(A));
-  widen_sum!((), A | .)
+  widen_sum((), A | .)
 }
 
 // `tail(cons(x, xs)) ≡ xs`.
@@ -163,7 +163,7 @@ equiv singleton_is_cons_nil[A](x: A) {
 }
 
 fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present(value) }, .(_empty: .) { default })
   }
 }

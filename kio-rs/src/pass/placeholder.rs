@@ -288,7 +288,13 @@ impl<'a> Classifier<'_, 'a> {
 
     fn expr(&mut self, expr: &'a mut Expr) -> Result<(), Error> {
         match expr {
-            Expr::BlockCall { prefix, blocks, .. } => {
+            Expr::BlockCall {
+                head,
+                prefix,
+                blocks,
+                ..
+            } => {
+                self.path(std::slice::from_mut(head))?;
                 for value in prefix {
                     self.expr(value)?;
                 }
@@ -301,7 +307,7 @@ impl<'a> Classifier<'_, 'a> {
                 self.expr(callee)?;
                 self.args(args)?;
             }
-            Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => self.args(args)?,
+            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => self.args(args)?,
             Expr::FnExpr { sig, body, .. } => {
                 let mut introduced = Vec::new();
                 for param in &sig.params {
@@ -370,11 +376,11 @@ impl<'a> Classifier<'_, 'a> {
                 receiver,
                 callee_segments,
                 args,
-                bang,
+                macro_call,
                 ..
             } => {
                 self.expr(receiver)?;
-                if bang.is_none() {
+                if macro_call.is_none() {
                     self.path(callee_segments)?;
                 }
                 self.args(args)?;
@@ -436,10 +442,7 @@ mod tests {
 
     #[test]
     fn numbered_bindings_classify_before_operator_expansion() {
-        for body in [
-            "let .x. = (); x1 + ()",
-            "action! { let .x. <- (); x1 + () }",
-        ] {
+        for body in ["let .x. = (); x1 + ()", "action { let .x. <- (); x1 + () }"] {
             let source = format!(
                 "module m; fn x2(a: ., b: .) -> . {{ a }} \
                 op _ + _ {{ impl x2; }}; fn run() {{ {body} }}"
@@ -581,6 +584,28 @@ mod tests {
             param.name, "p1",
             "outer lambda must not capture a free name in the inner owner"
         );
+    }
+
+    #[test]
+    fn numbered_block_head_belongs_to_the_nearest_placeholder() {
+        let mut module =
+            parser::parse("module m; import provider(macro x1); fn run() { .x. { x1 { () } } }")
+                .unwrap();
+        let Expr::FnPlaceholder {
+            stem,
+            state,
+            body,
+            meta,
+            ..
+        } = function_mut(&mut module)
+        else {
+            panic!("placeholder owner")
+        };
+        assert_eq!(prepare(stem, state, body, meta.span).unwrap(), 1);
+        let Expr::BlockCall { head, .. } = body.as_ref() else {
+            panic!("neutral block call")
+        };
+        assert_eq!(head.name, local_name(1));
     }
 
     #[test]

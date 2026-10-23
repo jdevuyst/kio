@@ -24,7 +24,7 @@ fn initial_env() -> HashMap<String, Type> {
 
 /// Pin the `Type::Param` payload-equality invariant that
 /// `match_disjoint` (slice 2.9) relies on. The fix routes the
-/// `match!` production through `pick_match_disjoint_pair`, which in
+/// `match` production through `pick_match_disjoint_pair`, which in
 /// turn checks `a != b` to reject two structurally-identical
 /// scrutinee arms (the case where one clause's parameter type
 /// covers both DNF branches). For two `Box(I32)` Param
@@ -84,10 +84,10 @@ fn block_ufcs_directions_keep_the_receiver_before_projected_blocks() {
             "__if_then_else__(I32, condition, .() { yes }, .() { no })"
         );
         let expected = match spelling {
-            UfcsSpelling::ReceiverFirst => "(condition).>if! { yes } else { no }",
-            UfcsSpelling::ReceiverLast => "(condition).>>if! { yes } else { no }",
-            UfcsSpelling::CalleeLast => "if! { yes } else { no }.<(condition)",
-            UfcsSpelling::CalleeFirst => "if! { yes } else { no }.<<(condition)",
+            UfcsSpelling::ReceiverFirst => "(condition).>if { yes } else { no }",
+            UfcsSpelling::ReceiverLast => "(condition).>>if { yes } else { no }",
+            UfcsSpelling::CalleeLast => "if { yes } else { no }.<(condition)",
+            UfcsSpelling::CalleeFirst => "if { yes } else { no }.<<(condition)",
         };
         assert_eq!(
             render::render_term_opts(&term, &render::RenderOpts { surface: true }),
@@ -300,7 +300,7 @@ fn type_only_support_tracks_body_calls_and_shrinking() {
                 params: vec![],
                 ret: Type::Unit,
                 body,
-                user_elaborators: vec![],
+                user_macros: vec![],
                 uses_surface: false,
                 surface_mode,
             };
@@ -746,7 +746,7 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
         | Term::Fit { inner } => {
             // Identity-only coercions: the inner's type is the
             // result type. The actual coercion semantics live in
-            // kio-rs's elaborator — selfcheck only verifies the
+            // kio-rs's macro — selfcheck only verifies the
             // generator stays inside the identity envelope.
             type_of(inner, env)
         }
@@ -848,13 +848,13 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             }
             Ok(*ret)
         }
-        Term::UserElaborator { name: _, inner } => {
-            // Generated user elaborators are identity-style
+        Term::UserMacro { name: _, inner } => {
+            // Generated user macros are identity-style
             // reflected-ABI templates; their Kio' fallback is the
             // wrapped term.
             type_of(inner, env)
         }
-        Term::MatchBang {
+        Term::MatchMacro {
             scrutinee,
             left_param,
             left_ty,
@@ -864,27 +864,27 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             right_body,
             ret_ty,
         } => {
-            // Two-clause `match!` against a sum-typed scrutinee.
+            // Two-clause `match` against a sum-typed scrutinee.
             // Per spec, both clause bodies produce the same common
             // result type `ret_ty`.
             let st = type_of(scrutinee, env)?;
             let expected_sum = Type::Sum(Box::new(left_ty.clone()), Box::new(right_ty.clone()));
             if st != expected_sum {
                 return Err(format!(
-                    "match!: scrutinee {st:?} != expected {expected_sum:?}"
+                    "match: scrutinee {st:?} != expected {expected_sum:?}"
                 ));
             }
             let mut le = env.clone();
             le.insert(left_param.clone(), left_ty.clone());
             let lt = type_of(left_body, &le)?;
             if lt != *ret_ty {
-                return Err(format!("match!: left body {lt:?} != ret_ty {ret_ty:?}"));
+                return Err(format!("match: left body {lt:?} != ret_ty {ret_ty:?}"));
             }
             let mut re = env.clone();
             re.insert(right_param.clone(), right_ty.clone());
             let rt = type_of(right_body, &re)?;
             if rt != *ret_ty {
-                return Err(format!("match!: right body {rt:?} != ret_ty {ret_ty:?}"));
+                return Err(format!("match: right body {rt:?} != ret_ty {ret_ty:?}"));
             }
             Ok(ret_ty.clone())
         }

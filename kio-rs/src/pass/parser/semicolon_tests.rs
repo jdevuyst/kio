@@ -25,7 +25,7 @@ fn outer_braced_entries_accept_one_redundant_suffix() {
         "equiv same { (); () }",
         "op _ + _ { impl add }",
         "varop [* *] { foldr1 step seed }",
-        "elab apply : . -> . { impl run }",
+        "macro apply : . -> . { impl run }",
     ] {
         for suffix in ["", ";"] {
             let source = format!("module sample; {item}{suffix}");
@@ -51,7 +51,7 @@ fn strict_nested_edges_preserve_repeat_and_empty_policy() {
     for body in [
         "op _ + _ { ; impl add; }",
         "varop [* *] { ; foldr1 step seed; finalize finish; }",
-        "elab apply : . -> . { ; captures (helper); impl run; }",
+        "macro apply : . -> . { ; captures (helper); impl run; }",
         "rec(loop) { ; fn f() { () }; fn g() { () }; }",
         "rec { ; type A = B; newtype B : . { constructor make; projector get }; }",
     ] {
@@ -60,7 +60,7 @@ fn strict_nested_edges_preserve_repeat_and_empty_policy() {
     for body in [
         "op _ + _ { ;; impl add }",
         "op _ + _ { impl add;; }",
-        "elab apply : . -> . { captures (helper) impl run }",
+        "macro apply : . -> . { captures (helper) impl run }",
         "rec(loop) { fn f() { () } fn g() { () } }",
         "rec { type A = B;; type B = . }",
     ] {
@@ -196,7 +196,7 @@ fn compact_declaration_outer_comments_have_one_owner() {
     for item in [
         "op _ + _ { impl add }",
         "varop [* *] { foldr1 step seed }",
-        "elab apply : . -> . { impl run }",
+        "macro apply : . -> . { impl run }",
     ] {
         for following in ["", "fn next() { () }"] {
             let source = format!("module sample; {item} // outside_marker\n; {following}");

@@ -9,9 +9,9 @@
 /// signature rows, which are ordinary unsorted integer lists.
 module automata/seq;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -20,10 +20,10 @@ pub rec newtype List[A] : . | (A & List(A)) { constructor pack; pub projector un
 
 pub type Ints = List(I32);
 
-pub fn nil[A] -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.pack(A, widen_sum((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, rest: List(A)) -> List(A) {
-  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+  List.pack(A, widen_sum((head, rest), . | (A & List(A))))
 }
 
 pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
@@ -31,13 +31,13 @@ pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
 pub fn empty() -> Ints { nil(I32) }
 
 fn is_empty[A](xs: List(A)) -> Bool {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
   }
 }
 
 fn head_or[A](xs: List(A), fallback: A) -> A {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
   }
 }
@@ -46,7 +46,7 @@ fn head_or[A](xs: List(A), fallback: A) -> A {
 /// every element. Operations that need early exit or pairwise state recurse
 /// directly instead.
 pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(head: A, rest: List(A)) { recur fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
   }
 }
@@ -66,9 +66,9 @@ pub fn len[A](xs: List(A)) -> I32 {
 }
 
 rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
-  if! leq_i32(count, 0) {
+  if(leq_i32(count, 0)) {
     xs
-  } else match! xs.>List.unpack {
+  } else match(xs.>List.unpack) {
     (.(_head: A, rest: List(A)) { recur drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
   }
 }
@@ -78,10 +78,10 @@ rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
 pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
 
 pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(head: I32, rest: Ints) {
-        if! eq_i32(head, value) { .t } else { recur member(value, rest) }
+        if(eq_i32(head, value)) { .t } else { recur member(value, rest) }
       }
     , .(_empty: .) { .f }
     )
@@ -90,12 +90,12 @@ pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
 
 /// Insert into a strictly ascending list, ignoring a value already there.
 pub rec(loop) fn insert(value: I32, xs: Ints) -> Ints {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(head: I32, rest: Ints) {
-        if! lt_i32(value, head) {
+        if(lt_i32(value, head)) {
           cons(value, xs)
-        } else if! eq_i32(value, head) {
+        } else if(eq_i32(value, head)) {
           xs
         } else {
           cons(head, recur(cont) insert(value, rest))
@@ -117,7 +117,7 @@ pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
     , xs
     , .(acc: I32 & Ints, x: A) {
         let .(at: I32, hits: Ints) = acc;
-        let next = if! keep(x) { insert(at, hits) } else { hits };
+        let next = if(keep(x)) { insert(at, hits) } else { hits };
         (add_i32(at, 1), next)
       }
     , (0, empty())
@@ -128,13 +128,13 @@ pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
 /// Elementwise equality. On canonical sets this is set equality; on
 /// signature rows it is row equality.
 rec(loop) fn ints_eq(xs: Ints, ys: Ints) -> Bool {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(x: I32, xr: Ints) {
-        match! ys.>List.unpack {
+        match(ys.>List.unpack) {
           (
           , .(y: I32, yr: Ints) {
-              if! eq_i32(x, y) { recur ints_eq(xr, yr) } else { .f }
+              if(eq_i32(x, y)) { recur ints_eq(xr, yr) } else { .f }
             }
           , .(_empty: .) { .f }
           )
@@ -146,10 +146,10 @@ rec(loop) fn ints_eq(xs: Ints, ys: Ints) -> Bool {
 }
 
 rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
-  match! rows.>List.unpack {
+  match(rows.>List.unpack) {
     (
     , .(row: Ints, rest: List(Ints)) {
-        if! ints_eq(row, needle) { at } else { recur scan_for(rest, needle, add_i32(at, 1)) }
+        if(ints_eq(row, needle)) { at } else { recur scan_for(rest, needle, add_i32(at, 1)) }
       }
     , .(_empty: .) { at }
     )
@@ -161,5 +161,5 @@ rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
 /// then takes — so there is no not-found sentinel to thread.
 pub fn intern(rows: List(Ints), needle: Ints) -> List(Ints) & I32 {
   let at = scan_for(rows, needle, 0);
-  if! lt_i32(at, len(rows)) { (rows, at) } else { (snoc(rows, needle), at) }
+  if(lt_i32(at, len(rows))) { (rows, at) } else { (snoc(rows, needle), at) }
 }

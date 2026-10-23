@@ -9,8 +9,8 @@
 /// or queued — which is what makes the accounting in `os/report` add up.
 module os/sched;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import os/config as config;
 import os/memory as memory;
 import os/num as num;
@@ -32,17 +32,17 @@ fn program_len(programs: Array(Array(Phase)), pid: I32) -> I32 {
 }
 
 rec(loop) fn admit(pcb: proc.Pcb, q: queue.Queues, tick: I32, pid: I32) {
-  if! leq_i32(config.proc_count(), pid) {
+  if(leq_i32(config.proc_count(), pid)) {
     ()
   } else {
-    if! num.eq(proc.arrive_at(pcb, pid), tick) { queue.enqueue(q, pid) } else { () };
+    if(num.eq(proc.arrive_at(pcb, pid), tick)) { queue.enqueue(q, pid) } else { () };
     recur admit(pcb, q, tick, add_i32(pid, 1))
   }
 }
 
 /// Every process left on the ready queue spent this tick waiting for the CPU.
 rec(loop) fn charge_queued(pcb: proc.Pcb, q: queue.Queues, i: I32) {
-  if! leq_i32(queue.ready_len(q), i) {
+  if(leq_i32(queue.ready_len(q), i)) {
     ()
   } else {
     proc.add_wait_tick(pcb, queue.ready_at(q, i));
@@ -54,7 +54,7 @@ rec(loop) fn charge_queued(pcb: proc.Pcb, q: queue.Queues, i: I32) {
 /// It runs before the process on the CPU can join that list, so the tick a
 /// process traps on is charged as a trap and not as blocked time.
 rec(loop) fn charge_blocked(pcb: proc.Pcb, q: queue.Queues, i: I32) {
-  if! leq_i32(queue.blocked_len(q), i) {
+  if(leq_i32(queue.blocked_len(q), i)) {
     ()
   } else {
     proc.add_block_tick(pcb, queue.blocked_at(q, i));
@@ -63,9 +63,9 @@ rec(loop) fn charge_blocked(pcb: proc.Pcb, q: queue.Queues, i: I32) {
 }
 
 rec(loop) fn all_retired(pcb: proc.Pcb, pid: I32) -> Bool {
-  if! leq_i32(config.proc_count(), pid) {
+  if(leq_i32(config.proc_count(), pid)) {
     .t
-  } else if! proc.is_done(pcb, pid) {
+  } else if(proc.is_done(pcb, pid)) {
     recur all_retired(pcb, add_i32(pid, 1))
   } else {
     .f
@@ -75,9 +75,9 @@ rec(loop) fn all_retired(pcb: proc.Pcb, pid: I32) -> Bool {
 /// Give the CPU to the head of the ready queue when it is free. A fresh quantum
 /// starts, and the incoming process is charged the context switch.
 fn dispatch(pcb: proc.Pcb, q: queue.Queues, running: I32, quantum_left: I32) -> I32 & I32 {
-  if! num.geq(running, 0) {
+  if(num.geq(running, 0)) {
     (running, quantum_left)
-  } else match! queue.dequeue(q) {
+  } else match(queue.dequeue(q)) {
     (
     , .(pid: I32) { proc.add_switch(pcb, pid); (pid, config.quantum()) }
     , .(_empty: .) { (config.nothing(), 0) }
@@ -96,11 +96,11 @@ fn settle(
 , pid: I32
 , quantum_left: I32
 ) -> trace.Outcome & I32 & I32 {
-  if! num.geq(proc.pc_at(pcb, pid), program_len(programs, pid)) {
+  if(num.geq(proc.pc_at(pcb, pid), program_len(programs, pid))) {
     proc.set_finish(pcb, pid, tick);
     queue.retire(q, pid);
     (trace.retired(), config.nothing(), 0)
-  } else if! leq_i32(quantum_left, 0) {
+  } else if(leq_i32(quantum_left, 0)) {
     queue.enqueue(q, pid);
     (trace.preempted(), config.nothing(), 0)
   } else {
@@ -121,11 +121,11 @@ fn run_compute(
 , quantum_left: I32
 , burst: I32
 ) -> trace.Event & trace.Outcome & I32 & I32 & I32 {
-  let owed = if! num.eq(proc.rem_at(pcb, pid), 0) { burst } else { proc.rem_at(pcb, pid) };
+  let owed = if(num.eq(proc.rem_at(pcb, pid), 0)) { burst } else { proc.rem_at(pcb, pid) };
   let left = sub_i32(owed, 1);
   proc.set_rem(pcb, pid, left);
   proc.add_cpu_tick(pcb, pid);
-  if! num.eq(left, 0) { proc.set_pc(pcb, pid, add_i32(proc.pc_at(pcb, pid), 1)) } else { () };
+  if(num.eq(left, 0)) { proc.set_pc(pcb, pid, add_i32(proc.pc_at(pcb, pid), 1)) } else { () };
   let .(out: trace.Outcome, next_pid: I32, next_quantum: I32) =
     settle(pcb, q, programs, tick, pid, sub_i32(quantum_left, 1));
   (trace.ran_event(left), out, hand, next_pid, next_quantum)
@@ -148,7 +148,7 @@ fn run_touch(
 , vp: I32
 ) -> trace.Event & trace.Outcome & I32 & I32 & I32 {
   let frame = memory.frame_of(mem, pid, vp);
-  if! num.geq(frame, 0) {
+  if(num.geq(frame, 0)) {
     memory.set_ref(mem, frame);
     proc.add_hit(pcb, pid);
     proc.add_cpu_tick(pcb, pid);
@@ -192,7 +192,7 @@ fn execute(
 , pid: I32
 , quantum_left: I32
 ) -> trace.Event & trace.Outcome & I32 & I32 & I32 {
-  match! phase_at(programs, pid, proc.pc_at(pcb, pid)) {
+  match(phase_at(programs, pid, proc.pc_at(pcb, pid))) {
     (
     , .(c: Compute) { run_compute(pcb, q, programs, tick, hand, pid, quantum_left, c.?{compute}) }
     , .(t: Touch) { run_touch(pcb, mem, q, programs, tick, hand, pid, quantum_left, t.?{touch}) }
@@ -211,9 +211,9 @@ rec(loop) fn tick_loop(
 , quantum_left: I32
 , idle: I32
 ) -> I32 & I32 {
-  if! all_retired(pcb, 0) {
+  if(all_retired(pcb, 0)) {
     (tick, idle)
-  } else if! leq_i32(config.tick_budget(), tick) {
+  } else if(leq_i32(config.tick_budget(), tick)) {
     (tick, idle)
   } else {
     queue.wake_serviced(q, tick);
@@ -221,7 +221,7 @@ rec(loop) fn tick_loop(
     let .(on_cpu: I32, quantum: I32) = dispatch(pcb, q, running, quantum_left);
     charge_queued(pcb, q, 0);
     charge_blocked(pcb, q, 0);
-    if! num.lt(on_cpu, 0) {
+    if(num.lt(on_cpu, 0)) {
       trace.emit(tick, config.nothing(), trace.stalled_event(), trace.nobody());
       recur tick_loop(
       , pcb

@@ -19,7 +19,7 @@ NN_<topic>/
 
 `source.kio` may be any byte sequence that lexes successfully —
 fixtures are not required to typecheck or to parse against the full
-grammar; the highlighter is a pure tokenization layer.
+grammar; token classification uses recoverable source structure and lexical scope.
 
 ## Coverage
 
@@ -29,12 +29,11 @@ least one fixture per kind:
 - `01_minimal` — single ident, smoke check
 - `02_keywords` — keyword-shaped words in isolation remain ordinary identifiers,
   including `if`, `else`, `match`, and `do`
-- `03_elaborator_bang_calls` — algebraic (`iso!` / `into!` / `onto!` /
-  `align!` / `ease!` / `atom!`), spine-palette (`reorder_sum!` /
-  `reorder_prod!` / `narrow_sum!` / `narrow_prod!` / `widen_sum!` /
-  `widen_prod!` / `flatten_sum!` / `flatten_prod!` / `one_sum!` /
-  `one_prod!` / `fit!`), and dispatch (`match!`) elab-bang forms,
-  plus an arbitrary user elab and a non-fusion intervening-space case
+- `03_macro_calls` — tagged algebraic, spine and dispatch macro imports,
+  blockless calls, an arbitrary renamed macro, and ordinary local shadowing
+  beside a user-defined `!` operator
+- `macro_ufcs_receiver_scope` — macro callees beside grouped and tuple UFCS
+  receivers in both directions, with ordinary parameter shadows
 - `04_operators_and_brackets` — reserved (`builtin`) ops vs. user ops,
   brackets vs. separators
 - `05_literals` — strings, ints, floats, bools
@@ -53,7 +52,7 @@ least one fixture per kind:
   a function call
 - `27_import_operator_grammar` — full fixed and variadic selected grammars
   retain their tags, slots, separators and delimiters
-- `32_callable_declaration_targets` — fixed, variadic and elab
+- `32_callable_declaration_targets` — fixed, variadic and macro
   callable targets retain ordinary function and type-member roles across trivia
 - `33_contextual_variadic` — `variadic` and mode-shaped ordinary names
   stay identifiers outside actual declarations, including calls and comments
@@ -84,4 +83,4 @@ kind here in the same change.
 
 This corpus is independent of `test-data/goldens/`. Goldens drive the
 end-to-end compile pipeline (parse → typecheck → build → run); this
-corpus drives the lexer-level tokenization only.
+corpus checks source token roles independently of typechecking and execution.

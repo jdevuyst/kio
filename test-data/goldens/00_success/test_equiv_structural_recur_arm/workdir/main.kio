@@ -1,7 +1,7 @@
 module main;
 
 import __comptime__;
-import elab/control(scope);
+import macros/control(macro scope);
 
 pure fn run(ct: __Comptime__, k: . -> .) {
   __structural_recur__(
@@ -16,7 +16,7 @@ pure fn run(ct: __Comptime__, k: . -> .) {
 }
 
 equiv discarded_totality(ct: __Comptime__) {
-  scope! {
+  scope {
     let ignored = run(
     , ct
     , .(_outer: .) -> . {

@@ -1,0 +1,23 @@
+package user_macro_owner_context;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  user_macro_owner_context;
+  user_macro_owner_context/**;
+  macro_owner_b;
+  macro_owner_c;
+  macros
+}

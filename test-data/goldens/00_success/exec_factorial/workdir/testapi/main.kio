@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -15,12 +15,12 @@ import testapi/iter(loop);
 // returns `acc`. Recursive `n!` rephrased as a step-state walk
 // per Kio's strong-normalization constraint.
 fn fact_step(state: I32 & I32) -> (I32 & I32) | I32 {
-  match! state {
+  match(state) {
     .(n: I32, acc: I32) {
-      if! leq_i32(n, 0) {
-        widen_sum!(acc)
+      if(leq_i32(n, 0)) {
+        widen_sum(acc)
       } else {
-        widen_sum!((sub_i32(n, 1), mul_i32(acc, n)), (I32 & I32) | I32)
+        widen_sum((sub_i32(n, 1), mul_i32(acc, n)), (I32 & I32) | I32)
       }
     }
   }

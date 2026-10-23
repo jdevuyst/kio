@@ -52,5 +52,5 @@ build {
 
 bridge {
   optics;
-  elab/testapi
+  macros/testapi
 }

@@ -10,8 +10,8 @@
 /// transcript should say so.
 module seg/script;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import seg/num(int_eq);
 import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
@@ -39,24 +39,24 @@ pub labels Op =
   | { min_range: I32 & I32 }
   | { set_point: I32 & I32 };
 
-fn add_op(l: I32, r: I32, x: I32) -> Op { {add_range = (l, r, x)}.>widen_sum!(Op) }
+fn add_op(l: I32, r: I32, x: I32) -> Op { {add_range = (l, r, x)}.>widen_sum(Op) }
 
-fn sum_op(l: I32, r: I32) -> Op { {sum_range = (l, r)}.>widen_sum!(Op) }
+fn sum_op(l: I32, r: I32) -> Op { {sum_range = (l, r)}.>widen_sum(Op) }
 
-fn min_op(l: I32, r: I32) -> Op { {min_range = (l, r)}.>widen_sum!(Op) }
+fn min_op(l: I32, r: I32) -> Op { {min_range = (l, r)}.>widen_sum(Op) }
 
-fn set_op(i: I32, v: I32) -> Op { {set_point = (i, v)}.>widen_sum!(Op) }
+fn set_op(i: I32, v: I32) -> Op { {set_point = (i, v)}.>widen_sum(Op) }
 
 /// A sawtooth: step up by 9 and wrap back down by 37 whenever the value would
 /// leave the band. It spreads the minimum around the array instead of parking
 /// it at one end, so a `min` query has somewhere interesting to look.
 rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I32) {
-  if! leq_i32(n, i) {
+  if(leq_i32(n, i)) {
     cells
   } else {
     array_set(cells, i, value);
     let stepped = add_i32(value, 9);
-    let wrapped = if! leq_i32(30, stepped) { sub_i32(stepped, 37) } else { stepped };
+    let wrapped = if(leq_i32(30, stepped)) { sub_i32(stepped, 37) } else { stepped };
     recur fill_from(cells, add_i32(i, 1), n, wrapped)
   }
 }
@@ -105,11 +105,11 @@ pub fn op_at(table: Array(I32), k: I32) -> Op {
   let p0 = array_get(table, add_i32(at, 1));
   let p1 = array_get(table, add_i32(at, 2));
   let p2 = array_get(table, add_i32(at, 3));
-  if! int_eq(code, code_add) {
+  if(int_eq(code, code_add)) {
     add_op(p0, p1, p2)
-  } else if! int_eq(code, code_sum) {
+  } else if(int_eq(code, code_sum)) {
     sum_op(p0, p1)
-  } else if! int_eq(code, code_min) {
+  } else if(int_eq(code, code_min)) {
     min_op(p0, p1)
   } else {
     set_op(p0, p1)

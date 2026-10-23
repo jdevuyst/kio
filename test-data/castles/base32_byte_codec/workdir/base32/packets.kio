@@ -9,7 +9,7 @@ module base32/packets;
 
 import base32/alphabet as alphabet;
 import base32/list as list;
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 
 /// A fixture is either a payload to round-trip or a transmission to
@@ -93,9 +93,9 @@ fn damaged() -> alphabet.Glyphs {
     .>glyph("K"))
 }
 
-fn to_encode(payload: alphabet.Bytes) -> Fixture { widen_sum!({payload}, Fixture) }
+fn to_encode(payload: alphabet.Bytes) -> Fixture { widen_sum({payload}, Fixture) }
 
-fn off_the_wire(glyphs: alphabet.Glyphs) -> Fixture { widen_sum!({received = glyphs}, Fixture) }
+fn off_the_wire(glyphs: alphabet.Glyphs) -> Fixture { widen_sum({received = glyphs}, Fixture) }
 
 fn queue(rest: list.List(Fixture), fixture: Fixture) -> list.List(Fixture) {
   list.cons(fixture, rest)

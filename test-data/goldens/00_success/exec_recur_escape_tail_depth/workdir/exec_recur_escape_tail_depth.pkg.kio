@@ -49,7 +49,7 @@ build {
 }
 
 bridge {
-  elab/testapi;
+  macros/testapi;
   testapi;
   testapi/**
 }

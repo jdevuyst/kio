@@ -1,0 +1,10 @@
+package signature_visibility_macro_call_type;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

@@ -13,9 +13,9 @@ module base32/decode;
 import base32/alphabet as alphabet;
 import base32/bits as bits;
 import base32/list as list;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -30,12 +30,12 @@ rec(loop) {
   /// the cursor, so a refusal can say where it happened. Padding carries
   /// no bits and is stepped over.
   fn walk(glyphs: alphabet.Glyphs, position: I32, acc: I32, held: I32, done: alphabet.Bytes) -> Decoded {
-    match! glyphs.>list.List.un_list {
+    match(glyphs.>list.List.un_list) {
       (
       , .(glyph: String, rest: alphabet.Glyphs) {
-          if! alphabet.is_pad(glyph) {
+          if(alphabet.is_pad(glyph)) {
             recur walk(rest, add_i32(position, 1), acc, held, done)
-          } else match! alphabet.value_of(glyph) {
+          } else match(alphabet.value_of(glyph)) {
             (
             , .(value: I32) {
                 recur emit(
@@ -46,18 +46,18 @@ rec(loop) {
                 , done
                 )
               }
-            , .(_unknown: .) { widen_sum!({reject = position}) }
+            , .(_unknown: .) { widen_sum({reject = position}) }
             )
           }
         }
-      , .(_empty: .) { widen_sum!({ok = list.reverse(done)}) }
+      , .(_empty: .) { widen_sum({ok = list.reverse(done)}) }
       )
     }
   };
   /// Draw off every whole byte the accumulator now holds, high bits
   /// first, and keep only the leftover bits behind.
   fn emit(glyphs: alphabet.Glyphs, position: I32, acc: I32, held: I32, done: alphabet.Bytes) -> Decoded {
-    if! lt_i32(held, alphabet.byte_bits()) {
+    if(lt_i32(held, alphabet.byte_bits())) {
       recur walk(glyphs, position, acc, held, done)
     } else {
       let left = sub_i32(held, alphabet.byte_bits());
@@ -68,20 +68,20 @@ rec(loop) {
 }
 
 pub rec(loop) fn bytes_eq(left: alphabet.Bytes, right: alphabet.Bytes) -> Bool {
-  match! left.>list.List.un_list {
+  match(left.>list.List.un_list) {
     (
     , .(head: I32, rest: alphabet.Bytes) {
-        match! right.>list.List.un_list {
+        match(right.>list.List.un_list) {
           (
           , .(other: I32, others: alphabet.Bytes) {
-              if! bits.int_eq(head, other) { recur bytes_eq(rest, others) } else { .f }
+              if(bits.int_eq(head, other)) { recur bytes_eq(rest, others) } else { .f }
             }
           , .(_empty: .) { .f }
           )
         }
       }
     , .(_empty: .) {
-        match! right.>list.List.un_list {
+        match(right.>list.List.un_list) {
           (.(_head: I32, _rest: alphabet.Bytes) { .f }, .(_empty: .) { .t })
         }
       }

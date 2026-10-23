@@ -545,8 +545,8 @@ highlighter. `kio doc build --html` emits per-token
 `<span class="kio-…">` markup inside both `language-kio` fenced code
 blocks and `.sig` item-signature blocks. Each span's class is the
 classifier's dotted wire string (`entity.name.function`,
-`keyword.elaborator`, …) rewritten to a hyphenated, `kio-`-prefixed CSS
-class (`kio-entity-name-function`, `kio-keyword-elaborator`, …);
+`keyword.macro`, …) rewritten to a hyphenated, `kio-`-prefixed CSS
+class (`kio-entity-name-function`, `kio-keyword-macro`, …);
 inter-token whitespace is emitted verbatim, and a block that fails to
 lex degrades to plain escaped text. The default stylesheet themes these
 classes through `--kio-tok-*` CSS custom properties, with a light
@@ -631,7 +631,7 @@ comment-parser error; that's an acceptable failure mode.
   package build block. Support directories are validation-only:
   their files are available to snippets, but are not rendered as
   documentation content. This lets snippets import same-package or
-  shared imported elabs exactly as ordinary modules do
+  shared imported macros exactly as ordinary modules do
   without injecting unrelated root modules into the scratch
   package. Module identities are their full relative slash paths,
   including subdirectories. Discovery excludes nested packages,

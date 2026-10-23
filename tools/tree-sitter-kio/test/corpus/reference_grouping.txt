@@ -32,10 +32,10 @@ op _ + _ { impl ((ops.add)) }
       (bracket_rbrace))))
 
 ================================================================================
-reference grouping preserves elaborator callable and captures
+reference grouping preserves macro callable and captures
 ================================================================================
 module m;
-elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers.run)) }
+macro form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers.run)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -44,7 +44,7 @@ elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers
     (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -52,9 +52,9 @@ elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (grouped_capture_value
@@ -84,7 +84,7 @@ elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers
           (bracket_rparen))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (grouped_callable_value
           (bracket_lparen)
@@ -99,10 +99,10 @@ elab form: . -> . { captures ((helper), ((Type)), ((ns.member))); impl ((helpers
       (bracket_rbrace))))
 
 ================================================================================
-reference grouping preserves elaborator fills marker target
+reference grouping preserves macro fills marker target
 ================================================================================
 module m;
-elab form: . -> . { impl(fills) ((helpers.run)) }
+macro form: . -> . { impl(fills) ((helpers.run)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -111,7 +111,7 @@ elab form: . -> . { impl(fills) ((helpers.run)) }
     (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -119,9 +119,9 @@ elab form: . -> . { impl(fills) ((helpers.run)) }
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -142,7 +142,7 @@ elab form: . -> . { impl(fills) ((helpers.run)) }
 reference grouping treats standalone fills as callable
 ================================================================================
 module m;
-elab form: . -> . { impl (fills) }
+macro form: . -> . { impl (fills) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -151,7 +151,7 @@ elab form: . -> . { impl (fills) }
     (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -159,9 +159,9 @@ elab form: . -> . { impl (fills) }
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (grouped_callable_value
           (bracket_lparen)

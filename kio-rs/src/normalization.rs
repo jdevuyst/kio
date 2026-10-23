@@ -1,7 +1,7 @@
 //! Shared normalization of Kio'-shaped terms under explicit pure primitives.
 //!
 //! Equivalence checks, REPL expression queries, in-memory source normalization,
-//! and user elaborators share this reduction engine and residual value domain.
+//! and user macros share this reduction engine and residual value domain.
 //!
 //! The evaluator walks typed `Expr<UncheckedPrime>` terms in an environment
 //! of parameter bindings and reduces them to a [`Value`] — a small ADT
@@ -54,8 +54,8 @@
 //!   same-module declarations, selective `import other/module(a, b);`
 //!   imports (single-segment), and `import other as alias;` qualified
 //!   imports (`alias.foo`, two-segment).
-//! - The ordinary Kio' forms produced by lowering surface `match!`, `if`/`else`,
-//!   and elaborator calls before this evaluator is entered.
+//! - The ordinary Kio' forms produced by lowering surface `match`, `if`/`else`,
+//!   and macro calls before this evaluator is entered.
 //! - **Constructors build [`Value::Data`]** — `__left__` /
 //!   `__right__` / `__pair__` and every newtype constructor
 //!   `N.c` genuinely construct, dropping their leading erased type-args.
@@ -105,7 +105,7 @@ mod structural_recursion;
 mod type_traversal;
 pub use artifact::EvalArtifact;
 pub(crate) use artifact::{
-    AuthenticatedEvalCtx, EvalArtifactInput, PreparedEvalModule, UserElaboratorEvalArtifactPair,
+    AuthenticatedEvalCtx, EvalArtifactInput, PreparedEvalModule, UserMacroEvalArtifactPair,
     eval_authenticated,
 };
 use metrics::ReflectionMetricKind;
@@ -292,7 +292,7 @@ pub(crate) struct CheckedTermTemplatePiece {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CheckedTermErrorKind {
-    Elaborator,
+    Macro,
     Type,
 }
 
@@ -359,7 +359,7 @@ enum CheckedTermNode {
         true_body: EvalRef<CheckedTerm>,
         false_body: EvalRef<CheckedTerm>,
     },
-    ElabError {
+    MacroError {
         kind: CheckedTermErrorKind,
         message: String,
     },
@@ -581,7 +581,7 @@ impl CheckedTerm {
         message: impl Into<String>,
     ) -> Self {
         Self::from_node(
-            CheckedTermNode::ElabError {
+            CheckedTermNode::MacroError {
                 kind,
                 message: message.into(),
             },
@@ -589,12 +589,12 @@ impl CheckedTerm {
         )
     }
 
-    pub fn elab_error_message(&self) -> Option<&str> {
+    pub fn macro_error_message(&self) -> Option<&str> {
         self.checked_error().map(|(_, message)| message)
     }
 
     pub fn checked_error(&self) -> Option<(CheckedTermErrorKind, &str)> {
-        checked_term_elab_error(&self.node)
+        checked_term_macro_error(&self.node)
     }
 
     pub(crate) fn instantiate_template_pre_prime<FR, FT>(
@@ -653,7 +653,7 @@ impl CheckedTerm {
         let names = bind_source
             .iter()
             .enumerate()
-            .map(|(index, bind)| bind.then(|| format!("__ct_elab_arg{index}__")))
+            .map(|(index, bind)| bind.then(|| format!("__ct_macro_arg{index}__")))
             .collect::<Vec<_>>();
         let source_term = |index: usize| {
             let source = &adapter.sources[index];
@@ -1292,7 +1292,7 @@ impl RuntimeCallbackAdapter<'_> {
                     RuntimeCallbackResult::Public,
                 )
             }
-            CheckedTermNode::Raw(_) | CheckedTermNode::ElabError { .. } => {
+            CheckedTermNode::Raw(_) | CheckedTermNode::MacroError { .. } => {
                 RuntimeCallbackTransport::public()
             }
         }
@@ -1478,7 +1478,7 @@ impl RuntimeCallbackAdapter<'_> {
             | CheckedTermNode::IntrinsicPair { .. }
             | CheckedTermNode::IntrinsicProjection { .. }
             | CheckedTermNode::IntrinsicInjection { .. }
-            | CheckedTermNode::ElabError { .. } => {
+            | CheckedTermNode::MacroError { .. } => {
                 let changed = self.transport(term);
                 if changed.result != RuntimeCallbackResult::Public {
                     unreachable!(
@@ -1507,7 +1507,7 @@ fn checked_term_template_value_counts(node: &CheckedTermNode) -> HashMap<usize, 
             }
             CheckedTermNode::Raw(_)
             | CheckedTermNode::Local { .. }
-            | CheckedTermNode::ElabError { .. } => {}
+            | CheckedTermNode::MacroError { .. } => {}
             CheckedTermNode::TermLet { value, body, .. } => {
                 collect(&value.node, out);
                 collect(&body.node, out);
@@ -1664,7 +1664,7 @@ fn replace_checked_term_template_values(
             true_body: recurse(true_body),
             false_body: recurse(false_body),
         },
-        CheckedTermNode::ElabError { kind, message } => CheckedTermNode::ElabError {
+        CheckedTermNode::MacroError { kind, message } => CheckedTermNode::MacroError {
             kind: *kind,
             message: message.clone(),
         },
@@ -2102,7 +2102,7 @@ fn checked_term_node_expr_with(
                 }),
             ],
         ),
-        CheckedTermNode::ElabError { .. } => Expr::Unit {
+        CheckedTermNode::MacroError { .. } => Expr::Unit {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             meta: zero_meta(),
@@ -2110,10 +2110,10 @@ fn checked_term_node_expr_with(
     }
 }
 
-fn checked_term_elab_error(node: &CheckedTermNode) -> Option<(CheckedTermErrorKind, &str)> {
+fn checked_term_macro_error(node: &CheckedTermNode) -> Option<(CheckedTermErrorKind, &str)> {
     let mut pending = vec![node];
     while let Some(node) = pending.pop() {
-        if let CheckedTermNode::ElabError { kind, message } = node {
+        if let CheckedTermNode::MacroError { kind, message } = node {
             return Some((*kind, message.as_str()));
         }
         let start = pending.len();
@@ -2139,10 +2139,7 @@ fn checked_call_callee_and_type_args(
 fn checked_template_span(call_span: Span, next: &mut u32) -> Span {
     let ordinal = *next;
     *next = (*next).saturating_add(1);
-    crate::pass::elaborator_registry::elaborator_template_span_at_call(
-        Span::new(0, ordinal),
-        call_span,
-    )
+    crate::pass::macro_registry::macro_template_span_at_call(Span::new(0, ordinal), call_span)
 }
 
 fn instantiate_checked_signature<FT>(
@@ -2251,9 +2248,9 @@ pub enum Value {
     FloatAtom(String, Option<String>),
     /// A string literal.
     StrAtom(String),
-    /// Opaque reflected type handle used by user-defined elaborator code.
+    /// Opaque reflected type handle used by user-defined macro code.
     ReflType(ReflectedType),
-    /// Opaque checked term handle used by user-defined elaborator code.
+    /// Opaque checked term handle used by user-defined macro code.
     CheckedTerm(EvalRef<CheckedTerm>),
     #[cfg(feature = "surface")]
     Projected(Arc<crate::pass::typecheck_core::apply::fills::ProjectedValue>),
@@ -4004,7 +4001,7 @@ fn compile_eval_expr(
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. } => match *ext {},
+        | Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Tuple { ext, .. } => match *ext {},
         Expr::LabelValue { ext, .. } => match *ext {},
         Expr::RowLet { ext, .. } => match *ext {},
@@ -4400,7 +4397,7 @@ fn collect_capture_slots(
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. } => match *ext {},
+        | Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Unit { .. }
         | Expr::BoolLit { .. }
         | Expr::IntLit { .. }
@@ -5635,8 +5632,8 @@ fn compile_direct_comptime_call(
                 ],
             })
         }
-        "__elab_error__" => Some(EvalExpr::CallPrimitive {
-            builtin: ComptimeBuiltin::ElabError,
+        "__macro_error__" => Some(EvalExpr::CallPrimitive {
+            builtin: ComptimeBuiltin::MacroError,
             args: vec![compile_diagnostic_text_expr(
                 trailing_value_arg1(args)?,
                 state,
@@ -5788,7 +5785,7 @@ fn direct_comptime_runtime_arity(builtin: ComptimeBuiltin) -> Option<usize> {
     use ComptimeBuiltin::*;
     Some(match builtin {
         TypeUnit | TypeBottom | TermUnit => 0,
-        TypeView | TypeIsProductRoot | TypeIsSumRoot | ElabError | TypeError | TermType => 1,
+        TypeView | TypeIsProductRoot | TypeIsSumRoot | MacroError | TypeError | TermType => 1,
         TypeProduct | TypeSum | TypeEqual | TypeNameEqual | TypeVarEqual | TypeArityEqual
         | TypeInstantiate | DiagnosticConcat | TermFn | TermTypeFn | TermTypeApp
         | IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
@@ -7260,7 +7257,7 @@ fn type_view_value_uncached(ty: &Type<EvalPhase>, ctx: &EvalCtx<'_>) -> Option<V
     // Qualify host-type heads before the view is destructured, so the
     // per-component `refl_type_value` recursions (and the leaf
     // `ReflTypeName`) carry the same self-identifying host spelling the
-    // elaborator-call goal type does — keeping deep `derive!` subgoal
+    // macro-call goal type does — keeping deep `derive` subgoal
     // reflections consistent with the goal.
     let ty = unfold_canonical_refl_type(ty, ctx);
     Some(match ty {
@@ -7427,7 +7424,7 @@ fn projected_function_params(
             return Ok(params);
         }
         let ProjectedTypeView::Product { left, right } = projected_type_view(proof, &param)? else {
-            return Err(crate::error::Error::elaborator(
+            return Err(crate::error::Error::macro_error(
                 zero_span(),
                 "a projected function ABI arity exceeded its exact product parameter spine",
             ));
@@ -7724,7 +7721,7 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
         | TypeVarDisplay
         | TypeArityDisplay
         | DiagnosticConcat
-        | ElabError
+        | MacroError
         | TypeError
         | StructuralRecur => ProjectedHelperClass::ContextInsensitive,
         TypeIsHost | TypeHostConverters | TypeEqual | TypeDisplay | TypeShortName
@@ -7804,7 +7801,7 @@ fn reflection_term_unit_value() -> Value {
 
 fn reflection_error_value(kind: CheckedTermErrorKind, message: &Value) -> Option<Value> {
     Some(checked_term_node_value(
-        CheckedTermNode::ElabError {
+        CheckedTermNode::MacroError {
             kind,
             message: diagnostic_value(message)?,
         },
@@ -8581,8 +8578,8 @@ fn reflect_leaf(builtin: ComptimeBuiltin, args: &[Value], ctx: &EvalCtx<'_>) -> 
             diagnostic_value(left)?,
             diagnostic_value(right)?
         ))),
-        ("__elab_error__", [message]) => {
-            reflection_error_value(CheckedTermErrorKind::Elaborator, message)
+        ("__macro_error__", [message]) => {
+            reflection_error_value(CheckedTermErrorKind::Macro, message)
         }
         ("__type_error__", [message]) => {
             reflection_error_value(CheckedTermErrorKind::Type, message)
@@ -9809,17 +9806,17 @@ mod tests {
             "String"
         ));
         // Two distinct multi-segment paths must NOT conflate — the
-        // open-world fix: a dependency's re-rooted `elab/testapi.String`
+        // open-world fix: a dependency's re-rooted `macros/testapi.String`
         // is a different host type from the consumer's `testapi.String`,
         // even though both are `role(str)`.
         assert!(!host_type_path_matches(
-            &[seg("elab"), seg("testapi"), seg("String")],
+            &[seg("macros"), seg("testapi"), seg("String")],
             "testapi",
             "String"
         ));
         assert!(!host_type_path_matches(
             &[seg("testapi"), seg("String")],
-            "elab/testapi",
+            "macros/testapi",
             "String"
         ));
         // Canonical matching never treats a bare type variable as a
@@ -9830,8 +9827,8 @@ mod tests {
             "String"
         ));
         assert!(host_type_path_matches(
-            &[seg("elab"), seg("testapi"), seg("String")],
-            "elab/testapi",
+            &[seg("macros"), seg("testapi"), seg("String")],
+            "macros/testapi",
             "String"
         ));
         // A different leaf name never matches.
@@ -10935,7 +10932,7 @@ mod tests {
             | ComptimeBuiltin::TypeArgsFold
             | ComptimeBuiltin::TypeFunctionParamsFold => ComptimeEvalSurface::DirectType,
             ComptimeBuiltin::DiagnosticConcat
-            | ComptimeBuiltin::ElabError
+            | ComptimeBuiltin::MacroError
             | ComptimeBuiltin::TypeError => ComptimeEvalSurface::DirectDiagnostic,
             ComptimeBuiltin::TermType
             | ComptimeBuiltin::TermLet
@@ -11153,7 +11150,7 @@ mod tests {
                 invalid_args: Some(vec![Value::Unit, text("right")]),
             },
             DirectComptimeCase {
-                builtin: ComptimeBuiltin::ElabError,
+                builtin: ComptimeBuiltin::MacroError,
                 valid_args: vec![text("elaboration failed")],
                 invalid_args: Some(vec![Value::Unit]),
             },
@@ -11465,16 +11462,16 @@ mod tests {
                     "diagnostic concat produced {value:?}"
                 );
             }
-            ComptimeBuiltin::ElabError | ComptimeBuiltin::TypeError => {
+            ComptimeBuiltin::MacroError | ComptimeBuiltin::TypeError => {
                 let Value::CheckedTerm(term) = value else {
                     panic!("{} must produce a checked error", builtin.public_name())
                 };
-                let expected_kind = if builtin == ComptimeBuiltin::ElabError {
-                    CheckedTermErrorKind::Elaborator
+                let expected_kind = if builtin == ComptimeBuiltin::MacroError {
+                    CheckedTermErrorKind::Macro
                 } else {
                     CheckedTermErrorKind::Type
                 };
-                let expected_message = if builtin == ComptimeBuiltin::ElabError {
+                let expected_message = if builtin == ComptimeBuiltin::MacroError {
                     "elaboration failed"
                 } else {
                     "type failed"
@@ -15275,7 +15272,7 @@ mod tests {
             IntrinsicEither,
             IntrinsicAbsurd,
             IntrinsicIfThenElse,
-            ElabError,
+            MacroError,
         }
 
         impl CheckedTermNodeKind {
@@ -15293,7 +15290,7 @@ mod tests {
                 Self::IntrinsicEither,
                 Self::IntrinsicAbsurd,
                 Self::IntrinsicIfThenElse,
-                Self::ElabError,
+                Self::MacroError,
             ];
         }
 
@@ -15318,7 +15315,7 @@ mod tests {
                 CheckedTermNode::IntrinsicIfThenElse { .. } => {
                     CheckedTermNodeKind::IntrinsicIfThenElse
                 }
-                CheckedTermNode::ElabError { .. } => CheckedTermNodeKind::ElabError,
+                CheckedTermNode::MacroError { .. } => CheckedTermNodeKind::MacroError,
             }
         }
 
@@ -15676,10 +15673,10 @@ mod tests {
                     ),
                 ),
                 replay_case!(
-                    "elab-error",
-                    ElabError,
+                    "macro-error",
+                    MacroError,
                     CheckedTerm::checked_error_for_test(
-                        CheckedTermErrorKind::Elaborator,
+                        CheckedTermErrorKind::Macro,
                         "intentional replay error",
                     ),
                     "()",
@@ -15704,12 +15701,12 @@ mod tests {
                     case.name
                 );
                 match case.kind {
-                    CheckedTermNodeKind::ElabError => {
+                    CheckedTermNodeKind::MacroError => {
                         // Callers reject the stored error before replay. The
                         // unit replay is therefore an intentional placeholder.
                         assert_eq!(
                             case.term.checked_error(),
-                            Some((CheckedTermErrorKind::Elaborator, "intentional replay error")),
+                            Some((CheckedTermErrorKind::Macro, "intentional replay error")),
                             "{}",
                             case.name
                         );
@@ -19318,8 +19315,8 @@ mod tests {
     }
 
     #[test]
-    fn elab_and_type_error_reduce_to_diagnostic_error_values() {
-        let ctx = test_primitive_ctx(&[ComptimeBuiltin::ElabError, ComptimeBuiltin::TypeError]);
+    fn macro_and_type_error_reduce_to_diagnostic_error_values() {
+        let ctx = test_primitive_ctx(&[ComptimeBuiltin::MacroError, ComptimeBuiltin::TypeError]);
         let eval_body = |body: &str| {
             let m = parse_module(&format!(
                 "module x; import __intrinsics__; import __comptime__; equiv probe {{ {body}; () }}"
@@ -19330,13 +19327,13 @@ mod tests {
         // A bare string message coerces to diagnostic text and raises the
         // error value — without the coercion / arm it stays a StrAtom and
         // the builtin sticks.
-        let elab = eval_body("__elab_error__(\"boom\")");
-        let Value::CheckedTerm(term) = &elab else {
-            panic!("__elab_error__ must raise a checked error value, got {elab:?}");
+        let macro_error_value = eval_body("__macro_error__(\"boom\")");
+        let Value::CheckedTerm(term) = &macro_error_value else {
+            panic!("__macro_error__ must raise a checked error value, got {macro_error_value:?}");
         };
         assert_eq!(
             term.checked_error(),
-            Some((CheckedTermErrorKind::Elaborator, "boom"))
+            Some((CheckedTermErrorKind::Macro, "boom"))
         );
 
         let type_err = eval_body("__type_error__(\"nope\")");
@@ -19354,10 +19351,10 @@ mod tests {
         // An annotated `"…"(__Diagnostic_text__)` literal reaching general
         // expression compilation through a `let` (not the direct-arm
         // message coercion) must still compile as diagnostic text: the
-        // bound value is a DiagnosticText, and `__elab_error__` over the
+        // bound value is a DiagnosticText, and `__macro_error__` over the
         // local raises the error rather than going stuck on a StrAtom.
         let ctx =
-            test_primitive_ctx(&[ComptimeBuiltin::DiagnosticText, ComptimeBuiltin::ElabError]);
+            test_primitive_ctx(&[ComptimeBuiltin::DiagnosticText, ComptimeBuiltin::MacroError]);
         let eval_body = |body: &str| {
             let (_m, [extracted]) = parse_module_with_bodies(
                 "module x; import __intrinsics__; import __comptime__; equiv probe { (); () }",
@@ -19372,13 +19369,13 @@ mod tests {
             "let-bound annotated literal must stay diagnostic text, got {bound:?}"
         );
 
-        let raised = eval_body("let m = \"boom\"(__Diagnostic_text__); __elab_error__(m)");
+        let raised = eval_body("let m = \"boom\"(__Diagnostic_text__); __macro_error__(m)");
         let Value::CheckedTerm(term) = &raised else {
-            panic!("__elab_error__ over the bound text must raise, got {raised:?}");
+            panic!("__macro_error__ over the bound text must raise, got {raised:?}");
         };
         assert_eq!(
             term.checked_error(),
-            Some((CheckedTermErrorKind::Elaborator, "boom"))
+            Some((CheckedTermErrorKind::Macro, "boom"))
         );
     }
 
@@ -21718,7 +21715,7 @@ mod tests {
                 }
                 CheckedTermNode::Raw(_)
                 | CheckedTermNode::Local { .. }
-                | CheckedTermNode::ElabError { .. } => {}
+                | CheckedTermNode::MacroError { .. } => {}
                 CheckedTermNode::TermLet { value, body, .. } => {
                     visit(value, expected, occurrences);
                     visit(body, expected, occurrences);

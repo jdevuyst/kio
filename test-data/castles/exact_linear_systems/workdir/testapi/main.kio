@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import systems/input as input;
 import systems/report as report;
 import testapi(I32);
@@ -11,7 +11,7 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 rec(loop) fn workbench(count: I32) {
-  match! input.next() {
+  match(input.next()) {
     .(item: input.Loaded) { report.run(item.?{input.loaded}); recur workbench(a.add_i32(count, 1)) };
     .(error: input.Input_error) {
       io.print(error.?{input.input_error}

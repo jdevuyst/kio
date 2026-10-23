@@ -3,8 +3,8 @@
 /// echo's indent is a string the program grows one space at a time.
 module turtle/text;
 
-import elab/control(if);
-import testapi(default Bool, I32, String);
+import macros/control(macro if);
+import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
@@ -24,6 +24,6 @@ rec(loop) {
   /// level, which is the whole reason the parse tree is legible on stdout.
   pub fn spaces(n: I32) -> String { recur pad(n, "") };
   fn pad(n: I32, acc: String) -> String {
-    if! leq_i32(n, 0) { acc } else { recur pad(sub_i32(n, 1), cat2(acc, " ")) }
+    if(leq_i32(n, 0)) { acc } else { recur pad(sub_i32(n, 1), cat2(acc, " ")) }
   }
 }

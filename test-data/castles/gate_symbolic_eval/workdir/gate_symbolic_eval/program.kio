@@ -1,8 +1,8 @@
 module gate_symbolic_eval/program;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, mul_i32);
 import testapi/fmt(int_to_string);
@@ -27,28 +27,28 @@ fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat
 
 fn line(label: String, value: String) -> String { cat3(label, value, "\n") }
 
-fn lit(value: I32) -> Expr { Expr.expr({lit = value}.>widen_sum!(Expr_node)) }
+fn lit(value: I32) -> Expr { Expr.expr({lit = value}.>widen_sum(Expr_node)) }
 
-fn var_x() -> Expr { Expr.expr({var_x=}.>widen_sum!(Expr_node)) }
+fn var_x() -> Expr { Expr.expr({var_x=}.>widen_sum(Expr_node)) }
 
-fn var_y() -> Expr { Expr.expr({var_y=}.>widen_sum!(Expr_node)) }
+fn var_y() -> Expr { Expr.expr({var_y=}.>widen_sum(Expr_node)) }
 
-fn var_z() -> Expr { Expr.expr({var_z=}.>widen_sum!(Expr_node)) }
+fn var_z() -> Expr { Expr.expr({var_z=}.>widen_sum(Expr_node)) }
 
 fn add(left: Expr, right: Expr) -> Expr {
-  Expr.expr({add_left = left, add_right = right}.>widen_sum!(Expr_node))
+  Expr.expr({add_left = left, add_right = right}.>widen_sum(Expr_node))
 }
 
 fn mul(left: Expr, right: Expr) -> Expr {
-  Expr.expr({mul_left = left, mul_right = right}.>widen_sum!(Expr_node))
+  Expr.expr({mul_left = left, mul_right = right}.>widen_sum(Expr_node))
 }
 
-fn some_i32(value: I32) -> Maybe_i32 { {some_i32 = value}.>widen_sum!(Maybe_i32) }
+fn some_i32(value: I32) -> Maybe_i32 { {some_i32 = value}.>widen_sum(Maybe_i32) }
 
-fn no_i32() -> Maybe_i32 { {no_i32=}.>widen_sum!(Maybe_i32) }
+fn no_i32() -> Maybe_i32 { {no_i32=}.>widen_sum(Maybe_i32) }
 
 fn as_const(e: Expr) -> Maybe_i32 {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(n: Lit) { some_i32(n.?{lit}) }
     , .(_x: Var_x) { no_i32() }
@@ -61,16 +61,16 @@ fn as_const(e: Expr) -> Maybe_i32 {
 }
 
 fn is_const(e: Expr, value: I32) -> Bool {
-  match! as_const(e) {
+  match(as_const(e)) {
     (.(n: Some_i32) { eq_i32(n.?{some_i32}, value) }, .(_n: No_i32) { .f })
   }
 }
 
 fn fold_add(left: Expr, right: Expr) -> Expr {
-  match! as_const(left) {
+  match(as_const(left)) {
     (
     , .(ln: Some_i32) {
-        match! as_const(right) {
+        match(as_const(right)) {
           (
           , .(rn: Some_i32) { lit(add_i32(ln.?{some_i32}, rn.?{some_i32})) }
           , .(_rn: No_i32) { add(left, right) }
@@ -83,10 +83,10 @@ fn fold_add(left: Expr, right: Expr) -> Expr {
 }
 
 fn fold_mul(left: Expr, right: Expr) -> Expr {
-  match! as_const(left) {
+  match(as_const(left)) {
     (
     , .(ln: Some_i32) {
-        match! as_const(right) {
+        match(as_const(right)) {
           (
           , .(rn: Some_i32) { lit(mul_i32(ln.?{some_i32}, rn.?{some_i32})) }
           , .(_rn: No_i32) { mul(left, right) }
@@ -99,9 +99,9 @@ fn fold_mul(left: Expr, right: Expr) -> Expr {
 }
 
 fn simplify_add(left: Expr, right: Expr) -> Expr {
-  if! is_const(left, 0) {
+  if(is_const(left, 0)) {
     right
-  } else if! is_const(right, 0) {
+  } else if(is_const(right, 0)) {
     left
   } else {
     fold_add(left, right)
@@ -109,13 +109,13 @@ fn simplify_add(left: Expr, right: Expr) -> Expr {
 }
 
 fn simplify_mul(left: Expr, right: Expr) -> Expr {
-  if! is_const(left, 0) {
+  if(is_const(left, 0)) {
     lit(0)
-  } else if! is_const(right, 0) {
+  } else if(is_const(right, 0)) {
     lit(0)
-  } else if! is_const(left, 1) {
+  } else if(is_const(left, 1)) {
     right
-  } else if! is_const(right, 1) {
+  } else if(is_const(right, 1)) {
     left
   } else {
     fold_mul(left, right)
@@ -123,7 +123,7 @@ fn simplify_mul(left: Expr, right: Expr) -> Expr {
 }
 
 rec(loop) fn simplify(e: Expr) -> Expr {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(n: Lit) { lit(n.?{lit}) }
     , .(_x: Var_x) { var_x() }
@@ -146,7 +146,7 @@ rec(loop) fn simplify(e: Expr) -> Expr {
 }
 
 rec(loop) fn eval(e: Expr) -> I32 {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(n: Lit) { n.?{lit} }
     , .(_x: Var_x) { 7 }
@@ -163,7 +163,7 @@ rec(loop) fn eval(e: Expr) -> I32 {
 }
 
 rec(loop) fn render(e: Expr) -> String {
-  match! e.>Expr.un_expr {
+  match(e.>Expr.un_expr) {
     (
     , .(n: Lit) { int_to_string(n.?{lit}) }
     , .(_x: Var_x) { "x" }

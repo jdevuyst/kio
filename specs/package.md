@@ -26,7 +26,7 @@ A package directory contains:
   optional `build` block and the optional single `bridge { ... }` block.
 - **`*.kio`** (except `<pkg>.sig.kio`, `<local>.dep.kio`, and
   `<local>.lock.kio`, below) — Kio source modules. Contain
-  types, functions, operators, elabs, `equiv` claims, `host type` /
+  types, functions, operators, macros, `equiv` claims, `host type` /
   `host fn` declarations, and other module-body items.
   A root module begins with `module <name>;`. Submodules live in
   separate files (`module root/sub;`).
@@ -152,7 +152,7 @@ conflict eagerly even when unused; aliases of one normalized terminal host
 identity agree. Default selections are local to the module, are not exported,
 and are not inherited by ordinary or qualified imports. The selected Boolean
 default also supplies the scheme of `__if_then_else__` and the reference
-`if!` elab's branching glue. The shared scope, alias and conflict rules live
+`if` macro's branching glue. The shared scope, alias and conflict rules live
 in [`language.md`](language.md#host-declarations-and-the-bridge-block).
 
 Host types are opaque inside Kio code. Structural typing does not cross a host
@@ -677,7 +677,7 @@ build {
 
   docs {
     md "docs";
-    support "poc-elaborators";
+    support "poc-macros";
     md_out "out/docs-md/";
     html "out/docs/"
   };

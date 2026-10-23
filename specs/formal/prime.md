@@ -10,16 +10,16 @@ them before codegen through:
   operator folding; desugaring of tuple literals, recursive-call
   syntax, literal aliases, and `.stem. { ... }` placeholder lambdas; and label elaboration.
 - Full-Kio typing plus Lowered → Prime substitution for inferred
-  annotations and call arguments, UFCS normalization, and imported elab
-  bang calls, including their generic trailing-block projections. An `equiv` item survives through Lowered but substitution drops
+  annotations and call arguments, UFCS normalization, and imported macro
+  macro calls, including their generic trailing-block projections. An `equiv` item survives through Lowered but substitution drops
   it, so it does not enter the Prime package used for code generation. The
-  reference source-to-target coercion palettes, `if!`, `scope!`, `do!`,
-  `match!`, and `derive!` are
+  reference source-to-target coercion palettes, `if`, `scope`, `do`,
+  `match`, and `derive` are
   user-defined Kio libraries whose
   implementations execute at compile time. Their per-form semantics live with
-  the executable POC they ship in (see [`../../docs/poc/elab.md`](../../docs/poc/elab.md)
+  the executable POC they ship in (see [`../../docs/poc/macros.md`](../../docs/poc/macros.md)
   and [`../../docs/poc/optics.md`](../../docs/poc/optics.md)); the common call
-  mechanism is in [`../language.md` § Elabs are imported, not ambient](../language.md#elaborators-are-imported-not-ambient).
+  mechanism is in [`../language.md` § Macros are imported, not ambient](../language.md#macros-are-imported-not-ambient).
 
 `kio test` is a separate consumer of the checked Lowered package. It retains
 `equiv` items and first validates the ordinary substituted Prime package. From
@@ -37,7 +37,7 @@ independently synthesized arguments when the literal is a direct callee,
 complete it before T-Lam. Kio' has no `_` type-placeholder spelling, and a
 checked or emitted artifact contains the concrete annotation.
 
-An elab declaration's `impl` or `impl(fills)` mode belongs entirely to
+A macro declaration's `impl` or `impl(fills)` mode belongs entirely to
 that surface-to-core bridge. So do the compile-time carriers `__Comptime__`,
 `__Type__`, `__Checked_term__`, and, for `impl(fills)`, `__Fill_ctx__`, along
 with fill transcripts, provisional checked recipes, and the `__comptime__`
@@ -829,10 +829,10 @@ function's domain, but declaration grouping, callee provenance, and private ABI
 metadata never add an application. Extending a module body changes none of
 those inputs for an already-resolved call.
 
-There is no candidate-pool / implicit-dispatch mechanism that could change a bridge type by inserting a different choice. Kio has no typeclasses; every elab call — source-to-target coercion, `match!`, or `derive!` — resolves through an **explicit import** and runs only at a written bang-call site. Adding declarations to some other module body cannot alter the scoped elab binding an existing call has already imported. An elab's rule set, structural pre-conditions, and (for `derive!`) candidate set are purely syntactic over the source / target types `P` wrote down and the candidates the call site literally lists — there is no implicit candidate pool to grow, so adding a new declaration cannot change the source / target types or candidates `P` already wrote, hence cannot change the elaboration `P` gets. (This is the open-world property of elab-call resolution; the per-library proofs that each coercion's rule subset is genuinely syntactic are in the POC case studies, [`../../docs/poc/elab.md`](../../docs/poc/elab.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md).)
+There is no candidate-pool / implicit-dispatch mechanism that could change a bridge type by inserting a different choice. Kio has no typeclasses; every macro call — source-to-target coercion, `match`, or `derive` — resolves through an **explicit import** and runs only at a written macro call site. Adding declarations to some other module body cannot alter the scoped macro binding an existing call has already imported. A macro's rule set, structural pre-conditions, and (for `derive`) candidate set are purely syntactic over the source / target types `P` wrote down and the candidates the call site literally lists — there is no implicit candidate pool to grow, so adding a new declaration cannot change the source / target types or candidates `P` already wrote, hence cannot change the elaboration `P` gets. (This is the open-world property of macro-call resolution; the per-library proofs that each coercion's rule subset is genuinely syntactic are in the POC case studies, [`../../docs/poc/macros.md`](../../docs/poc/macros.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md).)
 
 For a fills-marked implementation, the schedule is fixed on that already
-resolved elab declaration and its staged operands come only from the
+resolved macro declaration and its staged operands come only from the
 already-fixed public call plan. The one transparent direct-call shell is
 recognized from compiler-owned resolved-intrinsic kind plus the unique exact
 canonical product-constructor scheme; an ordinary declaration with the same

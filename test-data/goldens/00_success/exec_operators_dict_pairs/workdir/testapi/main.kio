@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Int, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -22,17 +22,17 @@ op _ => _ { impl pair_of }
 // `::` operator gives it the standard right-folded surface.
 rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
 
 op _ :: __ { impl push }
 
 fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
-  match! ys.>List.un_list {
+  match(ys.>List.un_list) {
     (
-    , .(x: A, rest: List(A)) { widen_sum!((f(x, acc), rest), (B & List(A)) | B) }
-    , .(_empty: .) { widen_sum!(acc, (B & List(A)) | B) }
+    , .(x: A, rest: List(A)) { widen_sum((f(x, acc), rest), (B & List(A)) | B) }
+    , .(_empty: .) { widen_sum(acc, (B & List(A)) | B) }
     )
   }
 }
@@ -42,7 +42,7 @@ fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
   , B & List(A)
   , B
   , .(state: B & List(A)) -> (B & List(A)) | B {
-      match! state {
+      match(state) {
         .(acc: B, ys: List(A)) { step(f, acc, ys) }
       }
     }
@@ -52,7 +52,7 @@ fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
 
 // Fold step that appends `<k>=<v>\n` onto the accumulator string.
 fn format_step(p: Pair, acc: String) -> String {
-  match! p.>Pair.un_pair {
+  match(p.>Pair.un_pair) {
     .(k: String, v: Int) {
       acc
         .>string_concat(k)

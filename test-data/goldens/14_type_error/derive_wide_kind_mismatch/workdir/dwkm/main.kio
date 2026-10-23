@@ -1,6 +1,6 @@
 module dwkm/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
@@ -56,7 +56,7 @@ fn flat_monad() -> Monad(Flat) {
 }
 
 fn bad() -> Monad(Box) {
-  derive!(
+  derive(
   , (
     , wrap0_monad
     , wrap1_monad

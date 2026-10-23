@@ -336,7 +336,7 @@ fn observe(block: &Block, out: &mut String) {
 }
 
 /// This follows sampled schedules and lexical values, not rendered syntax or
-/// elaborator lowering. The consumer explicitly invokes delayed blocks.
+/// macro lowering. The consumer explicitly invokes delayed blocks.
 pub fn expected_stdout(probe: &ControlProbe) -> String {
     let mut out = String::new();
     match probe {

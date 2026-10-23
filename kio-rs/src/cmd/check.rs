@@ -361,7 +361,7 @@ pub(crate) fn error_if_no_kio_files(cwd: &Path) -> Result<(), ExitCode> {
 /// Run the full check pipeline (parse → package build → use resolution
 /// → cycle check → in-body resolution → type check) over the cwd's
 /// source tree. On success returns the typed [`Package`] at the
-/// [`Prime`](crate::ast::Prime) phase — elaborator-position elaborations
+/// [`Prime`](crate::ast::Prime) phase — macro-position elaborations
 /// substituted into the AST and validated as Kio' — ready to feed to a
 /// backend; on failure prints the diagnostic to stderr and returns the
 /// matching exit code.
@@ -1243,7 +1243,7 @@ fn lsp_importable_name_binder(
         | Item::Labels(_, _)
         | Item::LabelForward(_, _)
         | Item::Equiv(_, _)
-        | Item::Elaborator(_, _)
+        | Item::Macro(_, _)
         | Item::Op(_, _)
         | Item::VariadicOperator(_, _)
         | Item::HostType(_) => None,
@@ -1453,7 +1453,7 @@ fn lsp_record_surface_declaration_positions(
                     Item::LiteralAlias(_, _)
                     | Item::LabelForward(_, _)
                     | Item::Equiv(_, _)
-                    | Item::Elaborator(_, _)
+                    | Item::Macro(_, _)
                     | Item::Op(_, _)
                     | Item::VariadicOperator(_, _) => {}
                 }
@@ -2165,7 +2165,7 @@ pub struct LspWarning {
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
 #[derive(Clone, Default)]
-pub(crate) struct LspUserElaboratorMemos {
+pub(crate) struct LspUserMacroMemos {
     revisions: crate::pass::typecheck_core::PackageTypecheckRevisionStore<
         PackageKey,
         SourceHash,
@@ -2175,7 +2175,7 @@ pub(crate) struct LspUserElaboratorMemos {
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
-impl LspUserElaboratorMemos {
+impl LspUserMacroMemos {
     pub(crate) fn for_editor() -> Self {
         Self {
             collect_refactoring_facts: true,
@@ -2234,7 +2234,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable(
     overlay: &package_collection::SourceOverlay,
     cancel_token: &crate::lsp::cancel::CancellationToken,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
-    let memos = LspUserElaboratorMemos::default();
+    let memos = LspUserMacroMemos::default();
     analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
         root,
         overlay,
@@ -2248,13 +2248,13 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
     root: &Path,
     overlay: &package_collection::SourceOverlay,
     cancel_token: &crate::lsp::cancel::CancellationToken,
-    user_elaborator_memos: &LspUserElaboratorMemos,
+    user_macro_memos: &LspUserMacroMemos,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     analyze_workspace_at_with_overlay_lsp_with_declarations(
         root,
         overlay,
         cancel_token,
-        user_elaborator_memos,
+        user_macro_memos,
         &mut None,
     )
 }
@@ -2266,7 +2266,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
     root: &Path,
     overlay: &package_collection::SourceOverlay,
     cancel_token: &crate::lsp::cancel::CancellationToken,
-    user_elaborator_memos: &LspUserElaboratorMemos,
+    user_macro_memos: &LspUserMacroMemos,
     declarations: &mut Option<BTreeMap<PathBuf, String>>,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     use crate::ast::Lowered;
@@ -2316,7 +2316,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
             })
             .collect(),
     );
-    let package_fingerprints = lsp_user_elaborator_package_fingerprints(&parsed_ws);
+    let package_fingerprints = lsp_user_macro_package_fingerprints(&parsed_ws);
 
     let mut sources: HashMap<PathBuf, String> = HashMap::new();
     for pkg in parsed_ws.packages.values() {
@@ -2387,7 +2387,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
     // its `Lowered` AST and its elaborations whole (the REPL `:normalize`
     // path partial-evaluates against both); any additional packages
     // contribute only their position index to the merged map.
-    let mut merged_index = user_elaborator_memos.position_index();
+    let mut merged_index = user_macro_memos.position_index();
     let root_key = lowered_workspace.root.clone();
     let mut root_package_lowered = None;
     let mut root_source_role_uses = Vec::new();
@@ -2396,7 +2396,7 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
             return None;
         }
         let normalized = crate::pass::alpha_normalize::normalize_package(&entry.package);
-        let typecheck_scope = user_elaborator_memos.scope_for(
+        let typecheck_scope = user_macro_memos.scope_for(
             key,
             package_fingerprints
                 .get(key)
@@ -2574,7 +2574,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable(
     focus_file: &Path,
     cancel_token: &crate::lsp::cancel::CancellationToken,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
-    let memos = LspUserElaboratorMemos::default();
+    let memos = LspUserMacroMemos::default();
     analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         root,
         overlay,
@@ -2590,7 +2590,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
     overlay: &package_collection::SourceOverlay,
     focus_file: &Path,
     cancel_token: &crate::lsp::cancel::CancellationToken,
-    user_elaborator_memos: &LspUserElaboratorMemos,
+    user_macro_memos: &LspUserMacroMemos,
 ) -> Option<Result<LspAnalysis, AnalysisFailure>> {
     use crate::ast::Lowered;
 
@@ -2618,7 +2618,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
     if cancel_token.is_cancelled() {
         return None;
     }
-    let package_fingerprints = lsp_user_elaborator_package_fingerprints(&parsed_ws);
+    let package_fingerprints = lsp_user_macro_package_fingerprints(&parsed_ws);
 
     let mut sources: HashMap<PathBuf, String> = HashMap::new();
     for pkg in parsed_ws.packages.values() {
@@ -2695,7 +2695,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
             root,
             overlay,
             cancel_token,
-            user_elaborator_memos,
+            user_macro_memos,
         );
     };
     if cancel_token.is_cancelled() {
@@ -2769,7 +2769,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         .package()
         .module(target_module.as_str())
         .expect("focused module was forced into the package");
-    let typecheck_scope = user_elaborator_memos.scope_for(
+    let typecheck_scope = user_macro_memos.scope_for(
         &target_key,
         package_fingerprints
             .get(&target_key)
@@ -2790,7 +2790,7 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         return None;
     }
 
-    let mut position_index = user_elaborator_memos.position_index();
+    let mut position_index = user_macro_memos.position_index();
     position_index.merge(typed.elaborations.position_index().clone());
 
     let file_to_module = lsp_file_to_module(&lowered_workspace);
@@ -3181,7 +3181,7 @@ fn collect_unused_expr_decls(
             collect_unused_expr_decls(source, file_path, module_path, &plan.value, declarations);
             collect_unused_expr_decls(source, file_path, module_path, &plan.body, declarations);
         }
-        Expr::UserElaborator { args, .. } => {
+        Expr::UserMacro { args, .. } => {
             collect_unused_call_arg_decls(source, file_path, module_path, args, declarations);
         }
         Expr::Ufcs { receiver, args, .. } => {
@@ -3257,7 +3257,7 @@ fn span_between(source: &str, start: u32, end: u32) -> Option<&str> {
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
-fn lsp_user_elaborator_package_fingerprints(
+fn lsp_user_macro_package_fingerprints(
     parsed_ws: &package_collection::ParsedPackageCollection,
 ) -> BTreeMap<PackageKey, SourceHash> {
     parsed_ws
@@ -3266,7 +3266,7 @@ fn lsp_user_elaborator_package_fingerprints(
         .map(|(key, parsed_pkg)| {
             let source_hash = crate::cache::package_check::source_hash(&parsed_pkg.sources);
             let mut h = blake3::Hasher::new();
-            write_fingerprint_part(&mut h, b"lsp-user-elaborator-package");
+            write_fingerprint_part(&mut h, b"lsp-user-macro-package");
             write_fingerprint_part(&mut h, source_hash.as_str().as_bytes());
             (
                 key.clone(),
@@ -3536,7 +3536,7 @@ struct FrontendTiming {
     import_body_type: Duration,
     summary_levels: usize,
     summary_max_width: usize,
-    user_elaborator_timing: crate::pass::typecheck_core::UserElaboratorTimingSnapshot,
+    user_macro_timing: crate::pass::typecheck_core::UserMacroTimingSnapshot,
 }
 
 impl FrontendTiming {
@@ -3578,17 +3578,17 @@ fn frontend_timing_line(package_key: &PackageKey, timing: &FrontendTiming) -> St
          pipeline_typecheck_ms={:.3} prime_validation_ms={:.3} \
          prime_check_ms={:.3} prime_bake_ms={:.3} prime_finalize_ms={:.3} \
          package_check_skipped={} import_body_type_ms={:.3} summary_levels={} summary_max_width={} \
-         user_elaborator_prepared_eval_ms={:.3} user_elaborator_prepared_hits={} \
-         user_elaborator_prepared_misses={} user_elaborator_prepared_first_writes={} \
-         user_elaborator_artifact_hits={} user_elaborator_artifact_misses={} \
-         user_elaborator_artifact_first_writes={} \
-         user_elaborator_template_eval_ms={:.3} \
-         user_elaborator_template_replay_ms={:.3} \
-         user_elaborator_template_memo_total_ms={:.3} \
-         user_elaborator_template_batch_obligations={} user_elaborator_template_batch_unique={} \
-         user_elaborator_template_batch_key_ms={:.3} user_elaborator_template_batch_compute_ms={:.3} \
-         user_elaborator_template_batch_replay_loop_ms={:.3} \
-         user_elaborator_template_batch_duplicates={}{}",
+         user_macro_prepared_eval_ms={:.3} user_macro_prepared_hits={} \
+         user_macro_prepared_misses={} user_macro_prepared_first_writes={} \
+         user_macro_artifact_hits={} user_macro_artifact_misses={} \
+         user_macro_artifact_first_writes={} \
+         user_macro_template_eval_ms={:.3} \
+         user_macro_template_replay_ms={:.3} \
+         user_macro_template_memo_total_ms={:.3} \
+         user_macro_template_batch_obligations={} user_macro_template_batch_unique={} \
+         user_macro_template_batch_key_ms={:.3} user_macro_template_batch_compute_ms={:.3} \
+         user_macro_template_batch_replay_loop_ms={:.3} \
+         user_macro_template_batch_duplicates={}{}",
         package_key.package_name,
         duration_ms(timing.prepare),
         timing.forced_modules,
@@ -3608,26 +3608,26 @@ fn frontend_timing_line(package_key: &PackageKey, timing: &FrontendTiming) -> St
         duration_ms(timing.import_body_type),
         timing.summary_levels,
         timing.summary_max_width,
-        duration_ms(timing.user_elaborator_timing.prepared_eval),
-        timing.user_elaborator_timing.prepared_hits,
-        timing.user_elaborator_timing.prepared_misses,
-        timing.user_elaborator_timing.prepared_first_writes,
-        timing.user_elaborator_timing.artifact_hits,
-        timing.user_elaborator_timing.artifact_misses,
-        timing.user_elaborator_timing.artifact_first_writes,
-        duration_ms(timing.user_elaborator_timing.template_eval),
-        duration_ms(timing.user_elaborator_timing.template_replay),
-        duration_ms(timing.user_elaborator_timing.template_memo_total),
-        timing.user_elaborator_timing.template_batch_obligations,
-        timing.user_elaborator_timing.template_batch_unique,
-        duration_ms(timing.user_elaborator_timing.template_batch_key),
-        duration_ms(timing.user_elaborator_timing.template_batch_compute),
-        duration_ms(timing.user_elaborator_timing.template_batch_replay_loop),
+        duration_ms(timing.user_macro_timing.prepared_eval),
+        timing.user_macro_timing.prepared_hits,
+        timing.user_macro_timing.prepared_misses,
+        timing.user_macro_timing.prepared_first_writes,
+        timing.user_macro_timing.artifact_hits,
+        timing.user_macro_timing.artifact_misses,
+        timing.user_macro_timing.artifact_first_writes,
+        duration_ms(timing.user_macro_timing.template_eval),
+        duration_ms(timing.user_macro_timing.template_replay),
+        duration_ms(timing.user_macro_timing.template_memo_total),
+        timing.user_macro_timing.template_batch_obligations,
+        timing.user_macro_timing.template_batch_unique,
+        duration_ms(timing.user_macro_timing.template_batch_key),
+        duration_ms(timing.user_macro_timing.template_batch_compute),
+        duration_ms(timing.user_macro_timing.template_batch_replay_loop),
         timing
-            .user_elaborator_timing
+            .user_macro_timing
             .template_batch_obligations
-            .saturating_sub(timing.user_elaborator_timing.template_batch_unique),
-        user_elaborator_eval_timing_fields(&timing.user_elaborator_timing),
+            .saturating_sub(timing.user_macro_timing.template_batch_unique),
+        user_macro_eval_timing_fields(&timing.user_macro_timing),
     )
 }
 
@@ -3648,44 +3648,44 @@ fn duration_ms(duration: Duration) -> f64 {
 }
 
 #[cfg(feature = "surface")]
-fn user_elaborator_eval_timing_fields(
-    timing: &crate::pass::typecheck_core::UserElaboratorTimingSnapshot,
+fn user_macro_eval_timing_fields(
+    timing: &crate::pass::typecheck_core::UserMacroTimingSnapshot,
 ) -> String {
     let eval = &timing.eval;
     format!(
-        " user_elaborator_eval_root_ms={:.3} user_elaborator_eval_root_calls={} \
-         user_elaborator_eval_expr_visits={} user_elaborator_eval_apply_ms={:.3} \
-         user_elaborator_eval_apply_calls={} user_elaborator_eval_apply_generic_ms={:.3} \
-         user_elaborator_eval_apply_generic_calls={} user_elaborator_eval_apply_atom_ms={:.3} \
-         user_elaborator_eval_apply_atom_calls={} user_elaborator_eval_apply_fn_ms={:.3} \
-         user_elaborator_eval_apply_fn_calls={} user_elaborator_eval_closure_apply_ms={:.3} \
-         user_elaborator_eval_closure_apply_calls={} user_elaborator_eval_comptime_ms={:.3} \
-         user_elaborator_eval_comptime_calls={} user_elaborator_eval_comptime_type_view_ms={:.3} \
-         user_elaborator_eval_comptime_type_view_calls={} user_elaborator_eval_comptime_type_equal_ms={:.3} \
-         user_elaborator_eval_comptime_type_equal_calls={} user_elaborator_eval_comptime_type_fold_ms={:.3} \
-         user_elaborator_eval_comptime_type_fold_calls={} user_elaborator_eval_comptime_term_ms={:.3} \
-         user_elaborator_eval_comptime_term_calls={} user_elaborator_eval_comptime_term_let_ms={:.3} \
-         user_elaborator_eval_comptime_term_let_calls={} user_elaborator_eval_comptime_term_fn_ms={:.3} \
-         user_elaborator_eval_comptime_term_fn_calls={} user_elaborator_eval_comptime_term_call_ms={:.3} \
-         user_elaborator_eval_comptime_term_call_calls={} user_elaborator_eval_comptime_term_type_ms={:.3} \
-         user_elaborator_eval_comptime_term_type_calls={} user_elaborator_eval_comptime_term_unit_ms={:.3} \
-         user_elaborator_eval_comptime_term_unit_calls={} user_elaborator_eval_comptime_intrinsic_pair_ms={:.3} \
-         user_elaborator_eval_comptime_intrinsic_pair_calls={} user_elaborator_eval_comptime_intrinsic_projection_ms={:.3} \
-         user_elaborator_eval_comptime_intrinsic_projection_calls={} user_elaborator_eval_comptime_intrinsic_injection_ms={:.3} \
-         user_elaborator_eval_comptime_intrinsic_injection_calls={} user_elaborator_eval_comptime_intrinsic_either_ms={:.3} \
-         user_elaborator_eval_comptime_intrinsic_either_calls={} user_elaborator_eval_comptime_intrinsic_other_ms={:.3} \
-         user_elaborator_eval_comptime_intrinsic_other_calls={} user_elaborator_eval_comptime_structural_recur_ms={:.3} \
-         user_elaborator_eval_comptime_structural_recur_calls={} user_elaborator_eval_comptime_other_ms={:.3} \
-         user_elaborator_eval_comptime_other_calls={} user_elaborator_eval_type_unfold_ms={:.3} \
-         user_elaborator_eval_type_unfold_calls={} user_elaborator_eval_type_equiv_ms={:.3} \
-         user_elaborator_eval_type_equiv_calls={} user_elaborator_eval_nf_eq_ms={:.3} \
-         user_elaborator_eval_nf_eq_calls={} user_elaborator_eval_eta_contract_ms={:.3} \
-         user_elaborator_eval_eta_contract_calls={} user_elaborator_eval_env_clones={} \
-         user_elaborator_eval_closure_builds={} user_elaborator_eval_arg_vecs={} \
-         user_elaborator_eval_arg_values={} user_elaborator_eval_capture_vecs={} \
-         user_elaborator_eval_capture_values={} user_elaborator_eval_exact_memo_hits={} \
-         user_elaborator_eval_exact_memo_misses={} user_elaborator_eval_exact_memo_key_skips={} \
-         user_elaborator_eval_exact_memo_stores={} user_elaborator_eval_hot_functions={}",
+        " user_macro_eval_root_ms={:.3} user_macro_eval_root_calls={} \
+         user_macro_eval_expr_visits={} user_macro_eval_apply_ms={:.3} \
+         user_macro_eval_apply_calls={} user_macro_eval_apply_generic_ms={:.3} \
+         user_macro_eval_apply_generic_calls={} user_macro_eval_apply_atom_ms={:.3} \
+         user_macro_eval_apply_atom_calls={} user_macro_eval_apply_fn_ms={:.3} \
+         user_macro_eval_apply_fn_calls={} user_macro_eval_closure_apply_ms={:.3} \
+         user_macro_eval_closure_apply_calls={} user_macro_eval_comptime_ms={:.3} \
+         user_macro_eval_comptime_calls={} user_macro_eval_comptime_type_view_ms={:.3} \
+         user_macro_eval_comptime_type_view_calls={} user_macro_eval_comptime_type_equal_ms={:.3} \
+         user_macro_eval_comptime_type_equal_calls={} user_macro_eval_comptime_type_fold_ms={:.3} \
+         user_macro_eval_comptime_type_fold_calls={} user_macro_eval_comptime_term_ms={:.3} \
+         user_macro_eval_comptime_term_calls={} user_macro_eval_comptime_term_let_ms={:.3} \
+         user_macro_eval_comptime_term_let_calls={} user_macro_eval_comptime_term_fn_ms={:.3} \
+         user_macro_eval_comptime_term_fn_calls={} user_macro_eval_comptime_term_call_ms={:.3} \
+         user_macro_eval_comptime_term_call_calls={} user_macro_eval_comptime_term_type_ms={:.3} \
+         user_macro_eval_comptime_term_type_calls={} user_macro_eval_comptime_term_unit_ms={:.3} \
+         user_macro_eval_comptime_term_unit_calls={} user_macro_eval_comptime_intrinsic_pair_ms={:.3} \
+         user_macro_eval_comptime_intrinsic_pair_calls={} user_macro_eval_comptime_intrinsic_projection_ms={:.3} \
+         user_macro_eval_comptime_intrinsic_projection_calls={} user_macro_eval_comptime_intrinsic_injection_ms={:.3} \
+         user_macro_eval_comptime_intrinsic_injection_calls={} user_macro_eval_comptime_intrinsic_either_ms={:.3} \
+         user_macro_eval_comptime_intrinsic_either_calls={} user_macro_eval_comptime_intrinsic_other_ms={:.3} \
+         user_macro_eval_comptime_intrinsic_other_calls={} user_macro_eval_comptime_structural_recur_ms={:.3} \
+         user_macro_eval_comptime_structural_recur_calls={} user_macro_eval_comptime_other_ms={:.3} \
+         user_macro_eval_comptime_other_calls={} user_macro_eval_type_unfold_ms={:.3} \
+         user_macro_eval_type_unfold_calls={} user_macro_eval_type_equiv_ms={:.3} \
+         user_macro_eval_type_equiv_calls={} user_macro_eval_nf_eq_ms={:.3} \
+         user_macro_eval_nf_eq_calls={} user_macro_eval_eta_contract_ms={:.3} \
+         user_macro_eval_eta_contract_calls={} user_macro_eval_env_clones={} \
+         user_macro_eval_closure_builds={} user_macro_eval_arg_vecs={} \
+         user_macro_eval_arg_values={} user_macro_eval_capture_vecs={} \
+         user_macro_eval_capture_values={} user_macro_eval_exact_memo_hits={} \
+         user_macro_eval_exact_memo_misses={} user_macro_eval_exact_memo_key_skips={} \
+         user_macro_eval_exact_memo_stores={} user_macro_eval_hot_functions={}",
         duration_ms(eval.root_eval),
         eval.root_eval_calls,
         eval.expr_visits,
@@ -3787,8 +3787,8 @@ fn sanitize_timing_token(value: &str) -> String {
 }
 
 #[cfg(not(feature = "surface"))]
-fn user_elaborator_eval_timing_fields(
-    _timing: &crate::pass::typecheck_core::UserElaboratorTimingSnapshot,
+fn user_macro_eval_timing_fields(
+    _timing: &crate::pass::typecheck_core::UserMacroTimingSnapshot,
 ) -> &'static str {
     ""
 }
@@ -3882,7 +3882,7 @@ mod tests {
                 &root,
                 &package_collection::SourceOverlay::empty(),
                 &crate::lsp::cancel::CancellationToken::new(),
-                &LspUserElaboratorMemos::default(),
+                &LspUserMacroMemos::default(),
                 &mut declarations,
             )
             .unwrap();
@@ -3925,7 +3925,7 @@ mod tests {
             import_body_type: Duration::ZERO,
             summary_levels: 0,
             summary_max_width: 0,
-            user_elaborator_timing: Default::default(),
+            user_macro_timing: Default::default(),
         };
 
         let line = frontend_timing_line(&key("pkg"), &timing);
@@ -4056,16 +4056,16 @@ mod tests {
              } \
              pub type Rep_payload = .; \
              pub newtype Rep : Rep_payload { pub constructor mk_rep; pub projector un_rep; }; \
-             pub elab make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
+             pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
              fn keep() -> . { () }",
         )
-        .expect("write elaborator module");
+        .expect("write macro module");
         std::fs::write(
             temp.path().join("pkg/main.kio"),
             "module pkg/main; \
              import pkg/refl(Rep); \
-             import pkg/refl(make_rep); \
-             fn main() -> Rep { make_rep!(., ()) }",
+             import pkg/refl(macro make_rep); \
+             fn main() -> Rep { make_rep(., ()) }",
         )
         .expect("write consumer module");
 
@@ -4218,10 +4218,10 @@ mod tests {
             "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n}\n",
         )
         .expect("write package file");
-        if source.contains("import sequence(do)") {
+        if source.contains("import sequence(macro do)") {
             std::fs::write(
                 dir.path().join("sequence.kio"),
-                include_str!("../../../test-data/poc/elab/workdir/sequence.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/sequence.kio"),
             )
             .expect("write sequence provider");
         }
@@ -4238,13 +4238,13 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     const COPIED_RECEIVER_SOURCE: &str = concat!(
-        "module pkg/main; import sequence(do);\n",
+        "module pkg/main; import sequence(macro do);\n",
         "newtype Left : . { constructor left; projector unleft; };\n",
         "newtype Right : . { constructor right; projector unright; };\n",
         "newtype Box[A] : A { constructor box; projector unbox; };\n",
         "fn pure[A](value: A) -> Box(A) { Box.box(value) }\n",
         "fn choose_second[A](first: A, second: Right) -> Box(Right) {\n",
-        "  do! (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {\n",
+        "  do (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {\n",
         "    next(Box.unbox(value))\n",
         "  }) {\n",
         "    let first_value <- pure(first);\n",
@@ -4405,16 +4405,16 @@ mod tests {
         use crate::lsp::positions::LineIndex;
         use lsp_types::{InlayHintLabel, Position, Range};
         let source = concat!(
-            "module pkg/main; import sequence(do);\n",
+            "module pkg/main; import sequence(macro do);\n",
             "newtype Box[A]: A { constructor box; projector unbox; };\n",
             "fn pure[A](value: A) -> Box(A) { Box.box(value) }\n",
             "fn factory[X](value: X) -> [A][B](Box(A) & (A -> Box(B))) -> Box(B) {\n",
             "  .[A][B](boxed: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(boxed)) }\n",
             "}\n",
             "fn run() -> Box(.) {\n",
-            "  do! factory(()) {\n",
+            "  do(factory(())) {\n",
             "    let first <- pure(());\n",
-            "    do! factory(()) {\n",
+            "    do(factory(())) {\n",
             "      pure(());\n",
             "      let second <- pure(first);\n",
             "      pure(second)\n",
@@ -4475,7 +4475,7 @@ mod tests {
                 "pub fn empty() -> . { () }\n",
                 "pub fn push(left: ., right: .) -> . { left }\n",
                 "pub fn finish(value: .) -> . { value }\n",
-                "pub pure fn elab_impl(ct: __Comptime__) -> __Checked_term__ {\n",
+                "pub pure fn macro_impl(ct: __Comptime__) -> __Checked_term__ {\n",
                 "  __term_unit__(ct)\n",
                 "}\n",
             ),
@@ -4512,7 +4512,7 @@ mod tests {
             "  foldr __term_call__ __term_unit__;\n",
             "  finalize __term_type__;\n",
             "};\n",
-            "elab unit : . -> . { impl helper.elab_impl; };\n",
+            "macro unit : . -> . { impl helper.macro_impl; };\n",
             "\n",
             "pub fn run() -> . { let _combined = () + (); [* (), () *] }\n",
         );
@@ -4568,33 +4568,29 @@ mod tests {
             declaration_leaf_spans.insert(target, leaf_spans);
         }
 
-        let elaborator_path = "helper.elab_impl";
-        let elaborator_start = source
-            .find(elaborator_path)
-            .expect("elaborator implementation path");
-        let elaborator_leaf_start = elaborator_start + "helper.".len();
-        let elaborator_leaf_span = crate::span::Span::new(
-            elaborator_leaf_start as u32,
-            (elaborator_leaf_start + "elab_impl".len()) as u32,
+        let macro_path = "helper.macro_impl";
+        let macro_start = source.find(macro_path).expect("macro implementation path");
+        let macro_leaf_start = macro_start + "helper.".len();
+        let macro_leaf_span = crate::span::Span::new(
+            macro_leaf_start as u32,
+            (macro_leaf_start + "macro_impl".len()) as u32,
         );
         assert!(
             matches!(
-                analysis.position_index.binder_at(module_path, elaborator_leaf_span),
+                analysis.position_index.binder_at(module_path, macro_leaf_span),
                 Some(ResolvedBinder::Fn { module_path, name })
-                    if module_path == "pkg/provider" && name == "elab_impl"
+                    if module_path == "pkg/provider" && name == "macro_impl"
             ),
-            "the elaborator leaf must share the provider function's semantic identity"
+            "the macro leaf must share the provider function's semantic identity"
         );
-        let elaborator_path_span = crate::span::Span::new(
-            elaborator_start as u32,
-            (elaborator_start + elaborator_path.len()) as u32,
-        );
+        let macro_path_span =
+            crate::span::Span::new(macro_start as u32, (macro_start + macro_path.len()) as u32);
         assert!(
             analysis
                 .position_index
-                .type_at(module_path, elaborator_path_span)
+                .type_at(module_path, macro_path_span)
                 .is_some(),
-            "the ordinary elaborator declaration typecheck retains its whole-path type"
+            "the ordinary macro declaration typecheck retains its whole-path type"
         );
 
         let intrinsic_start = source.find("__pair__").expect("intrinsic target");
@@ -6884,45 +6880,45 @@ mod tests {
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
-    fn write_lsp_user_elaborator_package(dir: &Path) -> PathBuf {
+    fn write_lsp_user_macro_package(dir: &Path) -> PathBuf {
         std::fs::create_dir_all(dir.join("pkg")).expect("create module dir");
         std::fs::write(
             dir.join("pkg.pkg.kio"),
             "package pkg;\n\n\
-             bridge { main; bad; elaborators; }\n",
+             bridge { main; bad; macros; }\n",
         )
         .expect("write package file");
         std::fs::write(
-            dir.join("elaborators.kio"),
-            "module elaborators;\n\n\
+            dir.join("macros.kio"),
+            "module macros;\n\n\
              import __intrinsics__;\n\n\
              import __comptime__;\n\n\
              pub type Optional_type = __Type__ | .;\n\n\
              pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Optional_type) -> __Checked_term__ {\n\
                __either__(__Type__, ., __Checked_term__, target, .(_target: __Type__) -> __Checked_term__ {\n\
                  value\n\
-               }, .() -> __Checked_term__ { __elab_error__(ct, \"elaborator needs a target\") })\n\
+               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\") })\n\
              }\n\n\
              pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Optional_type) -> __Checked_term__ {\n\
-               __elab_error__(ct, \"bad elaborator ran\")\n\
+               __macro_error__(ct, \"bad macro ran\")\n\
              }\n\n\
-             pub elab id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
-             pub elab fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
+             pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
+             pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
         )
-        .expect("write elaborator package");
+        .expect("write macro package");
         let main_path = dir.join("main.kio");
         std::fs::write(
             &main_path,
             "module main;\n\n\
-             import elaborators(id_user);\n\n\
-             pub fn run() -> . { id_user!(., ()) }\n",
+             import macros(macro id_user);\n\n\
+             pub fn run() -> . { id_user(., ()) }\n",
         )
         .expect("write main");
         std::fs::write(
             dir.join("bad.kio"),
             "module bad;\n\n\
-             import elaborators(fail_user);\n\n\
-             pub fn bad() -> . { fail_user!(., ()) }\n",
+             import macros(macro fail_user);\n\n\
+             pub fn bad() -> . { fail_user(., ()) }\n",
         )
         .expect("write bad");
         main_path
@@ -6930,9 +6926,9 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_focused_analysis_does_not_evaluate_sibling_user_elaborator() {
+    fn lsp_focused_analysis_does_not_evaluate_sibling_user_macro() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let main_path = write_lsp_user_elaborator_package(dir.path());
+        let main_path = write_lsp_user_macro_package(dir.path());
         let overlay = package_collection::SourceOverlay::empty();
         let cancel = crate::lsp::cancel::CancellationToken::new();
 
@@ -6945,17 +6941,17 @@ mod tests {
         .expect("focused analysis should not be cancelled");
         assert!(
             focused.is_ok(),
-            "focused analysis should not force the bad sibling elaborator: {focused:?}"
+            "focused analysis should not force the bad sibling macro: {focused:?}"
         );
 
         let full = analyze_workspace_at_with_overlay_lsp(dir.path(), &overlay)
-            .expect_err("full analysis should evaluate the bad sibling elaborator");
+            .expect_err("full analysis should evaluate the bad sibling macro");
         assert!(
             full.errors.iter().any(|error| {
                 let (_, message) = error.error.diag();
-                message.contains("bad elaborator ran")
+                message.contains("bad macro ran")
             }),
-            "full analysis should expose the sibling elaborator failure: {full:?}"
+            "full analysis should expose the sibling macro failure: {full:?}"
         );
     }
 
@@ -7119,19 +7115,19 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_repeated_alpha_equal_elaborator_callers_keep_written_names() {
+    fn lsp_repeated_alpha_equal_macro_callers_keep_written_names() {
         for reverse in [false, true] {
             let dir = tempfile::tempdir().expect("tempdir");
             std::fs::write(dir.path().join("pkg.pkg.kio"), "package pkg;\n")
                 .expect("write package");
             std::fs::write(
-                dir.path().join("elaborators.kio"),
-                "module elaborators; import __comptime__;\n\
+                dir.path().join("macros.kio"),
+                "module macros; import __comptime__;\n\
                  pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n\
-                 pub elab echo : [T] T -> T { impl keep; };\n",
+                 pub macro echo : [T] T -> T { impl keep; };\n",
             )
-            .expect("write elaborator");
-            let mut source = String::from("module main; import elaborators(echo);\n");
+            .expect("write macro");
+            let mut source = String::from("module main; import macros(macro echo);\n");
             for number in 0..8 {
                 source.push_str(&format!(
                     "fn make{number}[Name{number}](value: Name{number}) -> [Name{number}] Name{number} -> Name{number} {{ .[Item](x: Item) -> Item {{ x }} }}\n"
@@ -7143,14 +7139,14 @@ mod tests {
             }
             source.push_str("pub fn run() -> . {\n");
             for (index, number) in names.iter().enumerate() {
-                source.push_str(&format!("let result{index} = echo!(make{number}(()));\n"));
+                source.push_str(&format!("let result{index} = echo(make{number}(()));\n"));
             }
             source.push_str("() }\n");
             let main_path = dir.path().join("main.kio");
             std::fs::write(&main_path, &source).expect("write main");
             let overlay = package_collection::SourceOverlay::empty();
             let cancel = crate::lsp::cancel::CancellationToken::new();
-            let memos = LspUserElaboratorMemos::default();
+            let memos = LspUserMacroMemos::default();
             let started = std::time::Instant::now();
             for _ in 0..3 {
                 let analysis = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
@@ -7185,26 +7181,26 @@ mod tests {
                 .only_memo()
                 .expect("one revision")
                 .snapshot();
-            assert_eq!(snapshot.user_elaborator.first_writes, 1);
-            assert!(snapshot.user_elaborator.misses >= 8);
-            assert!(snapshot.user_elaborator.hits > 0);
+            assert_eq!(snapshot.user_macro.first_writes, 1);
+            assert!(snapshot.user_macro.misses >= 8);
+            assert!(snapshot.user_macro.hits > 0);
             eprintln!(
                 "written binder memo: reverse={reverse} callers={} analyses=3 elapsed={:?} stats={:?}",
                 names.len(),
                 started.elapsed(),
-                snapshot.user_elaborator
+                snapshot.user_macro
             );
         }
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_user_elaborator_memo_survives_repeated_same_snapshot_analysis() {
+    fn lsp_user_macro_memo_survives_repeated_same_snapshot_analysis() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let main_path = write_lsp_user_elaborator_package(dir.path());
+        let main_path = write_lsp_user_macro_package(dir.path());
         let overlay = package_collection::SourceOverlay::empty();
         let cancel = crate::lsp::cancel::CancellationToken::new();
-        let memos = LspUserElaboratorMemos::default();
+        let memos = LspUserMacroMemos::default();
 
         for _ in 0..2 {
             let result = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
@@ -7227,12 +7223,12 @@ mod tests {
             .expect("expected one package memo entry")
             .snapshot();
         assert_eq!(
-            snapshot.user_elaborator.misses, 1,
-            "first focused request should compute the user-elaborator template once"
+            snapshot.user_macro.misses, 1,
+            "first focused request should compute the user-macro template once"
         );
         assert_eq!(
-            snapshot.user_elaborator.hits, 1,
-            "second identical focused request should reuse the user-elaborator template memo"
+            snapshot.user_macro.hits, 1,
+            "second identical focused request should reuse the user-macro template memo"
         );
     }
 
@@ -7240,7 +7236,7 @@ mod tests {
     #[test]
     fn lsp_missing_focus_fallback_reuses_worker_memos() {
         let dir = tempfile::tempdir().expect("tempdir");
-        write_lsp_user_elaborator_package(dir.path());
+        write_lsp_user_macro_package(dir.path());
         std::fs::write(
             dir.path().join("bad.kio"),
             "module bad;\n\npub fn bad() -> . { () }\n",
@@ -7249,7 +7245,7 @@ mod tests {
         let missing_focus = dir.path().join("missing.kio");
         let overlay = package_collection::SourceOverlay::empty();
         let cancel = crate::lsp::cancel::CancellationToken::new();
-        let memos = LspUserElaboratorMemos::default();
+        let memos = LspUserMacroMemos::default();
 
         for _ in 0..2 {
             let result = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
@@ -7271,18 +7267,18 @@ mod tests {
             .only_memo()
             .expect("fallback should populate the worker's package memo")
             .snapshot();
-        assert_eq!(snapshot.user_elaborator.misses, 1);
-        assert_eq!(snapshot.user_elaborator.hits, 1);
+        assert_eq!(snapshot.user_macro.misses, 1);
+        assert_eq!(snapshot.user_macro.hits, 1);
     }
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_user_elaborator_memo_invalidates_after_provider_edit() {
+    fn lsp_user_macro_memo_invalidates_after_provider_edit() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let main_path = write_lsp_user_elaborator_package(dir.path());
+        let main_path = write_lsp_user_macro_package(dir.path());
         let overlay = package_collection::SourceOverlay::empty();
         let cancel = crate::lsp::cancel::CancellationToken::new();
-        let memos = LspUserElaboratorMemos::default();
+        let memos = LspUserMacroMemos::default();
 
         let first = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
             dir.path(),
@@ -7294,17 +7290,14 @@ mod tests {
         .expect("focused analysis should not be cancelled");
         assert!(first.is_ok(), "baseline analysis should succeed: {first:?}");
 
-        let provider_path = dir.path().join("elaborators.kio");
-        let provider = std::fs::read_to_string(&provider_path).expect("read elaborator provider");
-        let edited = provider.replace(
-            "\nvalue\n",
-            "\n__elab_error__(ct, \"edited elaborator ran\")\n",
-        );
+        let provider_path = dir.path().join("macros.kio");
+        let provider = std::fs::read_to_string(&provider_path).expect("read macro provider");
+        let edited = provider.replace("\nvalue\n", "\n__macro_error__(ct, \"edited macro ran\")\n");
         assert_ne!(
             edited, provider,
             "provider edit should replace the branch body"
         );
-        std::fs::write(provider_path, edited).expect("edit elaborator provider");
+        std::fs::write(provider_path, edited).expect("edit macro provider");
 
         let second = analyze_module_at_with_overlay_lsp_cancellable_with_memos(
             dir.path(),
@@ -7314,11 +7307,11 @@ mod tests {
             &memos,
         )
         .expect("focused analysis should not be cancelled")
-        .expect_err("edited elaborator should reject the call");
+        .expect_err("edited macro should reject the call");
         assert!(
             second.errors.iter().any(|error| {
                 let (_, message) = error.error.diag();
-                message.contains("edited elaborator ran")
+                message.contains("edited macro ran")
             }),
             "the edited provider, not the cached baseline, must be evaluated: {second:?}"
         );
@@ -7326,7 +7319,7 @@ mod tests {
 
     #[cfg(all(feature = "surface", feature = "lsp"))]
     #[test]
-    fn lsp_user_elaborator_fingerprint_ignores_unrelated_package_source() {
+    fn lsp_user_macro_fingerprint_ignores_unrelated_package_source() {
         fn key(name: &str) -> PackageKey {
             PackageKey {
                 canonical_dir: PathBuf::from(name),
@@ -7365,8 +7358,8 @@ mod tests {
             ]),
         };
 
-        let baseline_fingerprints = lsp_user_elaborator_package_fingerprints(&baseline);
-        let edited_fingerprints = lsp_user_elaborator_package_fingerprints(&edited_b);
+        let baseline_fingerprints = lsp_user_macro_package_fingerprints(&baseline);
+        let edited_fingerprints = lsp_user_macro_package_fingerprints(&edited_b);
 
         assert_eq!(baseline_fingerprints.get(&a), edited_fingerprints.get(&a));
         assert_ne!(baseline_fingerprints.get(&b), edited_fingerprints.get(&b));
@@ -7653,7 +7646,7 @@ where
                                         import_body_type: Duration::ZERO,
                                         summary_levels: 0,
                                         summary_max_width: 0,
-                                        user_elaborator_timing: Default::default(),
+                                        user_macro_timing: Default::default(),
                                     },
                                 );
                             }
@@ -7682,7 +7675,7 @@ where
                                         import_body_type: Duration::ZERO,
                                         summary_levels: 0,
                                         summary_max_width: 0,
-                                        user_elaborator_timing: Default::default(),
+                                        user_macro_timing: Default::default(),
                                     },
                                 );
                             }
@@ -7716,7 +7709,7 @@ where
                             pending_typechecked,
                             forced_modules,
                             typed_cache_store,
-                            user_elaborator_timing,
+                            user_macro_timing,
                         ) = if package_check_skipped {
                             (None, 0, Duration::ZERO, Default::default())
                         } else {
@@ -7732,7 +7725,7 @@ where
                                 Some(checked.package),
                                 checked.forced_modules,
                                 checked.typed_cache_store,
-                                checked.user_elaborator_timing,
+                                checked.user_macro_timing,
                             )
                         };
                         let pipeline_typecheck = pipeline_typecheck_start.elapsed();
@@ -7771,7 +7764,7 @@ where
                                     import_body_type: import_elapsed,
                                     summary_levels,
                                     summary_max_width,
-                                    user_elaborator_timing,
+                                    user_macro_timing,
                                 },
                             );
                         }
@@ -7958,11 +7951,11 @@ impl TypedCacheState {
                 continue;
             }
             let same_package_surfaces = same_package_public_surfaces(parsed_pkg);
-            let same_package_elaborator_impls = same_package_elaborator_impl_surfaces(parsed_pkg);
+            let same_package_macro_impls = same_package_macro_impl_surfaces(parsed_pkg);
             let same_package_known_modules: BTreeSet<PackageModuleKey> =
                 same_package_surfaces.keys().cloned().collect();
-            let same_package_elaborator_known_modules: BTreeSet<PackageModuleKey> =
-                same_package_elaborator_impls.keys().cloned().collect();
+            let same_package_macro_known_modules: BTreeSet<PackageModuleKey> =
+                same_package_macro_impls.keys().cloned().collect();
             let package_name = parsed_pkg
                 .package_file
                 .as_ref()
@@ -7974,9 +7967,9 @@ impl TypedCacheState {
                     module,
                     package_name.as_ref(),
                     &same_package_surfaces,
-                    &same_package_elaborator_impls,
+                    &same_package_macro_impls,
                     &same_package_known_modules,
-                    &same_package_elaborator_known_modules,
+                    &same_package_macro_known_modules,
                     &mut deps,
                 );
                 deps.sort_by_key(TypedModuleDependency::label);
@@ -8062,7 +8055,7 @@ struct ScheduledTypecheckResult {
     package: crate::pass::alpha_normalize::AlphaNormalizedPackage<Prime>,
     forced_modules: usize,
     typed_cache_store: Duration,
-    user_elaborator_timing: crate::pass::typecheck_core::UserElaboratorTimingSnapshot,
+    user_macro_timing: crate::pass::typecheck_core::UserMacroTimingSnapshot,
 }
 
 fn assemble_scheduled_typecheck_package<P>(
@@ -8250,10 +8243,10 @@ where
     // A typed-cache hit skips a module's own typechecking, so the
     // optimization normally leaves that module's body un-forced and
     // un-lowered in `summary.lowered.package`. But a cache-*miss* module
-    // is retyped, and retyping evaluates any user elaborator it imports
+    // is retyped, and retyping evaluates any user macro it imports
     // against the lowered body of the *defining* module. If that defining
     // module is a cache hit, its un-forced placeholder body would be
-    // evaluated instead of the real elaborator, silently degrading the
+    // evaluated instead of the real macro, silently degrading the
     // result. So any module a cache-miss module transitively depends on
     // must also be force-lowered (its typed result still comes from the
     // cache; only its lowered body is needed). When every module hits,
@@ -8386,7 +8379,7 @@ where
         package: assemble_scheduled_typecheck_package(normalized, typed_modules, package_file),
         forced_modules,
         typed_cache_store,
-        user_elaborator_timing: typecheck_scope.user_elaborator_timing_snapshot(),
+        user_macro_timing: typecheck_scope.user_macro_timing_snapshot(),
     })
 }
 
@@ -8441,7 +8434,7 @@ where
 /// module transitively depends on them. A cache hit otherwise leaves a
 /// module's body un-forced; that is safe only when nobody re-evaluates
 /// that body. A retyped (miss) consumer does re-evaluate an imported
-/// elaborator's defining-module body at compile time, so every module
+/// macro's defining-module body at compile time, so every module
 /// reachable from a miss must carry its real lowered body even when its
 /// own typed result is served from cache. Empty when nothing misses.
 fn force_lower_targets_for_miss_consumers(
@@ -8548,7 +8541,7 @@ fn same_package_public_surfaces(
     )
 }
 
-fn same_package_elaborator_impl_surfaces(
+fn same_package_macro_impl_surfaces(
     parsed_pkg: &ParsedPackage,
 ) -> BTreeMap<PackageModuleKey, SurfaceFingerprint> {
     #[cfg(test)]
@@ -8581,7 +8574,7 @@ fn same_package_elaborator_impl_surfaces(
     compose_transitive_same_package_fingerprints(
         &direct_fingerprints,
         &deps_by_module,
-        "same-package-elaborator-impl",
+        "same-package-macro-impl",
     )
 }
 
@@ -9040,12 +9033,12 @@ mod typed_cache_dependency_fingerprint_tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn elaborator_module_retains_every_qualified_import_as_an_impl_dependency() {
+    fn macro_module_retains_every_qualified_import_as_an_impl_dependency() {
         let module = crate::pass::parser::parse(
             "module owner; \
              import helpers/used as used; \
              import helpers/unused as unused; \
-             elab demo : . -> . { impl used.build; };",
+             macro demo : . -> . { impl used.build; };",
         )
         .expect("qualified implementation target parses");
         let known_modules = ["helpers/used", "helpers/unused"]
@@ -9053,7 +9046,7 @@ mod typed_cache_dependency_fingerprint_tests {
             .map(module_key)
             .collect();
 
-        let actual = same_package_elaborator_import_targets(&module, None, &known_modules);
+        let actual = same_package_macro_import_targets(&module, None, &known_modules);
 
         assert_eq!(
             actual,
@@ -9063,7 +9056,7 @@ mod typed_cache_dependency_fingerprint_tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn module_without_elaborators_does_not_retain_qualified_impl_dependencies() {
+    fn module_without_macros_does_not_retain_qualified_impl_dependencies() {
         let module = crate::pass::parser::parse(
             "module owner; \
              import helpers/selected(helper); \
@@ -9076,7 +9069,7 @@ mod typed_cache_dependency_fingerprint_tests {
             .map(module_key)
             .collect();
 
-        let actual = same_package_elaborator_import_targets(&module, None, &known_modules);
+        let actual = same_package_macro_import_targets(&module, None, &known_modules);
 
         assert_eq!(actual, vec![module_key("helpers/selected")]);
     }
@@ -9223,21 +9216,18 @@ mod typed_cache_dependency_fingerprint_tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn elaborator_impl_fingerprint_tracks_imported_helper_source() {
+    fn macro_impl_fingerprint_tracks_imported_helper_source() {
         fn parsed_module(path: &str, source: &str) -> (PathBuf, Module<Surface>) {
             let module_file =
                 crate::pass::parser::parse_module_file(source).expect("module source parses");
             (PathBuf::from(path), module_file.module)
         }
 
-        fn package(elaborator_source: &str, helper_source: &str) -> ParsedPackage {
-            let elaborator_path = PathBuf::from("elaborators.kio");
-            let helper_path = PathBuf::from("elaborator_util.kio");
+        fn package(macro_source: &str, helper_source: &str) -> ParsedPackage {
+            let macro_path = PathBuf::from("macros.kio");
+            let helper_path = PathBuf::from("macro_util.kio");
             let modules = vec![
-                parsed_module(
-                    elaborator_path.to_str().expect("utf8 path"),
-                    elaborator_source,
-                ),
+                parsed_module(macro_path.to_str().expect("utf8 path"), macro_source),
                 parsed_module(helper_path.to_str().expect("utf8 path"), helper_source),
             ];
             ParsedPackage {
@@ -9247,64 +9237,58 @@ mod typed_cache_dependency_fingerprint_tests {
                 package_file: None,
                 dep_files: Vec::new(),
                 sources: BTreeMap::from([
-                    (elaborator_path, elaborator_source.to_owned()),
+                    (macro_path, macro_source.to_owned()),
                     (helper_path, helper_source.to_owned()),
                 ]),
             }
         }
 
-        let elaborator_source = "module elaborators;\n\
-            import elaborator_util(helper);\n\
-            pub elab poc : [A] A -> [B] B { impl helper; };\n";
-        let helper_source = "module elaborator_util;\n\
+        let macro_source = "module macros;\n\
+            import macro_util(helper);\n\
+            pub macro poc : [A] A -> [B] B { impl helper; };\n";
+        let helper_source = "module macro_util;\n\
             pub pure fn helper[A](value: A)[B] -> B { value }\n";
-        let baseline =
-            same_package_elaborator_impl_surfaces(&package(elaborator_source, helper_source));
-        let changed_helper = same_package_elaborator_impl_surfaces(&package(
-            elaborator_source,
-            "module elaborator_util;\n\
+        let baseline = same_package_macro_impl_surfaces(&package(macro_source, helper_source));
+        let changed_helper = same_package_macro_impl_surfaces(&package(
+            macro_source,
+            "module macro_util;\n\
              pub pure fn helper[A](value: A)[B] -> B { helper(A, value, B) }\n",
         ));
-        let changed_declaration = same_package_elaborator_impl_surfaces(&package(
-            "module elaborators;\n\
-             import elaborator_util(helper);\n\
-             pub elab poc : [A] A -> [B] B { captures helper; impl helper; };\n",
+        let changed_declaration = same_package_macro_impl_surfaces(&package(
+            "module macros;\n\
+             import macro_util(helper);\n\
+             pub macro poc : [A] A -> [B] B { captures helper; impl helper; };\n",
             helper_source,
         ));
 
-        let elaborators = module_key("elaborators");
-        assert_ne!(baseline.get(&elaborators), changed_helper.get(&elaborators));
-        assert_ne!(
-            baseline.get(&elaborators),
-            changed_declaration.get(&elaborators)
-        );
+        let macros = module_key("macros");
+        assert_ne!(baseline.get(&macros), changed_helper.get(&macros));
+        assert_ne!(baseline.get(&macros), changed_declaration.get(&macros));
 
-        let qualified_elaborator_source = "module elaborators;\n\
-            import elaborator_util as util;\n\
-            pub elab poc : [A] A -> [B] B { impl util.helper; };\n";
-        let qualified_baseline = same_package_elaborator_impl_surfaces(&package(
-            qualified_elaborator_source,
-            helper_source,
-        ));
-        let qualified_changed_helper = same_package_elaborator_impl_surfaces(&package(
-            qualified_elaborator_source,
-            "module elaborator_util;\n\
+        let qualified_macro_source = "module macros;\n\
+            import macro_util as util;\n\
+            pub macro poc : [A] A -> [B] B { impl util.helper; };\n";
+        let qualified_baseline =
+            same_package_macro_impl_surfaces(&package(qualified_macro_source, helper_source));
+        let qualified_changed_helper = same_package_macro_impl_surfaces(&package(
+            qualified_macro_source,
+            "module macro_util;\n\
              pub pure fn helper[A](value: A)[B] -> B { helper(A, value, B) }\n",
         ));
         assert_ne!(
-            qualified_baseline.get(&elaborators),
-            qualified_changed_helper.get(&elaborators),
-            "a qualified elaborator implementation target must retain its helper body dependency"
+            qualified_baseline.get(&macros),
+            qualified_changed_helper.get(&macros),
+            "a qualified macro implementation target must retain its helper body dependency"
         );
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn elaborator_schedule_change_keeps_the_lazy_surface_but_invalidates_the_impl() {
+    fn macro_schedule_change_keeps_the_lazy_surface_but_invalidates_the_impl() {
         fn package(source: &str) -> ParsedPackage {
-            let path = PathBuf::from("elaborators.kio");
+            let path = PathBuf::from("macros.kio");
             let module_file = crate::pass::parser::parse_module_file_lazy(source)
-                .expect("lazy elaborator source parses");
+                .expect("lazy macro source parses");
             ParsedPackage {
                 root_dir: PathBuf::new(),
                 modules: vec![(path.clone(), module_file.module)],
@@ -9316,18 +9300,18 @@ mod typed_cache_dependency_fingerprint_tests {
         }
 
         let late = package(
-            "module elaborators;\n\
-             pub elab poc : [A] A -> [B] B { impl helper; };\n",
+            "module macros;\n\
+             pub macro poc : [A] A -> [B] B { impl helper; };\n",
         );
         let fills = package(
-            "module elaborators;\n\
-             pub elab poc : [A] A -> [B] B { impl(fills) helper; };\n",
+            "module macros;\n\
+             pub macro poc : [A] A -> [B] B { impl(fills) helper; };\n",
         );
         let retargeted = package(
-            "module elaborators;\n\
-             pub elab poc : [A] A -> [B] B { impl other_helper; };\n",
+            "module macros;\n\
+             pub macro poc : [A] A -> [B] B { impl other_helper; };\n",
         );
-        let module = module_key("elaborators");
+        let module = module_key("macros");
         let late_public = same_package_public_surfaces(&late);
         let fills_public = same_package_public_surfaces(&fills);
         let retargeted_public = same_package_public_surfaces(&retargeted);
@@ -9342,9 +9326,9 @@ mod typed_cache_dependency_fingerprint_tests {
             "the implementation target must not enter the public header fingerprint"
         );
 
-        let late_impl = same_package_elaborator_impl_surfaces(&late);
-        let fills_impl = same_package_elaborator_impl_surfaces(&fills);
-        let retargeted_impl = same_package_elaborator_impl_surfaces(&retargeted);
+        let late_impl = same_package_macro_impl_surfaces(&late);
+        let fills_impl = same_package_macro_impl_surfaces(&fills);
+        let retargeted_impl = same_package_macro_impl_surfaces(&retargeted);
         assert_ne!(
             late_impl.get(&module),
             fills_impl.get(&module),
@@ -9362,9 +9346,9 @@ mod typed_cache_dependency_fingerprint_tests {
     fn trailing_descriptors_participate_in_lazy_public_surface_fingerprints() {
         fn surface(entries: &str) -> BTreeMap<PackageModuleKey, SurfaceFingerprint> {
             let source = format!(
-                "module elaborators; pub elab choose : [R] (. -> R) -> (. -> R) -> R {{ {entries} impl helper; }}"
+                "module macros; pub macro choose : [R] (. -> R) -> (. -> R) -> R {{ {entries} impl helper; }}"
             );
-            let path = PathBuf::from("elaborators.kio");
+            let path = PathBuf::from("macros.kio");
             let parsed = crate::pass::parser::parse_module_file_lazy(&source).unwrap();
             same_package_public_surfaces(&ParsedPackage {
                 root_dir: PathBuf::new(),
@@ -9395,9 +9379,9 @@ fn collect_same_package_import_fingerprints(
     module: &Module<Surface>,
     package_name: Option<&PackageName>,
     public_surfaces: &BTreeMap<PackageModuleKey, SurfaceFingerprint>,
-    elaborator_impl_surfaces: &BTreeMap<PackageModuleKey, SurfaceFingerprint>,
+    macro_impl_surfaces: &BTreeMap<PackageModuleKey, SurfaceFingerprint>,
     public_known_modules: &BTreeSet<PackageModuleKey>,
-    elaborator_known_modules: &BTreeSet<PackageModuleKey>,
+    macro_known_modules: &BTreeSet<PackageModuleKey>,
     deps: &mut Vec<TypedModuleDependency>,
 ) {
     for target_key in same_package_import_targets(module, package_name, public_known_modules) {
@@ -9408,11 +9392,9 @@ fn collect_same_package_import_fingerprints(
             ));
         }
     }
-    for target_key in
-        same_package_elaborator_import_targets(module, package_name, elaborator_known_modules)
-    {
-        if let Some(hash) = elaborator_impl_surfaces.get(&target_key) {
-            deps.push(TypedModuleDependency::same_package_elaborator_module(
+    for target_key in same_package_macro_import_targets(module, package_name, macro_known_modules) {
+        if let Some(hash) = macro_impl_surfaces.get(&target_key) {
+            deps.push(TypedModuleDependency::same_package_macro_module(
                 target_key,
                 hash.clone(),
             ));
@@ -9466,26 +9448,26 @@ fn same_package_dependency_closure(
     closure
 }
 
-fn same_package_elaborator_import_targets(
+fn same_package_macro_import_targets(
     module: &Module<Surface>,
     package_name: Option<&PackageName>,
     known_modules: &BTreeSet<PackageModuleKey>,
 ) -> Vec<PackageModuleKey> {
     // Function bodies remain lazy here, so a selectively imported name may
-    // be an elaborator called from a body we have not parsed yet. A local
-    // elaborator implementation may also reach any qualified import through
+    // be a macro called from a body we have not parsed yet. A local
+    // macro implementation may also reach any qualified import through
     // its ordinary pure helper graph. Retain every qualified import when the
-    // module declares an elaborator; narrowing that set requires a complete
+    // module declares a macro; narrowing that set requires a complete
     // body-level call-graph analysis, not just inspection of the impl path.
-    let declares_elaborator = module
+    let declares_macro = module
         .items
         .iter()
-        .any(|item| matches!(item, crate::ast::Item::Elaborator(_, _)));
+        .any(|item| matches!(item, crate::ast::Item::Macro(_, _)));
     let mut targets = BTreeSet::new();
     for u in &module.imports {
         let target = match &u.kind {
             crate::ast::ImportKind::Selective { from, .. } => from,
-            crate::ast::ImportKind::Qualified { path, .. } if declares_elaborator => path,
+            crate::ast::ImportKind::Qualified { path, .. } if declares_macro => path,
             crate::ast::ImportKind::Qualified { .. }
             | crate::ast::ImportKind::Intrinsics
             | crate::ast::ImportKind::Comptime => continue,
@@ -9572,10 +9554,10 @@ fn public_surface_entries(module: &Module<Surface>) -> Vec<String> {
                     crate::pretty::pretty_item_signature(item)
                 ))
             }
-            crate::ast::Item::Elaborator(s, _) if s.vis.is_pub() => entries.push(format!(
-                "elaborator:{}:{}",
+            crate::ast::Item::Macro(s, _) if s.vis.is_pub() => entries.push(format!(
+                "macro:{}:{}",
                 s.name,
-                crate::pretty::pretty_elaborator_public_signature(s)
+                crate::pretty::pretty_macro_public_signature(s)
             )),
             // Host items are always public and part of the contract
             // surface, so they contribute to the public fingerprint.
@@ -9592,7 +9574,7 @@ fn public_surface_entries(module: &Module<Surface>) -> Vec<String> {
             crate::ast::Item::Equiv(_, _)
             | crate::ast::Item::Op(_, _)
             | crate::ast::Item::VariadicOperator(_, _)
-            | crate::ast::Item::Elaborator(_, _) => {}
+            | crate::ast::Item::Macro(_, _) => {}
         }
     }
     entries.sort();
@@ -9931,7 +9913,7 @@ fn normalize_projected_signature_patterns(signature: &mut crate::ast::Signature<
 ///   Public newtypes are reduced to the same four-state host surface recorded
 ///   in a signature file; private newtypes pass through for visibility checks.
 /// - The surface-only auxiliary declarations (`equiv`, `op`, `varop`,
-///   `literal`, `elab`) contribute no contract entry (see
+///   `literal`, `macro`) contribute no contract entry (see
 ///   `sig::surface::item_is_exported`), and `kio-prime`'s lowering rejects
 ///   them, so they are dropped: the result is the same contract on both
 ///   binaries.
@@ -10007,7 +9989,7 @@ fn select_contract_declarations(module: &mut crate::ast::Module<Surface>) -> Res
             Item::Labels(..)
             | Item::LabelForward(..)
             | Item::Equiv(..)
-            | Item::Elaborator(..)
+            | Item::Macro(..)
             | Item::LiteralAlias(..)
             | Item::Op(..)
             | Item::VariadicOperator(..) => {}
@@ -10695,7 +10677,7 @@ mod contract_surface_tests {
                 "import provider({tag});",
             ),
             (
-                "elaborator",
+                "macro",
                 "module provider; \
                  import __comptime__; \
                  pub pure fn identity_impl( \
@@ -10703,8 +10685,8 @@ mod contract_surface_tests {
                    _source: __Type__, \
                    value: __Checked_term__ \
                  ) -> __Checked_term__ { value } \
-                 pub elab identity : [A] A -> A { impl identity_impl; };",
-                "import provider(identity);",
+                 pub macro identity : [A] A -> A { impl identity_impl; };",
+                "import provider(macro identity);",
             ),
         ];
         for (_, provider, import) in cases {
@@ -11189,7 +11171,7 @@ mod contract_surface_tests {
             "module api;\n\
              host type Bool role(bool);\n\
              host type I32 role(i32);\n\
-             pub fn pick(b: Bool, x: I32, y: I32) -> I32 { if b { x } else { y } }\n\
+             pub fn pick(b: Bool, x: I32, y: I32) -> I32 { if (b) { x } else { y } }\n\
              pub fn first[A][B]((value: A, _: B)) -> A { value }\n",
         )
         .unwrap();
@@ -11302,23 +11284,27 @@ mod contract_surface_tests {
     }
 
     #[test]
-    fn projected_elaborator_origins_match_across_pipelines_and_import_orders() {
-        let elaborator =
-            "pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
-        for (first_item, second_item) in [
-            (elaborator, elaborator),
-            ("pub fn same() -> . { () }", elaborator),
+    fn projected_macro_origins_match_across_pipelines_and_import_orders() {
+        let macro_def =
+            "pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
+        for (first_item, first_selector, second_item) in [
+            (macro_def, "macro same", macro_def),
+            ("pub fn same() -> . { () }", "same", macro_def),
         ] {
             for api in [
-                "module api; import first(same); import second(same); pub fn expose() -> . { () }",
-                "module api; import second(same); import first(same); pub fn expose() -> . { () }",
+                format!(
+                    "module api; import first({first_selector}); import second(macro same); pub fn expose() -> . {{ () }}"
+                ),
+                format!(
+                    "module api; import second(macro same); import first({first_selector}); pub fn expose() -> . {{ () }}"
+                ),
             ] {
                 for error in projected_errors_for_modules(
                     "  api;",
                     &[
                         ("first.kio", &format!("module first; {first_item}")),
                         ("second.kio", &format!("module second; {second_item}")),
-                        ("api.kio", api),
+                        ("api.kio", &api),
                     ],
                 ) {
                     assert!(
@@ -11376,13 +11362,13 @@ mod contract_surface_tests {
 
     #[test]
     fn projected_import_failures_with_consumed_declarations_in_both_pipelines() {
-        let elaborator =
-            "pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
+        let macro_def =
+            "pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
         for error in projected_errors_for_modules(
             "  api;",
             &[
-                ("first.kio", &format!("module first; {elaborator}")),
-                ("second.kio", &format!("module second; {elaborator}")),
+                ("first.kio", &format!("module first; {macro_def}")),
+                ("second.kio", &format!("module second; {macro_def}")),
                 (
                     "api.kio",
                     "module api; import first as first; import second as second; import missing(absent); pub fn expose() -> . { () }",
@@ -11399,13 +11385,13 @@ mod contract_surface_tests {
 
     #[test]
     fn projected_import_cycles_with_consumed_declarations_in_both_pipelines() {
-        let elaborator =
-            "pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
+        let macro_def =
+            "pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
         for error in projected_errors_for_modules(
             "  api;",
             &[
-                ("first.kio", &format!("module first; {elaborator}")),
-                ("second.kio", &format!("module second; {elaborator}")),
+                ("first.kio", &format!("module first; {macro_def}")),
+                ("second.kio", &format!("module second; {macro_def}")),
                 (
                     "api.kio",
                     "module api; import cycle as cycle; import first as first; import second as second; pub fn expose() -> . { () }",

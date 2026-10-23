@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(default String);
 import testapi/io(print);
 import testapi/types(Cell);
@@ -13,7 +13,7 @@ import testapi/types(Pair);
 // pub members flow through together, no per-member opt-in or
 // opt-out.
 fn first_of(p: String & String) -> String {
-  match! p {
+  match(p) {
     .(a: String, _b: String) { a }
   }
 }

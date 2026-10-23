@@ -1,6 +1,6 @@
 ---
 name: audit-surface-forms-usage
-description: Verify non-Kio' .kio files prefer surface forms over intrinsic spellings — no __intrinsic__, prefer UFCS, spine-first elaborators, imported if!/else, elided type-args
+description: Verify non-Kio' .kio files prefer surface forms over intrinsic spellings — no __intrinsic__, prefer UFCS, spine-first macros, imported if/else, elided type-args
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -17,8 +17,8 @@ Read ai/topics/surface-forms.md before starting.
 In `*.kio` files outside the intrinsic-subject set, grep for:
 
 - `import __intrinsics__;` — should not appear except in intrinsic-subject files.
-- `__intrinsic_*` direct calls — should not appear; the surface has operators, tuple literals, spine elaborators, `match!`, imported `if!`/`else`, etc.
-- `__either__`, `__if_then_else__`, `__pair__`, `__left__`, `__right__` — same; sum elimination goes through `match!`, product construction through tuple literals, sum construction through `widen_sum!`.
+- `__intrinsic_*` direct calls — should not appear; the surface has operators, tuple literals, spine macros, `match`, imported `if`/`else`, etc.
+- `__either__`, `__if_then_else__`, `__pair__`, `__left__`, `__right__` — same; sum elimination goes through `match`, product construction through tuple literals, sum construction through `widen_sum`.
 
 For each hit, decide whether the file is genuinely subject-of-intrinsic. If unsure, flag it.
 
@@ -26,20 +26,20 @@ For each hit, decide whether the file is genuinely subject-of-intrinsic. If unsu
 
 Per [`ai/topics/surface-forms.md`](../../topics/surface-forms.md), ordinary (non-subject) surface code prefers:
 
-- **Spine-first coercions** — the axis-specific spine forms (`reorder_sum!` / `reorder_prod!` / `narrow_sum!` / `narrow_prod!` / `widen_sum!` / `widen_prod!` / `flatten_sum!` / `flatten_prod!` / `one_sum!` / `one_prod!`) for single-axis coercions, `fit!` for multi-axis or recursive ones. The algebraic palette (`iso!` / `into!` / `onto!` / `align!` / `ease!`) is subject-gated; sweeping for out-of-subject algebraic uses is [`audit-spine-vs-algebraic`](../audit-spine-vs-algebraic/SKILL.md)'s job — don't duplicate it here.
-- **`atom!` for picking a single value from an aggregate** — single-component projection (`r.>atom!(Field)`, `pair.>atom!(T)`). `if!`/`else` and `match!` already return the common arm type directly, so an `atom!` added just to collapse their result is itself a finding, as is `atom!` on a plain atomic reference where a bare name reads better.
-- **UFCS for readable elab calls** — `r.>fit!(T)` over `fit!(r, T)`, `r.>atom!` over `atom!(r)`, and corresponding receiver-first block calls where they clarify value flow. A written empty UFCS argument list is invalid; omit the list when no other prefix argument is needed. Retain direct calls when they better express the argument roles or test subject.
+- **Spine-first coercions** — the axis-specific spine forms (`reorder_sum` / `reorder_prod` / `narrow_sum` / `narrow_prod` / `widen_sum` / `widen_prod` / `flatten_sum` / `flatten_prod` / `one_sum` / `one_prod`) for single-axis coercions, `fit` for multi-axis or recursive ones. The algebraic palette (`iso` / `into` / `onto` / `align` / `ease`) is subject-gated; sweeping for out-of-subject algebraic uses is [`audit-spine-vs-algebraic`](../audit-spine-vs-algebraic/SKILL.md)'s job — don't duplicate it here.
+- **`atom` for picking a single value from an aggregate** — single-component projection (`r.>atom(Field)`, `pair.>atom(T)`). `if`/`else` and `match` already return the common arm type directly, so an `atom` added just to collapse their result is itself a finding, as is `atom` on a plain atomic reference where a bare name reads better.
+- **UFCS for readable macro calls** — `r.>fit(T)` over `fit(r, T)`, `r.>atom` over `atom(r)`, and corresponding receiver-first block calls where they clarify value flow. A written empty UFCS argument list is invalid; omit the list when no other prefix argument is needed. Retain direct calls when they better express the argument roles or test subject.
 - **UFCS for type-member access** — `r.>T.member` over `T.member(r)` when `T.member` takes a single value-arg the receiver fills.
 - **UFCS for readable ordinary-call chains** — review nested calls where a value's path through ordinary functions would be clearer with `.>` or `.>>`; retain prefix calls when they express argument roles or the test subject better. Never infer that a left-associated rewrite preserves a right-nested call's order or behavior.
-- **Explicit-target form for inline coercions** — `widen_sum!(e, T)` inline rather than a wrapper `fn mk_left(s: String) -> (String | !) { widen_sum!(s) }`.
+- **Explicit-target form for inline coercions** — `widen_sum(e, T)` inline rather than a wrapper `fn mk_left(s: String) -> (String | !) { widen_sum(s) }`.
 
 For each `*.kio` outside the intrinsic-subject set:
 
-- Find hand-compositions of axis-specific forms (`narrow_prod!(widen_sum!(e, T), U)`) where a single `fit!(e, U)` produces the same result.
-- Find `match! value { clauses }` / `if! c { a } else { b }` results wrapped in `atom!` just to collapse the arms — the wrap is redundant.
-- Find elab calls whose receiver flow would be clearer with UFCS. For block calls, check that the receiver remains within the ordinary prefix before projected block arguments; reverse splices follow all blocks. Preserve labelled-block ownership and quotation semantics rather than assuming a textual move preserves meaning.
+- Find hand-compositions of axis-specific forms (`narrow_prod(widen_sum(e, T), U)`) where a single `fit(e, U)` produces the same result.
+- Find `match(value) { clauses }` / `if(c) { a } else { b }` results wrapped in `atom` just to collapse the arms — the wrap is redundant.
+- Find macro calls whose receiver flow would be clearer with UFCS. For block calls, check that the receiver remains within the ordinary prefix before projected block arguments; reverse splices follow all blocks. Preserve labelled-block ownership and quotation semantics rather than assuming a textual move preserves meaning.
 - Find nested ordinary calls whose value flow is obscured and sketch a grouping-preserving UFCS rewrite. Treat this as a readability judgment, not a blanket conversion; classify host effects, syntax-focused cases, and intentional teaching examples before proposing a change.
-- Find one-off helper fns whose only purpose is to anchor an expected type for an elaborator call (`fn mk_*(…) -> (… | !) { widen_sum!(…) }`) — those should be inlined as `widen_sum!(…, (T | !))`.
+- Find one-off helper fns whose only purpose is to anchor an expected type for a macro call (`fn mk_*(…) -> (… | !) { widen_sum(…) }`) — those should be inlined as `widen_sum(…, (T | !))`.
 - Find type aliases introduced solely to dodge "compound type in a type-arg slot" — that constraint doesn't exist; compound types are valid in every type-arg position.
 
 ## 3. Other antipatterns

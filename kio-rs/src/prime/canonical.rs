@@ -138,7 +138,7 @@ fn collect_names(e: &Expr<Prime>, out: &mut HashSet<String>) {
         | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::RecCall { ext, .. }
@@ -579,7 +579,7 @@ fn collect_free_path_heads(e: &Expr<Prime>, bound: &HashSet<String>, free: &mut 
         | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::RecCall { ext, .. }

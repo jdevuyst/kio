@@ -234,7 +234,7 @@ fn ufcs_authentication_final_full_and_focused_first_last_mixed_chains() {
                 .refactoring_storage_counts()
                 .is_none()
         );
-        let memos = LspUserElaboratorMemos::for_editor();
+        let memos = LspUserMacroMemos::for_editor();
         let overlay = package_collection::SourceOverlay::empty();
         let cancel = crate::lsp::cancel::CancellationToken::new();
         let full = analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
@@ -275,7 +275,7 @@ fn ufcs_authentication_final_full_and_focused_first_last_mixed_chains() {
 fn ufcs_authentication_final_local_generic_origins_and_reused_scopes() {
     eprintln!(
         "ufcs scope layout: memo_holder={} package_scope={}",
-        std::mem::size_of::<LspUserElaboratorMemos>(),
+        std::mem::size_of::<LspUserMacroMemos>(),
         std::mem::size_of::<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>()
     );
     let source = "module pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }";
@@ -286,7 +286,7 @@ fn ufcs_authentication_final_local_generic_origins_and_reused_scopes() {
             .refactoring_storage_counts()
             .is_none()
     );
-    let memos = LspUserElaboratorMemos::for_editor();
+    let memos = LspUserMacroMemos::for_editor();
     let overlay = package_collection::SourceOverlay::empty();
     let cancel = crate::lsp::cancel::CancellationToken::new();
     for _ in 0..2 {

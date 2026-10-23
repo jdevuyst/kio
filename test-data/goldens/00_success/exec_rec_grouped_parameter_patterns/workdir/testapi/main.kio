@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith as arithmetic;
 import testapi/fmt as fmt;
@@ -9,11 +9,11 @@ import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn accumulate(state: (I32 & I32) & I32 & I32, offset: I32) -> I32 {
-  match! state {
+  match(state) {
     .((count: I32, total: I32), (step: I32, bias: I32)) {
       io.print(fmt.int_to_string(count));
       io.print(" ");
-      if! arithmetic.leq_i32(count, 0) {
+      if(arithmetic.leq_i32(count, 0)) {
         arithmetic.add_i32(arithmetic.add_i32(total, bias), offset)
       } else {
         recur accumulate(

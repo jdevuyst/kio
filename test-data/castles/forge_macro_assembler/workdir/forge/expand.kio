@@ -10,19 +10,19 @@
 /// `series` fixture. Nothing renames a label on the way in.
 module forge/expand;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import forge/isa(Src);
 import forge/list as l;
 import forge/program as p;
 import forge/program(Call, Flat, Flats, Instr, Item, Items, Macros, Mark, Srcs, Unknown_macro);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi/iter(loop);
 
 /// Expansion either finishes, or names the macro it could not find.
 pub type Expansion = Flats | Unknown_macro;
 
 rec(loop) fn splice(body: Srcs, acc: Flats) -> Flats {
-  match! l.un_cons(body) {
+  match(l.un_cons(body)) {
     (
     , .(i: Src, rest: Srcs) { recur splice(rest, l.cons(p.flat_instr(i), acc)) }
     , .(_empty: .) { acc }
@@ -32,16 +32,16 @@ rec(loop) fn splice(body: Srcs, acc: Flats) -> Flats {
 
 /// Expand one item onto the reversed accumulator.
 fn one(it: Item, macros: Macros, acc: Flats) -> Expansion {
-  match! it {
+  match(it) {
     (
-    , .(x: Instr) { widen_sum!(l.cons(p.flat_instr(x.?{p.instr}), acc)) }
-    , .(x: Mark) { widen_sum!(l.cons(p.flat_mark(x.?{p.mark}), acc)) }
+    , .(x: Instr) { widen_sum(l.cons(p.flat_instr(x.?{p.instr}), acc)) }
+    , .(x: Mark) { widen_sum(l.cons(p.flat_mark(x.?{p.mark}), acc)) }
     , .(x: Call) {
         let name = x.?{p.call};
-        match! p.find_macro(macros, name) {
+        match(p.find_macro(macros, name)) {
           (
-          , .(body: Srcs) { widen_sum!(splice(body, acc)) }
-          , .(_none: .) { widen_sum!(p.unknown_macro(name)) }
+          , .(body: Srcs) { widen_sum(splice(body, acc)) }
+          , .(_none: .) { widen_sum(p.unknown_macro(name)) }
           )
         }
       }
@@ -50,14 +50,14 @@ fn one(it: Item, macros: Macros, acc: Flats) -> Expansion {
 }
 
 rec(loop) fn walk(items: Items, macros: Macros, acc: Flats) -> Expansion {
-  match! l.un_cons(items) {
+  match(l.un_cons(items)) {
     (
     , .(it: Item, rest: Items) {
-        match! one(it, macros, acc) {
-          (.(next: Flats) { recur walk(rest, macros, next) }, .(e: Unknown_macro) { widen_sum!(e) })
+        match(one(it, macros, acc)) {
+          (.(next: Flats) { recur walk(rest, macros, next) }, .(e: Unknown_macro) { widen_sum(e) })
         }
       }
-    , .(_empty: .) { widen_sum!(l.reverse(acc)) }
+    , .(_empty: .) { widen_sum(l.reverse(acc)) }
     )
   }
 }

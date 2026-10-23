@@ -7,9 +7,7 @@
 
 use std::marker::PhantomData;
 
-use crate::ast::{
-    Equiv, ExpressionOccurrence, Never, Phase, Prime, Purity, Type, UserElaboratorDef,
-};
+use crate::ast::{Equiv, ExpressionOccurrence, Never, Phase, Prime, Purity, Type, UserMacroDef};
 use crate::error::Error;
 use crate::pass::resolve::ResolvePhase;
 use crate::pass::typecheck_core::declarations::{AuxiliaryItemChecks, ModuleDeferralCheck};
@@ -153,7 +151,7 @@ impl<P: Phase + Clone + std::fmt::Debug + Eq> Phase for Contract<P> {
     type TypeGoal = P::TypeGoal;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -192,7 +190,7 @@ impl DeclarationPhase for Contract<Prime> {
 
 impl<P: Phase + Clone + std::fmt::Debug + Eq> AuxiliaryItemChecks<Contract<P>> for Contract<P>
 where
-    Self: DeclarationPhase<Elaborations = ()> + Phase<ItemEquiv = Never, ItemElaborator = Never>,
+    Self: DeclarationPhase<Elaborations = ()> + Phase<ItemEquiv = Never, ItemMacro = Never>,
 {
     fn check_equiv<'m>(
         _: &'m Equiv<Self>,
@@ -204,8 +202,8 @@ where
         match *witness {}
     }
 
-    fn check_elaborator<'m>(
-        _: &'m UserElaboratorDef<Self>,
+    fn check_macro<'m>(
+        _: &'m UserMacroDef<Self>,
         witness: &Never,
         _: usize,
         _: &'m ModuleEnv<'m, Self>,

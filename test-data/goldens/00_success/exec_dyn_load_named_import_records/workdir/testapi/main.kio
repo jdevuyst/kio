@@ -1,7 +1,5 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
 import loader(
 , Import
 , Lr_diag
@@ -16,18 +14,20 @@ import loader(
 , {import}
 );
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(String, default Bool);
 import testapi/io(print);
 
 fn show(entry: Import) {
-  match! un_import(entry) {
+  match(un_import(entry)) {
     .(local: String, provider: String) {
       print(local);
       print(":"(String));
       print(import_source(entry));
       print("@"(String));
       print(provider);
-      if! import_is_default(entry) {
+      if(import_is_default(entry)) {
         print(":selected"(String))
       } else {
         print(":unselected"(String))
@@ -38,7 +38,7 @@ fn show(entry: Import) {
 }
 
 fn load_result(source: String) {
-  match! un_load_outcome(load_package(source)) {
+  match(un_load_outcome(load_package(source))) {
     (
     , .(_loaded: Lr_image) { print("ok\n"(String)) }
     , .(_diagnostic: Lr_diag) { print("rejected\n"(String)) }
@@ -52,7 +52,7 @@ pub fn main() {
   show(mk_import_selected("Selected"(String), "Number"(String), "origin"(String), .t(Bool)));
   let raw = {import = ("raw"(String), "source"(String), "origin"(String), .t(Bool))};
   show(raw);
-  match! Import.get(raw) {
+  match(Import.get(raw)) {
     .(local: String, original: String, provider: String, selected: Bool) {
       print(local);
       print("\n"(String));
@@ -60,7 +60,7 @@ pub fn main() {
       print("\n"(String));
       print(provider);
       print("\n"(String));
-      if! selected { print("selected\n"(String)) } else { print("unselected\n"(String)) }
+      if(selected) { print("selected\n"(String)) } else { print("unselected\n"(String)) }
     }
   };
   load_result("module origin; pub fn source() { () } module consumer; import "

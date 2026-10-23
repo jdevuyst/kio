@@ -8,7 +8,7 @@
 use crate::ast::{
     CallArg, ElaboratorCall, Expr, FnDef, HostFn, HostFnParam, HostType, Item, LitAnnotationExt,
     Lowered, Module, Never, Newtype, Phase, Prime, Signature, SignatureParam, Type, TypeAlias,
-    TypeParam, UserElaboratorDef,
+    TypeParam, UserMacroDef,
 };
 use crate::pass::resolve::Package;
 use crate::span::Span;
@@ -129,7 +129,7 @@ where
             }
             exit_signature(visitor, &mut equiv.sig, scope);
         }
-        Item::Elaborator(elab, _) => walk_elaborator(visitor, elab),
+        Item::Macro(macro_def, _) => walk_macro(visitor, macro_def),
         Item::HostType(host) => walk_host_type(visitor, host),
         Item::HostFn(host) => walk_host_fn(visitor, host),
         Item::RecGroup(_, ext)
@@ -177,12 +177,12 @@ where
     exit_binders(visitor, &mut newtype.type_params, scope);
 }
 
-fn walk_elaborator<P, V>(visitor: &mut V, elab: &mut UserElaboratorDef<P>)
+fn walk_macro<P, V>(visitor: &mut V, macro_def: &mut UserMacroDef<P>)
 where
     P: TypecheckVisitPhase,
     V: TypecheckVisitMut<P> + ?Sized,
 {
-    visitor.visit_type(&mut elab.call_ty);
+    visitor.visit_type(&mut macro_def.call_ty);
 }
 
 fn walk_host_type<P, V>(visitor: &mut V, host: &mut HostType<P>)
@@ -414,7 +414,7 @@ where
                 visitor.visit_expr(value);
             }
         },
-        Expr::UserElaborator { args, .. } => visit_call_args(visitor, args),
+        Expr::UserMacro { args, .. } => visit_call_args(visitor, args),
         Expr::Ufcs { receiver, args, .. } => {
             visitor.visit_expr(receiver);
             visit_call_args(visitor, args);

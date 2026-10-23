@@ -268,7 +268,7 @@ pub fn handle_references(
 enum BinderKey {
     BlockLabel {
         module_path: String,
-        elaborator: String,
+        macro_name: String,
         ordinal: usize,
     },
     /// Top-level fn or cross-module fn: `(module_path, name)`.
@@ -315,12 +315,12 @@ fn binder_key(b: &ResolvedBinder, cursor_module_path: &str) -> BinderKey {
     match b {
         ResolvedBinder::BlockLabel {
             module_path,
-            elaborator,
+            macro_name,
             ordinal,
             ..
         } => BinderKey::BlockLabel {
             module_path: module_path.clone(),
-            elaborator: elaborator.clone(),
+            macro_name: macro_name.clone(),
             ordinal: *ordinal,
         },
         ResolvedBinder::Fn { module_path, name } => BinderKey::Fn {
@@ -389,16 +389,16 @@ fn binder_matches_key(
         (
             BinderKey::BlockLabel {
                 module_path,
-                elaborator,
+                macro_name,
                 ordinal,
             },
             ResolvedBinder::BlockLabel {
                 module_path: owner,
-                elaborator: head,
+                macro_name: head,
                 ordinal: index,
                 ..
             },
-        ) if module_path == owner && elaborator == head && ordinal == index => true,
+        ) if module_path == owner && macro_name == head && ordinal == index => true,
         (
             BinderKey::Fn { module_path, name },
             ResolvedBinder::Fn {

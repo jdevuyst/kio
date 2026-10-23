@@ -2,14 +2,14 @@
 module testapi/main;
 
 import defaults(apply_default, eval_default);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import imageio(read_image_stdin);
 import loader(Contract, Image, Lr_diag, Lr_image);
 import loader(Diag);
 import loader(contract_check, contract_cons, contract_nil, mk_expect);
 import loader(diag_message, export_term, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import prime(Term);
 import result(Ev_done, Ev_stuck);
 import testapi(I32, Scalar, String);
@@ -23,19 +23,19 @@ import value(value_to_scalar, vunit);
 // Call a zero-parameter export (one unit application) and render its i32;
 // a name that resolves to no unique surface export renders so.
 fn call0_i32(im: Image, name: String) -> String {
-  match! export_term(im, name) {
+  match(export_term(im, name)) {
     (
     , .(t: Term) {
-        match! eval_default(t) {
+        match(eval_default(t)) {
           (
           , .(v: Ev_done) {
-              match! apply_default(Ev_done.get(v), vunit()) {
+              match(apply_default(Ev_done.get(v), vunit())) {
                 (
                 , .(r: Ev_done) {
-                    match! value_to_scalar(Ev_done.get(r)) {
+                    match(value_to_scalar(Ev_done.get(r))) {
                       (
                       , .(s: Scalar) {
-                          match! scalar_as_i32(s) {
+                          match(scalar_as_i32(s)) {
                             (.(n: I32) { int_to_string(n) }, .(_no: .) { "<not an i32>"(String) })
                           }
                         }
@@ -61,7 +61,7 @@ fn one_expect(name: String, sig: String) -> Contract {
 }
 
 fn show_check(label: String, im: Image, c: Contract) -> String {
-  match! contract_check(im, c) {
+  match(contract_check(im, c)) {
     (
     , .(d: Diag) { string_concat(label, string_concat(diag_message(d), "\n"(String))) }
     , .(_ok: .) { string_concat(label, "ok\n"(String)) }
@@ -72,7 +72,7 @@ fn show_check(label: String, im: Image, c: Contract) -> String {
 /// Loads the piped-in image, calls both qualified exports, and reports
 /// the contract outcomes.
 pub fn main() {
-  match! un_load_outcome(load_package(read_image_stdin())) {
+  match(un_load_outcome(load_package(read_image_stdin()))) {
     (
     , .(im0: Lr_image) {
         let im = Lr_image.get(im0);

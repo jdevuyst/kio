@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -13,17 +13,17 @@ fn step(reenter: . -> Replies, _state: .) -> . | Replies {
   let direct = .() -> I32 { 41 };
   let saved =
     .() -> I32 {
-      match! reenter() {
+      match(reenter()) {
         .(answer: . -> I32, _again: . -> I32) { answer() }
       }
     };
-  (direct, saved).>widen_sum!
+  (direct, saved).>widen_sum
 }
 
 pub fn main() {
   let replies = iter.loop_reentry(step, ());
   io.print("ready\n");
-  match! replies {
+  match(replies) {
     .(_direct: . -> I32, saved: . -> I32) {
       io.print(fmt.i32_to_string(saved()));
       io.print("\n");

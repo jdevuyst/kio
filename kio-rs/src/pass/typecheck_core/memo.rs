@@ -28,23 +28,23 @@ where
 {
     polymorphic_instantiations: Mutex<HashMap<PolymorphicInstantiationKey<P>, InternedType<P>>>,
     polymorphic_stats: MemoStats,
-    user_elaborator_timings: UserElaboratorTimings,
+    user_macro_timings: UserMacroTimings,
     #[cfg(feature = "surface")]
-    user_elaborator: SingleflightMemo<UserElaboratorMemoKey, UserElaboratorTemplateResult>,
+    user_macro: SingleflightMemo<UserMacroMemoKey, UserMacroTemplateResult>,
     #[cfg(feature = "surface")]
-    user_elaborator_stats: MemoStats,
+    user_macro_stats: MemoStats,
     #[cfg(feature = "surface")]
-    user_elaborator_prepared: SingleflightMemo<UserElaboratorPreparedKey, PreparedUserElaborator>,
+    user_macro_prepared: SingleflightMemo<UserMacroPreparedKey, PreparedUserMacro>,
     #[cfg(feature = "surface")]
-    user_elaborator_prepared_stats: MemoStats,
+    user_macro_prepared_stats: MemoStats,
     #[cfg(feature = "surface")]
-    user_elaborator_prepared_caches: Mutex<HashMap<String, PreparedUserElaboratorCaches>>,
+    user_macro_prepared_caches: Mutex<HashMap<String, PreparedUserMacroCaches>>,
     #[cfg(feature = "surface")]
-    user_elaborator_eval_function_cache: crate::normalization::SharedEvalFunctionCache,
+    user_macro_eval_function_cache: crate::normalization::SharedEvalFunctionCache,
     #[cfg(all(feature = "surface", test))]
-    user_elaborator_template_executions: AtomicUsize,
+    user_macro_template_executions: AtomicUsize,
     #[cfg(all(feature = "surface", test))]
-    user_elaborator_template_execution_sources: Mutex<HashMap<(String, String), usize>>,
+    user_macro_template_execution_sources: Mutex<HashMap<(String, String), usize>>,
 }
 
 impl<P> Default for MemoCtx<P>
@@ -55,24 +55,24 @@ where
         Self {
             polymorphic_instantiations: Mutex::new(HashMap::new()),
             polymorphic_stats: MemoStats::default(),
-            user_elaborator_timings: UserElaboratorTimings::default(),
+            user_macro_timings: UserMacroTimings::default(),
             #[cfg(feature = "surface")]
-            user_elaborator: SingleflightMemo::default(),
+            user_macro: SingleflightMemo::default(),
             #[cfg(feature = "surface")]
-            user_elaborator_stats: MemoStats::default(),
+            user_macro_stats: MemoStats::default(),
             #[cfg(feature = "surface")]
-            user_elaborator_prepared: SingleflightMemo::default(),
+            user_macro_prepared: SingleflightMemo::default(),
             #[cfg(feature = "surface")]
-            user_elaborator_prepared_stats: MemoStats::default(),
+            user_macro_prepared_stats: MemoStats::default(),
             #[cfg(feature = "surface")]
-            user_elaborator_prepared_caches: Mutex::new(HashMap::new()),
+            user_macro_prepared_caches: Mutex::new(HashMap::new()),
             #[cfg(feature = "surface")]
-            user_elaborator_eval_function_cache:
-                crate::normalization::SharedEvalFunctionCache::default(),
+            user_macro_eval_function_cache: crate::normalization::SharedEvalFunctionCache::default(
+            ),
             #[cfg(all(feature = "surface", test))]
-            user_elaborator_template_executions: AtomicUsize::new(0),
+            user_macro_template_executions: AtomicUsize::new(0),
             #[cfg(all(feature = "surface", test))]
-            user_elaborator_template_execution_sources: Mutex::new(HashMap::new()),
+            user_macro_template_execution_sources: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -86,10 +86,9 @@ where
             return;
         }
         #[cfg(feature = "surface")]
-        self.user_elaborator_stats.log("user-elaborator");
+        self.user_macro_stats.log("user-macro");
         #[cfg(feature = "surface")]
-        self.user_elaborator_prepared_stats
-            .log("user-elaborator-prepared");
+        self.user_macro_prepared_stats.log("user-macro-prepared");
         self.polymorphic_stats.log("polymorphic-instantiation");
     }
 }
@@ -99,36 +98,36 @@ where
     P: Phase,
 {
     pub fn snapshot(&self) -> MemoSnapshot {
-        let user_elaborator_timings = self.user_elaborator_timings.snapshot();
+        let user_macro_timings = self.user_macro_timings.snapshot();
         #[cfg(feature = "surface")]
-        let user_elaborator_timings = {
-            let mut user_elaborator_timings = user_elaborator_timings;
-            let prepared = self.user_elaborator_prepared_stats.snapshot();
-            user_elaborator_timings.prepared_hits = prepared.hits;
-            user_elaborator_timings.prepared_misses = prepared.misses;
-            user_elaborator_timings.prepared_first_writes = prepared.first_writes;
-            user_elaborator_timings
+        let user_macro_timings = {
+            let mut user_macro_timings = user_macro_timings;
+            let prepared = self.user_macro_prepared_stats.snapshot();
+            user_macro_timings.prepared_hits = prepared.hits;
+            user_macro_timings.prepared_misses = prepared.misses;
+            user_macro_timings.prepared_first_writes = prepared.first_writes;
+            user_macro_timings
         };
         MemoSnapshot {
             polymorphic_instantiations: self.polymorphic_stats.snapshot(),
-            user_elaborator_timings,
+            user_macro_timings,
             #[cfg(feature = "surface")]
-            user_elaborator: self.user_elaborator_stats.snapshot(),
+            user_macro: self.user_macro_stats.snapshot(),
             #[cfg(feature = "surface")]
-            user_elaborator_prepared: self.user_elaborator_prepared_stats.snapshot(),
+            user_macro_prepared: self.user_macro_prepared_stats.snapshot(),
         }
     }
 
-    pub fn record_user_elaborator_template_eval(&self, duration: Duration) {
-        self.user_elaborator_timings.template_eval.add(duration);
+    pub fn record_user_macro_template_eval(&self, duration: Duration) {
+        self.user_macro_timings.template_eval.add(duration);
     }
 
     #[cfg(all(feature = "surface", test))]
-    pub(crate) fn record_user_elaborator_template_execution(&self, module: &str, name: &str) {
-        self.user_elaborator_template_executions
+    pub(crate) fn record_user_macro_template_execution(&self, module: &str, name: &str) {
+        self.user_macro_template_executions
             .fetch_add(1, Ordering::Relaxed);
         *self
-            .user_elaborator_template_execution_sources
+            .user_macro_template_execution_sources
             .lock()
             .expect("template execution observation lock poisoned")
             .entry((module.to_owned(), name.to_owned()))
@@ -136,12 +135,8 @@ where
     }
 
     #[cfg(all(feature = "surface", test))]
-    pub(crate) fn user_elaborator_template_executions_for(
-        &self,
-        module: &str,
-        name: &str,
-    ) -> usize {
-        self.user_elaborator_template_execution_sources
+    pub(crate) fn user_macro_template_executions_for(&self, module: &str, name: &str) -> usize {
+        self.user_macro_template_execution_sources
             .lock()
             .expect("template execution observation lock poisoned")
             .get(&(module.to_owned(), name.to_owned()))
@@ -150,56 +145,49 @@ where
     }
 
     #[cfg(all(feature = "surface", test))]
-    pub(crate) fn user_elaborator_template_executions(&self) -> usize {
-        self.user_elaborator_template_executions
-            .load(Ordering::Relaxed)
+    pub(crate) fn user_macro_template_executions(&self) -> usize {
+        self.user_macro_template_executions.load(Ordering::Relaxed)
     }
 
-    pub fn record_user_elaborator_prepared_eval(&self, duration: Duration) {
-        self.user_elaborator_timings.prepared_eval.add(duration);
+    pub fn record_user_macro_prepared_eval(&self, duration: Duration) {
+        self.user_macro_timings.prepared_eval.add(duration);
     }
 
     #[cfg(feature = "surface")]
-    pub fn record_user_elaborator_eval_metrics(
+    pub fn record_user_macro_eval_metrics(
         &self,
         snapshot: crate::normalization::EvalMetricsSnapshot,
     ) {
-        self.user_elaborator_timings.eval.add_snapshot(snapshot);
+        self.user_macro_timings.eval.add_snapshot(snapshot);
     }
 
-    pub fn record_user_elaborator_template_replay(&self, duration: Duration) {
-        self.user_elaborator_timings.template_replay.add(duration);
+    pub fn record_user_macro_template_replay(&self, duration: Duration) {
+        self.user_macro_timings.template_replay.add(duration);
     }
 
-    pub fn record_user_elaborator_template_memo_total(&self, duration: Duration) {
-        self.user_elaborator_timings
-            .template_memo_total
-            .add(duration);
+    pub fn record_user_macro_template_memo_total(&self, duration: Duration) {
+        self.user_macro_timings.template_memo_total.add(duration);
     }
 
-    pub fn record_user_elaborator_template_batch(&self, obligations: usize, unique: usize) {
-        self.user_elaborator_timings
+    pub fn record_user_macro_template_batch(&self, obligations: usize, unique: usize) {
+        self.user_macro_timings
             .template_batch_obligations
             .fetch_add(obligations, Ordering::Relaxed);
-        self.user_elaborator_timings
+        self.user_macro_timings
             .template_batch_unique
             .fetch_add(unique, Ordering::Relaxed);
     }
 
-    pub fn record_user_elaborator_template_batch_key(&self, duration: Duration) {
-        self.user_elaborator_timings
-            .template_batch_key
-            .add(duration);
+    pub fn record_user_macro_template_batch_key(&self, duration: Duration) {
+        self.user_macro_timings.template_batch_key.add(duration);
     }
 
-    pub fn record_user_elaborator_template_batch_compute(&self, duration: Duration) {
-        self.user_elaborator_timings
-            .template_batch_compute
-            .add(duration);
+    pub fn record_user_macro_template_batch_compute(&self, duration: Duration) {
+        self.user_macro_timings.template_batch_compute.add(duration);
     }
 
-    pub fn record_user_elaborator_template_batch_replay_loop(&self, duration: Duration) {
-        self.user_elaborator_timings
+    pub fn record_user_macro_template_batch_replay_loop(&self, duration: Duration) {
+        self.user_macro_timings
             .template_batch_replay_loop
             .add(duration);
     }
@@ -261,55 +249,55 @@ where
     }
 
     #[cfg(feature = "surface")]
-    pub fn user_elaborator_template_or_compute<E, F, V>(
+    pub fn user_macro_template_or_compute<E, F, V>(
         &self,
-        key: UserElaboratorMemoKey,
+        key: UserMacroMemoKey,
         compute: F,
         verify: V,
-    ) -> Result<UserElaboratorTemplateResult, E>
+    ) -> Result<UserMacroTemplateResult, E>
     where
-        F: FnOnce() -> Result<UserElaboratorTemplateResult, E>,
-        V: Fn(&UserElaboratorTemplateResult),
+        F: FnOnce() -> Result<UserMacroTemplateResult, E>,
+        V: Fn(&UserMacroTemplateResult),
     {
-        self.user_elaborator.get_or_try_compute_matching(
+        self.user_macro.get_or_try_compute_matching(
             key,
-            &self.user_elaborator_stats,
+            &self.user_macro_stats,
             compute,
-            "user elaborator memo lock poisoned",
+            "user macro memo lock poisoned",
             verify,
-            UserElaboratorMemoKey::presentation_matches,
+            UserMacroMemoKey::presentation_matches,
         )
     }
 
     #[cfg(feature = "surface")]
-    pub fn user_elaborator_prepared_or_try_compute<E, F>(
+    pub fn user_macro_prepared_or_try_compute<E, F>(
         &self,
-        key: UserElaboratorPreparedKey,
+        key: UserMacroPreparedKey,
         compute: F,
-    ) -> Result<PreparedUserElaborator, E>
+    ) -> Result<PreparedUserMacro, E>
     where
-        F: FnOnce() -> Result<PreparedUserElaborator, E>,
+        F: FnOnce() -> Result<PreparedUserMacro, E>,
     {
-        self.user_elaborator_prepared.get_or_try_compute(
+        self.user_macro_prepared.get_or_try_compute(
             key,
-            &self.user_elaborator_prepared_stats,
+            &self.user_macro_prepared_stats,
             compute,
-            "user elaborator prepared memo lock poisoned",
+            "user macro prepared memo lock poisoned",
             |_| {},
         )
     }
 
     #[cfg(feature = "surface")]
-    pub fn user_elaborator_prepared_caches_for_module(
+    pub fn user_macro_prepared_caches_for_module(
         &self,
         module_path: &str,
-    ) -> PreparedUserElaboratorCaches {
+    ) -> PreparedUserMacroCaches {
         let mut caches = self
-            .user_elaborator_prepared_caches
+            .user_macro_prepared_caches
             .lock()
-            .expect("user elaborator prepared cache-bundle lock poisoned");
+            .expect("user macro prepared cache-bundle lock poisoned");
         let entry = caches.entry(module_path.to_owned()).or_default();
-        entry.eval_function_cache = self.user_elaborator_eval_function_cache.clone();
+        entry.eval_function_cache = self.user_macro_eval_function_cache.clone();
         entry.clone()
     }
 }
@@ -378,16 +366,16 @@ where
 
 #[cfg(feature = "surface")]
 #[derive(Clone)]
-pub struct UserElaboratorMemoKey {
+pub struct UserMacroMemoKey {
     module_path: String,
-    elaborator_name: String,
-    inputs: Vec<UserElaboratorMemoInputKey>,
+    macro_name: String,
+    inputs: Vec<UserMacroMemoInputKey>,
     result_type: Option<PresentedTypeMemoKey>,
 }
 
 #[cfg(feature = "surface")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) enum UserElaboratorMemoInputKey {
+pub(crate) enum UserMacroMemoInputKey {
     ComptimeProof,
     Type(PresentedTypeMemoKey),
     OptionalTypeKnown(PresentedTypeMemoKey),
@@ -398,7 +386,7 @@ pub(crate) enum UserElaboratorMemoInputKey {
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorMemoInputKey {
+impl UserMacroMemoInputKey {
     fn presentation_matches(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::ComptimeProof, Self::ComptimeProof)
@@ -414,34 +402,34 @@ impl UserElaboratorMemoInputKey {
 }
 
 #[cfg(feature = "surface")]
-impl PartialEq for UserElaboratorMemoKey {
+impl PartialEq for UserMacroMemoKey {
     fn eq(&self, other: &Self) -> bool {
         self.module_path == other.module_path
-            && self.elaborator_name == other.elaborator_name
+            && self.macro_name == other.macro_name
             && self.inputs == other.inputs
     }
 }
 #[cfg(feature = "surface")]
-impl Eq for UserElaboratorMemoKey {}
+impl Eq for UserMacroMemoKey {}
 #[cfg(feature = "surface")]
-impl Hash for UserElaboratorMemoKey {
+impl Hash for UserMacroMemoKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.module_path.hash(state);
-        self.elaborator_name.hash(state);
+        self.macro_name.hash(state);
         self.inputs.hash(state);
     }
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorMemoKey {
+impl UserMacroMemoKey {
     pub(crate) fn new(
         module_path: String,
-        elaborator_name: String,
-        inputs: Vec<UserElaboratorMemoInputKey>,
+        macro_name: String,
+        inputs: Vec<UserMacroMemoInputKey>,
     ) -> Self {
         Self {
             module_path,
-            elaborator_name,
+            macro_name,
             inputs,
             result_type: None,
         }
@@ -469,12 +457,12 @@ impl UserElaboratorMemoKey {
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Debug)]
-pub struct UserElaboratorTemplate {
+pub struct UserMacroTemplate {
     pub checked: crate::normalization::CheckedTerm,
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorTemplate {
+impl UserMacroTemplate {
     pub fn result_ty(&self) -> &Type<UncheckedPrime> {
         self.checked.ty()
     }
@@ -482,62 +470,61 @@ impl UserElaboratorTemplate {
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct UserElaboratorTemplateGeneratedImport {
+pub struct UserMacroTemplateGeneratedImport {
     pub module_path: String,
     pub alias: String,
 }
 
 #[cfg(feature = "surface")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub(crate) struct UserElaboratorArtifactKey {
-    elaborator_module_path: String,
-    elaborator_name: String,
-    capture_imports: Vec<UserElaboratorTemplateGeneratedImport>,
+pub(crate) struct UserMacroArtifactKey {
+    macro_module_path: String,
+    macro_name: String,
+    capture_imports: Vec<UserMacroTemplateGeneratedImport>,
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorArtifactKey {
+impl UserMacroArtifactKey {
     pub(crate) fn new(
-        elaborator_module_path: String,
-        elaborator_name: String,
-        capture_imports: Vec<UserElaboratorTemplateGeneratedImport>,
+        macro_module_path: String,
+        macro_name: String,
+        capture_imports: Vec<UserMacroTemplateGeneratedImport>,
     ) -> Self {
         Self {
-            elaborator_module_path,
-            elaborator_name,
+            macro_module_path,
+            macro_name,
             capture_imports,
         }
     }
 }
 
 #[cfg(feature = "surface")]
-pub(crate) use crate::normalization::UserElaboratorEvalArtifactPair;
+pub(crate) use crate::normalization::UserMacroEvalArtifactPair;
 
 #[cfg(feature = "surface")]
 #[derive(Default)]
-pub(crate) struct UserElaboratorArtifactMemo {
-    entries:
-        SingleflightMemo<UserElaboratorArtifactKey, std::sync::Arc<UserElaboratorEvalArtifactPair>>,
+pub(crate) struct UserMacroArtifactMemo {
+    entries: SingleflightMemo<UserMacroArtifactKey, std::sync::Arc<UserMacroEvalArtifactPair>>,
     stats: MemoStats,
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorArtifactMemo {
+impl UserMacroArtifactMemo {
     pub(crate) fn get_or_try_compute<E, F, V>(
         &self,
-        key: UserElaboratorArtifactKey,
+        key: UserMacroArtifactKey,
         compute: F,
         verify: V,
-    ) -> Result<std::sync::Arc<UserElaboratorEvalArtifactPair>, E>
+    ) -> Result<std::sync::Arc<UserMacroEvalArtifactPair>, E>
     where
-        F: FnOnce() -> Result<UserElaboratorEvalArtifactPair, E>,
-        V: Fn(&std::sync::Arc<UserElaboratorEvalArtifactPair>),
+        F: FnOnce() -> Result<UserMacroEvalArtifactPair, E>,
+        V: Fn(&std::sync::Arc<UserMacroEvalArtifactPair>),
     {
         self.entries.get_or_try_compute(
             key,
             &self.stats,
             || compute().map(std::sync::Arc::new),
-            "user elaborator artifact memo lock poisoned",
+            "user macro artifact memo lock poisoned",
             verify,
         )
     }
@@ -549,11 +536,11 @@ impl UserElaboratorArtifactMemo {
 }
 
 #[cfg(feature = "surface")]
-pub type UserElaboratorTemplateResult = Result<UserElaboratorTemplate, String>;
+pub type UserMacroTemplateResult = Result<UserMacroTemplate, String>;
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Default)]
-pub struct PreparedUserElaboratorCaches {
+pub struct PreparedUserMacroCaches {
     pub(crate) fn_closure_cache: crate::normalization::SharedFnClosureCache,
     pub(crate) eval_function_cache: crate::normalization::SharedEvalFunctionCache,
     pub(crate) type_view_cache: crate::normalization::SharedTypeViewCache,
@@ -562,7 +549,7 @@ pub struct PreparedUserElaboratorCaches {
 
 #[cfg(feature = "surface")]
 #[derive(Clone)]
-pub struct PreparedUserElaborator {
+pub struct PreparedUserMacro {
     pub(crate) value: crate::normalization::Value,
     pub(crate) fn_closure_cache: crate::normalization::SharedFnClosureCache,
     pub(crate) eval_function_cache: crate::normalization::SharedEvalFunctionCache,
@@ -571,7 +558,7 @@ pub struct PreparedUserElaborator {
 }
 
 #[cfg(feature = "surface")]
-impl PreparedUserElaborator {
+impl PreparedUserMacro {
     pub(crate) fn new(
         value: crate::normalization::Value,
         fn_closure_cache: crate::normalization::SharedFnClosureCache,
@@ -591,28 +578,28 @@ impl PreparedUserElaborator {
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub enum UserElaboratorPreparedPurpose {
+pub enum UserMacroPreparedPurpose {
     Template,
 }
 
 #[cfg(feature = "surface")]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct UserElaboratorPreparedKey {
+pub struct UserMacroPreparedKey {
     module_path: String,
-    elaborator_name: String,
-    purpose: UserElaboratorPreparedPurpose,
+    macro_name: String,
+    purpose: UserMacroPreparedPurpose,
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorPreparedKey {
+impl UserMacroPreparedKey {
     pub(crate) fn new(
         module_path: String,
-        elaborator_name: String,
-        purpose: UserElaboratorPreparedPurpose,
+        macro_name: String,
+        purpose: UserMacroPreparedPurpose,
     ) -> Self {
         Self {
             module_path,
-            elaborator_name,
+            macro_name,
             purpose,
         }
     }
@@ -620,11 +607,11 @@ impl UserElaboratorPreparedKey {
 
 pub struct MemoSnapshot {
     pub polymorphic_instantiations: CacheSnapshot,
-    pub user_elaborator_timings: UserElaboratorTimingSnapshot,
+    pub user_macro_timings: UserMacroTimingSnapshot,
     #[cfg(feature = "surface")]
-    pub user_elaborator: CacheSnapshot,
+    pub user_macro: CacheSnapshot,
     #[cfg(feature = "surface")]
-    pub user_elaborator_prepared: CacheSnapshot,
+    pub user_macro_prepared: CacheSnapshot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -635,7 +622,7 @@ pub struct CacheSnapshot {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct UserElaboratorTimingSnapshot {
+pub struct UserMacroTimingSnapshot {
     pub prepared_eval: Duration,
     pub prepared_hits: usize,
     pub prepared_misses: usize,
@@ -705,7 +692,7 @@ struct MemoStats {
 }
 
 #[derive(Default)]
-struct UserElaboratorTimings {
+struct UserMacroTimings {
     prepared_eval: AtomicDuration,
     template_eval: AtomicDuration,
     template_replay: AtomicDuration,
@@ -862,9 +849,9 @@ where
     }
 }
 
-impl UserElaboratorTimings {
-    fn snapshot(&self) -> UserElaboratorTimingSnapshot {
-        UserElaboratorTimingSnapshot {
+impl UserMacroTimings {
+    fn snapshot(&self) -> UserMacroTimingSnapshot {
+        UserMacroTimingSnapshot {
             prepared_eval: self.prepared_eval.snapshot(),
             prepared_hits: 0,
             prepared_misses: 0,
@@ -1009,31 +996,31 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    fn user_elaborator_key() -> UserElaboratorMemoKey {
+    fn user_macro_key() -> UserMacroMemoKey {
         let ty = unit();
         let ty_key = PresentedTypeMemoKey::from_type(&ty);
-        UserElaboratorMemoKey::new(
-            "elaborators".to_owned(),
+        UserMacroMemoKey::new(
+            "macros".to_owned(),
             "id".to_owned(),
             vec![
-                UserElaboratorMemoInputKey::Type(ty_key.clone()),
-                UserElaboratorMemoInputKey::OptionalTypeKnown(ty_key),
+                UserMacroMemoInputKey::Type(ty_key.clone()),
+                UserMacroMemoInputKey::OptionalTypeKnown(ty_key),
             ],
         )
     }
 
     #[cfg(feature = "surface")]
-    fn user_elaborator_prepared_key() -> UserElaboratorPreparedKey {
-        UserElaboratorPreparedKey::new(
-            "elaborators".to_owned(),
+    fn user_macro_prepared_key() -> UserMacroPreparedKey {
+        UserMacroPreparedKey::new(
+            "macros".to_owned(),
             "id".to_owned(),
-            UserElaboratorPreparedPurpose::Template,
+            UserMacroPreparedPurpose::Template,
         )
     }
 
     #[cfg(feature = "surface")]
-    fn empty_user_elaborator_artifact() -> UserElaboratorEvalArtifactPair {
-        UserElaboratorEvalArtifactPair::unit_for_test("implementation")
+    fn empty_user_macro_artifact() -> UserMacroEvalArtifactPair {
+        UserMacroEvalArtifactPair::unit_for_test("implementation")
     }
 
     #[test]
@@ -1195,20 +1182,19 @@ mod tests {
     #[test]
     fn artifact_memo_verify_on_checks_hits() {
         let _var = MemoVerifyVar::set("1");
-        let memo = UserElaboratorArtifactMemo::default();
-        let key =
-            UserElaboratorArtifactKey::new("elaborators".to_owned(), "id".to_owned(), Vec::new());
+        let memo = UserMacroArtifactMemo::default();
+        let key = UserMacroArtifactKey::new("macros".to_owned(), "id".to_owned(), Vec::new());
         let verifies = std::cell::Cell::new(0usize);
 
         memo.get_or_try_compute(
             key.clone(),
-            || Ok::<_, ()>(empty_user_elaborator_artifact()),
+            || Ok::<_, ()>(empty_user_macro_artifact()),
             |_| verifies.set(verifies.get() + 1),
         )
         .expect("cold artifact memo entry");
         memo.get_or_try_compute(
             key,
-            || Ok::<_, ()>(empty_user_elaborator_artifact()),
+            || Ok::<_, ()>(empty_user_macro_artifact()),
             |_| verifies.set(verifies.get() + 1),
         )
         .expect("warm artifact memo entry");
@@ -1218,9 +1204,9 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn user_elaborator_template_singleflight_shares_parallel_cold_miss() {
+    fn user_macro_template_singleflight_shares_parallel_cold_miss() {
         let memo = Arc::new(MemoCtx::<Lowered>::default());
-        let key = user_elaborator_key();
+        let key = user_macro_key();
         let compute_calls = Arc::new(AtomicUsize::new(0));
         let start = Arc::new(Barrier::new(8));
         let handles: Vec<_> = (0..8)
@@ -1231,12 +1217,12 @@ mod tests {
                 let start = Arc::clone(&start);
                 std::thread::spawn(move || {
                     start.wait();
-                    memo.user_elaborator_template_or_compute(
+                    memo.user_macro_template_or_compute(
                         key,
                         || {
                             compute_calls.fetch_add(1, Ordering::SeqCst);
                             std::thread::sleep(Duration::from_millis(50));
-                            Ok::<UserElaboratorTemplateResult, ()>(Err("cached".to_owned()))
+                            Ok::<UserMacroTemplateResult, ()>(Err("cached".to_owned()))
                         },
                         |_| {},
                     )
@@ -1248,11 +1234,11 @@ mod tests {
         for handle in handles {
             match handle.join().expect("worker should not panic") {
                 Err(message) => assert_eq!(message, "cached"),
-                Ok(_) => panic!("test value should be a cached user-elaborator diagnostic"),
+                Ok(_) => panic!("test value should be a cached user-macro diagnostic"),
             }
         }
         assert_eq!(compute_calls.load(Ordering::SeqCst), 1);
-        let stats = memo.snapshot().user_elaborator;
+        let stats = memo.snapshot().user_macro;
         assert_eq!(stats.misses, 1);
         assert_eq!(stats.first_writes, 1);
         assert_eq!(stats.hits, 7);
@@ -1260,9 +1246,9 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn user_elaborator_prepared_singleflight_shares_parallel_cold_miss() {
+    fn user_macro_prepared_singleflight_shares_parallel_cold_miss() {
         let memo = Arc::new(MemoCtx::<Lowered>::default());
-        let key = user_elaborator_prepared_key();
+        let key = user_macro_prepared_key();
         let compute_calls = Arc::new(AtomicUsize::new(0));
         let start = Arc::new(Barrier::new(8));
         let handles: Vec<_> = (0..8)
@@ -1273,10 +1259,10 @@ mod tests {
                 let start = Arc::clone(&start);
                 std::thread::spawn(move || {
                     start.wait();
-                    memo.user_elaborator_prepared_or_try_compute(key, || {
+                    memo.user_macro_prepared_or_try_compute(key, || {
                         compute_calls.fetch_add(1, Ordering::SeqCst);
                         std::thread::sleep(Duration::from_millis(50));
-                        Ok::<_, ()>(PreparedUserElaborator::new(
+                        Ok::<_, ()>(PreparedUserMacro::new(
                             crate::normalization::Value::Unit,
                             crate::normalization::SharedFnClosureCache::default(),
                             crate::normalization::SharedEvalFunctionCache::default(),
@@ -1297,22 +1283,22 @@ mod tests {
         }
         assert_eq!(compute_calls.load(Ordering::SeqCst), 1);
         let snapshot = memo.snapshot();
-        assert_eq!(snapshot.user_elaborator_prepared.misses, 1);
-        assert_eq!(snapshot.user_elaborator_prepared.first_writes, 1);
-        assert_eq!(snapshot.user_elaborator_prepared.hits, 7);
-        assert_eq!(snapshot.user_elaborator_timings.prepared_misses, 1);
-        assert_eq!(snapshot.user_elaborator_timings.prepared_first_writes, 1);
-        assert_eq!(snapshot.user_elaborator_timings.prepared_hits, 7);
+        assert_eq!(snapshot.user_macro_prepared.misses, 1);
+        assert_eq!(snapshot.user_macro_prepared.first_writes, 1);
+        assert_eq!(snapshot.user_macro_prepared.hits, 7);
+        assert_eq!(snapshot.user_macro_timings.prepared_misses, 1);
+        assert_eq!(snapshot.user_macro_timings.prepared_first_writes, 1);
+        assert_eq!(snapshot.user_macro_timings.prepared_hits, 7);
     }
 
     #[cfg(feature = "surface")]
     #[test]
-    fn user_elaborator_prepared_caches_share_compiled_functions_package_wide() {
+    fn user_macro_prepared_caches_share_compiled_functions_package_wide() {
         let memo = MemoCtx::<Lowered>::default();
 
-        let first = memo.user_elaborator_prepared_caches_for_module("elaborators");
-        let second = memo.user_elaborator_prepared_caches_for_module("elaborators");
-        let other = memo.user_elaborator_prepared_caches_for_module("other_elaborators");
+        let first = memo.user_macro_prepared_caches_for_module("macros");
+        let second = memo.user_macro_prepared_caches_for_module("macros");
+        let other = memo.user_macro_prepared_caches_for_module("other_macros");
 
         assert!(
             first
@@ -1331,9 +1317,9 @@ mod tests {
                 .ptr_eq(&other.exact_call_memo_cache)
         );
         let cache_count = memo
-            .user_elaborator_prepared_caches
+            .user_macro_prepared_caches
             .lock()
-            .expect("user elaborator prepared cache-bundle lock poisoned")
+            .expect("user macro prepared cache-bundle lock poisoned")
             .len();
         assert_eq!(cache_count, 2);
     }

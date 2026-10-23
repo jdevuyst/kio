@@ -4,9 +4,9 @@
 //!   kio-gen --output <dir> [--seed <N>] [--count <N>] [-j <N>] [--prime-only]
 //!
 //! Default emission is "full Kio": Kio' core plus the surface forms
-//! the generator has grown (`if!`/`else`, tuple literals, label-value
-//! sugar, `match!`, the algebraic / spine elaborators, user-defined
-//! `elab`, and operators). `--prime-only` is an opt-in filter that restricts
+//! the generator has grown (`if`/`else`, tuple literals, label-value
+//! sugar, `match`, the algebraic / spine macros, user-defined
+//! `macro`, and operators). `--prime-only` is an opt-in filter that restricts
 //! output to the Kio' core.
 
 use std::path::PathBuf;

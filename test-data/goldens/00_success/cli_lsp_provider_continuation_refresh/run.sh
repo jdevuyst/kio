@@ -19,7 +19,7 @@ assert.notEqual(changed, provider);
 const uri = pathToFileURL(resolve('pkg/main.kio')).href;
 const providerUri = pathToFileURL(resolve('pkg/provider.kio')).href;
 const prefix = source.slice(0, source.indexOf('fallback'));
-assert.ok(prefix.includes('choose!'));
+assert.ok(prefix.includes('choose { () } '));
 const prefixLines = prefix.split('\n');
 const position = { line: prefixLines.length - 1, character: prefixLines.at(-1).length };
 const child = spawn(process.env.KIO_BIN, ['lsp'], {

@@ -4,8 +4,8 @@
 //! recognised: with `surface = false` (the default and the rendering
 //! used for Kio'-only programs), every term renders to its Kio'
 //! form; with `surface = true`, surface-form rewrites fire (tuple
-//! literals, `{label = e}`, `match!`, spine elaborators, user
-//! elaborators, `if!`/`else`).
+//! literals, `{label = e}`, `match`, spine macros, user
+//! macros, `if`/`else`).
 //! `Program::uses_surface` decides which opts to use for a given
 //! program: surface-using programs render with the flag enabled.
 
@@ -55,8 +55,8 @@ impl RenderContext {
 
 /// Render-time switches. Default = render every term to its Kio'
 /// form. Set `surface = true` to enable every surface-form rewrite
-/// the renderer knows about: tuple literals, `{label = e}`, `match!`,
-/// spine elaborators, user elaborators, `if!`/`else`. Programs whose
+/// the renderer knows about: tuple literals, `{label = e}`, `match`,
+/// spine macros, user macros, `if`/`else`. Programs whose
 /// `uses_surface` is true are rendered with this flag on.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RenderOpts {
@@ -147,7 +147,7 @@ fn collect_emitted_value_names(term: &Term, opts: &RenderOpts, names: &mut HashS
             }
             collect_emitted_value_names(payload, opts, names);
         }
-        Term::MatchBang {
+        Term::MatchMacro {
             scrutinee,
             left_param,
             left_body,
@@ -218,7 +218,7 @@ fn collect_emitted_value_names(term: &Term, opts: &RenderOpts, names: &mut HashS
             collect_emitted_value_names(lhs, opts, names);
             collect_emitted_value_names(rhs, opts, names);
         }
-        Term::UserElaborator { name, inner } => {
+        Term::UserMacro { name, inner } => {
             if opts.surface {
                 names.insert(name.clone());
             }
@@ -258,7 +258,7 @@ pub fn render_type(t: &Type) -> String {
 /// variant renders the same in surface and Kio' mode: generated
 /// label types are written by their nominal type names in every type
 /// position, while value-position surface forms (`{<label> = e}`,
-/// `match!`, etc.) can still fire in the body.
+/// `match`, etc.) can still fire in the body.
 pub fn render_type_opts(t: &Type, _opts: &RenderOpts) -> String {
     render_type(t)
 }
@@ -493,7 +493,7 @@ fn render_term_opts_with_context(
                 )
             }
         }
-        Term::MatchBang {
+        Term::MatchMacro {
             scrutinee,
             left_param,
             left_ty,
@@ -503,9 +503,9 @@ fn render_term_opts_with_context(
             right_body,
             ret_ty,
         } => {
-            // The MatchBang AST stores clause bodies that already
+            // The MatchMacro AST stores clause bodies that already
             // produce the common `ret_ty`. Surface mode emits them
-            // directly inside `match!` clauses; Kio' mode emits the
+            // directly inside `match` clauses; Kio' mode emits the
             // equivalent homogeneous `__either__` arms.
             if opts.surface {
                 // A computed match source needs the same ordinary
@@ -519,7 +519,7 @@ fn render_term_opts_with_context(
                 let rendered_left = render_term_opts_with_context(left_body, opts, context);
                 let rendered_right = render_term_opts_with_context(right_body, opts, context);
                 let rendered_match = format!(
-                    "match!({}) {{ (.({left_param}: {}) {{ {} }}, .({right_param}: {}) {{ {} }}) }}",
+                    "match({}) {{ (.({left_param}: {}) {{ {} }}, .({right_param}: {}) {{ {} }}) }}",
                     source_name.as_deref().unwrap_or(&rendered_scrutinee),
                     render_type_opts(left_ty, opts),
                     rendered_left,
@@ -528,7 +528,7 @@ fn render_term_opts_with_context(
                 );
                 if let Some(source_name) = source_name {
                     format!(
-                        "scope! {{ let {source_name} = {rendered_scrutinee}; {rendered_match} }}"
+                        "scope {{ let {source_name} = {rendered_scrutinee}; {rendered_match} }}"
                     )
                 } else {
                     rendered_match
@@ -548,7 +548,7 @@ fn render_term_opts_with_context(
         Term::Into { inner } => {
             if opts.surface {
                 format!(
-                    "into!({})",
+                    "into({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -558,7 +558,7 @@ fn render_term_opts_with_context(
         Term::Onto { inner } => {
             if opts.surface {
                 format!(
-                    "onto!({})",
+                    "onto({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -568,7 +568,7 @@ fn render_term_opts_with_context(
         Term::Iso { inner } => {
             if opts.surface {
                 format!(
-                    "iso!({})",
+                    "iso({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -578,7 +578,7 @@ fn render_term_opts_with_context(
         Term::Align { inner } => {
             if opts.surface {
                 format!(
-                    "align!({})",
+                    "align({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -588,7 +588,7 @@ fn render_term_opts_with_context(
         Term::Ease { inner } => {
             if opts.surface {
                 format!(
-                    "ease!({})",
+                    "ease({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -598,7 +598,7 @@ fn render_term_opts_with_context(
         Term::Atom { inner } => {
             if opts.surface {
                 format!(
-                    "atom!({})",
+                    "atom({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -608,7 +608,7 @@ fn render_term_opts_with_context(
         Term::ReorderSum { inner } => {
             if opts.surface {
                 format!(
-                    "reorder_sum!({})",
+                    "reorder_sum({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -618,7 +618,7 @@ fn render_term_opts_with_context(
         Term::ReorderProd { inner } => {
             if opts.surface {
                 format!(
-                    "reorder_prod!({})",
+                    "reorder_prod({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -628,7 +628,7 @@ fn render_term_opts_with_context(
         Term::NarrowSum { inner } => {
             if opts.surface {
                 format!(
-                    "narrow_sum!({})",
+                    "narrow_sum({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -638,7 +638,7 @@ fn render_term_opts_with_context(
         Term::NarrowProd { inner } => {
             if opts.surface {
                 format!(
-                    "narrow_prod!({})",
+                    "narrow_prod({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -648,7 +648,7 @@ fn render_term_opts_with_context(
         Term::WidenSum { inner } => {
             if opts.surface {
                 format!(
-                    "widen_sum!({})",
+                    "widen_sum({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -658,7 +658,7 @@ fn render_term_opts_with_context(
         Term::WidenProd { inner } => {
             if opts.surface {
                 format!(
-                    "widen_prod!({})",
+                    "widen_prod({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -668,7 +668,7 @@ fn render_term_opts_with_context(
         Term::FlattenSum { inner } => {
             if opts.surface {
                 format!(
-                    "flatten_sum!({})",
+                    "flatten_sum({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -678,7 +678,7 @@ fn render_term_opts_with_context(
         Term::FlattenProd { inner } => {
             if opts.surface {
                 format!(
-                    "flatten_prod!({})",
+                    "flatten_prod({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -688,7 +688,7 @@ fn render_term_opts_with_context(
         Term::OneSum { inner } => {
             if opts.surface {
                 format!(
-                    "one_sum!({})",
+                    "one_sum({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -698,7 +698,7 @@ fn render_term_opts_with_context(
         Term::OneProd { inner } => {
             if opts.surface {
                 format!(
-                    "one_prod!({})",
+                    "one_prod({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -708,7 +708,7 @@ fn render_term_opts_with_context(
         Term::Fit { inner } => {
             if opts.surface {
                 format!(
-                    "fit!({})",
+                    "fit({})",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -838,10 +838,10 @@ fn render_term_opts_with_context(
                 )
             }
         }
-        Term::UserElaborator { name, inner } => {
+        Term::UserMacro { name, inner } => {
             if opts.surface {
                 format!(
-                    "{name}!({}, _)",
+                    "{name}({}, _)",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -866,11 +866,11 @@ fn render_term_opts_with_context(
                     render_block_body_opts_with_context(else_, opts, context),
                 );
                 match ufcs {
-                    None => format!("if!({receiver}) {blocks}"),
-                    Some(UfcsSpelling::ReceiverFirst) => format!("({receiver}).>if! {blocks}"),
-                    Some(UfcsSpelling::ReceiverLast) => format!("({receiver}).>>if! {blocks}"),
-                    Some(UfcsSpelling::CalleeLast) => format!("if! {blocks}.<({receiver})"),
-                    Some(UfcsSpelling::CalleeFirst) => format!("if! {blocks}.<<({receiver})"),
+                    None => format!("if({receiver}) {blocks}"),
+                    Some(UfcsSpelling::ReceiverFirst) => format!("({receiver}).>if {blocks}"),
+                    Some(UfcsSpelling::ReceiverLast) => format!("({receiver}).>>if {blocks}"),
+                    Some(UfcsSpelling::CalleeLast) => format!("if {blocks}.<({receiver})"),
+                    Some(UfcsSpelling::CalleeFirst) => format!("if {blocks}.<<({receiver})"),
                 }
             } else {
                 debug_assert_eq!(then_ty, else_ty);
@@ -930,17 +930,17 @@ fn collect_tuple_items(t: &Term) -> Option<Vec<Term>> {
 ///
 /// Today's surface-affected constructs:
 /// - `__pair__` calls (tuple-literal sugar, slice 2.4)
-/// - `Term::IfElse` (ordinary `if!` block elaborator calls)
+/// - `Term::IfElse` (ordinary `if` block macro calls)
 /// - `Term::LabelConstruct` (surface `{label = e}`, slice 2.7+2.8)
 /// - `Term::Into` / `Term::Onto` / `Term::Iso` / `Term::Align` /
-///   `Term::Ease` / `Term::Atom` (the six algebraic elaborators,
+///   `Term::Ease` / `Term::Atom` (the six algebraic macros,
 ///   identity-coercion surface forms).
 /// - `Term::ReorderSum` / `Term::ReorderProd` / `Term::NarrowSum` /
 ///   `Term::NarrowProd` / `Term::WidenSum` / `Term::WidenProd` /
 ///   `Term::FlattenSum` / `Term::FlattenProd` / `Term::OneSum` /
 ///   `Term::OneProd` / `Term::Fit` (the spine palette, also
 ///   identity-coercion surface forms).
-/// - `Term::UserElaborator` (generated user-defined elaborator calls).
+/// - `Term::UserMacro` (generated user-defined macro calls).
 ///
 /// `Type::Label` in the program signature does not trigger surface
 /// rendering today: the generator deliberately renders Label types as
@@ -987,8 +987,8 @@ pub fn term_uses_surface_forms(t: &Term) -> bool {
         | Term::Placeholder { .. }
         | Term::LiteralAliasRef { .. }
         | Term::OpCall { .. }
-        | Term::UserElaborator { .. }
-        | Term::MatchBang { .. } => true,
+        | Term::UserMacro { .. }
+        | Term::MatchMacro { .. } => true,
     }
 }
 
@@ -1011,8 +1011,8 @@ fn render_str_lit(s: &str) -> String {
 /// Render a program's `fn` declaration as Kio source. Surface
 /// sugar is enabled iff `prog.uses_surface` is true; in that case
 /// every surface-form recogniser the renderer knows about (tuple
-/// sugar, `if!` blocks, label-value sugar, generated user
-/// elaborators) fires.
+/// sugar, `if` blocks, label-value sugar, generated user
+/// macros) fires.
 pub fn render_fn_def(prog: &Program) -> String {
     let opts = RenderOpts {
         surface: prog.uses_surface,
@@ -1061,8 +1061,8 @@ mod tests {
         Term::App(Box::new(Term::Var(name.to_string())), Vec::new())
     }
 
-    fn match_bang(scrutinee: Term, left_body: Term, right_body: Term) -> Term {
-        Term::MatchBang {
+    fn match_macro(scrutinee: Term, left_body: Term, right_body: Term) -> Term {
+        Term::MatchMacro {
             scrutinee: Box::new(scrutinee),
             left_param: "left".to_string(),
             left_ty: Type::i32(),
@@ -1179,8 +1179,8 @@ mod tests {
     }
 
     #[test]
-    fn surface_match_bang_non_var_source_uses_collision_free_binding() {
-        let body = Term::MatchBang {
+    fn surface_match_macro_non_var_source_uses_collision_free_binding() {
+        let body = Term::MatchMacro {
             scrutinee: Box::new(Term::App(
                 Box::new(Term::Var("_gen_match_source2".to_string())),
                 vec![Term::Var("_gen_match_source1".to_string())],
@@ -1199,22 +1199,22 @@ mod tests {
             params: vec![("_gen_match_source1".to_string(), Type::i32())],
             ret: Type::i32(),
             body,
-            user_elaborators: Vec::new(),
+            user_macros: Vec::new(),
             uses_surface: true,
             surface_mode: true,
         };
 
         let rendered = render_fn_def(&program);
         assert!(rendered.contains(
-            "scope! { let _gen_match_source5 = _gen_match_source2(_gen_match_source1); \
-             match!(_gen_match_source5) {"
+            "scope { let _gen_match_source5 = _gen_match_source2(_gen_match_source1); \
+             match(_gen_match_source5) {"
         ));
         assert_eq!(rendered.matches("_gen_match_source4").count(), 2);
     }
 
     #[test]
     fn surface_nested_match_sources_receive_distinct_bindings() {
-        let inner_left = match_bang(
+        let inner_left = match_macro(
             call("left_source"),
             Term::NumLit {
                 base: Base::I32,
@@ -1225,7 +1225,7 @@ mod tests {
                 repr: "2".to_string(),
             },
         );
-        let inner_right = match_bang(
+        let inner_right = match_macro(
             call("right_source"),
             Term::NumLit {
                 base: Base::I32,
@@ -1236,7 +1236,7 @@ mod tests {
                 repr: "4".to_string(),
             },
         );
-        let term = match_bang(call("outer_source"), inner_left, inner_right);
+        let term = match_macro(call("outer_source"), inner_left, inner_right);
 
         let rendered = render_term_opts(&term, &RenderOpts { surface: true });
         for (suffix, source) in [(0, "outer_source"), (1, "left_source"), (2, "right_source")] {
@@ -1269,13 +1269,13 @@ mod tests {
         };
         assert_eq!(
             render_term_opts(&term, &RenderOpts { surface: true }),
-            "if!(if!(.t(Bool)) { .f(Bool) } else { .t(Bool) }) { .t(Bool) } else { .f(Bool) }"
+            "if(if(.t(Bool)) { .f(Bool) } else { .t(Bool) }) { .t(Bool) } else { .f(Bool) }"
         );
     }
 
     #[test]
-    fn surface_match_bang_var_source_uses_a_product_block() {
-        let term = match_bang(
+    fn surface_match_macro_var_source_uses_a_product_block() {
+        let term = match_macro(
             Term::Var("source".to_string()),
             Term::Var("left".to_string()),
             Term::Var("right".to_string()),
@@ -1283,13 +1283,13 @@ mod tests {
 
         assert_eq!(
             render_term_opts(&term, &RenderOpts { surface: true }),
-            "match!(source) { (.(left: I32) { left }, .(right: String) { right }) }"
+            "match(source) { (.(left: I32) { left }, .(right: String) { right }) }"
         );
     }
 
     #[test]
-    fn prime_match_bang_non_var_source_stays_byte_identical() {
-        let term = match_bang(
+    fn prime_match_macro_non_var_source_stays_byte_identical() {
+        let term = match_macro(
             call("make_source"),
             Term::Var("left".to_string()),
             Term::Var("right".to_string()),
@@ -1302,8 +1302,8 @@ mod tests {
     }
 
     #[test]
-    fn surface_match_bang_non_var_rhs_is_rendered_once() {
-        let term = match_bang(
+    fn surface_match_macro_non_var_rhs_is_rendered_once() {
+        let term = match_macro(
             call("source_once"),
             Term::Var("left".to_string()),
             Term::Var("right".to_string()),

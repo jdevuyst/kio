@@ -1,6 +1,6 @@
 module main;
 
-import elab/control(if);
+import macros/control(macro if);
 
 default host type Bool role(bool);
 
@@ -14,7 +14,7 @@ pub fn keep_matching[A](keep: A -> Bool, seed: A, first_element: A, second_eleme
   , first_element
   , second_element
   , .(carry: A, element: A) -> A {
-      if! keep(element) { element } else { carry }
+      if(keep(element)) { element } else { carry }
     }
   )
 }

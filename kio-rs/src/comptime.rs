@@ -47,7 +47,7 @@ pub enum ComptimeBuiltin {
     TypeVarDisplay,
     TypeArityDisplay,
     DiagnosticConcat,
-    ElabError,
+    MacroError,
     TypeError,
     StructuralRecur,
     TermType,
@@ -125,7 +125,7 @@ impl ComptimeBuiltin {
             "__type_var_display__" => Self::TypeVarDisplay,
             "__type_arity_display__" => Self::TypeArityDisplay,
             "__diagnostic_concat__" => Self::DiagnosticConcat,
-            "__elab_error__" => Self::ElabError,
+            "__macro_error__" => Self::MacroError,
             "__type_error__" => Self::TypeError,
             "__structural_recur__" => Self::StructuralRecur,
             "__term_type__" => Self::TermType,
@@ -198,7 +198,7 @@ impl ComptimeBuiltin {
             Self::TypeVarDisplay => "__type_var_display__",
             Self::TypeArityDisplay => "__type_arity_display__",
             Self::DiagnosticConcat => "__diagnostic_concat__",
-            Self::ElabError => "__elab_error__",
+            Self::MacroError => "__macro_error__",
             Self::TypeError => "__type_error__",
             Self::StructuralRecur => "__structural_recur__",
             Self::TermType => "__term_type__",
@@ -290,7 +290,7 @@ impl ComptimeBuiltin {
             | Self::TypeVarDisplay
             | Self::TypeArityDisplay
             | Self::DiagnosticConcat
-            | Self::ElabError
+            | Self::MacroError
             | Self::TypeError
             | Self::StructuralRecur
             | Self::TermType
@@ -397,7 +397,7 @@ pub const PUBLIC_COMPTIME_NAMES: &[&str] = &[
     "__type_var_display__",
     "__type_arity_display__",
     "__diagnostic_concat__",
-    "__elab_error__",
+    "__macro_error__",
     "__type_error__",
     "__structural_recur__",
     "__term_type__",
@@ -473,7 +473,7 @@ mod tests {
             TypeVarDisplay,
             TypeArityDisplay,
             DiagnosticConcat,
-            ElabError,
+            MacroError,
             TypeError,
             StructuralRecur,
             TermType,

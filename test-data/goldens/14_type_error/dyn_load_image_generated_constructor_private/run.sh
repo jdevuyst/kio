@@ -27,7 +27,7 @@ mkdir -p "$work/testapi"
 cp "$PKG_SRC"/testapi/*.kio "$work/testapi/"
 cp -R "$PKG_SRC/list" "$work/list"
 cp -R "$PKG_SRC/loader" "$work/loader"
-cp -R "$PKG_SRC/elab" "$work/elab"
+cp -R "$PKG_SRC/macros" "$work/macros"
 
 cp "$CASE_DIR/workdir/dyn_load_image_generated_constructor_private.pkg.kio" "$work/"
 

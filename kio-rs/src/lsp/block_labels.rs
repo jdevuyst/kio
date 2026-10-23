@@ -1,4 +1,4 @@
-//! Source positions for trailing labels selected by ordinary elaborator resolution.
+//! Source positions for trailing labels selected by ordinary macro resolution.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -40,7 +40,7 @@ pub(crate) fn record_module(
             let Some(label) = label else { continue };
             let binder = ResolvedBinder::BlockLabel {
                 module_path: owner.clone(),
-                elaborator: fact.name.clone(),
+                macro_name: fact.name.clone(),
                 ordinal,
                 name: label.name.clone(),
                 exposure: *exposure,
@@ -91,6 +91,7 @@ pub(crate) fn record_module(
         }
     }
 
+    let macro_calls = crate::scope_walk::macro_calls(module);
     let mut pending = Vec::new();
     for item in &module.items {
         match item {
@@ -102,7 +103,7 @@ pub(crate) fn record_module(
             | Item::Newtype(_)
             | Item::Labels(_, _)
             | Item::LabelForward(_, _)
-            | Item::Elaborator(_, _)
+            | Item::Macro(_, _)
             | Item::TypeRecGroup(_)
             | Item::HostType(_)
             | Item::HostFn(_)
@@ -121,7 +122,9 @@ pub(crate) fn record_module(
                 blocks,
                 ..
             } => {
-                if let Some(fact) = declarations.get(head.as_str()) {
+                if macro_calls.contains(head.span)
+                    && let Some(fact) = declarations.get(head.as_str())
+                {
                     let owner = file_to_module.get(&fact.file)?;
                     index.record_binder(
                         module_path,
@@ -145,7 +148,7 @@ pub(crate) fn record_module(
                                 written.span,
                                 ResolvedBinder::BlockLabel {
                                     module_path: owner.clone(),
-                                    elaborator: fact.name.clone(),
+                                    macro_name: fact.name.clone(),
                                     ordinal,
                                     name: declared.name.clone(),
                                     exposure: *exposure,
@@ -165,7 +168,7 @@ pub(crate) fn record_module(
                 pending.push(callee);
                 push_args(&mut pending, args);
             }
-            Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => {
+            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
                 push_args(&mut pending, args)
             }
             Expr::Ufcs { receiver, args, .. } => {

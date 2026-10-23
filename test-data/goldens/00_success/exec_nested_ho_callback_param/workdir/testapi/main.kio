@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/spine_elaborators(one_prod);
+import macros/spine_macros(macro one_prod);
 import testapi(I32);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
@@ -12,12 +12,12 @@ import testapi/io(print);
 //
 // `Apply` is a one-factor-of-interest product carrying an applicator
 // `(step: I32 -> I32, x: I32) -> I32` alongside a plain `I32 ->
-// I32`. `proj_apply` projects the applicator back out (`one_prod!`),
+// I32`. `proj_apply` projects the applicator back out (`one_prod`),
 // returning it as the same function type; `main` then drives it with a
 // concrete callback.
 type Apply = (((I32 -> I32) & I32) -> I32) & (I32 -> I32);
 
-fn proj_apply(p: Apply) -> ((I32 -> I32) & I32) -> I32 { one_prod!(p) }
+fn proj_apply(p: Apply) -> ((I32 -> I32) & I32) -> I32 { one_prod(p) }
 
 pub fn main() {
   // `twice` applies its callback parameter twice — its first parameter

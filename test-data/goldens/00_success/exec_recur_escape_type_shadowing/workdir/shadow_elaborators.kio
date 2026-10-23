@@ -12,4 +12,4 @@ pure fn invoke_impl(
   (__term_call__(ct, __term_type__(ct, specialized), specialized, __term_unit__(ct)), fills)
 }
 
-pub elab invoke : [Result] ([T] T -> Result) -> Result { impl(fills) invoke_impl }
+pub macro invoke : [Result] ([T] T -> Result) -> Result { impl(fills) invoke_impl }

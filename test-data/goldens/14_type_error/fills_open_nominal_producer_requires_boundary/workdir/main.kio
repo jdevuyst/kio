@@ -1,10 +1,10 @@
 module main;
 
-import elab(Box, ignore);
+import macros(Box, macro ignore);
 
 host fn boxed[A](callback: . -> .) -> Box(A);
 
 fn run() {
-  let _result = ignore!(boxed(.() { () }));
+  let _result = ignore(boxed(.() { () }));
   ()
 }

@@ -14,16 +14,17 @@ fn right(input: .) {
 
 fn bang(input: .) {
   input
-    .>>staged!(
+    .>>staged(
     // before bang arguments
     , value
     )
 }
 
 fn empty() {
-  e!(
-  // before empty arguments
-
+  (
+    e
+    // before empty arguments
+    )(
   // inside empty arguments
   )
 }
@@ -41,7 +42,7 @@ fn recursive() {
 }
 
 fn left() {
-  e!(
+  e(
   // before written arguments
   , argument
   ).<(

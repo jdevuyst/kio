@@ -2,10 +2,10 @@
 all four block-call splice directions
 ================================================================================
 fn subject() {
-  receiver.>outer!(extra) { first } next { second };
-  receiver.>>outer! extra { first } next { second };
-  outer!(extra) { first } next { second }.<<receiver;
-  outer! extra { first } next { second }.<receiver
+  receiver.>outer(extra) { first } next { second };
+  receiver.>>outer (extra) { first } next { second };
+  outer(extra) { first } next { second }.<<receiver;
+  outer (extra) { first } next { second }.<receiver
 }
 --------------------------------------------------------------------------------
 
@@ -25,7 +25,8 @@ fn subject() {
           (identifier))
         (operator_arrow_ufcs)
         (block_call
-          (block_head)
+          (call_callee
+            (entity_name_function))
           (block_value_arguments
             (bracket_lparen)
             (expression_path
@@ -49,9 +50,13 @@ fn subject() {
           (identifier))
         (operator_arrow_ufcs)
         (block_call
-          (block_head)
-          (expression_path
-            (identifier))
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -67,7 +72,8 @@ fn subject() {
       (separator_semicolon)
       (block_ufcs_expr
         (block_call
-          (block_head)
+          (call_callee
+            (entity_name_function))
           (block_value_arguments
             (bracket_lparen)
             (expression_path
@@ -91,9 +97,13 @@ fn subject() {
       (separator_semicolon)
       (block_ufcs_expr
         (block_call
-          (block_head)
-          (expression_path
-            (identifier))
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -114,7 +124,7 @@ fn subject() {
 ================================================================================
 recovery preserves outer suffix ownership when final-label braces are missing
 ================================================================================
-fn subject() { outer! extra { first } next inner! other { second }.<receiver }
+fn subject() { outer (extra) { first } next inner (other) { second }.<receiver }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -130,9 +140,13 @@ fn subject() { outer! extra { first } next inner! other { second }.<receiver }
       (bracket_lbrace)
       (block_ufcs_expr
         (block_call
-          (block_head)
-          (expression_path
-            (identifier))
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -141,9 +155,13 @@ fn subject() { outer! extra { first } next inner! other { second }.<receiver }
           (elided_block
             (block_label)
             (block_call
-              (block_head)
-              (expression_path
-                (identifier))
+              (call_callee
+                (entity_name_function))
+              (block_value_arguments
+                (bracket_lparen)
+                (expression_path
+                  (identifier))
+                (bracket_rparen))
               (neutral_block
                 (bracket_lbrace)
                 (expression_path
@@ -157,7 +175,7 @@ fn subject() { outer! extra { first } next inner! other { second }.<receiver }
 ================================================================================
 braces isolate the spliced labelled child
 ================================================================================
-fn subject() { outer! extra { first } next { inner! other { second }.<receiver } }
+fn subject() { outer (extra) { first } next { inner (other) { second }.<receiver } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -172,9 +190,13 @@ fn subject() { outer! extra { first } next { inner! other { second }.<receiver }
     (expression_block
       (bracket_lbrace)
       (block_call
-        (block_head)
-        (expression_path
-          (identifier))
+        (call_callee
+          (entity_name_function))
+        (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
         (neutral_block
           (bracket_lbrace)
           (expression_path
@@ -186,9 +208,13 @@ fn subject() { outer! extra { first } next { inner! other { second }.<receiver }
             (bracket_lbrace)
             (block_ufcs_expr
               (block_call
-                (block_head)
-                (expression_path
-                  (identifier))
+                (call_callee
+                  (entity_name_function))
+                (block_value_arguments
+                  (bracket_lparen)
+                  (expression_path
+                    (identifier))
+                  (bracket_rparen))
                 (neutral_block
                   (bracket_lbrace)
                   (expression_path
@@ -204,8 +230,8 @@ fn subject() { outer! extra { first } next { inner! other { second }.<receiver }
 grouped block calls and tight receivers chain through the completed result
 ================================================================================
 fn subject() {
-  ((outer! extra { first })).<receiver(arg).>after;
-  outer! extra { first }.<<(receiver.>after)
+  ((outer (extra) { first })).<receiver(arg).>after;
+  outer (extra) { first }.<<(receiver.>after)
 }
 --------------------------------------------------------------------------------
 
@@ -227,9 +253,13 @@ fn subject() {
             (grouped_block_call
               (bracket_lparen)
               (block_call
-                (block_head)
-                (expression_path
-                  (identifier))
+                (call_callee
+                  (entity_name_function))
+                (block_value_arguments
+                  (bracket_lparen)
+                  (expression_path
+                    (identifier))
+                  (bracket_rparen))
                 (neutral_block
                   (bracket_lbrace)
                   (expression_path
@@ -252,9 +282,13 @@ fn subject() {
       (separator_semicolon)
       (block_ufcs_expr
         (block_call
-          (block_head)
-          (expression_path
-            (identifier))
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -275,7 +309,7 @@ fn subject() {
 ================================================================================
 reverse UFCS inside an ordinary block prefix
 ================================================================================
-fn subject() { outer! helper.<receiver { first } }
+fn subject() { outer (helper.<receiver) { first } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -290,13 +324,17 @@ fn subject() { outer! helper.<receiver { first } }
     (expression_block
       (bracket_lbrace)
       (block_call
-        (block_head)
-        (block_prefix_ufcs
-          (call_callee
-            (entity_name_function))
-          (operator_arrow_ufcs)
-          (expression_path
-            (identifier)))
+        (call_callee
+          (entity_name_function))
+        (block_value_arguments
+          (bracket_lparen)
+          (ufcs_expr
+            (call_callee
+              (entity_name_function))
+            (operator_arrow_ufcs)
+            (expression_path
+              (identifier)))
+          (bracket_rparen))
         (neutral_block
           (bracket_lbrace)
           (expression_path
@@ -308,7 +346,7 @@ fn subject() { outer! helper.<receiver { first } }
 closed operator result as a forward block receiver
 ================================================================================
 import ops(op <| _ |>);
-fn subject() { <|value|>.>outer! { body } }
+fn subject() { <|value|>.>outer { body } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -343,7 +381,8 @@ fn subject() { <|value|>.>outer! { body } }
           (operator_run))
         (operator_arrow_ufcs)
         (block_call
-          (block_head)
+          (call_callee
+            (entity_name_function))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -354,7 +393,7 @@ fn subject() { <|value|>.>outer! { body } }
 ================================================================================
 field suffix consumes the completed reverse block splice
 ================================================================================
-fn subject() { outer! { body }.<receiver.?{field} }
+fn subject() { outer { body }.<receiver.?{field} }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -371,7 +410,8 @@ fn subject() { outer! { body }.<receiver.?{field} }
       (field_expression
         (block_ufcs_expr
           (block_call
-            (block_head)
+            (call_callee
+              (entity_name_function))
             (neutral_block
               (bracket_lbrace)
               (expression_path
@@ -394,8 +434,8 @@ tight reverse receivers include native label values and closed operators
 ================================================================================
 import ops(op <| _ |>);
 fn subject() {
-  outer! { body }.<{field = value};
-  outer! { body }.<< <|value|>.?{field}
+  outer { body }.<{field = value};
+  outer { body }.<< <|value|>.?{field}
 }
 --------------------------------------------------------------------------------
 
@@ -424,7 +464,8 @@ fn subject() {
       (bracket_lbrace)
       (block_ufcs_expr
         (block_call
-          (block_head)
+          (call_callee
+            (entity_name_function))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -444,7 +485,8 @@ fn subject() {
       (field_expression
         (block_ufcs_expr
           (block_call
-            (block_head)
+            (call_callee
+              (entity_name_function))
             (neutral_block
               (bracket_lbrace)
               (expression_path
@@ -469,7 +511,7 @@ fn subject() {
 ================================================================================
 ordinary application consumes a completed forward block splice result
 ================================================================================
-fn subject() { receiver.>outer! extra { body }(arg)(other).>after }
+fn subject() { receiver.>outer (extra) { body }(arg)(other).>after }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -491,9 +533,13 @@ fn subject() { receiver.>outer! extra { body }(arg)(other).>after }
                 (identifier))
               (operator_arrow_ufcs)
               (block_call
-                (block_head)
-                (expression_path
-                  (identifier))
+                (call_callee
+                  (entity_name_function))
+                (block_value_arguments
+                  (bracket_lparen)
+                  (expression_path
+                    (identifier))
+                  (bracket_rparen))
                 (neutral_block
                   (bracket_lbrace)
                   (expression_path
@@ -517,7 +563,7 @@ fn subject() { receiver.>outer! extra { body }(arg)(other).>after }
 ================================================================================
 tight receiver applications consume their own block primary
 ================================================================================
-fn subject() { outer! { body }.<inner! { other }(arg)(next) }
+fn subject() { outer { body }.<inner { other }(arg)(next) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -533,7 +579,8 @@ fn subject() { outer! { body }.<inner! { other }(arg)(next) }
       (bracket_lbrace)
       (block_ufcs_expr
         (block_call
-          (block_head)
+          (call_callee
+            (entity_name_function))
           (neutral_block
             (bracket_lbrace)
             (expression_path
@@ -543,7 +590,8 @@ fn subject() { outer! { body }.<inner! { other }(arg)(next) }
         (call_expr
           (call_expr
             (block_call
-              (block_head)
+              (call_callee
+                (entity_name_function))
               (neutral_block
                 (bracket_lbrace)
                 (expression_path

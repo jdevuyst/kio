@@ -7,9 +7,9 @@
 /// or push one to the wrong child, and some query's two answers stop matching.
 module seg/driver;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import seg/brute(Brute, brute_min, brute_point_set, brute_range_add, brute_sum, touches);
 import seg/num(and, int_eq);
 import seg/ops(point_set, query_min, query_sum, range_add);
@@ -36,16 +36,16 @@ import testapi/iter(loop);
 /// the two answers a query drew from the two structures.
 labels Outcome = { settled: String } | { answered: String & I32 & I32 };
 
-fn settled(text: String) -> Outcome { {settled = text}.>widen_sum!(Outcome) }
+fn settled(text: String) -> Outcome { {settled = text}.>widen_sum(Outcome) }
 
 fn answered(text: String, from_tree: I32, from_ref: I32) -> Outcome {
-  {answered = (text, from_tree, from_ref)}.>widen_sum!(Outcome)
+  {answered = (text, from_tree, from_ref)}.>widen_sum(Outcome)
 }
 
 /// Run one operation against both structures. The two calls are always
 /// adjacent, so no code path can update one and forget the other.
 fn apply_op(t: Tree, base: Brute, op: Op) -> Outcome {
-  match! op {
+  match(op) {
     (
     , .(a: Add_range) {
         let .(l: I32, r: I32, x: I32) = a.?{add_range};
@@ -76,7 +76,7 @@ fn stamp(k: I32) -> String { cat3("op", index2(add_i32(k, 1)), "  ") }
 /// Render one finished operation and report whether its two answers agreed.
 /// An update has nothing to compare, so it agrees vacuously.
 fn record(k: I32, outcome: Outcome, spent: String) -> Bool {
-  match! outcome {
+  match(outcome) {
     (
     , .(s: Settled) { line(cat3(stamp(k), s.?{settled}, spent)); .t }
     , .(a: Answered) {
@@ -112,7 +112,7 @@ fn step(t: Tree, base: Brute, table: Array(I32), k: I32) -> Bool {
 }
 
 rec(loop) fn step_from(t: Tree, base: Brute, table: Array(I32), k: I32, agreed: Bool) -> Bool {
-  if! leq_i32(op_count(), k) {
+  if(leq_i32(op_count(), k)) {
     agreed
   } else {
     let this_one = step(t, base, table, k);

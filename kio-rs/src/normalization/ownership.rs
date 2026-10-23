@@ -757,7 +757,7 @@ impl Reclaim for CheckedTermNode {
                 shared(true_body, pending);
                 shared(false_body, pending);
             }
-            Self::ElabError { .. } => {}
+            Self::MacroError { .. } => {}
         }
     }
 }
@@ -860,7 +860,7 @@ macro_rules! reclaim_ast {
                     | Expr::Elaborator { ext, .. }
                     | Expr::RecOrder { ext, .. }
                     | Expr::RecQuote { ext, .. }
-                    | Expr::UserElaborator { ext, .. }
+                    | Expr::UserMacro { ext, .. }
                     | Expr::Ufcs { ext, .. }
                     | Expr::OpChain { ext, .. }
                     | Expr::EnrichedTuple { ext, .. }

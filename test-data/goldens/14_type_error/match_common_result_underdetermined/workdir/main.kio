@@ -1,6 +1,6 @@
 module main;
 
-import elab/match(match);
+import macros/match(macro match);
 
 host type Left;
 
@@ -10,7 +10,7 @@ fn identity[A](value: A) -> A { value }
 
 fn rejected(source: Left | Right) {
   let _result =
-    match! source {
+    match(source) {
       (.(_left: Left) { identity(_) }, .(_right: Right) { identity(_) })
     };
   ()

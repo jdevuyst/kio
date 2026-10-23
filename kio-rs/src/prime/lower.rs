@@ -16,15 +16,15 @@
 //! - `Expr::Elaborator` — field access (`x.?{foo}`) and field update
 //!   (`x.!{foo = y}`). Any
 //!   [`crate::ast::ElaboratorKind`] is rejected.
-//! - `Expr::UserElaborator` — reference palettes, `match!`, `derive!`, and
-//!   package-defined elaborator calls alike.
-//! - `Expr::Ufcs` — regular UFCS (`r.>f`) and elaborator-UFCS
-//!   (`r.>iso!(T)`) dispatch.
+//! - `Expr::UserMacro` — reference palettes, `match`, `derive`, and
+//!   package-defined macro calls alike.
+//! - `Expr::Ufcs` — regular UFCS (`r.>f`) and macro-UFCS
+//!   (`r.>iso(T)`) dispatch.
 //! - `Type::LabelSugar` — `{f: T}` label-derived type sugar.
 //! - `Item::Labels` — label declarations.
 //! - `Item::LiteralAlias` — `literal` declarations.
 //! - `Item::Equiv`, `Item::Op`, `Item::Fold`, term-level `Item::RecGroup`, and
-//!   user elaborator declarations; operator-pattern and label imports are
+//!   user macro declarations; operator-pattern and label imports are
 //!   rejected for the same reason. `Item::TypeRecGroup` is shared Kio' syntax
 //!   and survives this lowering.
 //!
@@ -197,28 +197,25 @@ impl SurfaceToPrime for PrimeLower {
         Err(prime_reject(label, meta.span))
     }
 
-    fn rewrite_expr_user_elaborator(
+    fn rewrite_expr_user_macro(
         &mut self,
         name: String,
         _args: Vec<crate::ast::CallArg<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error> {
-        Err(prime_reject(
-            &format!("`{name}!` user-elaborator position"),
-            meta.span,
-        ))
+        Err(prime_reject(&format!("`{name}` macro call"), meta.span))
     }
 
     fn rewrite_expr_ufcs(
         &mut self,
         ufcs: crate::prime::walk::SurfaceUfcs,
     ) -> Result<Expr<Prime>, Error> {
-        // Both regular UFCS (`r.>f(args)`) and elaborator-UFCS
-        // (`r.>iso!(T)`) are rejected at the Surface → Prime
+        // Both regular UFCS (`r.>f(args)`) and macro-UFCS
+        // (`r.>iso(T)`) are rejected at the Surface → Prime
         // boundary — Kio' admits neither spelling. The diagnostic
         // distinguishes them so the user sees the form they wrote.
-        let label = if ufcs.bang.is_some() {
-            "elaborator-form UFCS dispatch (`r.>iso!`)"
+        let label = if ufcs.macro_call.is_some() {
+            "macro-form UFCS dispatch (`r.>iso`)"
         } else {
             "UFCS dispatch (`r.>f`)"
         };
@@ -284,11 +281,11 @@ impl SurfaceToPrime for PrimeLower {
         Err(prime_reject("`rec(loop)` declaration", d.meta.span))
     }
 
-    fn rewrite_item_elaborator(
+    fn rewrite_item_macro(
         &mut self,
-        d: crate::ast::UserElaboratorDef<Surface>,
+        d: crate::ast::UserMacroDef<Surface>,
     ) -> Result<Item<Prime>, Error> {
-        Err(prime_reject("`elab` declaration", d.meta.span))
+        Err(prime_reject("`macro` declaration", d.meta.span))
     }
 
     fn rewrite_item_literal_alias(
@@ -304,6 +301,10 @@ impl SurfaceToPrime for PrimeLower {
 
     fn rewrite_import_label(&mut self, span: Span) -> Result<(), Error> {
         Err(prime_reject("label `import` item", span))
+    }
+
+    fn rewrite_import_macro(&mut self, span: Span) -> Result<(), Error> {
+        Err(prime_reject("macro `import` item", span))
     }
 
     fn rewrite_import_comptime(&mut self, span: Span) -> Result<(), Error> {
@@ -334,6 +335,16 @@ mod tests {
         let lowered = lower_module(module).expect("lower_module");
         assert_eq!(lowered.path.segments, vec!["x"]);
         assert_eq!(lowered.items.len(), 1);
+    }
+
+    #[test]
+    fn lower_module_rejects_macro_import_before_provider_resolution() {
+        let module = parse_module("module consumer; import provider(macro choose as pick);");
+        let error = lower_module(module).expect_err("macro tags are surface-only");
+        assert!(err_msg(error).contains("macro `import` item"));
+
+        let ordinary = parse_module("module consumer; import provider(macro as pick);");
+        lower_module(ordinary).expect("the ordinary name macro remains a valid import");
     }
 
     #[test]
@@ -372,13 +383,13 @@ mod tests {
     }
 
     #[test]
-    fn lower_module_rejects_if_bang_call() {
-        let module = parse_module("module x; fn f() -> . { if! .t { () } else { () } }");
+    fn lower_module_rejects_if_block_call() {
+        let module = parse_module("module x; fn f() -> . { if (.t) { () } else { () } }");
         let Some(Item::FnDef(def)) = module.items.first() else {
-            panic!("expected function with if! body");
+            panic!("expected function with if body");
         };
         assert!(matches!(&def.body, Expr::BlockCall { .. }));
-        let msg = err_msg(lower_module(module).expect_err("rejects if!"));
+        let msg = err_msg(lower_module(module).expect_err("rejects if"));
         assert!(msg.contains("trailing blocks"), "names form: {msg}");
     }
 
@@ -407,30 +418,34 @@ mod tests {
 
     #[test]
     fn lower_module_rejects_iso() {
-        let module = parse_module("module x; fn f() -> . { iso!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects iso!"));
-        assert!(msg.contains("`iso!`"), "names form: {msg}");
+        let module = parse_module("module x; import provider(macro iso); fn f() -> . { iso(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects iso"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_into() {
-        let module = parse_module("module x; fn f() -> . { into!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects into!"));
-        assert!(msg.contains("`into!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro into); fn f() -> . { into(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects into"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_onto() {
-        let module = parse_module("module x; fn f() -> . { onto!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects onto!"));
-        assert!(msg.contains("`onto!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro onto); fn f() -> . { onto(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects onto"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
-    fn lower_module_rejects_match_elaborator() {
-        let module = parse_module("module x; fn f[A](v: A) -> . { match!(v, (.() { () })) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects match!"));
-        assert!(msg.contains("`match!`"), "names form: {msg}");
+    fn lower_module_rejects_match_macro() {
+        let module = parse_module(
+            "module x; import provider(macro match); fn f[A](v: A) -> . { match(v, (.() { () })) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects match"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
@@ -461,96 +476,113 @@ mod tests {
     }
 
     #[test]
-    fn lower_module_rejects_elaborator_ufcs() {
-        let module = parse_module("module x; fn f() -> . { let r = (); r.>iso! }");
-        let msg = err_msg(lower_module(module).expect_err("rejects elaborator-UFCS"));
-        assert!(msg.contains("elaborator-form UFCS"), "names form: {msg}");
+    fn lower_module_rejects_macro_ufcs() {
+        let module = parse_module(
+            "module x; import provider(macro iso); fn f() -> . { let r = (); r.>iso }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects macro-UFCS"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
         assert!(msg.contains("kio-prime"), "frames as kio-prime-only: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_align() {
-        let module = parse_module("module x; fn f() -> . { align!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects align!"));
-        assert!(msg.contains("`align!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro align); fn f() -> . { align(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects align"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_atom() {
-        let module = parse_module("module x; fn f() -> . { atom!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects atom!"));
-        assert!(msg.contains("`atom!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro atom); fn f() -> . { atom(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects atom"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     // ---- Spine-palette rejection ----------------------------------------
     //
     // Each of the nine spine-palette forms is surface-only, just like
     // the algebraic palette; the kio-prime binary rejects every one
-    // at the Surface → Prime boundary, naming the form so the user
-    // sees which spelling triggered the rejection. The cases below
-    // pin each form by name.
+    // at the Surface → Prime boundary. The explicit selected import
+    // establishes each call's macro kind without consulting its provider.
 
     #[test]
     fn lower_module_rejects_reorder_sum() {
-        let module = parse_module("module x; fn f() -> . { reorder_sum!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects reorder_sum!"));
-        assert!(msg.contains("`reorder_sum!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro reorder_sum); fn f() -> . { reorder_sum(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects reorder_sum"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_reorder_prod() {
-        let module = parse_module("module x; fn f() -> . { reorder_prod!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects reorder_prod!"));
-        assert!(msg.contains("`reorder_prod!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro reorder_prod); fn f() -> . { reorder_prod(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects reorder_prod"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_narrow_sum() {
-        let module = parse_module("module x; fn f() -> . { narrow_sum!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects narrow_sum!"));
-        assert!(msg.contains("`narrow_sum!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro narrow_sum); fn f() -> . { narrow_sum(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects narrow_sum"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_narrow_prod() {
-        let module = parse_module("module x; fn f() -> . { narrow_prod!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects narrow_prod!"));
-        assert!(msg.contains("`narrow_prod!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro narrow_prod); fn f() -> . { narrow_prod(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects narrow_prod"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_widen_sum() {
-        let module = parse_module("module x; fn f() -> . { widen_sum!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects widen_sum!"));
-        assert!(msg.contains("`widen_sum!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro widen_sum); fn f() -> . { widen_sum(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects widen_sum"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_widen_prod() {
-        let module = parse_module("module x; fn f() -> . { widen_prod!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects widen_prod!"));
-        assert!(msg.contains("`widen_prod!`"), "names form: {msg}");
+        let module = parse_module(
+            "module x; import provider(macro widen_prod); fn f() -> . { widen_prod(()) }",
+        );
+        let msg = err_msg(lower_module(module).expect_err("rejects widen_prod"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_one_sum() {
-        let module = parse_module("module x; fn f() -> . { one_sum!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects one_sum!"));
-        assert!(msg.contains("`one_sum!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro one_sum); fn f() -> . { one_sum(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects one_sum"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_one_prod() {
-        let module = parse_module("module x; fn f() -> . { one_prod!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects one_prod!"));
-        assert!(msg.contains("`one_prod!`"), "names form: {msg}");
+        let module =
+            parse_module("module x; import provider(macro one_prod); fn f() -> . { one_prod(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects one_prod"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]
     fn lower_module_rejects_fit() {
-        let module = parse_module("module x; fn f() -> . { fit!(()) }");
-        let msg = err_msg(lower_module(module).expect_err("rejects fit!"));
-        assert!(msg.contains("`fit!`"), "names form: {msg}");
+        let module = parse_module("module x; import provider(macro fit); fn f() -> . { fit(()) }");
+        let msg = err_msg(lower_module(module).expect_err("rejects fit"));
+        assert!(msg.contains("macro `import` item"), "names form: {msg}");
     }
 
     #[test]

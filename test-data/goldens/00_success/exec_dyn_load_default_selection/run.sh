@@ -14,7 +14,7 @@ for source in "$PKG_SRC"/*.kio; do
   case "$name" in dyn_load_prime.pkg.kio) continue ;; esac
   cp "$source" "$work/$name"
 done
-for directory in testapi list loader elab; do
+for directory in testapi list loader macros; do
   cp -R "$PKG_SRC/$directory" "$work/$directory"
 done
 cp "$case_dir/workdir/testapi/main.kio" "$work/testapi/main.kio"

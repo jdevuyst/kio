@@ -11,9 +11,6 @@
 /// arm and crosses with a widen. Only `jmp` and `jmpz` are rebuilt.
 module forge/assemble;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import forge/expand as e;
 import forge/isa as isa;
 import forge/isa(
@@ -53,6 +50,9 @@ import forge/program(
 , Undefined_label
 , Unknown_macro
 );
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
@@ -62,16 +62,16 @@ import testapi/iter(loop);
 type Placed = (Srcs & Symbols) | Duplicate_label;
 
 rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
-  match! l.un_cons(fs) {
+  match(l.un_cons(fs)) {
     (
     , .(f: Flat, rest: Flats) {
-        match! f {
+        match(f) {
           (
           , .(x: Instr) { recur place(rest, add_i32(at, 1), l.cons(x.?{p.instr}, code), syms) }
           , .(x: Mark) {
               let name = x.?{p.mark};
-              if! p.is_placed(syms, name) {
-                widen_sum!(p.duplicate_label(name))
+              if(p.is_placed(syms, name)) {
+                widen_sum(p.duplicate_label(name))
               } else {
                 recur place(rest, at, code, l.cons(p.symbol(name, at), syms))
               }
@@ -79,7 +79,7 @@ rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
           )
         }
       }
-    , .(_empty: .) { widen_sum!((l.reverse(code), l.reverse(syms))) }
+    , .(_empty: .) { widen_sum((l.reverse(code), l.reverse(syms))) }
     )
   }
 }
@@ -97,57 +97,57 @@ type Resolved = Prog | Undefined_label;
 type Fix = Fixed | Undefined_label;
 
 fn addr_of(syms: Symbols, name: String) -> I32 | Undefined_label {
-  match! p.find_symbol(syms, name) {
-    (.(at: I32) { widen_sum!(at) }, .(_none: .) { widen_sum!(p.undefined_label(name)) })
+  match(p.find_symbol(syms, name)) {
+    (.(at: I32) { widen_sum(at) }, .(_none: .) { widen_sum(p.undefined_label(name)) })
   }
 }
 
-fn carried(i: Ins) -> Fix { widen_sum!(p.fixed(i), Fix) }
+fn carried(i: Ins) -> Fix { widen_sum(p.fixed(i), Fix) }
 
 /// Resolve one source instruction. The two jumps consult the symbol table;
 /// every other opcode is already an `Ins` arm and only has to be widened
 /// into the resolved set.
 fn fix(i: Src, syms: Symbols) -> Fix {
-  match! i {
+  match(i) {
     (
     , .(x: Jmp) {
-        match! addr_of(syms, x.?{isa.jmp}) {
-          (.(at: I32) { carried(isa.jmp_at(at)) }, .(err: Undefined_label) { widen_sum!(err) })
+        match(addr_of(syms, x.?{isa.jmp})) {
+          (.(at: I32) { carried(isa.jmp_at(at)) }, .(err: Undefined_label) { widen_sum(err) })
         }
       }
     , .(x: Jmpz) {
         let .(r: Reg, name: String) = x.?{isa.jmpz};
-        match! addr_of(syms, name) {
-          (.(at: I32) { carried(isa.jmpz_at(r, at)) }, .(err: Undefined_label) { widen_sum!(err) })
+        match(addr_of(syms, name)) {
+          (.(at: I32) { carried(isa.jmpz_at(r, at)) }, .(err: Undefined_label) { widen_sum(err) })
         }
       }
-    , .(x: Loadi) { carried(widen_sum!(x, Ins)) }
-    , .(x: Mov) { carried(widen_sum!(x, Ins)) }
-    , .(x: Add) { carried(widen_sum!(x, Ins)) }
-    , .(x: Sub) { carried(widen_sum!(x, Ins)) }
-    , .(x: Mul) { carried(widen_sum!(x, Ins)) }
-    , .(x: Div) { carried(widen_sum!(x, Ins)) }
-    , .(x: Mod) { carried(widen_sum!(x, Ins)) }
-    , .(x: Push) { carried(widen_sum!(x, Ins)) }
-    , .(x: Pop) { carried(widen_sum!(x, Ins)) }
-    , .(x: Emit) { carried(widen_sum!(x, Ins)) }
-    , .(x: Halt) { carried(widen_sum!(x, Ins)) }
+    , .(x: Loadi) { carried(widen_sum(x, Ins)) }
+    , .(x: Mov) { carried(widen_sum(x, Ins)) }
+    , .(x: Add) { carried(widen_sum(x, Ins)) }
+    , .(x: Sub) { carried(widen_sum(x, Ins)) }
+    , .(x: Mul) { carried(widen_sum(x, Ins)) }
+    , .(x: Div) { carried(widen_sum(x, Ins)) }
+    , .(x: Mod) { carried(widen_sum(x, Ins)) }
+    , .(x: Push) { carried(widen_sum(x, Ins)) }
+    , .(x: Pop) { carried(widen_sum(x, Ins)) }
+    , .(x: Emit) { carried(widen_sum(x, Ins)) }
+    , .(x: Halt) { carried(widen_sum(x, Ins)) }
     )
   }
 }
 
 rec(loop) fn resolve(code: Srcs, syms: Symbols, acc: Prog) -> Resolved {
-  match! l.un_cons(code) {
+  match(l.un_cons(code)) {
     (
     , .(i: Src, rest: Srcs) {
-        match! fix(i, syms) {
+        match(fix(i, syms)) {
           (
           , .(f: Fixed) { recur resolve(rest, syms, l.cons(f.?{p.fixed}, acc)) }
-          , .(err: Undefined_label) { widen_sum!(err) }
+          , .(err: Undefined_label) { widen_sum(err) }
           )
         }
       }
-    , .(_empty: .) { widen_sum!(l.reverse(acc)) }
+    , .(_empty: .) { widen_sum(l.reverse(acc)) }
     )
   }
 }
@@ -159,24 +159,24 @@ fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil(I
 /// Each phase can only fail its own way, and every failure widens into the
 /// one rejection sum the caller reports.
 pub fn build(items: Items, macros: Macros) -> Built {
-  match! e.expand(items, macros) {
+  match(e.expand(items, macros)) {
     (
     , .(fs: Flats) {
-        match! pass_one(fs) {
+        match(pass_one(fs)) {
           (
           , .(code: Srcs, syms: Symbols) {
-              match! pass_two(code, syms) {
+              match(pass_two(code, syms)) {
                 (
-                , .(prog: Prog) { widen_sum!(p.image(prog, syms, l.len(fs))) }
-                , .(err: Undefined_label) { widen_sum!(err) }
+                , .(prog: Prog) { widen_sum(p.image(prog, syms, l.len(fs))) }
+                , .(err: Undefined_label) { widen_sum(err) }
                 )
               }
             }
-          , .(err: Duplicate_label) { widen_sum!(err) }
+          , .(err: Duplicate_label) { widen_sum(err) }
           )
         }
       }
-    , .(err: Unknown_macro) { widen_sum!(err) }
+    , .(err: Unknown_macro) { widen_sum(err) }
     )
   }
 }

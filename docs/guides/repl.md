@@ -21,11 +21,11 @@ No package file is required: a directory of loose `.kio` modules works, and an e
 
 The prompt is two-line: above the `kio>` input symbol, the REPL renders the current module's path — or `(no module — :load <module-path> to begin)` before anything is loaded — so a bare-name query always shows which scope it resolves against. The transcripts in this guide elide that context line to stay compact.
 
-It is a module inspector, not a host runtime. Loading or refreshing a module checks the directory snapshot through parsing, operator folding and surface lowering, name resolution, and Lowered typechecking. Expression queries additionally substitute the recorded completions and validate the resulting Prime artifact; `:normalize` reduces the checked expression through the compiler's host-independent reduction relation. The REPL therefore shows the same types and signatures as the compiler without executing the package against a host. `kio repl` is a typed lens onto a directory's modules, not a place to run programs.
+It is a module inspector, not a host runtime. Loading or refreshing a module checks the directory snapshot through parsing, operator folding and surface lowering, name resolution, and Lowered typechecking. Expression queries substitute recorded completions and validate the resulting Prime artifact. The shared query path may also simplify compound expressions; `:normalize` displays the resulting residual form through the compiler's host-independent reduction relation. The REPL therefore shows the same types and signatures as the compiler without executing the package against a host. `kio repl` is a typed lens onto a directory's modules, not a place to run programs.
 
 Two consequences follow:
 
-- The prompt accepts **meta-commands and queries, but no definitions**. You cannot type a `fn` or an `import` clause; what you can type is a `:`-prefixed meta-command or a name or Kio expression to inspect. An expression is type-checked and, for `:normalize`, reduced; it is never run against a host.
+- The prompt accepts **meta-commands and queries, but no definitions**. You cannot type a `fn` or an `import` clause; what you can type is a `:`-prefixed meta-command or a name or Kio expression to inspect. An expression is type-checked and may be simplified by the shared query path; `:normalize` displays that simplified form. It is never run against a host.
 - Every answer is **compiler-accurate**. `:t` shows a function's synthesized type; `:pure` applies the compiler's pure-function rule; `:signature` shows its declaration header; `:doc` renders the same documentation `kio doc build` would; `:source` prints exactly what `kio fmt` would; an expression typed on its own prints its type and the residual form the compiler uses for `equiv` checks.
 
 ## A first session
@@ -195,7 +195,7 @@ mul(3(Int), 4(Int))
 
 A single identifier on its own is read as that name, not as a zero-argument call. To reduce a single name instead of viewing its doc, use `:normalize` explicitly: `:normalize example_fn1` reduces it; `example_fn1` on its own prints the doc-comment and signature.
 
-`:normalize <expr>` shows what the expression reduces to: the REPL simplifies as far as its reduction rules allow — running through function bodies, substituting `let`-bindings, and reducing the intrinsics produced by elab calls. Literals are already values. Host functions never execute here, even when all their arguments are known. An intrinsic can also remain residual when an opaque input hides information its rule needs, such as a product projection whose pair is unknown; free variables likewise remain symbolic.
+`:normalize <expr>` shows what the expression reduces to: the REPL simplifies as far as its reduction rules allow — running through function bodies, substituting `let`-bindings, and reducing the intrinsics produced by macro calls. Literals are already values. Host functions never execute here, even when all their arguments are known. An intrinsic can also remain residual when an opaque input hides information its rule needs, such as a product projection whose pair is unknown; free variables likewise remain symbolic.
 
 Numeric literals display their checked values. For example, `010(Int)`
 normalizes to `10(Int)`. If `Float` has `role(f32)`, `0.1(Float)` can display

@@ -1,7 +1,7 @@
 module queue_backlog_sim/sim;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import queue/core(Queue, empty);
 import queue_backlog_sim/fifo as fifo;
 import queue_backlog_sim/model(
@@ -48,13 +48,13 @@ import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
 
 fn max_i32(a: I32, b: I32) -> I32 {
-  if! lt_i32(a, b) { b } else { a }
+  if(lt_i32(a, b)) { b } else { a }
 }
 
 fn make_job(ticket_id: I32, tick: I32) -> Job {
@@ -76,7 +76,7 @@ fn initial_state() -> State {
 }
 
 rec(loop) fn enqueue_arrivals(remaining: I32, tick_value: I32, next_id: I32, q: Queue(Job)) -> Enqueue_result {
-  if! leq_i32(remaining, 0) {
+  if(leq_i32(remaining, 0)) {
     {enqueued_queue = q, enqueued_next = next_id}
   } else {
     recur enqueue_arrivals(
@@ -113,11 +113,11 @@ rec(loop) fn serve_capacity(
 , wait: I32
 , effort_units: I32
 ) -> Serve_result {
-  if! leq_i32(remaining, 0) {
+  if(leq_i32(remaining, 0)) {
     {served_queue = q, served_jobs = jobs, served_wait = wait, served_effort = effort_units}
   } else {
     let one = serve_one(tick_value, q);
-    if! eq_i32(one.?{served_jobs}, 0) {
+    if(eq_i32(one.?{served_jobs}, 0)) {
       {served_queue = q, served_jobs = jobs, served_wait = wait, served_effort = effort_units}
     } else {
       recur serve_capacity(
@@ -168,7 +168,7 @@ fn step_tick(state: State) -> State {
 }
 
 rec(loop) fn run_from(state: State) -> State {
-  if! leq_i32(schedule.total_ticks(), state.?{current_tick}) {
+  if(leq_i32(schedule.total_ticks(), state.?{current_tick})) {
     state
   } else {
     recur run_from(step_tick(state))

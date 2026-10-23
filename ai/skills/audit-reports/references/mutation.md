@@ -1,6 +1,6 @@
 # Mutation audit
 
-Drive [`reports/mutation.sh`](../../../../reports/mutation.sh) over the kio-rs **semantic core**: the typer (`typecheck_core` + `typecheck_full` and its production submodules), the elaborator registry, the substitute pass, the normalizer (`normalization`), the backend-neutral optimizer, and the Prime path (`src/prime/`). cargo-mutants applies small syntactic edits ("mutants") to the source and runs the test suite; a mutant that survives — passes the suite unchanged — names a place where the test corpus is too weak to catch a behavioral change.
+Drive [`reports/mutation.sh`](../../../../reports/mutation.sh) over the kio-rs **semantic core**: the typer (`typecheck_core` + `typecheck_full` and its production submodules), the macro registry, the substitute pass, the normalizer (`normalization`), the backend-neutral optimizer, and the Prime path (`src/prime/`). cargo-mutants applies small syntactic edits ("mutants") to the source and runs the test suite; a mutant that survives — passes the suite unchanged — names a place where the test corpus is too weak to catch a behavioral change.
 
 Anchors: AGENTS.md § Universal rules — "Optimizations are justified, not assumed" names this audit as the firing / no-op sweep for optimization coverage, and the harness charter lives above `MUTATION_TARGETS` in `reports/mutation.sh`.
 

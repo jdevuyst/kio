@@ -28,8 +28,7 @@ use crate::ast::{
     RowLetEntry, SigChangeSet, SigExportFn, SigItem, SigItemRef, SigModuleSection, SigRemoveModule,
     SigRemoveName, SigVersion, Signature, SignatureFile, SignatureGroup, SignatureParam,
     SourceBlock, SourceOrigin, Surface, TargetBlock, TargetEntry, Type, TypeAlias, TypeMember,
-    TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserElaboratorDef, VariadicOperator,
-    Visibility,
+    TypeParam, TypeRecGroup, TypeRecMember, UfcsFlavor, UserMacroDef, VariadicOperator, Visibility,
 };
 use crate::ast::{
     DelimitedTrivia, SignatureTrivia, SignatureTriviaPosition, append_relocated_trivia,
@@ -55,7 +54,7 @@ type ParsedLeftSplice = (
 
 /// Prepend `trivia` to the expression's `meta.leading_trivia` —
 /// used by `let_statement` / `block_body_continuation` /
-/// elaborator arm tuples to attach captured between-token trivia to the
+/// macro arm tuples to attach captured between-token trivia to the
 /// inner expression that follows. The expression's own captured
 /// trivia (if any) is kept after the injected run so source order is
 /// preserved.
@@ -229,7 +228,7 @@ fn remove_type_comments(ty: &mut Type, moved: &std::collections::HashSet<Span>) 
 }
 
 /// Collect comments after the first meaningful token in one top-level item
-/// slice. `op`, `varop`, and `elab` canonicalize compact bodies whose fields do
+/// slice. `op`, `varop`, and `macro` canonicalize compact bodies whose fields do
 /// not all have trivia channels, so their internal comments move together to
 /// the compact body's trivia slot in source order. The first token's trivia is
 /// excluded because
@@ -278,7 +277,7 @@ fn internal_item_comments(children: &[SkeletonNode]) -> Vec<Trivia> {
 fn retain_compact_declaration_comments(item: &mut Item, children: &[SkeletonNode]) {
     if matches!(
         item,
-        Item::Op(_, _) | Item::VariadicOperator(_, _) | Item::Elaborator(_, _)
+        Item::Op(_, _) | Item::VariadicOperator(_, _) | Item::Macro(_, _)
     ) {
         let declaration_end = item.meta().span.end;
         let comments = internal_item_comments(children)
@@ -286,16 +285,16 @@ fn retain_compact_declaration_comments(item: &mut Item, children: &[SkeletonNode
             .filter(|trivia| comment_span(trivia).is_none_or(|span| span.end <= declaration_end))
             .collect::<Vec<_>>();
         let moved = comments.iter().filter_map(comment_span).collect();
-        if let Item::Elaborator(elaborator, _) = item {
-            remove_type_comments(&mut elaborator.call_ty, &moved);
+        if let Item::Macro(macro_def, _) = item {
+            remove_type_comments(&mut macro_def.call_ty, &moved);
         }
         match item {
             Item::Op(op, _) => append_relocated_trivia(&mut op.body_trivia, comments),
             Item::VariadicOperator(fold, _) => {
                 append_relocated_trivia(&mut fold.body_trivia, comments)
             }
-            Item::Elaborator(elaborator, _) => {
-                append_relocated_trivia(&mut elaborator.body_trivia, comments)
+            Item::Macro(macro_def, _) => {
+                append_relocated_trivia(&mut macro_def.body_trivia, comments)
             }
             _ => unreachable!("only compact declarations reach this branch"),
         }
@@ -626,7 +625,7 @@ fn set_item_doc(item: &mut Item, doc: Option<DocComment>, leading: &[Trivia]) {
         Item::LabelForward(d, _) => d.doc = doc,
         Item::Op(b, _) => b.doc = doc,
         Item::VariadicOperator(b, _) => b.doc = doc,
-        Item::Elaborator(s, _) => s.doc = doc,
+        Item::Macro(s, _) => s.doc = doc,
         Item::HostType(h) => h.doc = doc,
         Item::HostFn(h) => h.doc = doc,
         Item::RecGroup(g, _) => {
@@ -899,6 +898,7 @@ pub(crate) enum ImportSelectionKind {
     Any,
     Name,
     DefaultType,
+    Macro,
     Label,
     FixedOperator,
     VariadicOperator,
@@ -1075,7 +1075,7 @@ pub(super) struct Parser<'a> {
     /// elaboration-bearing variant (`Expr::BlockCall` / `Expr::Elaborator`)
     /// and on every `Expr::Ufcs` (whose `NodeId`
     /// carries through to the `Expr::Elaborator` the desugar pass
-    /// produces for elaborator-UFCS) so the typer's `Elaborations`
+    /// produces for macro UFCS) so the typer's `Elaborations`
     /// table has a clone-stable key. Per-parser-invocation; different
     /// `parse_*` calls don't share IDs, which is fine because each
     /// invocation produces an independent compilation unit with its
@@ -1088,7 +1088,6 @@ pub(super) struct Parser<'a> {
     /// parsing consults the table to recognize operator usages.
     operator_scope: OpRegistry,
     recover_import_errors: Option<Vec<Error>>,
-    block_stop_depth: Option<usize>,
     /// Optional source-local tooling facts. The ordinary compiler path keeps
     /// this absent; expression probes request only structural forall facts.
     tooling: Option<ParserTooling>,
@@ -1573,7 +1572,6 @@ impl<'a> Parser<'a> {
             next_node_id: 0,
             operator_scope: OpRegistry::new(),
             recover_import_errors: None,
-            block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
             empty_block_prefix_lists: std::collections::HashMap::new(),
@@ -1636,7 +1634,6 @@ impl<'a> Parser<'a> {
             next_node_id: 0,
             operator_scope: OpRegistry::new(),
             recover_import_errors: None,
-            block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
             empty_block_prefix_lists: std::collections::HashMap::new(),
@@ -1683,18 +1680,6 @@ impl<'a> Parser<'a> {
             cursor.advance()?;
         }
         cursor.peek_token().cloned()
-    }
-
-    fn peek_adjacent_bang_after_ident(&self) -> bool {
-        let (Some(ident), Some(bang)) = (self.peek_token_at(0), self.peek_token_at(1)) else {
-            return false;
-        };
-        Self::adjacent_bang_tokens(&ident, &bang)
-    }
-
-    fn adjacent_bang_tokens(ident: &Token, bang: &Token) -> bool {
-        matches!((&ident.kind, &bang.kind), (TokenKind::Ident(_), TokenKind::SymbolRun(run))
-            if run.starts_with('!') && bang.span.start == ident.span.end)
     }
 
     fn peek_span(&self) -> Span {
@@ -1844,7 +1829,7 @@ impl<'a> Parser<'a> {
     /// True iff the next token is the [`TokenKind::SymbolRun`]
     /// whose content starts with `s`. Used by the structural-
     /// recovery sites (function arrow `->`,
-    /// existential closer `>`, bang-call dispatch `!`) to recognize their delimiter
+    /// existential closer `>`) to recognize their delimiter
     /// even when greedy lexer fusion pulled it into a longer run
     /// (`->!`, `>:`, `><`). The `expect_*` peelers
     /// downstream do the actual split.
@@ -2017,24 +2002,6 @@ impl<'a> Parser<'a> {
                 Ok(self.split_current_sym(1).span)
             }
             _ => Err(self.err_here("expected `>`")),
-        }
-    }
-
-    /// Consume `!` either as a standalone one-char SymbolRun or
-    /// as the leading byte of a fused run (`!=`, `!~`, …). At
-    /// the second shape, peels `!` off the front via
-    /// [`SkeletonCursor::split_current_sym`] and leaves the
-    /// suffix as the new "current" for the next consumer. Used
-    /// at the bang-call recognition sites (`iso!` / `into!` /
-    /// `onto!` / `align!` / `atom!`, and dot-splice elaborator suffixes
-    /// like `r.>iso!` / `r.>>iso!`).
-    fn expect_bang(&mut self) -> Result<Span, Error> {
-        match self.peek() {
-            Some(TokenKind::SymbolRun(s)) if s == "!" => Ok(self.advance().span),
-            Some(TokenKind::SymbolRun(s)) if s.starts_with('!') => {
-                Ok(self.split_current_sym(1).span)
-            }
-            _ => Err(self.err_here("expected `!`")),
         }
     }
 
@@ -2485,10 +2452,10 @@ impl<'a> Parser<'a> {
         Self::validate_value_name(&leaf.name, leaf.span)
     }
 
-    /// An elaborator may capture either a bare type or a value path. A dotted
+    /// A macro may capture either a bare type or a value path. A dotted
     /// capture denotes a value member, while a single segment retains the
     /// type-or-value distinction that the typer resolves.
-    fn validate_elaborator_capture_path(segments: &[PathSegment]) -> Result<(), Error> {
+    fn validate_macro_capture_path(segments: &[PathSegment]) -> Result<(), Error> {
         if segments.len() == 1 {
             let segment = &segments[0];
             Self::validate_value_or_type_name(&segment.name, segment.span)
@@ -3049,7 +3016,7 @@ impl<'a> Parser<'a> {
                 | Item::TypeRecGroup(_)
                 | Item::Newtype(_)
                 | Item::Equiv(_, _)
-                | Item::Elaborator(_, _)
+                | Item::Macro(_, _)
                 | Item::Op(_, _)
                 | Item::VariadicOperator(_, _)
         ) {
@@ -3118,11 +3085,11 @@ impl<'a> Parser<'a> {
                 item: Item::Equiv(e, ()),
                 deferred: None,
             })
-        } else if mode == ItemParseMode::Lazy && self.peek_ident_named("elab") {
-            let elaborator = self.elaborator_item_deferred(modifiers, item_start)?;
+        } else if mode == ItemParseMode::Lazy && self.peek_ident_named("macro") {
+            let macro_def = self.macro_item_deferred(modifiers, item_start)?;
             Ok(ParsedLazyItem {
                 outer_trivia: Vec::new(),
-                item: Item::Elaborator(elaborator, ()),
+                item: Item::Macro(macro_def, ()),
                 deferred: None,
             })
         } else {
@@ -3213,19 +3180,19 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn elaborator_item_deferred(
+    fn macro_item_deferred(
         &mut self,
         modifiers: ItemModifiers,
         start: u32,
-    ) -> Result<UserElaboratorDef, Error> {
-        self.expect_ident_named("elab")?;
+    ) -> Result<UserMacroDef, Error> {
+        self.expect_ident_named("macro")?;
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
-        self.expect_kind(TokenKind::sym(":"), "`:` after elab name")?;
+        self.expect_kind(TokenKind::sym(":"), "`:` after macro name")?;
         let call_ty = self.type_expr()?;
-        let (captures, schedule, implementation, trailing_blocks) = self.parse_elaborator_body()?;
+        let (captures, schedule, implementation, trailing_blocks) = self.parse_macro_body()?;
         let semi_end = self.syntax_end;
-        Ok(UserElaboratorDef {
+        Ok(UserMacroDef {
             vis: modifiers.vis,
             name,
             name_span,
@@ -5068,13 +5035,17 @@ impl<'a> Parser<'a> {
                 let mut import = self.import_stmt_in(DeclarationEnd::BlockEntry)?;
                 if let ImportKind::Selective { items, .. } = &import.kind
                     && let Some(span) = items.iter().find_map(|item| match item {
-                        ImportItem::Name { default_span, .. } => *default_span,
+                        ImportItem::Name {
+                            default_span,
+                            macro_span,
+                            ..
+                        } => default_span.or(*macro_span),
                         _ => None,
                     })
                 {
                     return Err(self.err(
                         span,
-                        "default type selections belong to modules, not signature snapshots",
+                        "macro and default type selections belong to modules, not signature snapshots",
                     ));
                 }
                 prepend_import_leading(&mut import, std::mem::take(&mut pending));
@@ -5118,7 +5089,7 @@ impl<'a> Parser<'a> {
     /// production. A version-leading `with` section additionally admits
     /// the shared-Kio′ `rec newtype` and complete `rec { ... }` forms;
     /// operation sections name those declarations by exact references.
-    /// Surface-only forms (`elab` / `op` / `labels` / `equiv` / `varop` /
+    /// Surface-only forms (`macro` / `op` / `labels` / `equiv` / `varop` /
     /// `literal`) are rejected with a sig-context diagnostic.
     fn sig_item(&mut self, allow_type_rec_groups: bool) -> Result<SigItem, Error> {
         let modifiers = self.item_modifiers_in(DeclarationContext::Signature {
@@ -5947,7 +5918,10 @@ impl<'a> Parser<'a> {
                     let selection_start = self.peek_span().start;
                     let selection_depth = self.cursor.depth();
                     let selection_kind = self.import_selection_kind();
-                    let selection_start = if selection_kind == ImportSelectionKind::DefaultType {
+                    let selection_start = if matches!(
+                        selection_kind,
+                        ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
+                    ) {
                         self.peek_token_at(1)
                             .filter(|token| token.span.start != token.span.end)
                             .map_or_else(
@@ -5966,7 +5940,10 @@ impl<'a> Parser<'a> {
                     // a following `as` fixes its selection to the ordinary namespace.
                     let tag_end = ((self.peek_ident_named("op")
                         || self.peek_ident_named("varop")
-                        || selection_kind == ImportSelectionKind::DefaultType)
+                        || matches!(
+                            selection_kind,
+                            ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
+                        ))
                         && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as"))
                     .then(|| self.peek_span().end);
                     let mut source_end = None;
@@ -6076,7 +6053,13 @@ impl<'a> Parser<'a> {
         allow_alias: bool,
         source_end: &mut Option<u32>,
     ) -> Result<ImportItem, Error> {
-        let default_span = if allow_alias
+        let macro_span = if allow_alias && self.macro_import_starts_here() {
+            Some(self.expect_ident_named("macro")?)
+        } else {
+            None
+        };
+        let default_span = if macro_span.is_none()
+            && allow_alias
             && self.peek_ident_named("default")
             && !matches!(
                 self.peek_at(1),
@@ -6093,7 +6076,11 @@ impl<'a> Parser<'a> {
         {
             return Err(self.err_here("`default` must select a host type or a type alias"));
         }
-        let selection = self.import_selection_kind();
+        let selection = if macro_span.is_some() {
+            ImportSelectionKind::Name
+        } else {
+            self.import_selection_kind()
+        };
         if selection == ImportSelectionKind::Label {
             self.expect_kind(TokenKind::LBrace, "`{`")?;
             let (name, name_span) = self.expect_ident()?;
@@ -6165,7 +6152,11 @@ impl<'a> Parser<'a> {
             });
         }
         let (name, span) = self.expect_ident()?;
-        Self::validate_value_or_type_name(&name, span)?;
+        if macro_span.is_some() {
+            Self::validate_value_name(&name, span)?;
+        } else {
+            Self::validate_value_or_type_name(&name, span)?;
+        }
         if allow_alias {
             self.cursor_choices(CursorSlot::Grammar, &["as"]);
         }
@@ -6187,6 +6178,7 @@ impl<'a> Parser<'a> {
         };
         Ok(ImportItem::Name {
             default_span,
+            macro_span,
             name,
             span,
             alias,
@@ -6194,23 +6186,43 @@ impl<'a> Parser<'a> {
         })
     }
 
+    fn macro_import_starts_here(&self) -> bool {
+        if !self.peek_ident_named("macro") {
+            return false;
+        }
+        let Some(TokenKind::Ident(name)) = self.peek_at(1) else {
+            return false;
+        };
+        if name != "as" {
+            return true;
+        }
+        self.peek_token_at(2).is_some_and(|token| {
+            matches!(token.kind, TokenKind::Comma | TokenKind::RParen)
+                && token.span.start < token.span.end
+        }) || (self.peek_ident_named_at(2, "as")
+            && matches!(self.peek_at(3), Some(TokenKind::Ident(_))))
+    }
+
     fn import_selection_kind(&self) -> ImportSelectionKind {
         // An unfinished import has a synthesized closer at the last atom,
         // before the whitespace belonging to the missing type target.
-        let missing_default_target = self.peek_ident_named("default")
-            && self.peek_token_at(1).is_some_and(|token| {
-                token.kind == TokenKind::RParen
-                    && token.span.start == token.span.end
-                    && self
-                        .tooling
-                        .as_ref()
-                        .and_then(|tooling| tooling.cursor)
-                        .is_some_and(|cursor| cursor > self.peek_span().end)
-            });
-        if self.peek_ident_named("default")
+        let missing_selection_target = self.peek_token_at(1).is_some_and(|token| {
+            token.kind == TokenKind::RParen
+                && token.span.start == token.span.end
+                && self
+                    .tooling
+                    .as_ref()
+                    .and_then(|tooling| tooling.cursor)
+                    .is_some_and(|cursor| cursor > self.peek_span().end)
+        });
+        if self.macro_import_starts_here()
+            || (self.peek_ident_named("macro") && missing_selection_target)
+        {
+            ImportSelectionKind::Macro
+        } else if self.peek_ident_named("default")
             && !self.peek_ident_named_at(1, "as")
             && (!matches!(self.peek_at(1), Some(TokenKind::Comma | TokenKind::RParen))
-                || missing_default_target)
+                || missing_selection_target)
         {
             ImportSelectionKind::DefaultType
         } else if matches!(self.peek(), Some(TokenKind::LBrace)) {
@@ -6284,7 +6296,12 @@ impl<'a> Parser<'a> {
             } else {
                 Span::new(start, end)
             };
-            if kind == ImportSelectionKind::DefaultType && start == cursor && source_end.is_none() {
+            if matches!(
+                kind,
+                ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
+            ) && start == cursor
+                && source_end.is_none()
+            {
                 self.tooling
                     .as_mut()
                     .expect("tooling was inspected above")
@@ -6498,7 +6515,7 @@ impl<'a> Parser<'a> {
             ("newtype", ordinary),
             ("labels", ordinary && surface),
             ("equiv", ordinary && module && !modifiers.vis.is_pub()),
-            ("elab", ordinary && module),
+            ("macro", ordinary && module),
             ("op", ordinary && module),
             ("varop", ordinary && module),
         ];
@@ -6604,9 +6621,8 @@ impl<'a> Parser<'a> {
                 ));
             }
             self.equiv().map(|e| Item::Equiv(e, ()))
-        } else if self.peek_ident_named("elab") {
-            self.elaborator_item(modifiers)
-                .map(|s| Item::Elaborator(s, ()))
+        } else if self.peek_ident_named("macro") {
+            self.macro_item(modifiers).map(|s| Item::Macro(s, ()))
         } else if self.peek_ident_named("varop") {
             let fold = self.variadic_operator(modifiers)?;
             Ok(Item::VariadicOperator(Box::new(fold), ()))
@@ -6638,21 +6654,21 @@ impl<'a> Parser<'a> {
             Err(error)
         } else {
             Err(self.err_here(
-                "expected `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `elab`, or `op`",
+                "expected `fn`, `rec`, `type`, `literal`, `newtype`, `labels`, `equiv`, `macro`, or `op`",
             ))
         }
     }
 
-    fn elaborator_item(&mut self, modifiers: ItemModifiers) -> Result<UserElaboratorDef, Error> {
+    fn macro_item(&mut self, modifiers: ItemModifiers) -> Result<UserMacroDef, Error> {
         let start = self.peek_span().start;
-        self.expect_ident_named("elab")?;
+        self.expect_ident_named("macro")?;
         let (name, name_span) = self.expect_binder()?;
         Self::validate_value_name(&name, name_span)?;
-        self.expect_kind(TokenKind::sym(":"), "`:` after elab name")?;
+        self.expect_kind(TokenKind::sym(":"), "`:` after macro name")?;
         let call_ty = self.type_expr()?;
-        let (captures, schedule, implementation, trailing_blocks) = self.parse_elaborator_body()?;
+        let (captures, schedule, implementation, trailing_blocks) = self.parse_macro_body()?;
         let semi_end = self.syntax_end;
-        Ok(UserElaboratorDef {
+        Ok(UserMacroDef {
             vis: modifiers.vis.clone(),
             name,
             name_span,
@@ -6667,18 +6683,18 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn parse_elaborator_body(
+    fn parse_macro_body(
         &mut self,
     ) -> Result<
         (
-            Vec<crate::ast::UserElaboratorCapture>,
-            crate::ast::ElaboratorSchedule,
+            Vec<crate::ast::UserMacroCapture>,
+            crate::ast::MacroSchedule,
             crate::ast::LexicalCallablePath,
             Vec<crate::ast::TrailingBlockDecl>,
         ),
         Error,
     > {
-        self.expect_kind(TokenKind::LBrace, "`{` after elab call type")?;
+        self.expect_kind(TokenKind::LBrace, "`{` after macro call type")?;
         self.leading_block_separator(false)?;
         let mut captures = None;
         let mut implementation = None;
@@ -6689,35 +6705,35 @@ impl<'a> Parser<'a> {
                 (
                     "captures",
                     captures.is_none(),
-                    "duplicate `captures` field in `elab` body",
+                    "duplicate `captures` field in `macro` body",
                 ),
                 (
                     "impl",
                     implementation.is_none(),
-                    "duplicate `impl` field in `elab` body",
+                    "duplicate `impl` field in `macro` body",
                 ),
                 ("trailing", true, "trailing block descriptor"),
             ],
-            "expected `captures`, `impl`, or `trailing` field in `elab` body",
+            "expected `captures`, `impl`, or `trailing` field in `macro` body",
         )? {
             match field {
                 "captures" => {
-                    captures = Some(self.parse_elaborator_captures()?);
+                    captures = Some(self.parse_macro_captures()?);
                 }
                 "impl" => {
                     self.expect_ident_named("impl")?;
-                    let (schedule, path, _) = self.parse_elaborator_implementation()?;
+                    let (schedule, path, _) = self.parse_macro_implementation()?;
                     implementation = Some((schedule, path));
                 }
                 "trailing" => trailing_blocks.push(self.trailing_block_descriptor()?),
-                _ => unreachable!("named-entry dispatch selected an elab field"),
+                _ => unreachable!("named-entry dispatch selected a macro field"),
             }
             self.block_separator(false, false, &["captures", "impl", "trailing"])?;
         }
         let Some((schedule, implementation)) = implementation else {
-            return Err(self.err_here("`elab` body requires an `impl` field"));
+            return Err(self.err_here("`macro` body requires an `impl` field"));
         };
-        self.expect_kind(TokenKind::RBrace, "`}` closing `elab` body")?;
+        self.expect_kind(TokenKind::RBrace, "`}` closing `macro` body")?;
         Ok((
             captures.unwrap_or_default(),
             schedule,
@@ -6768,11 +6784,11 @@ impl<'a> Parser<'a> {
             )
     }
 
-    fn parse_elaborator_implementation(
+    fn parse_macro_implementation(
         &mut self,
     ) -> Result<
         (
-            crate::ast::ElaboratorSchedule,
+            crate::ast::MacroSchedule,
             crate::ast::LexicalCallablePath,
             u32,
         ),
@@ -6795,27 +6811,25 @@ impl<'a> Parser<'a> {
             let marker = self.advance().span;
             self.record_keyword(marker, KeywordRole::Declaration);
             self.advance();
-            crate::ast::ElaboratorSchedule::Fills
+            crate::ast::MacroSchedule::Fills
         } else {
-            crate::ast::ElaboratorSchedule::Late
+            crate::ast::MacroSchedule::Late
         };
         let (implementation, _) = self.parse_lexical_callable_path(
-            "elaborator implementations must name a lexical callable",
+            "macro implementations must name a lexical callable",
             "move any reordering or wrapping logic into a named `pure fn`",
         )?;
         Ok((schedule, implementation, self.syntax_end))
     }
 
-    fn parse_elaborator_captures(
-        &mut self,
-    ) -> Result<Vec<crate::ast::UserElaboratorCapture>, Error> {
+    fn parse_macro_captures(&mut self) -> Result<Vec<crate::ast::UserMacroCapture>, Error> {
         self.expect_ident_named("captures")?;
         let mut captures = Vec::new();
         if matches!(self.peek(), Some(TokenKind::LParen)) {
             self.expect_kind(TokenKind::LParen, "`(` before captures")?;
             self.cursor_choices(CursorSlot::Capture, &[]);
             while !matches!(self.peek(), Some(TokenKind::RParen)) {
-                captures.push(self.parse_elaborator_capture_path()?);
+                captures.push(self.parse_macro_capture_path()?);
                 if matches!(self.peek(), Some(TokenKind::Comma)) {
                     self.advance();
                     self.cursor_choices(CursorSlot::Capture, &[]);
@@ -6828,7 +6842,7 @@ impl<'a> Parser<'a> {
             }
             self.expect_kind(TokenKind::RParen, "`)` after `captures (...)`")?;
         } else {
-            captures.push(self.parse_elaborator_capture_path()?);
+            captures.push(self.parse_macro_capture_path()?);
         }
         if captures.is_empty() {
             return Err(self.err_here("expected at least one name in `captures`"));
@@ -6836,17 +6850,15 @@ impl<'a> Parser<'a> {
         Ok(captures)
     }
 
-    fn parse_elaborator_capture_path(
-        &mut self,
-    ) -> Result<crate::ast::UserElaboratorCapture, Error> {
+    fn parse_macro_capture_path(&mut self) -> Result<crate::ast::UserMacroCapture, Error> {
         let start = self.peek_span().start;
         let (segments, _) = self.grouped_reference(|parser| {
             parser.cursor_choices(CursorSlot::Capture, &[]);
             parser.value_path_segments()
         })?;
         let span_end = self.syntax_end;
-        Self::validate_elaborator_capture_path(&segments)?;
-        Ok(crate::ast::UserElaboratorCapture {
+        Self::validate_macro_capture_path(&segments)?;
+        Ok(crate::ast::UserMacroCapture {
             segments,
             span: Span::new(start, span_end),
         })
@@ -9402,7 +9414,7 @@ impl<'a> Parser<'a> {
     /// `(...)`, or `name: (...)`. Bare `name` and bare `_` carry an
     /// implicit `Type::Infer` (`_`) annotation — admissible at slot
     /// positions where the surrounding context pins the type (a
-    /// lambda literal, a `match!` clause). For top-level fn definitions
+    /// lambda literal, a `match` clause). For top-level fn definitions
     /// the typer rejects `_` slots that no context resolves.
     fn param_pattern_elem(
         &mut self,
@@ -9435,7 +9447,7 @@ impl<'a> Parser<'a> {
         // Bare slot: `name` or `_` with no `:`. The slot's type
         // becomes `Type::Infer` — the typer pulls it from the
         // surrounding context (a lambda literal's expected type, a
-        // `match!` clause's dispatch pattern). For top-level fn defs
+        // `match` clause's dispatch pattern). For top-level fn defs
         // the typer rejects an unresolvable `_`.
         if !self.at_sym(":") {
             return Ok(ParamPatternElem::Bind {
@@ -11028,10 +11040,6 @@ impl<'a> Parser<'a> {
 
     /// Delimiters determine this grammar before any operator is resolved.
     fn try_variadic_literal(&mut self) -> Result<Option<Expr>, Error> {
-        self.with_block_slot_boundary(true, |parser| parser.try_variadic_literal_body())
-    }
-
-    fn try_variadic_literal_body(&mut self) -> Result<Option<Expr>, Error> {
         if !self.peek().is_some_and(|kind| kind.is_sym("[")) {
             return Ok(None);
         }
@@ -11109,6 +11117,13 @@ impl<'a> Parser<'a> {
         loop {
             match self.peek() {
                 Some(TokenKind::LParen) => {
+                    if let Expr::BlockCall { blocks, meta, .. } = &e
+                        && blocks
+                            .last()
+                            .is_some_and(|block| block.close.end == meta.span.end)
+                    {
+                        return Err(self.err_here("parenthesize the complete trailing-block call before applying its result"));
+                    }
                     let start = e.span().start;
                     let list_start = self.peek_span().start;
                     if let Expr::Path { segments, .. } = &e
@@ -11203,37 +11218,36 @@ impl<'a> Parser<'a> {
                     self.advance(); // consume `.>` / `.>>`
                     let mut callee_tokens = self.cursor.clone();
                     let block_call = self.block_call_starts_here();
-                    let grouped_callee = matches!(self.peek(), Some(TokenKind::LParen));
-                    let (segments, callee_span_end) = self.ufcs_callee_path()?;
+                    let (segments, callee_span_end) = if block_call {
+                        let (name, span) =
+                            self.grouped_reference(|parser| parser.expect_ident())?;
+                        (vec![PathSegment::new(name, span)], self.syntax_end)
+                    } else {
+                        self.ufcs_callee_path()?
+                    };
                     Self::collect_line_comments(
                         &mut callee_tokens,
                         callee_span_end,
                         &mut e.meta_mut().trailing_trivia,
                     );
                     let callee_span = Span::new(arrow_end, callee_span_end);
-                    // Elaborator bang-call splice: `r.>iso!(T)`,
-                    // `r.>>match!(arms)`, etc. The trailing `!`
-                    // after a single-segment UFCS callee selects block syntax
-                    // or an ordinary elaborator splice. Both use the resolved
-                    // elaborator's public type, not its implementation ABI.
-                    // The peek accepts
-                    // a fused `!`-prefix SymbolRun
-                    // (`!=`, `!~`, …) too — greedy lexer fusion can
-                    // absorb a trailing op-char into the `!` run,
-                    // and `expect_bang` peels it back.
-                    if self.at_sym_prefix("!") {
-                        if grouped_callee {
-                            return Err(self
-                                .err_here("the `!` suffix requires an ungrouped elaborator name"));
+                    if block_call {
+                        let [head] = segments.as_slice() else {
+                            return Err(self.err(
+                                callee_span,
+                                "a trailing-block call requires a single local macro name",
+                            ));
+                        };
+                        let mut call = self.block_call_tail(head.name.clone(), head.span)?;
+                        let Expr::BlockCall { id, .. } = &call else {
+                            unreachable!()
+                        };
+                        if let Some(span) = self.empty_block_prefix_lists.get(id) {
+                            return Err(empty_ufcs_arg_list_error(*span));
                         }
-                        e = self.elaborator_ufcs_call(
-                            e,
-                            segments,
-                            callee_span,
-                            start,
-                            flavor,
-                            block_call,
-                        )?;
+                        let end = call.span().end;
+                        self.splice_block_call(&mut call, e, flavor, Span::new(start, end))?;
+                        e = call;
                         continue;
                     }
                     // Optional argument list. A bare `r.>f` (no
@@ -11260,7 +11274,7 @@ impl<'a> Parser<'a> {
                         callee_span,
                         args,
                         flavor,
-                        bang: None,
+                        macro_call: None,
                         meta: Meta::new(Span::new(start, end)),
                         ext: id,
                     };
@@ -11332,7 +11346,7 @@ impl<'a> Parser<'a> {
             callee_span,
             args,
             flavor,
-            bang: None,
+            macro_call: None,
             meta: Meta::new(Span::new(start, end)),
             ext: self.fresh_node_id(),
         })
@@ -11633,149 +11647,6 @@ impl<'a> Parser<'a> {
         Ok((segments, end))
     }
 
-    /// Parse the tail of a right-callee elaborator splice, having
-    /// already consumed the inserted value and the `.>` / `.>>`
-    /// path segments. A bang-suffix UFCS callee must be a single path segment;
-    /// typechecking later requires that name to resolve to an in-scope user
-    /// elaborator.
-    ///
-    /// Block forms use the direct block-prefix parser and arrange the receiver
-    /// before descriptor projection. Blockless forms retain [`Expr::Ufcs`] with
-    /// `bang = Some(bang_span)`; ordinary public call typing determines their
-    /// receiver placement. Both retain the written direction for formatting.
-    fn elaborator_ufcs_call(
-        &mut self,
-        receiver: Expr,
-        segments: Vec<PathSegment>,
-        callee_span: Span,
-        start: u32,
-        flavor: UfcsFlavor,
-        block_call: bool,
-    ) -> Result<Expr, Error> {
-        // Consume the `!` — peel from the front of any fused
-        // SymbolRun (e.g. `!=`) so the trailing op-chars stay
-        // available for the next consumer.
-        let bang_span = self.expect_bang()?;
-        if segments.len() != 1 {
-            let callee = segments
-                .iter()
-                .map(|s| s.as_str())
-                .collect::<Vec<_>>()
-                .join(".");
-            return Err(self.err(
-                Span::new(callee_span.start, bang_span.end),
-                format!(
-                    "the `!` suffix after `{}` requires a single elaborator name; \
-                     got `{}{callee}!`",
-                    flavor.token(),
-                    flavor.token(),
-                ),
-            ));
-        }
-        let name = &segments[0];
-        Self::validate_value_name(&name.name, name.span)?;
-        if block_call {
-            let mut call = self.block_call_tail(name.name.clone(), name.span)?;
-            let Expr::BlockCall { id, .. } = &call else {
-                unreachable!()
-            };
-            if let Some(span) = self.empty_block_prefix_lists.get(id) {
-                return Err(empty_ufcs_arg_list_error(*span));
-            }
-            let end = call.span().end;
-            self.splice_block_call(&mut call, receiver, flavor, Span::new(start, end))?;
-            return Ok(call);
-        }
-        let (args, end_pos, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
-            let list_start = self.peek_span().start;
-            let (args, end, source_trivia) =
-                self.call_arg_list(None, self.peek_leading_trivia())?;
-            if args.is_empty() {
-                return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
-            }
-            (args, end, source_trivia)
-        } else {
-            (Vec::new(), bang_span.end, None)
-        };
-        let id = self.fresh_node_id();
-        Ok(Expr::Ufcs {
-            source_trivia,
-            occurrence: Default::default(),
-            receiver: Box::new(receiver),
-            callee_segments: segments,
-            callee_span,
-            args,
-            flavor,
-            bang: Some(bang_span),
-            meta: Meta::new(Span::new(start, end_pos)),
-            ext: id,
-        })
-    }
-
-    /// Parse a user elaborator bang-call form.
-    fn bang_call_expr(&mut self) -> Result<Expr, Error> {
-        let start_span = self.peek_span();
-        let start = start_span.start;
-        let kind_tok = self.advance();
-        let TokenKind::Ident(name) = &kind_tok.kind else {
-            unreachable!("expr_primary dispatched with Ident in lookahead");
-        };
-        let name = name.clone();
-        Self::validate_value_name(&name, kind_tok.span)?;
-        let bang_span = self.expect_bang()?;
-        let explicit_list = self.peek_left_call_splice_flavor().is_none();
-        let list_start = self.peek_span().start;
-        let (args, mut end, source_trivia) = if explicit_list {
-            self.call_arg_list(None, self.peek_leading_trivia())?
-        } else {
-            (Vec::new(), bang_span.end, None)
-        };
-        if let Some(flavor) = self.peek_left_call_splice_flavor() {
-            if explicit_list && args.is_empty() {
-                return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
-            }
-            let leading = self.peek_leading_trivia();
-            self.advance(); // consume `.<` / `.<<`
-            let mut inserted = self.expr_tight_call_arg()?;
-            inject_leading_trivia(&mut inserted, leading);
-            end = inserted.span().end;
-            let id = self.fresh_node_id();
-            return Ok(Expr::Ufcs {
-                source_trivia,
-                occurrence: Default::default(),
-                receiver: Box::new(inserted),
-                callee_segments: vec![PathSegment::new(name, kind_tok.span)],
-                callee_span: kind_tok.span,
-                args,
-                flavor,
-                bang: Some(bang_span),
-                meta: Meta::new(Span::new(start, end)),
-                ext: id,
-            });
-        }
-        self.user_elaborator_expr_from_args(name, args, source_trivia, start, end)
-    }
-
-    fn user_elaborator_expr_from_args(
-        &mut self,
-        name: String,
-        args: Vec<CallArg>,
-        source_trivia: Option<Box<DelimitedTrivia>>,
-        start: u32,
-        end: u32,
-    ) -> Result<Expr, Error> {
-        let id = self.fresh_node_id();
-        Ok(Expr::UserElaborator {
-            source_trivia,
-            occurrence: Default::default(),
-            name,
-            args,
-            form: crate::ast::UserElaboratorCallForm::Ordinary,
-            meta: Meta::new(Span::new(start, end)),
-            ext: id,
-        })
-    }
-
     fn let_value_binder(
         &mut self,
         leading: &mut Vec<Trivia>,
@@ -11835,20 +11706,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn with_block_slot_boundary<T>(
-        &mut self,
-        explicit: bool,
-        parse: impl FnOnce(&mut Self) -> Result<T, Error>,
-    ) -> Result<T, Error> {
-        let saved = self.block_stop_depth;
-        if explicit {
-            self.block_stop_depth = None;
-        }
-        let result = parse(self);
-        self.block_stop_depth = saved;
-        result
-    }
-
     fn block_prefix_value(&self, value: Expr) -> Result<Expr, Error> {
         let mut head = &value;
         while let Expr::Call { callee, .. } = head {
@@ -11871,31 +11728,38 @@ impl<'a> Parser<'a> {
     }
 
     fn block_call_starts_here(&self) -> bool {
-        if self.block_stop_depth == Some(self.cursor.depth()) {
-            return false;
-        }
-        let Some(TokenKind::Ident(name)) = self.peek() else {
-            return false;
-        };
-        if Self::validate_value_name(name, self.peek_span()).is_err() {
-            return false;
-        }
         use crate::pass::tree_skeleton::{GroupKind, SkeletonNode};
-        let [
-            SkeletonNode::Leaf(head),
-            SkeletonNode::Leaf(bang),
-            next,
-            rest @ ..,
-        ] = self.cursor.remaining_current_frame()
-        else {
+        fn direct_head(node: &SkeletonNode) -> Option<&Token> {
+            match node {
+                SkeletonNode::Leaf(token) if matches!(token.kind, TokenKind::Ident(_)) => {
+                    Some(token)
+                }
+                SkeletonNode::Group {
+                    kind: GroupKind::Paren,
+                    children,
+                    close: Some(_),
+                    recovered: false,
+                    ..
+                } => {
+                    if let [child] = children.as_slice() {
+                        direct_head(child)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }
+        let [head, next, rest @ ..] = self.cursor.remaining_current_frame() else {
             return false;
         };
-        if head.span != self.peek_span() || !Self::adjacent_bang_tokens(head, bang) {
+        let Some(head) = direct_head(head) else {
             return false;
-        }
-        // A fused suffix is still owned by ordinary bang/operator parsing;
-        // an operator-leading block prefix requires explicit parentheses.
-        if !matches!(&bang.kind, TokenKind::SymbolRun(run) if run == "!") {
+        };
+        let TokenKind::Ident(name) = &head.kind else {
+            unreachable!()
+        };
+        if Self::validate_value_name(name, head.span).is_err() {
             return false;
         }
         match next {
@@ -11915,26 +11779,6 @@ impl<'a> Parser<'a> {
                     ..
                 })
             ),
-            SkeletonNode::Leaf(Token {
-                kind:
-                    TokenKind::Ident(_)
-                    | TokenKind::IntLit { .. }
-                    | TokenKind::FloatLit { .. }
-                    | TokenKind::StrLit(_)
-                    | TokenKind::BoolLit(_),
-                ..
-            }) => true,
-            SkeletonNode::Leaf(Token {
-                kind: TokenKind::SymbolRun(run),
-                ..
-            }) if run == "." => {
-                matches!(rest.first(), Some(SkeletonNode::Leaf(Token {
-                    kind: TokenKind::Ident(name), ..
-                })) if name == "t" || name == "f")
-                    && !matches!(rest.get(1), Some(SkeletonNode::Leaf(Token {
-                        kind: TokenKind::SymbolRun(run), ..
-                    })) if run == ".")
-            }
             _ => false,
         }
     }
@@ -12028,10 +11872,16 @@ impl<'a> Parser<'a> {
     }
 
     fn block_call(&mut self) -> Result<Expr, Error> {
-        let (name, head_span) = self.expect_ident()?;
-        self.expect_bang()?;
-        self.record_source_name(head_span, SourceNameRole::FunctionReference);
-        self.block_call_tail(name, head_span)
+        let start = self.peek_span().start;
+        let mut comments = self.cursor.clone();
+        comments.advance();
+        let (name, head_span) = self.grouped_reference(|parser| parser.expect_ident())?;
+        let mut leading = Vec::new();
+        Self::collect_line_comments(&mut comments, self.syntax_end, &mut leading);
+        let mut call = self.block_call_tail(name, head_span)?;
+        call.meta_mut().span.start = start;
+        inject_leading_trivia(&mut call, leading);
+        Ok(call)
     }
 
     fn splice_block_call(
@@ -12074,8 +11924,7 @@ impl<'a> Parser<'a> {
         let start = head_span.start;
         let mut prefix = Vec::new();
         let mut empty_prefix_list = None;
-        let prefix_explicit = matches!(self.peek(), Some(TokenKind::LParen));
-        if prefix_explicit {
+        if matches!(self.peek(), Some(TokenKind::LParen)) {
             let list_start = self.peek_span().start;
             let list_leading = self.peek_leading_trivia();
             let result = self.call_arg_list(None, Vec::new());
@@ -12084,7 +11933,7 @@ impl<'a> Parser<'a> {
                 head_span,
                 BlockCursorRegion::Prefix,
                 &[],
-                Span::new(head_span.end + 1, self.peek_span().start),
+                Span::new(list_start + 1, self.peek_span().start),
             );
             let (args, end, mut source_trivia) = result?;
             if args.is_empty() {
@@ -12114,22 +11963,9 @@ impl<'a> Parser<'a> {
             if let Some(first) = prefix.first_mut() {
                 inject_leading_trivia(first, list_leading);
             }
-        } else if !matches!(self.peek(), Some(TokenKind::LBrace)) {
-            let leading = self.peek_leading_trivia();
-            let saved = self.block_stop_depth;
-            self.block_stop_depth = Some(self.cursor.depth());
-            let result = self.expr();
-            self.block_stop_depth = saved;
-            self.record_block_cursor(
-                &name,
-                head_span,
-                BlockCursorRegion::Prefix,
-                &[],
-                Span::new(head_span.end + 1, self.peek_span().start),
-            );
-            let mut value = self.block_prefix_value(result?)?;
-            inject_leading_trivia(&mut value, leading);
-            prefix.push(value);
+        }
+        if matches!(self.peek(), Some(TokenKind::LBrace)) {
+            self.record_source_name(head_span, SourceNameRole::FunctionReference);
         }
         self.block_body_cursor(&name, head_span, &[]);
         let mut blocks = vec![self.neutral_block(None)?];
@@ -12179,7 +12015,6 @@ impl<'a> Parser<'a> {
             id,
             head: PathSegment::new(name, head_span),
             prefix,
-            prefix_explicit,
             splice: None,
             blocks,
             meta: Meta::new(Span::new(start, end)),
@@ -12422,7 +12257,8 @@ impl<'a> Parser<'a> {
     }
 
     fn expr_primary(&mut self) -> Result<Expr, Error> {
-        if self.block_call_starts_here() {
+        let rec_call = self.peek_ident_named("recur") && self.rec_call_starts_here();
+        if !rec_call && self.block_call_starts_here() {
             return self.block_call();
         }
         self.cursor_choices(CursorSlot::Value, &["recur"]);
@@ -12457,7 +12293,6 @@ impl<'a> Parser<'a> {
                     vec![FixEdit::new(span, "recur")],
                 )));
         }
-        let rec_call = self.peek_ident_named("recur") && self.rec_call_starts_here();
         match self.peek() {
             Some(TokenKind::StrLit(_)) => {
                 let (value, span) = self.read_str_literal();
@@ -12523,15 +12358,6 @@ impl<'a> Parser<'a> {
             // shape. In expression position it is an ordinary value
             // identifier, so calls like `let()` remain admissible.
             Some(TokenKind::Ident(s)) if s == "recur" && rec_call => self.rec_call_expr(),
-            // Bang-call form: a `name!(args...)` user-elaborator call
-            // (`iso!(e)`, `fit!(e, T)`, `match!(...)`, `my_elaborator!(e, T)`
-            // — all imported elaborators). The
-            // identifier and `!` must be adjacent; `name !` remains an
-            // ordinary path followed by a separate token and reports at
-            // the stray `!` site.
-            Some(TokenKind::Ident(_)) if self.peek_adjacent_bang_after_ident() => {
-                self.bang_call_expr()
-            }
             Some(TokenKind::Ident(_)) => self.expr_path(),
             Some(TokenKind::LParen) => self.expr_paren(),
             Some(TokenKind::LBrace) => self.label_value_expr(),
@@ -12857,7 +12683,7 @@ impl<'a> Parser<'a> {
         Ok(reference)
     }
 
-    /// Parse the callable-target syntax shared by `op`, `varop`, and `elab`.
+    /// Parse the callable-target syntax shared by `op`, `varop`, and `macro`.
     /// A target is an ordinary lexical value path: a local or selectively
     /// imported name, or a dotted path through a qualified import/newtype.
     fn parse_lexical_callable_path(
@@ -12995,6 +12821,9 @@ impl<'a> Parser<'a> {
             first.meta_mut().leading_trivia = leading;
             let closing_trivia = std::mem::take(&mut pending_trivia);
             append_relocated_trivia(&mut first.meta_mut().trailing_trivia, closing_trivia);
+            if matches!(first, Expr::BlockCall { .. }) {
+                first.meta_mut().span = Span::new(start, self.peek_span().end);
+            }
             self.advance();
             return Ok(first);
         }
@@ -13031,7 +12860,11 @@ impl<'a> Parser<'a> {
         }
         let end = self.expect_kind(TokenKind::RParen, "`)`")?.end;
         if items.len() < 2 {
-            return Ok(items.pop().expect("single item exists"));
+            let mut single = items.pop().expect("single item exists");
+            if matches!(single, Expr::BlockCall { .. }) {
+                single.meta_mut().span = Span::new(start, end);
+            }
+            return Ok(single);
         }
         Ok(Expr::Tuple {
             occurrence: Default::default(),
@@ -14192,7 +14025,7 @@ fn parse_item_from_children(
             Item::FnDef(_)
                 | Item::RecGroup(_, _)
                 | Item::Equiv(_, _)
-                | Item::Elaborator(_, _)
+                | Item::Macro(_, _)
                 | Item::VariadicOperator(_, _)
         )
     {
@@ -14426,7 +14259,7 @@ fn item_keyword_starts_here(
         "fn" if paren_group(1) || next_is(1, "=") || next_is_semicolon(1) => false,
         "fn" => leaf_value_name(1),
         "type" => leaf_ident(1) || brace_group(1),
-        "literal" | "newtype" | "equiv" | "elab" => leaf_ident(1),
+        "literal" | "newtype" | "equiv" | "macro" => leaf_ident(1),
         "labels" => leaf_ident(1) || brace_group(1),
         "op" => op_pattern_lead(1),
         "varop" => matches!(

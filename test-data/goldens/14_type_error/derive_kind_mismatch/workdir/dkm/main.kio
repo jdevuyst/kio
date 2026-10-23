@@ -1,6 +1,6 @@
 module dkm/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
@@ -25,6 +25,6 @@ fn flat_monad() -> Monad(Flat) {
   Monad.mk_monad(.[A][B](m, k) { k(m) })
 }
 
-fn bad() -> Monad(Box) { derive!((box_monad, flat_monad), Monad(Box)) }
+fn bad() -> Monad(Box) { derive((box_monad, flat_monad), Monad(Box)) }
 
 pub fn main() { () }

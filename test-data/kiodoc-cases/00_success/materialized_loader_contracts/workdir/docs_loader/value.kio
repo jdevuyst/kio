@@ -1,9 +1,9 @@
 /// The universal runtime value model `prime_eval` produces: ordinary Kio types are erased, while staged host functions retain exact declaration descriptors.
 module docs_loader/value;
 
-import docs_loader/elab/match(match);
-import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/host_descriptor(Host_fn);
+import docs_loader/macros/match(macro match);
+import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/prime(Group_slots, Term);
 import docs_loader/testapi(Scalar);
 
@@ -68,7 +68,7 @@ import docs_loader/testapi(Scalar);
 // A sum value records which arm it injects. Tagging it with a host
 // `Bool` would drag a host type into the structural core; instead the
 // tag is the pure two-state shape `. | .` (left vs. right), labeled so
-// `match!` can tell the arms apart.
+// `match` can tell the arms apart.
 /// Defines the left-injection sum tag.
 pub labels { side_l: . };
 
@@ -79,14 +79,14 @@ pub labels { side_r: . };
 pub type Side = Side_l | Side_r;
 
 /// The left-injection tag.
-pub fn s_left() -> Side { widen_sum!({side_l=}, Side_l | Side_r) }
+pub fn s_left() -> Side { widen_sum({side_l=}, Side_l | Side_r) }
 
 /// The right-injection tag.
-pub fn s_right() -> Side { widen_sum!({side_r=}, Side_l | Side_r) }
+pub fn s_right() -> Side { widen_sum({side_r=}, Side_l | Side_r) }
 
 /// Eliminates a `Side` tag, choosing the left or right result.
 pub fn side_select[A](on_left: A, on_right: A, sd: Side) -> A {
-  match! sd {
+  match(sd) {
     (.(_l: Side_l) { on_left }, .(_r: Side_r) { on_right })
   }
 }
@@ -145,14 +145,14 @@ pub fn un_value(v: Value) -> Value_shape { Value.get(v) }
 // `testapi/scalar.kio`'s `scalar_of_*` lifts.
 /// Recovers the opaque host `Scalar` a `V_host` value carries, or `()` otherwise.
 pub fn value_to_scalar(v: Value) -> . | Scalar {
-  match! un_value(v) {
+  match(un_value(v)) {
     (
-    , .(hv: V_host) { widen_sum!(V_host.get(hv), . | Scalar) }
-    , .(_c: V_closure) { widen_sum!((), . | Scalar) }
-    , .(_p: V_product) { widen_sum!((), . | Scalar) }
-    , .(_s: V_sum) { widen_sum!((), . | Scalar) }
-    , .(_u: V_unit) { widen_sum!((), . | Scalar) }
-    , .(_f: V_hostfn) { widen_sum!((), . | Scalar) }
+    , .(hv: V_host) { widen_sum(V_host.get(hv), . | Scalar) }
+    , .(_c: V_closure) { widen_sum((), . | Scalar) }
+    , .(_p: V_product) { widen_sum((), . | Scalar) }
+    , .(_s: V_sum) { widen_sum((), . | Scalar) }
+    , .(_u: V_unit) { widen_sum((), . | Scalar) }
+    , .(_f: V_hostfn) { widen_sum((), . | Scalar) }
     )
   }
 }
@@ -161,10 +161,10 @@ pub fn value_to_scalar(v: Value) -> . | Scalar {
 // Vals — flattened host-boundary slots accumulated across value groups
 // =====================================================================
 /// The empty slot accumulator.
-pub fn vals_nil() -> Vals { {vals = widen_sum!((), . | (Value & Vals))} }
+pub fn vals_nil() -> Vals { {vals = widen_sum((), . | (Value & Vals))} }
 
 /// Prepends one flattened slot.
-pub fn vals_push(v: Value, vs: Vals) -> Vals { {vals = widen_sum!((v, vs), . | (Value & Vals))} }
+pub fn vals_push(v: Value, vs: Vals) -> Vals { {vals = widen_sum((v, vs), . | (Value & Vals))} }
 
 /// Splits the next accumulated slot from the remainder.
 pub fn un_vals(vs: Vals) -> . | (Value & Vals) { Vals.get(vs) }
@@ -174,17 +174,17 @@ pub fn un_vals(vs: Vals) -> . | (Value & Vals) { Vals.get(vs) }
 // =====================================================================
 /// Builds a closure value from a captured environment and a body term.
 pub fn vclosure(e: Env, body: Term) -> Value {
-  {value = widen_sum!({v_closure = (e, body)}, Value_shape)}
+  {value = widen_sum({v_closure = (e, body)}, Value_shape)}
 }
 
 /// Builds a product value from its two components.
 pub fn vproduct(a: Value, b: Value) -> Value {
-  {value = widen_sum!({v_product = (a, b)}, Value_shape)}
+  {value = widen_sum({v_product = (a, b)}, Value_shape)}
 }
 
 /// Builds a tagged-sum value from an arm tag and a payload.
 pub fn vsum(sd: Side, payload: Value) -> Value {
-  {value = widen_sum!({v_sum = (sd, payload)}, Value_shape)}
+  {value = widen_sum({v_sum = (sd, payload)}, Value_shape)}
 }
 
 /// Builds a left-injected sum value.
@@ -194,15 +194,15 @@ pub fn vleft(payload: Value) -> Value { vsum(s_left(), payload) }
 pub fn vright(payload: Value) -> Value { vsum(s_right(), payload) }
 
 /// The unit value.
-pub fn vunit() -> Value { {value = widen_sum!({v_unit=}, Value_shape)} }
+pub fn vunit() -> Value { {value = widen_sum({v_unit=}, Value_shape)} }
 
 /// Builds a host value from an opaque host `Scalar`.
-pub fn vhost(s: Scalar) -> Value { {value = widen_sum!({v_host = s}, Value_shape)} }
+pub fn vhost(s: Scalar) -> Value { {value = widen_sum({v_host = s}, Value_shape)} }
 
 /// Builds a host-function value from its exact declaration descriptor,
 /// remaining `Group_slots`, and accumulated argument `Vals`.
 pub fn vhostfn(descriptor: Host_fn, groups: Group_slots, args: Vals) -> Value {
-  {value = widen_sum!({v_hostfn = (descriptor, (groups, args))}, Value_shape)}
+  {value = widen_sum({v_hostfn = (descriptor, (groups, args))}, Value_shape)}
 }
 
 /// Builds an unapplied host-function value.
@@ -214,10 +214,10 @@ pub fn vhostfn_fresh(descriptor: Host_fn, groups: Group_slots) -> Value {
 // Environment constructors and lookup
 // =====================================================================
 /// The empty environment.
-pub fn env_nil() -> Env { {env = widen_sum!((), . | (Value & Env))} }
+pub fn env_nil() -> Env { {env = widen_sum((), . | (Value & Env))} }
 
 /// Extends the environment with one binding at index 0.
-pub fn env_push(v: Value, e: Env) -> Env { {env = widen_sum!((v, e), . | (Value & Env))} }
+pub fn env_push(v: Value, e: Env) -> Env { {env = widen_sum((v, e), . | (Value & Env))} }
 
 /// One-step destructor on an environment.
 pub fn un_env(e: Env) -> . | (Value & Env) { Env.get(e) }
@@ -255,59 +255,59 @@ equiv side_right[A](l: A, r: A) {
 // `un_value(vclosure(e, t))` recovers the closure arm.
 equiv un_closure(e: Env, t: Term) {
   un_value(vclosure(e, t));
-  widen_sum!({v_closure = (e, t)}, Value_shape)
+  widen_sum({v_closure = (e, t)}, Value_shape)
 }
 
 // `un_value(vproduct(a, b))` recovers the product arm.
 equiv un_product(a: Value, b: Value) {
   un_value(vproduct(a, b));
-  widen_sum!({v_product = (a, b)}, Value_shape)
+  widen_sum({v_product = (a, b)}, Value_shape)
 }
 
 // `un_value(vsum(sd, p))` recovers the sum arm.
 equiv un_sum(sd: Side, p: Value) {
   un_value(vsum(sd, p));
-  widen_sum!({v_sum = (sd, p)}, Value_shape)
+  widen_sum({v_sum = (sd, p)}, Value_shape)
 }
 
 // `un_value(vleft(p))` is the left-tagged sum arm.
 equiv un_left(p: Value) {
   un_value(vleft(p));
-  widen_sum!({v_sum = (s_left(), p)}, Value_shape)
+  widen_sum({v_sum = (s_left(), p)}, Value_shape)
 }
 
 // `un_value(vright(p))` is the right-tagged sum arm.
 equiv un_right(p: Value) {
   un_value(vright(p));
-  widen_sum!({v_sum = (s_right(), p)}, Value_shape)
+  widen_sum({v_sum = (s_right(), p)}, Value_shape)
 }
 
 // `un_value(vunit())` recovers the unit arm.
 equiv un_unit() {
   un_value(vunit());
-  widen_sum!({v_unit=}, Value_shape)
+  widen_sum({v_unit=}, Value_shape)
 }
 
 // `un_value(vhost(s))` recovers the host-value arm.
 equiv un_host_val(s: Scalar) {
   un_value(vhost(s));
-  widen_sum!({v_host = s}, Value_shape)
+  widen_sum({v_host = s}, Value_shape)
 }
 
 // `un_value(vhostfn(descriptor, groups, args))` recovers the host-fn arm.
 equiv un_hostfn_val(descriptor: Host_fn, groups: Group_slots, args: Vals) {
   un_value(vhostfn(descriptor, groups, args));
-  widen_sum!({v_hostfn = (descriptor, (groups, args))}, Value_shape)
+  widen_sum({v_hostfn = (descriptor, (groups, args))}, Value_shape)
 }
 
 equiv un_vals_push(v: Value, vs: Vals) {
   un_vals(vals_push(v, vs));
-  widen_sum!((v, vs), . | (Value & Vals))
+  widen_sum((v, vs), . | (Value & Vals))
 }
 
 equiv un_vals_nil() {
   un_vals(vals_nil());
-  widen_sum!((), . | (Value & Vals))
+  widen_sum((), . | (Value & Vals))
 }
 
 // --- environment round-trips ---
@@ -315,11 +315,11 @@ equiv un_vals_nil() {
 // `un_env(env_push(v, e)) ≡ (v, e)` (the non-empty arm).
 equiv un_env_push(v: Value, e: Env) {
   un_env(env_push(v, e));
-  widen_sum!((v, e), . | (Value & Env))
+  widen_sum((v, e), . | (Value & Env))
 }
 
 // `un_env(env_nil()) ≡ ()` (the empty arm).
 equiv un_env_nil() {
   un_env(env_nil());
-  widen_sum!((), . | (Value & Env))
+  widen_sum((), . | (Value & Env))
 }

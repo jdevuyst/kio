@@ -39,10 +39,10 @@ pure fn sequence_checked(
 , body: __Checked_term__
 ) -> __Checked_term__ { __term_call__(ct, __term_type__(ct, body), body, receiver) }
 
-pub elab packet : [A] A -> A { trailing product; impl identity_checked }
+pub macro packet : [A] A -> A { trailing product; impl identity_checked }
 
-pub elab two : (. & .) -> . { trailing product; trailing product fallback; impl first_checked }
+pub macro two : (. & .) -> . { trailing product; trailing product fallback; impl first_checked }
 
-pub elab enter : [R] (. -> R) -> R { trailing thunk; impl(fills) enter_checked }
+pub macro enter : [R] (. -> R) -> R { trailing thunk; impl(fills) enter_checked }
 
-pub elab sequence : [*F][R] Bind(F) -> Sequence(F, R) -> F(R) { trailing sequence; impl sequence_checked }
+pub macro sequence : [*F][R] Bind(F) -> Sequence(F, R) -> F(R) { trailing sequence; impl sequence_checked }

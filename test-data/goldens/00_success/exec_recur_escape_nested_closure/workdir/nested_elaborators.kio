@@ -19,7 +19,7 @@ pure fn invoke_then_impl(
   (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
 }
 
-pub elab invoke_then : [Result] (. -> Result) -> I32 -> Result { impl(fills) invoke_then_impl }
+pub macro invoke_then : [Result] (. -> Result) -> I32 -> Result { impl(fills) invoke_then_impl }
 
 pure fn keep_callback_impl(
 , _ct: __Comptime__
@@ -28,7 +28,7 @@ pure fn keep_callback_impl(
 , callback: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ { (callback, fills) }
 
-pub elab keep_callback : [Callback] Callback -> Callback { impl(fills) keep_callback_impl }
+pub macro keep_callback : [Callback] Callback -> Callback { impl(fills) keep_callback_impl }
 
 pub fn observe[Result](callback: . -> Result) { io.print("opaque\n"); let _ = callback(); () }
 
@@ -47,4 +47,4 @@ pure fn mixed_use_impl(
   (__term_let__(ct, unit, opaque_use, .(_bound: __Checked_term__) { terminal }), fills)
 }
 
-pub elab mixed_use : [Result] (. -> Result) -> Result { captures observe; impl(fills) mixed_use_impl }
+pub macro mixed_use : [Result] (. -> Result) -> Result { captures observe; impl(fills) mixed_use_impl }

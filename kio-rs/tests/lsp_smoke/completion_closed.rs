@@ -356,7 +356,7 @@ fn capture_completion_offers_bare_types_and_values_but_value_only_members() {
     );
     let initial = "module app; import other as m;\n";
     let uri = path_to_file_uri(&dir.write("app.kio", initial));
-    let head = "module app; import other as m; type Foo = .; type _Foo = .; pure fn helper() { () } elab form: . -> . { ";
+    let head = "module app; import other as m; type Foo = .; type _Foo = .; pure fn helper() { () } macro form: . -> . { ";
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
     open_and_wait_for_analysis(&mut lsp, &uri, initial);
@@ -423,7 +423,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     // Grammar sections: module declarations, host declarations, and surface items.
     let declarations = [
         ("default", " host type A role(i64);"),
-        ("elab", " make: . { impl run; };"),
+        ("macro", " make: . { impl run; };"),
         ("equiv", " same() { (); () }"),
         ("fn", " run() { () }"),
         ("host", " type A;"),
@@ -615,7 +615,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; elab make: . -> . { ",
+        "module app; macro make: . -> . { ",
         &[
             ("captures", " (run); impl run; };"),
             ("impl", " run; };"),
@@ -624,29 +624,33 @@ fn closed_cases() -> Vec<ClosedCase> {
     );
     add(
         "",
-        "module app; elab make: . -> . { captures (run); ",
+        "module app; macro make: . -> . { captures (run); ",
         &[("impl", " run; };"), ("trailing", " product; impl run; };")],
     );
     add(
         "",
-        "module app; elab make: . { impl(",
+        "module app; macro make: . { impl(",
         &[("fills", ") run; };")],
     );
     add(
         "",
-        "module app; elab make: . -> . { impl run; ",
+        "module app; macro make: . -> . { impl run; ",
         &[("captures", " (run); };"), ("trailing", " product; };")],
     );
     add(
         "",
-        "module app; elab make: [A] A -> . { trailing ",
+        "module app; macro make: [A] A -> . { trailing ",
         &[
             ("product", "; impl run; };"),
             ("thunk", "; impl run; };"),
             ("sequence", "; impl run; };"),
         ],
     );
-    add("", "module app; elab make: . -> . { trailing product ", &[]);
+    add(
+        "",
+        "module app; macro make: . -> . { trailing product ",
+        &[],
+    );
     add("", "module app; op ~ _ { ", &[("impl", " run; };")]);
     add("", "module app; op ~ _ { impl run; ", &[]);
     add(
@@ -684,7 +688,7 @@ fn closed_cases() -> Vec<ClosedCase> {
     }
     add(
         "",
-        "module app; elab choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation } fn run() { choose! { () } ",
+        "module app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation } fn run() { choose { () } ",
         &[("otherwise", " { () } }")],
     );
     add(

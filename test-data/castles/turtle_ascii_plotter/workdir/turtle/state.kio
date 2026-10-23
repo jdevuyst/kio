@@ -8,9 +8,9 @@
 /// clip counter rather than a bounds check on the position.
 module turtle/state;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32);
 import turtle/canvas as canvas;
@@ -19,36 +19,36 @@ import turtle/canvas as canvas;
 /// toward smaller `y`.
 pub labels Facing = { north: . } | { east: . } | { south: . } | { west: . };
 
-fn north_facing() -> Facing { {north=}.>widen_sum!(Facing) }
+fn north_facing() -> Facing { {north=}.>widen_sum(Facing) }
 
-fn east_facing() -> Facing { {east=}.>widen_sum!(Facing) }
+fn east_facing() -> Facing { {east=}.>widen_sum(Facing) }
 
-fn south_facing() -> Facing { {south=}.>widen_sum!(Facing) }
+fn south_facing() -> Facing { {south=}.>widen_sum(Facing) }
 
-fn west_facing() -> Facing { {west=}.>widen_sum!(Facing) }
+fn west_facing() -> Facing { {west=}.>widen_sum(Facing) }
 
 pub fn facing_name(f: Facing) -> String {
-  match! f {
+  match(f) {
     (.(_n: North) { "N" }, .(_e: East) { "E" }, .(_s: South) { "S" }, .(_w: West) { "W" })
   }
 }
 
 /// The horizontal component of one step along `f`.
 pub fn facing_dx(f: Facing) -> I32 {
-  match! f {
+  match(f) {
     (.(_n: North) { 0 }, .(_e: East) { 1 }, .(_s: South) { 0 }, .(_w: West) { -1 })
   }
 }
 
 /// The vertical component of one step along `f`.
 pub fn facing_dy(f: Facing) -> I32 {
-  match! f {
+  match(f) {
     (.(_n: North) { -1 }, .(_e: East) { 0 }, .(_s: South) { 1 }, .(_w: West) { 0 })
   }
 }
 
 pub fn turn_right(f: Facing) -> Facing {
-  match! f {
+  match(f) {
     (
     , .(_n: North) { east_facing() }
     , .(_e: East) { south_facing() }
@@ -59,7 +59,7 @@ pub fn turn_right(f: Facing) -> Facing {
 }
 
 pub fn turn_left(f: Facing) -> Facing {
-  match! f {
+  match(f) {
     (
     , .(_n: North) { west_facing() }
     , .(_e: East) { north_facing() }
@@ -135,5 +135,5 @@ pub fn tick(s: State) -> State { s.!{executed = add_i32(s.?{executed}, 1)} }
 pub fn clip(s: State) -> State { s.!{clipped = add_i32(s.?{clipped}, 1)} }
 
 pub fn pen_name(d: Bool) -> String {
-  if! d { "down" } else { "up" }
+  if(d) { "down" } else { "up" }
 }

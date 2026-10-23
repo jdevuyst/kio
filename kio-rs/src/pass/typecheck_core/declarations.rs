@@ -1,4 +1,4 @@
-use crate::ast::{Equiv, ExpressionOccurrence, Never, Phase, UserElaboratorDef};
+use crate::ast::{Equiv, ExpressionOccurrence, Never, Phase, UserMacroDef};
 use crate::error::Error;
 use crate::pass::resolve::ResolvePhase;
 use crate::span::Span;
@@ -96,9 +96,9 @@ pub trait AuxiliaryItemChecks<P: DeclarationPhase> {
     where
         P: Phase<TypeLabelSugar = Never> + Clone;
 
-    fn check_elaborator<'m>(
-        item: &'m UserElaboratorDef<P>,
-        witness: &P::ItemElaborator,
+    fn check_macro<'m>(
+        item: &'m UserMacroDef<P>,
+        witness: &P::ItemMacro,
         index: usize,
         env: &'m ModuleEnv<'m, P>,
         elaborations: &mut P::Elaborations,
@@ -123,14 +123,14 @@ impl<P: TyperPhase> AuxiliaryItemChecks<P> for BodyItemChecks {
         super::check_equiv(item, index, env, elaborations)
     }
 
-    fn check_elaborator<'m>(
-        item: &'m UserElaboratorDef<P>,
-        _: &P::ItemElaborator,
+    fn check_macro<'m>(
+        item: &'m UserMacroDef<P>,
+        _: &P::ItemMacro,
         index: usize,
         env: &'m ModuleEnv<'m, P>,
         elaborations: &mut P::Elaborations,
     ) -> Result<(), Error> {
-        P::Typer::check_user_elaborator_item(item, index, env, elaborations)
+        P::Typer::check_user_macro_item(item, index, env, elaborations)
     }
 
     const DISCHARGE: Option<ModuleDeferralCheck<P>> = Some(P::Typer::discharge_module_deferrals);

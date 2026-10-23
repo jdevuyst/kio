@@ -11,11 +11,17 @@ use crate::span::Span;
 pub(crate) fn project_module(
     module: &mut Module<Surface>,
     scope: &PackageBlockScope,
+    macros: &crate::scope_walk::MacroCalls,
 ) -> Result<(), Error> {
     let module_path = module.path.segments.join("/");
     let mut projection = Projection {
         scope,
         module: &module_path,
+        macros,
+        next_node_id: macros
+            .max_node_id
+            .checked_add(1)
+            .expect("source NodeId space exhausted"),
     };
     for item in &mut module.items {
         match item {
@@ -35,7 +41,7 @@ pub(crate) fn project_module(
             | Item::Newtype(_)
             | Item::Labels(_, _)
             | Item::LabelForward(_, _)
-            | Item::Elaborator(_, _)
+            | Item::Macro(_, _)
             | Item::TypeRecGroup(_)
             | Item::HostType(_)
             | Item::HostFn(_)
@@ -49,10 +55,51 @@ pub(crate) fn project_module(
 struct Projection<'a> {
     scope: &'a PackageBlockScope,
     module: &'a str,
+    macros: &'a crate::scope_walk::MacroCalls,
+    next_node_id: u64,
 }
 
 impl Projection<'_> {
     fn expr(&mut self, expr: &mut Expr<Surface>) -> Result<(), Error> {
+        if let Expr::Call { meta, .. } = expr
+            && let Some(name) = self.macros.direct.get(&meta.span)
+        {
+            let span = meta.span;
+            let Expr::Call {
+                args,
+                source_trivia,
+                meta,
+                ..
+            } = std::mem::replace(expr, unit(span))
+            else {
+                unreachable!()
+            };
+            assert!(
+                self.next_node_id < crate::ast::SYNTHESIZED_NODE_ID_START,
+                "source NodeId space exhausted"
+            );
+            let id = NodeId(self.next_node_id);
+            self.next_node_id += 1;
+            *expr = Expr::UserMacro {
+                source_trivia,
+                occurrence: Default::default(),
+                name: name.clone(),
+                args,
+                form: UserMacroCallForm::Ordinary,
+                meta,
+                ext: id,
+            };
+        }
+        if let Expr::Ufcs {
+            callee_segments,
+            macro_call,
+            ..
+        } = expr
+            && let [head] = callee_segments.as_slice()
+            && self.macros.contains(head.span)
+        {
+            *macro_call = Some(head.span);
+        }
         if let Expr::BlockCall { .. } = expr {
             let span = expr.span();
             let Expr::BlockCall {
@@ -66,30 +113,40 @@ impl Projection<'_> {
             else {
                 unreachable!()
             };
+            if !self.macros.contains(head.span) {
+                return Err(Error::name_res(
+                    head.span,
+                    format!("`{}` is not a macro in this lexical scope", head.as_str()),
+                )
+                .with_help(format!(
+                    "import it with `import <module>(macro {});`",
+                    head.as_str()
+                )));
+            }
             let declaration = self
                 .scope
                 .declaration(self.module, head.as_str())
                 .ok_or_else(|| {
                     Error::name_res(
                         head.span,
-                        format!("elaborator `{}` is not in scope", head.as_str()),
+                        format!("macro `{}` is not in scope", head.as_str()),
                     )
                     .with_help(format!(
-                        "import it with `import <module>({});`",
+                        "import it with `import <module>(macro {});`",
                         head.as_str()
                     ))
                 })?;
             if declaration.module == self.module && declaration.span.start > head.span.start {
                 return Err(Error::name_res(
                     head.span,
-                    format!("elaborator `{}` is not yet in scope", head.as_str()),
+                    format!("macro `{}` is not yet in scope", head.as_str()),
                 ));
             }
             if declaration.blocks.is_empty() {
                 return Err(block_error(
                     declaration,
                     head.span,
-                    "this elaborator declares no trailing blocks",
+                    "this macro declares no trailing blocks",
                 ));
             }
             if blocks.len() != declaration.blocks.len() {
@@ -165,12 +222,12 @@ impl Projection<'_> {
                     index,
                 )?));
             }
-            *expr = Expr::UserElaborator {
+            *expr = Expr::UserMacro {
                 source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name: head.name,
                 args,
-                form: UserElaboratorCallForm::TrailingBlocks,
+                form: UserMacroCallForm::TrailingBlocks,
                 meta,
                 ext: id,
             };
@@ -187,7 +244,7 @@ impl Projection<'_> {
                 self.expr(callee)?;
                 self.args(args)?;
             }
-            Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => self.args(args)?,
+            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => self.args(args)?,
             Expr::Ufcs { receiver, args, .. } => {
                 self.expr(receiver)?;
                 self.args(args)?;
@@ -259,7 +316,7 @@ fn block_error(declaration: &BlockDeclaration, span: Span, message: impl Into<St
     Error::type_(span, message).with_secondary_in_file(
         &declaration.file,
         declaration.span,
-        "trailing blocks selected from this elaborator declaration",
+        "trailing blocks selected from this macro declaration",
     )
 }
 

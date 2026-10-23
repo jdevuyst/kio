@@ -11,13 +11,13 @@
 /// width drifts, shows up as two numbers that disagree.
 module justify/layout;
 
-import elab/control(if);
-import elab/match(match);
 import justify/cost as cost;
 import justify/dp(Table, table_back);
 import justify/list as list;
 import justify/list(List);
 import justify/word(Words, span_used);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(eq_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
@@ -46,10 +46,10 @@ fn make_line(xs: Words, column: I32, from: I32, to: I32, n: I32) -> Line {
 }
 
 rec(loop) fn lines_onto(xs: Words, column: I32, n: I32, breaks: List(I32), acc: List(Line)) -> List(Line) {
-  match! breaks.>List.unpack {
+  match(breaks.>List.unpack) {
     (
     , .(from: I32, rest: List(I32)) {
-        if! list.is_empty(rest) {
+        if(list.is_empty(rest)) {
           list.reverse(acc)
         } else {
           let to = list.head_or(rest, from);
@@ -68,7 +68,7 @@ pub fn lines_of(xs: Words, column: I32, breaks: List(I32), n: I32) -> List(Line)
 }
 
 rec(loop) fn total_onto(ls: List(Line), acc: I32) -> I32 {
-  match! ls.>List.unpack {
+  match(ls.>List.unpack) {
     (
     , .(l: Line, rest: List(Line)) { recur total_onto(rest, cost.sat_add(acc, line_badness(l))) }
     , .(_empty: .) { acc }
@@ -80,7 +80,7 @@ rec(loop) fn total_onto(ls: List(Line), acc: I32) -> I32 {
 pub fn total_badness(ls: List(Line)) -> I32 { total_onto(ls, 0) }
 
 rec(loop) fn walk_back(back: List(I32), j: I32, acc: List(I32)) -> List(I32) {
-  if! leq_i32(j, 0) {
+  if(leq_i32(j, 0)) {
     list.cons(0, acc)
   } else {
     recur walk_back(back, list.at(back, j, 0), list.cons(j, acc))

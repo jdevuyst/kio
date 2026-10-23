@@ -1,0 +1,34 @@
+module calls;
+
+import library/algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);
+import library/spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);
+import library/match(macro match);
+import library/custom(macro arbitrary_source as foo);
+
+fn ignore(value: .) -> . { value }
+op _ ! { impl ignore; };
+
+fn run(value: .) {
+  iso(value);
+  into(value);
+  onto(value);
+  align(value);
+  ease(value);
+  atom(value);
+  reorder_sum(value);
+  reorder_prod(value);
+  narrow_sum(value);
+  narrow_prod(value);
+  widen_sum(value);
+  widen_prod(value);
+  flatten_sum(value);
+  flatten_prod(value);
+  one_sum(value);
+  one_prod(value);
+  fit(value);
+  match(value, .(item: .) { () });
+  foo(value)
+}
+
+fn shadow(iso: .) { iso ! }
+fn after(value: .) { foo(value) }

@@ -24,7 +24,7 @@ combinator just pulls those two functions out of the pair and applies them.
 Nothing in the library is magic — each optic is two functions in a tuple,
 plus the structural glue that builds and takes apart tuples and sums. The
 library is **host-capability-free**: it depends on nothing but the spine
-elabs and `match!`, so the whole vocabulary is one file you can copy
+macros and `match`, so the whole vocabulary is one file you can copy
 into your own package and use as-is.
 
 ## How the package is laid out
@@ -33,10 +33,10 @@ The package name is `optics`. Its `workdir/` follows the split POC layout:
 
 - [`optics.pkg.kio`](../../test-data/poc/optics/workdir/optics.pkg.kio) — the package
   file: a `build { ... }` block, and a `bridge { ... }` block exposing the
-  `optics` module and the dependency's `elab/testapi` host module.
-- [`elab.dep.kio`](../../test-data/poc/optics/workdir/elab.dep.kio) — the
-  dependency declaration that brings in the `elab` POC, whose
-  `spine_elaborators` and `match` modules the library is built on. The
+  `optics` module and the dependency's `macros/testapi` host module.
+- [`macros.dep.kio`](../../test-data/poc/optics/workdir/macros.dep.kio) — the
+  dependency declaration that brings in the `macros` POC, whose
+  `spine_macros` and `match` modules the library is built on. The
   dependency form is documented in
   [`pkg.md` § Dependency files](../guides/pkg.md#dependency-files).
 - [`optics.kio`](../../test-data/poc/optics/workdir/optics.kio) — the
@@ -54,27 +54,27 @@ The package name is `optics`. Its `workdir/` follows the split POC layout:
   host-boundary scaffolding (`host type` / `host fn` declarations) standing in
   for the capabilities a real host supplies (`I32`, `String`, `add`,
   `int_to_string`, `print`). A user replaces these with their own host.
-- `elab/spine_elaborators` and `elab/match` — the imported compile-time
-  helpers the library is built on, brought in through the `elab` dependency
-  (the modules re-root under the `elab/` local name). They are the subject of
-  the separate [`elab` POC](../guides/using-libraries.md); here they
+- `macros/spine_macros` and `macros/match` — the imported compile-time
+  helpers the library is built on, brought in through the `macros` dependency
+  (the modules re-root under the `macros/` local name). They are the subject of
+  the separate [`macros` POC](../guides/using-libraries.md); here they
   are imported and used, not explained.
 
 The split between `optics.kio` and `demo/testapi/main.kio` is deliberate: the
 optic vocabulary needs no host capability at all, so it sits alone in the
 root package; the tour needs arithmetic and printing, so those live in the
 nested demo package where the host items are declared. You can depend on the
-package or copy `optics.kio` and declare the `elab` dependency under the local
-name `elab`. If you want the worked tour too, copy `demo/testapi/main.kio` and
+package or copy `optics.kio` and declare the `macros` dependency under the local
+name `macros`. If you want the worked tour too, copy `demo/testapi/main.kio` and
 point its host imports at your own host.
 
 The library definitions and tour helpers compile together in a hidden harness.
 It supplies the same host shape the POC's `testapi` modules declare — `Bool`,
 `I32`, `Int`, `String`, and the `add` / `int_to_string` / `print` host functions
-— plus the spine elabs and `match!`. The three worked tour expressions
+— plus the spine macros and `match`. The three worked tour expressions
 below compile separately against the real `optics` library with the host types
 they use. The prism examples select `I32` as their module-local integer
-default so the literal source of `widen_sum!` has a type before injection.
+default so the literal source of `widen_sum` has a type before injection.
 
 <!--kio {harness=optics placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -83,8 +83,8 @@ bridge {
 
 module kiodoc;
 
-import match(match);
-import spine_elaborators(narrow_prod, one_prod, widen_sum);
+import match(macro match);
+import spine_macros(macro narrow_prod, macro one_prod, macro widen_sum);
 
 host type Bool role(bool);
 host type I32 role(i32);
@@ -121,7 +121,7 @@ fn check_lens() {
 module kiodoc;
 
 import optics(left_prism, review);
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 
 default host type I32 role(i32);
 host type String role(str);
@@ -136,59 +136,59 @@ fn check_prism() {
 
 Before the optics themselves, a word on the toolkit they are built from. The
 optic functions read and write `&`-products and `|`-sums, and the library
-does that entirely with **spine elabs** — checked, imported
+does that entirely with **spine macros** — checked, imported
 compile-time helpers that generate the value-level glue to build and take
 apart structural types. The library's import block is its whole dependency
 list:
 
 ```kio {ignore}
-import elab/spine_elaborators(flatten_sum, narrow_sum, one_prod, one_sum, widen_sum);
-import elab/match(match);
+import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro one_prod, macro one_sum, macro widen_sum);
+import macros/match(macro match);
 ```
 
 Two of these carry almost the entire library:
 
-- **`one_prod!(p, T)`** extracts the first component of type `T` out of a
+- **`one_prod(p, T)`** extracts the first component of type `T` out of a
   product `p`. It is how every combinator pulls a getter or setter back out
   of the pair an optic *is*. It selects the first matching spine slot of `p`.
-- **`widen_sum!(v, T)`** injects a value `v` into a wider sum type `T` — the
+- **`widen_sum(v, T)`** injects a value `v` into a wider sum type `T` — the
   injection that builds an `(A | .)` "hit", drops to the `()` "miss" arm, or
   lands a value at a chosen arm of a sum.
 
 The library's import line names five spine forms (`flatten_sum`,
-`narrow_sum`, `one_prod`, `one_sum`, `widen_sum`). Only `one_prod!` and
-`widen_sum!` are used in `optics.kio` itself; the others ride along in the
+`narrow_sum`, `one_prod`, `one_sum`, `widen_sum`). Only `one_prod` and
+`widen_sum` are used in `optics.kio` itself; the others ride along in the
 import because they are part of the spine palette an adopter typically keeps
-in scope. The row-update operator in `demo/testapi/main` adds `narrow_prod!`. No
-algebraic elab (`iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`)
+in scope. The row-update operator in `demo/testapi/main` adds `narrow_prod`. No
+algebraic macro (`iso`, `into`, `onto`, `align`, `ease`, `atom`)
 and no raw `__intrinsics__` appear anywhere in the library — a deliberate
 constraint the library header states: the optic vocabulary is built from the
 everyday structural palette an adopter already has.
 
-Both `one_prod!` and `widen_sum!` are **positional**. The spine engine walks
+Both `one_prod` and `widen_sum` are **positional**. The spine engine walks
 the right spine of the source and target types slot-by-slot, with no DNF
 normalization and no distributivity rewrite — a slot matches a slot by type
 and position only. That positional discipline is exactly why the optic
 functions stay correct even when their type parameters coincide: a getter and
-setter of *distinct* types are still distinguishable by `one_prod!`, and a
+setter of *distinct* types are still distinguishable by `one_prod`, and a
 left-vs-right arm of a sum is still distinguishable by position even when both
 arms have the same type. The full per-form contract for the spine palette —
 the right-spine slot multiset each form matches, why each form is sound and
-total, and what information it preserves or discards — is documented in the elab-POC case
-study [`docs/poc/elab.md`](elab.md), which exercises every spine form against
+total, and what information it preserves or discards — is documented in the macro-POC case
+study [`docs/poc/macros.md`](macros.md), which exercises every spine form against
 `equiv` laws; this case study uses the forms in the optics setting rather
 than re-deriving their per-form semantics.
 
-`match!` is the dispatch elab. Its product block supplies clause lambdas,
+`match` is the dispatch macro. Its product block supplies clause lambdas,
 which it turns into structural dispatch over a product or sum: a product
 scrutinee is destructured positionally by a single clause, and a sum
 scrutinee is dispatched arm-by-arm by clauses whose parameter types name the
 arms. The library uses it for both: to eliminate the `(A | .)` a prism
-preview returns, and to destructure an iso's pair when `one_prod!` cannot
-(see § Iso). The `match!` clause-dispatch mechanism is specified in
+preview returns, and to destructure an iso's pair when `one_prod` cannot
+(see § Iso). The `match` clause-dispatch mechanism is specified in
 [`specs/language.md` § Pattern matching](../../specs/language.md#pattern-matching);
 the per-branch dispatch and per-leaf reconstruction algorithm is exercised
-end to end in the elab-POC case study [`docs/poc/elab.md`](elab.md).
+end to end in the macro-POC case study [`docs/poc/macros.md`](macros.md).
 
 ## Lens — a getter paired with a setter
 
@@ -203,23 +203,23 @@ pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
 A `Lens(S, A)` is the product of a getter `S -> A` and a setter
 `(A & S) -> S`. Nothing more. The getter is unary and the setter binary, so
 the two components have distinct types — and that distinction is exactly what
-lets `one_prod!` pick each one out of the pair unambiguously.
+lets `one_prod` pick each one out of the pair unambiguously.
 
 ### view, set, over
 
 The three core lens combinators pull the two functions out and apply them:
 
 ```kio {@optics}
-pub fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod!(l, S -> A)(x) }
+pub fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod(l, S -> A)(x) }
 
-pub fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod!(l, (A & S) -> S)(new_a, x) }
+pub fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod(l, (A & S) -> S)(new_a, x) }
 
 pub fn over[S][A](l: Lens(S, A), f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
 ```
 
-`one_prod!(l, S -> A)` picks the getter and applies it to `x`;
-`one_prod!(l, (A & S) -> S)` picks the setter and applies it to the new value
-and the container. `one_prod!` can disambiguate because the getter type
+`one_prod(l, S -> A)` picks the getter and applies it to `x`;
+`one_prod(l, (A & S) -> S)` picks the setter and applies it to the new value
+and the container. `one_prod` can disambiguate because the getter type
 `S -> A` and the setter type `(A & S) -> S` are different — there is
 exactly one product slot of each. `over` is *defined* in terms of the other
 two — view, apply `f`, set — so its meaning is the equation
@@ -303,22 +303,22 @@ pub type Prism[S][A] = (S -> (A | .)) & (A -> S);
 ### preview, review, over_prism
 
 `preview` runs the partial getter; `review` runs the constructor. Both are
-the same `one_prod!` projection the lens combinators use, picking the right
+the same `one_prod` projection the lens combinators use, picking the right
 half of the pair by type:
 
 ```kio {@optics}
-pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod!(p, S -> (A | .))(x) }
+pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod(p, S -> (A | .))(x) }
 
-pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod!(p, A -> S)(v) }
+pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod(p, A -> S)(v) }
 ```
 
 `over_prism` applies a function through the prism when the source is in the
-matching arm, and leaves it unchanged otherwise. This is where `match!`
+matching arm, and leaves it unchanged otherwise. This is where `match`
 eliminates the `(A | .)` that `preview` produces:
 
 ```kio {@optics}
 pub fn over_prism[S][A](p: Prism(S, A), f: A -> A, x: S) -> S {
-  match! preview(p, x) {
+  match(preview(p, x)) {
     (.(av: A) { review(p, f(av)) }, .(_u: .) { x })
   }
 }
@@ -332,51 +332,51 @@ through `review(p, f(av))`; the clause typed `()` is the miss path and returns
 
 `left_prism` focuses the left arm of a sum `(A | B)`. Its preview maps the
 source's left arm to the target's `A` arm and the right arm to `()`; each
-`match!` clause explicitly constructs the common `A | .` result with
-`widen_sum!`. Its review is a single left-injection:
+`match` clause explicitly constructs the common `A | .` result with
+`widen_sum`. Its review is a single left-injection:
 
 ```kio {@optics}
 pub fn left_prism[A][B] -> Prism(A | B, A) {
   let pre =
     .(x: A | B) -> A | . {
-      match! x {
-        (.(av: A) { widen_sum!(av, A | .) }, .(_bv: B) { widen_sum!((), A | .) })
+      match(x) {
+        (.(av: A) { widen_sum(av, A | .) }, .(_bv: B) { widen_sum((), A | .) })
       }
     };
-  let rev = .(av: A) -> A | B { widen_sum!(av, A | B) };
+  let rev = .(av: A) -> A | B { widen_sum(av, A | B) };
   (pre, rev)
 }
 
 pub fn right_prism[A][B] -> Prism(A | B, B) {
   let pre =
     .(x: A | B) -> B | . {
-      match! x {
-        (.(_av: A) { widen_sum!((), B | .) }, .(bv: B) { widen_sum!(bv, B | .) })
+      match(x) {
+        (.(_av: A) { widen_sum((), B | .) }, .(bv: B) { widen_sum(bv, B | .) })
       }
     };
-  let rev = .(bv: B) -> A | B { widen_sum!(bv, A | B) };
+  let rev = .(bv: B) -> A | B { widen_sum(bv, A | B) };
   (pre, rev)
 }
 ```
 
 `right_prism` is the mirror of `left_prism`: its preview keeps the right arm
 and drops the left, and its review injects into the right arm of `(A | B)`.
-In each preview, the two `match!` clauses are dispatched by their parameter
+In each preview, the two `match` clauses are dispatched by their parameter
 type — `.(av: A)` takes the left arm, `.(_bv: B)` takes the right — and each
-body writes `widen_sum!` against that preview's common result — `A | .` for
+body writes `widen_sum` against that preview's common result — `A | .` for
 `left_prism`, `B | .` for `right_prism`. This explicit result construction is
 separate from dispatch: the clause parameter selects the source arm, while the
-common result makes the clause bodies agree. The positional `match!` keeps
+common result makes the clause bodies agree. The positional `match` keeps
 `left_prism` meaning "left" and `right_prism` meaning "right" even when `A`
 and `B` coincide.
 
-There is a subtle and important point about `rev`. `widen_sum!(av, A | B)` is
+There is a subtle and important point about `rev`. `widen_sum(av, A | B)` is
 a single left-injection, and the spine engine generates that glue *once*
 against the abstract type `A` — treating `A` as one opaque spine slot.
 Because the slot is opaque, the generated injection stays a valid
 *left*-injection even when `A` is later instantiated to a *sum* type. That is
 the adopter-natural way to build an outer-left injection that a monomorphic
-spine `widen_sum!` could not reach directly — you route the whole value
+spine `widen_sum` could not reach directly — you route the whole value
 through a polymorphic prism's own `review`. The demonstrative tour exercises
 exactly this when it composes prisms (see § The deep-prism tour).
 
@@ -388,8 +388,8 @@ Two prisms compose into a prism for a nested focus:
 pub fn compose_prism[S][A][B](psa: Prism(S, A), pab: Prism(A, B)) -> Prism(S, B) {
   let pre =
     .(x: S) -> B | . {
-      match! preview(psa, x) {
-        (.(av: A) { preview(pab, av) }, .(_u: .) { widen_sum!((), B | .) })
+      match(preview(psa, x)) {
+        (.(av: A) { preview(pab, av) }, .(_u: .) { widen_sum((), B | .) })
       }
     };
   let rev = .(bv: B) -> S { review(psa, review(pab, bv)) };
@@ -421,14 +421,14 @@ the library honor it, and the `equiv` laws check it.
 The elimination strategy here differs from the lens and prism combinators,
 and the reason is worth dwelling on. An iso's two components can have the
 *same* type: when `S` and `A` coincide, both the forward `S -> A` and the
-backward `A -> S` are `S -> S`. So `one_prod!` selects the first matching
+backward `A -> S` are `S -> S`. So `one_prod` selects the first matching
 slot and cannot select the second by type alone. The iso combinators
-therefore use `match!` *positional* destructuring instead:
+therefore use `match` *positional* destructuring instead:
 
 ```kio {@optics}
 pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
   let fwd =
-    match! i {
+    match(i) {
       .(f: S -> A, _b: A -> S) { f }
     };
   fwd(x)
@@ -436,7 +436,7 @@ pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
 
 pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
   let bwd =
-    match! i {
+    match(i) {
       .(_f: S -> A, b: A -> S) { b }
     };
   bwd(v)
@@ -445,7 +445,7 @@ pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
 pub fn over_iso[S][A](i: Iso(S, A), f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
 ```
 
-`match! i { .(f: S -> A, _b: A -> S) { f } }` binds the pair positionally — `f` is the first
+`match(i) { .(f: S -> A, _b: A -> S) { f } }` binds the pair positionally — `f` is the first
 component, `_b` the second — and returns the first; `review_iso` returns the
 second. `over_iso` converts forward, applies `f` to the converted value, and
 converts back — its meaning is `over_iso(i, f, x) ≡ review_iso(i, f(view_iso(i, x)))`,
@@ -453,8 +453,8 @@ again pinned by a law.
 
 > This is the cleanest illustration of the positional-vs-typed split in the
 > spine palette: when the two slots have distinct types, pick by type with
-> `one_prod!` (lens, prism); when they may coincide, destructure by position
-> with `match!` (iso).
+> `one_prod` (lens, prism); when they may coincide, destructure by position
+> with `match` (iso).
 
 ### Concrete isos
 
@@ -479,7 +479,7 @@ pub fn assoc_iso[A][B][C] -> Iso((A & B) & C, A & B & C) {
 binder destructures `(A & B)` and rebuilds it swapped. `assoc_iso` moves the
 nesting parenthesis: `to` takes `((A & B) & C)` and produces the
 right-nested `A & B & C` (which parses as `A & (B & C)`), and `from` is the
-inverse. Both rely on `match!`-style positional binding in the lambda
+inverse. Both rely on `match`-style positional binding in the lambda
 parameter patterns to take pairs apart.
 
 ### Composing isos
@@ -508,7 +508,7 @@ pub fn iso_to_lens[S][A](i: Iso(S, A)) -> Lens(S, A) {
 }
 
 pub fn iso_to_prism[S][A](i: Iso(S, A)) -> Prism(S, A) {
-  let pre = .(x: S) -> A | . { widen_sum!(view_iso(i, x), A | .) };
+  let pre = .(x: S) -> A | . { widen_sum(view_iso(i, x), A | .) };
   let rev = .(v: A) -> S { review_iso(i, v) };
   (pre, rev)
 }
@@ -572,12 +572,12 @@ tour's `((I32 & String) & I32)` sample value.
 The tour also binds a per-label row-update setter to a `%%` operator. This is
 the concrete bridge between optics and **row types**: a row-typed field setter
 is exactly the "set" half of a lens, specialized to a named field. It builds
-on an anonymous `labels` block and the `narrow_prod!` spine form:
+on an anonymous `labels` block and the `narrow_prod` spine form:
 
 ```kio {@optics}
 labels { hed: I32, mid: String, tal: I32 };
 
-fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod!(x, R)) }
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x, R)) }
 
 op __ %% _ { impl set_hed }
 ```
@@ -590,14 +590,14 @@ crosses *into* the type with the brace constructor `{hed = n}` and crosses
 
 `set_hed` takes a row whose head is a `Hed` and whose tail is anything (`R`),
 and rebuilds it with a fresh `Hed`: it constructs `{hed = n}` for the new
-head and uses `narrow_prod!(x, R)` to drop the old `Hed` head off `x`,
+head and uses `narrow_prod(x, R)` to drop the old `Hed` head off `x`,
 keeping the rest of the row. `r %% n` replaces the `hed` field; the `[R]`
 binder is inferred from the receiver's value type, so the call site writes no
 type argument. The `__` left slot makes `%%` left-associative, so
 `r %% a %% b` chains as `set_hed(set_hed(r, a), b)` — last write wins.
 
 > The `labels` machinery, brace construction, `.get` projection, and the
-> `narrow_prod!` row-tail drop are covered in
+> `narrow_prod` row-tail drop are covered in
 > [Structural products and row types](../guides/products.md).
 
 ## The demonstrative tour
@@ -622,7 +622,7 @@ fn say_i32(n: I32) { print(int_to_string(n)); print("\n") }
 fn say_str(s: String) { print(s); print("\n") }
 
 fn say_opt_i32(x: I32 | .) {
-  match! x {
+  match(x) {
     (.(n: I32) { print("Some("); print(int_to_string(n)); print(")") }, .(_u: .) { print("None") })
   };
   print("\n")
@@ -638,13 +638,13 @@ local adapter; this tour does not need that extra boundary.
 ### Reading a row back out
 
 The `%%` operator writes the `hed` field; `show_hmt` reads all three fields
-back to render the row. It `match!`-destructures the three-label product and
+back to render the row. It `match`-destructures the three-label product and
 projects each field with the generated `.get` (written UFCS-style as
 `h.>Hed.get`, i.e. `Hed.get(h)`):
 
 ```kio {@optics}
 fn show_hmt(x: Hed & Mid & Tal) {
-  match! x {
+  match(x) {
     .(h: Hed, m: Mid, t: Tal) {
       print(int_to_string(h.>Hed.get));
       print(", ");
@@ -657,7 +657,7 @@ fn show_hmt(x: Hed & Mid & Tal) {
 }
 ```
 
-The single `match!` clause binds the three labels positionally; each `.get`
+The single `match` clause binds the three labels positionally; each `.get`
 crosses the label boundary to recover the `I32` or `String` payload. This is
 the read half of the optics-and-row-types bridge: `set_hed` is the lens "set"
 specialized to `hed`, and `Hed.get` is the lens "view" for the same field.
@@ -670,7 +670,7 @@ through `compose_prism(left_prism((I32 | String), I32), left_prism(_, _))`.
 
 The interesting case is building a value that lands in the *outer-left* arm —
 a whole `(I32 | String)` injected into the left of `(I32 | String) | I32`. A
-monomorphic spine `widen_sum!` cannot do this directly: it walks the source's
+monomorphic spine `widen_sum` cannot do this directly: it walks the source's
 right spine arm-by-arm against the target's right-spine slots
 `[(I32 | String), I32]`, and the source's `String` arm has no like-typed
 target slot to land in. The adopter-natural construction is the *outer
@@ -678,19 +678,19 @@ prism's own* `review`:
 
 ```kio {@prism_use}
 let p_outer = left_prism(I32 | String, I32);
-let deep_hit = review(p_outer, widen_sum!(5, I32 | String));
+let deep_hit = review(p_outer, widen_sum(5, I32 | String));
 ```
 
-`left_prism(I32 | String, I32)`'s `rev` is `widen_sum!(av, A | B)` generated
+`left_prism(I32 | String, I32)`'s `rev` is `widen_sum(av, A | B)` generated
 against the abstract `A` (a single opaque spine slot), so its left-injection
 glue stays valid when `A` is instantiated to the sum `I32 | String`. No
-intrinsic, no algebraic elab — the polymorphic prism *is* the tool that
+intrinsic, no algebraic macro — the polymorphic prism *is* the tool that
 reaches the nested arm. The outer-*right* arm, by contrast, is reachable with
-`widen_sum!` directly, because `100 : I32` finds a like-typed target arm at
+`widen_sum` directly, because `100 : I32` finds a like-typed target arm at
 the outer-right slot:
 
 ```kio {@prism_use}
-let deep_outer_miss = widen_sum!(100, (I32 | String) | I32);
+let deep_outer_miss = widen_sum(100, (I32 | String) | I32);
 ```
 
 Previewing the composed prism against these three values — outer-left hit
@@ -798,13 +798,13 @@ equiv fst_over_def[A][B](x: A & B, f: A -> A) {
 ### Prism laws
 
 The prism round-trip law is build-then-match: `preview(p, review(p, v))` hits
-with `v`, expressed as `widen_sum!(v, A | .)` — the `Some(v)` arm. For the
+with `v`, expressed as `widen_sum(v, A | .)` — the `Some(v)` arm. For the
 left prism:
 
 ```text
 equiv left_review_preview[A][B](v: A) {
   preview(left_prism(A, B), review(left_prism(A, B), v));
-  widen_sum!(v, A | .)
+  widen_sum(v, A | .)
 }
 ```
 
@@ -816,7 +816,7 @@ transformed:
 ```text
 equiv left_over_review[A][B](v: A, f: A -> A) {
   preview(left_prism(A, B), over_prism(left_prism(A, B), f, review(left_prism(A, B), v)));
-  widen_sum!(f(v), A | .)
+  widen_sum(f(v), A | .)
 }
 ```
 
@@ -877,7 +877,7 @@ equiv iso_prism_review[A][B](y: B & A) {
 
 equiv iso_prism_preview[A][B](x: A & B) {
   preview(iso_to_prism(swap_iso(A, B)), x);
-  widen_sum!(view_iso(swap_iso(A, B), x), (B & A) | .)
+  widen_sum(view_iso(swap_iso(A, B), x), (B & A) | .)
 }
 ```
 
@@ -900,15 +900,15 @@ source {
 ```
 
 Run `kio dep fetch` from that package root. This writes `optics.lock.kio`
-and materializes the selected package, including its `elab` dependency,
+and materializes the selected package, including its `macros` dependency,
 under the `optics/` local root. Import the public module with, for example,
 `import optics/optics(Lens, view, set);`. The optic functions themselves are
-host-capability-free. The POC package bridge also exposes `elab/testapi` host
-requirements, re-rooted as `optics/elab/testapi` in the consumer: `String`
+host-capability-free. The POC package bridge also exposes `macros/testapi` host
+requirements, re-rooted as `optics/macros/testapi` in the consumer: `String`
 with role `str`, `I32` and `Int` with role `i32`, and `Bool` with role `bool`.
 If your public bridge reaches these declarations, include that module and
 supply all four host types. Alternatively, add
-`rehost optics/elab/testapi to your_host_module;` to `optics.dep.kio` before
+`rehost optics/macros/testapi to your_host_module;` to `optics.dep.kio` before
 fetching, provide matching declarations in that consumer module, and bridge
 the provider. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with-rehost)
 explains that setup, and [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
@@ -916,8 +916,8 @@ explains committing the lock and materialized sources.
 
 If you need to adapt the library source, copy
 [`optics.kio`](../../test-data/poc/optics/workdir/optics.kio) into your package
-and declare the [`elab` dependency](elab.md#adopting-the-elaborators) under the
-local name `elab`, which is the root its imports use. The worked tour and
+and declare the [`macros` dependency](macros.md#adopting-the-macros) under the
+local name `macros`, which is the root its imports use. The worked tour and
 operator DSL live separately in
 [`demo/testapi/main.kio`](../../test-data/poc/optics/workdir/demo/testapi/main.kio);
 its host imports (`I32`, `String`, `add`, `int_to_string`, `print`) refer to
@@ -932,18 +932,18 @@ explains that choice.
 
 ## See also
 
-- [The elab POC](elab.md) — the case study that documents the spine
-  palette (`one_prod!`, `widen_sum!`, `narrow_prod!`, …), `match!`, and the
-  rest of the elab vocabulary per form, with their `equiv` laws.
+- [The macro POC](macros.md) — the case study that documents the spine
+  palette (`one_prod`, `widen_sum`, `narrow_prod`, …), `match`, and the
+  rest of the macro vocabulary per form, with their `equiv` laws.
 - [Operators](../guides/operators.md) — the `op` mechanics
   behind the `^` / `**` / `^?` / `##` / `%%` DSL.
 - [Structural products and row types](../guides/products.md) — the
   `labels` machinery and the per-label setter that becomes the `%%`
   row-update operator.
 - [Structural sums and pattern matching](../guides/sums.md) —
-  the sum machinery prisms are built on, and `match!` in depth.
+  the sum machinery prisms are built on, and `match` in depth.
 - [Using libraries](../guides/using-libraries.md) — the
-  map of the `elab` POC modules the spine elabs and `match!` live in.
+  map of the `macros` POC modules the spine macros and `match` live in.
 - [Testing with `equiv`](../guides/equiv.md) — how the laws
   above are written and run.
 - [`test-data/poc/optics/`](../../test-data/poc/optics/) — the full worked

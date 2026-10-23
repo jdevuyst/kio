@@ -1,8 +1,8 @@
 module petri/witness;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import petri/model as model;
 import petri/search as search;
 import queue/list/core as lists;
@@ -19,17 +19,17 @@ pub type Path = lists.List(I32);
 pub rec(loop) fn reconstruct(nodes: lists.List(search.Node), node: search.Node, path: Path) ->
   Path | .
    {
-  if! arithmetic.eq_i32(node.?{search.depth}, 0) {
-    if! arithmetic.eq_i32(node.?{search.parent}, -1) { path.>widen_sum! } else { ().>widen_sum! }
-  } else match! search.find_node(nodes, node.?{search.parent}) {
+  if(arithmetic.eq_i32(node.?{search.depth}, 0)) {
+    if(arithmetic.eq_i32(node.?{search.parent}, -1)) { path.>widen_sum } else { ().>widen_sum }
+  } else match(search.find_node(nodes, node.?{search.parent})) {
     .(parent: search.Node) {
-      if! arithmetic.eq_i32(arithmetic.add_i32(parent.?{search.depth}, 1), node.?{search.depth}) {
+      if(arithmetic.eq_i32(arithmetic.add_i32(parent.?{search.depth}, 1), node.?{search.depth})) {
         recur reconstruct(nodes, parent, lists.cons(node.?{search.via}, path))
       } else {
-        ().>widen_sum!
+        ().>widen_sum
       }
     };
-    .() { ().>widen_sum! }
+    .() { ().>widen_sum }
   }
 }
 
@@ -40,11 +40,11 @@ pub fn show_marking(marking: model.Marking) -> String {
 pub rec(loop) fn replay(net: model.Net, path: Path, marking: model.Marking, step: I32) ->
   model.Marking | .
    {
-  match! lists.uncons(path) {
+  match(lists.uncons(path)) {
     .(transition_id: I32, rest: Path) {
-      match! traversal.at(transition_id, net.?{model.transitions}) {
+      match(traversal.at(transition_id, net.?{model.transitions})) {
         .(transition: model.Transition) {
-          match! model.fire(net, transition, marking) {
+          match(model.fire(net, transition, marking)) {
             .(next: model.Marking) {
               io.print(text.string_concat(
               , "  "
@@ -61,21 +61,21 @@ pub rec(loop) fn replay(net: model.Net, path: Path, marking: model.Marking, step
               ));
               recur replay(net, rest, next, arithmetic.add_i32(step, 1))
             };
-            .() { ().>widen_sum! }
+            .() { ().>widen_sum }
           }
         };
-        .() { ().>widen_sum! }
+        .() { ().>widen_sum }
       }
     };
-    .() { marking.>widen_sum! }
+    .() { marking.>widen_sum }
   }
 }
 
 pub fn agrees(net: model.Net, result: model.Marking | ., expected: model.Marking) -> Bool {
-  match! result {
+  match(result) {
     .(marking: model.Marking) {
-      if! model.equal(marking, expected) {
-        if! model.completed(net, marking) {
+      if(model.equal(marking, expected)) {
+        if(model.completed(net, marking)) {
           .f
         } else {
           arithmetic.eq_i32(model.enabled_count(net, marking), 0)

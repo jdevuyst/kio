@@ -56,12 +56,12 @@ A dangling spec or POC link is a finding (the case study points a reader at cont
 
 ## 3. `docs ⊆ POC` — nothing documented is absent from the POC
 
-This is the load-bearing check. Every Kio identifier a case study presents as belonging to the package — types, functions, elaborators, operators, labels — must exist in the backing package's `workdir/` sources. The case study is a read-through of the POC, not a place to invent or rename API.
+This is the load-bearing check. Every Kio identifier a case study presents as belonging to the package — types, functions, macros, operators, labels — must exist in the backing package's `workdir/` sources. The case study is a read-through of the POC, not a place to invent or rename API.
 
 The high-signal classes to verify:
 
 - **Validated `kio` fences.** A case study's `{@harness}`-validated snippets are the strongest `⊆` evidence: if `kio doc check` passes, the snippet compiles against a harness that supplies the POC's host shape, so the surface it uses is real. Run `kio doc check docs/poc/<x>.md` and treat any snippet failure as a finding (either the snippet drifted from the POC, or the POC changed under it).
-- **Named declarations in prose and `text` fences.** A case study also quotes `equiv` laws and type / fn signatures in non-validated `text` fences. Each top-level declaration name those quote (`fn <name>`, `type <name>`, `newtype <name>`, `equiv <name>`, `op` pattern, `pub elab <name>`) must appear in the backing package. Spot-check by extracting the declaration names the page quotes and grepping the package:
+- **Named declarations in prose and `text` fences.** A case study also quotes `equiv` laws and type / fn signatures in non-validated `text` fences. Each top-level declaration name those quote (`fn <name>`, `type <name>`, `newtype <name>`, `equiv <name>`, `op` pattern, `pub macro <name>`) must appear in the backing package. Spot-check by extracting the declaration names the page quotes and grepping the package:
 
 ```sh
 # For docs/poc/<x>.md, every `equiv <name>` quoted in the page must exist in the POC.
@@ -72,8 +72,8 @@ grep -oE '^equiv [A-Za-z_][A-Za-z0-9_]*' "$page" | sort -u | while read -r _ nam
     || printf 'docs ⊄ POC: equiv %s quoted in %s not found in package\n' "$name" "$page"
 done
 
-# Likewise top-level fn / type / newtype / elab names the page quotes inside kio/text fences.
-grep -oE '\b(fn|type|newtype|pub elab) [A-Za-z_][A-Za-z0-9_]*' "$page" | sort -u | while read -r kind name; do
+# Likewise top-level fn / type / newtype / macro names the page quotes inside kio/text fences.
+grep -oE '\b(fn|type|newtype|pub macro) [A-Za-z_][A-Za-z0-9_]*' "$page" | sort -u | while read -r kind name; do
   grep -rqE "(^|\\bpub )$kind $name\\b" "test-data/poc/$topic/workdir" \
     || printf 'docs ⊄ POC: %s %s quoted in %s not found in package\n' "$kind" "$name" "$page"
 done
@@ -91,7 +91,7 @@ A case study should walk the package's whole public API and operator DSL, not a 
 # Every pub top-level item in the package's headline root library modules
 # should be named somewhere in the case study. Exclude nested demos,
 # materialized dependency roots, host scaffolding (`testapi`), and shared
-# elaborator-internal utility modules (`elaborator_util`, the `*_util`
+# macro-internal utility modules (`macro_util`, the `*_util`
 # convention) — those are plumbing other modules import across the boundary,
 # not the package's headline surface.
 page=docs/poc/<x>.md
@@ -113,18 +113,18 @@ for src in sorted(workdir.rglob("*.kio")):
         continue
     if src.name == "testapi.kio" or "/testapi/" in src.as_posix():
         continue
-    if src.name in {"elaborator_util.kio"} or src.name.endswith("_util.kio"):
+    if src.name in {"macro_util.kio"} or src.name.endswith("_util.kio"):
         continue
     if any(src.is_relative_to(root) for root in dependency_roots):
         continue
-    for match in re.finditer(r"^pub (fn|type|newtype|op|elab|labels) ([A-Za-z_][A-Za-z0-9_]*)", src.read_text(), flags=re.M):
+    for match in re.finditer(r"^pub (fn|type|newtype|op|macro|labels) ([A-Za-z_][A-Za-z0-9_]*)", src.read_text(), flags=re.M):
         kind, name = match.groups()
         if name not in text:
             print(f"headline omission: pub {kind} {name} from {src} not mentioned in {page}")
 PY
 ```
 
-A handful of omissions of **minor helpers** is acceptable (the contract says "headline" surface): a form-builder's internal constructors (`rep_*`, `show_*`), a checked-impl helper (`*_accepts`, `*_or_raw`), or a view-tail type are plumbing, not headline. The salient surface is what a reader comes for — a package's central types and its primary combinators / elaborator bang-call names. The optics case study omitting a private display helper is fine; omitting `compose_lens`, or the elab case study omitting `fit!`, would be a real finding. Judge by salience, not by raw count.
+A handful of omissions of **minor helpers** is acceptable (the contract says "headline" surface): a form-builder's internal constructors (`rep_*`, `show_*`), a checked-impl helper (`*_accepts`, `*_or_raw`), or a view-tail type are plumbing, not headline. The salient surface is what a reader comes for — a package's central types and its primary combinators / macro call names. The optics case study omitting a private display helper is fine; omitting `compose_lens`, or the macro case study omitting `fit`, would be a real finding. Judge by salience, not by raw count.
 
 ## 5. No reshaped-source tells
 

@@ -1,17 +1,17 @@
 /// The polynomial representation and its normal form.
 module poly/core;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as lc;
 import list/list as ll;
 import list/list(varop [] as [* *]);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(eq_i32, sub_i32);
 import testapi/iter(loop);
 
 fn value_or[A](default: A, result: A | .) -> A {
-  match! result {
+  match(result) {
     (.(value: A) { value }, .(_empty: .) { default })
   }
 }
@@ -27,10 +27,10 @@ pub type Coeffs = lc.List(I32);
 pub newtype Poly : Coeffs { constructor mk; projector un }
 
 rec(loop) fn drop_zero_head(cs: Coeffs) -> Coeffs {
-  match! lc.uncons(cs) {
+  match(lc.uncons(cs)) {
     (
     , .(c: I32, rest: Coeffs) {
-        if! eq_i32(c, 0) { recur drop_zero_head(rest) } else { cs }
+        if(eq_i32(c, 0)) { recur drop_zero_head(rest) } else { cs }
       }
     , .(_empty: .) { cs }
     )
@@ -71,12 +71,12 @@ pub fn coeff_at(p: Poly, i: I32) -> I32 { value_or(0, ll.at(i, coeffs(p))) }
 pub fn leading(p: Poly) -> I32 { value_or(0, ll.last(coeffs(p))) }
 
 rec(loop) fn coeffs_equal(xs: Coeffs, ys: Coeffs) -> Bool {
-  match! lc.uncons(xs) {
+  match(lc.uncons(xs)) {
     (
     , .(x: I32, rest: Coeffs) {
-        if! ll.null(ys) {
+        if(ll.null(ys)) {
           .f
-        } else if! eq_i32(x, head_or_zero(ys)) {
+        } else if(eq_i32(x, head_or_zero(ys))) {
           recur coeffs_equal(rest, lc.tail(ys))
         } else {
           .f

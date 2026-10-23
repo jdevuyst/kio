@@ -38,7 +38,7 @@ mkdir -p "$work/testapi"
 cp "$PKG_SRC"/testapi/*.kio "$work/testapi/"
 cp -R "$PKG_SRC/list" "$work/list"
 cp -R "$PKG_SRC/loader" "$work/loader"
-cp -R "$PKG_SRC/elab" "$work/elab"
+cp -R "$PKG_SRC/macros" "$work/macros"
 
 cp "$CASE_DIR/workdir/testapi/main.kio" "$work/testapi/main.kio"
 cp "$CASE_DIR/workdir/exec_dyn_load_rankn_contract.pkg.kio" "$work/exec_dyn_load_rankn_contract.pkg.kio"

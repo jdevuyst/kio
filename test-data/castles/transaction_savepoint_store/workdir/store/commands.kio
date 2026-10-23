@@ -1,8 +1,8 @@
 module store/commands;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import store/history as history;
 import store/transactions as tx;
 import testapi(I32, String, default Bool);
@@ -15,45 +15,45 @@ pub labels Command = { opcode: String, key: String, argument: String };
 pub labels Read = { parsed: Command } | { end: . } | { malformed: String };
 
 pub fn read() -> Read {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(opcode: String) {
-      match! io.read_ascii_line() {
+      match(io.read_ascii_line()) {
         .(key: String) {
-          match! io.read_ascii_line() {
-            .(argument: String) { widen_sum!({parsed = {opcode, key, argument}}, Read) };
-            .() { widen_sum!({malformed = "missing argument line"}, Read) }
+          match(io.read_ascii_line()) {
+            .(argument: String) { widen_sum({parsed = {opcode, key, argument}}, Read) };
+            .() { widen_sum({malformed = "missing argument line"}, Read) }
           }
         };
-        .() { widen_sum!({malformed = "missing key line"}, Read) }
+        .() { widen_sum({malformed = "missing key line"}, Read) }
       }
     };
-    .() { widen_sum!({end=}, Read) }
+    .() { widen_sum({end=}, Read) }
   }
 }
 
 pub fn apply(s: tx.State, c: Command) -> tx.Reply {
   let op = c.?{opcode};
   let key = c.?{key};
-  if! text.string_eq(op, "BEGIN") {
+  if(text.string_eq(op, "BEGIN")) {
     tx.begin(s)
-  } else if! text.string_eq(op, "PUT") {
-    match! fmt.string_to_int(c.?{argument}) {
+  } else if(text.string_eq(op, "PUT")) {
+    match(fmt.string_to_int(c.?{argument})) {
       .(value: I32) { tx.put(s, key, value) };
       .() { tx.rejected(s, text.string_concat("invalid integer ", c.?{argument})) }
     }
-  } else if! text.string_eq(op, "DELETE") {
+  } else if(text.string_eq(op, "DELETE")) {
     tx.delete(s, key)
-  } else if! text.string_eq(op, "SAVE") {
+  } else if(text.string_eq(op, "SAVE")) {
     tx.save(s, key)
-  } else if! text.string_eq(op, "ROLLBACK") {
+  } else if(text.string_eq(op, "ROLLBACK")) {
     tx.rollback(s, key)
-  } else if! text.string_eq(op, "RELEASE") {
+  } else if(text.string_eq(op, "RELEASE")) {
     tx.release(s, key)
-  } else if! text.string_eq(op, "COMMIT") {
+  } else if(text.string_eq(op, "COMMIT")) {
     tx.commit(s)
-  } else if! text.string_eq(op, "ABORT") {
+  } else if(text.string_eq(op, "ABORT")) {
     tx.abort(s)
-  } else if! text.string_eq(op, "GET") {
+  } else if(text.string_eq(op, "GET")) {
     tx.accepted(
     , s
     , text.string_concat(
@@ -64,7 +64,7 @@ pub fn apply(s: tx.State, c: Command) -> tx.Reply {
         )
       )
     )
-  } else if! text.string_eq(op, "SNAPSHOT") {
+  } else if(text.string_eq(op, "SNAPSHOT")) {
     tx.accepted(s, text.string_concat("snapshot ", key))
   } else {
     tx.rejected(s, text.string_concat("unknown operation ", op))

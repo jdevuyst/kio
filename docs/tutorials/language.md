@@ -1,8 +1,8 @@
 # The Kio language
 
-Start here when you want to read and write ordinary Kio source. The chapters build a working model of the language one construct at a time: packages, modules, functions, host-backed values, data shapes, matching, polymorphism, UFCS, and elab calls.
+Start here when you want to read and write ordinary Kio source. The chapters build a working model of the language one construct at a time: packages, modules, functions, host-backed values, data shapes, matching, polymorphism, UFCS, and macro calls.
 
-Read straight through if you are new to Kio, or skip to the chapter that matches what you need. The goal is practical familiarity: enough to read modules, write simple programs, and recognize common surface forms. Deeper treatment of individual features, such as operator definitions, UFCS, elabs, and optics, lives in [docs/guides/](../guides/).
+Read straight through if you are new to Kio, or skip to the chapter that matches what you need. The goal is practical familiarity: enough to read modules, write simple programs, and recognize common surface forms. Deeper treatment of individual features, such as operator definitions, UFCS, macros, and optics, lives in [docs/guides/](../guides/).
 
 <!-- Snippets here illustrate Kio at every level: package files
 (variant=package), module bodies
@@ -20,9 +20,9 @@ bridge {
 
 module kiodoc;
 
-import match(match);
-import control(if, scope);
-import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
+import match(macro match);
+import control(macro if, macro scope);
+import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
 default host type Int role(i32);
 default host type String role(str);
@@ -45,9 +45,9 @@ bridge {
 
 module kiodoc;
 
-import match(match);
-import control(if, scope);
-import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
+import match(macro match);
+import control(macro if, macro scope);
+import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
 default host type Int role(i32);
 default host type String role(str);
@@ -154,9 +154,9 @@ The `module hello/main;` line says "this file is the module at path `hello/main`
 
 `import` brings names into the module's scope. The common shape pulls items from another module in the same package:
 
-`import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A braced item selects label syntax, so a consumer that names a generated type and constructs its label writes `import people(Name, {name});`. Neither spelling imports the other. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
+`import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A tagged `macro name` item selects a macro, for example `import match(macro match);`. A braced item selects label syntax, so a consumer that names a generated type and constructs its label writes `import people(Name, {name});`. Neither spelling imports the other. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
 
-When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack(Item)` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library elabs such as `match!` and the structural palette for normal product and sum code.
+When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack(Item)` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library macros such as `match` and the structural palette for normal product and sum code.
 
 To choose a local spelling, use a selective alias:
 `import hello(String as Text, print as write);`. The destination keeps the
@@ -332,7 +332,7 @@ For a generic function requiring two values of the same type,
 See [literal types and defaults](../guides/typechecking.md#literal-types-and-module-local-defaults)
 for aliases, source scope, conflicts and editor repairs.
 
-Operations on these types — `add`, `mul`, `int_to_string`, `print` — are `host fn`s. Kio does not auto-include a standard library: the host supplies whatever the bridged modules' `host` declarations ask for, and reusable Kio code arrives through ordinary modules and dependencies. The compiler provides the core and compile-time pseudo-modules named in Chapter 2, but libraries such as the structural elab palette are user Kio code that a package imports explicitly.
+Operations on these types — `add`, `mul`, `int_to_string`, `print` — are `host fn`s. Kio does not auto-include a standard library: the host supplies whatever the bridged modules' `host` declarations ask for, and reusable Kio code arrives through ordinary modules and dependencies. The compiler provides the core and compile-time pseudo-modules named in Chapter 2, but libraries such as the structural macro palette are user Kio code that a package imports explicitly.
 
 For the rest of the tutorial, assume the module declares `Int`, `String`, `Bool`, the obvious numeric ops, and `print` / `int_to_string` as `host` items. Each chapter's snippets sit inside `arith/main.kio` or its equivalent.
 
@@ -422,11 +422,13 @@ first.
 
 ### Conditionals
 
-Importing `if` provides an `if!` call with two blocks. Both branches produce one common result type:
+Importing `if` provides a macro call with a parenthesized condition and two
+blocks. Every nonempty written macro prefix uses ordinary argument-list parentheses.
+Both branches produce one common result type:
 
 ```kio {@tutorial_module}
 fn choose(condition: Bool, when_true: Int, when_false: Int) -> Int {
-  if! condition { when_true } else { when_false }
+  if(condition) { when_true } else { when_false }
 }
 ```
 
@@ -447,18 +449,18 @@ selected branch runs.
 
 ### Scoped expressions
 
-The imported `scope!` elab turns an ordinary scoped block into an expression. It is useful in
+The imported `scope` macro turns an ordinary scoped block into an expression. It is useful in
 an argument, conditional arm, or `equiv` arm where local statements need a
 wrapper:
 
 ```kio {@tutorial_module}
 fn increment_in_expression(value: Int) -> Int {
-  scope! { let next = add(value, 1); next }
+  scope { let next = add(value, 1); next }
 }
 ```
 
 The body admits ordinary `let`, expression-statement, and trailing-expression
-rules. `do! bind { let x <- ...; result }` is a distinct, bind-based form covered
+rules. `do(bind) { let x <- ...; result }` is a distinct, bind-based form covered
 in [Higher-kinded types](../guides/higher-kinded-types.md#monadic-do).
 
 ### Placeholder lambdas
@@ -549,7 +551,7 @@ bridge {
 
 module kiodoc;
 
-import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
+import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
 host type Int role(i32);
 host type String role(str);
@@ -570,7 +572,7 @@ bridge {
 
 module kiodoc;
 
-import spine_elaborators(narrow_prod, one_prod, one_sum, widen_sum);
+import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
 host type Int role(i32);
 host type String role(str);
@@ -631,7 +633,7 @@ Where `&` ("and") composes types into products, `|` ("or") composes types into *
 ```kio {@tutorial_module}
 fn classify(v: String | Int) {
   let _r =
-    match! v {
+    match(v) {
       .(s: String) { print(s) };
       .(n: Int) { print(int_to_string(n)) }
     };
@@ -639,30 +641,30 @@ fn classify(v: String | Int) {
 }
 ```
 
-`(String | Int)` is the type of a value that is *either* a `String` *or* an `Int`. `match!` takes one **clause** per arm of the sum. Each `.(name: Type) { body }` matches one branch; the body computes the result.
+`(String | Int)` is the type of a value that is *either* a `String` *or* an `Int`. `match` takes one **clause** per arm of the sum. Each `.(name: Type) { body }` matches one branch; the body computes the result.
 
-This is a deliberate preview of elabs. `match!` is imported library code, not a built-in keyword. The tutorial harness imports it for the snippets; in a real package, you depend on the module that defines `match` and bring it into scope with `import match(match);`. Chapter 9 comes back to the import model.
+This is a deliberate preview of macros. `match` is imported library code, not a built-in keyword. The tutorial harness imports it for the snippets; in a real package, you depend on the module that defines `match` and bring it into scope with `import match(macro match);`. Chapter 9 comes back to the import model.
 
-Every clause body must produce the same result type. Both arms above produce the unit value, so the `match!` expression has type `.`. We bind it to `_r` only to sequence the printing before returning `()`.
+Every clause body must produce the same result type. Both arms above produce the unit value, so the `match` expression has type `.`. We bind it to `_r` only to sequence the printing before returning `()`.
 
 ### Constructing a sum value
 
-How do you build a `(String | Int)` value from a `String`? With another preview elab, `widen_sum!`, which injects a value into a target sum that contains its type as an arm:
+How do you build a `(String | Int)` value from a `String`? With another preview macro, `widen_sum`, which injects a value into a target sum that contains its type as an arm:
 
 ```kio {@tutorial_module}
 fn classify_again(v: String | Int) {
   let _r =
-    match! v {
+    match(v) {
       .(s: String) { print(s) };
       .(n: Int) { print(int_to_string(n)) }
     };
   ()
 }
 
-pub fn main() { let v = widen_sum!("matched right\n", String | Int); classify_again(v) }
+pub fn main() { let v = widen_sum("matched right\n", String | Int); classify_again(v) }
 ```
 
-`widen_sum!("matched right\n", String | Int)` says "put this `String` into this target sum." Like `match!`, `widen_sum!` is imported library code; the tutorial harness imports it from `spine_elaborators`. The elab walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
+`widen_sum("matched right\n", String | Int)` says "put this `String` into this target sum." Like `match`, `widen_sum` is imported library code; the tutorial harness imports it from `spine_macros`. The macro walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
 
 ## Chapter 7 — Polymorphism
 
@@ -826,7 +828,7 @@ Some polymorphic values need a type but no value argument. Leave out the
 value-parameter group to construct the result as soon as the type is supplied:
 
 ```kio {@tutorial_module}
-fn nothing[A] -> A | . { widen_sum!((), A | .) }
+fn nothing[A] -> A | . { widen_sum((), A | .) }
 
 fn nothing_later[A]() -> A | . { nothing(A) }
 
@@ -849,7 +851,7 @@ later computation. The two types are distinct.
 The anonymous form is `.[A] { body }`:
 
 ```kio {@block_expr}
-let make = .[A] { widen_sum!((), A | .) };
+let make = .[A] { widen_sum((), A | .) };
 let _empty = make(Int);
 ()
 ```
@@ -884,59 +886,59 @@ An argless UFCS segment is bare: write `value.>f` rather than `value.>f()`.
 The latter is rejected because direct `f()` means a Unit call; write
 `value.>f(())` when Unit really is an additional argument.
 
-Bang calls use the same surface rule. Because Chapter 6 already used `widen_sum!`, you can read `s.>widen_sum!(String | Int)` as the receiver-first spelling of `widen_sum!(s, String | Int)`. The full guide covers the other UFCS splice forms: `.>>`, `.<`, and `.<<`.
+Macro calls use the same surface rule. Because Chapter 6 already used `widen_sum`, you can read `s.>widen_sum(String | Int)` as the receiver-first spelling of `widen_sum(s, String | Int)`. The full guide covers the other UFCS splice forms: `.>>`, `.<`, and `.<<`.
 
-Blocks stay attached to the elab: `v.>match! { clauses }` means
-`match! v { clauses }`. In a reverse spelling, the receiver follows all the
-blocks: `match! { clauses }.<v`. In either case it fills the scrutinee position,
+Blocks stay attached to the macro: `v.>match { clauses }` means
+`match(v) { clauses }`. In a reverse spelling, the receiver follows all the
+blocks: `match { clauses }.<v`. In either case it fills the scrutinee position,
 not a position after the clauses. See the
 [UFCS guide](../guides/ufcs.md#calls-with-trailing-blocks) for nested blocks
 and grouping.
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="chapter-9-imported-elaborators"></a>
+<a id="chapter-9-imported-macros"></a>
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="chapter-9--imported-elaborators"></a>
+<a id="chapter-9--imported-macros"></a>
 
-## Chapter 9 — Imported elabs
+## Chapter 9 — Imported macros
 
-Elabs are Kio library code that the compiler runs while checking a call. A module declares an elab under an ordinary name, callers import that name with `import`, and the call site adds `!`. If `widen_sum` is not in scope, `widen_sum!(...)` does not resolve.
+Macros are Kio library code that the compiler runs while checking a call. A module declares a macro under an ordinary name. Callers select it explicitly, for example `import match(macro match);`, then call that local name directly. If `widen_sum` is not in scope, `widen_sum(...)` does not resolve.
 
-The tutorial harness imports `match` from `match` and imports `widen_sum`, `one_prod`, and friends from `spine_elaborators`. A real package gets those modules through a dependency and writes the imports itself. Kio provides the elab mechanism; it does not globally install this palette.
+The tutorial harness imports `match` from `match` and imports `widen_sum`, `one_prod`, and friends from `spine_macros`. A real package gets those modules through a dependency and writes the imports itself. Kio provides the macro mechanism; it does not globally install this palette.
 
-Use an elab when the type already says what structural glue is needed and you do not want to write the glue by hand. The examples below use prefix calls so the imported names stay obvious; the UFCS forms from Chapter 8 are equivalent when you want receiver-first reading.
+Use a macro when the type already says what structural glue is needed and you do not want to write the glue by hand. The examples below use prefix calls so the imported names stay obvious; the UFCS forms from Chapter 8 are equivalent when you want receiver-first reading.
 
 ```kio {@tutorial_module}
 fn as_text(v: String | Int) -> String {
-  match! v {
+  match(v) {
     .(s: String) { s };
     .(n: Int) { int_to_string(n) }
   }
 }
 
-fn as_sum(s: String) -> String | Int { widen_sum!(s, String | Int) }
+fn as_sum(s: String) -> String | Int { widen_sum(s, String | Int) }
 
-fn pick_second(p: String & Int) -> Int { one_prod!(p, Int) }
+fn pick_second(p: String & Int) -> Int { one_prod(p, Int) }
 ```
 
 Read those as three explicit requests to imported code:
 
-- `match!` builds branch selection for a sum.
-- `widen_sum!` injects a value into a target sum that contains its type.
-- `one_prod!` picks a slot out of a product by target type.
+- `match` builds branch selection for a sum.
+- `widen_sum` injects a value into a target sum that contains its type.
+- `one_prod` picks a slot out of a product by target type.
 
-That is enough for this tutorial. The full spine palette includes `reorder_*`, `narrow_*`, `widen_*`, `flatten_*`, `one_*`, and `fit!`; the checked implementations and per-form examples live in [the elab case study](../poc/elab.md). [Using libraries](../guides/using-libraries.md) explains how to adopt them. The [structural sums guide](../guides/sums.md) covers `match!` in depth, and [Error handling](../guides/error-handling.md) shows how sums compose into explicit failure flow.
+That is enough for this tutorial. The full spine palette includes `reorder_*`, `narrow_*`, `widen_*`, `flatten_*`, `one_*`, and `fit`; the checked implementations and per-form examples live in [the macro case study](../poc/macros.md). [Using libraries](../guides/using-libraries.md) explains how to adopt them. The [structural sums guide](../guides/sums.md) covers `match` in depth, and [Error handling](../guides/error-handling.md) shows how sums compose into explicit failure flow.
 
 ## Chapter 10 — Where to go from here
 
-This tutorial covered the bones: packages, modules, functions, atomic types, tuples and labels, sums, pattern matching, polymorphism, UFCS, and elab calls. Enough to read Kio code and write small programs.
+This tutorial covered the bones: packages, modules, functions, atomic types, tuples and labels, sums, pattern matching, polymorphism, UFCS, and macro calls. Enough to read Kio code and write small programs.
 
 The next layer is in [docs/guides/](../guides/), in roughly dependency order:
 
-- [Structural sums and pattern matching](../guides/sums.md) — the full vocabulary for sum types, including the more interesting `match!` patterns.
+- [Structural sums and pattern matching](../guides/sums.md) — the full vocabulary for sum types, including the more interesting `match` patterns.
 - [UFCS calls](../guides/ufcs.md) — the four receiver-splice spellings and how they map back to ordinary calls.
-- [Using libraries](../guides/using-libraries.md) — adopting imported libraries; [the elab case study](../poc/elab.md) supplies checked per-form examples of the structural helpers.
+- [Using libraries](../guides/using-libraries.md) — adopting imported libraries; [the macro case study](../poc/macros.md) supplies checked per-form examples of the structural helpers.
 - [Operators](../guides/operators.md) — fixed operator patterns and recursive / greedy slots.
 - [Variadic operators](../guides/variadic-operators.md) — four fold modes, element order, and collection literals.
 - [Structural products and row types](../guides/products.md) — how `&` plus type variables expresses row polymorphism and field update.
@@ -946,6 +948,6 @@ The next layer is in [docs/guides/](../guides/), in roughly dependency order:
 And [docs/poc/](../poc/) contains case studies that read through executable proof-of-concept packages end to end:
 
 - [The optics library](../poc/optics.md) — lenses, prisms, and isos as function pairs, the operator DSL, and the spine palette in use.
-- [Higher-kinded types](../poc/hkt.md) — kinded brands, instance dictionaries, `do`-block pipelines, and `derive!`.
+- [Higher-kinded types](../poc/hkt.md) — kinded brands, instance dictionaries, `do`-block pipelines, and `derive`.
 
 For the language as a contract — productions, precise semantics, type-system rules — read [`specs/language.md`](../../specs/language.md). For how to embed a Kio package in your environment, see [docs/hosts/](../hosts/). For the full `kio` command-line surface, [`specs/cli.md`](../../specs/cli.md).

@@ -1,9 +1,9 @@
 module report/render;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as cells;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
 import report/model as model;
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
@@ -56,12 +56,12 @@ fn failure_lines(path: String, failures: cells.List(model.Case)) {
 }
 
 rec(loop) fn walk(pending: cells.List(model.Suite & String)) {
-  match! cells.uncons(pending) {
+  match(cells.uncons(pending)) {
     .(entry: model.Suite & String, rest: cells.List(model.Suite & String)) {
       let .(suite, prefix) = entry;
       let .(name, counts, children, failures) = suite.>model.Suite.unpack;
       let path =
-        if! text.string_eq(prefix, "") {
+        if(text.string_eq(prefix, "")) {
           name
         } else {
           text.string_concat(prefix, text.string_concat("/", name))

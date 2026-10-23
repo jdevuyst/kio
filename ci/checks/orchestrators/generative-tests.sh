@@ -88,7 +88,7 @@ kio@haskell${TAB}${REPO_ROOT}/kio-rs/target/debug/kio${TAB}${REPO_ROOT}/ci/infra
 # kio-gen marks no case with either. The dyn_load_prime loader now loads the
 # grammar kio-gen emits — newtypes / type aliases, qualified constructor /
 # projector calls, multi-module packages, and the multi-parameter /
-# polymorphic-lambda dictionary-passing shapes elaborators expand to. What
+# polymorphic-lambda dictionary-passing shapes macros expand to. What
 # remains is the dyn-load-prime value model: the interpreter's host scalars are
 # i32 / string / bool only (`test-data/poc/dyn_load_prime/workdir/prime.kio` § Hostval), so a
 # generated program using a wider numeric (i64 / i128 / u64 / u128) or a

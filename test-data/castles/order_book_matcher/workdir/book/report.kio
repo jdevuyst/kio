@@ -37,8 +37,8 @@ import book/order(
 , trade_taker
 );
 import book/text as text;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string);
@@ -84,7 +84,7 @@ fn trade_line(t: Trade) -> String {
 /// The trades one event generated: everything the event appended to the
 /// tape, from where the tape stood before it ran.
 pub rec(loop) fn print_trades(i: I32, b: Book) {
-  if! leq_i32(tape_len(b), i) {
+  if(leq_i32(tape_len(b), i)) {
     ()
   } else {
     print(trade_line(trade_at(b, i)));
@@ -132,17 +132,17 @@ pub fn no_growth_reason(id: I32, remaining: I32, target: I32) -> String {
 }
 
 fn price_text(price: I32 | .) -> String {
-  match! price {
+  match(price) {
     (.(p: I32) { text.int_text(p) }, .(_none: .) { text.missing() })
   }
 }
 
 /// A spread needs both sides, so an empty side has none.
 fn spread_text(b: Book) -> String {
-  match! best_price(bids_of(b)) {
+  match(best_price(bids_of(b))) {
     (
     , .(bid: I32) {
-        match! best_price(asks_of(b)) {
+        match(best_price(asks_of(b))) {
           (.(ask: I32) { text.int_text(sub_i32(ask, bid)) }, .(_none: .) { text.missing() })
         }
       }
@@ -186,9 +186,9 @@ fn level_line(price: I32, qty: I32, orders: I32) -> String {
 /// is sorted by price, so a level is a run of equal prices and nothing
 /// else can be one.
 rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
-  if! leq_i32(depth(orders), i) {
+  if(leq_i32(depth(orders), i)) {
     i
-  } else if! int_eq(price_of(at(orders, i)), price) {
+  } else if(int_eq(price_of(at(orders, i)), price)) {
     recur level_end(add_i32(i, 1), price, orders)
   } else {
     i
@@ -196,7 +196,7 @@ rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
 }
 
 rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I32 {
-  if! leq_i32(end, i) {
+  if(leq_i32(end, i)) {
     total
   } else {
     recur level_qty(add_i32(i, 1), end, add_i32(total, remaining_of(at(orders, i))), orders)
@@ -204,7 +204,7 @@ rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I3
 }
 
 rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
-  if! leq_i32(end, i) {
+  if(leq_i32(end, i)) {
     ()
   } else {
     print(order_line(at(orders, i)));
@@ -213,7 +213,7 @@ rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
 }
 
 rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
-  if! leq_i32(depth(orders), i) {
+  if(leq_i32(depth(orders), i)) {
     ()
   } else {
     let price = price_of(at(orders, i));
@@ -225,7 +225,7 @@ rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
 }
 
 fn print_side(orders: Array(Order)) {
-  if! is_empty(orders) { print("    (empty)\n") } else { print_levels(0, orders) }
+  if(is_empty(orders)) { print("    (empty)\n") } else { print_levels(0, orders) }
 }
 
 /// The queues print best price first, so the two sides read outwards from
@@ -243,7 +243,7 @@ fn stat_line(label: String, value: I32) -> String {
 }
 
 rec(loop) fn sum_volume(i: I32, total: I32, b: Book) -> I32 {
-  if! leq_i32(tape_len(b), i) {
+  if(leq_i32(tape_len(b), i)) {
     total
   } else {
     recur sum_volume(add_i32(i, 1), add_i32(total, trade_qty(trade_at(b, i))), b)
@@ -253,7 +253,7 @@ rec(loop) fn sum_volume(i: I32, total: I32, b: Book) -> I32 {
 fn tape_volume(b: Book) -> I32 { sum_volume(0, 0, b) }
 
 rec(loop) fn sum_notional(i: I32, total: I32, b: Book) -> I32 {
-  if! leq_i32(tape_len(b), i) {
+  if(leq_i32(tape_len(b), i)) {
     total
   } else {
     let t = trade_at(b, i);

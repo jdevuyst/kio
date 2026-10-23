@@ -1,6 +1,6 @@
 module workbench;
 
-import elab/match(match);
+import macros/match(macro match);
 import substitutions as subst;
 import terms as term;
 import testapi(I32, String);
@@ -15,7 +15,7 @@ pub fn run(name: String, left: term.Term, right: term.Term) {
   line("case: ", name);
   line("  left: ", term.render(left));
   line("  right: ", term.render(right));
-  match! solver.solve(left, right) {
+  match(solver.solve(left, right)) {
     .(solution: solver.Solved) {
       let bindings = solution.>solver.Solved.get;
       let resolved_left = subst.apply(bindings, left);

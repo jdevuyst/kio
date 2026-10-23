@@ -1,7 +1,7 @@
 module certificate;
 
-import elab/control(if);
 import forest as forest;
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -18,9 +18,9 @@ rec(loop) fn ancestry(
 , first: I32
 , second: I32
 ) -> Bool {
-  if! forest.less(second, forest.size(source)) {
+  if(forest.less(second, forest.size(source))) {
     let target_second = array.array_get(mapping, second);
-    if! forest.less(target_second, 0) {
+    if(forest.less(target_second, 0)) {
       recur ancestry(source, target, mapping, first, arith.add_i32(second, 1))
     } else {
       let source_ancestor = forest.less(second, forest.after(source, first));
@@ -28,14 +28,14 @@ rec(loop) fn ancestry(
       , target_second
       , forest.after(target, array.array_get(mapping, first))
       );
-      let agrees = if! source_ancestor {
+      let agrees = if(source_ancestor) {
         target_ancestor
-      } else if! target_ancestor {
+      } else if(target_ancestor) {
         .f
       } else {
         .t
       };
-      if! agrees {
+      if(agrees) {
         recur ancestry(source, target, mapping, first, arith.add_i32(second, 1))
       } else {
         .f
@@ -53,13 +53,13 @@ rec(loop) fn check_nodes(
 , position: I32
 , previous: I32
 ) -> Bool {
-  if! forest.less(position, forest.size(source)) {
+  if(forest.less(position, forest.size(source))) {
     let destination = array.array_get(mapping, position);
-    if! forest.equal(destination, -1) {
+    if(forest.equal(destination, -1)) {
       recur check_nodes(source, target, mapping, arith.add_i32(position, 1), previous)
-    } else if! forest.less(previous, destination) {
-      if! forest.less(destination, forest.size(target)) {
-        if! ancestry(source, target, mapping, position, arith.add_i32(position, 1)) {
+    } else if(forest.less(previous, destination)) {
+      if(forest.less(destination, forest.size(target))) {
+        if(ancestry(source, target, mapping, position, arith.add_i32(position, 1))) {
           recur check_nodes(source, target, mapping, arith.add_i32(position, 1), destination)
         } else {
           .f
@@ -76,7 +76,7 @@ rec(loop) fn check_nodes(
 }
 
 pub fn valid(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> Bool {
-  if! forest.equal(array.array_len(mapping), forest.size(source)) {
+  if(forest.equal(array.array_len(mapping), forest.size(source))) {
     check_nodes(source, target, mapping, 0, -1)
   } else {
     .f
@@ -91,15 +91,15 @@ rec(loop) fn tally(
 , matched: I32
 , renamed: I32
 ) -> I32 & I32 {
-  if! forest.less(position, forest.size(source)) {
+  if(forest.less(position, forest.size(source))) {
     let destination = array.array_get(mapping, position);
-    if! forest.less(destination, 0) {
+    if(forest.less(destination, 0)) {
       recur tally(source, target, mapping, arith.add_i32(position, 1), matched, renamed)
     } else {
-      let renamed = if! forest.equal(
+      let renamed = if(forest.equal(
       , forest.symbol(source, position)
       , forest.symbol(target, destination)
-      ) {
+      )) {
         renamed
       } else {
         arith.add_i32(renamed, 1)

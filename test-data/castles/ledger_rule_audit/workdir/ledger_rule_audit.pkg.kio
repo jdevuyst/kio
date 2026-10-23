@@ -47,6 +47,6 @@ build {
 bridge {
   testapi;
   testapi/**;
-  elab/testapi;
+  macros/testapi;
   ledger_rule_audit/**
 }

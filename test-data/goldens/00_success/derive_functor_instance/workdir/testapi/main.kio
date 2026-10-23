@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -22,7 +22,7 @@ fn identity_functor() -> Functor(Identity) {
   Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
 }
 
-fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
+fn derived_identity_functor() -> Functor(Identity) { derive(_, (box_functor, identity_functor)) }
 
 fn use_derived() -> String {
   let functor = derived_identity_functor();

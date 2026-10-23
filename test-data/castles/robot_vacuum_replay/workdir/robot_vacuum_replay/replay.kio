@@ -1,6 +1,6 @@
 module robot_vacuum_replay/replay;
 
-import elab/match(match);
+import macros/match(macro match);
 import robot_vacuum_replay/apply(apply_command);
 import robot_vacuum_replay/model(Vacuum, initial_vacuum);
 import robot_vacuum_replay/parse(parse_command);
@@ -10,7 +10,7 @@ import testapi/io(print, read_ascii_line);
 import testapi/iter(loop);
 
 rec(loop) fn replay_lines(state: Vacuum) -> Vacuum {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(line: String) {
         let cmd = parse_command(line);

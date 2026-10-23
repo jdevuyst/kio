@@ -1,10 +1,10 @@
 /// The polynomial operations: add, subtract, scale, shift, multiply.
 module poly/arith;
 
-import elab/control(if);
 import list/core as lc;
 import list/list as ll;
 import list/list(varop [] as [* *]);
+import macros/control(macro if);
 import poly/core as core;
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, mul_i32, sub_i32);
@@ -19,8 +19,8 @@ type Step = (I32 & I32) -> I32;
 // whichever vector runs out first, which is why the shorter operand needs no
 // separate padding pass.
 rec(loop) fn zip_rev(op: Step, acc: Coeffs, xs: Coeffs, ys: Coeffs) -> Coeffs {
-  if! ll.null(xs) {
-    if! ll.null(ys) {
+  if(ll.null(xs)) {
+    if(ll.null(ys)) {
       acc
     } else {
       recur zip_rev(op, lc.cons(op(0, core.head_or_zero(ys)), acc), xs, lc.tail(ys))
@@ -58,7 +58,7 @@ pub fn shift(p: core.Poly, k: I32) -> core.Poly {
 // Convolution, accumulated one coefficient of `a` at a time: the term `a_i x^i`
 // contributes `a_i * x^i * b` to the product, which is `b` scaled and shifted.
 rec(loop) fn convolve(acc: core.Poly, i: I32, cs: Coeffs, b: core.Poly) -> core.Poly {
-  if! ll.null(cs) {
+  if(ll.null(cs)) {
     acc
   } else {
     let term = shift(scale(b, core.head_or_zero(cs)), i);

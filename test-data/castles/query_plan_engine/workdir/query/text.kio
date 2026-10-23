@@ -7,7 +7,7 @@
 /// from the length recorded beside it when the datum was written.
 module query/text;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
@@ -24,7 +24,7 @@ pub fn cat5(a: String, b: String, c: String, d: String, e: String) -> String {
 }
 
 rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat2(acc, unit)) }
+  if(leq_i32(n, 0)) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat2(acc, unit)) }
 }
 
 pub fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
@@ -41,9 +41,9 @@ pub fn pad_right(s: String, n: I32) -> String { cat2(s, spaces(n)) }
 /// directly: multiplying a bound past 10^9 would overflow the 32-bit host
 /// type before the comparison that consumes it could run.
 rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
-  if! lt_i32(n, bound) {
+  if(lt_i32(n, bound)) {
     acc
-  } else if! leq_i32(1000000000, bound) {
+  } else if(leq_i32(1000000000, bound)) {
     add_i32(acc, 1)
   } else {
     recur digits_from(n, mul_i32(bound, 10), add_i32(acc, 1))
@@ -52,5 +52,5 @@ rec(loop) fn digits_from(n: I32, bound: I32, acc: I32) -> I32 {
 
 /// The printed width of an integer, sign included.
 pub fn digits(n: I32) -> I32 {
-  if! lt_i32(n, 0) { add_i32(1, digits_from(sub_i32(0, n), 10, 1)) } else { digits_from(n, 10, 1) }
+  if(lt_i32(n, 0)) { add_i32(1, digits_from(sub_i32(0, n), 10, 1)) } else { digits_from(n, 10, 1) }
 }

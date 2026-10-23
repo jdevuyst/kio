@@ -86,7 +86,7 @@ through a plain `import`, like any other item. A `host type` may carry a
 which literal shapes the declared type accepts. Multiple host types in one
 scope may carry the same role. When no annotation or expected type chooses a
 literal's type, it needs an explicit module-local `default`; `role` alone does
-not select one. The core branching intrinsic and the reference `if!` elab's
+not select one. The core branching intrinsic and the reference `if` macro's
 branching glue use the module's Boolean default too. Ordinary imports do not
 inherit a provider's selections. See
 [literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
@@ -141,7 +141,7 @@ and `Bool` for the branching operation; the host roles alone do not select them.
 ```kio {variant=module}
 module array_fill;
 
-import control(if);
+import control(macro if);
 
 default host type I32 role(i32);
 
@@ -160,7 +160,7 @@ host fn array_set[T](a: Array(T), i: I32, v: T);
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
-  if! leq_i32(i, 2) {
+  if(leq_i32(i, 2)) {
     array_set(scores, i, add_i32(i, 10));
     recur fill_scores(add_i32(i, 1), scores)
   } else {
@@ -271,11 +271,11 @@ A **local path** dependency points at the dependency's package file with a
 relative `/`-separated `path`:
 
 ```kio {variant=dependency}
-// elab.dep.kio
-dependency elab;
+// macros.dep.kio
+dependency macros;
 
 source {
-  path "../libs/elab/elab.pkg.kio"
+  path "../libs/macros/macros.pkg.kio"
 }
 ```
 
@@ -284,13 +284,13 @@ commit SHA. Add `path` when the repository contains several packages or the
 package is nested:
 
 ```kio {variant=dependency}
-// elab.dep.kio
-dependency elab;
+// macros.dep.kio
+dependency macros;
 
 source {
   git "https://example.com/libraries.git";
   ref "main";
-  path "packages/elab/elab.pkg.kio"
+  path "packages/macros/macros.pkg.kio"
 }
 ```
 
@@ -303,12 +303,12 @@ repository root or one directory below it. The standalone local-path form above
 keeps its consumer-relative meaning.
 
 Either way, the dependency's modules are re-rooted under the local name, so a
-module that was `module match;` in the dependency is imported as `elab/match` by
+module that was `module match;` in the dependency is imported as `macros/match` by
 the consumer:
 
 ```kio {ignore}
-import elab/match(match);
-import elab/spine_elaborators as spine;
+import macros/match(macro match);
+import macros/spine_macros as spine;
 ```
 
 Importing from a dependency and exposing a package boundary are separate
@@ -325,12 +325,12 @@ package app;
 bridge {
   app;
   app/**;
-  elab/testapi
+  macros/testapi
 }
 ```
 
-The dependency file makes `elab/...` importable; the bridge entry makes the
-needed `elab/testapi` host-facing declarations visible at the package
+The dependency file makes `macros/...` importable; the bridge entry makes the
+needed `macros/testapi` host-facing declarations visible at the package
 boundary.
 
 ### Pinning a git dependency
@@ -341,13 +341,13 @@ dependency's contract surface at that commit are written to a `<local>.lock.kio`
 file beside the `<local>.dep.kio`:
 
 ```kio {variant=lock}
-// elab.lock.kio
-lock elab;
+// macros.lock.kio
+lock macro;
 
 resolved {
   git "https://example.com/libraries.git";
   ref "main";
-  path "packages/elab/elab.pkg.kio";
+  path "packages/macros/macros.pkg.kio";
   commit "0123456789abcdef0123456789abcdef01234567";
   sig "3f9c1e…"
 }

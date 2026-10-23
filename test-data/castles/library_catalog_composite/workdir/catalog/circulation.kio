@@ -25,9 +25,9 @@ import catalog/domain(Checkout, Hold, Report, Return);
 import catalog/domain(cat, fine_rate, istr);
 import catalog/ledger as ledger;
 import catalog/shelf as shelf;
-import elab/control(if);
-import elab/match(match);
 import list/list as list;
+import macros/control(macro if);
+import macros/match(macro match);
 import result/result as result;
 import testapi(I32, String, default Bool);
 import testapi/arith(leq_i32, mul_i32);
@@ -81,7 +81,7 @@ fn do_checkout(books: Book_index, members: Member_index, holds: Hold_list, id: I
   , resolve(books, members, id, call)
   , .(pair: Borrower) {
       let .(who: Member, entry: Book) = pair;
-      if! leq_i32(entry.?{copies_total}, entry.?{copies_out}) {
+      if(leq_i32(entry.?{copies_total}, entry.?{copies_out})) {
         result.err(Applied, Failure, dom.fail_no_copies(call))
       } else {
         let .(lent: Book) = shelf.take_copy(entry);
@@ -113,7 +113,7 @@ fn do_return(
   , resolve(books, members, id, call)
   , .(pair: Borrower) {
       let .(who: Member, entry: Book) = pair;
-      if! ledger.holds_copy(who, call) {
+      if(ledger.holds_copy(who, call)) {
         let .(shelved: Book) = shelf.put_copy(entry);
         let .(settled: Member) = ledger.give_back(who, call, days_late);
         result.ok(
@@ -140,7 +140,7 @@ fn do_hold(books: Book_index, members: Member_index, holds: Hold_list, id: I32, 
   , resolve(books, members, id, call)
   , .(pair: Borrower) {
       let .(_who: Member, entry: Book) = pair;
-      if! shelf.is_available(entry) {
+      if(shelf.is_available(entry)) {
         result.err(Applied, Failure, dom.fail_copies_available(call))
       } else {
         let .(booked: Hold_list) = list.prepend({holder = id, held_call = call}, holds);
@@ -155,7 +155,7 @@ fn do_report(books: Book_index, members: Member_index, holds: Hold_list) -> Outc
 }
 
 pub fn apply(op: Op, books: Book_index, members: Member_index, holds: Hold_list) -> Outcome {
-  match! op {
+  match(op) {
     (
     , .(step: Checkout) {
         let .(id: I32, call: I32) = step.?{checkout};

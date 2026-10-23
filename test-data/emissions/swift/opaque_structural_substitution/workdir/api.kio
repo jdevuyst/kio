@@ -1,6 +1,6 @@
 module api;
 
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 
 host type Box[T];
 
@@ -30,7 +30,7 @@ pub fn product_output(number: Number, flag: Flag) -> Box(Number & Flag) {
   product_box(number, flag)
 }
 
-pub fn left_box[A][B](value: A) -> Box(A | B) { pack(value.>widen_sum!(A | B)) }
+pub fn left_box[A][B](value: A) -> Box(A | B) { pack(value.>widen_sum(A | B)) }
 
 fn boxed_reader[T](value: T) -> Box([B] B -> T) {
   pack(.[B] {

@@ -1,26 +1,26 @@
 module sensor_alarm_window/window;
 
-import elab/control(if);
+import macros/control(macro if);
 import sensor_alarm_window/scanner as scanner;
 import testapi(I32, String, default Bool);
 import testapi/text as text;
 
 fn both(left: Bool, right: Bool) -> Bool {
-  if! left { right } else { .f }
+  if(left) { right } else { .f }
 }
 
 fn count3(first: Bool, second: Bool, third: Bool) -> I32 {
-  if! first {
-    if! second {
-      if! third { 3 } else { 2 }
-    } else if! third {
+  if(first) {
+    if(second) {
+      if(third) { 3 } else { 2 }
+    } else if(third) {
       2
     } else {
       1
     }
-  } else if! second {
-    if! third { 2 } else { 1 }
-  } else if! third {
+  } else if(second) {
+    if(third) { 2 } else { 1 }
+  } else if(third) {
     1
   } else {
     0

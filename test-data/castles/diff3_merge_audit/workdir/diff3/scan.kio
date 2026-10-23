@@ -8,8 +8,8 @@ module diff3/scan;
 
 import diff3/list as list;
 import diff3/prim as prim;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/io(read_ascii_line);
 import testapi/iter(loop);
@@ -42,11 +42,11 @@ fn open_section(cursor: Cursor, next: I32) -> Cursor {
 
 fn keep(cursor: Cursor, line: String) -> Cursor {
   let .({section, base_rev, ours_rev, theirs_rev}) = cursor;
-  if! prim.int_eq(section, 1) {
+  if(prim.int_eq(section, 1)) {
     {section, base_rev = list.cons(line, base_rev), ours_rev, theirs_rev}
-  } else if! prim.int_eq(section, 2) {
+  } else if(prim.int_eq(section, 2)) {
     {section, base_rev, ours_rev = list.cons(line, ours_rev), theirs_rev}
-  } else if! prim.int_eq(section, 3) {
+  } else if(prim.int_eq(section, 3)) {
     {section, base_rev, ours_rev, theirs_rev = list.cons(line, theirs_rev)}
   } else {
     cursor
@@ -54,11 +54,11 @@ fn keep(cursor: Cursor, line: String) -> Cursor {
 }
 
 fn step(cursor: Cursor, line: String) -> Cursor {
-  if! string_eq(line, "#base") {
+  if(string_eq(line, "#base")) {
     open_section(cursor, 1)
-  } else if! string_eq(line, "#ours") {
+  } else if(string_eq(line, "#ours")) {
     open_section(cursor, 2)
-  } else if! string_eq(line, "#theirs") {
+  } else if(string_eq(line, "#theirs")) {
     open_section(cursor, 3)
   } else {
     keep(cursor, line)
@@ -66,7 +66,7 @@ fn step(cursor: Cursor, line: String) -> Cursor {
 }
 
 rec(loop) fn drain(cursor: Cursor) -> Cursor {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (.(line: String) { recur drain(step(cursor, line)) }, .(_eof: .) { cursor })
   }
 }

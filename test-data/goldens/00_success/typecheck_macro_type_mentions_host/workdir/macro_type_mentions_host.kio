@@ -1,0 +1,3 @@
+module macro_type_mentions_host;
+
+host type I32 role(i32);

@@ -446,6 +446,7 @@ mod tests {
                     kind: ImportKind::Selective {
                         from: module_path("selected"),
                         items: vec![ImportItem::Name {
+                            macro_span: None,
                             default_span: None,
                             name: "S".to_owned(),
                             span,

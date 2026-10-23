@@ -2,8 +2,6 @@
 /// so a run can be read and checked without the source beside it.
 module huffman/render;
 
-import elab/control(if);
-import elab/match(match);
 import huffman/code(Bits, Entry, {entry_bits}, {entry_freq}, {entry_len}, {entry_symbol});
 import huffman/freq(Count, {count_freq}, {count_symbol});
 import huffman/list(List, fold, for_each, len);
@@ -13,13 +11,15 @@ import huffman/report({milli_bits_each}, {saved_bits}, {saved_permille}, {symbol
 import huffman/text(cat, cat3, cat4, line, num, pad_num, pad_text);
 import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
 import huffman/tree({step_left}, {step_merged}, {step_right});
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32);
 import testapi/io(print);
 import testapi/iter(loop);
 
 fn bit_glyph(bit: I32) -> String {
-  if! eq_i32(bit, 0) { "0" } else { "1" }
+  if(eq_i32(bit, 0)) { "0" } else { "1" }
 }
 
 fn bits_text(bits: Bits) -> String {
@@ -30,7 +30,7 @@ fn bits_text(bits: Bits) -> String {
 /// the build log names exactly the nodes the queue was ordering and pins the
 /// chosen tie-break.
 fn node_name(node: Node) -> String {
-  if! is_leaf(node) { glyph(symbol_or(node, -1)) } else { cat("*", num(key(node))) }
+  if(is_leaf(node)) { glyph(symbol_or(node, -1)) } else { cat("*", num(key(node))) }
 }
 
 fn node_text(node: Node) -> String { cat4(node_name(node), "(", num(weight(node)), ")") }
@@ -92,7 +92,7 @@ fn step_line(index: I32, entry: Step) -> String {
 }
 
 rec(loop) fn print_steps(steps: List(Step), index: I32) {
-  match! steps.>List.un_list {
+  match(steps.>List.un_list) {
     (
     , .(head: Step, rest: List(Step)) {
         print(step_line(index, head));
@@ -132,7 +132,7 @@ pub fn print_encoded(bits: Bits) {
 pub fn print_decoded(symbols: I32, matches: Bool) {
   heading("decode: walk the tree bit by bit, back to symbols");
   figure("decoded symbols", num(symbols));
-  print(line(if! matches {
+  print(line(if(matches) {
     "  round trip: OK, the decoded message is the original"
   } else {
     "  round trip: FAILED, the decoded message differs"
@@ -167,7 +167,7 @@ pub fn print_kraft(longest: I32, scale: I32, total: I32, words: I32, holds: Bool
   figure("scale (2 ^ longest)", num(scale));
   figure("codewords", num(words));
   figure("sum of scaled terms", num(total));
-  print(line(if! holds {
+  print(line(if(holds) {
     "  verdict: the code lengths satisfy Kraft equality"
   } else {
     "  verdict: the code lengths miss Kraft equality"

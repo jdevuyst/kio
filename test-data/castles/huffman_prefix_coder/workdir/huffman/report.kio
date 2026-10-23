@@ -6,9 +6,9 @@
 /// check is done in whole numbers by scaling every term by `2^maxlen`.
 module huffman/report;
 
-import elab/control(if);
 import huffman/code(Entry, {entry_len});
 import huffman/list(List, fold, len);
+import macros/control(macro if);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
@@ -24,13 +24,13 @@ fn divided(quotient: I32, remainder: I32) -> Divided { {quotient, remainder} }
 /// It is not a tail call — the recursion's result is what the level above
 /// doubles — so the depth is one frame per bit of the quotient.
 rec(loop) fn divide(n: I32, d: I32) -> Divided {
-  if! lt_i32(n, d) {
+  if(lt_i32(n, d)) {
     divided(0, n)
   } else {
     let half = recur(cont) divide(n, mul_i32(d, 2));
     let doubled = mul_i32(half.?{quotient}, 2);
     let rest = half.?{remainder};
-    if! leq_i32(d, rest) {
+    if(leq_i32(d, rest)) {
       divided(add_i32(doubled, 1), sub_i32(rest, d))
     } else {
       divided(doubled, rest)
@@ -41,17 +41,17 @@ rec(loop) fn divide(n: I32, d: I32) -> Divided {
 /// `n / d` rounded down. A non-positive divisor has no answer to give, so it
 /// reports zero rather than diverging on a divisor that can never reach `n`.
 fn div_floor(n: I32, d: I32) -> I32 {
-  if! leq_i32(d, 0) { 0 } else { divide(n, d).?{quotient} }
+  if(leq_i32(d, 0)) { 0 } else { divide(n, d).?{quotient} }
 }
 
 rec(loop) fn pow2_from(exponent: I32, acc: I32) -> I32 {
-  if! leq_i32(exponent, 0) { acc } else { recur pow2_from(sub_i32(exponent, 1), mul_i32(acc, 2)) }
+  if(leq_i32(exponent, 0)) { acc } else { recur pow2_from(sub_i32(exponent, 1), mul_i32(acc, 2)) }
 }
 
 pub fn pow2(exponent: I32) -> I32 { pow2_from(exponent, 1) }
 
 rec(loop) fn ceil_log2_from(value: I32, width: I32, reach: I32) -> I32 {
-  if! leq_i32(value, reach) {
+  if(leq_i32(value, reach)) {
     width
   } else {
     recur ceil_log2_from(value, add_i32(width, 1), mul_i32(reach, 2))
@@ -66,7 +66,7 @@ pub fn longest_code(rows: List(Entry)) -> I32 {
   , rows
   , .(best: I32, row: Entry) {
       let width = row.?{entry_len};
-      if! lt_i32(best, width) { width } else { best }
+      if(lt_i32(best, width)) { width } else { best }
     }
   , 0
   )

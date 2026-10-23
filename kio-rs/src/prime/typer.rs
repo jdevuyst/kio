@@ -276,7 +276,7 @@ impl Typer<Prime> for PrimeTyper {
             crate::ast::Expr::RecOrder { ext, .. } | crate::ast::Expr::RecQuote { ext, .. } => {
                 match *ext {}
             }
-            crate::ast::Expr::UserElaborator { ext, .. } => match *ext {},
+            crate::ast::Expr::UserMacro { ext, .. } => match *ext {},
             crate::ast::Expr::Ufcs { ext, .. } => match *ext {},
             // Statically uninhabited at `Prime` — the enriched
             // structural variants are produced *after* the typer, by
@@ -333,8 +333,8 @@ impl Typer<Prime> for PrimeTyper {
         crate::pass::typecheck_core::default_check_value_against(e, expected, tcx)
     }
 
-    fn check_user_elaborator_item<'m>(
-        _elaborator: &'m crate::ast::UserElaboratorDef<Prime>,
+    fn check_user_macro_item<'m>(
+        _macro: &'m crate::ast::UserMacroDef<Prime>,
         _item_index: usize,
         _env: &crate::pass::typecheck_core::ModuleEnv<'m, Prime>,
         _elaborations: &mut <Prime as crate::pass::typecheck_core::DeclarationPhase>::Elaborations,
@@ -481,7 +481,7 @@ impl Typer<Prime> for PrimeTyper {
         _env: &crate::pass::typecheck_core::ModuleEnv<'_, Prime>,
         _elaborations: &mut <Prime as crate::pass::typecheck_core::DeclarationPhase>::Elaborations,
     ) -> Result<(), crate::error::Error> {
-        // Kio' carries no surface elaborator forms (every elaboration-
+        // Kio' carries no surface macro forms (every elaboration-
         // bearing variant is uninhabited at Prime), so there is no
         // deferred-elaboration queue to drain. The trait method exists
         // so the shared per-module checker is phase-polymorphic;
@@ -1087,7 +1087,7 @@ fn bake_expr(
         // Elaboration-bearing variants — uninhabited at Prime.
         Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
         // Enriched structural variants only exist post-typecheck.
         Expr::EnrichedTuple { ext, .. }

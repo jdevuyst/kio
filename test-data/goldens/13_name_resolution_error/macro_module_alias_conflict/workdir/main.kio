@@ -1,0 +1,4 @@
+module main;
+
+import helpers as keep;
+import helpers(macro keep);

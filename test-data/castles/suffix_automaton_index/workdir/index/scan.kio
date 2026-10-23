@@ -1,16 +1,16 @@
 module index/scan;
 
-import elab/control(if);
 import index/analysis as analysis;
 import index/automaton as sam;
 import index/numbers as num;
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as n;
 import testapi/array as a;
 import testapi/iter(loop);
 
 rec(loop) fn copy_span(source: Array(I32), position: I32, stop: I32, result: Array(I32)) -> Array(I32) {
-  if! num.less(position, stop) {
+  if(num.less(position, stop)) {
     a.array_push(result, a.array_get(source, position));
     recur copy_span(source, n.add_i32(position, 1), stop, result)
   } else {
@@ -23,8 +23,8 @@ pub fn slice(source: Array(I32), start: I32, stop: I32) -> Array(I32) {
 }
 
 rec(loop) fn matches(source: Array(I32), query: Array(I32), start: I32, offset: I32) -> Bool {
-  if! num.less(offset, a.array_len(query)) {
-    if! num.equal(a.array_get(source, n.add_i32(start, offset)), a.array_get(query, offset)) {
+  if(num.less(offset, a.array_len(query))) {
+    if(num.equal(a.array_get(source, n.add_i32(start, offset)), a.array_get(query, offset))) {
       recur matches(source, query, start, n.add_i32(offset, 1))
     } else {
       .f
@@ -35,8 +35,8 @@ rec(loop) fn matches(source: Array(I32), query: Array(I32), start: I32, offset: 
 }
 
 rec(loop) fn count_from(source: Array(I32), query: Array(I32), start: I32, stop: I32, total: I32) -> I32 {
-  if! num.less(start, stop) {
-    let extra = if! matches(source, query, start, 0) { 1 } else { 0 };
+  if(num.less(start, stop)) {
+    let extra = if(matches(source, query, start, 0)) { 1 } else { 0 };
     recur count_from(source, query, n.add_i32(start, 1), stop, n.add_i32(total, extra))
   } else {
     total
@@ -50,13 +50,13 @@ pub fn occurrences(source: Array(I32), query: Array(I32)) -> I32 {
 pub labels Audit = { intervals: I32, mismatches: I32, unique: I32, repeated: I32 };
 
 rec(loop) fn enumerate(source: Array(I32), index: sam.Index, start: I32, stop: I32, audit: Audit) -> Audit {
-  if! num.less(start, a.array_len(source)) {
-    if! n.leq_i32(stop, a.array_len(source)) {
+  if(num.less(start, a.array_len(source))) {
+    if(n.leq_i32(stop, a.array_len(source))) {
       let query = slice(source, start, stop);
       let count = occurrences(source, query);
-      let mismatch = if! num.equal(count, analysis.occurrences(index, query)) { 0 } else { 1 };
-      let first = if! num.equal(count_from(source, query, 0, start, 0), 0) { 1 } else { 0 };
-      let longest = if! n.leq_i32(2, count) {
+      let mismatch = if(num.equal(count, analysis.occurrences(index, query))) { 0 } else { 1 };
+      let first = if(num.equal(count_from(source, query, 0, start, 0), 0)) { 1 } else { 0 };
+      let longest = if(n.leq_i32(2, count)) {
         num.max(audit.?{repeated}, a.array_len(query))
       } else {
         audit.?{repeated}

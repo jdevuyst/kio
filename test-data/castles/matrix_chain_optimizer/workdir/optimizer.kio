@@ -2,7 +2,7 @@ module optimizer;
 
 import chain as chain;
 import chain(Matrix, {cols}, {rows});
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as math;
 import testapi/array as arrays;
@@ -42,12 +42,12 @@ rec(loop) fn choose(
 , best: I32
 , best_split: I32
 ) -> I32 & I32 {
-  if! math.leq_i32(last, middle) {
+  if(math.leq_i32(last, middle)) {
     (best, best_split)
   } else {
     let candidate = trial(matrices, plan, first, last, middle);
     // Ascending splits and strict improvement retain the earliest equal-cost split.
-    if! math.leq_i32(candidate, math.sub_i32(best, 1)) {
+    if(math.leq_i32(candidate, math.sub_i32(best, 1))) {
       recur choose(matrices, plan, first, last, math.add_i32(middle, 1), candidate, middle)
     } else {
       recur choose(matrices, plan, first, last, math.add_i32(middle, 1), best, best_split)
@@ -57,7 +57,7 @@ rec(loop) fn choose(
 
 rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I32) {
   let last = math.sub_i32(math.add_i32(first, width), 1);
-  if! math.leq_i32(plan.?{size}, last) {
+  if(math.leq_i32(plan.?{size}, last)) {
     ()
   } else {
     let initial = trial(matrices, plan, first, last, first);
@@ -77,7 +77,7 @@ rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I
 }
 
 rec(loop) fn widths(matrices: Array(Matrix), plan: Plan, width: I32) -> Plan {
-  if! math.leq_i32(width, plan.?{size}) {
+  if(math.leq_i32(width, plan.?{size})) {
     intervals(matrices, plan, width, 0);
     recur widths(matrices, plan, math.add_i32(width, 1))
   } else {
@@ -96,7 +96,7 @@ pub fn optimize(matrices: Array(Matrix)) -> Plan {
 }
 
 pub rec(loop) fn reconstruct(plan: Plan, first: I32, last: I32) -> tree.Tree {
-  if! chain.equal(first, last) {
+  if(chain.equal(first, last)) {
     tree.leaf(first)
   } else {
     let middle = split(plan, first, last);

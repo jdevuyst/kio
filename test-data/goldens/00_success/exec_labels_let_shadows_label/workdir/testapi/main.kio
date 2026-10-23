@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
@@ -13,9 +13,9 @@ fn via_let(s: String) -> String { let mid = s; mid }
 // `hed` shadowed by a `fn` value parameter.
 fn via_param(hed: String) -> String { hed }
 
-// `tal` shadowed by a `match!` clause value parameter.
+// `tal` shadowed by a `match` clause value parameter.
 fn via_clause(s: String) -> String {
-  match! s {
+  match(s) {
     .(tal: String) { tal }
   }
 }

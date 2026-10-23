@@ -21,7 +21,7 @@
 //! canonical 100-column budget. [`comma_list`](crate::doc::comma_list)
 //! drives the width-driven A1 break for every comma-separated list
 //! (parameter lists, member lists, call args, tuples, label sugar,
-//! elaborator / `equiv` arm lists, etc.) — flat when it fits, leading-
+//! macro / `equiv` arm lists, etc.) — flat when it fits, leading-
 //! comma multi-line when it doesn't or when an inner unconditional
 //! break cascades out. [`align`](crate::doc::align) pins continuation
 //! chunks of a reflowed string literal to the column of the first
@@ -147,24 +147,22 @@ pub fn pretty_item_signature(item: &Item) -> String {
     render(&doc, WIDTH)
 }
 
-/// Canonical public-cache identity for a user elaborator declaration.
+/// Canonical public-cache identity for a user macro declaration.
 ///
 /// Captures constrain visibility; ordered trailing descriptors determine block
 /// projection. The private implementation target and its execution schedule are
-/// deliberately absent: same-package elaborator consumers track those via
+/// deliberately absent: same-package macro consumers track those via
 /// the separate implementation-source fingerprint.
 #[cfg(feature = "cli")]
-pub(crate) fn pretty_elaborator_public_signature(
-    elaborator: &crate::ast::UserElaboratorDef,
-) -> String {
-    let entries = doc_elaborator_public_entries(elaborator);
+pub(crate) fn pretty_macro_public_signature(macro_def: &crate::ast::UserMacroDef) -> String {
+    let entries = doc_macro_public_entries(macro_def);
     let has_entries = !entries.is_empty();
     render(
         &concat_all([
-            doc_vis(&elaborator.vis),
-            text(format!("elab {}", elaborator.name)),
+            doc_vis(&macro_def.vis),
+            text(format!("macro {}", macro_def.name)),
             text(" : "),
-            doc_type(&elaborator.call_ty),
+            doc_type(&macro_def.call_ty),
             text(" { "),
             join(text("; "), entries),
             text(if has_entries { " }" } else { "}" }),
@@ -204,7 +202,7 @@ pub fn pretty_item_type(item: &Item) -> Option<String> {
         | Item::VariadicOperator(_, _)
         | Item::RecGroup(_, _)
         | Item::TypeRecGroup(_)
-        | Item::Elaborator(_, _)
+        | Item::Macro(_, _)
         | Item::HostType(_)
         | Item::Equiv(_, _) => None,
     }
@@ -270,7 +268,7 @@ fn strip_item_doc(item: &Item) -> Item {
         Item::LabelForward(t, _) => t.doc = None,
         Item::Op(o, _) => o.doc = None,
         Item::VariadicOperator(f, _) => f.doc = None,
-        Item::Elaborator(s, _) => s.doc = None,
+        Item::Macro(s, _) => s.doc = None,
         Item::RecGroup(g, _) => {
             for member in &mut g.members {
                 member.doc = None;
@@ -559,12 +557,15 @@ fn doc_import_entry(u: &Import) -> Doc {
 fn import_item_display(item: &crate::ast::ImportItem) -> String {
     match item {
         ImportItem::Name {
+            macro_span,
             default_span,
             name,
             alias,
             ..
         } => {
-            let prefix = if default_span.is_some() {
+            let prefix = if macro_span.is_some() {
+                "macro "
+            } else if default_span.is_some() {
                 "default "
             } else {
                 ""
@@ -618,7 +619,7 @@ fn doc_item_entry(item: &Item) -> Doc {
         Item::Labels(d, _) => doc_labels(d),
         Item::LabelForward(d, _) => doc_label_forward(d),
         Item::Equiv(e, _) => doc_equiv(e),
-        Item::Elaborator(s, _) => doc_elaborator_item(s),
+        Item::Macro(s, _) => doc_macro_item(s),
         Item::RecGroup(g, _) => doc_rec_group(g),
         Item::TypeRecGroup(g) => doc_type_rec_group(g),
         Item::Op(d, _) => doc_op(d),
@@ -810,31 +811,31 @@ fn doc_fn_def(d: &FnDef<Surface, impl FnPurityExt>) -> Doc {
     ])
 }
 
-fn doc_elaborator_item(s: &crate::ast::UserElaboratorDef) -> Doc {
+fn doc_macro_item(s: &crate::ast::UserMacroDef) -> Doc {
     let doc_prefix = s.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let pubword = doc_vis(&s.vis);
-    let mut entries = doc_elaborator_public_entries(s);
+    let mut entries = doc_macro_public_entries(s);
     entries.push(concat_all([
         text(match s.schedule {
-            crate::ast::ElaboratorSchedule::Late => "impl ",
-            crate::ast::ElaboratorSchedule::Fills => "impl(fills) ",
+            crate::ast::MacroSchedule::Late => "impl ",
+            crate::ast::MacroSchedule::Fills => "impl(fills) ",
         }),
         text(value_path_surface_str(s.implementation.segments())),
     ]));
     concat_all([
         doc_prefix,
         pubword,
-        text(format!("elab {}", s.name)),
+        text(format!("macro {}", s.name)),
         text(" : "),
         doc_type(&s.call_ty),
         doc_compact_declaration_body(&s.body_trivia, join(text("; "), entries)),
     ])
 }
 
-fn doc_elaborator_public_entries(s: &crate::ast::UserElaboratorDef) -> Vec<Doc> {
+fn doc_macro_public_entries(s: &crate::ast::UserMacroDef) -> Vec<Doc> {
     let mut entries = Vec::new();
     if !s.captures.is_empty() {
-        entries.push(doc_elaborator_captures(s));
+        entries.push(doc_macro_captures(s));
     }
     for block in &s.trailing_blocks {
         entries.push(text(format!(
@@ -853,7 +854,7 @@ fn doc_elaborator_public_entries(s: &crate::ast::UserElaboratorDef) -> Vec<Doc> 
     entries
 }
 
-fn doc_elaborator_captures(s: &crate::ast::UserElaboratorDef) -> Doc {
+fn doc_macro_captures(s: &crate::ast::UserMacroDef) -> Doc {
     if s.captures.is_empty() {
         empty()
     } else if s.captures.len() == 1 {
@@ -867,7 +868,7 @@ fn doc_elaborator_captures(s: &crate::ast::UserElaboratorDef) -> Doc {
     }
 }
 
-fn doc_capture_path(capture: &crate::ast::UserElaboratorCapture) -> Doc {
+fn doc_capture_path(capture: &crate::ast::UserMacroCapture) -> Doc {
     text(
         capture
             .segments
@@ -2127,16 +2128,12 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator {
+        Expr::UserMacro {
             name,
             args,
             source_trivia,
             ..
-        } => doc_call(
-            text(format!("{name}!")),
-            args,
-            delimited_closing(source_trivia),
-        ),
+        } => doc_call(text(name.clone()), args, delimited_closing(source_trivia)),
         Expr::BlockCall {
             head,
             prefix,
@@ -2154,15 +2151,8 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     text(flavor.token()),
                 ]);
             }
-            parts.push(text(format!("{}!", head.name)));
-            if let [value] = prefix
-                && !has_comments(&value.meta().leading_trivia)
-                && !has_comments(&value.meta().trailing_trivia)
-                && block_prefix_starts_bare(value)
-                && !block_prefix_has_exposed_block(value)
-            {
-                parts.extend([text(" "), doc_expr(value)]);
-            } else if let [
+            parts.push(text(head.name.clone()));
+            if let [
                 Expr::Unit {
                     meta,
                     source_trivia,
@@ -2381,112 +2371,6 @@ fn block_splice_parts(
     (written, Some((receiver, flavor)))
 }
 
-fn block_prefix_starts_bare(expr: &Expr) -> bool {
-    match expr {
-        Expr::Path { .. }
-        | Expr::StrLit { .. }
-        | Expr::IntLit { .. }
-        | Expr::FloatLit { .. }
-        | Expr::BoolLit { .. }
-        | Expr::RecCall { .. }
-        | Expr::UserElaborator { .. } => true,
-        Expr::Call { callee, .. } => {
-            !call_callee_needs_parens(callee)
-                && !expr_boundary_has_comments(callee, true, true)
-                && block_prefix_starts_bare(callee)
-        }
-        Expr::Elaborator { call, .. } => {
-            let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. }
-                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
-            };
-            !matches!(receiver.as_ref(), Expr::OpChain { .. })
-                && !expr_boundary_has_comments(receiver, true, true)
-                && block_prefix_starts_bare(receiver)
-        }
-        Expr::Ufcs {
-            receiver, flavor, ..
-        } => {
-            if !flavor.callee_on_right() {
-                return true;
-            }
-            let mut innermost = receiver.as_ref();
-            while let Expr::Ufcs {
-                receiver, flavor, ..
-            } = innermost
-                && flavor.callee_on_right()
-            {
-                innermost = receiver;
-            }
-            !matches!(innermost, Expr::OpChain { .. })
-                && !expr_boundary_has_comments(innermost, true, false)
-                && block_prefix_starts_bare(innermost)
-        }
-        Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { pattern, slots },
-            ..
-        } => {
-            !matches!(pattern.first(), Some(OpPart::Token { .. }))
-                && slots.first().is_some_and(|first| {
-                    !op_chain_slot_needs_parens(first, 0, pattern)
-                        && !expr_boundary_has_comments(
-                            first,
-                            true,
-                            !matches!(pattern.get(1), Some(OpPart::Token { .. })),
-                        )
-                        && block_prefix_starts_bare(first)
-                })
-        }
-        _ => false,
-    }
-}
-
-// Only follow edges printed without an expression boundary. Call arguments,
-// function bodies and explicit operator continuations already own their braces.
-fn block_prefix_has_exposed_block(expr: &Expr) -> bool {
-    match expr {
-        Expr::BlockCall { .. } => true,
-        Expr::Call { callee, .. } => {
-            !call_callee_needs_parens(callee) && block_prefix_has_exposed_block(callee)
-        }
-        Expr::Elaborator { call, .. } => {
-            let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. }
-                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
-            };
-            !matches!(receiver.as_ref(), Expr::OpChain { .. })
-                && block_prefix_has_exposed_block(receiver)
-        }
-        Expr::Ufcs {
-            receiver, flavor, ..
-        } => {
-            if flavor.callee_on_right() {
-                !matches!(receiver.as_ref(), Expr::OpChain { .. })
-                    && block_prefix_has_exposed_block(receiver)
-            } else {
-                matches!(receiver.as_ref(), Expr::Call { .. })
-                    && block_prefix_has_exposed_block(receiver)
-            }
-        }
-        Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { pattern, slots },
-            ..
-        } => {
-            let mut slots = slots.iter();
-            pattern.iter().enumerate().any(|(index, part)| {
-                if matches!(part, OpPart::Token { .. }) {
-                    return false;
-                }
-                let slot = slots.next().expect("operator slot expression");
-                !matches!(pattern.get(index + 1), Some(OpPart::Token { .. }))
-                    && !op_chain_slot_needs_parens(slot, index, pattern)
-                    && block_prefix_has_exposed_block(slot)
-            })
-        }
-        _ => false,
-    }
-}
-
 fn doc_source_existential_let(expr: &Expr) -> Option<Doc> {
     let opening = crate::pass::parser::source_existential_let(expr)?;
     let type_params: Option<Vec<_>> = opening
@@ -2586,8 +2470,7 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
             ..
         }
     );
-    let splice = matches!(callee, Expr::Ufcs { .. })
-        || matches!(callee, Expr::BlockCall { splice: Some(flavor), .. } if !flavor.callee_on_right());
+    let splice = matches!(callee, Expr::Ufcs { .. } | Expr::BlockCall { .. });
     let normal_operator = operator_expr_needs_grouping(callee);
     bare_literal || splice || normal_operator
 }
@@ -2866,19 +2749,6 @@ fn operator_expr_needs_grouping(expr: &Expr) -> bool {
 /// claims or a containing frame's pending operator word.
 fn doc_op_chain_slot(slot: &Expr, needs_parens: bool, trailing: bool) -> Doc {
     doc_expr_grouped_boundary(slot, needs_parens, true, trailing)
-}
-
-fn op_chain_slot_needs_parens(
-    slot: &Expr,
-    slot_index: usize,
-    parent_pattern: &[crate::ast::OpPart],
-) -> bool {
-    operator_slot_grouping(
-        slot,
-        slot_index,
-        parent_pattern,
-        &mut OperatorBoundaryCache::default(),
-    )
 }
 
 #[derive(Default)]
@@ -3173,11 +3043,6 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
         args: &'a [CallArg],
         closing: &'a [Trivia],
         flavor: crate::ast::UfcsFlavor,
-        /// True when this segment is the elaborator-UFCS form
-        /// (`r.>iso!(T)` etc.). The pretty-printer appends `!`
-        /// after the callee name to round-trip the user-authored
-        /// spelling.
-        bang: bool,
         /// Comments that trailed the segment's receiver (the
         /// preceding chain step, or the innermost receiver for the
         /// first segment). The lexer attaches a receiver-trailing
@@ -3194,7 +3059,6 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
         callee_segments,
         args,
         flavor,
-        bang,
         source_trivia,
         ..
     } = cur
@@ -3207,7 +3071,6 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
             args,
             closing: delimited_closing(source_trivia),
             flavor: *flavor,
-            bang: bang.is_some(),
             leading_trivia: receiver.meta().trailing_trivia.as_slice(),
         });
         cur = receiver.as_ref();
@@ -3216,10 +3079,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
     let innermost = cur;
     let seg_doc = |seg: &Segment| -> Doc {
         let callee = text(seg.callee_segments.join("."));
-        let mut head = concat(text(seg.flavor.token()), callee);
-        if seg.bang {
-            head = concat(head, text("!"));
-        }
+        let head = concat(text(seg.flavor.token()), callee);
         if seg.args.is_empty() && !has_comments(seg.closing) {
             head
         } else {
@@ -3264,17 +3124,13 @@ fn doc_left_call_splice(top: &Expr) -> Doc {
         callee_segments,
         args,
         flavor,
-        bang,
         source_trivia,
         ..
     } = top
     else {
         unreachable!("doc_left_call_splice called on non-UFCS expression")
     };
-    let mut callee = text(callee_segments.join("."));
-    if bang.is_some() {
-        callee = concat(callee, text("!"));
-    }
+    let callee = text(callee_segments.join("."));
     let lhs = if args.is_empty() && !has_comments(delimited_closing(source_trivia)) {
         callee
     } else {
@@ -3872,8 +3728,8 @@ fn has_comments(trivia: &[Trivia]) -> bool {
 }
 
 /// Emit comments captured as leading trivia before an inline position, for
-/// example `let` bindings inside expression bodies and `match!` clauses inside
-/// a multi-clause `match!`. Each
+/// example `let` bindings inside expression bodies and `match` clauses inside
+/// a multi-clause `match`. Each
 /// `LineComment` is followed by a [`hardline`]; intermediate
 /// blank-line paragraph separators between two comment paragraphs
 /// are preserved; runs of empty `//` lines collapse to one.
@@ -4662,7 +4518,7 @@ mod tests {
             newtype Box : . { ; constructor make; projector take; };
             op _ + _ { ; impl add; };
             varop [% %] { ; foldl step initial; finalize finish; };
-            elab identity : . -> . { ; captures id; impl identity_impl; };
+            macro identity : . -> . { ; captures id; impl identity_impl; };
             host type Text role(str) { owned };
             type Alias = .;
             labels Choice = { left: . } | { right: . };
@@ -4674,7 +4530,7 @@ mod tests {
             "newtype Box : . { constructor make; projector take }\n",
             "op _ + _ { impl add }\n",
             "varop [% %] { foldl step initial; finalize finish }\n",
-            "elab identity : . -> . { captures id; impl identity_impl }\n",
+            "macro identity : . -> . { captures id; impl identity_impl }\n",
             "host type Text role(str) { owned };",
             "type Alias = .;",
             "labels Choice = { left: . } | { right: . };",
@@ -4869,7 +4725,7 @@ mod tests {
                 ".(whole: (x: Int, y: Int))",
             ] {
                 roundtrip(&format!(
-                    "module m; fn run() {{ do! m {{ let {binder} {connective} value; result }} }}"
+                    "module m; fn run() {{ do(m) {{ let {binder} {connective} value; result }} }}"
                 ));
             }
         }
@@ -5276,23 +5132,23 @@ import p( // opening selection
     fn executable_blocks_unfold_one_level_at_a_time() {
         for (body, expected) in [
             (
-                "if! ready { run() } else { wait() }",
-                "if! ready { run() } else { wait() }",
+                "if(ready) { run() } else { wait() }",
+                "if(ready) { run() } else { wait() }",
             ),
             (
-                "if! ready { do! bind { run() } } else { wait() }",
-                "if! ready {\n  do! bind { run() }\n} else {\n  wait()\n}",
+                "if(ready) { do(bind) { run() } } else { wait() }",
+                "if(ready) {\n  do(bind) { run() }\n} else {\n  wait()\n}",
             ),
             (
-                "choose! ready { nested! { run() } } otherwise { wait() }",
-                "choose! ready {\n  nested! { run() }\n} otherwise {\n  wait()\n}",
+                "choose(ready) { nested { run() } } otherwise { wait() }",
+                "choose(ready) {\n  nested { run() }\n} otherwise {\n  wait()\n}",
             ),
-            ("do! bind { run() }", "do! bind { run() }"),
-            ("do! bind { run(); wait() }", "do! bind { run(); wait() }"),
-            ("scope! { let x = run(); x }", "scope! { let x = run(); x }"),
+            ("do(bind) { run() }", "do(bind) { run() }"),
+            ("do(bind) { run(); wait() }", "do(bind) { run(); wait() }"),
+            ("scope { let x = run(); x }", "scope { let x = run(); x }"),
             (
-                "choose! ready { {field = value} } otherwise { other }",
-                "choose! ready { {field = value} } otherwise { other }",
+                "choose(ready) { {field = value} } otherwise { other }",
+                "choose(ready) { {field = value} } otherwise { other }",
             ),
         ] {
             let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
@@ -5309,34 +5165,34 @@ import p( // opening selection
     fn trailing_block_chains_share_width_depth_and_comment_choices() {
         for (body, width, expected) in [
             (
-                "if! a { x } else if! b { y } else { z }",
+                "if(a) { x } else if(b) { y } else { z }",
                 100,
-                "if! a { x } else if! b { y } else { z }",
+                "if(a) { x } else if(b) { y } else { z }",
             ),
             (
-                "if! a { x } else if! b { y } else { z }",
+                "if(a) { x } else if(b) { y } else { z }",
                 30,
-                "if! a {\n  x\n} else if! b {\n  y\n} else {\n  z\n}",
+                "if(a) {\n  x\n} else if(b) {\n  y\n} else {\n  z\n}",
             ),
             (
-                "choose! a { x } otherwise choose! b { nested! { y } } otherwise { z }",
+                "choose(a) { x } otherwise choose(b) { nested { y } } otherwise { z }",
                 100,
-                "choose! a {\n  x\n} otherwise choose! b {\n  nested! { y }\n} otherwise {\n  z\n}",
+                "choose(a) {\n  x\n} otherwise choose(b) {\n  nested { y }\n} otherwise {\n  z\n}",
             ),
             (
-                "if! a { x } else if! b { // keep\ny } else { z }",
+                "if(a) { x } else if(b) { // keep\ny } else { z }",
                 100,
-                "if! a {\n  x\n} else if! b {\n  // keep\n  y\n} else {\n  z\n}",
+                "if(a) {\n  x\n} else if(b) {\n  // keep\n  y\n} else {\n  z\n}",
             ),
             (
-                "if! a { x } else { y // tail\n}",
+                "if(a) { x } else { y // tail\n}",
                 100,
-                "if! a {\n  x\n} else {\n  y\n  // tail\n}",
+                "if(a) {\n  x\n} else {\n  y\n  // tail\n}",
             ),
             (
-                "choose! a { nested! {} } otherwise {}",
+                "choose(a) { nested {} } otherwise {}",
                 100,
-                "choose! a {\n  nested! {}\n} otherwise {\n}",
+                "choose(a) {\n  nested {}\n} otherwise {\n}",
             ),
         ] {
             let parsed = parse(&format!("module x; fn f() {{ {body} }}")).unwrap();
@@ -5590,11 +5446,11 @@ import p( // opening selection
 
             for connective in ["=", "<-"] {
                 let source = format!(
-                    "module m; fn f() {{ do! bind {{ let // binder\n{name} \
+                    "module m; fn f() {{ do(bind) {{ let // binder\n{name} \
                      // connector\n{connective} // value\n(); () }} }}"
                 );
                 let expected = format!(
-                    "module m;\n\nfn f() {{\n  do! bind {{\n    // binder\n    \
+                    "module m;\n\nfn f() {{\n  do(bind) {{\n    // binder\n    \
                      let {name} {connective} // connector\n\n    // value\n    \
                      ();\n    ()\n  }}\n}}\n"
                 );
@@ -5602,10 +5458,10 @@ import p( // opening selection
                 assert_eq!(parsed_structure(&source), parsed_structure(&expected));
                 assert_eq!(
                     roundtrip(&format!(
-                        "module m; fn f() {{ do! bind {{ let {name} {connective} (); () }} }}"
+                        "module m; fn f() {{ do(bind) {{ let {name} {connective} (); () }} }}"
                     )),
                     format!(
-                        "module m;\n\nfn f() {{\n  do! bind {{ let {name} {connective} (); () }}\n}}\n"
+                        "module m;\n\nfn f() {{\n  do(bind) {{ let {name} {connective} (); () }}\n}}\n"
                     )
                 );
             }
@@ -5623,11 +5479,11 @@ import p( // opening selection
 
             for connective in ["=", "<-"] {
                 let source = format!(
-                    "module m; fn f() {{ do! bind {{ {intro}(first, second) \
+                    "module m; fn f() {{ do(bind) {{ {intro}(first, second) \
                      {connective} packet; first }} }}"
                 );
                 let expected = format!(
-                    "module m;\n\nfn f() {{\n  do! bind {{\n    // binder\n    \
+                    "module m;\n\nfn f() {{\n  do(bind) {{\n    // binder\n    \
                      let .(first, second) {connective} packet;\n    first\n  }}\n}}\n"
                 );
                 assert_eq!(roundtrip(&source), expected);
@@ -5655,7 +5511,7 @@ import p( // opening selection
             "(<Hidden> packet // closing\n)",
             "(<Hidden> (first: Hidden, second: . // inner closing\n) // closing\n)",
         ] {
-            for (prefix, suffix) in [("", ""), ("do! bind {", "}")] {
+            for (prefix, suffix) in [("", ""), ("do(bind) {", "}")] {
                 let source = format!(
                     "module m; fn f() {{ {prefix} let // before dot\n. \
                      // before opener\n{pattern} // equals\n= // value\npacket; () {suffix} }}"
@@ -5723,11 +5579,11 @@ import p( // opening selection
                 format!(
                     "module m; fn example() {{ let .{pattern} // after pattern\n= value; () }}"
                 ),
-                format!("module m; fn example() {{ do! m {{ let .{pattern} = value; () }} }}"),
-                format!("module m; fn example() {{ do! m {{ let .{pattern} <- value; () }} }}"),
+                format!("module m; fn example() {{ do(m) {{ let .{pattern} = value; () }} }}"),
+                format!("module m; fn example() {{ do(m) {{ let .{pattern} <- value; () }} }}"),
                 format!("module m; fn example() {{ let .(<Hidden> {pattern}) = value; () }}"),
                 format!(
-                    "module m; fn example() {{ do! m {{ let .(<Hidden> {pattern}) = value; () }} }}"
+                    "module m; fn example() {{ do(m) {{ let .(<Hidden> {pattern}) = value; () }} }}"
                 ),
             ] {
                 // A bare single name after `whole:` denotes a type, not a pattern.
@@ -5918,7 +5774,7 @@ import p( // opening selection
              pub type T = .; \
              pub newtype N : . { pub constructor mk_n; pub projector un_n; }; \
              pub labels L = { a: . }; \
-             pub elab checked : [A] A -> A { impl checked_impl; }; \
+             pub macro checked : [A] A -> A { impl checked_impl; }; \
              pub op _ + _ { impl plus; }; \
              pub varop [* *] { foldr append empty; }; \
              rec(loop) pub fn g() -> . { () }",
@@ -5927,15 +5783,15 @@ import p( // opening selection
         assert!(pp.contains("pub type T = .;"));
         assert!(pp.contains("pub newtype N : ."));
         assert!(pp.contains("pub labels L ="));
-        assert!(pp.contains("pub elab checked :"));
+        assert!(pp.contains("pub macro checked :"));
         assert!(pp.contains("pub op _ + _ { impl plus }"));
         assert!(pp.contains("pub varop [* *] { foldr append empty }"));
         assert!(pp.contains("pub rec(loop) fn g() {"));
     }
 
     #[test]
-    fn fills_elaborator_schedule_has_a_stable_canonical_spelling() {
-        let pp = roundtrip("module x; elab demo : . -> . { impl (fills) demo_impl; };");
+    fn fills_macro_schedule_has_a_stable_canonical_spelling() {
+        let pp = roundtrip("module x; macro demo : . -> . { impl (fills) demo_impl; };");
         assert!(pp.contains("{ impl(fills) demo_impl }"), "got:\n{pp}");
     }
 
@@ -5948,7 +5804,7 @@ import p( // opening selection
                foldr helpers.Box.push Box.empty; \
                finalize finish; \
              }; \
-             elab demo : . -> . { impl(fills) helpers.demo_impl; };",
+             macro demo : . -> . { impl(fills) helpers.demo_impl; };",
         );
         for expected in [
             "impl helpers.add }",
@@ -5977,10 +5833,10 @@ varop [* *] {
   finalize helpers // finalize owner
     .finish;
 };
-elab demo : . -> . {
+macro demo : . -> . {
   impl( // schedule open
     fills // schedule marker
-  ) helpers // elaborator owner
+  ) helpers // macro owner
     .demo_impl;
 };
 "#;
@@ -5995,7 +5851,7 @@ elab demo : . -> . {
             "// finalize owner",
             "// schedule open",
             "// schedule marker",
-            "// elaborator owner",
+            "// macro owner",
         ];
         let mut previous = 0;
         for comment in comments {
@@ -6011,7 +5867,7 @@ elab demo : . -> . {
         let source = r#"module x;
 
 /// declaration docs
-elab demo : Box(
+macro demo : Box(
   // nested call type
   A
 ) -> . {
@@ -6021,10 +5877,10 @@ elab demo : Box(
 };
 "#;
         let parsed = parse(source).unwrap_or_else(|e| panic!("parse failed: {e:?}\n{source}"));
-        let crate::ast::Item::Elaborator(elaborator, _) = &parsed.items[0] else {
-            panic!("expected elaborator")
+        let crate::ast::Item::Macro(macro_def, _) = &parsed.items[0] else {
+            panic!("expected macro")
         };
-        let original_doc = elaborator.doc.clone();
+        let original_doc = macro_def.doc.clone();
         assert_eq!(
             original_doc
                 .as_ref()
@@ -6033,7 +5889,7 @@ elab demo : Box(
                 .as_slice(),
             ["declaration docs"]
         );
-        let original_body_comments = elaborator
+        let original_body_comments = macro_def
             .body_trivia
             .iter()
             .filter_map(|trivia| match trivia {
@@ -6075,11 +5931,11 @@ elab demo : Box(
 
         let reparsed =
             parse(&once).unwrap_or_else(|e| panic!("parse of pretty output failed: {e:?}\n{once}"));
-        let crate::ast::Item::Elaborator(elaborator, _) = &reparsed.items[0] else {
-            panic!("expected elaborator after reparse")
+        let crate::ast::Item::Macro(macro_def, _) = &reparsed.items[0] else {
+            panic!("expected macro after reparse")
         };
-        assert_eq!(elaborator.doc, original_doc);
-        let reparsed_body_comments = elaborator
+        assert_eq!(macro_def.doc, original_doc);
+        let reparsed_body_comments = macro_def
             .body_trivia
             .iter()
             .filter_map(|trivia| match trivia {
@@ -6189,7 +6045,7 @@ elab demo : Box(
     #[test]
     fn import_selective_round_trips() {
         roundtrip("module x; import pkg/mod(Foo, Bar);");
-        roundtrip("module x; import match(match);");
+        roundtrip("module x; import match(macro match);");
     }
 
     #[test]
@@ -6882,7 +6738,7 @@ elab demo : Box(
     #[test]
     fn field_splice_and_row_let_boundaries_keep_comments_in_order() {
         let binding = "let .({ready // inner close\n} // outer close\n) // equals\n= row; ready";
-        let mut bodies = vec![binding.to_owned(), format!("flow! {{ {binding} }}")];
+        let mut bodies = vec![binding.to_owned(), format!("flow {{ {binding} }}")];
         for operator in ["?", "!"] {
             for fields in ["", "ready"] {
                 bodies.push(format!(
@@ -7954,9 +7810,9 @@ elab demo : Box(
 
     #[test]
     fn block_label_value_prefix_keeps_required_grouping() {
-        let output = roundtrip("module x; fn f() -> . { do!({field = value}) { final_value } }");
+        let output = roundtrip("module x; fn f() -> . { do({field = value}) { final_value } }");
         assert!(
-            output.contains("do!({field = value}) {"),
+            output.contains("do({field = value}) {"),
             "label-value receiver lost its disambiguating parentheses:\n{output}"
         );
     }
@@ -7978,7 +7834,7 @@ elab demo : Box(
         ] {
             let source = format!(
                 "module x; op _ + _ {{ impl add; }}; \
-                 fn f() {{ choose! ({prefix}) {{ // body\n() }} }}"
+                 fn f() {{ choose ({prefix}) {{ // body\n() }} }}"
             );
             let output = roundtrip(&source);
             assert_eq!(
@@ -8001,7 +7857,7 @@ elab demo : Box(
         ] {
             let source = format!(
                 "module x; op _ + _ {{ impl add; }}; \
-                 fn f() {{ choose! {prefix} {{ // body\n() }} }}"
+                 fn f() {{ choose({prefix}) {{ // body\n() }} }}"
             );
             let output = roundtrip(&source);
             assert_eq!(
@@ -8009,7 +7865,7 @@ elab demo : Box(
                 parsed_structure(&output),
                 "{source}"
             );
-            assert!(output.contains("choose! "), "{output}");
+            assert!(output.contains("choose("), "{output}");
             let comments = output
                 .lines()
                 .filter_map(|line| line.find("//").map(|start| line[start..].trim()))
@@ -8029,7 +7885,7 @@ elab demo : Box(
             "(// first\nleft // second\n) %%",
             "left ?? (// first\nmiddle ?? right // second\n)",
             "left @@ (// first\nmiddle :: right // second\n)",
-            "choose! ((// first\nleft) + right) { // second\n() }",
+            "choose ((// first\nleft) + right) { // second\n() }",
         ] {
             let source = format!(
                 "module x; op _ + _ {{ impl add; }}; op _ :: __ {{ impl cons; }}; \
@@ -8137,7 +7993,7 @@ elab demo : Box(
                 "(.() { () }.?{field})(())",
                 "(.() { () }.!{field = value})(())",
             ] {
-                let source = format!("module x; fn f() {{ fit!(id{splice}({argument})) }}");
+                let source = format!("module x; fn f() {{ fit(id{splice}({argument})) }}");
                 let printed = roundtrip(&source);
                 assert_eq!(
                     parsed_structure(&source),
@@ -8597,12 +8453,12 @@ elab demo : Box(
         for source in [
             "fn f(){ x.>g // 1\n(A, y) }",
             "fn f(){ x.>>g // 1\n( // 2\ny // 3\n) }",
-            "fn f(){ x.>g! // 1\n(y) }",
-            "fn f(){ x.>>g! // 1\n( // 2\ny // 3\n) }",
-            "fn f(){ g! // 1\n(y) }",
-            "fn f(){ g! // 1\n( // 2\n) }",
-            "fn f(){ g! // 1\n(y).<x }",
-            "fn f(){ g! // 1\n(y).<<x }",
+            "fn f(){ x.>g // 1\n(y) }",
+            "fn f(){ x.>>g // 1\n( // 2\ny // 3\n) }",
+            "fn f(){ g // 1\n(y) }",
+            "fn f(){ g // 1\n( // 2\n) }",
+            "fn f(){ g // 1\n(y).<x }",
+            "fn f(){ g // 1\n(y).<<x }",
             "fn f(){ recur g // 1\n(y) }",
             "fn f(){ recur g // 1\n( // 2\n) }",
             "fn f(){ recur // 1\ng(y) }",
@@ -8610,15 +8466,15 @@ elab demo : Box(
             "fn f(){ recur( // 1\npoly // 2\n, // 3\ncont // 4\n) // 5\ng(y) }",
             "fn f(){ g.< // 1\n(x) }",
             "fn f(){ g.<< // 1\n(x) }",
-            "fn f(){ g!.< // 1\n(x) }",
-            "fn f(){ g!.<< // 1\n(x) }",
+            "fn f(){ g.< // 1\n(x) }",
+            "fn f(){ g.<< // 1\n(x) }",
             "fn f(){ g // 1\n.< // 2\n(x) }",
             "fn f(){ g(y) // 1\n.<< // 2\n(x) }",
-            "fn f(){ g! // 1\n.< // 2\n(x) }",
-            "fn f(){ g!(y) // 1\n.<< // 2\n(x) }",
+            "fn f(){ g // 1\n.< // 2\n(x) }",
+            "fn f(){ g(y) // 1\n.<< // 2\n(x) }",
             "fn f(){ g.< // 1\n( // 2\nh // 3\n)(x) }",
             "fn f(){ g // 1\n( // 2\nx // 3\n) }",
-            "fn f(){ g! // 1\n(x) { () } }",
+            "fn f(){ g // 1\n(x) { () } }",
         ] {
             let source = format!("module x; {source}");
             let printed = roundtrip(&source);
@@ -8644,8 +8500,8 @@ elab demo : Box(
         );
         for source in [
             "x.>g // comment\n()",
-            "x.>>g! // comment\n()",
-            "g! // comment\n().<x",
+            "x.>>g // comment\n()",
+            "g // comment\n().<x",
         ] {
             assert!(parse(&format!("module x; fn f(){{ {source} }}")).is_err());
         }
@@ -8655,13 +8511,13 @@ elab demo : Box(
     fn delimited_comment_owners_cover_call_consumers_and_type_groups() {
         for source in [
             "fn f() { recur f( // 1\n) }",
-            "fn f() { e!( // 1\n) }",
+            "fn f() { e( // 1\n) }",
             "fn f() { x.>g(y // 1\n) }",
-            "fn f() { x.>e!(y // 1\n) }",
+            "fn f() { x.>e(y // 1\n) }",
             "fn f() { g(y // 1\n).<x }",
-            "fn f() { e!(y // 1\n).<x }",
-            "fn f() { e!( // 1\n) { () } }",
-            "fn f() { e!((x // 1\n), y // 2\n) { () } }",
+            "fn f() { e(y // 1\n).<x }",
+            "fn f() { e( // 1\n) { () } }",
+            "fn f() { e((x // 1\n), y // 2\n) { () } }",
             "fn f[ // 1\nA, // 2\nB // 3\n]() { () }",
             "fn f() // 1\n[A] // 2\n( // 3\nx: A) { x }",
             "fn f() { .( // 1\nx // 2\n: // 3\n. // 4\n) { x } }",
@@ -8743,7 +8599,7 @@ host type String role(str);
 
 host fn print(s: String) -> .;
 
-pub fn main() -> . { print("Hello, world!") }"#,
+pub fn main() -> . { print("Hello, world") }"#,
         );
     }
 
@@ -9427,7 +9283,7 @@ fn f() -> . {
     fn lambda_item_block_body_nests_inside_the_lambda() {
         let src = "module x;\n\
                    fn filter[A](keep: A -> Bool, xs: A, whole: A) -> A {\n\
-                     reverse(fold_list(xs, whole, .(carry: A, x: A) -> A { if! keep(x) { cons(x, carry) } else { carry } }))\n\
+                     reverse(fold_list(xs, whole, .(carry: A, x: A) -> A { if(keep(x)) { cons(x, carry) } else { carry } }))\n\
                    }\n";
         let pp = roundtrip(src);
         assert_eq!(
@@ -9439,38 +9295,38 @@ fn f() -> . {
              \x20 , xs\n\
              \x20 , whole\n\
              \x20 , .(carry: A, x: A) -> A {\n\
-             \x20     if! keep(x) { cons(x, carry) } else { carry }\n\
+             \x20     if(keep(x)) { cons(x, carry) } else { carry }\n\
              \x20   }\n\
              \x20 ))\n\
              }\n"
         );
     }
 
-    /// The same item-content anchoring through the `match!` clause
+    /// The same item-content anchoring through the `match` clause
     /// path: a clause lambda is an item of the clause tuple, itself
-    /// an item of the `match!` argument list, so each `, ` level
+    /// an item of the `match` argument list, so each `, ` level
     /// nests its content and a broken clause body sits at +2 from
     /// its clause header.
     #[test]
     fn match_clause_bodies_nest_inside_their_clause() {
         let src = "module x;\n\
-                   import match(match);\n\
+                   import match(macro match);\n\
                    fn step[A](v: A | A, dflt: A) -> A {\n\
-                     match!(v, (.(l: A) { if! is_good(l) { l } else { dflt } }, .(r: A) { r }))\n\
+                     match(v, (.(l: A) { if(is_good(l)) { l } else { dflt } }, .(r: A) { r }))\n\
                    }\n";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
             "module x;\n\
              \n\
-             import match(match);\n\
+             import match(macro match);\n\
              \n\
              fn step[A](v: A | A, dflt: A) -> A {\n\
-             \x20 match!(\n\
+             \x20 match(\n\
              \x20 , v\n\
              \x20 , (\n\
              \x20   , .(l: A) {\n\
-             \x20       if! is_good(l) { l } else { dflt }\n\
+             \x20       if(is_good(l)) { l } else { dflt }\n\
              \x20     }\n\
              \x20   , .(r: A) { r }\n\
              \x20   )\n\
@@ -9593,20 +9449,20 @@ fn f() -> . {
 
     #[test]
     fn scope_call_round_trips_as_block_expression() {
-        let pp = roundtrip("module x; fn f() -> . { scope! { let x = (); x } }");
-        assert!(pp.contains("scope! { let x = (); x }"), "got:\n{pp}");
+        let pp = roundtrip("module x; fn f() -> . { scope { let x = (); x } }");
+        assert!(pp.contains("scope { let x = (); x }"), "got:\n{pp}");
         assert!(pp.contains("let x = ();"), "got:\n{pp}");
     }
 
     #[test]
     fn scope_call_comment_survives_round_trip() {
         let pp = roundtrip(
-            "module x; fn f() -> . { scope! { \
+            "module x; fn f() -> . { scope { \
              // local binding\n\
              let x = (); x } }",
         );
         assert!(
-            pp.contains("scope! {\n    // local binding\n    let x = ();"),
+            pp.contains("scope {\n    // local binding\n    let x = ();"),
             "expected scope comment before local let; got:\n{pp}"
         );
     }
@@ -9615,33 +9471,34 @@ fn f() -> . {
     fn sequence_call_comment_survives_round_trip() {
         let pp = roundtrip(
             "module x; fn bind[A][B](x: A, k: A -> B) -> B { k(x) } \
-             fn f() -> . { do! bind { \
+             fn f() -> . { do(bind) { \
                // sequence step\n\
                (); () } }",
         );
         assert!(
-            pp.contains("do! bind {\n    // sequence step\n    ();"),
+            pp.contains("do(bind) {\n    // sequence step\n    ();"),
             "expected sequence comment before expression; got:\n{pp}"
         );
     }
 
-    /// A comment captured before a `match!` clause survives the
+    /// A comment captured before a `match` clause survives the
     /// round-trip: the comment emits on its own line above the
     /// clause inside the multi-line arms tuple.
     #[test]
     fn within_body_comment_before_match_clause_survives_round_trip() {
-        // Use single-clause `match!` first to verify trivia
+        // Use single-clause `match` first to verify trivia
         // capture works for the basic case. Multi-clause is the
         // intended target — a baseline check below confirms the
         // comment-free multi-clause parses, then the with-comment
         // form is round-tripped.
-        let bare = "module x; import match(match); fn f[A](v: A) -> . { match!(v, .() { () }) }";
+        let bare =
+            "module x; import match(macro match); fn f[A](v: A) -> . { match(v, .() { () }) }";
         parse(bare).expect("single-clause baseline parses");
         // The comment-free multi-clause control must parse before
         // checking the same shape with interstitial trivia.
-        let multi_bare = "module x; import match(match); fn f[A](v: A) -> . { match!(v, (.() { () }, .[B](n: B) { () })) }";
+        let multi_bare = "module x; import match(macro match); fn f[A](v: A) -> . { match(v, (.() { () }, .[B](n: B) { () })) }";
         parse(multi_bare).expect("multi-clause baseline parses");
-        let src = "module x; import match(match); fn f[A](v: A) -> . { match!(v, (.() { () }, // sec\n.[B](n: B) { () })) }";
+        let src = "module x; import match(macro match); fn f[A](v: A) -> . { match(v, (.() { () }, // sec\n.[B](n: B) { () })) }";
         let m = parse(src)
             .unwrap_or_else(|e| panic!("with-comment parse failed: {e:?}\nsource:\n{src}"));
         let out = pretty_module(&m);
@@ -9725,12 +9582,12 @@ fn f() -> . {
     #[test]
     fn within_closure_body_comment_before_let_emits_once() {
         let src = "module x;\n\
-                   import match(match);\n\
+                   import match(macro match);\n\
                    fn apply[A](x: A, f: A -> A) -> A { f(x) }\n\
                    fn g[A](p: A & A) -> A & A {\n\
                      apply(A & A, p, .(q) {\n\
                        // keep q\n\
-                       let kept = match!(q, .(l: A, r: A) { (l, r) });\n\
+                       let kept = match(q, .(l: A, r: A) { (l, r) });\n\
                        kept\n\
                      })\n\
                    }\n";
@@ -9820,7 +9677,7 @@ fn f() -> . {
     fn trailing_comment_in_scope_call_survives() {
         let src = "module x;\n\
                    fn f() -> . {\n\
-                     scope! {\n\
+                     scope {\n\
                        ()\n\
                        // dangling in do\n\
                      }\n\
@@ -10053,11 +9910,37 @@ fn f() -> . {
     }
 
     #[test]
-    fn elaborator_left_call_splice_preserves_bang() {
-        let pp = roundtrip("module x; fn f() -> . { let r = iso!(T).<<value; () }");
+    fn macro_block_prefixes_keep_their_parentheses() {
+        for head in ["select", "let", "recur"] {
+            for argument in ["value", "compute(value)", ".t", "-1"] {
+                let source = format!(
+                    "module x; import provider(macro {head}); fn run(value: .) -> . {{ {head}({argument}) {{ () }} }}"
+                );
+                let output = roundtrip(&source);
+                assert!(
+                    output.contains(&format!("{head}({argument}) {{")),
+                    "{output}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn macro_block_result_call_keeps_its_callee_grouped() {
+        let output = roundtrip(
+            "module x; import provider(macro choose); fn run(value: .) -> . { (choose { value })(()) }",
+        );
+        assert!(output.contains("(choose { value })(())"), "{output}");
+    }
+
+    #[test]
+    fn macro_left_call_splice_preserves_selected_import() {
+        let pp = roundtrip(
+            "module x; import palette(macro iso); fn f() -> . { let r = iso(T).<<value; () }",
+        );
         assert!(
-            pp.contains("iso!(T).<<value"),
-            "elaborator left-call splice should preserve `!`; got:\n{pp}"
+            pp.contains("iso(T).<<value"),
+            "macro left-call splice should preserve its call spelling; got:\n{pp}"
         );
     }
 
@@ -10073,10 +9956,10 @@ fn f() -> . {
   receiver.>>T.member;
   T.member.<receiver;
   T.member.<<receiver;
-  receiver.>transform!;
-  receiver.>>transform!;
-  transform!.<receiver;
-  transform!.<<receiver;
+  receiver.>transform;
+  receiver.>>transform;
+  transform.<receiver;
+  transform.<<receiver;
   receiver.>call(());
   call(()).<receiver;
   ()
@@ -10091,10 +9974,10 @@ fn f() -> . {
             "receiver.>>T.member",
             "T.member.<receiver",
             "T.member.<<receiver",
-            "receiver.>transform!",
-            "receiver.>>transform!",
-            "transform!.<receiver",
-            "transform!.<<receiver",
+            "receiver.>transform",
+            "receiver.>>transform",
+            "transform.<receiver",
+            "transform.<<receiver",
             "receiver.>call(())",
             "call(()).<receiver",
         ] {

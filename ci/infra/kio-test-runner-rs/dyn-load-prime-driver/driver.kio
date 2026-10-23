@@ -1,9 +1,6 @@
 /// The dyn-load-prime test driver: load a guest image from the runner, drive it per the case's protocol, and observe its host effects.
 module driver;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_fn, Host_type, Host_types, Param_kinds, Role);
 import host_descriptor(base_kind, host_types_cons, host_types_nil, mk_role_host_type);
 import host_descriptor(host_fn_eq, host_fn_id, host_id_eq, host_id_local, host_id_module);
@@ -33,6 +30,9 @@ import loader(host_fn_binding_descriptor, host_fn_binding_groups, un_host_fn_bin
 import loader(host_fn_bindings_cons, host_fn_bindings_nil, mk_host_adapter, mk_host_fn_binding);
 import loader(hostfn_descriptor, hostfn_groups, un_hostfns);
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import prime(Group_slots, group_slots_cons, group_slots_nil, un_group_slots);
 import result(Call_result, call_done, call_stuck);
 import result(call_apply, call_apply_then, call_fold);
@@ -222,12 +222,12 @@ fn opaque_step_descriptor() -> Host_fn {
 fn base_param_kinds(arity: I32) -> Param_kinds {
   loop(
   , .(state: I32 & Param_kinds) {
-      match! state {
+      match(state) {
         .(remaining: I32, kinds: Param_kinds) {
-          if! leq_i32(remaining, 0(I32)) {
-            widen_sum!(kinds, (I32 & Param_kinds) | Param_kinds)
+          if(leq_i32(remaining, 0(I32))) {
+            widen_sum(kinds, (I32 & Param_kinds) | Param_kinds)
           } else {
-            widen_sum!(
+            widen_sum(
             , (sub_i32(remaining, 1(I32)), param_kinds_cons(base_kind(), kinds))
             , (I32 & Param_kinds) | Param_kinds
             )
@@ -242,9 +242,9 @@ fn base_param_kinds(arity: I32) -> Param_kinds {
 fn protocol_host_type(index: I32) -> Host_type {
   let id = mk_host_id(protocol_host_type_module(index), protocol_host_type_leaf(index));
   let role_name = protocol_host_type_role(index);
-  if! string_eq(role_name, ""(String)) {
+  if(string_eq(role_name, ""(String))) {
     mk_roleless_host_type(id, base_param_kinds(protocol_host_type_arity(index)))
-  } else match! role_from_name(role_name) {
+  } else match(role_from_name(role_name)) {
     (
     , .(role: Role) { mk_role_host_type(id, role) }
     , .(_unknown: .) {
@@ -259,13 +259,13 @@ fn protocol_host_type(index: I32) -> Host_type {
 fn protocol_host_types() -> Host_types {
   loop(
   , .(state: I32 & Host_types) {
-      match! state {
+      match(state) {
         .(remaining: I32, types: Host_types) {
-          if! leq_i32(remaining, 0(I32)) {
-            widen_sum!(types, (I32 & Host_types) | Host_types)
+          if(leq_i32(remaining, 0(I32))) {
+            widen_sum(types, (I32 & Host_types) | Host_types)
           } else {
             let index = sub_i32(remaining, 1(I32));
-            widen_sum!(
+            widen_sum(
             , (index, host_types_cons(protocol_host_type(index), types))
             , (I32 & Host_types) | Host_types
             )
@@ -280,13 +280,13 @@ fn protocol_host_types() -> Host_types {
 fn protocol_host_fn_groups(fn_index: I32) -> Group_slots {
   loop(
   , .(state: I32 & Group_slots) {
-      match! state {
+      match(state) {
         .(remaining: I32, groups: Group_slots) {
-          if! leq_i32(remaining, 0(I32)) {
-            widen_sum!(groups, (I32 & Group_slots) | Group_slots)
+          if(leq_i32(remaining, 0(I32))) {
+            widen_sum(groups, (I32 & Group_slots) | Group_slots)
           } else {
             let group_index = sub_i32(remaining, 1(I32));
-            widen_sum!(
+            widen_sum(
             , (
               , group_index
               , group_slots_cons(protocol_host_fn_group_slots(fn_index, group_index), groups)
@@ -315,13 +315,13 @@ fn protocol_host_fn(index: I32) -> Host_fn_binding {
 fn protocol_host_functions() -> Host_fn_bindings {
   loop(
   , .(state: I32 & Host_fn_bindings) {
-      match! state {
+      match(state) {
         .(remaining: I32, functions: Host_fn_bindings) {
-          if! leq_i32(remaining, 0(I32)) {
-            widen_sum!(functions, (I32 & Host_fn_bindings) | Host_fn_bindings)
+          if(leq_i32(remaining, 0(I32))) {
+            widen_sum(functions, (I32 & Host_fn_bindings) | Host_fn_bindings)
           } else {
             let index = sub_i32(remaining, 1(I32));
-            widen_sum!(
+            widen_sum(
             , (index, host_fn_bindings_cons(protocol_host_fn(index), functions))
             , (I32 & Host_fn_bindings) | Host_fn_bindings
             )
@@ -340,17 +340,17 @@ fn protocol_host_adapter() -> Host_adapter {
   // host contract, and only this script's adapter admits it. The exact runtime
   // preflight below compares against `functions`, not this local extension.
   let adapter_functions =
-    if! string_eq(protocol_name(), "export-callback-roundtrip"(String)) {
+    if(string_eq(protocol_name(), "export-callback-roundtrip"(String))) {
       host_fn_bindings_cons(
       , mk_host_fn_binding(cb_add3_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
       , functions
       )
-    } else if! string_eq(protocol_name(), "export-compound-input-once"(String)) {
+    } else if(string_eq(protocol_name(), "export-compound-input-once"(String))) {
       host_fn_bindings_cons(
       , mk_host_fn_binding(cb_pair_descriptor(), group_slots_cons(0(I32), group_slots_nil()))
       , functions
       )
-    } else if! string_eq(protocol_name(), "opaque-compound-roundtrip"(String)) {
+    } else if(string_eq(protocol_name(), "opaque-compound-roundtrip"(String))) {
       host_fn_bindings_cons(
       , mk_host_fn_binding(opaque_step_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
       , functions
@@ -373,31 +373,31 @@ fn make_lit_protocol(text: String, host_type: Host_type) -> Value {
 fn protocol_group_slots_eq(left: Group_slots, right: Group_slots) -> Bool {
   loop(
   , .(state: Group_slots & Group_slots) {
-      match! state {
+      match(state) {
         .(left0: Group_slots, right0: Group_slots) {
-          match! un_group_slots(left0) {
+          match(un_group_slots(left0)) {
             (
             , .(left_slots: I32, left_rest: Group_slots) {
-                match! un_group_slots(right0) {
+                match(un_group_slots(right0)) {
                   (
                   , .(right_slots: I32, right_rest: Group_slots) {
-                      if! eq_i32(left_slots, right_slots) {
-                        widen_sum!((left_rest, right_rest), (Group_slots & Group_slots) | Bool)
+                      if(eq_i32(left_slots, right_slots)) {
+                        widen_sum((left_rest, right_rest), (Group_slots & Group_slots) | Bool)
                       } else {
-                        widen_sum!(.f(Bool), (Group_slots & Group_slots) | Bool)
+                        widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool)
                       }
                     }
-                  , .(_right_empty: .) { widen_sum!(.f(Bool), (Group_slots & Group_slots) | Bool) }
+                  , .(_right_empty: .) { widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool) }
                   )
                 }
               }
             , .(_left_empty: .) {
-                match! un_group_slots(right0) {
+                match(un_group_slots(right0)) {
                   (
                   , .(_right_head: I32, _right_tail: Group_slots) {
-                      widen_sum!(.f(Bool), (Group_slots & Group_slots) | Bool)
+                      widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool)
                     }
-                  , .(_right_empty: .) { widen_sum!(.t(Bool), (Group_slots & Group_slots) | Bool) }
+                  , .(_right_empty: .) { widen_sum(.t(Bool), (Group_slots & Group_slots) | Bool) }
                   )
                 }
               }
@@ -411,7 +411,7 @@ fn protocol_group_slots_eq(left: Group_slots, right: Group_slots) -> Bool {
 }
 
 fn protocol_binding_matches_hostfn(binding: Host_fn_binding, hostfn: Hostfn) -> Bool {
-  if! host_fn_eq(host_fn_binding_descriptor(binding), hostfn_descriptor(hostfn)) {
+  if(host_fn_eq(host_fn_binding_descriptor(binding), hostfn_descriptor(hostfn))) {
     protocol_group_slots_eq(host_fn_binding_groups(binding), hostfn_groups(hostfn))
   } else {
     .f(Bool)
@@ -421,16 +421,16 @@ fn protocol_binding_matches_hostfn(binding: Host_fn_binding, hostfn: Hostfn) -> 
 fn protocol_has_runtime_hostfn(hostfn: Hostfn, bindings: Host_fn_bindings) -> Bool {
   loop(
   , .(remaining: Host_fn_bindings) {
-      match! un_host_fn_bindings(remaining) {
+      match(un_host_fn_bindings(remaining)) {
         (
         , .(binding: Host_fn_binding, rest: Host_fn_bindings) {
-            if! protocol_binding_matches_hostfn(binding, hostfn) {
-              widen_sum!(.t(Bool), Host_fn_bindings | Bool)
+            if(protocol_binding_matches_hostfn(binding, hostfn)) {
+              widen_sum(.t(Bool), Host_fn_bindings | Bool)
             } else {
-              widen_sum!(rest, Host_fn_bindings | Bool)
+              widen_sum(rest, Host_fn_bindings | Bool)
             }
           }
-        , .(_empty: .) { widen_sum!(.f(Bool), Host_fn_bindings | Bool) }
+        , .(_empty: .) { widen_sum(.f(Bool), Host_fn_bindings | Bool) }
         )
       }
     }
@@ -445,18 +445,18 @@ fn protocol_runtime_hostfns_match(runtime: Hostfns) -> Bool {
   // while the shared protocol registry rejects duplicate contract identities.
   loop(
   , .(state: Hostfns & I32) {
-      match! state {
+      match(state) {
         .(remaining: Hostfns, unmatched: I32) {
-          match! un_hostfns(remaining) {
+          match(un_hostfns(remaining)) {
             (
             , .(hostfn: Hostfn, rest: Hostfns) {
-                if! protocol_has_runtime_hostfn(hostfn, protocol_functions) {
-                  widen_sum!((rest, sub_i32(unmatched, 1(I32))), (Hostfns & I32) | Bool)
+                if(protocol_has_runtime_hostfn(hostfn, protocol_functions)) {
+                  widen_sum((rest, sub_i32(unmatched, 1(I32))), (Hostfns & I32) | Bool)
                 } else {
-                  widen_sum!(.f(Bool), (Hostfns & I32) | Bool)
+                  widen_sum(.f(Bool), (Hostfns & I32) | Bool)
                 }
               }
-            , .(_empty: .) { widen_sum!(eq_i32(unmatched, 0(I32)), (Hostfns & I32) | Bool) }
+            , .(_empty: .) { widen_sum(eq_i32(unmatched, 0(I32)), (Hostfns & I32) | Bool) }
             )
           }
         }
@@ -468,31 +468,31 @@ fn protocol_runtime_hostfns_match(runtime: Hostfns) -> Bool {
 
 // The guest-side i32 payload of a host scalar value, or `()`.
 fn as_i32(v: Value) -> . | I32 {
-  match! value_to_scalar(v) {
-    (.(s: Scalar) { scalar_as_i32(s) }, .(_no: .) { widen_sum!((), . | I32) })
+  match(value_to_scalar(v)) {
+    (.(s: Scalar) { scalar_as_i32(s) }, .(_no: .) { widen_sum((), . | I32) })
   }
 }
 
 fn as_str(v: Value) -> . | String {
-  match! value_to_scalar(v) {
-    (.(s: Scalar) { scalar_as_str(s) }, .(_no: .) { widen_sum!((), . | String) })
+  match(value_to_scalar(v)) {
+    (.(s: Scalar) { scalar_as_str(s) }, .(_no: .) { widen_sum((), . | String) })
   }
 }
 
 fn vi32(n: I32) -> Value { vhost(scalar_of_i32(n)) }
 
 fn arm_add_count(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(_c: V_closure) { call_stuck("add_count expected two i32 values"(String)) }
     , .(_f: V_hostfn) { call_stuck("add_count expected two i32 values"(String)) }
     , .(p: V_product) {
-        match! V_product.get(p) {
+        match(V_product.get(p)) {
           .(a: Value, b: Value) {
-            match! as_i32(a) {
+            match(as_i32(a)) {
               (
               , .(x: I32) {
-                  match! as_i32(b) {
+                  match(as_i32(b)) {
                     (
                     , .(y: I32) { call_done(vi32(add_i32(x, y))) }
                     , .(_nob: .) { call_stuck("add_count expected two i32 values"(String)) }
@@ -513,7 +513,7 @@ fn arm_add_count(dom: Value) -> Call_result {
 }
 
 fn arm_count_to_string(dom: Value) -> Call_result {
-  match! as_i32(dom) {
+  match(as_i32(dom)) {
     (
     , .(n: I32) { call_done(vhost(scalar_of_str(int_to_string(n)))) }
     , .(_no: .) { call_stuck("count_to_string expected an i32 value"(String)) }
@@ -522,12 +522,12 @@ fn arm_count_to_string(dom: Value) -> Call_result {
 }
 
 fn arm_staged(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(_closure: V_closure) { call_stuck("staged expected a product domain"(String)) }
     , .(_hostfn: V_hostfn) { call_stuck("staged expected a product domain"(String)) }
     , .(product: V_product) {
-        match! V_product.get(product) {
+        match(V_product.get(product)) {
           .(_first: Value, second: Value) { call_done(second) }
         }
       }
@@ -547,12 +547,12 @@ fn arm_staged(dom: Value) -> Call_result {
 // this arm asks the machine to apply and re-dispatches
 // `driver_make_pair_fst` with the result.
 fn arm_make_pair(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pr: V_product) {
-        match! V_product.get(pr) {
+        match(V_product.get(pr)) {
           .(a: Value, b: Value) {
-            match! un_value(a) {
+            match(un_value(a)) {
               (
               , .(_c: V_closure) { call_apply_then(a, b, make_pair_fst_descriptor(), vunit()) }
               , .(_hf: V_hostfn) { call_apply_then(a, b, make_pair_fst_descriptor(), vunit()) }
@@ -577,15 +577,15 @@ fn arm_make_pair(dom: Value) -> Call_result {
 // The re-dispatch after `make_pair`'s requested application: project the
 // build result's first component.
 fn arm_make_pair_fst(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pr: V_product) {
-        match! V_product.get(pr) {
+        match(V_product.get(pr)) {
           .(result: Value, _state: Value) {
-            match! un_value(result) {
+            match(un_value(result)) {
               (
               , .(rp: V_product) {
-                  match! V_product.get(rp) {
+                  match(V_product.get(rp)) {
                     .(x: Value, _y: Value) { call_done(x) }
                   }
                 }
@@ -612,10 +612,10 @@ fn arm_make_pair_fst(dom: Value) -> Call_result {
 // `(seed, ("compound-callback", true))` — the canonical driver's exact
 // argument — and the application's result is the host call's result.
 fn arm_call_step(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pr: V_product) {
-        match! V_product.get(pr) {
+        match(V_product.get(pr)) {
           .(step: Value, seed: Value) {
             call_apply(
             , step
@@ -653,10 +653,10 @@ fn arm_apply_poly(dom: Value) -> Call_result {
 // Re-dispatch after the erased type stage, preserving the string argument
 // while the evaluator applies the returned value closure.
 fn arm_apply_poly_value(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pr: V_product) {
-        match! V_product.get(pr) {
+        match(V_product.get(pr)) {
           .(f: Value, arg: Value) { call_apply(f, arg) }
         }
       }
@@ -674,16 +674,16 @@ fn arm_apply_poly_value(dom: Value) -> Call_result {
 }
 
 fn render_i32(v: Value) -> String {
-  match! as_i32(v) {
+  match(as_i32(v)) {
     (.(n: I32) { int_to_string(n) }, .(_no: .) { "sum_to_string expected an i32 payload"(String) })
   }
 }
 
 fn render_str(v: Value) -> String {
-  match! value_to_scalar(v) {
+  match(value_to_scalar(v)) {
     (
     , .(s: Scalar) {
-        match! scalar_as_str(s) {
+        match(scalar_as_str(s)) {
           (.(t: String) { t }, .(_no: .) { "sum_to_string expected a string payload"(String) })
         }
       }
@@ -695,13 +695,13 @@ fn render_str(v: Value) -> String {
 // `sum_to_string(I32 | String) -> String` — the canonical body renders a
 // left (i32) numerically and passes a right (string) through.
 fn arm_sum_to_string(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(_c: V_closure) { call_stuck("sum_to_string expected a sum"(String)) }
     , .(_f: V_hostfn) { call_stuck("sum_to_string expected a sum"(String)) }
     , .(_p: V_product) { call_stuck("sum_to_string expected a sum"(String)) }
     , .(sm: V_sum) {
-        match! V_sum.get(sm) {
+        match(V_sum.get(sm)) {
           .(sd: Side, payload: Value) {
             call_done(vhost(scalar_of_str(side_select(render_i32(payload), render_str(payload), sd))))
           }
@@ -730,10 +730,10 @@ fn reentry_callback(descriptor: Host_fn, step: Value) -> Value {
 }
 
 fn arm_loop_reentry(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pair: V_product) {
-        match! V_product.get(pair) {
+        match(V_product.get(pair)) {
           .(step: Value, state: Value) {
             call_fold(reentry_callback(reentry_step_descriptor(), step), state)
           }
@@ -747,10 +747,10 @@ fn arm_loop_reentry(dom: Value) -> Call_result {
 }
 
 fn arm_reentry_step(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(pair: V_product) {
-        match! V_product.get(pair) {
+        match(V_product.get(pair)) {
           .(step: Value, state: Value) {
             let reenter = reentry_callback(reentry_run_descriptor(), step);
             call_apply(step, vproduct(reenter, state))
@@ -767,17 +767,17 @@ fn arm_reentry_step(dom: Value) -> Call_result {
 // The fired step: `(delta, n) -> delta + n` (the canonical `make_step`
 // body's addition).
 fn arm_step_apply(dom: Value) -> Call_result {
-  match! un_value(dom) {
+  match(un_value(dom)) {
     (
     , .(_c: V_closure) { call_stuck("driver_step_apply expected two i32s"(String)) }
     , .(_f: V_hostfn) { call_stuck("driver_step_apply expected two i32s"(String)) }
     , .(p: V_product) {
-        match! V_product.get(p) {
+        match(V_product.get(p)) {
           .(a: Value, b: Value) {
-            match! as_i32(a) {
+            match(as_i32(a)) {
               (
               , .(delta: I32) {
-                  match! as_i32(b) {
+                  match(as_i32(b)) {
                     (
                     , .(n: I32) { call_done(vi32(add_i32(delta, n))) }
                     , .(_nob: .) { call_stuck("driver_step_apply expected two i32s"(String)) }
@@ -800,7 +800,7 @@ fn arm_step_apply(dom: Value) -> Call_result {
 // The host callback the export-callback script passes into the guest:
 // the canonical `(n) => n + 3`.
 fn arm_cb_add3(dom: Value) -> Call_result {
-  match! as_i32(dom) {
+  match(as_i32(dom)) {
     (
     , .(n: I32) { call_done(vi32(add_i32(n, 3(I32)))) }
     , .(_no: .) { call_stuck("driver_cb_add3 expected an i32"(String)) }
@@ -809,7 +809,7 @@ fn arm_cb_add3(dom: Value) -> Call_result {
 }
 
 fn arm_eprint(dom: Value) -> Call_result {
-  match! as_str(dom) {
+  match(as_str(dom)) {
     (
     , .(message: String) { protocol_eprint(message); call_done(vunit()) }
     , .(_no: .) { call_stuck("eprint expected a string"(String)) }
@@ -818,7 +818,7 @@ fn arm_eprint(dom: Value) -> Call_result {
 }
 
 fn arm_exit(dom: Value) -> Call_result {
-  match! as_i32(dom) {
+  match(as_i32(dom)) {
     (
     , .(status: I32) { protocol_exit(status); call_done(vunit()) }
     , .(_no: .) { call_stuck("exit expected an i32 status"(String)) }
@@ -835,229 +835,226 @@ fn arm_exit(dom: Value) -> Call_result {
 // handle.
 fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_local(host_fn_id(descriptor));
-  if! host_fn_eq(
+  if(host_fn_eq(
   , descriptor
   , mk_host_fn(mk_host_id("prog"(String), "print_i32"(String)), "(h{prog.I32}) -> ."(String))
-  ) {
-    match! as_i32(dom) {
+  )) {
+    match(as_i32(dom)) {
       (
       , .(n: I32) { print(int_to_string(n)); call_done(vunit()) }
       , .(_other: .) { call_stuck("prog.print_i32 expected an i32"(String)) }
       )
     }
-  } else if! host_fn_eq(descriptor, loop_reentry_descriptor()) {
+  } else if(host_fn_eq(descriptor, loop_reentry_descriptor())) {
     arm_loop_reentry(dom)
-  } else if! host_fn_eq(descriptor, reentry_run_descriptor()) {
+  } else if(host_fn_eq(descriptor, reentry_run_descriptor())) {
     arm_loop_reentry(dom)
-  } else if! host_fn_eq(descriptor, reentry_step_descriptor()) {
+  } else if(host_fn_eq(descriptor, reentry_step_descriptor())) {
     arm_reentry_step(dom)
-  } else if! string_eq(protocol_name(), "host-forall-stage-effects"(String)) {
-    if! host_fn_eq(
+  } else if(string_eq(protocol_name(), "host-forall-stage-effects"(String))) {
+    if(host_fn_eq(
     , descriptor
     , mk_host_fn(mk_host_id("testapi/main"(String), "produce"(String)), "() -> ([#0] .)"(String))
-    ) {
+    )) {
       print("create\n"(String));
       call_done(vhostfn(
       , forall_stage_descriptor()
       , group_slots_cons(0(I32), group_slots_nil())
       , vals_nil()
       ))
-    } else if! host_fn_eq(descriptor, forall_stage_descriptor()) {
+    } else if(host_fn_eq(descriptor, forall_stage_descriptor())) {
       print("apply\n"(String));
       call_done(vunit())
-    } else if! host_fn_eq(
+    } else if(host_fn_eq(
     , descriptor
     , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
-    ) {
+    )) {
       print("observe\n"(String));
       call_done(vunit())
     } else {
       call_stuck("host-forall-stage-effects received an unexpected host descriptor"(String))
     }
-  } else if! string_eq(protocol_name(), "type-only-stage-trace"(String)) {
-    if! host_fn_eq(
+  } else if(string_eq(protocol_name(), "type-only-stage-trace"(String))) {
+    if(host_fn_eq(
     , descriptor
     , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
-    ) {
+    )) {
       print("observe\n"(String));
       call_done(vunit())
-    } else if! host_fn_eq(
+    } else if(host_fn_eq(
     , descriptor
     , mk_host_fn(mk_host_id("testapi/main"(String), "consume"(String)), "() -> ."(String))
-    ) {
+    )) {
       print("consume\n"(String));
       call_done(vunit())
     } else {
       call_stuck("type-only-stage-trace received an unexpected host descriptor"(String))
     }
-  } else if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"(String), "produce"(String))) {
+  } else if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"(String), "produce"(String)))) {
     print("direct\n"(String));
     call_done(vproduct(vi32(7(I32)), vhost(scalar_of_str("direct-value"(String)))))
-  } else if! host_fn_eq(descriptor, cb_pair_descriptor()) {
+  } else if(host_fn_eq(descriptor, cb_pair_descriptor())) {
     print("callback\n"(String));
     call_done(vproduct(vi32(9(I32)), vhost(scalar_of_str("callback-value"(String)))))
-  } else if! host_fn_eq(descriptor, opaque_step_descriptor()) {
-    match! as_i32(dom) {
+  } else if(host_fn_eq(descriptor, opaque_step_descriptor())) {
+    match(as_i32(dom)) {
       (
       , .(number: I32) { print("call\n"(String)); call_done(vi32(add_i32(number, 1(I32)))) }
       , .(_bad: .) { call_stuck("opaque callback expected an i32"(String)) }
       )
     }
-  } else if! string_eq(identity, "staged"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "staged"(String))) {
+  } else if(string_eq(identity, "staged"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "staged"(String)))) {
       arm_staged(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "make_pair"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_pair"(String))) {
+  } else if(string_eq(identity, "make_pair"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_pair"(String)))) {
       arm_make_pair(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "driver_make_pair_fst"(String)) {
-    if! host_fn_eq(descriptor, make_pair_fst_descriptor()) {
+  } else if(string_eq(identity, "driver_make_pair_fst"(String))) {
+    if(host_fn_eq(descriptor, make_pair_fst_descriptor())) {
       arm_make_pair_fst(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "call_step"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "call_step"(String))) {
+  } else if(string_eq(identity, "call_step"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "call_step"(String)))) {
       arm_call_step(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "apply_poly"(String)) {
-    if! host_id_eq(
-    , host_fn_id(descriptor)
-    , mk_host_id("testapi/arith"(String), "apply_poly"(String))
-    ) {
+  } else if(string_eq(identity, "apply_poly"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "apply_poly"(String)))) {
       arm_apply_poly(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "driver_apply_poly_value"(String)) {
-    if! host_fn_eq(descriptor, apply_poly_value_descriptor()) {
+  } else if(string_eq(identity, "driver_apply_poly_value"(String))) {
+    if(host_fn_eq(descriptor, apply_poly_value_descriptor())) {
       arm_apply_poly_value(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "sum_to_string"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "sum_to_string"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/fmt"(String), "sum_to_string"(String))
-    ) {
+    )) {
       arm_sum_to_string(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "make_step"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_step"(String))) {
+  } else if(string_eq(identity, "make_step"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_step"(String)))) {
       arm_make_step(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "driver_step_apply"(String)) {
-    if! host_fn_eq(descriptor, step_apply_descriptor()) {
+  } else if(string_eq(identity, "driver_step_apply"(String))) {
+    if(host_fn_eq(descriptor, step_apply_descriptor())) {
       arm_step_apply(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "driver_cb_add3"(String)) {
-    if! host_fn_eq(descriptor, cb_add3_descriptor()) {
+  } else if(string_eq(identity, "driver_cb_add3"(String))) {
+    if(host_fn_eq(descriptor, cb_add3_descriptor())) {
       arm_cb_add3(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "add_count"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "add_count"(String))) {
+  } else if(string_eq(identity, "add_count"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "add_count"(String)))) {
       arm_add_count(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "count_to_string"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "count_to_string"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/fmt"(String), "count_to_string"(String))
-    ) {
+    )) {
       arm_count_to_string(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "make_token"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "make_token"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/opaque"(String), "make_token"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "token_value"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "token_value"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/opaque"(String), "token_value"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "box_make"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_make"(String))) {
+  } else if(string_eq(identity, "box_make"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_make"(String)))) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "box_get"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_get"(String))) {
+  } else if(string_eq(identity, "box_get"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_get"(String)))) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "round_functor"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "round_functor"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/arith"(String), "round_functor"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "round_picker"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "round_picker"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/arith"(String), "round_picker"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "round_poly_thunk"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "round_poly_thunk"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/arith"(String), "round_poly_thunk"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "round_unit_slot"(String)) {
-    if! host_id_eq(
+  } else if(string_eq(identity, "round_unit_slot"(String))) {
+    if(host_id_eq(
     , host_fn_id(descriptor)
     , mk_host_id("testapi/arith"(String), "round_unit_slot"(String))
-    ) {
+    )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "eprint"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "eprint"(String))) {
+  } else if(string_eq(identity, "eprint"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "eprint"(String)))) {
       arm_eprint(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if! string_eq(identity, "exit"(String)) {
-    if! host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "exit"(String))) {
+  } else if(string_eq(identity, "exit"(String))) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "exit"(String)))) {
       arm_exit(dom)
     } else {
       serve_default(descriptor, dom)
@@ -1081,8 +1078,8 @@ fn failure_string(message: String) -> String { runner_failure(message); ""(Strin
 
 // Apply one ordinary Surface stage, preserving an earlier diagnostic.
 fn apply_result[P](surf: Surface(P), result: P | Diag, arg: P) -> P | Diag {
-  match! result {
-    (.(f: P) { surf.?{apply}((f, arg)) }, .(d: Diag) { widen_sum!(d, P | Diag) })
+  match(result) {
+    (.(f: P) { surf.?{apply}((f, arg)) }, .(d: Diag) { widen_sum(d, P | Diag) })
   }
 }
 
@@ -1093,10 +1090,10 @@ fn call_export[P](surf: Surface(P), name: String, arg: P) -> P | Diag {
 
 // Render a call's i32 result as its printed line.
 fn i32_line[P](surf: Surface(P), r: P | Diag) -> String {
-  match! r {
+  match(r) {
     (
     , .(v: P) {
-        match! surf.?{i32_out}(v) {
+        match(surf.?{i32_out}(v)) {
           (
           , .(n: I32) { string_concat(int_to_string(n), "\n"(String)) }
           , .(d: Diag) { failure_string(diag_line("i32 result — "(String), d)) }
@@ -1110,10 +1107,10 @@ fn i32_line[P](surf: Surface(P), r: P | Diag) -> String {
 
 // Render a call's string result as its printed line.
 fn str_line[P](surf: Surface(P), r: P | Diag) -> String {
-  match! r {
+  match(r) {
     (
     , .(v: P) {
-        match! surf.?{str_out}(v) {
+        match(surf.?{str_out}(v)) {
           (
           , .(s: String) { string_concat(s, "\n"(String)) }
           , .(d: Diag) { failure_string(diag_line("string result — "(String), d)) }
@@ -1137,7 +1134,7 @@ fn script_namespace[P](surf: Surface(P)) {
 // export-callback-roundtrip: `apply_twice((n) => n + 3, 10)` then
 // `make_step(4)` applied to `5`.
 fn script_callback[P](surf: Surface(P)) {
-  match! surf.?{hostfn_in}(cb_add3_descriptor()) {
+  match(surf.?{hostfn_in}(cb_add3_descriptor())) {
     (
     , .(cb: P) {
         print(i32_line(
@@ -1154,7 +1151,7 @@ fn script_callback[P](surf: Surface(P)) {
   };
   let make_step_result =
     call_export(surf, "testapi/main.make_step"(String), surf.?{i32_in}(4(I32)));
-  match! make_step_result {
+  match(make_step_result) {
     (
     , .(step: P) { print(i32_line(surf, surf.?{apply}((step, surf.?{i32_in}(5(I32)))))) }
     , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
@@ -1182,7 +1179,7 @@ fn script_multilabel[P](surf: Surface(P)) {
     , "testapi/main.say"(String)
     , surf.?{pair_in}((surf.?{i32_in}(42(I32)), surf.?{str_in}("shown\n"(String))))
     );
-  match! say_result {
+  match(say_result) {
     (.(_done: P) { () }, .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) })
   };
   let echo_pair_result =
@@ -1191,19 +1188,19 @@ fn script_multilabel[P](surf: Surface(P)) {
     , "testapi/main.echo_pair"(String)
     , surf.?{pair_in}((surf.?{i32_in}(88(I32)), surf.?{str_in}("99"(String))))
     );
-  match! echo_pair_result {
+  match(echo_pair_result) {
     (
     , .(row: P) {
-        match! surf.?{pair_out}(row) {
+        match(surf.?{pair_out}(row)) {
           (
           , .(a: P, b: P) {
-              match! surf.?{i32_out}(a) {
+              match(surf.?{i32_out}(a)) {
                 (
                 , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
                 , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
                 )
               };
-              match! surf.?{str_out}(b) {
+              match(surf.?{str_out}(b)) {
                 (
                 , .(s: String) { print(string_concat(s, "\n"(String))) }
                 , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
@@ -1218,10 +1215,10 @@ fn script_multilabel[P](surf: Surface(P)) {
     )
   };
   let a_mk_result = call_export(surf, "testapi/main.A.mk"(String), surf.?{i32_in}(111(I32)));
-  match! a_mk_result {
+  match(a_mk_result) {
     (
     , .(a: P) {
-        match! call_export(surf, "testapi/main.echo_a"(String), a) {
+        match(call_export(surf, "testapi/main.echo_a"(String), a)) {
           (
           , .(echoed: P) {
               print(i32_line(surf, call_export(surf, "testapi/main.A.get"(String), echoed)))
@@ -1276,28 +1273,28 @@ fn script_nested_product[P](surf: Surface(P)) {
       , surf.?{pair_in}((surf.?{i32_in}(7(I32)), surf.?{i32_in}(9(I32))))
       ))
     );
-  match! nested_product_result {
+  match(nested_product_result) {
     (
     , .(out: P) {
-        match! surf.?{pair_out}(out) {
+        match(surf.?{pair_out}(out)) {
           (
           , .(head: P, rest: P) {
-              match! surf.?{str_out}(head) {
+              match(surf.?{str_out}(head)) {
                 (
                 , .(s: String) { print(string_concat(s, "\n"(String))) }
                 , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
                 )
               };
-              match! surf.?{pair_out}(rest) {
+              match(surf.?{pair_out}(rest)) {
                 (
                 , .(x: P, y: P) {
-                    match! surf.?{i32_out}(x) {
+                    match(surf.?{i32_out}(x)) {
                       (
                       , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
                       , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
                       )
                     };
-                    match! surf.?{i32_out}(y) {
+                    match(surf.?{i32_out}(y)) {
                       (
                       , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
                       , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
@@ -1320,7 +1317,7 @@ fn script_nested_product[P](surf: Surface(P)) {
 // The compound-input script observes values only through Surface operations.
 // Host call events are emitted by the two exact capabilities above.
 fn compound_input_value[P](r: P | Diag, consume: P -> .) {
-  match! r {
+  match(r) {
     (
     , .(v: P) { consume(v) }
     , .(d: Diag) { runner_failure(diag_line("compound input — "(String), d)) }
@@ -1329,7 +1326,7 @@ fn compound_input_value[P](r: P | Diag, consume: P -> .) {
 }
 
 fn compound_input_pair[P](surf: Surface(P), value: P, consume: (P & P) -> .) {
-  match! surf.?{pair_out}(value) {
+  match(surf.?{pair_out}(value)) {
     (consume, .(d: Diag) { runner_failure(diag_line("compound pair — "(String), d)) })
   }
 }
@@ -1339,8 +1336,8 @@ fn compound_input_inner[P](surf: Surface(P), value: P) {
   , surf
   , value
   , .(left: P, right: P) {
-      print(i32_line(surf, widen_sum!(left, P | Diag)));
-      print(i32_line(surf, widen_sum!(right, P | Diag)))
+      print(i32_line(surf, widen_sum(left, P | Diag)));
+      print(i32_line(surf, widen_sum(right, P | Diag)))
     }
   )
 }
@@ -1350,23 +1347,23 @@ fn compound_input_outer[P](surf: Surface(P), value: P) {
   , surf
   , value
   , .(text: P, inner: P) {
-      print(str_line(surf, widen_sum!(text, P | Diag)));
+      print(str_line(surf, widen_sum(text, P | Diag)));
       compound_input_inner(surf, inner)
     }
   )
 }
 
 fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consume: P -> .) {
-  match! surf.?{sum_is_left}(value) {
+  match(surf.?{sum_is_left}(value)) {
     (
     , .(is_left: Bool) {
-        if! is_left {
-          if! expected_left {
+        if(is_left) {
+          if(expected_left) {
             ()
           } else {
             runner_failure("compound input: unexpected left arm\n"(String))
           }
-        } else if! expected_left {
+        } else if(expected_left) {
           runner_failure("compound input: unexpected right arm\n"(String))
         } else {
           ()
@@ -1385,8 +1382,8 @@ fn script_compound_input_once[P](surf: Surface(P)) {
       , surf
       , value
       , .(number: P, text: P) {
-          print(i32_line(surf, widen_sum!(number, P | Diag)));
-          print(str_line(surf, widen_sum!(text, P | Diag)))
+          print(i32_line(surf, widen_sum(number, P | Diag)));
+          print(str_line(surf, widen_sum(text, P | Diag)))
         }
       )
     };
@@ -1424,7 +1421,7 @@ fn script_compound_input_once[P](surf: Surface(P)) {
           , surf
           , result
           , .t(Bool)
-          , .(number: P) { print(i32_line(surf, widen_sum!(number, P | Diag))) }
+          , .(number: P) { print(i32_line(surf, widen_sum(number, P | Diag))) }
           )
         }
       )
@@ -1502,7 +1499,7 @@ fn script_newtype_sum[P](surf: Surface(P)) {
     , "testapi/main.pack"(String)
     , surf.?{pair_in}((surf.?{i32_in}(7(I32)), surf.?{str_in}("hi"(String))))
     );
-  match! pack_result {
+  match(pack_result) {
     (
     , .(packed: P) {
         print(i32_line(
@@ -1523,14 +1520,14 @@ fn script_newtype_sum[P](surf: Surface(P)) {
 // application per value group.
 fn script_curried[P](surf: Surface(P)) {
   let pick_result = call_export(surf, "testapi/main.pick"(String), surf.?{str_in}("ku"(String)));
-  match! pick_result {
+  match(pick_result) {
     (
     , .(picked: P) { print(str_line(surf, surf.?{apply}((picked, surf.?{str_in}("rz"(String)))))) }
     , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
     )
   };
   let last_result = call_export(surf, "testapi/main.last"(String), surf.?{i32_in}(1(I32)));
-  match! last_result {
+  match(last_result) {
     (
     , .(lasted: P) {
         print(i32_line(
@@ -1556,22 +1553,22 @@ fn script_type_roundtrip[P](surf: Surface(P)) {
       , surf.?{str_in}("export-type-right"(String))
       ))
     );
-  match! pair_mk_result {
+  match(pair_mk_result) {
     (
     , .(boxed: P) {
-        match! call_export(surf, "testapi/types.Pair.un_pair"(String), boxed) {
+        match(call_export(surf, "testapi/types.Pair.un_pair"(String), boxed)) {
           (
           , .(payload: P) {
-              match! surf.?{pair_out}(payload) {
+              match(surf.?{pair_out}(payload)) {
                 (
                 , .(l: P, r: P) {
-                    match! surf.?{str_out}(l) {
+                    match(surf.?{str_out}(l)) {
                       (
                       , .(a: String) { print(string_concat(a, "\n"(String))) }
                       , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
                       )
                     };
-                    match! surf.?{str_out}(r) {
+                    match(surf.?{str_out}(r)) {
                       (
                       , .(b: String) { print(string_concat(b, "\n"(String))) }
                       , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
@@ -1603,10 +1600,10 @@ fn opaque_print_pair[P](surf: Surface(P), result: P | Diag) {
       , surf
       , value
       , .(left: P, right: P) {
-          match! surf.?{i32_out}(left) {
+          match(surf.?{i32_out}(left)) {
             (
             , .(a: I32) {
-                match! surf.?{i32_out}(right) {
+                match(surf.?{i32_out}(right)) {
                   (
                   , .(b: I32) {
                       print(string_concat(
@@ -1726,33 +1723,33 @@ fn script_opaque_compound[P](surf: Surface(P)) {
 // Keep these script adapters aligned with the canonical support inventory
 // in src/shared/protocol.rs, which the coverage lint consumes.
 fn dispatch_script[P](surf: Surface(P), proto: String) {
-  if! string_eq(proto, "export-namespace-roundtrip"(String)) {
+  if(string_eq(proto, "export-namespace-roundtrip"(String))) {
     script_namespace(surf)
-  } else if! string_eq(proto, "export-callback-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-callback-roundtrip"(String))) {
     script_callback(surf)
-  } else if! string_eq(proto, "export-module-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-module-roundtrip"(String))) {
     script_module(surf)
-  } else if! string_eq(proto, "export-multi-label-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-multi-label-roundtrip"(String))) {
     script_multilabel(surf)
-  } else if! string_eq(proto, "export-poly-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-poly-roundtrip"(String))) {
     script_poly(surf)
-  } else if! string_eq(proto, "export-nested-product-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-nested-product-roundtrip"(String))) {
     script_nested_product(surf)
-  } else if! string_eq(proto, "export-compound-input-once"(String)) {
+  } else if(string_eq(proto, "export-compound-input-once"(String))) {
     script_compound_input_once(surf)
-  } else if! string_eq(proto, "export-newtype-scalar-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-newtype-scalar-roundtrip"(String))) {
     script_newtype_scalar(surf)
-  } else if! string_eq(proto, "export-newtype-sum-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-newtype-sum-roundtrip"(String))) {
     script_newtype_sum(surf)
-  } else if! string_eq(proto, "export-curried-facade"(String)) {
+  } else if(string_eq(proto, "export-curried-facade"(String))) {
     script_curried(surf)
-  } else if! string_eq(proto, "export-type-roundtrip"(String)) {
+  } else if(string_eq(proto, "export-type-roundtrip"(String))) {
     script_type_roundtrip(surf)
-  } else if! string_eq(proto, "opaque-product-roundtrip"(String)) {
+  } else if(string_eq(proto, "opaque-product-roundtrip"(String))) {
     script_opaque_product(surf)
-  } else if! string_eq(proto, "opaque-compound-roundtrip"(String)) {
+  } else if(string_eq(proto, "opaque-compound-roundtrip"(String))) {
     script_opaque_compound(surf)
-  } else if! string_eq(proto, "generic-nominal-opaque-roundtrip"(String)) {
+  } else if(string_eq(proto, "generic-nominal-opaque-roundtrip"(String))) {
     script_generic_nominal_opaque(surf)
   } else {
     unsupported_protocol_script()
@@ -1762,10 +1759,10 @@ fn dispatch_script[P](surf: Surface(P), proto: String) {
 fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
 
 fn instantiate_protocol(im: Image) -> Loaded | Diag {
-  if! protocol_runtime_hostfns_match(image_hostfns(im)) {
+  if(protocol_runtime_hostfns_match(image_hostfns(im))) {
     instantiate(protocol_host_adapter(), serve_protocol, make_lit_protocol, test_bool_default, im)
   } else {
-    widen_sum!(
+    widen_sum(
     , mk_diag("dyn_load_prime: selected runner protocol does not exactly match the "
               "image's runtime host-function contract"(String))
     , Loaded | Diag
@@ -1775,7 +1772,7 @@ fn instantiate_protocol(im: Image) -> Loaded | Diag {
 
 // Instantiate the package against the selected exact protocol and call no export.
 fn construct_protocol(im: Image) {
-  match! un_inst(instantiate_protocol(im)) {
+  match(un_inst(instantiate_protocol(im))) {
     (
     , .(_handle: Loaded) { () }
     , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "(String), d)) }
@@ -1785,7 +1782,7 @@ fn construct_protocol(im: Image) {
 
 // Invoke `main` through the selected protocol's exact surface.
 fn run_protocol_main(im: Image) {
-  match! un_inst(instantiate_protocol(im)) {
+  match(un_inst(instantiate_protocol(im))) {
     (
     , .(handle: Loaded) {
         Loaded.get(handle)(.[P](surf: Surface(P)) {
@@ -1795,7 +1792,7 @@ fn run_protocol_main(im: Image) {
             , string_concat(protocol_entry_module(), ".main"(String))
             , surf.?{unit_in}
             );
-          match! main_result {
+          match(main_result) {
             (
             , .(_result: P) { () }
             , .(d: Diag) { runner_failure(diag_line("calling guest `main` failed — "(String), d)) }
@@ -1811,7 +1808,7 @@ fn run_protocol_main(im: Image) {
 // Instantiate the image against the protocol adapter inventory and matching
 // runtime capabilities, then run the selected script over the opened surface.
 fn run_protocol_script(im: Image, proto: String) {
-  match! un_inst(instantiate_protocol(im)) {
+  match(un_inst(instantiate_protocol(im))) {
     (
     , .(handle: Loaded) {
         Loaded.get(handle)(.[P](surf: Surface(P)) { dispatch_script(surf, proto) })
@@ -1825,18 +1822,18 @@ fn run_protocol_script(im: Image, proto: String) {
 /// protocol's load, construct, main, or export-script execution mode.
 pub fn main() {
   let src = read_guest_image();
-  match! un_load_outcome(load_package(src)) {
+  match(un_load_outcome(load_package(src))) {
     (
     , .(im: Lr_image) {
         let proto = protocol_name();
         let mode = protocol_execution_mode();
-        if! string_eq(mode, "load"(String)) {
+        if(string_eq(mode, "load"(String))) {
           ()
-        } else if! string_eq(mode, "construct"(String)) {
+        } else if(string_eq(mode, "construct"(String))) {
           construct_protocol(Lr_image.get(im))
-        } else if! string_eq(mode, "script"(String)) {
+        } else if(string_eq(mode, "script"(String))) {
           run_protocol_script(Lr_image.get(im), proto)
-        } else if! string_eq(mode, "main"(String)) {
+        } else if(string_eq(mode, "main"(String))) {
           run_protocol_main(Lr_image.get(im))
         } else {
           runner_failure("dyn-load-prime driver: unsupported protocol execution mode\n"(String))

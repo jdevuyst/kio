@@ -6,7 +6,7 @@
 //! cross-references. It is a thin presentation layer over the Rust
 //! frontend, the LSP analysis services, and the Kiodoc renderer — it
 //! runs each module through parse / desugar / label lowering / typecheck /
-//! elaborator-discharge, but never executes it against a host.
+//! macro expansion, but never executes it against a host.
 //!
 //! Each turn is either a `:`-prefixed meta-command or a bare Kio
 //! expression. A bare *name* routes to `:doc` (its doc-comment +
@@ -355,7 +355,7 @@ fn run_loop_interactive(
 /// lines (joined with `\n`) until [`completion::input_is_complete`]
 /// reports the gathered buffer is complete, then dispatches the whole
 /// buffer in one go. The two paths therefore agree on what a single
-/// "input" is — a transcript driving `:normalize if true {` across two lines
+/// "input" is — a transcript driving `:normalize if(true) {` across two lines
 /// normalizes one expression, exactly as a user typing it interactively
 /// would. EOF flushes any partial buffer so an unterminated final input
 /// still reaches the parser (which surfaces the error) rather than being

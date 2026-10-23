@@ -44,7 +44,7 @@ fn fixture(discarded_functions: usize, body_statements: usize) -> Module {
            -> __Checked_term__ {\n\
            let keep = .(x: __Checked_term__) -> __Checked_term__ { x }; keep(value)\n\
          }\n\
-         elab identity : [A] A -> A { impl selected; };\n",
+         macro identity : [A] A -> A { impl selected; };\n",
     );
     for index in 0..discarded_functions {
         source.push_str(&format!("pure fn unused{index}(value: .) -> . {{\n"));

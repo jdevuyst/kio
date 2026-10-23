@@ -1,12 +1,12 @@
 module lab/replica;
 
 import dict/dict as dict;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import lab/clock as clock;
 import list/core as core;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import result/result as result;
 import testapi(I32, default Bool);
 import testapi/arith as arith;
@@ -31,7 +31,7 @@ pub labels Fault =
 pub type Change = Replica & Message;
 
 pub fn key_order(a: I32, b: I32) -> dict.Ordering {
-  if! arith.lt_i32(a, b) { dict.lt() } else if! arith.eq_i32(a, b) { dict.eq() } else { dict.gt() }
+  if(arith.lt_i32(a, b)) { dict.lt() } else if(arith.eq_i32(a, b)) { dict.eq() } else { dict.gt() }
 }
 
 pub fn empty(node: clock.Node) -> Replica {
@@ -43,9 +43,9 @@ pub fn versions(replica: Replica, key: I32) -> core.List(Version) {
 }
 
 rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
-  match! core.uncons(retained) {
+  match(core.uncons(retained)) {
     .(head: Version, tail: core.List(Version)) {
-      if! clock.lexical_before(incoming.?{stamp}, head.?{stamp}) {
+      if(clock.lexical_before(incoming.?{stamp}, head.?{stamp})) {
         core.cons(incoming, retained)
       } else {
         core.cons(head, recur(cont) insert_ordered(incoming, tail))
@@ -59,17 +59,17 @@ fn merge(incoming: Version, retained: core.List(Version)) -> core.List(Version) 
   let obsolete =
     lists.foldl(
     , .(found: Bool, old: Version) {
-        if! found { .t } else { clock.leq(incoming.?{stamp}, old.?{stamp}) }
+        if(found) { .t } else { clock.leq(incoming.?{stamp}, old.?{stamp}) }
       }
     , .f
     , retained
     );
-  if! obsolete {
+  if(obsolete) {
     retained
   } else {
     let survivors = lists.filter(
     , .(old: Version) {
-        if! clock.leq(old.?{stamp}, incoming.?{stamp}) { .f } else { .t }
+        if(clock.leq(old.?{stamp}, incoming.?{stamp})) { .f } else { .t }
       }
     , retained
     );
@@ -98,27 +98,27 @@ pub fn write(replica: Replica, key: I32, value: I32) -> Change {
 }
 
 pub fn read(replica: Replica, key: I32) -> result.Result(I32, Fault) {
-  match! core.uncons(versions(replica, key)) {
+  match(core.uncons(versions(replica, key))) {
     .(head: Version, tail: core.List(Version)) {
-      if! lists.null(tail) {
+      if(lists.null(tail)) {
         result.ok(head.?{value})
       } else {
-        result.err({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum!(Fault))
+        result.err({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum(Fault))
       }
     };
-    .(_empty: .) { result.err({missing = key}.>widen_sum!(Fault)) }
+    .(_empty: .) { result.err({missing = key}.>widen_sum(Fault)) }
   }
 }
 
 fn choose(replica: Replica, key: I32, choice: I32) -> result.Result(I32, Fault) {
   let retained = versions(replica, key);
-  if! lists.null(retained) {
-    result.err({missing = key}.>widen_sum!(Fault))
-  } else if! arith.lt_i32(lists.length(retained), 2) {
-    result.err({not_conflicted = key}.>widen_sum!(Fault))
-  } else match! lists.find(.(v: Version) { arith.eq_i32(choice, v.?{value}) }, retained) {
+  if(lists.null(retained)) {
+    result.err({missing = key}.>widen_sum(Fault))
+  } else if(arith.lt_i32(lists.length(retained), 2)) {
+    result.err({not_conflicted = key}.>widen_sum(Fault))
+  } else match(lists.find(.(v: Version) { arith.eq_i32(choice, v.?{value}) }, retained)) {
     .(v: Version) { result.ok(v.?{value}) };
-    .(_absent: .) { result.err({choice_absent = choice}.>widen_sum!(Fault)) }
+    .(_absent: .) { result.err({choice_absent = choice}.>widen_sum(Fault)) }
   }
 }
 
@@ -127,14 +127,14 @@ pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result(Change,
 }
 
 fn same_version(x: Version, y: Version) -> Bool {
-  if! arith.eq_i32(x.?{value}, y.?{value}) { clock.equal(x.?{stamp}, y.?{stamp}) } else { .f }
+  if(arith.eq_i32(x.?{value}, y.?{value})) { clock.equal(x.?{stamp}, y.?{stamp}) } else { .f }
 }
 
 fn same_versions(xs: core.List(Version), ys: core.List(Version)) -> Bool {
-  if! arith.eq_i32(lists.length(xs), lists.length(ys)) {
+  if(arith.eq_i32(lists.length(xs), lists.length(ys))) {
     lists.foldl(
     , .(same: Bool, v: Version) {
-        if! same { lists.elem(same_version, v, ys) } else { .f }
+        if(same) { lists.elem(same_version, v, ys) } else { .f }
       }
     , .t
     , xs
@@ -145,13 +145,13 @@ fn same_versions(xs: core.List(Version), ys: core.List(Version)) -> Bool {
 }
 
 pub fn converged(x: Replica, y: Replica) -> Bool {
-  if! clock.equal(x.?{observed}, y.?{observed}) {
-    if! arith.eq_i32(dict.size(x.?{records}), dict.size(y.?{records})) {
+  if(clock.equal(x.?{observed}, y.?{observed})) {
+    if(arith.eq_i32(dict.size(x.?{records}), dict.size(y.?{records}))) {
       dict.fold_asc(
       , x.?{records}
       , .t
       , .(same: Bool, key: I32, retained: core.List(Version)) {
-          if! same { same_versions(retained, versions(y, key)) } else { .f }
+          if(same) { same_versions(retained, versions(y, key)) } else { .f }
         }
       )
     } else {

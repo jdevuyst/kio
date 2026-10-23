@@ -12,7 +12,7 @@
 /// prints one block per exercise and then the class summary.
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import rational/expr as expr;
 import rational/fixture as fixture;
 import rational/grader as grader;
@@ -58,7 +58,7 @@ fn report(index: I32, item: Exercise) -> Verdict {
 }
 
 rec(loop) fn walk(index: I32, remaining: Roster, marks: Tally) -> Tally {
-  match! Roster.body(remaining) {
+  match(Roster.body(remaining)) {
     (
     , .(item: Exercise, rest: Roster) {
         let verdict = report(index, item);

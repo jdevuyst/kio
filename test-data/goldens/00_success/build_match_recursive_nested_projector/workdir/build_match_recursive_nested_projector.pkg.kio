@@ -51,5 +51,5 @@ build {
 bridge {
   build_match_recursive_nested_projector;
   build_match_recursive_nested_projector/**;
-  elab/testapi
+  macros/testapi
 }

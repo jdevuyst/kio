@@ -11,9 +11,6 @@
 /// walks off the end simply runs out of instructions.
 module forge/vm;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import forge/isa as isa;
 import forge/isa(
 , Add
@@ -38,6 +35,9 @@ import forge/isa(
 );
 import forge/list as l;
 import forge/program(Prog);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, div_i32, leq_i32, lt_i32, mod_i32, mul_i32, sub_i32);
 import testapi/iter(loop);
@@ -49,7 +49,7 @@ pub type Words = l.List(I32);
 /// Integer equality, out of the antisymmetry of `<=`: this host tier
 /// supplies the comparisons but no `eq_i32`.
 pub fn int_eq(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
+  if(leq_i32(a, b)) { leq_i32(b, a) } else { .f }
 }
 
 fn is_zero(n: I32) -> Bool { int_eq(n, 0) }
@@ -61,7 +61,7 @@ pub labels Regs = { va: I32, vb: I32, vc: I32, vd: I32 };
 fn zeroed() -> Regs { {va = 0, vb = 0, vc = 0, vd = 0} }
 
 pub fn read_reg(regs: Regs, r: Reg) -> I32 {
-  match! r {
+  match(r) {
     (
     , .(_a: Ra) { regs.?{va} }
     , .(_b: Rb) { regs.?{vb} }
@@ -80,7 +80,7 @@ fn set_c(regs: Regs, v: I32) -> Regs { regs.!{vc = v} }
 fn set_d(regs: Regs, v: I32) -> Regs { regs.!{vd = v} }
 
 fn write_reg(regs: Regs, r: Reg, v: I32) -> Regs {
-  match! r {
+  match(r) {
     (
     , .(_a: Ra) { set_a(regs, v) }
     , .(_b: Rb) { set_b(regs, v) }
@@ -113,21 +113,21 @@ pub fn boot() -> Vm {
 /// Why the machine stopped.
 pub labels Stop = { halted: . } | { ran_off: . } | { out_of_fuel: . } | { faulted: String };
 
-fn halted() -> Stop { {halted=}.>widen_sum!(Stop) }
+fn halted() -> Stop { {halted=}.>widen_sum(Stop) }
 
-fn ran_off() -> Stop { {ran_off=}.>widen_sum!(Stop) }
+fn ran_off() -> Stop { {ran_off=}.>widen_sum(Stop) }
 
-fn out_of_fuel() -> Stop { {out_of_fuel=}.>widen_sum!(Stop) }
+fn out_of_fuel() -> Stop { {out_of_fuel=}.>widen_sum(Stop) }
 
-fn faulted(why: String) -> Stop { {faulted = why}.>widen_sum!(Stop) }
+fn faulted(why: String) -> Stop { {faulted = why}.>widen_sum(Stop) }
 
 /// One step's result: the machine carries on, or it is finished and hands
 /// back its final state together with the reason.
 labels Outcome = { going: Vm } | { done: Vm & Stop };
 
-fn going(m: Vm) -> Outcome { {going = m}.>widen_sum!(Outcome) }
+fn going(m: Vm) -> Outcome { {going = m}.>widen_sum(Outcome) }
 
-fn stop(m: Vm, why: Stop) -> Outcome { {done = (m, why)}.>widen_sum!(Outcome) }
+fn stop(m: Vm, why: Stop) -> Outcome { {done = (m, why)}.>widen_sum(Outcome) }
 
 fn set_pc(m: Vm, at: I32) -> Vm { m.!{pc = at} }
 
@@ -154,7 +154,7 @@ fn alu(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
 /// reaches the host's integer division.
 fn alu_checked(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
   let divisor = read(m, src);
-  if! is_zero(divisor) {
+  if(is_zero(divisor)) {
     stop(m, faulted("divide by zero"))
   } else {
     store(m, dst, f(read(m, dst), divisor))
@@ -163,13 +163,13 @@ fn alu_checked(m: Vm, dst: Reg, src: Reg, f: (I32 & I32) -> I32) -> Outcome {
 
 fn push_word(m: Vm, v: I32) -> Outcome {
   let deep = add_i32(m.?{depth}, 1);
-  let peak = if! lt_i32(m.?{high}, deep) { deep } else { m.?{high} };
+  let peak = if(lt_i32(m.?{high}, deep)) { deep } else { m.?{high} };
   going(advance(m.!{stack = l.cons(v, m.?{stack}), depth = deep, high = peak}))
 }
 
 fn pop_word(m: Vm, dst: Reg) -> Outcome {
   let next = l.un_cons(m.?{stack});
-  match! next {
+  match(next) {
     (
     , .(top: I32, rest: Words) {
         let .(popped: Vm) = m.!{stack = rest, depth = sub_i32(m.?{depth}, 1)};
@@ -186,7 +186,7 @@ fn emit_word(m: Vm, r: Reg) -> Outcome {
 }
 
 fn exec(m: Vm, i: Ins) -> Outcome {
-  match! i {
+  match(i) {
     (
     , .(x: Loadi) { let .(r: Reg, n: I32) = x.?{isa.loadi}; store(m, r, n) }
     , .(x: Mov) { let .(dst: Reg, src: Reg) = x.?{isa.mov}; store(m, dst, read(m, src)) }
@@ -202,7 +202,7 @@ fn exec(m: Vm, i: Ins) -> Outcome {
     , .(x: Jmp_addr) { going(set_pc(m, x.?{isa.jmp_addr})) }
     , .(x: Jmpz_addr) {
         let .(r: Reg, at: I32) = x.?{isa.jmpz_addr};
-        if! is_zero(read(m, r)) { going(set_pc(m, at)) } else { going(advance(m)) }
+        if(is_zero(read(m, r))) { going(set_pc(m, at)) } else { going(advance(m)) }
       }
     )
   }
@@ -211,15 +211,15 @@ fn exec(m: Vm, i: Ins) -> Outcome {
 /// Fetch, charge one unit of fuel, execute. A program counter past the
 /// last instruction finds nothing and ends the run.
 fn step(code: Prog, m: Vm) -> Outcome {
-  if! leq_i32(m.?{fuel}, 0) {
+  if(leq_i32(m.?{fuel}, 0)) {
     stop(m, out_of_fuel())
-  } else match! l.un_cons(l.drop(code, m.?{pc})) {
+  } else match(l.un_cons(l.drop(code, m.?{pc}))) {
     (.(i: Ins, _rest: Prog) { exec(spend(m), i) }, .(_end: .) { stop(m, ran_off()) })
   }
 }
 
 pub rec(loop) fn run(code: Prog, m: Vm) -> Vm & Stop {
-  match! step(code, m) {
+  match(step(code, m)) {
     (.(g: Going) { recur run(code, g.?{going}) }, .(d: Done) { d.?{done} })
   }
 }

@@ -929,7 +929,7 @@ fn cmd_type(session: &mut Session, arg: &str, palette: Palette) -> String {
 /// The expression branch of [`cmd_type`].
 fn cmd_type_expression(session: &mut Session, expr: &str, palette: Palette) -> String {
     match query_expr_for_repl(session, expr) {
-        Ok(result) => render_expr_type(expr, &result, palette),
+        Ok(result) => render_expr_type(session, expr, &result, palette),
         Err(ReplExprQueryError::Syntax(error)) => invalid_input_with_cause(expr, &error.render()),
         Err(ReplExprQueryError::Query(ExprQueryError::Syntax(message))) => {
             invalid_input_with_cause(expr, &message)
@@ -1027,7 +1027,7 @@ fn cmd_type_name(session: &Session, name: &str, palette: Palette) -> String {
             found.display_name, found.display_name
         ),
         Item::Equiv(_, _) => format!("`{}` is an `equiv` declaration", found.display_name),
-        Item::Elaborator(_, _) => format!("`{}` is an elaborator declaration", found.display_name),
+        Item::Macro(_, _) => format!("`{}` is a macro declaration", found.display_name),
         // A `host fn` binds a value (its declared function type); a
         // `host type` is type-level.
         Item::HostFn(_) => match crate::pretty::pretty_item_type(&found.item) {
@@ -1137,9 +1137,7 @@ fn cmd_pure_name(session: &Session, name: &str) -> String {
             purity_kind_error(&found.display_name, "a variadic operator binding")
         }
         Item::Equiv(_, _) => purity_kind_error(&found.display_name, "an `equiv` declaration"),
-        Item::Elaborator(_, _) => {
-            purity_kind_error(&found.display_name, "an elaborator declaration")
-        }
+        Item::Macro(_, _) => purity_kind_error(&found.display_name, "a macro declaration"),
         Item::HostType(_) => purity_kind_error(&found.display_name, "a `host type`"),
         Item::RecGroup(_, _) => unreachable!("selected recursion-group item is not a function"),
         Item::TypeRecGroup(_) => {
@@ -1161,7 +1159,7 @@ fn purity_kind_error(name: &str, kind: &str) -> String {
 /// kind-aware shortcut. The output is the **residual NF**: the value
 /// left after applying every reduction the host-independent partial
 /// evaluator admits — β-reduction, `let`-unfolding, fn-call inlining,
-/// `match!` / `if`/`else` / elaboration. Pure expressions
+/// intrinsic operations over already-expanded core terms. Pure expressions
 /// collapse to ground values; host items remain as opaque atoms;
 /// applications that can't be reduced residualize as `callee(arg, …)`.
 fn cmd_normalize(session: &mut Session, expr: &str, palette: Palette) -> String {
@@ -1303,7 +1301,7 @@ fn cmd_expr(session: &mut Session, input: &str, palette: Palette) -> String {
         match query_expr_for_repl(session, &expr_src) {
             Ok(result) => format!(
                 "{}\n{}",
-                render_expr_type(&expr_src, &result, palette),
+                render_expr_type(session, &expr_src, &result, palette),
                 render_normal_form(&result, palette)
             ),
             Err(e) => render_expr_error(&e),
@@ -1458,13 +1456,23 @@ fn render_normal_form(result: &ExprQueryResult, palette: Palette) -> String {
 
 /// Render an expression query's synthesized type, prefixed by the
 /// expression as the user typed it.
-fn render_expr_type(expr_src: &str, result: &ExprQueryResult, palette: Palette) -> String {
+fn render_expr_type(
+    session: &Session,
+    expr_src: &str,
+    result: &ExprQueryResult,
+    palette: Palette,
+) -> String {
     let ty = crate::pass::typecheck_core::display_type(&result.ty);
-    format!(
-        "{} : {}",
-        highlight(expr_src, palette),
-        highlight_type(&ty, palette)
-    )
+    let module = session
+        .current()
+        .and_then(|current| session.module(current))
+        .map(|entry| &entry.module);
+    let context =
+        module.and_then(|module| crate::pass::parser::expression_parse_context(module).ok());
+    let expression = crate::tokens::dump_repl_input(expr_src, 0, context.as_ref(), module)
+        .map(|tokens| super::highlight::highlight_classified(expr_src, palette, &tokens))
+        .unwrap_or_else(|_| expr_src.to_owned());
+    format!("{} : {}", expression, highlight_type(&ty, palette))
 }
 
 /// Render a command-facing expression-query failure as a user-facing diagnostic.
@@ -1534,7 +1542,12 @@ fn cmd_doc(session: &Session, name: &str, palette: Palette) -> String {
     if let Some(doc) = entry.as_ref().and_then(|entry| entry.doc()) {
         let raw = doc.lines.join("\n");
         let rendered = render_doc_prose(&raw, &found.module);
-        out.push_str(&render_doc_for_terminal(&rendered, palette));
+        out.push_str(&render_doc_for_terminal(
+            &rendered.text,
+            palette,
+            Some(&found.module),
+            &rendered.source_tokens,
+        ));
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
@@ -1599,7 +1612,12 @@ fn doc_for_module(session: &Session, module_path: &str, palette: Palette) -> Str
     if let Some(doc) = &module.doc {
         let raw = doc.lines.join("\n");
         let rendered = render_doc_prose(&raw, module);
-        out.push_str(&render_doc_for_terminal(&rendered, palette));
+        out.push_str(&render_doc_for_terminal(
+            &rendered.text,
+            palette,
+            Some(module),
+            &rendered.source_tokens,
+        ));
         if !out.is_empty() && !out.ends_with('\n') {
             out.push('\n');
         }
@@ -1639,14 +1657,17 @@ fn doc_for_module(session: &Session, module_path: &str, palette: Palette) -> Str
 /// so `` [`name`] `` references render as plain code spans and the
 /// `@signature` / `@source` directives resolve against `module`'s
 /// items.
-fn render_doc_prose(prose: &str, module: &Module<Surface>) -> String {
-    use crate::kiodoc::render::rewrite::rewrite;
+fn render_doc_prose(
+    prose: &str,
+    module: &Module<Surface>,
+) -> crate::kiodoc::render::rewrite::Rewritten {
+    use crate::kiodoc::render::rewrite::rewrite_with_context;
     use crate::kiodoc::render::scope::ModuleScope;
     use crate::kiodoc::render::site::SymbolIndex;
 
     let scope = ModuleScope::from_module(module.clone());
     let index = SymbolIndex::default();
-    rewrite(
+    rewrite_with_context(
         prose,
         "",
         ".md",
@@ -1660,22 +1681,45 @@ fn render_doc_prose(prose: &str, module: &Module<Surface>) -> String {
 /// bodies of ` ```kio ` fenced blocks, and drop Markdown link
 /// syntax around code spans so `` [`name`](url) `` reads as
 /// `` `name` ``. Non-fence prose is emitted as-is.
-fn render_doc_for_terminal(markdown: &str, palette: Palette) -> String {
+fn render_doc_for_terminal(
+    markdown: &str,
+    palette: Palette,
+    module: Option<&Module<Surface>>,
+    source_tokens: &std::collections::HashMap<u32, Vec<crate::tokens::ClassifiedToken>>,
+) -> String {
     let mut out = String::new();
+    let module_source = module.map(crate::pretty::pretty_module);
+    let mut self_harness = false;
     let mut in_kio_fence = false;
     let mut fence_buf = String::new();
-    for line in markdown.lines() {
+    let mut offset = 0;
+    let mut fence_start = 0;
+    for raw_line in markdown.split_inclusive('\n') {
+        let line_start = offset;
+        offset += raw_line.len();
+        let line = raw_line.trim_end_matches(['\r', '\n']);
         let trimmed = line.trim_start();
         if !in_kio_fence && (trimmed == "```kio" || trimmed.starts_with("```kio ")) {
             in_kio_fence = true;
+            fence_start = line_start as u32;
+            self_harness =
+                crate::doc_markup::generated::self_harness_info(trimmed.trim_start_matches("```"));
             fence_buf.clear();
             continue;
         }
         if in_kio_fence && trimmed == "```" {
             in_kio_fence = false;
             // Highlight and indent the captured fence body.
-            for body_line in fence_buf.lines() {
-                let _ = writeln!(out, "    {}", highlight(body_line, palette));
+            let tokens = source_tokens.get(&fence_start).cloned().unwrap_or_else(|| {
+                crate::tokens::dump_doc_code_with_module(
+                    &fence_buf,
+                    self_harness,
+                    module_source.as_deref(),
+                )
+            });
+            let highlighted = super::highlight::highlight_classified(&fence_buf, palette, &tokens);
+            for body_line in highlighted.lines() {
+                let _ = writeln!(out, "    {body_line}");
             }
             continue;
         }
@@ -1800,6 +1844,29 @@ fn cmd_source(session: &Session, name: &str, palette: Palette) -> String {
     } else {
         format!("{prefix}\n{body}")
     };
+    if let Some(source) = session.source_of(&found.file_path) {
+        let span = selected_item.span();
+        if let (Some(before), Some(after)) = (
+            source.get(..span.start as usize),
+            source.get(span.end as usize..),
+        ) {
+            let assembled = format!("{before}{combined}{after}");
+            if let Ok(tokens) = crate::tokens::dump(&assembled) {
+                let start = before.len() as u32;
+                let end = start + combined.len() as u32;
+                let tokens = tokens
+                    .into_iter()
+                    .filter(|token| token.span.start >= start && token.span.end <= end)
+                    .map(|mut token| {
+                        token.span.start -= start;
+                        token.span.end -= start;
+                        token
+                    })
+                    .collect::<Vec<_>>();
+                return super::highlight::highlight_classified(&combined, palette, &tokens);
+            }
+        }
+    }
     highlight(&combined, palette)
 }
 
@@ -2033,8 +2100,8 @@ fn ls_item_lines(item: &Item<Surface>, verbose: bool) -> Vec<String> {
             vec![format!("{vis} {{{}}}", forward.name)]
         }
         Item::Equiv(e, _) => vec![format!("equiv {}", e.name)],
-        Item::Elaborator(s, _) => {
-            let vis = if s.vis.is_pub() { "pub elab" } else { "elab" };
+        Item::Macro(s, _) => {
+            let vis = if s.vis.is_pub() { "pub macro" } else { "macro" };
             vec![format!("{vis} {}", s.name)]
         }
         Item::HostType(h) => vec![format!("host type {}", h.name)],
@@ -2081,7 +2148,7 @@ fn terse_elides_a_signature(items: &[Item<Surface>]) -> bool {
         | Item::TypeAlias(_)
         | Item::LiteralAlias(_, _)
         | Item::LabelForward(_, _)
-        | Item::Elaborator(_, _)
+        | Item::Macro(_, _)
         | Item::Op(_, _)
         | Item::VariadicOperator(_, _)
         | Item::HostType(_)
@@ -2694,7 +2761,7 @@ fn cmd_source_refs(
         _ => (
             match found.selected_item() {
                 Item::LiteralAlias(_, _) => SourceNameKind::Value,
-                Item::Elaborator(_, _) => SourceNameKind::Elaborator,
+                Item::Macro(_, _) => SourceNameKind::Macro,
                 Item::Equiv(_, _) => SourceNameKind::Equiv,
                 _ => unreachable!("source references select an erased declaration or label"),
             },
@@ -2929,7 +2996,7 @@ fn item_label(item: &Item<Surface>, module_path: &str) -> String {
         Item::Newtype(n) => format!("in newtype {}", n.name),
         Item::TypeAlias(a) => format!("in type {}", a.name),
         Item::LiteralAlias(l, _) => format!("in literal {}", l.name),
-        Item::Elaborator(s, _) => format!("in elaborator {}", s.name),
+        Item::Macro(s, _) => format!("in macro {}", s.name),
         Item::Equiv(e, _) => format!("in equiv {}", e.name),
         Item::Labels(t, _) => match &t.type_alias_name {
             Some(n) => format!("in labels {n}"),
@@ -2979,7 +3046,7 @@ impl Resolved {
             // These source declarations have no binder in the typed position index.
             Item::LiteralAlias(_, _)
             | Item::Equiv(_, _)
-            | Item::Elaborator(_, _)
+            | Item::Macro(_, _)
             | Item::LabelForward(_, _) => false,
             Item::Op(_, _) | Item::VariadicOperator(_, _) => {
                 unreachable!("operator references select their Surface grammar")
@@ -3017,7 +3084,7 @@ impl Resolved {
                 .map(|(_, span)| span);
         }
         match entry {
-            DocEntry::Elaborator(def) => Some(def.name_span),
+            DocEntry::Macro(def) => Some(def.name_span),
             DocEntry::LabelForward(def, _) => Some(def.name_span),
             _ => entry.type_name_span(),
         }
@@ -3487,7 +3554,7 @@ fn surface_item_name(item: &Item<Surface>) -> Option<&str> {
         }),
         Item::TypeAlias(a) => Some(&a.name),
         Item::LiteralAlias(l, _) => Some(&l.name),
-        Item::Elaborator(s, _) => Some(&s.name),
+        Item::Macro(s, _) => Some(&s.name),
         Item::Newtype(n) => Some(&n.name),
         Item::Labels(t, _) => t.type_alias_name.as_deref(),
         Item::LabelForward(_, _) => None,
@@ -3865,7 +3932,7 @@ mod tests {
             "demo/ops.(op _ + _, choose)",
             "demo/ops.(op _ + _",
             "choose as other",
-            "import demo/ops(choose)",
+            "import demo/ops(macro choose)",
             "choose, empty",
             "(op _ + _)",
         ] {
@@ -4078,11 +4145,11 @@ mod tests {
         let mut files = std::collections::BTreeMap::new();
         files.insert(
             root.join("totality.pkg.kio"),
-            "package totality;\n\nbridge {\n  app/**;\n  elaborators;\n}\n".to_owned(),
+            "package totality;\n\nbridge {\n  app/**;\n  macros;\n}\n".to_owned(),
         );
         files.insert(
-            root.join("elaborators.kio"),
-            r#"module elaborators;
+            root.join("macros.kio"),
+            r#"module macros;
 
 import __comptime__;
 
@@ -4121,13 +4188,13 @@ pub pure fn reentrant_checked(
   , _target: Target_request
   ) -> __Checked_term__ { reenter(ct, value) }
 
-pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked; };
+pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checked; };
 "#
             .to_owned(),
         );
         files.insert(
             root.join("app/main.kio"),
-            "module app/main;\n\nimport elaborators(reentrant);\n\nfn idle() -> . { () }\n"
+            "module app/main;\n\nimport macros(macro reentrant);\n\nfn idle() -> . { () }\n"
                 .to_owned(),
         );
         Session::new_in_memory(root, files)
@@ -4163,7 +4230,7 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
         );
 
         let result =
-            Command::Normalize("reentrant!((), .)".to_owned()).run(&mut session, Palette::plain());
+            Command::Normalize("reentrant((), .)".to_owned()).run(&mut session, Palette::plain());
         assert!(
             result
                 .output
@@ -5574,6 +5641,32 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
     }
 
     #[test]
+    fn terminal_doc_source_directives_retain_exact_generated_fence_context() {
+        let module = crate::pass::parser::parse("module app; import provider(macro selected); fn early(selected: . -> .) { selected(()); later(()) } macro later : . -> . { impl implementation; }; fn after() { later(()); selected(()) }").unwrap();
+        let prose = "Before [`@source early`]\nBetween [`@source after`]\n```kio\nfn after() { later(()); selected(()) }\n```";
+        let rewritten = render_doc_prose(prose, &module);
+        let rendered = render_doc_for_terminal(
+            &rewritten.text,
+            Palette::truecolor(),
+            Some(&module),
+            &rewritten.source_tokens,
+        );
+        let style = Palette::truecolor()
+            .style_for_kind(crate::tokens::TokenKind::EntityNameMacroReference)
+            .unwrap();
+        assert_eq!(
+            rendered.matches(&format!("{style}later")).count(),
+            1,
+            "{rendered}"
+        );
+        assert_eq!(
+            rendered.matches(&format!("{style}selected")).count(),
+            1,
+            "{rendered}"
+        );
+    }
+
+    #[test]
     fn cmd_doc_renders_newtype_doc_comment() {
         // A `///` doc-comment on a `newtype` is surfaced by `:doc`
         // (previously silently dropped). Routes through the shared
@@ -5713,8 +5806,8 @@ pub elab reentrant : [Source] Source -> [Target] Target { impl reentrant_checked
             (
                 root.join("main.kio"),
                 concat!(
-                    "module main; import provider(packet); import other as second;\n",
-                    "fn nested() -> . { packet! { packet! { () } } }\n",
+                    "module main; import provider(macro packet); import other as second;\n",
+                    "fn nested() -> . { packet { packet { () } } }\n",
                     "fn shadow(packet: .) -> . { packet }\n",
                 )
                 .to_owned(),

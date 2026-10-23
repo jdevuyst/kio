@@ -385,7 +385,7 @@ fn item_name_and_doc(item: &Item) -> (std::borrow::Cow<'_, str>, Option<&DocComm
         }
         Item::Op(o, _) => ("", o.doc.as_ref()),
         Item::VariadicOperator(f, _) => ("", f.doc.as_ref()),
-        Item::Elaborator(s, _) => (s.name.as_str(), s.doc.as_ref()),
+        Item::Macro(s, _) => (s.name.as_str(), s.doc.as_ref()),
         Item::HostType(h) => (h.name.as_str(), h.doc.as_ref()),
         Item::HostFn(h) => (h.name.as_str(), h.doc.as_ref()),
         Item::RecGroup(_, _) => ("", None),

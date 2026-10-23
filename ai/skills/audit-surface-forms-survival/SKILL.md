@@ -11,10 +11,10 @@ AGENTS.md § Universal rules — Kio' is a strict subset of Kio, Surface forms m
 1. **Kio' adds nothing to Kio.** Every spelling, identifier class, declaration/import form, typing rule, and runtime meaning accepted as Kio' is accepted with the same meaning by the full Kio pipeline. Kio' is a restriction, never a privileged compiler dialect.
 2. **No surface-only form survives into Kio'.** The AST that reaches the Prime phase contains only Kio' constructs.
 3. **No surface-only *information* survives into Kio'.** Even when a surviving node looks Kio'-shaped, it must not carry hidden surface provenance — original label-declaration names, "was the signature elided" flags, optional types that encode "user wrote it" vs. "typer filled it in," or any other back-reference whose only consumer is "remember which surface form produced this." Such fields are themselves hidden surface forms.
-4. **Compile-time evaluation consumes phase-pure inputs.** `equiv`, `:normalize`, user elaborators, generated-term templates, and future `__comptime__` hooks reduce Kio'-shaped core terms plus an explicit primitive environment. In kio-rs, an entry adapter may use typed Lowered plus boundary-local `Elaborations` only to build an explicit `UncheckedPrime` evaluator input; the reducer must never consume Lowered/surface ASTs, `Elaborations`, or hidden typer state.
+4. **Compile-time evaluation consumes phase-pure inputs.** `equiv`, `:normalize`, user macros, generated-term templates, and future `__comptime__` hooks reduce Kio'-shaped core terms plus an explicit primitive environment. In kio-rs, an entry adapter may use typed Lowered plus boundary-local `Elaborations` only to build an explicit `UncheckedPrime` evaluator input; the reducer must never consume Lowered/surface ASTs, `Elaborations`, or hidden typer state.
 5. **`structural_recovery` consumes Kio' shape only.** The recovery pass (`Module<Prime>` → `Module<Enriched>`) is the back-end's only mediator between Kio' and codegen. Its decisions must be driven by intrinsic call structure, type-args, and Kio'-identity names — never by surface-provenance fields that rode through Prime so recovery could read them.
 6. **Phase artifacts derive no authority from producer provenance.** A Prime/textual/serialized/cache/dynamic-load construct may grant only authority that its receiving validator can verify from the artifact and explicit dependencies. Reserved or compiler-generated spellings provide hygiene only, and an exact selected private edge never expands into module-wide access.
-7. **Call semantics use resolved types only.** Derive call completion, argument grouping, partial application and residualization, and UFCS placement from the resolved public type, written syntax, and local constraints. Never use declaration or host-parameter grouping, runtime ABI arity, callee identity or provenance, or a private elaborator ABI to change the public call plan.
+7. **Call semantics use resolved types only.** Derive call completion, argument grouping, partial application and residualization, and UFCS placement from the resolved public type, written syntax, and local constraints. Never use declaration or host-parameter grouping, runtime ABI arity, callee identity or provenance, or a private macro ABI to change the public call plan.
 
 Property (3) is the generalization of property (2): a `from_labels_label: Option<String>` on a Prime-surviving `Newtype` is conceptually a surviving `labels` declaration, just expressed as a field instead of an AST variant. Before label elaboration, explicit `Labels` declarations and Surface label relations remain authoritative through Surface transformations and dependency materialization. Their erasure forbids carrying that provenance into Prime; it does not authorize reconstructing a Surface label binding from an ordinary newtype. Property (4) extends the same phase-boundary purity rule to evaluator inputs. Property (5) is the motivation: when a downstream pass cheats by reading surface provenance, the front-end's layered design erodes — recovery becomes coupled to the front-end's history rather than the Kio' input it claims to accept. Property (6) applies the same producer-independent counterfactual to authority: a fresh parser and validator see the artifact, not who emitted it.
 
@@ -46,7 +46,7 @@ Reserve **no-leak** and **context leak** for session, machine, user, worktree, a
 
 The discriminator:
 
-- **Typer -> substitute workspace, consumed by writing into the AST.** Legitimate. `Elaborations` is the canonical boundary-local side channel: the typer records the next-phase shape for elaboration-bearing sites, the substitute pass reads it and writes the explicit `__either__`/`__if_then_else__` calls or checked user-elaborator replay into the Prime AST, and after substitute the side table is dead. The final Prime AST is the public encoding; the side channel was scaffolding.
+- **Typer -> substitute workspace, consumed by writing into the AST.** Legitimate. `Elaborations` is the canonical boundary-local side channel: the typer records the next-phase shape for elaboration-bearing sites, the substitute pass reads it and writes the explicit `__either__`/`__if_then_else__` calls or checked user-macro replay into the Prime AST, and after substitute the side table is dead. The final Prime AST is the public encoding; the side channel was scaffolding.
 - **Typer -> codegen, evaluator, or any pass past substitute, consumed in parallel with the AST.** Forbidden. Whatever the parallel structure carries is information the downstream pass needs but the AST doesn't admit — which means the AST is incomplete. Either the AST should carry the info, or the pass should re-derive it from what the AST does encode (the same source text a fresh re-parse + re-typecheck would see).
 
 The counterfactual is the test for both: if the dumped source carries the info, the AST should too; if it doesn't, neither should the side channel. A side channel that lives past the substitute boundary is the same hygiene failure as a Prime-surviving provenance field, just better-hidden.
@@ -66,10 +66,10 @@ Compare `specs/prime.md` and `specs/language.md`, the full and Prime parser entr
 The surface forms that must not survive are:
 
 - Tuple literals (n-ary `(a, b, …)`)
-- Generic trailing block calls to imported elaborators (including `if!`/`else`, `scope!`, `do! <receiver> { … }`, and `match!`)
-- Elaborators (algebraic): `iso!`, `into!`, `onto!`, `align!`, `ease!`, `atom!`
-- Elaborators (spine): `fit!`, `reorder_sum!`, `reorder_prod!`, `narrow_sum!`, `narrow_prod!`, `widen_sum!`, `widen_prod!`, `flatten_sum!`, `flatten_prod!`, `one_sum!`, `one_prod!`
-- Bang-call with explicit target type (`elaborator!(e, T)`)
+- Generic trailing block calls to imported macros (including `if`/`else`, `scope`, `do(<receiver>) { … }`, and `match`)
+- Macros (algebraic): `iso`, `into`, `onto`, `align`, `ease`, `atom`
+- Macros (spine): `fit`, `reorder_sum`, `reorder_prod`, `narrow_sum`, `narrow_prod`, `widen_sum`, `widen_prod`, `flatten_sum`, `flatten_prod`, `one_sum`, `one_prod`
+- Macro call with explicit target type (`convert(e, T)`)
 - UFCS (`r.>m`, `r.>m(T)`)
 - `.stem. { ... }` placeholder lambdas
 - `literal` declarations
@@ -97,7 +97,7 @@ If any form is silently passed through, that's the finding.
 
 ## 5. Elaboration substitution at the Lowered → Prime boundary
 
-Generic trailing block calls are projected before desugaring according to ordinary imported elaborator declarations: product blocks become independent values, thunk blocks become lambdas, and sequence blocks become nested ordinary bind calls. The resulting imported calls, including `if!`, `scope!`, `do!`, and `match!`, use the same boundary-local elaboration path as other user elaborators when their removal needs completed types. `typecheck_full` records the elaboration and substitution swaps it into the AST at the Lowered → Prime boundary; UFCS and field syntax also close at that boundary. Elaborator calls stay as elaboration variants rather than being folded into the intrinsic-scheme registry — this preserves the phase-typed elimination invariant (`PrimeTyper` discharges every elaborator arm via `match *ext {}`). Check:
+Generic trailing block calls are projected before desugaring according to ordinary imported macro declarations: product blocks become independent values, thunk blocks become lambdas, and sequence blocks become nested ordinary bind calls. The resulting imported calls, including `if`, `scope`, `do`, and `match`, use the same boundary-local elaboration path as other user macros when their removal needs completed types. `typecheck_full` records the elaboration and substitution swaps it into the AST at the Lowered → Prime boundary; UFCS and field syntax also close at that boundary. Macro calls stay as elaboration variants rather than being folded into the intrinsic-scheme registry — this preserves the phase-typed elimination invariant (`PrimeTyper` discharges every elaborator arm via `match *ext {}`). Check:
 
 - Every dispatch position that produces an elaboration records it in the `Elaborations` table.
 - The substitute pass consumes every recorded elaboration and emits only ordinary nodes admitted by the shared Kio'/Kio subset.
@@ -107,7 +107,7 @@ Look for `Elaborations`, `substitute`, `lower_post_typecheck`, or similar symbol
 
 ## 6. Cargo feature gating
 
-The `kio-prime` binary should exclude every kio-only module (`desugar`, `elaborator_registry`, `full`, `label_elab`, `op_fold`, `substitute`, `typecheck_full`) via Cargo feature flags. Read `kio-rs/Cargo.toml` and the relevant `#[cfg(feature = "...")]` annotations to confirm. A kio-only module visible from the kio-prime build is a leak.
+The `kio-prime` binary should exclude every kio-only module (`desugar`, `macro_registry`, `full`, `label_elab`, `op_fold`, `substitute`, `typecheck_full`) via Cargo feature flags. Read `kio-rs/Cargo.toml` and the relevant `#[cfg(feature = "...")]` annotations to confirm. A kio-only module visible from the kio-prime build is a leak.
 
 ## 7. Surface-provenance fields on Prime-surviving nodes
 
@@ -133,7 +133,7 @@ For each candidate field on a Prime-surviving node, answer in order:
 
 The bar is the same as for surface forms: if the information is not part of Kio''s formal identity, it does not belong on a Prime node. The counterfactual is the test for "part of Kio''s formal identity."
 
-**Exemplar: `Type::Function.abi_arity` is not type identity.** Kio type syntax uses `&` for product domains, not comma-separated function-type parameters. Declaration grouping may still be needed to bind a definition body or express a host ABI, but a consumer that makes two equal function types accept different source calls because of that grouping is leaking syntax into type semantics. Inspect every semantic read of `abi_arity`, signature parameter groups, host-function parameter groups, and user-elaborator transcript metadata. Require same-public-type counterfactuals across ordinary, host, Required/Optional elaborator, bang, prefix, and UFCS calls. Boundary-local artifacts may carry representation data only after the shared public call plan has been selected.
+**Exemplar: `Type::Function.abi_arity` is not type identity.** Kio type syntax uses `&` for product domains, not comma-separated function-type parameters. Declaration grouping may still be needed to bind a definition body or express a host ABI, but a consumer that makes two equal function types accept different source calls because of that grouping is leaking syntax into type semantics. Inspect every semantic read of `abi_arity`, signature parameter groups, host-function parameter groups, and user-macro transcript metadata. Require same-public-type counterfactuals across ordinary, host, Required/Optional macro, prefix, and UFCS calls. Boundary-local artifacts may carry representation data only after the shared public call plan has been selected.
 
 ### Recommended phase-narrowing pattern
 
@@ -166,7 +166,7 @@ For each candidate, perform the fresh-load counterfactual: construct or emit the
 
 ## 9. Compile-time evaluator inputs
 
-Compile-time evaluator entry points must preserve phase-boundary purity. Audit every caller that feeds the evaluator behind `equiv`, the REPL `:normalize` command, user elaborators, generated-term templates, and future `__comptime__` hooks.
+Compile-time evaluator entry points must preserve phase-boundary purity. Audit every caller that feeds the evaluator behind `equiv`, the REPL `:normalize` command, user macros, generated-term templates, and future `__comptime__` hooks.
 
 Check:
 

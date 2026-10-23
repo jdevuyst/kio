@@ -1,7 +1,7 @@
 /// Character-code constants and ASCII classifiers the lexer uses to scan Kio' source text.
 module docs_loader/chars;
 
-import docs_loader/elab/control(if);
+import docs_loader/macros/control(macro if);
 import docs_loader/testapi(default Bool, default I32);
 import docs_loader/testapi/arith(eq_i32, leq_i32);
 
@@ -21,12 +21,12 @@ import docs_loader/testapi/arith(eq_i32, leq_i32);
 // branch is exactly right.
 /// Boolean disjunction of two host bools (both operands already evaluated).
 pub fn or2(a: Bool, b: Bool) -> Bool {
-  if! a { .t(Bool) } else { b }
+  if(a) { .t(Bool) } else { b }
 }
 
 /// Boolean conjunction of two host bools (both operands already evaluated).
 pub fn and2(a: Bool, b: Bool) -> Bool {
-  if! a { b } else { .f(Bool) }
+  if(a) { b } else { .f(Bool) }
 }
 
 // --- punctuation and structural character codes ---

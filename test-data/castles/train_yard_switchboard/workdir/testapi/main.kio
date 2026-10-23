@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(
@@ -30,8 +30,8 @@ fn initial_yard() -> Array(String) {
 fn is_empty(slot: String) -> Bool { string_eq(slot, "empty") }
 
 rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I32) -> I32 {
-  if! leq_i32(index, last) {
-    if! is_empty(array_get(yard, index)) {
+  if(leq_i32(index, last)) {
+    if(is_empty(array_get(yard, index))) {
       recur occupied_count(yard, add_i32(index, 1), last, count)
     } else {
       recur occupied_count(yard, add_i32(index, 1), last, add_i32(count, 1))

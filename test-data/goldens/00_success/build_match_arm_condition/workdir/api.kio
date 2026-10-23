@@ -1,20 +1,20 @@
 module api;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 
 default host type Bool role(bool);
 
 host fn sink(value: Bool);
 
 pub fn choose(value: . | Bool, detail: . | Bool) -> Bool {
-  match! value {
+  match(value) {
     (
     , .(flag: Bool) {
-        match! detail {
+        match(detail) {
           (
           , .(_present: Bool) {
-              if! flag { .t } else { .f }
+              if(flag) { .t } else { .f }
             }
           , .(_empty: .) { .f }
           )
@@ -26,14 +26,14 @@ pub fn choose(value: . | Bool, detail: . | Bool) -> Bool {
 }
 
 pub fn choose_effect(value: . | Bool, detail: . | Bool) {
-  match! value {
+  match(value) {
     (
     , .(flag: Bool) {
-        match! detail {
+        match(detail) {
           (
           , .(_present: Bool) { sink(flag) }
           , .(_empty: .) {
-              if! flag { sink(.t) } else { sink(.f) }
+              if(flag) { sink(.t) } else { sink(.f) }
             }
           )
         }

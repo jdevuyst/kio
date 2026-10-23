@@ -7,9 +7,9 @@
 /// intermediate result travels with its rows.
 module query/row;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import query/list as list;
 import query/schema as schema;
 import query/value as value;
@@ -40,17 +40,17 @@ pub fn rel_cols_of(r: Relation) -> schema.Col_list { r.?{rel_cols} }
 
 pub fn rel_rows_of(r: Relation) -> Table { r.?{rel_rows} }
 
-fn some_value(v: value.Value) -> Maybe_value { {some_value = v}.>widen_sum!(Maybe_value) }
+fn some_value(v: value.Value) -> Maybe_value { {some_value = v}.>widen_sum(Maybe_value) }
 
-fn no_value() -> Maybe_value { {no_value=}.>widen_sum!(Maybe_value) }
+fn no_value() -> Maybe_value { {no_value=}.>widen_sum(Maybe_value) }
 
 /// The association-list lookup every operator is built on: walk the
 /// row's cells until one carries the wanted column.
 pub rec(loop) fn row_get(row: Row, c: schema.Col) -> Maybe_value {
-  match! row.>list.List.un_list {
+  match(row.>list.List.un_list) {
     (
     , .(head: Cell, rest: Row) {
-        if! schema.col_eq(cell_col_of(head), c) {
+        if(schema.col_eq(cell_col_of(head), c)) {
           some_value(cell_val_of(head))
         } else {
           recur row_get(rest, c)
@@ -65,7 +65,7 @@ pub rec(loop) fn row_get(row: Row, c: schema.Col) -> Maybe_value {
 /// datum both answer `no_int`, so every comparison in the engine has
 /// exactly one shape to handle.
 pub fn row_int(row: Row, c: schema.Col) -> value.Maybe_int {
-  match! row_get(row, c) {
+  match(row_get(row, c)) {
     (.(v: Some_value) { value.value_int(v.?{some_value}) }, .(_none: No_value) { value.no_int() })
   }
 }
@@ -74,7 +74,7 @@ pub fn row_int(row: Row, c: schema.Col) -> value.Maybe_int {
 /// row does not carry renders as `?`: the engine shows the hole rather
 /// than inventing a value for it.
 pub fn row_cell(row: Row, c: schema.Col) -> value.Value {
-  match! row_get(row, c) {
+  match(row_get(row, c)) {
     (.(v: Some_value) { v.?{some_value} }, .(_none: No_value) { value.text_val("?", 1) })
   }
 }
@@ -85,7 +85,7 @@ pub fn row_merge(left: Row, right: Row) -> Row { list.append(left, right) }
 
 /// Restrict a row to the named columns, in the order they were named.
 pub rec(loop) fn project_row(cols: schema.Col_list, row: Row) -> Row {
-  match! cols.>list.List.un_list {
+  match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
         list.cons(cell(c, row_cell(row, c)), recur(cont) project_row(rest, row))

@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/match(match);
 import interpreter/input as input;
 import interpreter/report as report;
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -10,11 +10,11 @@ import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn cases(completed: I32) {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(title: String) {
-      match! io.read_ascii_line() {
+      match(io.read_ascii_line()) {
         .(budget: String) {
-          match! input.read_tokens() {
+          match(input.read_tokens()) {
             .(tokens: input.Tokens) {
               report.case_result(title, budget, tokens);
               recur cases(arith.add_i32(completed, 1))

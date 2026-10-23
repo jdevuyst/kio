@@ -16,11 +16,11 @@ Create one `<local>.dep.kio` file at the consumer package root. For a nearby
 checkout, point `path` at the dependency's package file:
 
 ```kio {variant=dependency}
-// elab.dep.kio
-dependency elab;
+// macros.dep.kio
+dependency macros;
 
 source {
-  path "../libs/elab/elab.pkg.kio"
+  path "../libs/macros/macros.pkg.kio"
 }
 ```
 
@@ -28,35 +28,35 @@ For a package inside a Git repository, provide a clone URL, a ref, and the
 package manifest's path relative to that repository's root:
 
 ```kio {variant=dependency}
-// elab.dep.kio
-dependency elab;
+// macros.dep.kio
+dependency macros;
 
 source {
   git "https://github.com/jdevuyst/kio/";
   ref "main";
-  path "test-data/poc/elab/workdir/elab.pkg.kio"
+  path "test-data/poc/macros/workdir/macros.pkg.kio"
 }
 ```
 
-The filename stem, `dependency` header, and local import root are all `elab`.
+The filename stem, `dependency` header, and local import root are all `macros`.
 The dependency package's original name does not have to match it. The Git
 `path` selects that exact package file inside the checkout; a standalone
 `source { path "..." }` instead resolves from the consumer's package root.
 Git sources without an explicit `path` use package discovery. `path ()` means
 the same thing; neither spelling pins a discovered path.
 
-From the consumer's package root, where `elab.dep.kio` lives, materialize the
+From the consumer's package root, where `macros.dep.kio` lives, materialize the
 source:
 
 ```sh
 kio dep fetch
 ```
 
-For a Git source, the first fetch also writes `elab.lock.kio` with the resolved
+For a Git source, the first fetch also writes `macros.lock.kio` with the resolved
 commit, selected path, and contract digest. An existing lock is honored;
 `kio dep update` is
 the explicit operation that moves the pin. Commit the dependency declaration,
-the Git lock when present, and the materialized `elab/` module tree. The whole
+the Git lock when present, and the materialized `macros/` module tree. The whole
 materialized closure is source, not a disposable build cache, so a fresh
 checkout can build without network access.
 
@@ -64,11 +64,11 @@ checkout can build without network access.
 
 Materialization places the dependency's module tree below the consumer-chosen
 local name. If the dependency declares `module match;`, a consumer that names
-it `elab` imports it as `elab/match`:
+it `macros` imports it as `macros/match`:
 
 ```kio {ignore}
-import elab/match(match);
-import elab/spine_elaborators(widen_sum, one_prod);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum, macro one_prod);
 ```
 
 Type imports likewise distinguish capability from local choice. An ordinary
@@ -79,18 +79,18 @@ with an expected or explicit type. See
 [literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
 for the categories, aliases and eager conflict rules.
 
-The bang belongs only at the call site:
+Call the selected local name directly:
 
 <!--kio {harness=inject placeholder="__INSERT_CODE_HERE__"}
 module kiodoc;
 
-import spine_elaborators(widen_sum);
+import spine_macros(macro widen_sum);
 
 __INSERT_CODE_HERE__
 -->
 
 ```kio {@inject}
-fn inject[A][B](value: A) -> A | B { widen_sum!(value, A | B) }
+fn inject[A][B](value: A) -> A | B { widen_sum(value, A | B) }
 ```
 
 Importing a dependency does not automatically expose it through the consumer's
@@ -190,14 +190,14 @@ its right result. The [list consumer below](#a-list-consumer-with-host-bindings)
 shows this traversal capability and all of `list`'s bindings in a complete
 package.
 
-All six packages also include an elab dependency with four host types
-under `<local>/elab/testapi`: `String` (`str`), `I32` and `Int` (both `i32`),
+All six packages also include a macro dependency with four host types
+under `<local>/macros/testapi`: `String` (`str`), `I32` and `Int` (both `i32`),
 and `Bool` (`bool`). `option`, `queue`, and `vec` include another copy under
-`<local>/list/elab/testapi`. When bridging the full interfaces, include these
+`<local>/list/macros/testapi`. When bridging the full interfaces, include these
 modules and supply their type bindings as well. These are distinct
 module-qualified types unless you explicitly unify them through rehosting;
 using the same host integer representation alone does not unify Kio types.
-The [elab library case study](../poc/elab.md#adopting-the-elaborators) explains the four-type
+The [macro library case study](../poc/macros.md#adopting-the-macros) explains the four-type
 setup. Constructors in `option/core`, `queue/core`, and `list/core` use no
 host operations; importing those alone does not require their traversal
 modules' host functions.
@@ -216,7 +216,7 @@ bridge {
   invoice;
   list/core;
   list/list;
-  list/elab/testapi
+  list/macros/testapi
 }
 ```
 
@@ -246,7 +246,7 @@ that module:
 | `loop` | `[S][R] ((S -> S \| R) & S) -> R`; continue on the left arm, return the right arm |
 | `string_concat` | `(String & String) -> String` |
 
-The elab dependency also requires host types under `list/elab/testapi`:
+The macro dependency also requires host types under `list/macros/testapi`:
 `Bool` (`bool`), `I32` and `Int` (both `i32`), and `String` (`str`).
 
 These are the bridged modules' requirements even though this particular
@@ -267,52 +267,52 @@ kio test
 ```
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="the-elaborator-library"></a>
+<a id="the-macro-library"></a>
 
-## The elab library
+## The macro library
 
-[`elab`](../../test-data/poc/elab/) is the reusable compile-time structural
+[`macros`](../../test-data/poc/macros/) is the reusable compile-time structural
 toolkit used throughout these guides. Its modules are deliberately separate so
 a consumer can import a narrow vocabulary:
 
-- `spine_elaborators` supplies the everyday `fit!`, `reorder_*`, `narrow_*`,
+- `spine_macros` supplies the everyday `fit`, `reorder_*`, `narrow_*`,
   `widen_*`, `flatten_*`, and `one_*` product/sum adapters.
-- `row_elaborators` constructs, updates, and projects label-product rows.
-- `tuple_elaborators` supplies tuple operations such as `head!`, `tail!`,
-  `concat!`, `flatten!`, `group!`, `zip!`, and `map!`.
+- `row_macros` constructs, updates, and projects label-product rows.
+- `tuple_macros` supplies tuple operations such as `head`, `tail`,
+  `concat`, `flatten`, `group`, `zip`, and `map`.
 - `match` supplies exhaustive, first-match structural dispatch through
-  `match!`.
-- `control` supplies lazy `if!` branches and ordinary `scope!` blocks.
-- `sequence` supplies `Bind` and `Sequence` types and `do!` blocks that
+  `match`.
+- `control` supplies lazy `if` branches and ordinary `scope` blocks.
+- `sequence` supplies `Bind` and `Sequence` types and `do` blocks that
   sequence actions through an explicitly supplied bind function.
-- `lookup` supplies the advanced conditional cross-sum helpers `lookup!` and
-  `contains!`. They inspect whether an active sum branch contains a requested
+- `lookup` supplies the advanced conditional cross-sum helpers `lookup` and
+  `contains`. They inspect whether an active sum branch contains a requested
   label; they are not aliases for `.?{field}`, which projects a statically
   known product field.
 - `derive` composes an explicit set of candidate rules to build one target
-  value through `derive!`.
+  value through `derive`.
 - `type_of` reflects a requested type into the library's user-level type
   representation.
 - `show` synthesizes a string renderer for supported structural shapes.
-- `algebraic_elaborators` supplies the DNF-level `iso!`, `into!`, `onto!`,
-  `align!`, `ease!`, and `atom!` palette.
-- `elaborator_util` contains shared implementation types and folds for
-  elab authors rather than an application-facing surface.
+- `algebraic_macros` supplies the DNF-level `iso`, `into`, `onto`,
+  `align`, `ease`, and `atom` palette.
+- `macro_util` contains shared implementation types and folds for
+  macro authors rather than an application-facing surface.
 
 For example:
 
 ```kio {ignore}
-import elab/match(match);
-import elab/control(if, scope);
-import elab/sequence(Bind, Sequence, do);
-import elab/lookup(contains, lookup);
-import elab/spine_elaborators(fit, widen_sum);
+import macros/match(macro match);
+import macros/control(macro if, macro scope);
+import macros/sequence(Bind, Sequence, macro do);
+import macros/lookup(macro contains, macro lookup);
+import macros/spine_macros(macro fit, macro widen_sum);
 ```
 
-[Defining elabs](elaborators.md) explains the reflection ABI behind
-these modules. [Building and testing elabs](elaborator-authoring.md)
-develops complete small implementations and their callers. [The elab
-library case study](../poc/elab.md) covers the library's operations, how its
+[Defining macros](macros.md) explains the reflection ABI behind
+these modules. [Building and testing macros](macro-authoring.md)
+develops complete small implementations and their callers. [The macro
+library case study](../poc/macros.md) covers the library's operations, how its
 modules fit together, and its laws; the linked source provides implementation
 details.
 
@@ -321,7 +321,7 @@ details.
 [`optics`](../../test-data/poc/optics/) provides lenses, prisms, and
 isomorphisms as pure function pairs. It includes composition, `view`, `set`,
 `over`, prism preview/review, product lenses, sum prisms, and structural
-isomorphisms. It depends on `elab` for the spine adapters, so consuming its
+isomorphisms. It depends on `macros` for the spine adapters, so consuming its
 materialized package also consumes the committed dependency closure.
 
 Import the public module through the chosen root:
@@ -339,7 +339,7 @@ Two POCs teach integration patterns rather than offering a single reusable
 module surface:
 
 - [Higher-kinded types](../poc/hkt.md) assembles kinded brands, explicit
-  `Functor`/`Monad` dictionaries, monadic `do`, and `derive!`. Use it as a
+  `Functor`/`Monad` dictionaries, monadic `do`, and `derive`. Use it as a
   design case study; the focused language mechanics are in
   [Higher-kinded types](higher-kinded-types.md).
 - [Dynamic loading](../poc/dyn_load_prime.md) demonstrates a host loading and

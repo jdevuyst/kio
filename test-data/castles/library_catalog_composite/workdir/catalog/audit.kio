@@ -12,16 +12,16 @@ import catalog/domain(
 );
 import catalog/domain(cat, istr);
 import catalog/domain({copies_available}, {no_copies}, {not_held}, {unknown_call}, {unknown_member});
-import elab/match(match);
 import list/core as lcore;
 import list/list as list;
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/arith(add_i32);
 
 labels Tally = { e_call: I32, e_member: I32, e_copies: I32, e_held: I32, e_hold: I32 };
 
 pub fn failure_text(reason: Failure) -> String {
-  match! reason {
+  match(reason) {
     (
     , .(bad: Unknown_call) { "unknown call-number ".>cat(istr(bad.?{unknown_call})) }
     , .(bad: Unknown_member) { "unknown member ".>cat(istr(bad.?{unknown_member})) }
@@ -48,7 +48,7 @@ fn one_more_held(counts: Tally) -> Tally { counts.!{e_held = add_i32(counts.?{e_
 fn one_more_hold(counts: Tally) -> Tally { counts.!{e_hold = add_i32(counts.?{e_hold}, 1)} }
 
 fn bump(counts: Tally, reason: Failure) -> Tally {
-  match! reason {
+  match(reason) {
     (
     , .(_bad: Unknown_call) { one_more_call(counts) }
     , .(_bad: Unknown_member) { one_more_member(counts) }

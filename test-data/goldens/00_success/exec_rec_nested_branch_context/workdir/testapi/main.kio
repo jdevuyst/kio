@@ -1,23 +1,23 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(default Bool, default I32);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn search(outer: Bool, inner: Bool) -> I32 | . {
-  if! outer {
-    if! inner { widen_sum!(7) } else { recur search(.f, .f) }
+  if(outer) {
+    if(inner) { widen_sum(7) } else { recur search(.f, .f) }
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
 fn report(value: I32 | .) {
-  match! value {
+  match(value) {
     (.(number: I32) { io.print(fmt.int_to_string(number)) }, .(_empty: .) { io.print("empty") })
   }
 }

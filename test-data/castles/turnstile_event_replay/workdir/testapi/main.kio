@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -73,13 +73,13 @@ fn make_state(
 fn initial_state() -> Gate_state { make_state(.t, .f, .f, 0, 0, 0, 0, 0, 0, 0, 0, 0) }
 
 fn bool_word(value: Bool) -> String {
-  if! value { "yes" } else { "no" }
+  if(value) { "yes" } else { "no" }
 }
 
 fn gate_mode(state: Gate_state) -> String {
-  if! state.?{maintenance} {
+  if(state.?{maintenance}) {
     "maintenance-open"
-  } else if! state.?{locked} {
+  } else if(state.?{locked}) {
     "locked"
   } else {
     "unlocked"
@@ -101,11 +101,11 @@ fn show_i32(label: String, value: I32) {
 fn show_bool(label: String, value: Bool) { io.print(cat4(label, ": ", bool_word(value), "\n")) }
 
 fn is_authorized_badge(badge_id: I32) -> Bool {
-  if! arith.lt_i32(1000, badge_id) { arith.lt_i32(badge_id, 1004) } else { .f }
+  if(arith.lt_i32(1000, badge_id)) { arith.lt_i32(badge_id, 1004) } else { .f }
 }
 
 fn handle_coin(state: Gate_state, next_line: I32) -> Gate_state {
-  if! state.?{maintenance} {
+  if(state.?{maintenance}) {
     print_plain_event(next_line, "coin ignored while maintenance open\n");
     make_state(
     , state.?{locked}
@@ -141,7 +141,7 @@ fn handle_coin(state: Gate_state, next_line: I32) -> Gate_state {
 }
 
 fn handle_push(state: Gate_state, next_line: I32) -> Gate_state {
-  if! state.?{maintenance} {
+  if(state.?{maintenance}) {
     print_plain_event(next_line, "push allowed by maintenance\n");
     make_state(
     , state.?{locked}
@@ -157,7 +157,7 @@ fn handle_push(state: Gate_state, next_line: I32) -> Gate_state {
     , state.?{unknown_events}
     , next_line
     )
-  } else if! state.?{credit} {
+  } else if(state.?{credit}) {
     print_plain_event(next_line, "push accepted; gate relocked\n");
     make_state(
     , .t
@@ -233,7 +233,7 @@ fn handle_accepted_badge(state: Gate_state, next_line: I32, badge_text: String) 
   make_state(
   , .f
   , state.?{maintenance}
-  , if! state.?{maintenance} { .f } else { .t }
+  , if(state.?{maintenance}) { .f } else { .t }
   , state.?{entries}
   , arith.add_i32(state.?{accepted_badges}, 1)
   , state.?{denied_badges}
@@ -283,7 +283,7 @@ fn handle_unknown(state: Gate_state, next_line: I32, line: String) -> Gate_state
 }
 
 fn handle_badge(state: Gate_state, next_line: I32, line: String, badge_id: I32) -> Gate_state {
-  if! is_authorized_badge(badge_id) {
+  if(is_authorized_badge(badge_id)) {
     handle_accepted_badge(state, next_line, line)
   } else {
     handle_denied_badge(state, next_line, line)
@@ -291,7 +291,7 @@ fn handle_badge(state: Gate_state, next_line: I32, line: String, badge_id: I32) 
 }
 
 fn handle_numeric_or_unknown(state: Gate_state, next_line: I32, line: String) -> Gate_state {
-  match! fmt.string_to_int(line) {
+  match(fmt.string_to_int(line)) {
     (
     , .(badge_id: I32) { handle_badge(state, next_line, line, badge_id) }
     , .(_not_number: .) { handle_unknown(state, next_line, line) }
@@ -301,13 +301,13 @@ fn handle_numeric_or_unknown(state: Gate_state, next_line: I32, line: String) ->
 
 fn apply_event(state: Gate_state, line: String) -> Gate_state {
   let next_line = arith.add_i32(state.?{line_no}, 1);
-  if! text.string_eq(line, "coin") {
+  if(text.string_eq(line, "coin")) {
     handle_coin(state, next_line)
-  } else if! text.string_eq(line, "push") {
+  } else if(text.string_eq(line, "push")) {
     handle_push(state, next_line)
-  } else if! text.string_eq(line, "maint-open") {
+  } else if(text.string_eq(line, "maint-open")) {
     handle_maintenance_open(state, next_line)
-  } else if! text.string_eq(line, "maint-close") {
+  } else if(text.string_eq(line, "maint-close")) {
     handle_maintenance_close(state, next_line)
   } else {
     handle_numeric_or_unknown(state, next_line, line)
@@ -315,7 +315,7 @@ fn apply_event(state: Gate_state, line: String) -> Gate_state {
 }
 
 rec(loop) fn replay(state: Gate_state) -> Gate_state {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     (.(line: String) { recur replay(apply_event(state, line)) }, .(_done: .) { state })
   }
 }

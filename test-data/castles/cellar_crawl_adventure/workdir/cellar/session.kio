@@ -7,8 +7,8 @@ import cellar/engine(apply);
 import cellar/outcome as outcome;
 import cellar/report as report;
 import cellar/state as state;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(String, default Bool);
 import testapi/io(print, read_ascii_line);
 import testapi/iter(loop);
@@ -17,14 +17,14 @@ import testapi/iter(loop);
 /// and its object leaves an empty object, which the engine refuses like any
 /// other word it does not know.
 fn read_object() -> String {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (.(word: String) { word }, .(_eof: .) { "" })
   }
 }
 
 fn read_rest(word: String) -> command.Command {
   let v = command.verb_of(word);
-  if! command.verb_takes_object(v) {
+  if(command.verb_takes_object(v)) {
     command.command_of(v, read_object())
   } else {
     command.command_of(v, "")
@@ -39,11 +39,11 @@ fn play_turn(g: state.Game, c: command.Command) -> state.Game {
 }
 
 rec(loop) fn play(g: state.Game) -> state.Game {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(word: String) {
         let next = play_turn(g, read_rest(word));
-        if! state.is_over(next) { next } else { recur play(next) }
+        if(state.is_over(next)) { next } else { recur play(next) }
       }
     , .(_eof: .) { g }
     )

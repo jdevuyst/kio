@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/fmt(int_to_string);
@@ -15,7 +15,7 @@ import testapi/iter(loop);
 // to surface the named `sum_range` combinator alongside the
 // numeric recurrences.
 fn sum_step(n: I32, (i: I32, acc: I32)) -> (I32 & I32) | I32 {
-  if! leq_i32(i, n) { widen_sum!((add_i32(i, 1), add_i32(acc, i))) } else { widen_sum!(acc) }
+  if(leq_i32(i, n)) { widen_sum((add_i32(i, 1), add_i32(acc, i))) } else { widen_sum(acc) }
 }
 
 fn sum_range(n: I32) -> I32 {

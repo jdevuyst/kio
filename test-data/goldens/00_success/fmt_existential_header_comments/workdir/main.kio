@@ -10,7 +10,7 @@ fn opened() {
 }
 
 fn blocked() {
-    scope! {
+    scope {
         let .( // first binder
             <Left> // second binder
             <Right> // tuple binder

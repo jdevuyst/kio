@@ -1,6 +1,6 @@
 module m;
 
-import elab/control(scope);
+import macros/control(macro scope);
 
 fn id[X](a: X) -> X { a }
 
@@ -15,7 +15,7 @@ equiv reflexive_value[A](x: A) {
 }
 
 equiv let_through_param[A](x: A) {
-  scope! { let y = x; y };
+  scope { let y = x; y };
   x
 }
 

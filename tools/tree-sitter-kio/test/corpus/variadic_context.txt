@@ -243,11 +243,14 @@ import syntax(op, import, variadic, {entry}, op _ (=) _, op _ ~ ___ ~, op _ ? _ 
     (module_path
       (entity_name_module))
     (bracket_lparen)
-    (identifier)
+    (import_named_item
+      (identifier))
     (separator_comma)
-    (identifier)
+    (import_named_item
+      (identifier))
     (separator_comma)
-    (identifier)
+    (import_named_item
+      (identifier))
     (separator_comma)
     (import_label_item
       (bracket_lbrace)

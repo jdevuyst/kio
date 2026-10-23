@@ -1,8 +1,8 @@
 module petri/search;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import petri/model as model;
 import queue/core as queues;
 import queue/list/core as lists;
@@ -30,14 +30,14 @@ pub fn find_node(nodes: lists.List(Node), node_id: I32) -> Node | . {
 }
 
 fn seen(nodes: lists.List(Node), state: model.Marking) -> Bool {
-  match! traversal.find(.(node: Node) { model.equal(node.?{marking}, state) }, nodes) {
+  match(traversal.find(.(node: Node) { model.equal(node.?{marking}, state) }, nodes)) {
     .(_node: Node) { .t };
     .() { .f }
   }
 }
 
 fn discover(state: Search, source: Node, transition_id: I32, marking: model.Marking) -> Search {
-  if! seen(state.?{visited}, marking) {
+  if(seen(state.?{visited}, marking)) {
     state.!{
     , edges = arithmetic.add_i32(state.?{edges}, 1)
     , duplicates = arithmetic.add_i32(state.?{duplicates}, 1)
@@ -52,7 +52,7 @@ fn discover(state: Search, source: Node, transition_id: I32, marking: model.Mark
     };
     let frontier = fifo.enqueue(child, state.?{frontier});
     let size = fifo.length(frontier);
-    let peak = if! arithmetic.lt_i32(state.?{peak}, size) { size } else { state.?{peak} };
+    let peak = if(arithmetic.lt_i32(state.?{peak}, size)) { size } else { state.?{peak} };
     state.!{
     , frontier
     , visited = lists.cons(child, state.?{visited})
@@ -69,10 +69,10 @@ rec(loop) fn expand(
 , transition_id: I32
 , state: Search
 ) -> Search {
-  match! lists.uncons(remaining) {
+  match(lists.uncons(remaining)) {
     .(transition: model.Transition, rest: lists.List(model.Transition)) {
       let .(next: Search) =
-        match! model.fire(net, transition, source.?{marking}) {
+        match(model.fire(net, transition, source.?{marking})) {
           .(marking: model.Marking) { discover(state, source, transition_id, marking) };
           .() { state }
         };
@@ -84,21 +84,21 @@ rec(loop) fn expand(
 
 fn record_deadlock(state: Search, node: Node) -> Search {
   let .(first: Node | .) =
-    match! state.?{first_deadlock} {
-      .(found: Node) { found.>widen_sum! };
-      .() { node.>widen_sum! }
+    match(state.?{first_deadlock}) {
+      .(found: Node) { found.>widen_sum };
+      .() { node.>widen_sum }
     };
   state.!{deadlocks = arithmetic.add_i32(state.?{deadlocks}, 1), first_deadlock = first}
 }
 
 rec(loop) fn explore(net: model.Net, state: Search) -> Search {
-  match! fifo.dequeue(state.?{frontier}) {
+  match(fifo.dequeue(state.?{frontier})) {
     .(node: Node, rest: queues.Queue(Node)) {
       let .(popped: Search) = state.!{frontier = rest};
       let grown = expand(net, node, net.?{model.transitions}, 0, popped);
       let .(classified: Search) =
-        if! arithmetic.eq_i32(grown.?{edges}, state.?{edges}) {
-          if! model.completed(net, node.?{marking}) {
+        if(arithmetic.eq_i32(grown.?{edges}, state.?{edges})) {
+          if(model.completed(net, node.?{marking})) {
             grown.!{terminals = arithmetic.add_i32(grown.?{terminals}, 1)}
           } else {
             record_deadlock(grown, node)
@@ -123,7 +123,7 @@ pub fn run(net: model.Net) -> Search {
     , duplicates = 0
     , terminals = 0
     , deadlocks = 0
-    , first_deadlock = ().>widen_sum!
+    , first_deadlock = ().>widen_sum
     , peak = 1
     }
   )

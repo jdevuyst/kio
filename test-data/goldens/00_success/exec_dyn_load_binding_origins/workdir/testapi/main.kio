@@ -1,9 +1,9 @@
 /// Loads fresh Kio' images with conflicting and repeated binding origins.
 module testapi/main;
 
-import elab/match(match);
 import loader(Load_outcome, Lr_diag, Lr_image, diag_message, un_load_outcome);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -70,7 +70,7 @@ fn repeated_compiler_block_image() -> String {
 }
 
 fn outcome(label: String, loaded: Load_outcome) -> String {
-  match! un_load_outcome(loaded) {
+  match(un_load_outcome(loaded)) {
     (
     , .(_image: Lr_image) { string_concat(label, "loaded\n"(String)) }
     , .(diagnostic: Lr_diag) {

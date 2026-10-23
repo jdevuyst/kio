@@ -1,10 +1,10 @@
 /// Evaluation at a point and the formal derivative.
 module poly/calculus;
 
-import elab/control(if);
 import list/core as lc;
 import list/list as ll;
 import list/list(varop [] as [* *]);
+import macros/control(macro if);
 import poly/core as core;
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, mul_i32);
@@ -24,7 +24,7 @@ pub fn eval(p: core.Poly, x: I32) -> I32 {
 // coefficient, then multiply what is left by its *original* degree, which is the
 // running counter starting at 1.
 rec(loop) fn scale_by_degree(acc: Coeffs, i: I32, cs: Coeffs) -> Coeffs {
-  if! ll.null(cs) {
+  if(ll.null(cs)) {
     acc
   } else {
     let term = mul_i32(i, core.head_or_zero(cs));

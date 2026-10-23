@@ -4,8 +4,8 @@
 //! `:t <name-or-expression>` and `:pure <name-or-expression>`, and bare
 //! compound-expression input all
 //! need the typed `Prime` form of an expression: the AST
-//! the front-end produces after desugaring, label lowering, elaborator
-//! discharge, UFCS rewriting, and type-argument inference. This module
+//! the front-end produces after desugaring, label lowering, macro
+//! expansion, UFCS rewriting, and type-argument inference. This module
 //! is the seam that produces it.
 //!
 //! ## How an expression query runs
@@ -273,7 +273,7 @@ fn separated_path_of(kinds: &[&TokenKind], sep: &str) -> Option<String> {
 /// synthesized type, and its residual normal form.
 pub struct ExprQueryResult {
     /// The expression's typed `Prime` form — every surface form
-    /// removed, every elaborator discharged, every inferred type-argument
+    /// removed, every macro expanded, every inferred type-argument
     /// filled in.
     pub typed_expr: Expr<Prime>,
     /// The expression's synthesized type. Carried at the `Lowered`
@@ -455,7 +455,7 @@ pub(super) fn query_expr_for_repl(
 
     // The synthesized type is recorded in the position index at the
     // expression's *source* span. Substitution can rewrite the typed
-    // `Prime` node (a `match!` / `if` / elaboration replaces the
+    // `Prime` node (macro expansion replaces the
     // surface node entirely), so the type is keyed off the original
     // byte range, not the post-substitution node's span — the position
     // index is populated pre-substitution.
@@ -901,7 +901,7 @@ fn invalid_single_expression() -> ReplExprQueryError {
 /// identifier already present in the module *and* the query. Including
 /// unresolved query spellings makes disjointness itself the capture-proof
 /// invariant instead of relying on the current non-recursive self-visibility
-/// rule. Elaborators cannot add an arbitrary caller-scoped spelling: their
+/// rule. Macros cannot add an arbitrary caller-scoped spelling: their
 /// checked-term constructors receive resolved captures, checked call slots,
 /// and hygienic callback locals. Starting from the session's monotone counter
 /// keeps the usual short names; wrapping makes the parse-only completion

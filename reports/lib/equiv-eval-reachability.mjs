@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 const LOGICAL = "kio-rs/src/normalization.rs";
 const REMAPPED = "src/normalization.rs";
-const PARITY = "00_success/repl_normalize_discharges_elaborators";
+const PARITY = "00_success/repl_normalize_discharges_macros";
 const SAFE = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const bad = (message) => { throw new Error(message); };
 const need = (condition, message) => { if (!condition) bad(message); };

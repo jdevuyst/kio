@@ -13,7 +13,7 @@ fn opened() {
 }
 
 fn blocked() {
-  scope! {
+  scope {
     // first binder
 
     // second binder

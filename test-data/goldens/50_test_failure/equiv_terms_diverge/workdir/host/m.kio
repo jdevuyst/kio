@@ -1,10 +1,10 @@
 module host/m;
 
-import elab/control(scope);
 import host(bar, foo);
+import macros/control(macro scope);
 
 equiv passes() {
-  scope! { let x = (); x };
+  scope { let x = (); x };
   ()
 }
 

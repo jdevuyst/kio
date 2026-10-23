@@ -723,6 +723,9 @@ pub struct NameSet {
     /// module providing the prompt's outer lexical scope.
     /// `None` leaves only bindings introduced in the prompt itself.
     pub current_module_src: Option<String>,
+    /// The same module snapshot as the input parser context, retained for
+    /// source-local classification without reparsing its function bodies.
+    pub(crate) expression_module: Option<Arc<crate::ast::Module<crate::ast::Surface>>>,
     /// Exact consumer-declared operator grammar for parsing live expressions in the
     /// current module. This is an opaque parser artifact, not a reconstruction
     /// from the completion-only [`OperatorEntry`] list.
@@ -815,6 +818,9 @@ impl NameSet {
             let module = &session.module(current)?.module;
             expression_parse_context(module).ok().map(Arc::new)
         });
+        let expression_module = session
+            .current()
+            .and_then(|current| Some(Arc::new(session.module(current)?.module.clone())));
         let expression_operators = session.current().and_then(|current| {
             let module = &session.module(current)?.module;
             Some(Arc::from(crate::scope_walk::expression_operators(
@@ -843,12 +849,8 @@ impl NameSet {
                         {
                             return None;
                         }
-                        match entry {
-                            crate::doc_entry::DocEntry::Elaborator(_) => candidate.label.push('!'),
-                            crate::doc_entry::DocEntry::LiteralAlias(_) => {
-                                candidate.kind = crate::scope_walk::CandidateKind::Constant
-                            }
-                            _ => {}
+                        if let crate::doc_entry::DocEntry::LiteralAlias(_) = entry {
+                            candidate.kind = crate::scope_walk::CandidateKind::Constant;
                         }
                     }
                     Some(scope_candidate_from_walk(candidate))
@@ -936,6 +938,7 @@ impl NameSet {
             selector_scope: Some(selector_scope),
             builtins,
             current_module_src,
+            expression_module,
             expression_parse_context,
             expression_bindings,
             expression_provider_sources,
@@ -1185,7 +1188,7 @@ fn collect_item(
         Item::TypeAlias(a) => (a.name.as_str(), ItemKind::TypeAlias, a.vis.is_pub()),
         Item::LiteralAlias(l, _) => (l.name.as_str(), ItemKind::Literal, l.vis.is_pub()),
         Item::Equiv(e, _) => (e.name.as_str(), ItemKind::Equiv, false),
-        Item::Elaborator(s, _) => (s.name.as_str(), ItemKind::Fn, s.vis.is_pub()),
+        Item::Macro(s, _) => (s.name.as_str(), ItemKind::Fn, s.vis.is_pub()),
         Item::HostType(h) => (h.name.as_str(), ItemKind::Newtype, true),
         Item::HostFn(h) => (h.name.as_str(), ItemKind::Fn, true),
         Item::Labels(t, _) => {
@@ -2262,10 +2265,10 @@ mod tests {
         let set = walk_set();
         let provider = AstScopeProvider::new(&set);
         for input in [
-            "do! bind { let local <- (); ",
-            "do! bind { (); let local = (); ",
-            "do! bind { let local = (); ",
-            "scope! { let local = (); ",
+            "do(bind) { let local <- (); ",
+            "do(bind) { (); let local = (); ",
+            "do(bind) { let local = (); ",
+            "scope { let local = (); ",
         ] {
             let result = complete(&set, &provider, input, input.len());
             assert!(
@@ -2293,7 +2296,7 @@ mod tests {
             "recur(",
             "recur(cont, ",
             ".() { recur(",
-            "do! bind { let value <- (); recur(",
+            "do(bind) { let value <- (); recur(",
         ] {
             let result = complete(&set, &provider, input, input.len());
             assert!(result.candidates.is_empty(), "{input}: {result:?}");

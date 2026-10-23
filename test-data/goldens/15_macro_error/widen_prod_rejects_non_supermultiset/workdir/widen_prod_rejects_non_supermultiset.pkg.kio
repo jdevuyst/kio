@@ -1,0 +1,21 @@
+package widen_prod_rejects_non_supermultiset;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  };
+
+  target ts {
+    out "out/ts/";
+    baseline v5_0
+  }
+}
+
+bridge {
+  main;
+  testapi;
+  macros/testapi
+}

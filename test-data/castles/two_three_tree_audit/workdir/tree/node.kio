@@ -7,9 +7,9 @@
 /// package exists to perform.
 module tree/node;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, lt_i32);
 import testapi/iter(loop);
@@ -27,14 +27,14 @@ rec {
 /// rebalance that drops or duplicates a key shows up here first.
 pub newtype Tree : Node & I32 { constructor mk_tree; projector un_tree }
 
-pub fn leaf_node() -> Node { Node.mk_node({leaf=}.>widen_sum!(Node_body)) }
+pub fn leaf_node() -> Node { Node.mk_node({leaf=}.>widen_sum(Node_body)) }
 
 pub fn two_node(l: Node, k: I32, v: String, r: Node) -> Node {
-  Node.mk_node({two = (l, k, v, r)}.>widen_sum!(Node_body))
+  Node.mk_node({two = (l, k, v, r)}.>widen_sum(Node_body))
 }
 
 pub fn three_node(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Node {
-  Node.mk_node({three = (l, k1, v1, m, k2, v2, r)}.>widen_sum!(Node_body))
+  Node.mk_node({three = (l, k1, v1, m, k2, v2, r)}.>widen_sum(Node_body))
 }
 
 pub fn make_tree(root: Node, size: I32) -> Tree { Tree.mk_tree((root, size)) }
@@ -46,24 +46,24 @@ pub fn root_of(t: Tree) -> Node { let .(r: Node, _n: I32) = t.>Tree.un_tree; r }
 pub fn size_of(t: Tree) -> I32 { let .(_r: Node, n: I32) = t.>Tree.un_tree; n }
 
 pub fn is_leaf(t: Node) -> Bool {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (.(_e: Leaf) { .t }, .(_two: Two) { .f }, .(_three: Three) { .f })
   }
 }
 
 pub fn and(a: Bool, b: Bool) -> Bool {
-  if! a { b } else { .f }
+  if(a) { b } else { .f }
 }
 
 fn max2(a: I32, b: I32) -> I32 {
-  if! lt_i32(a, b) { b } else { a }
+  if(lt_i32(a, b)) { b } else { a }
 }
 
 /// The longest root-to-leaf path. Taken as a maximum over the children rather
 /// than by following one of them, so a tree whose leaves have drifted to
 /// different depths still reports a height the audit can contradict.
 pub rec(loop) fn height(t: Node) -> I32 {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { 0 }
     , .(n: Two) {
@@ -85,21 +85,21 @@ pub rec(loop) fn height(t: Node) -> I32 {
 
 labels Found = { payload: String } | { absent: . };
 
-fn found(v: String) -> Found { {payload = v}.>widen_sum!(Found) }
+fn found(v: String) -> Found { {payload = v}.>widen_sum(Found) }
 
-fn not_found() -> Found { {absent=}.>widen_sum!(Found) }
+fn not_found() -> Found { {absent=}.>widen_sum(Found) }
 
 /// Search. The only descent in the package that never rebuilds anything, so
 /// it is the only one that is a plain tail recursion.
 rec(loop) fn lookup(t: Node, k: I32) -> Found {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { not_found() }
     , .(n: Two) {
         let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
-        if! eq_i32(k, k1) {
+        if(eq_i32(k, k1)) {
           found(v1)
-        } else if! lt_i32(k, k1) {
+        } else if(lt_i32(k, k1)) {
           recur lookup(l, k)
         } else {
           recur lookup(r, k)
@@ -107,13 +107,13 @@ rec(loop) fn lookup(t: Node, k: I32) -> Found {
       }
     , .(n: Three) {
         let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
-        if! eq_i32(k, k1) {
+        if(eq_i32(k, k1)) {
           found(v1)
-        } else if! eq_i32(k, k2) {
+        } else if(eq_i32(k, k2)) {
           found(v2)
-        } else if! lt_i32(k, k1) {
+        } else if(lt_i32(k, k1)) {
           recur lookup(l, k)
-        } else if! lt_i32(k, k2) {
+        } else if(lt_i32(k, k2)) {
           recur lookup(m, k)
         } else {
           recur lookup(r, k)
@@ -124,7 +124,7 @@ rec(loop) fn lookup(t: Node, k: I32) -> Found {
 }
 
 pub fn contains(t: Node, k: I32) -> Bool {
-  match! lookup(t, k) {
+  match(lookup(t, k)) {
     (.(_p: Payload) { .t }, .(_a: Absent) { .f })
   }
 }

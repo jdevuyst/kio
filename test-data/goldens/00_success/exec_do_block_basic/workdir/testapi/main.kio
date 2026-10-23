@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi(default String);
 import testapi/io(print);
 
@@ -20,7 +20,7 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // The continuation's parameter type is filled in from the
 // receiver's bind shape.
 fn run() -> Box(String) {
-  do! box_bind { let a <- box_pure("do basic ok\n"); box_pure(a) }
+  do(box_bind) { let a <- box_pure("do basic ok\n"); box_pure(a) }
 }
 
 pub fn main() { print(Box.un_box(run())) }

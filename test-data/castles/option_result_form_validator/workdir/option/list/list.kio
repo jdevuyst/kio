@@ -14,9 +14,9 @@ import option/list/core(
 , tail
 , uncons
 );
-import option/list/elab/control(if);
-import option/list/elab/match(match);
-import option/list/elab/spine_elaborators(widen_sum);
+import option/list/macros/control(macro if);
+import option/list/macros/match(macro match);
+import option/list/macros/spine_macros(macro widen_sum);
 
 default host type Bool role(bool);
 
@@ -37,7 +37,7 @@ host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 host fn string_concat(p0: String, p1: String) -> String;
 
 fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present(value) }, .(_empty: .) { default })
   }
 }
@@ -52,18 +52,18 @@ fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
 fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
   loop(
   , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-      match! state {
+      match(state) {
         .(carry: Acc, rest: List(A)) {
-          match! uncons(rest) {
+          match(uncons(rest)) {
             (
             , .(pair: A & List(A)) {
-                match! pair {
+                match(pair) {
                   .(head: A, tl: List(A)) {
-                    widen_sum!((step(carry, head), tl), (Acc & List(A)) | Acc)
+                    widen_sum((step(carry, head), tl), (Acc & List(A)) | Acc)
                   }
                 }
               }
-            , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+            , .(_empty: .) { widen_sum(carry, (Acc & List(A)) | Acc) }
             )
           }
         }
@@ -89,7 +89,7 @@ pub fn length[A](xs: List(A)) -> I32 {
 
 /// Reports whether the list is empty.
 pub fn null[A](xs: List(A)) -> Bool {
-  match! uncons(xs) {
+  match(uncons(xs)) {
     (.(_pair: A & List(A)) { .f }, .(_empty: .) { .t })
   }
 }
@@ -120,12 +120,12 @@ pub fn foldr[A][Acc](f: (A & Acc) -> Acc, seed: Acc, xs: List(A)) -> Acc {
 pub fn replicate[A](n: I32, x: A) -> List(A) {
   loop(
   , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-      match! state {
+      match(state) {
         .(k: I32, acc: List(A)) {
-          if! lt_i32(0, k) {
-            widen_sum!((sub_i32(k, 1), cons(x, acc)), (I32 & List(A)) | List(A))
+          if(lt_i32(0, k)) {
+            widen_sum((sub_i32(k, 1), cons(x, acc)), (I32 & List(A)) | List(A))
           } else {
-            widen_sum!(acc, (I32 & List(A)) | List(A))
+            widen_sum(acc, (I32 & List(A)) | List(A))
           }
         }
       }
@@ -141,17 +141,17 @@ pub fn iterate[A](n: I32, f: A -> A, seed: A) -> List(A) {
   let built =
     loop(
     , .(state: I32 & A & List(A)) -> (I32 & A & List(A)) | List(A) {
-        match! state {
+        match(state) {
           .(k: I32, cur_acc: A & List(A)) {
-            match! cur_acc {
+            match(cur_acc) {
               .(cur: A, acc: List(A)) {
-                if! lt_i32(0, k) {
-                  widen_sum!(
+                if(lt_i32(0, k)) {
+                  widen_sum(
                   , (sub_i32(k, 1), (f(cur), cons(cur, acc)))
                   , (I32 & A & List(A)) | List(A)
                   )
                 } else {
-                  widen_sum!(acc, (I32 & A & List(A)) | List(A))
+                  widen_sum(acc, (I32 & A & List(A)) | List(A))
                 }
               }
             }
@@ -177,7 +177,7 @@ pub fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
   , xs
   , nil(A)
   , .(carry: List(A), x: A) -> List(A) {
-      if! keep(x) { cons(x, carry) } else { carry }
+      if(keep(x)) { cons(x, carry) } else { carry }
     }
   ))
 }
@@ -192,16 +192,16 @@ pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
 // Filtering by position: take / drop / split_at
 // =====================================================================
 fn take_advance[A](k: I32, acc: List(A), rest: List(A)) -> ((I32 & List(A)) & List(A)) | List(A) {
-  match! uncons(rest) {
+  match(uncons(rest)) {
     (
     , .(pair: A & List(A)) {
-        match! pair {
+        match(pair) {
           .(h: A, tl: List(A)) {
-            widen_sum!(((sub_i32(k, 1), cons(h, acc)), tl), ((I32 & List(A)) & List(A)) | List(A))
+            widen_sum(((sub_i32(k, 1), cons(h, acc)), tl), ((I32 & List(A)) & List(A)) | List(A))
           }
         }
       }
-    , .(_empty: .) { widen_sum!(acc, ((I32 & List(A)) & List(A)) | List(A)) }
+    , .(_empty: .) { widen_sum(acc, ((I32 & List(A)) & List(A)) | List(A)) }
     )
   }
 }
@@ -211,14 +211,14 @@ pub fn take[A](n: I32, xs: List(A)) -> List(A) {
   let built =
     loop(
     , .(state: (I32 & List(A)) & List(A)) -> ((I32 & List(A)) & List(A)) | List(A) {
-        match! state {
+        match(state) {
           .(cnt_acc: I32 & List(A), rest: List(A)) {
-            match! cnt_acc {
+            match(cnt_acc) {
               .(k: I32, acc: List(A)) {
-                if! lt_i32(0, k) {
+                if(lt_i32(0, k)) {
                   take_advance(k, acc, rest)
                 } else {
-                  widen_sum!(acc, ((I32 & List(A)) & List(A)) | List(A))
+                  widen_sum(acc, ((I32 & List(A)) & List(A)) | List(A))
                 }
               }
             }
@@ -231,14 +231,14 @@ pub fn take[A](n: I32, xs: List(A)) -> List(A) {
 }
 
 fn drop_advance[A](k: I32, rest: List(A)) -> (I32 & List(A)) | List(A) {
-  match! uncons(rest) {
+  match(uncons(rest)) {
     (
     , .(pair: A & List(A)) {
-        match! pair {
-          .(_h: A, tl: List(A)) { widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A)) }
+        match(pair) {
+          .(_h: A, tl: List(A)) { widen_sum((sub_i32(k, 1), tl), (I32 & List(A)) | List(A)) }
         }
       }
-    , .(_empty: .) { widen_sum!(nil(A), (I32 & List(A)) | List(A)) }
+    , .(_empty: .) { widen_sum(nil(A), (I32 & List(A)) | List(A)) }
     )
   }
 }
@@ -247,12 +247,12 @@ fn drop_advance[A](k: I32, rest: List(A)) -> (I32 & List(A)) | List(A) {
 pub fn drop[A](n: I32, xs: List(A)) -> List(A) {
   loop(
   , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-      match! state {
+      match(state) {
         .(k: I32, rest: List(A)) {
-          if! lt_i32(0, k) {
+          if(lt_i32(0, k)) {
             drop_advance(k, rest)
           } else {
-            widen_sum!(rest, (I32 & List(A)) | List(A))
+            widen_sum(rest, (I32 & List(A)) | List(A))
           }
         }
       }
@@ -270,7 +270,7 @@ pub fn elem[A](eq: (A & A) -> Bool, target: A, xs: List(A)) -> Bool {
   , xs
   , .f
   , .(found: Bool, x: A) -> Bool {
-      if! found { .t } else { eq(target, x) }
+      if(found) { .t } else { eq(target, x) }
     }
   )
 }
@@ -279,11 +279,11 @@ pub fn elem[A](eq: (A & A) -> Bool, target: A, xs: List(A)) -> Bool {
 pub fn find[A](pred: A -> Bool, xs: List(A)) -> A | . {
   fold_list(
   , xs
-  , widen_sum!((), A | .)
+  , widen_sum((), A | .)
   , .(found: A | ., x: A) -> A | . {
       fold_result(
-      , if! pred(x) { widen_sum!(x, A | .) } else { widen_sum!((), A | .) }
-      , .(y: A) -> A | . { widen_sum!(y, A | .) }
+      , if(pred(x)) { widen_sum(x, A | .) } else { widen_sum((), A | .) }
+      , .(y: A) -> A | . { widen_sum(y, A | .) }
       , found
       )
     }
@@ -295,12 +295,12 @@ pub fn at[A](i: I32, xs: List(A)) -> A | . {
   let final =
     fold_list(
     , xs
-    , (0, widen_sum!((), A | .))
+    , (0, widen_sum((), A | .))
     , .(index_result: I32 & (A | .), x: A) -> I32 & (A | .) {
-        match! index_result {
+        match(index_result) {
           .(j: I32, result: A | .) {
-            if! eq_i32(i, j) {
-              (add_i32(j, 1), widen_sum!(x, A | .))
+            if(eq_i32(i, j)) {
+              (add_i32(j, 1), widen_sum(x, A | .))
             } else {
               (add_i32(j, 1), result)
             }
@@ -308,7 +308,7 @@ pub fn at[A](i: I32, xs: List(A)) -> A | . {
         }
       }
     );
-  match! final {
+  match(final) {
     .(_j: I32, result: A | .) { result }
   }
 }
@@ -318,24 +318,24 @@ pub fn index_of[A](eq: (A & A) -> Bool, target: A, xs: List(A)) -> I32 | . {
   let final =
     fold_list(
     , xs
-    , (0, widen_sum!((), I32 | .))
+    , (0, widen_sum((), I32 | .))
     , .(index_result: I32 & (I32 | .), x: A) -> I32 & (I32 | .) {
-        match! index_result {
+        match(index_result) {
           .(j: I32, result: I32 | .) {
             fold_result(
-            , if! eq(target, x) {
-                (add_i32(j, 1), widen_sum!(j, I32 | .))
+            , if(eq(target, x)) {
+                (add_i32(j, 1), widen_sum(j, I32 | .))
               } else {
-                (add_i32(j, 1), widen_sum!((), I32 | .))
+                (add_i32(j, 1), widen_sum((), I32 | .))
               }
-            , .(found: I32) -> I32 & (I32 | .) { (add_i32(j, 1), widen_sum!(found, I32 | .)) }
+            , .(found: I32) -> I32 & (I32 | .) { (add_i32(j, 1), widen_sum(found, I32 | .)) }
             , result
             )
           }
         }
       }
     );
-  match! final {
+  match(final) {
     .(_j: I32, result: I32 | .) { result }
   }
 }
@@ -351,15 +351,15 @@ pub fn to_string[A](show: A -> String, xs: List(A)) -> String {
     , xs
     , (.f, "")
     , .(carry: Bool & String, x: A) -> Bool & String {
-        match! carry {
+        match(carry) {
           .(seen: Bool, body: String) {
-            if! seen { (.t, cc(body, cc(", ", show(x)))) } else { (.t, show(x)) }
+            if(seen) { (.t, cc(body, cc(", ", show(x)))) } else { (.t, show(x)) }
           }
         }
       }
     );
   let body =
-    match! final {
+    match(final) {
       .(_seen: Bool, body: String) { body }
     };
   string_concat("[", string_concat(body, "]"))
@@ -417,7 +417,7 @@ pub varop [] { foldr prepend empty }
 // touches no loop.
 equiv head_singleton[T](x: T) {
   head(singleton(x));
-  widen_sum!(x, T | .)
+  widen_sum(x, T | .)
 }
 
 // =====================================================================

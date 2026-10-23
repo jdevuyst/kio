@@ -56,9 +56,11 @@ impl Elaborations {
         while let Some(source) = pending.pop() {
             if captures.sources.insert(source.site().id) {
                 match source {
-                    Expr::UserElaborator { ext, .. }
+                    Expr::UserMacro { ext, .. }
                     | Expr::Ufcs {
-                        bang: Some(_), ext, ..
+                        macro_call: Some(_),
+                        ext,
+                        ..
                     } => {
                         captures.calls.insert(*ext, (source.site().id, root));
                     }
@@ -169,7 +171,7 @@ pub(super) fn finish_expansions(
     if elaborations.rec_quote.is_none() {
         return Ok(());
     }
-    let mut replay = super::UserElaboratorReplayEnv {
+    let mut replay = super::UserMacroReplayEnv {
         module_path: &env.module_path,
         module: env.module,
         elaborations,
@@ -183,10 +185,10 @@ pub(super) fn finish_expansions(
 }
 
 /// A completed quoted expression can occur inside an otherwise ordinary
-/// elaborator operand. Consume its local carrier before ordinary substitution.
+/// macro operand. Consume its local carrier before ordinary substitution.
 pub(super) fn finish_source_expansions(
     source: &Expr<Lowered>,
-    replay: &mut super::UserElaboratorReplayEnv<'_>,
+    replay: &mut super::UserMacroReplayEnv<'_>,
 ) -> Result<(), crate::error::Error> {
     if replay.elaborations.rec_quote.is_none() {
         return Ok(());
@@ -218,7 +220,7 @@ pub(super) fn finish_source_expansions(
 
 pub(super) fn finish_expansion(
     carrier: &Expr<Lowered>,
-    replay: &mut super::UserElaboratorReplayEnv<'_>,
+    replay: &mut super::UserMacroReplayEnv<'_>,
 ) -> Result<(), crate::error::Error> {
     if replay
         .elaborations
@@ -309,7 +311,7 @@ fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Exp
             pending.push(&plan.body);
         }
         Expr::RecQuote { .. } => {}
-        Expr::UserElaborator { args, .. } => push_arguments(args, pending),
+        Expr::UserMacro { args, .. } => push_arguments(args, pending),
         Expr::Ufcs { receiver, args, .. } => {
             pending.push(receiver);
             push_arguments(args, pending);

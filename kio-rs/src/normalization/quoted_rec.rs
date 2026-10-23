@@ -242,7 +242,7 @@ fn adapt<'a>(
                             }
                             CheckedTermNode::Raw(_)
                             | CheckedTermNode::Local { .. }
-                            | CheckedTermNode::ElabError { .. } => {
+                            | CheckedTermNode::MacroError { .. } => {
                                 unreachable!("an atomic ordinary node cannot contain suspension")
                             }
                             CheckedTermNode::TemplateValue { .. }

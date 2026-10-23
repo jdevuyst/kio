@@ -1,0 +1,14 @@
+package typecheck_user_macro_higher_kinded_type_argument;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

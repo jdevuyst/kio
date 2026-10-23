@@ -18,9 +18,9 @@ import core(
 , well_formed
 , yes
 );
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core(List, cons, head, nil, uncons);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 
 host type I32 role(i32);
 
@@ -28,12 +28,12 @@ host fn add_i32(p0: I32, p1: I32) -> I32;
 
 host fn loop[S][R](p0: S -> (S | R), p1: S) -> R;
 
-fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
 
-fn absent[A] -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
@@ -48,18 +48,18 @@ fn has_value[A](result: A | .) -> Bool {
 fn fold_list[A][Acc](xs: List(A), seed: Acc, step: (Acc & A) -> Acc) -> Acc {
   loop(
   , .(state: Acc & List(A)) -> (Acc & List(A)) | Acc {
-      match! state {
+      match(state) {
         .(carry: Acc, rest: List(A)) {
-          match! uncons(rest) {
+          match(uncons(rest)) {
             (
             , .(pair: A & List(A)) {
-                match! pair {
+                match(pair) {
                   .(head: A, tail: List(A)) {
-                    widen_sum!((step(carry, head), tail), (Acc & List(A)) | Acc)
+                    widen_sum((step(carry, head), tail), (Acc & List(A)) | Acc)
                   }
                 }
               }
-            , .(_empty: .) { widen_sum!(carry, (Acc & List(A)) | Acc) }
+            , .(_empty: .) { widen_sum(carry, (Acc & List(A)) | Acc) }
             )
           }
         }
@@ -77,11 +77,11 @@ fn reverse_list[A](xs: List(A)) -> List(A) {
 // Smart constructor
 // =====================================================================
 fn mkq[A](f: List(A), b: List(A)) -> Queue(A) {
-  match! uncons(f) {
+  match(uncons(f)) {
     (
     , .(_pair: A & List(A)) { Queue.mk_unchecked((f, b)) }
     , .(_empty: .) {
-        match! uncons(b) {
+        match(uncons(b)) {
           (
           , .(_bpair: A & List(A)) { Queue.mk_unchecked((reverse_list(b), nil(A))) }
           , .(_bempty: .) { empty(A) }
@@ -106,7 +106,7 @@ pub fn dequeue[A](q: Queue(A)) -> (A & Queue(A)) | . {
   fold_result(
   , absent(A & Queue(A))
   , .(pair: A & Queue(A)) {
-      match! pair {
+      match(pair) {
         .(h: A, rest: Queue(A)) { present((h, mkq(front(rest), back(rest)))) }
       }
     }
@@ -218,7 +218,7 @@ equiv fifo_second_out[A](a0: A, a1: A) {
   fold_result(
   , absent(A)
   , .(pair: A & Queue(A)) {
-      match! pair {
+      match(pair) {
         .(_h: A, rest: Queue(A)) { peek(rest) }
       }
     }
@@ -231,7 +231,7 @@ equiv dequeue_head_is_oldest[A](a0: A, a1: A) {
   fold_result(
   , absent(A)
   , .(pair: A & Queue(A)) {
-      match! pair {
+      match(pair) {
         .(h: A, _rest: Queue(A)) { present(h) }
       }
     }

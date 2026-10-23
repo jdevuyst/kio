@@ -1,0 +1,14 @@
+package rec_unrelated_match_macro_lambda;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  rec_unrelated_match_macro_lambda/**
+}

@@ -1,6 +1,6 @@
 module packet_frame_decoder/frame;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/text as text;
@@ -32,11 +32,11 @@ pub fn payload(frame: String) -> String { text.string_slice(frame, 11, 15) }
 pub fn checksum(frame: String) -> String { text.string_slice(frame, 16, 19) }
 
 pub fn kind_name(frame: String) -> String {
-  if! text.string_eq(kind(frame), "D") {
+  if(text.string_eq(kind(frame), "D")) {
     "DATA"
-  } else if! text.string_eq(kind(frame), "A") {
+  } else if(text.string_eq(kind(frame), "A")) {
     "ACK"
-  } else if! text.string_eq(kind(frame), "H") {
+  } else if(text.string_eq(kind(frame), "H")) {
     "HEARTBEAT"
   } else {
     "UNKNOWN"

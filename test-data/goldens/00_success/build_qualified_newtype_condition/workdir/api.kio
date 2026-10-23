@@ -1,12 +1,12 @@
 module api;
 
 import decoy as other;
-import elab/control(if);
+import macros/control(macro if);
 import selected as chosen;
 import testapi(default Bool);
 
 pub fn choose(card: chosen.Card) -> Bool {
-  if! card.?{chosen.flag} { .t } else { .f }
+  if(card.?{chosen.flag}) { .t } else { .f }
 }
 
 pub fn preserve_decoy(card: other.Card) -> other.Card { card }

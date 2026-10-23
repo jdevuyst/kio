@@ -4,7 +4,7 @@
 /// prints.
 module datalog/symbols;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -30,25 +30,25 @@ pub literal p_hubserved = 9;
 pub literal p_depotzone = 10;
 
 pub fn pred_name(code: I32) -> String {
-  if! eq_i32(code, p_link) {
+  if(eq_i32(code, p_link)) {
     "link"
-  } else if! eq_i32(code, p_station) {
+  } else if(eq_i32(code, p_station)) {
     "station"
-  } else if! eq_i32(code, p_hub) {
+  } else if(eq_i32(code, p_hub)) {
     "hub"
-  } else if! eq_i32(code, p_depot) {
+  } else if(eq_i32(code, p_depot)) {
     "depot"
-  } else if! eq_i32(code, p_reach) {
+  } else if(eq_i32(code, p_reach)) {
     "reach"
-  } else if! eq_i32(code, p_oddhop) {
+  } else if(eq_i32(code, p_oddhop)) {
     "oddhop"
-  } else if! eq_i32(code, p_evenhop) {
+  } else if(eq_i32(code, p_evenhop)) {
     "evenhop"
-  } else if! eq_i32(code, p_samezone) {
+  } else if(eq_i32(code, p_samezone)) {
     "samezone"
-  } else if! eq_i32(code, p_hubserved) {
+  } else if(eq_i32(code, p_hubserved)) {
     "hubserved"
-  } else if! eq_i32(code, p_depotzone) {
+  } else if(eq_i32(code, p_depotzone)) {
     "depotzone"
   } else {
     "?pred"
@@ -83,25 +83,25 @@ literal cost_base = 10;
 pub fn c_cost(cost: I32) -> I32 { add_i32(cost_base, cost) }
 
 pub fn const_name(code: I32) -> String {
-  if! eq_i32(code, c_alder) {
+  if(eq_i32(code, c_alder)) {
     "alder"
-  } else if! eq_i32(code, c_birch) {
+  } else if(eq_i32(code, c_birch)) {
     "birch"
-  } else if! eq_i32(code, c_cedar) {
+  } else if(eq_i32(code, c_cedar)) {
     "cedar"
-  } else if! eq_i32(code, c_dover) {
+  } else if(eq_i32(code, c_dover)) {
     "dover"
-  } else if! eq_i32(code, c_elm) {
+  } else if(eq_i32(code, c_elm)) {
     "elm"
-  } else if! eq_i32(code, c_fen) {
+  } else if(eq_i32(code, c_fen)) {
     "fen"
-  } else if! eq_i32(code, c_north) {
+  } else if(eq_i32(code, c_north)) {
     "north"
-  } else if! eq_i32(code, c_mid) {
+  } else if(eq_i32(code, c_mid)) {
     "mid"
-  } else if! eq_i32(code, c_south) {
+  } else if(eq_i32(code, c_south)) {
     "south"
-  } else if! leq_i32(cost_base, code) {
+  } else if(leq_i32(cost_base, code)) {
     int_to_string(sub_i32(code, cost_base))
   } else {
     "?const"
@@ -119,13 +119,13 @@ pub literal v_z = 3;
 pub literal v_c = 4;
 
 pub fn var_name(code: I32) -> String {
-  if! eq_i32(code, v_x) {
+  if(eq_i32(code, v_x)) {
     "X"
-  } else if! eq_i32(code, v_y) {
+  } else if(eq_i32(code, v_y)) {
     "Y"
-  } else if! eq_i32(code, v_z) {
+  } else if(eq_i32(code, v_z)) {
     "Z"
-  } else if! eq_i32(code, v_c) {
+  } else if(eq_i32(code, v_c)) {
     "C"
   } else {
     "?var"

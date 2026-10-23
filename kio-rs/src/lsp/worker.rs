@@ -51,7 +51,7 @@ use std::time::{Duration, Instant};
 use lsp_types::Uri;
 
 use crate::cmd::check::{
-    AnalysisFailure, LspAnalysis, LspUserElaboratorMemos,
+    AnalysisFailure, LspAnalysis, LspUserMacroMemos,
     analyze_module_at_with_overlay_lsp_cancellable_with_memos,
     analyze_workspace_at_with_overlay_lsp_with_declarations,
 };
@@ -487,7 +487,7 @@ fn run_worker(
     cancellations: CancellationRegistry,
 ) {
     let mut backlog = VecDeque::new();
-    let user_elaborator_memos = LspUserElaboratorMemos::for_editor();
+    let user_macro_memos = LspUserMacroMemos::for_editor();
     loop {
         let msg = match backlog.pop_front() {
             Some(msg) => Ok(msg),
@@ -510,7 +510,7 @@ fn run_worker(
                     }
                 }
                 let snapshot_id = req.snapshot.id();
-                let result = run_one_with_memos(req, &user_elaborator_memos);
+                let result = run_one_with_memos(req, &user_macro_memos);
                 cancellations.complete(snapshot_id);
                 if let Some(result) = result
                     && result_tx.send(result).is_err()
@@ -558,15 +558,15 @@ fn requests_substitute(left: &WorkRequest, right: &WorkRequest) -> bool {
 
 #[cfg(test)]
 fn run_one(req: WorkRequest) -> Option<WorkerResult> {
-    let user_elaborator_memos = LspUserElaboratorMemos::for_editor();
-    run_one_with_memos(req, &user_elaborator_memos)
+    let user_macro_memos = LspUserMacroMemos::for_editor();
+    run_one_with_memos(req, &user_macro_memos)
 }
 
 /// Execute one [`WorkRequest`] against the overlay snapshot and wrap
 /// the outcome into a [`WorkerResult`].
 fn run_one_with_memos(
     req: WorkRequest,
-    user_elaborator_memos: &LspUserElaboratorMemos,
+    user_macro_memos: &LspUserMacroMemos,
 ) -> Option<WorkerResult> {
     let WorkRequest {
         package_root,
@@ -594,7 +594,7 @@ fn run_one_with_memos(
                 &overlay,
                 &focus.file_path,
                 &cancel_token,
-                user_elaborator_memos,
+                user_macro_memos,
             ) else {
                 emit_cancelled_timing(snapshot_id, priority, true, &package_root, start);
                 return None;
@@ -610,7 +610,7 @@ fn run_one_with_memos(
                 &package_root,
                 &overlay,
                 &cancel_token,
-                user_elaborator_memos,
+                user_macro_memos,
                 &mut declarations,
             ) else {
                 emit_cancelled_timing(snapshot_id, priority, false, &package_root, start);

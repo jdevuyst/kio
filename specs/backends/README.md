@@ -822,7 +822,7 @@ stages adapted without adding a value argument. The semantic walk is a
 product-theoretic rule rather than a printer convention: exported value groups
 are finite products at the Kio level, tuple values are elements of those
 products, and Kio uses the right-associated binary tree as the definitional
-representation. Local function values and elab glue keep their product
+representation. Local function values and macro glue keep their product
 type; only a prepared host-boundary facade receives the semantic slot plan and
 paired execution layout. See
 [`specs/language.md` § Type parameters](../language.md#type-parameters)
@@ -853,8 +853,8 @@ same type grouping without exposing spine-slot keys; a recursively binary
 record's fixed child keys are not semantic spine-slot keys.
 
 The walk is **shared between FFI canonicalization and the
-spine-based elab palette** (a user-defined coercion library;
-see [`../../docs/poc/elab.md`](../../docs/poc/elab.md) § The spine
+spine-based macro palette** (a user-defined coercion library;
+see [`../../docs/poc/macros.md`](../../docs/poc/macros.md) § The spine
 palette). The
 FFI side derives its slot plan from the walk and, for spine-keyed presentations,
 derives the per-backend keys there; the spine palette
@@ -1195,7 +1195,7 @@ carrier. Body identity therefore cannot be cited as proof of native generic
 associated-type equality or as permission to omit the public marker/application
 relation.
 
-What every backend keeps, regardless of strategy, is **explicit dictionary threading**: Kio has no typeclasses, and instance coherence is local to the `derive!` call tuple (see [`language.md` § The `derive!` elab](../language.md#the-derive-elaborator)), incompatible with a host's global instance coherence. So a `Functor` / `Monad` instance is an ordinary value Kio passes as a `fn` parameter — never a host typeclass instance — on every backend. A native-HKT backend adds native kinds + native rank-N payloads on top; a type-erased backend needs neither.
+What every backend keeps, regardless of strategy, is **explicit dictionary threading**: Kio has no typeclasses, and instance coherence is local to the `derive` call tuple (see [`language.md` § The `derive` macro](../language.md#the-derive-macro)), incompatible with a host's global instance coherence. So a `Functor` / `Monad` instance is an ordinary value Kio passes as a `fn` parameter — never a host typeclass instance — on every backend. A native-HKT backend adds native kinds + native rank-N payloads on top; a type-erased backend needs neither.
 
 Each backend page documents its own realization under a § Higher-kinded types section:
 

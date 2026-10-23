@@ -12,8 +12,8 @@
 /// one's roof down with it.
 module skyline/multiset;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import skyline/list as lst;
 import skyline/logic as logic;
 import testapi(I32, default Bool);
@@ -28,10 +28,10 @@ pub fn empty() -> Active { lst.nil(I32) }
 /// tall as, which keeps the list descending and puts a new tallest roof at the
 /// head.
 pub rec(loop) fn add(h: I32, xs: Active) -> Active {
-  match! xs.>lst.List.un_list {
+  match(xs.>lst.List.un_list) {
     (
     , .(head: I32, rest: Active) {
-        if! leq_i32(head, h) {
+        if(leq_i32(head, h)) {
           lst.cons(h, lst.cons(head, rest))
         } else {
           lst.cons(head, recur(cont) add(h, rest))
@@ -45,10 +45,10 @@ pub rec(loop) fn add(h: I32, xs: Active) -> Active {
 /// Withdraw one roof of height `h` — the first entry that equals it, and only
 /// that entry. Every other copy of `h` stays standing.
 pub rec(loop) fn drop(h: I32, xs: Active) -> Active {
-  match! xs.>lst.List.un_list {
+  match(xs.>lst.List.un_list) {
     (
     , .(head: I32, rest: Active) {
-        if! logic.eq(head, h) { rest } else { lst.cons(head, recur(cont) drop(h, rest)) }
+        if(logic.eq(head, h)) { rest } else { lst.cons(head, recur(cont) drop(h, rest)) }
       }
     , .(_empty: .) { lst.nil(I32) }
     )
@@ -58,7 +58,7 @@ pub rec(loop) fn drop(h: I32, xs: Active) -> Active {
 /// The silhouette's height right now: the tallest roof overhead, or ground
 /// level when the sweep stands in a gap with nothing above it.
 pub fn peak(xs: Active) -> I32 {
-  match! xs.>lst.List.un_list {
+  match(xs.>lst.List.un_list) {
     (.(head: I32, _rest: Active) { head }, .(_empty: .) { 0 })
   }
 }

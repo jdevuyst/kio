@@ -1,10 +1,10 @@
 module egraph/graph;
 
 import egraph/numbers as n;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
-import testapi(Array, I32, default Bool);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import testapi(Array, default Bool, default I32);
 import testapi/arith as num;
 import testapi/array as arr;
 import testapi/iter(loop);
@@ -37,7 +37,7 @@ fn changed(g: Graph) { arr.array_set(revisions(g), 0, n.increment(revision(g))) 
 
 pub rec(loop) fn find(g: Graph, id: I32) -> I32 {
   let parent = arr.array_get(parents(g), id);
-  if! n.equal(id, parent) { id } else { recur find(g, parent) }
+  if(n.equal(id, parent)) { id } else { recur find(g, parent) }
 }
 
 pub fn same_class(g: Graph, a: I32, b: I32) -> Bool { n.equal(find(g, a), find(g, b)) }
@@ -45,10 +45,10 @@ pub fn same_class(g: Graph, a: I32, b: I32) -> Bool { n.equal(find(g, a), find(g
 pub fn merge(g: Graph, a: I32, b: I32) -> Bool {
   let root_a = find(g, a);
   let root_b = find(g, b);
-  if! n.equal(root_a, root_b) {
+  if(n.equal(root_a, root_b)) {
     .f
   } else {
-    if! n.less(root_a, root_b) {
+    if(n.less(root_a, root_b)) {
       arr.array_set(parents(g), root_b, root_a)
     } else {
       arr.array_set(parents(g), root_a, root_b)
@@ -65,27 +65,27 @@ fn same_children(g: Graph, left: I32 & I32, right: I32 & I32) -> Bool {
 }
 
 fn same_key(g: Graph, a: Node, b: Node) -> Bool {
-  match! a {
+  match(a) {
     .(a: Constant) {
-      match! b {
+      match(b) {
         .(b: Constant) { n.equal(a.?{constant}, b.?{constant}) };
         .() { .f }
       }
     };
     .(a: Variable) {
-      match! b {
+      match(b) {
         .(b: Variable) { n.equal(a.?{variable}, b.?{variable}) };
         .() { .f }
       }
     };
     .(a: Addition) {
-      match! b {
+      match(b) {
         .(b: Addition) { same_children(g, a.?{addition}, b.?{addition}) };
         .() { .f }
       }
     };
     .(a: Product) {
-      match! b {
+      match(b) {
         .(b: Product) { same_children(g, a.?{product}, b.?{product}) };
         .() { .f }
       }
@@ -94,12 +94,12 @@ fn same_key(g: Graph, a: Node, b: Node) -> Bool {
 }
 
 rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
-  if! n.equal(i, size(g)) {
+  if(n.equal(i, size(g))) {
     arr.array_push(nodes(g), value);
     arr.array_push(parents(g), i);
     changed(g);
     i
-  } else if! same_key(g, value, node(g, i)) {
+  } else if(same_key(g, value, node(g, i))) {
     find(g, i)
   } else {
     recur intern_walk(g, value, n.increment(i))
@@ -107,29 +107,29 @@ rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
 }
 
 pub fn constant_node(g: Graph, value: I32) -> I32 {
-  intern_walk(g, {constant = value}.>widen_sum!(Node), 0)
+  intern_walk(g, {constant = value}.>widen_sum(Node), 0)
 }
 
 pub fn variable_node(g: Graph, symbol: I32) -> I32 {
-  intern_walk(g, {variable = symbol}.>widen_sum!(Node), 0)
+  intern_walk(g, {variable = symbol}.>widen_sum(Node), 0)
 }
 
 pub fn add(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, {addition = (a, b)}.>widen_sum!(Node), 0)
+  intern_walk(g, {addition = (a, b)}.>widen_sum(Node), 0)
 }
 
 pub fn multiply(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, {product = (a, b)}.>widen_sum!(Node), 0)
+  intern_walk(g, {product = (a, b)}.>widen_sum(Node), 0)
 }
 
 rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
-  if! n.equal(i, size(g)) {
+  if(n.equal(i, size(g))) {
     merges
-  } else if! num.leq_i32(size(g), j) {
+  } else if(num.leq_i32(size(g), j)) {
     recur rebuild_pairs(g, n.increment(i), num.add_i32(i, 2), merges)
   } else {
-    let extra = if! same_key(g, node(g, i), node(g, j)) {
-      if! merge(g, i, j) { 1 } else { 0 }
+    let extra = if(same_key(g, node(g, i), node(g, j))) {
+      if(merge(g, i, j)) { 1 } else { 0 }
     } else {
       0
     };
@@ -139,19 +139,19 @@ rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
 
 rec(loop) fn rebuild_until_quiet(g: Graph, total: I32) -> I32 {
   let merges = rebuild_pairs(g, 0, 1, 0);
-  if! n.equal(merges, 0) { total } else { recur rebuild_until_quiet(g, num.add_i32(total, merges)) }
+  if(n.equal(merges, 0)) { total } else { recur rebuild_until_quiet(g, num.add_i32(total, merges)) }
 }
 
 pub fn rebuild(g: Graph) -> I32 { rebuild_until_quiet(g, 0) }
 
 rec(loop) fn class_walk(g: Graph, i: I32, total: I32) -> I32 {
-  if! n.equal(i, size(g)) {
+  if(n.equal(i, size(g))) {
     total
   } else {
     recur class_walk(
     , g
     , n.increment(i)
-    , num.add_i32(total, if! n.equal(find(g, i), i) { 1 } else { 0 })
+    , num.add_i32(total, if(n.equal(find(g, i), i)) { 1 } else { 0 })
     )
   }
 }
@@ -159,14 +159,14 @@ rec(loop) fn class_walk(g: Graph, i: I32, total: I32) -> I32 {
 pub fn class_count(g: Graph) -> I32 { class_walk(g, 0, 0) }
 
 rec(loop) fn member_walk(g: Graph, root: I32, i: I32, total: I32) -> I32 {
-  if! n.equal(i, size(g)) {
+  if(n.equal(i, size(g))) {
     total
   } else {
     recur member_walk(
     , g
     , root
     , n.increment(i)
-    , num.add_i32(total, if! same_class(g, i, root) { 1 } else { 0 })
+    , num.add_i32(total, if(same_class(g, i, root)) { 1 } else { 0 })
     )
   }
 }

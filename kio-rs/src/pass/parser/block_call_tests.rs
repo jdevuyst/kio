@@ -5,34 +5,35 @@ use crate::ast::{BlockExposure, Expr, Item, NeutralItem};
 fn block_cursor_regions_survive_incomplete_bodies_without_descriptors() {
     use super::BlockCursorRegion;
     for (body, expected_head, expected_region) in [
-        ("outer! val|ue { () }", "outer", BlockCursorRegion::Prefix),
+        ("outer (val|ue) { () }", "outer", BlockCursorRegion::Prefix),
         (
-            "val|ue.>outer!(()) { () }",
+            "((outer))(val|ue) { () }",
             "outer",
             BlockCursorRegion::Prefix,
         ),
         (
-            "outer!(()) { () }.<val|ue",
+            "val|ue.>outer(()) { () }",
             "outer",
             BlockCursorRegion::Prefix,
         ),
-        ("outer! { val|ue }", "outer", BlockCursorRegion::Body(0)),
         (
-            "outer! { () } fa|llback { () }",
+            "outer(()) { () }.<val|ue",
+            "outer",
+            BlockCursorRegion::Prefix,
+        ),
+        ("outer { val|ue }", "outer", BlockCursorRegion::Body(0)),
+        (
+            "outer { () } fa|llback { () }",
             "outer",
             BlockCursorRegion::Label(1),
         ),
-        ("outer! { () } |", "outer", BlockCursorRegion::Label(1)),
+        ("outer { () } |", "outer", BlockCursorRegion::Label(1)),
         (
-            "outer! { () } fallback { val|",
+            "outer { () } fallback { val|",
             "outer",
             BlockCursorRegion::Body(1),
         ),
-        (
-            "outer! { inner! { val|",
-            "inner",
-            BlockCursorRegion::Body(0),
-        ),
+        ("outer { inner { val|", "inner", BlockCursorRegion::Body(0)),
     ] {
         let marked = format!("module app; fn f(value: .) {{ {body}");
         let offset = marked.find('|').unwrap() as u32;
@@ -71,22 +72,22 @@ fn block_ufcs_places_the_receiver_in_the_ordinary_prefix() {
     use crate::ast::UfcsFlavor::*;
     for (body, flavor, names) in [
         (
-            "r.>f!(a, b) { c } next { d }",
+            "r.>f(a, b) { c } next { d }",
             ReceiverFirst,
             ["r", "a", "b"],
         ),
         (
-            "r.>>f!(a, b) { c } next { d }",
+            "r.>>f(a, b) { c } next { d }",
             ReceiverLast,
             ["a", "b", "r"],
         ),
         (
-            "f!(a, b) { c } next { d }.<<r",
+            "f(a, b) { c } next { d }.<<r",
             ArgumentFirst,
             ["r", "a", "b"],
         ),
         (
-            "((f!(a, b) { c } next { d })).<r",
+            "((f(a, b) { c } next { d })).<r",
             ArgumentLast,
             ["a", "b", "r"],
         ),
@@ -112,20 +113,20 @@ fn block_ufcs_places_the_receiver_in_the_ordinary_prefix() {
         assert_eq!(actual, names, "{body}");
     }
     for body in [
-        "r.>f! a { b }",
-        "r.>>f! a { b }",
-        "f! a { b }.<<r",
-        "f! a { b }.<r",
-        "r.>f! { b }",
-        "r.>>f! { b }",
-        "f! { b }.<<r",
-        "f! { b }.<r",
-        "outer! r.>convert!(a) { b }",
-        "outer! r.>convert! { b }",
-        "outer! g.<r { b }",
-        "outer!(r.>inner! a { c }) { b }",
-        "(f! a { b }.<r)(x)",
-        "r.>f! a { b }(x)",
+        "r.>f (a) { b }",
+        "r.>>f (a) { b }",
+        "f (a) { b }.<<r",
+        "f (a) { b }.<r",
+        "r.>f { b }",
+        "r.>>f { b }",
+        "f { b }.<<r",
+        "f { b }.<r",
+        "outer (r.>convert(a)) { b }",
+        "outer (r.>convert) { b }",
+        "outer (g.<r) { b }",
+        "outer(r.>inner (a) { c }) { b }",
+        "(f (a) { b }.<r)(x)",
+        "(r.>f (a) { b })(x)",
     ] {
         roundtrip(body, "");
     }
@@ -138,7 +139,7 @@ fn block_reverse_splice_follows_labels_and_uses_a_tight_receiver() {
         prefix,
         blocks,
         ..
-    } = roundtrip("outer! a { b } label { inner! c { d } }.<r", "")
+    } = roundtrip("outer (a) { b } label { inner (c) { d } }.<r", "")
     else {
         panic!("outer block")
     };
@@ -152,7 +153,7 @@ fn block_reverse_splice_follows_labels_and_uses_a_tight_receiver() {
         }
     ));
     let Expr::BlockCall { splice, blocks, .. } =
-        roundtrip("outer! a { b } label { inner! c { d }.<r }", "")
+        roundtrip("outer (a) { b } label { inner (c) { d }.<r }", "")
     else {
         panic!("outer block")
     };
@@ -168,14 +169,14 @@ fn block_reverse_splice_follows_labels_and_uses_a_tight_receiver() {
         }
     ));
     for body in [
-        "outer! a { b } label { r.>inner! c { d } }",
-        "f! a { b }.<r(x).>g",
-        "f! a { b }.<(r.>g)",
+        "outer (a) { b } label { r.>inner (c) { d } }",
+        "f (a) { b }.<r(x).>g",
+        "f (a) { b }.<(r.>g)",
     ] {
         roundtrip(body, "");
     }
     assert!(
-        matches!(roundtrip("f! a { b }.<r(x).>g", ""), Expr::Ufcs { receiver, .. }
+        matches!(roundtrip("f (a) { b }.<r(x).>g", ""), Expr::Ufcs { receiver, .. }
         if matches!(*receiver, Expr::BlockCall { .. }))
     );
 }
@@ -191,7 +192,7 @@ fn block_reverse_splice_requires_its_own_final_label_braces() {
         for (open, close) in [("", ""), ("((", "))")] {
             for (before_child, before_arrow) in [(" ", ""), (" // child\n ", " // suffix\n ")] {
                 let source = format!(
-                    "module consumer; fn subject() {{ {open}outer! a {{ b }} label{before_child}inner! c {{ d }}{close}{before_arrow}{arrow}r }}"
+                    "module consumer; fn subject() {{ {open}outer (a) {{ b }} label{before_child}inner(c) {{ d }}{close}{before_arrow}{arrow}r }}"
                 );
                 let error = parse(&source).expect_err("reverse splice requires label braces");
                 assert!(
@@ -255,21 +256,21 @@ fn block_reverse_splice_requires_its_own_final_label_braces() {
         }
         roundtrip(
             &format!(
-                "outer! a {{ b }} label {{ middle! c {{ d }} tail inner! e {{ f }} }}{arrow}r"
+                "outer (a) {{ b }} label {{ middle(c) {{ d }} tail inner (e) {{ f }} }}{arrow}r"
             ),
             "",
         );
         roundtrip(
-            &format!("outer! a {{ b }} label {{ inner! c {{ d }}{arrow}r }}"),
+            &format!("outer (a) {{ b }} label {{ inner(c) {{ d }}{arrow}r }}"),
             "",
         );
-        roundtrip(&format!("outer! g{arrow}r {{ b }}"), "");
+        roundtrip(&format!("outer(g{arrow}r) {{ b }}"), "");
     }
     for body in [
-        "outer! a { b } label inner! c { d }",
-        "r.>outer! a { b } label inner! c { d }",
-        "r.>>outer! a { b } label inner! c { d }",
-        "outer! a { b } label inner! c { d }.>g",
+        "outer (a) { b } label inner (c) { d }",
+        "r.>outer (a) { b } label inner (c) { d }",
+        "r.>>outer (a) { b } label inner (c) { d }",
+        "outer (a) { b } label inner (c) { d }.>g",
     ] {
         roundtrip(body, "");
     }
@@ -278,10 +279,10 @@ fn block_reverse_splice_requires_its_own_final_label_braces() {
 #[test]
 fn block_splice_rejects_empty_lists_without_confusing_explicit_unit() {
     for body in [
-        "r.>f!() { b }",
-        "r.>>f!() { b }",
-        "f!() { b }.<r",
-        "((f!() { b })).<<r",
+        "r.>f() { b }",
+        "r.>>f() { b }",
+        "f() { b }.<r",
+        "((f() { b })).<<r",
     ] {
         let source = format!("module consumer; fn subject() {{ {body} }}");
         let error = parse(&source).expect_err(body);
@@ -301,11 +302,11 @@ fn block_splice_rejects_empty_lists_without_confusing_explicit_unit() {
         assert!(replacements.contains(&""));
     }
     for body in [
-        "r.>f!(()) { b }",
-        "r.>>f!(()) { b }",
-        "f!(()) { b }.<r",
-        "f!(()) { b }.<<r",
-        "f!() { b }",
+        "r.>f(()) { b }",
+        "r.>>f(()) { b }",
+        "f(()) { b }.<r",
+        "f(()) { b }.<<r",
+        "f() { b }",
     ] {
         roundtrip(body, "");
     }
@@ -314,14 +315,11 @@ fn block_splice_rejects_empty_lists_without_confusing_explicit_unit() {
 #[test]
 fn block_splice_does_not_reopen_completed_or_already_spliced_calls() {
     for body in [
-        "f!(a).<r { b }",
-        "f!(a).<<r { b }",
-        "f! a { b }.<r label { c }",
-        "f! a { b }(x).<r",
-        "(f! a { b }.<r).<<s",
-        "(r.>f! a { b }).<s",
-        "r.>m.f! a { b }",
-        "m.f! a { b }.<r",
+        "f (a) { b }(x).<r",
+        "(f (a) { b }.<r).<<s",
+        "(r.>f (a) { b }).<s",
+        "r.>m.f a { b }",
+        "m.f a { b }.<r",
     ] {
         assert!(
             parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
@@ -331,14 +329,36 @@ fn block_splice_does_not_reopen_completed_or_already_spliced_calls() {
 }
 
 #[test]
+fn reverse_splice_receivers_keep_their_own_block_calls() {
+    for body in ["f(a).<r { b }", "f(a).<<r { b }"] {
+        assert!(matches!(roundtrip(body, ""), Expr::Ufcs { receiver, .. }
+            if matches!(receiver.as_ref(), Expr::BlockCall { head, .. } if head.name == "r")));
+    }
+    let Expr::BlockCall {
+        head,
+        prefix,
+        blocks,
+        ..
+    } = roundtrip("f (a) { b }.<r (label) { c }", "")
+    else {
+        panic!("outer block")
+    };
+    assert_eq!(head.name, "f");
+    assert_eq!(blocks.len(), 1);
+    assert!(
+        matches!(prefix.last(), Some(Expr::BlockCall { head, blocks, .. }) if head.name == "r" && blocks.len() == 1)
+    );
+}
+
+#[test]
 fn block_splice_receivers_cannot_supply_type_arguments() {
     for body in [
-        "A.>f! { b }",
-        "A.>>f! { b }",
-        "f! { b }.<A",
-        "f! { b }.<<A",
-        "(A(B)).>f! { b }",
-        "f! { b }.<(A(B))",
+        "A.>f { b }",
+        "A.>>f { b }",
+        "f { b }.<A",
+        "f { b }.<<A",
+        "(A(B)).>f { b }",
+        "f { b }.<(A(B))",
     ] {
         let source = format!("module consumer; fn subject() {{ {body} }}");
         let error = parse(&source).expect_err("a block receiver is an ordinary value prefix");
@@ -358,9 +378,9 @@ fn block_splice_nested_receivers_fit_the_default_test_stack() {
         let mut body = "value".to_owned();
         for _ in 0..24 {
             body = if matches!(flavor, ".>" | ".>>") {
-                format!("({body}){flavor}f! a {{ b }}")
+                format!("({body}){flavor}f(a) {{ b }}")
             } else {
-                format!("f! a {{ b }}{flavor}({body})")
+                format!("f (a) {{ b }}{flavor}({body})")
             };
         }
         roundtrip(&body, "");
@@ -370,17 +390,17 @@ fn block_splice_nested_receivers_fit_the_default_test_stack() {
 #[test]
 fn block_splice_formatting_preserves_comments_and_operator_boundaries() {
     for body in [
-        "r // receiver\n .>f! // prefix\n (a) { b }",
-        "f! a { b } // splice\n .<r // receiver\n .>g",
-        "f!(// unit\n ()) { b }.<r",
-        "outer! a { b } label { inner! c { d } // splice\n .<r }",
+        "r // receiver\n .>f // prefix\n (a) { b }",
+        "f (a) { b } // splice\n .<r // receiver\n .>g",
+        "f(// unit\n ()) { b }.<r",
+        "outer (a) { b } label { inner (c) { d } // splice\n .<r }",
     ] {
         roundtrip(body, "");
     }
     for body in [
-        "a + ((b < k >).>f! { c })",
-        "[! (< x >.>f! { c }) !]",
-        "[! f! { c }.<(< x >) !]",
+        "a + ((b < k >).>f { c })",
+        "[! (< x >.>f { c }) !]",
+        "[! f { c }.<(< x >) !]",
     ] {
         roundtrip(
             body,
@@ -393,8 +413,8 @@ fn topology(expr: &Expr) -> serde_json::Value {
     fn normalize(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Object(map) => {
-                if let Some(bang) = map.get_mut("bang") {
-                    *bang = serde_json::Value::Bool(!bang.is_null());
+                if let Some(macro_call) = map.get_mut("macro_call") {
+                    *macro_call = serde_json::Value::Bool(!macro_call.is_null());
                 }
                 map.retain(|key, _| {
                     !key.ends_with("_span")
@@ -411,7 +431,6 @@ fn topology(expr: &Expr) -> serde_json::Value {
                                 | "id"
                                 | "ext"
                                 | "access_ext"
-                                | "prefix_explicit"
                                 | "elided"
                                 | "semicolon"
                         )
@@ -467,7 +486,7 @@ fn roundtrip(body: &str, operators: &str) -> Expr {
 #[test]
 fn block_heads_and_labels_have_no_name_specific_grammar() {
     for head in ["if", "do", "scope", "else", "let", "choose"] {
-        let body = format!("{head}! value {{ first() }} next {{ last() }}");
+        let body = format!("{head}(value) {{ first() }} next {{ last() }}");
         let Expr::BlockCall {
             head: parsed_head,
             blocks,
@@ -482,12 +501,12 @@ fn block_heads_and_labels_have_no_name_specific_grammar() {
     parse("module consumer; fn subject(if: ., do: ., else: .) { (if, do, else) }")
         .expect("ordinary identifier roles");
     for body in [
-        "if condition { yes() } else { no() }",
+        "if (condition) { yes() } else { no() }",
         "do { result() }",
-        "do receiver { let value <- source(); value }",
+        "do (receiver) { let value <- source(); value }",
     ] {
         assert!(
-            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
+            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_ok(),
             "{body}"
         );
     }
@@ -496,11 +515,11 @@ fn block_heads_and_labels_have_no_name_specific_grammar() {
 #[test]
 fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
     for (body, expected) in [
-        ("if! .t { yes() } else { no() }", true),
-        ("if! .f { yes() } else { no() }", false),
-        ("choose! .t(Bool) { yes() } fallback { no() }", true),
+        ("if (.t) { yes() } else { no() }", true),
+        ("if (.f) { yes() } else { no() }", false),
+        ("choose (.t(Bool)) { yes() } fallback { no() }", true),
         (
-            "choose! // head\n .f // prefix\n { yes() } fallback { no() }",
+            "choose // head\n (.f) // prefix\n { yes() } fallback { no() }",
             false,
         ),
     ] {
@@ -511,13 +530,13 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
         assert!(matches!(prefix.as_slice(), [Expr::BoolLit { value, .. }] if *value == expected));
         assert_eq!(blocks.len(), 2);
     }
-    roundtrip("outer!(inner! .t { yes() } else { no() }) { body() }", "");
-    roundtrip("outer!(.t. { t1 }) { body() }", "");
-    roundtrip("outer!(.() { () }) { body() }", "");
+    roundtrip("outer(inner (.t) { yes() } else { no() }) { body() }", "");
+    roundtrip("outer(.t. { t1 }) { body() }", "");
+    roundtrip("outer(.() { () }) { body() }", "");
     for body in [
-        "outer! .t. { t1 } { body() }",
-        "outer! .() { () } { body() }",
-        "outer! inner! .t { yes() } { body() }",
+        "outer .t. { t1 } { body() }",
+        "outer .() { () } { body() }",
+        "outer inner .t { yes() } { body() }",
     ] {
         assert!(
             parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
@@ -529,25 +548,19 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
 #[test]
 fn block_prefix_layout_preserves_expression_boundaries() {
     for (body, head) in [
-        ("outer!(value) { b() }", "outer! value {"),
-        ("outer!(f(A)(value)) { b() }", "outer! f(A)(value) {"),
+        ("outer(value) { b() }", "outer(value) {"),
+        ("outer(f(A)(value)) { b() }", "outer(f(A)(value)) {"),
+        ("outer(A.member(value)) { b() }", "outer(A.member(value)) {"),
+        ("outer(convert(value)) { b() }", "outer(convert(value)) {"),
+        ("outer(-1) { b() }", "outer(-1) {"),
+        ("outer(-1.5) { b() }", "outer(-1.5) {"),
+        ("outer(()) { b() }", "outer() {"),
+        ("outer { b() }", "outer {"),
+        ("outer(left, right) { b() }", "outer(left, right) {"),
+        ("outer((left, right)) { b() }", "outer((left, right)) {"),
         (
-            "outer!(A.member(value)) { b() }",
-            "outer! A.member(value) {",
-        ),
-        (
-            "outer!(convert!(value)) { b() }",
-            "outer! convert!(value) {",
-        ),
-        ("outer!(-1) { b() }", "outer! -1 {"),
-        ("outer!(-1.5) { b() }", "outer! -1.5 {"),
-        ("outer!(()) { b() }", "outer!() {"),
-        ("outer! { b() }", "outer! {"),
-        ("outer!(left, right) { b() }", "outer!(left, right) {"),
-        ("outer!((left, right)) { b() }", "outer!((left, right)) {"),
-        (
-            "outer!({ field = value }) { b() }",
-            "outer!({field = value}) {",
+            "outer({ field = value }) { b() }",
+            "outer({field = value}) {",
         ),
     ] {
         roundtrip(body, "");
@@ -558,30 +571,30 @@ fn block_prefix_layout_preserves_expression_boundaries() {
     for slot in ["_", "__", "___"] {
         let operators = format!("import absent(op _ + {slot}, op - _, op _ <| _ |>);");
         for body in [
-            "outer!(left + right) { b() }",
-            "outer! left + (inner! value { a() }) { b() }",
-            "outer!(inner! value { a() } + x) { b() }",
-            "outer! left + f(inner! value { a() }) { b() }",
-            "outer! left <| inner! value { a() } |> { b() }",
-            "outer!(- value) { b() }",
+            "outer(left + right) { b() }",
+            "outer (left + (inner (value) { a() })) { b() }",
+            "outer(inner (value) { a() } + x) { b() }",
+            "outer(left + f(inner(value) { a() })) { b() }",
+            "outer (left <| inner (value) { a() } |>) { b() }",
+            "outer(- value) { b() }",
         ] {
             roundtrip(body, &operators);
         }
         let parsed = parse(&format!(
-            "module consumer; {operators} fn subject() {{ outer!(left + right) {{ b() }} }}"
+            "module consumer; {operators} fn subject() {{ outer(left + right) {{ b() }} }}"
         ))
         .unwrap();
-        assert!(crate::pretty::pretty_module(&parsed).contains("outer! left + right {"));
+        assert!(crate::pretty::pretty_module(&parsed).contains("outer(left + right) {"));
     }
     for body in [
-        "outer! // prefix\n (value) { b() }",
-        "outer! // prefix\n value { b() }",
-        "outer! // prefix\n f(A)(value) { b() }",
-        "outer! // prefix\n convert!(value) { b() }",
-        "outer! // prefix\n -1.5 { b() }",
-        "outer!(value // tail\n) { b() }",
-        "outer! // unit\n () { b() }",
-        "outer!(// unit contents\n) { b() }",
+        "outer // prefix\n (value) { b() }",
+        "outer // prefix\n (value) { b() }",
+        "outer // prefix\n (f(A)(value)) { b() }",
+        "outer // prefix\n (convert(value)) { b() }",
+        "outer // prefix\n (-1.5) { b() }",
+        "outer(value // tail\n) { b() }",
+        "outer // unit\n () { b() }",
+        "outer(// unit contents\n) { b() }",
     ] {
         roundtrip(body, "");
     }
@@ -589,11 +602,11 @@ fn block_prefix_layout_preserves_expression_boundaries() {
 
 #[test]
 fn final_label_elision_is_structural_and_comment_preserving() {
-    let body = "outer! value { a() } fallback { inner! next { b() } }";
+    let body = "outer (value) { a() } fallback { inner (next) { b() } }";
     roundtrip(body, "");
     let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
     let rendered = crate::pretty::pretty_module(&parsed);
-    assert!(rendered.contains("} fallback inner! next {"), "{rendered}");
+    assert!(rendered.contains("} fallback inner(next) {"), "{rendered}");
     let reparsed = parse(&rendered).unwrap();
     let Expr::BlockCall { blocks, .. } = function(&reparsed) else {
         panic!("outer block");
@@ -601,12 +614,12 @@ fn final_label_elision_is_structural_and_comment_preserving() {
     assert_eq!(blocks.len(), 2);
     assert!(blocks[1].elided);
     for body in [
-        "outer! value { a() } fallback { inner! next { b() } } cleanup { c() }",
-        "outer! value { a() } fallback { // wrapper\n inner! next { b() } }",
-        "outer! value { a() } fallback { inner! next { b() } // wrapper\n }",
-        "outer! value { a() } fallback { before(); inner! next { b() } }",
-        "outer! value { a() } fallback { let x = next; inner! x { b() } }",
-        "outer! value { a() } fallback // child\n inner! next { b() }",
+        "outer (value) { a() } fallback { inner (next) { b() } } cleanup { c() }",
+        "outer (value) { a() } fallback { // wrapper\n inner (next) { b() } }",
+        "outer (value) { a() } fallback { inner (next) { b() } // wrapper\n }",
+        "outer (value) { a() } fallback { before(); inner (next) { b() } }",
+        "outer (value) { a() } fallback { let x = next; inner (x) { b() } }",
+        "outer (value) { a() } fallback // child\n inner (next) { b() }",
     ] {
         roundtrip(body, "");
         let parsed = parse(&format!("module consumer; fn subject() {{ {body} }}")).unwrap();
@@ -614,10 +627,10 @@ fn final_label_elision_is_structural_and_comment_preserving() {
         assert!(rendered.contains("fallback {"), "{rendered}");
     }
     for body in [
-        "outer! { // child\n inner! value { a() } }",
-        "outer! { let value = // child\n inner! x { a() }; value }",
-        "outer!(// child\n inner! x { a() }) { b() }",
-        "consume(// child\n inner! x { a() })",
+        "outer { // child\n inner (value) { a() } }",
+        "outer { let value = // child\n inner (x) { a() }; value }",
+        "outer(// child\n inner (x) { a() }) { b() }",
+        "consume(// child\n inner (x) { a() })",
     ] {
         roundtrip(body, "");
     }
@@ -625,16 +638,16 @@ fn final_label_elision_is_structural_and_comment_preserving() {
 
 #[test]
 fn descriptors_keep_relative_order_in_eager_and_lazy_headers() {
-    let source = "module consumer; elab choose: . -> . { impl impl_choose; trailing thunk; captures captured; trailing thunk else; trailing product finally }";
+    let source = "module consumer; macro choose: . -> . { impl impl_choose; trailing thunk; captures captured; trailing thunk else; trailing product finally }";
     let parsed = parse(source).unwrap();
     let lazy = parse_lazy(source).unwrap();
-    let Item::Elaborator(eager, _) = &parsed.items[0] else {
-        panic!("elaborator");
+    let Item::Macro(eager, _) = &parsed.items[0] else {
+        panic!("macro");
     };
-    let Item::Elaborator(deferred, _) = &lazy.module().items[0] else {
-        panic!("elaborator");
+    let Item::Macro(deferred, _) = &lazy.module().items[0] else {
+        panic!("macro");
     };
-    let descriptors = |def: &crate::ast::UserElaboratorDef| {
+    let descriptors = |def: &crate::ast::UserMacroDef| {
         def.trailing_blocks
             .iter()
             .map(|block| {
@@ -663,19 +676,19 @@ fn descriptors_keep_relative_order_in_eager_and_lazy_headers() {
 
 #[test]
 fn blockless_prefix_and_grouped_child_have_distinct_ownership() {
-    let ordinary = roundtrip("outer! convert!(value) { b() }", "");
+    let ordinary = roundtrip("outer (convert(value)) { b() }", "");
     let Expr::BlockCall { prefix, blocks, .. } = ordinary else {
         panic!("outer block");
     };
-    assert!(matches!(prefix.as_slice(), [Expr::UserElaborator { .. }]));
+    assert!(matches!(prefix.as_slice(), [Expr::Call { .. }]));
     assert_eq!(blocks.len(), 1);
-    let nested = roundtrip("outer!(convert!(value) { a() }) { b() }", "");
+    let nested = roundtrip("outer(convert(value) { a() }) { b() }", "");
     let Expr::BlockCall { prefix, .. } = nested else {
         panic!("outer block");
     };
     assert!(matches!(prefix.as_slice(), [Expr::BlockCall { .. }]));
     let elided = roundtrip(
-        "choose! condition { first() } else choose! next { second() } else { third() }",
+        "choose (condition) { first() } else choose (next) { second() } else { third() }",
         "",
     );
     let Expr::BlockCall { blocks, .. } = elided else {
@@ -696,10 +709,10 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
     for slot in ["_", "__", "___"] {
         let operators = format!("import absent(op _ + {slot}, op <| _ |>);");
         for body in [
-            "outer! left + value { b() }",
-            "outer! left + (inner! value { a() }) { b() }",
-            "outer! left + <| inner! value { a() } |> { b() }",
-            "outer! left + value { b() } + { field = later }",
+            "outer (left + value) { b() }",
+            "outer (left + (inner (value) { a() })) { b() }",
+            "outer (left + <| inner (value) { a() } |>) { b() }",
+            "outer(left + value) { b() } + { field = later }",
         ] {
             let expr = roundtrip(body, &operators);
             if body.ends_with("{ b() }") {
@@ -707,7 +720,7 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
             }
         }
         let source = format!(
-            "module consumer; {operators} fn subject() {{ outer! left + inner! value {{ a() }} {{ b() }} }}"
+            "module consumer; {operators} fn subject() {{ outer left + inner (value) {{ a() }} {{ b() }} }}"
         );
         assert!(parse(&source).is_err(), "{slot}");
     }
@@ -716,15 +729,15 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
 #[test]
 fn block_prefix_role_follows_only_the_callee_spine() {
     for value in ["A", "A(B)", "A(B)(C)"] {
-        let source = format!("module consumer; fn subject() {{ outer!({value}) {{ b() }} }}");
+        let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         assert!(parse(&source).is_err(), "{value}");
     }
     for value in ["f(A)", "f(A)(value)", "A.member(B)(value)", "-1", "-1.5"] {
-        roundtrip(&format!("outer! {value} {{ b() }}"), "");
+        roundtrip(&format!("outer({value}) {{ b() }}"), "");
     }
-    roundtrip("outer!(- value) { b() }", "import absent(op - _);");
+    roundtrip("outer(- value) { b() }", "import absent(op - _);");
     assert!(
-        parse("module consumer; import absent(op - _); fn subject() { outer! - value { b() } }")
+        parse("module consumer; import absent(op - _); fn subject() { outer - value { b() } }")
             .is_err()
     );
 }
@@ -732,14 +745,14 @@ fn block_prefix_role_follows_only_the_callee_spine() {
 #[test]
 fn neutral_items_and_comments_roundtrip_without_descriptors() {
     for body in [
-        "outer! // before-prefix\n(value) { b() }",
-        "outer! // before-unit\n(// unit\n) { b() }",
-        "outer!(value // prefix-tail\n) // before-body\n{ b() }",
-        "outer! { ;; let .(x: T) <- // rhs\n source; ; x; // tail\n ; }",
-        "outer! { let .(x: T, _: U) = pair; x }",
-        "outer! { let .({field as local}) = source; local }",
-        "outer! { let .(<T> value) = source; value }",
-        "outer! { ; // empty\n; }",
+        "outer // before-prefix\n(value) { b() }",
+        "outer // before-unit\n(// unit\n) { b() }",
+        "outer(value // prefix-tail\n) // before-body\n{ b() }",
+        "outer { ;; let .(x: T) <- // rhs\n source; ; x; // tail\n ; }",
+        "outer { let .(x: T, _: U) = pair; x }",
+        "outer { let .({field as local}) = source; local }",
+        "outer { let .(<T> value) = source; value }",
+        "outer { ; // empty\n; }",
     ] {
         roundtrip(body, "");
     }
@@ -759,33 +772,33 @@ fn neutral_final_separators_preserve_items_and_canonicalize() {
     }
 
     for (body, has_separator, equivalent) in [
-        ("outer! { action(); }", true, "outer! { action() }"),
-        ("outer! { action() }", false, "outer! { action() }"),
-        ("outer! { ;; action();; }", true, "outer! { action() }"),
+        ("outer { action(); }", true, "outer { action() }"),
+        ("outer { action() }", false, "outer { action() }"),
+        ("outer { ;; action();; }", true, "outer { action() }"),
         (
-            "outer! { action() // before-semi\n; }",
+            "outer { action() // before-semi\n; }",
             true,
-            "outer! { action() }",
+            "outer { action() }",
         ),
         (
-            "outer! { action(); // after-semi\n }",
+            "outer { action(); // after-semi\n }",
             true,
-            "outer! { action() }",
+            "outer { action() }",
         ),
         (
-            "outer! { first(); action(); }",
+            "outer { first(); action(); }",
             true,
-            "outer! { first(); action() }",
+            "outer { first(); action() }",
         ),
         (
-            "outer! { first(); action() }",
+            "outer { first(); action() }",
             false,
-            "outer! { first(); action() }",
+            "outer { first(); action() }",
         ),
         (
-            "outer! { first() } next { action(); }",
+            "outer { first() } next { action(); }",
             true,
-            "outer! { first() } next { action() }",
+            "outer { first() } next { action() }",
         ),
     ] {
         let expr = roundtrip(body, "");
@@ -808,23 +821,23 @@ fn neutral_final_separators_preserve_items_and_canonicalize() {
 #[test]
 fn malformed_block_buffers_reject_without_inventing_items() {
     for body in [
-        "outer! value {",
-        "outer! { let x <- }",
-        "outer! { a() b() }",
-        "outer! { a() } else",
+        "outer(value) {",
+        "outer { let x <- }",
+        "outer { a() b() }",
+        "outer { a() } else",
     ] {
         assert!(
             parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
             "{body}"
         );
     }
-    roundtrip("outer! { let x <- source; x }", "");
+    roundtrip("outer { let x <- source; x }", "");
 }
 
 #[test]
-fn placeholder_ownership_uses_neutral_binders_not_heads_or_labels() {
+fn placeholder_ownership_includes_direct_heads_but_excludes_labels() {
     let source =
-        "module consumer; fn subject() { .x. { x9! x3 { let .(x1: T) <- x2; x1 } x8 { x1 } } }";
+        "module consumer; fn subject() { .x. { x9 (x3) { let .(x1: T) <- x2; x1 } x8 { x1 } } }";
     let mut parsed = parse(source).unwrap();
     let Item::FnDef(def) = parsed.items.last_mut().unwrap() else {
         panic!("function");
@@ -841,7 +854,7 @@ fn placeholder_ownership_uses_neutral_binders_not_heads_or_labels() {
     };
     assert!(matches!(
         state,
-        crate::ast::PlaceholderState::Source { slot_count: 3 }
+        crate::ast::PlaceholderState::Source { slot_count: 9 }
     ));
     let references = crate::pass::placeholder::classify(&stem.name, body, meta.span).unwrap();
     let actual = references
@@ -854,12 +867,12 @@ fn placeholder_ownership_uses_neutral_binders_not_heads_or_labels() {
             )
         })
         .collect::<Vec<_>>();
-    assert_eq!(actual, vec![(3, "x3"), (2, "x2"), (1, "x1")]);
+    assert_eq!(actual, vec![(9, "x9"), (3, "x3"), (2, "x2"), (1, "x1")]);
 }
 
 #[test]
 fn neutral_binder_completion_is_source_ordered_and_block_local() {
-    let source = "module consumer; fn subject() { outer! { let .({field as local}) = source; local } next { other } }";
+    let source = "module consumer; fn subject() { outer { let .({field as local}) = source; local } next { other } }";
     let parsed = parse(source).unwrap();
     let after = source.find("; local").unwrap() as u32 + 3;
     let rhs = source.find("= source").unwrap() as u32 + 3;
@@ -878,7 +891,7 @@ fn neutral_binder_completion_is_source_ordered_and_block_local() {
 #[test]
 fn neutral_binding_and_prefix_errors_keep_source_spans() {
     for value in ["A", "A(B)", "A(B)(C)"] {
-        let source = format!("module consumer; fn subject() {{ outer!({value}) {{ b() }} }}");
+        let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         let error = parse(&source).unwrap_err();
         assert!(matches!(error, crate::error::Error::Parse(_)));
         let diagnostic = error.diagnostic();
@@ -893,7 +906,7 @@ fn neutral_binding_and_prefix_errors_keep_source_spans() {
         );
     }
     let source =
-        "module consumer; fn subject() { outer! { let .({field as local}) = source; local } }";
+        "module consumer; fn subject() { outer { let .({field as local}) = source; local } }";
     let parsed = parse(source).unwrap();
     let Expr::BlockCall { head, blocks, .. } = function(&parsed) else {
         panic!("block call");

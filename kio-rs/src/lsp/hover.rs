@@ -167,7 +167,7 @@ pub fn handle_hover(
     if let Some((
         span,
         crate::pass::typecheck_full::ResolvedBinder::BlockLabel {
-            elaborator,
+            macro_name,
             name,
             exposure,
             ..
@@ -189,7 +189,7 @@ pub fn handle_hover(
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
                 value: format!(
-                    "```kio\ntrailing {kind} {name}\n```\n\nContinuation label of `{elaborator}!`."
+                    "```kio\ntrailing {kind} {name}\n```\n\nContinuation label of `{macro_name}`."
                 ),
             }),
             range: Some(span_to_lsp_range(span, &line_index)),

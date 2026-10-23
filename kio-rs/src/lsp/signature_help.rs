@@ -394,7 +394,7 @@ fn visit_item<'a>(item: &'a Item<Surface>, offset: u32, best: &mut Option<CallSi
                 visit_expr(&term.body, offset, best);
             }
         }
-        Item::Elaborator(_, _) => {}
+        Item::Macro(_, _) => {}
         Item::VariadicOperator(_, _) => {}
         Item::TypeRecGroup(_) => {}
         Item::TypeAlias(_)
@@ -454,7 +454,7 @@ fn visit_expr<'a>(expr: &'a Expr<Surface>, offset: u32, best: &mut Option<CallSi
             }
         }
         Expr::Elaborator { call, .. } => visit_elaborator_call(call, offset, best),
-        Expr::UserElaborator { args, .. } => visit_call_args(args, offset, best),
+        Expr::UserMacro { args, .. } => visit_call_args(args, offset, best),
         Expr::Ufcs { receiver, args, .. } => {
             visit_expr(receiver, offset, best);
             visit_call_args(args, offset, best);
@@ -634,7 +634,7 @@ mod tests {
     #[test]
     fn signature_call_facts_are_editor_only_and_bounded_by_source_calls() {
         use crate::cmd::check::{
-            LspUserElaboratorMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
+            LspUserMacroMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
         };
         use crate::package_collection::SourceOverlay;
         use std::collections::BTreeMap;
@@ -664,9 +664,9 @@ mod tests {
             let span = Span::new(call_start, call_start + "pair((), ())".len() as u32);
             for editor in [false, true] {
                 let memos = if editor {
-                    LspUserElaboratorMemos::for_editor()
+                    LspUserMacroMemos::for_editor()
                 } else {
-                    LspUserElaboratorMemos::default()
+                    LspUserMacroMemos::default()
                 };
                 let start = Instant::now();
                 let analysis = analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(

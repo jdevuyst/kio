@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 
@@ -16,7 +16,7 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // zero-precondition base instance written inline.
 fn use_derived() -> String {
   let monad =
-    derive!(
+    derive(
     , .() -> Monad(Box) {
         Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
       }

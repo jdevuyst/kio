@@ -2,7 +2,7 @@
 module book/event;
 
 import book/order(Side, buy_side, sell_side);
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
 
@@ -22,17 +22,17 @@ pub labels Event =
   | { amend: Amend_req };
 
 fn limit_event(side: Side, price: I32, qty: I32) -> Event {
-  {limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum!(Event)
+  {limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum(Event)
 }
 
 fn market_event(side: Side, qty: I32) -> Event {
-  {market = {mr_side = side, mr_qty = qty}}.>widen_sum!(Event)
+  {market = {mr_side = side, mr_qty = qty}}.>widen_sum(Event)
 }
 
-fn cancel_event(id: I32) -> Event { {cancel = id}.>widen_sum!(Event) }
+fn cancel_event(id: I32) -> Event { {cancel = id}.>widen_sum(Event) }
 
 fn amend_event(id: I32, qty: I32) -> Event {
-  {amend = {ar_id = id, ar_qty = qty}}.>widen_sum!(Event)
+  {amend = {ar_id = id, ar_qty = qty}}.>widen_sum(Event)
 }
 
 pub fn limit_of(e: Limit) -> Limit_req { e.?{limit} }

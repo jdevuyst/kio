@@ -1,7 +1,7 @@
 module dispatch;
 
 import __comptime__;
-import elab/match as canonical;
+import macros/match as canonical;
 
 pub pure fn dispatch_checked(
 , ct: __Comptime__
@@ -15,4 +15,4 @@ pub pure fn dispatch_checked(
   canonical.match_checked(ct, fills, source, scrutinee, clauses_type, clauses, target)
 }
 
-pub elab dispatch : [Source] Source -> [Clauses] Clauses -> [Target] Target { impl(fills) dispatch_checked }
+pub macro dispatch : [Source] Source -> [Clauses] Clauses -> [Target] Target { impl(fills) dispatch_checked }

@@ -18,5 +18,5 @@ bridge {
   testapi;
   dnf;
   dnf/**;
-  elab/testapi
+  macros/testapi
 }

@@ -1,15 +1,15 @@
 module logic/report;
 
-import elab/control(if);
 import list/list as traversal;
 import logic/model as model;
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;
 
 fn bit(value: Bool) -> String {
-  if! value { "1" } else { "0" }
+  if(value) { "1" } else { "0" }
 }
 
 fn time(at: I32) -> String {

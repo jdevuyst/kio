@@ -1227,7 +1227,7 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "  )\n",
         "}\n",
         "\n",
-        "pub elab common :\n",
+        "pub macro common :\n",
         "  [First] First ->\n",
         "  [Second] Second ->\n",
         "  [Target] Target\n",
@@ -1237,8 +1237,8 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
     );
     let initial_source = concat!(
         "module pkg/main;\n",
-        "import pkg/common(common);\n",
-        "import control(if);\n",
+        "import pkg/common(macro common);\n",
+        "import control(macro if);\n",
         "\n",
         "default host type Bool role(bool);\n",
         "host type I32 role(i32);\n",
@@ -1248,13 +1248,13 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "\n",
         "pub fn run(condition: Bool) -> . {\n",
         "  let _if_result =\n",
-        "    if! condition {\n",
+        "    if(condition) {\n",
         "      make()\n",
         "    } else {\n",
         "      witness()\n",
         "    };\n",
         "  let fill_thunk =\n",
-        "    common!(\n",
+        "    common(\n",
         "      .() { make() },\n",
         "      .() { witness() }\n",
         "    );\n",
@@ -1266,7 +1266,7 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
     dir.write("pkg/common.kio", common_source);
     dir.write(
         "control.kio",
-        include_str!("../../test-data/poc/elab/workdir/control.kio"),
+        include_str!("../../test-data/poc/macros/workdir/control.kio"),
     );
     let main_path = dir.write("pkg/main.kio", initial_source);
     dir.write_pkg_root_package();
@@ -2660,9 +2660,9 @@ fn lsp_hover_returns_type_on_elaborator_implementation_path() {
         "\n",
         "import pkg/provider as helper;\n",
         "\n",
-        "elab unit : . -> . { impl helper.unit_impl; };\n",
+        "macro unit : . -> . { impl helper.unit_impl; };\n",
         "\n",
-        "pub fn run() -> . { unit!() }\n",
+        "pub fn run() -> . { unit() }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write(
@@ -2726,7 +2726,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
         "  foldr helper.push helper.empty;\n",
         "  finalize helper.finish;\n",
         "};\n",
-        "elab unit : . -> . { impl helper.elab_impl; };\n",
+        "macro unit : . -> . { impl helper.elab_impl; };\n",
         "\n",
         "fn direct() -> . { helper.combine((), ()) }\n",
         "fn use_operator() -> . { () + () }\n",
@@ -4060,6 +4060,9 @@ mod doc_completion;
 
 #[path = "lsp_smoke/block_calls.rs"]
 mod block_calls;
+
+#[path = "lsp_smoke/macro_calls.rs"]
+mod macro_calls;
 
 #[path = "lsp_smoke/default_types.rs"]
 mod default_types;
@@ -6366,6 +6369,12 @@ fn lsp_capabilities_advertise_semantic_tokens_provider() {
         !types.is_empty(),
         "legend.tokenTypes must be non-empty; legend = {legend:?}"
     );
+    assert_eq!(types.len(), 13, "semantic token legend changed: {legend:?}");
+    assert_eq!(
+        types[12].as_str(),
+        Some("macro"),
+        "macro token must keep slot 12"
+    );
     let modifiers = legend
         .get("tokenModifiers")
         .and_then(Value::as_array)
@@ -8049,13 +8058,13 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
         "module pkg/main;\n",
         "\n",
         "import pkg(default Bool, I32, add_i32, leq_i32, loop);\n",
-        "import control(if);\n",
+        "import control(macro if);\n",
         "\n",
         // Three value params: the lowering unpacks the rec state tuple with a
         // `rec_rest` binding per param past the first, which is what the leak
         // needs. A single-param `rec` never produced the warning.
         "pub rec(loop) fn sum_to(index: I32, last: I32, total: I32) -> I32 {\n",
-        "  if! leq_i32(index, last) {\n",
+        "  if(leq_i32(index, last)) {\n",
         "    recur sum_to(add_i32(index, 1), last, add_i32(total, index))\n",
         "  } else {\n",
         "    total\n",
@@ -8065,7 +8074,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     let main_path = dir.write("pkg/main.kio", source);
     dir.write(
         "control.kio",
-        include_str!("../../test-data/poc/elab/workdir/control.kio"),
+        include_str!("../../test-data/poc/macros/workdir/control.kio"),
     );
     dir.write(
         "pkg.kio",

@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import shadow_elaborators(invoke);
+import macros/control(macro if);
+import shadow_elaborators(macro invoke);
 import testapi(I32, default Bool, default String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -9,7 +9,7 @@ import testapi/io as io;
 import testapi/iter as iter;
 
 rec(iter.loop_reentry) fn changed[A](value: A, remaining: I32) -> A {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     value
   } else {
     let callback = .[A](inner: A) -> A { recur(poly, escape) changed(A, inner, 0) };
@@ -20,7 +20,7 @@ rec(iter.loop_reentry) fn changed[A](value: A, remaining: I32) -> A {
 }
 
 rec(iter.loop_reentry) fn captured[A](value: A, remaining: I32, observe: A -> .) -> A {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     value
   } else {
     let callback = .[A](_inner: A) -> . { observe(recur(escape) captured(value, 0, observe)) };
@@ -30,10 +30,10 @@ rec(iter.loop_reentry) fn captured[A](value: A, remaining: I32, observe: A -> .)
 }
 
 rec(iter.loop) fn structural[A](value: A, remaining: I32) -> I32 {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     53
   } else {
-    invoke!(.[A](inner: A) { recur(poly) structural(A, inner, arith.sub_i32(remaining, 1)) })
+    invoke(.[A](inner: A) { recur(poly) structural(A, inner, arith.sub_i32(remaining, 1)) })
   }
 }
 

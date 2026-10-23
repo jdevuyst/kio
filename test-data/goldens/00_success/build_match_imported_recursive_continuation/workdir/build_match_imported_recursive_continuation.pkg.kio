@@ -51,5 +51,5 @@ build {
 bridge {
   build_match_imported_recursive_continuation;
   build_match_imported_recursive_continuation/**;
-  elab/testapi
+  macros/testapi
 }

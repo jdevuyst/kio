@@ -23,8 +23,8 @@ import ballad/stats(
 import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, Step, Stop);
 import ballad/weave({line_draws}, {line_stop}, {line_words});
 import ballad/weave({step_from}, {step_roll}, {step_state}, {step_succs}, {step_to});
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, div_i32, leq_i32, mod_i32);
 import testapi/fmt(int_to_string);
@@ -43,14 +43,14 @@ fn field(label: String, value: String) { say(cat(label, cat(": ", value))) }
 /// Integer equality, composed from `<=` in both directions: the host tier
 /// supplies comparisons but no `eq_i32`.
 fn int_eq(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
+  if(leq_i32(a, b)) { leq_i32(b, a) } else { .f }
 }
 
 rec(loop) fn words_onto(ws: List(String), first: Bool, acc: String) -> String {
-  match! ws.>List.un_list {
+  match(ws.>List.un_list) {
     (
     , .(w: String, more: List(String)) {
-        let next = if! first { w } else { acc.>cat(" ").>cat(w) };
+        let next = if(first) { w } else { acc.>cat(" ").>cat(w) };
         recur words_onto(more, .f, next)
       }
     , .(_empty: .) { acc }
@@ -61,10 +61,10 @@ rec(loop) fn words_onto(ws: List(String), first: Bool, acc: String) -> String {
 fn words_text(ws: List(String)) -> String { words_onto(ws, .t, "") }
 
 rec(loop) fn states_onto(ns: List(I32), first: Bool, acc: String) -> String {
-  match! ns.>List.un_list {
+  match(ns.>List.un_list) {
     (
     , .(n: I32, more: List(I32)) {
-        let next = if! first { num(n) } else { acc.>cat(" ").>cat(num(n)) };
+        let next = if(first) { num(n) } else { acc.>cat(" ").>cat(num(n)) };
         recur states_onto(more, .f, next)
       }
     , .(_empty: .) { acc }
@@ -73,11 +73,11 @@ rec(loop) fn states_onto(ns: List(I32), first: Bool, acc: String) -> String {
 }
 
 rec(loop) fn tallies_onto(ts: List(Tally), first: Bool, acc: String) -> String {
-  match! ts.>List.un_list {
+  match(ts.>List.un_list) {
     (
     , .(t: Tally, more: List(Tally)) {
         let piece = t.?{word}.>cat("*").>cat(num(t.?{count}));
-        let next = if! first { piece } else { acc.>cat(" ").>cat(piece) };
+        let next = if(first) { piece } else { acc.>cat(" ").>cat(piece) };
         recur tallies_onto(more, .f, next)
       }
     , .(_empty: .) { acc }
@@ -94,12 +94,12 @@ fn tallies_text(ts: List(Tally)) -> String {
 /// `moon[0,2) river[2,3)` says a roll of 0 or 1 lands on `moon` and a roll of
 /// 2 lands on `river`. This is the line that makes the weighting checkable.
 rec(loop) fn bands_onto(ts: List(Tally), lo: I32, first: Bool, acc: String) -> String {
-  match! ts.>List.un_list {
+  match(ts.>List.un_list) {
     (
     , .(t: Tally, more: List(Tally)) {
         let hi = add_i32(lo, t.?{count});
         let piece = t.?{word}.>cat("[").>cat(num(lo)).>cat(",").>cat(num(hi)).>cat(")");
-        let next = if! first { piece } else { acc.>cat(" ").>cat(piece) };
+        let next = if(first) { piece } else { acc.>cat(" ").>cat(piece) };
         recur bands_onto(more, hi, .f, next)
       }
     , .(_empty: .) { acc }
@@ -110,7 +110,7 @@ rec(loop) fn bands_onto(ts: List(Tally), lo: I32, first: Bool, acc: String) -> S
 fn bands_text(ts: List(Tally)) -> String { bands_onto(ts, 0, .t, "") }
 
 fn stop_text(s: Stop) -> String {
-  match! s {
+  match(s) {
     (
     , .(_e: By_end_word) { "end word" }
     , .(_c: By_word_cap) { "word cap" }
@@ -139,7 +139,7 @@ pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) {
 }
 
 rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) {
-  match! phrases.>List.un_list {
+  match(phrases.>List.un_list) {
     (
     , .(p: List(String), more: List(List(String))) {
         say(num(i).>cat(": ").>cat(words_text(p)));
@@ -151,7 +151,7 @@ rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) {
 }
 
 rec(loop) fn count_tokens(phrases: List(List(String)), acc: I32) -> I32 {
-  match! phrases.>List.un_list {
+  match(phrases.>List.un_list) {
     (
     , .(p: List(String), more: List(List(String))) {
         recur count_tokens(more, add_i32(acc, len(p)))
@@ -162,10 +162,10 @@ rec(loop) fn count_tokens(phrases: List(List(String)), acc: I32) -> I32 {
 }
 
 rec(loop) fn rows_hold(rows: List(Row), w: String) -> Bool {
-  match! rows.>List.un_list {
+  match(rows.>List.un_list) {
     (
     , .(r: Row, more: List(Row)) {
-        if! string_eq(r.?{row_word}, w) { .t } else { recur rows_hold(more, w) }
+        if(string_eq(r.?{row_word}, w)) { .t } else { recur rows_hold(more, w) }
       }
     , .(_empty: .) { .f }
     )
@@ -173,10 +173,10 @@ rec(loop) fn rows_hold(rows: List(Row), w: String) -> Bool {
 }
 
 rec(loop) fn count_end_only(ends: List(Tally), rows: List(Row), acc: I32) -> I32 {
-  match! ends.>List.un_list {
+  match(ends.>List.un_list) {
     (
     , .(t: Tally, more: List(Tally)) {
-        let next = if! rows_hold(rows, t.?{word}) { acc } else { add_i32(acc, 1) };
+        let next = if(rows_hold(rows, t.?{word})) { acc } else { add_i32(acc, 1) };
         recur count_end_only(more, rows, next)
       }
     , .(_empty: .) { acc }
@@ -200,7 +200,7 @@ pub fn print_corpus(phrases: List(List(String)), m: Model) {
 }
 
 rec(loop) fn print_rows(rows: List(Row)) {
-  match! rows.>List.un_list {
+  match(rows.>List.un_list) {
     (
     , .(r: Row, more: List(Row)) {
         say(r.?{row_word}.>cat(" -> ").>cat(tallies_text(r.?{row_succs})));
@@ -220,10 +220,10 @@ pub fn print_model(m: Model) {
 }
 
 rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) {
-  match! lines.>List.un_list {
+  match(lines.>List.un_list) {
     (
     , .(l: Line, more: List(Line)) {
-        if! int_eq(mod_i32(i, per_verse), 0) {
+        if(int_eq(mod_i32(i, per_verse), 0)) {
           say("verse ".>cat(num(add_i32(div_i32(i, per_verse), 1))))
         } else {
           ()
@@ -243,7 +243,7 @@ pub fn print_verses(lines: List(Line), per_verse: I32) {
 }
 
 rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
-  match! draws.>List.un_list {
+  match(draws.>List.un_list) {
     (
     , .(d: Step, more: List(Step)) {
         say("  draw "
@@ -268,9 +268,9 @@ rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
 }
 
 rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) {
-  if! leq_i32(per_verse, i) {
+  if(leq_i32(per_verse, i)) {
     ()
-  } else match! lines.>List.un_list {
+  } else match(lines.>List.un_list) {
     (
     , .(l: Line, more: List(Line)) {
         say("line ".>cat(num(add_i32(i, 1))));

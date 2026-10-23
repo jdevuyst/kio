@@ -1,9 +1,9 @@
 module host/m;
 
-import elab/control(if);
 import host(Input, bar, condition, default Bool, foo);
+import macros/control(macro if);
 
 equiv stuck_if_eq(x: Input) {
-  if! condition(x) { foo() } else { bar() };
-  if! condition(x) { foo() } else { bar() }
+  if(condition(x)) { foo() } else { bar() };
+  if(condition(x)) { foo() } else { bar() }
 }

@@ -209,9 +209,7 @@ impl Parser<'_> {
         } else {
             self.peek_leading_trivia()
         };
-        let mut expr = self.with_block_slot_boundary(!frames.boundaries.is_empty(), |parser| {
-            parser.expr_postfix()
-        })?;
+        let mut expr = self.expr_postfix()?;
         inject_leading_trivia(&mut expr, leading);
         Ok(Operand { expr, root: None })
     }

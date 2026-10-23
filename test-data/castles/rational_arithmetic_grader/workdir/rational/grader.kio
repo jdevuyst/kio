@@ -1,9 +1,9 @@
 /// Verdicts, the exercise roster, and the marking rubric.
 module rational/grader;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import rational/core as core;
 import rational/core(Division_by_zero, Eval, Fraction, Rational);
 import rational/expr(Expr);
@@ -45,33 +45,33 @@ pub labels Tally = {
 
 pub fn exercise(question: Expr, submitted: Fraction) -> Exercise { {question, submitted} }
 
-pub fn no_exercises() -> Roster { Roster.of_body(widen_sum!((), . | (Exercise & Roster))) }
+pub fn no_exercises() -> Roster { Roster.of_body(widen_sum((), . | (Exercise & Roster))) }
 
 pub fn with_exercise(head: Exercise, rest: Roster) -> Roster {
-  Roster.of_body(widen_sum!((head, rest), . | (Exercise & Roster)))
+  Roster.of_body(widen_sum((head, rest), . | (Exercise & Roster)))
 }
 
-fn exact_mark(note: String) -> Report { {outcome = widen_sum!({exact=}, Verdict), note} }
+fn exact_mark(note: String) -> Report { {outcome = widen_sum({exact=}, Verdict), note} }
 
-fn equivalent_mark(note: String) -> Report { {outcome = widen_sum!({equivalent=}, Verdict), note} }
+fn equivalent_mark(note: String) -> Report { {outcome = widen_sum({equivalent=}, Verdict), note} }
 
-fn wrong_mark(note: String) -> Report { {outcome = widen_sum!({wrong=}, Verdict), note} }
+fn wrong_mark(note: String) -> Report { {outcome = widen_sum({wrong=}, Verdict), note} }
 
-fn undefined_mark(note: String) -> Report { {outcome = widen_sum!({undefined=}, Verdict), note} }
+fn undefined_mark(note: String) -> Report { {outcome = widen_sum({undefined=}, Verdict), note} }
 
 /// Which way the student missed. Nothing else needs an ordering on rationals,
 /// but a grader that can only say "no" is less use than one that can say "high".
 fn direction(student: Rational, correct: Rational) -> String {
-  if! core.less(student, correct) { "below the correct value" } else { "above the correct value" }
+  if(core.less(student, correct)) { "below the correct value" } else { "above the correct value" }
 }
 
 /// Mark a submission against the value the question actually has.
 fn judge(correct: Rational, submitted: Fraction) -> Report {
-  match! core.reduce(submitted) {
+  match(core.reduce(submitted)) {
     (
     , .(student: Rational) {
-        if! core.equal(student, correct) {
-          if! core.is_canonical(submitted, student) {
+        if(core.equal(student, correct)) {
+          if(core.is_canonical(submitted, student)) {
             exact_mark("in lowest terms")
           } else {
             equivalent_mark(text.cat4(
@@ -93,7 +93,7 @@ fn judge(correct: Rational, submitted: Fraction) -> Report {
 /// A question that cannot be evaluated is undefined whatever the student wrote:
 /// there is no value to have got right.
 pub fn assess(correct: Eval, submitted: Fraction) -> Report {
-  match! correct {
+  match(correct) {
     (
     , .(number: Rational) { judge(number, submitted) }
     , .(_fault: Division_by_zero) {
@@ -104,7 +104,7 @@ pub fn assess(correct: Eval, submitted: Fraction) -> Report {
 }
 
 pub fn verdict_text(outcome: Verdict) -> String {
-  match! outcome {
+  match(outcome) {
     (
     , .(_v: Exact) { "exact" }
     , .(_v: Equivalent) { "equivalent" }
@@ -131,7 +131,7 @@ fn bump_undefined(marks: Tally) -> Tally {
 }
 
 pub fn record(marks: Tally, outcome: Verdict) -> Tally {
-  match! outcome {
+  match(outcome) {
     (
     , .(_v: Exact) { bump_exact(marks) }
     , .(_v: Equivalent) { bump_equivalent(marks) }

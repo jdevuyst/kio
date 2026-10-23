@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi(default String);
 import testapi/io as io;
 import testapi/text as text;
@@ -13,7 +13,7 @@ fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value
 
 fn combine() -> String {
   let result =
-    do! bind {
+    do(bind) {
       let first <- pure("left");
       let append <- pure(.(prefix: String) { text.string_concat(prefix, "right!") });
       pure(append(first))

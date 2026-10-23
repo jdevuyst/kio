@@ -160,7 +160,15 @@ pub(crate) fn completion_cursor<'a>(
     None
 }
 
+#[cfg(test)]
 pub(crate) fn classify(doc: &DocSource<'_>) -> Vec<ClassifiedToken> {
+    classify_with_module(doc, None)
+}
+
+pub(crate) fn classify_with_module(
+    doc: &DocSource<'_>,
+    module_source: Option<&str>,
+) -> Vec<ClassifiedToken> {
     let mut logical = Vec::new();
     let mut markup = Vec::new();
     for block in scan_blocks(&doc.text) {
@@ -186,9 +194,10 @@ pub(crate) fn classify(doc: &DocSource<'_>) -> Vec<ClassifiedToken> {
                 }
                 if super::generated::is_kio_info(fence.info.text) {
                     let mut cursor = fence.body.span.start;
-                    for token in crate::tokens::dump_doc_code(
+                    for token in crate::tokens::dump_doc_code_with_module(
                         fence.body.text,
                         super::generated::self_harness_info(fence.info.text),
+                        module_source,
                     ) {
                         let span = Span::new(
                             fence.body.span.start + token.span.start,

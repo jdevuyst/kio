@@ -294,7 +294,7 @@ pub enum TypedModuleDependency {
         module: PackageModuleKey,
         fingerprint: SurfaceFingerprint,
     },
-    SamePackageElaboratorModule {
+    SamePackageMacroModule {
         module: PackageModuleKey,
         fingerprint: SurfaceFingerprint,
     },
@@ -308,11 +308,11 @@ impl TypedModuleDependency {
         }
     }
 
-    pub fn same_package_elaborator_module(
+    pub fn same_package_macro_module(
         module: PackageModuleKey,
         fingerprint: SurfaceFingerprint,
     ) -> Self {
-        Self::SamePackageElaboratorModule {
+        Self::SamePackageMacroModule {
             module,
             fingerprint,
         }
@@ -323,8 +323,8 @@ impl TypedModuleDependency {
             Self::SamePackageModule { module, .. } => {
                 format!("same-package:{}", module.as_str())
             }
-            Self::SamePackageElaboratorModule { module, .. } => {
-                format!("same-package-elaborator:{}", module.as_str())
+            Self::SamePackageMacroModule { module, .. } => {
+                format!("same-package-macro:{}", module.as_str())
             }
         }
     }
@@ -332,7 +332,7 @@ impl TypedModuleDependency {
     pub fn fingerprint(&self) -> SurfaceFingerprint {
         match self {
             Self::SamePackageModule { fingerprint, .. }
-            | Self::SamePackageElaboratorModule { fingerprint, .. } => fingerprint.clone(),
+            | Self::SamePackageMacroModule { fingerprint, .. } => fingerprint.clone(),
         }
     }
 }

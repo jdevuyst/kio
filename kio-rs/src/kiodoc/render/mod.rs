@@ -24,6 +24,7 @@
 //! output" for the site structure, URL scheme, and anchor format.
 
 pub mod assets;
+mod highlight;
 pub mod markdown;
 pub mod rewrite;
 pub mod scope;
@@ -527,8 +528,13 @@ fn render_tutorial_page(
 ) -> String {
     let prefix = url_prefix(url_stem);
     let overrides = collect_ref_overrides(source);
-    let rewritten = rewrite::rewrite(source, &prefix, format.ext(), index, scope, &overrides);
-    finish_body(&rewritten, format)
+    if format == Format::Html {
+        let rewritten =
+            rewrite::rewrite_with_context(source, &prefix, format.ext(), index, scope, &overrides);
+        markdown::render_html_with_context(&rewritten.text, None, &rewritten.source_tokens)
+    } else {
+        rewrite::rewrite(source, &prefix, format.ext(), index, scope, &overrides)
+    }
 }
 
 /// Rewrite a doc-comment / prose fragment, tolerating a missing
@@ -542,7 +548,19 @@ fn rewrite_or_plain(
     scope: Option<&dyn DirectiveScope>,
     overrides: &HashSet<String>,
 ) -> String {
-    match scope {
+    if format == Format::Html
+        && let Some(scope) = scope
+    {
+        let rewritten =
+            rewrite::rewrite_with_context(prose, prefix, format.ext(), index, scope, overrides);
+        let module = scope.module_source();
+        return markdown::render_html_with_context(
+            &rewritten.text,
+            module.as_deref(),
+            &rewritten.source_tokens,
+        );
+    }
+    let rewritten = match scope {
         Some(s) => rewrite::rewrite(prose, prefix, format.ext(), index, s, overrides),
         None => {
             // No scope: still rewrite intra-doc links via a
@@ -550,6 +568,12 @@ fn rewrite_or_plain(
             let empty = scope::PackageBoundaryScope::from_bridged_modules(None, std::iter::empty());
             rewrite::rewrite(prose, prefix, format.ext(), index, &empty, overrides)
         }
+    };
+    if format == Format::Html {
+        let module = scope.and_then(|scope| scope.module_source());
+        markdown::render_html_with_module(&rewritten, module.as_deref())
+    } else {
+        rewritten
     }
 }
 

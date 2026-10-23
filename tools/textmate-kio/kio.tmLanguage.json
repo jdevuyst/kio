@@ -44,7 +44,7 @@
         {
           "begin": "\\bvarop\\b(?=[ \\t]*(?://[^\\r\\n]*)?$)",
           "beginCaptures": { "0": { "name": "meta.ambiguous-declaration-head.kio" } },
-          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?<=\\})[ \\t]*;?|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "patterns": [
             { "include": "#comment-doc" },
             { "include": "#comment" },
@@ -66,7 +66,7 @@
     },
     "expression-document": {
       "comment": "A raw expression root cannot acquire item ownership when recovery reaches a declaration-shaped line; its remaining tail keeps lexical roles.",
-      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:newtype\\b|labels\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!default\\b[ \\t]+(?:pub(?:\\([^\\n)]*\\))?[ \\t]+)?(?:host[ \\t]+(?:pub[ \\t]+)?type|type)[ \\t]+[A-Z_])(?!(?:module|import|fn|newtype|host|type|literal|labels|equiv|elab|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
+      "begin": "(?=varop\\b[ \\t]*\\()|(?=rec\\b)(?!rec\\b[ \\t]*(?:newtype\\b|labels\\b|\\{|(?<root_rec_parens>\\((?:[^()\"/\\r\\n]|\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|/(?!/)|\\g<root_rec_parens>)*\\))[ \\t]*(?:fn|pub)\\b))|(?!default\\b[ \\t]+(?:pub(?:\\([^\\n)]*\\))?[ \\t]+)?(?:host[ \\t]+(?:pub[ \\t]+)?type|type)[ \\t]+[A-Z_])(?!(?:module|import|fn|newtype|host|type|literal|labels|equiv|macro|pub|pure|rec|op|varop|dependency|lock)\\b)(?=\\S)",
       "end": "(?!)",
       "patterns": [
         {
@@ -712,7 +712,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -724,7 +724,7 @@
       "beginCaptures": {
         "0": { "name": "entity.name.type.kio" }
       },
-      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -1190,9 +1190,6 @@
           "include": "#block-call"
         },
         {
-          "include": "#elaborator-bang-call"
-        },
-        {
           "include": "#dot-lambda"
         },
         {
@@ -1253,14 +1250,14 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?<=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
         { "include": "#varop-head" },
         { "include": "#comment-doc" },
         { "include": "#comment" },
         {
           "begin": "\\S",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             { "include": "#comment-doc" },
@@ -1315,12 +1312,6 @@
           "include": "#bool"
         },
         {
-          "include": "#block-call"
-        },
-        {
-          "include": "#elaborator-bang-call"
-        },
-        {
           "include": "#placeholder-lambda"
         },
         {
@@ -1369,7 +1360,7 @@
           "include": "#equiv-decl"
         },
         {
-          "include": "#elab-decl"
+          "include": "#macro-decl"
         },
         {
           "include": "#visibility"
@@ -1379,6 +1370,9 @@
         },
         {
           "include": "#ambiguous-op-head"
+        },
+        {
+          "include": "#block-call"
         },
         {
           "include": "#call-head"
@@ -1672,11 +1666,6 @@
       "match": "\\.(?:t|f)\\b(?!\\.)",
       "name": "constant.language.boolean.kio"
     },
-    "elaborator-bang-call": {
-      "comment": "A contiguous value-reference-plus-bang token is an elaborator call for highlighting. The head follows the canonical word shape, including reserved references; a reserved prefix alone supplies no special role. A space before `!` keeps the identifier and operator tokens separate.",
-      "match": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!",
-      "name": "entity.name.function.macro.elaborator.kio"
-    },
     "keyword-rec": {
       "begin": "\\brec\\b",
       "beginCaptures": {
@@ -1831,10 +1820,20 @@
         { "include": "#operator-builtin" },
         { "include": "#operator-user" },
         { "include": "#punctuation-separator" },
+        { "include": "#import-macro-modifier" },
         { "include": "#import-default-modifier" },
         { "include": "#import-identifier" },
         { "include": "#import-ambiguous-tag-name" }
       ]
+    },
+    "import-macro-modifier": {
+      "match": "\\b(macro)\\b\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?:\\s+(as)\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*))?(?=\\s*[,)])",
+      "captures": {
+        "1": { "name": "keyword.declaration.kio" },
+        "2": { "name": "entity.name.macro.kio" },
+        "3": { "name": "keyword.declaration.kio" },
+        "4": { "name": "entity.name.macro.kio" }
+      }
     },
     "import-default-modifier": {
       "match": "\\bdefault\\b(?=[ \\t]+[A-Z_][A-Za-z0-9_]*\\b)",
@@ -2031,9 +2030,10 @@
       ]
     },
     "fn-decl-head": {
-      "begin": "\\bfn\\b",
+      "begin": "\\b(?:(pure)\\s+)?(fn)\\b",
       "beginCaptures": {
-        "0": { "name": "keyword.declaration.kio" }
+        "1": { "name": "keyword.declaration.kio" },
+        "2": { "name": "keyword.declaration.kio" }
       },
       "end": "(?=\\})|(?<=[};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
@@ -2049,7 +2049,7 @@
           "name": "punctuation.bracket.kio"
         }
       },
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2077,7 +2077,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2108,7 +2108,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.separator.kio"
@@ -2138,7 +2138,7 @@
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2233,7 +2233,7 @@
     },
     "keyword-declaration": {
       "comment": "Item-leading and binding-leading keywords.",
-      "match": "\\b(?:fn|newtype|type|literal|labels|equiv|elab|module|pub|pure|let|package|build|host|bridge|dependency|source|lock|resolved|signature|with|breaking|nonbreaking|add|modify|remove)\\b",
+      "match": "\\b(?:fn|newtype|type|literal|labels|equiv|module|pub|pure|let|package|build|host|bridge|dependency|source|lock|resolved|signature|with|breaking|nonbreaking|add|modify|remove)\\b",
       "name": "keyword.declaration.kio"
     },
     "slot": {
@@ -2289,7 +2289,6 @@
         { "include": "#ambiguous-minus-before-number" },
         { "include": "#number" },
         { "include": "#bool" },
-        { "include": "#elaborator-bang-call" },
         { "include": "#slot" },
         { "include": "#lexical-bracket-run" },
         { "include": "#operator-arrow" },
@@ -2354,7 +2353,7 @@
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#binding-head"
@@ -2462,7 +2461,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.operator.kio" }
       },
-      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?<=\\})|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
         { "include": "#newtype-type-operand" },
         { "include": "#comment-doc" },
@@ -2473,7 +2472,7 @@
             "1": { "name": "keyword.operator.arrow.kio" },
             "2": { "name": "keyword.operator.kio" }
           },
-          "end": "(?<=[A-Za-z0-9_.)}])|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?<=[A-Za-z0-9_.)}])|(?=;)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "patterns": [
             { "include": "#newtype-type-operand" }
           ]
@@ -2484,13 +2483,13 @@
       ]
     },
     "block-call": {
-      "begin": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!",
+      "begin": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:(?<block_prefix_args>\\((?:[^()\\r\\n]|\\g<block_prefix_args>)*\\))[ \\t]*)?\\{)",
       "beginCaptures": {
         "0": {
-          "name": "entity.name.function.macro.elaborator.kio"
+          "name": "entity.name.function.kio"
         }
       },
-      "end": "(?=[;,)\\}])|(?=\\S)(?![A-Za-z_]|//|\\{)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?=[;,)\\}])|(?=\\S)(?![A-Za-z_]|//|\\{)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "applyEndPatternLast": true,
       "patterns": [
         {
@@ -2512,7 +2511,7 @@
     },
     "block-call-prefix": {
       "begin": "\\G",
-      "end": "\\{|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\{|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2526,7 +2525,7 @@
     },
     "block-call-body": {
       "begin": "(?<=\\{)",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2539,13 +2538,13 @@
       ]
     },
     "block-call-label": {
-      "begin": "\\b_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:\\{|//|$|_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!))",
+      "begin": "\\b_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:\\{|//|$|_?[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t(])))",
       "beginCaptures": {
         "0": {
           "name": "keyword.control.kio"
         }
       },
-      "end": "(?<=\\})|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?<=\\})|(?=[;,)\\}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2576,7 +2575,7 @@
       },
       "patterns": [
         {
-          "comment": "A bang at a square-frame edge can be a marker or a native suffix. Keep that ambiguous role neutral, including when the closer is on a later line.",
+          "comment": "A bang at a square-frame edge can close its marker. Keep that role neutral until the surrounding frame establishes its boundary.",
           "match": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*!(?=[ \\t]*(?:\\]|$|//))"
         },
         {
@@ -2629,9 +2628,6 @@
         },
         {
           "include": "#bool"
-        },
-        {
-          "include": "#elaborator-bang-call"
         },
         {
           "include": "#dot-lambda"
@@ -2690,7 +2686,7 @@
           "name": "meta.ambiguous-binding-head.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#binding-head"
@@ -2702,7 +2698,7 @@
     },
     "binding-head": {
       "begin": "\\G",
-      "end": "(?:(=)|(<-))(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?:(=)|(<-))(?![+\\-*/%^~?@#$\\\\'\\x60<>=!&|:.])|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "1": {
           "name": "keyword.operator.kio"
@@ -2770,7 +2766,7 @@
         },
         {
           "begin": "(?=\\S)",
-          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
           "patterns": [
             {
               "include": "#expression-tokens"
@@ -2781,7 +2777,7 @@
     },
     "label-expression": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -2800,7 +2796,7 @@
       "beginCaptures": {
         "0": { "name": "entity.name.label.kio" }
       },
-      "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -2809,7 +2805,7 @@
           "beginCaptures": {
             "0": { "name": "keyword.operator.kio" }
           },
-          "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "end": "(?=[,}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
           "patterns": [
             { "include": "#expression-tokens" }
           ]
@@ -2826,7 +2822,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
@@ -2836,7 +2832,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
@@ -2846,7 +2842,7 @@
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "(?=\\})|;|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#labels-body" },
         { "include": "#type-tokens" }
@@ -2857,7 +2853,7 @@
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "endCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -2877,20 +2873,21 @@
         { "include": "#function-name" }
       ]
     },
-    "elab-decl": {
-      "begin": "\\belab\\b",
+    "macro-decl": {
+      "begin": "\\b(macro)\\b\\s+(_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*)(?=\\s*:)",
       "beginCaptures": {
-        "0": { "name": "keyword.declaration.kio" }
+        "1": { "name": "keyword.declaration.kio" },
+        "2": { "name": "entity.name.macro.kio" }
       },
-      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?<=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
-        { "include": "#elab-body" },
+        { "include": "#macro-body" },
         { "include": "#type-tokens" }
       ]
     },
-    "elab-body": {
+    "macro-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -2909,13 +2906,13 @@
           "include": "#comment"
         },
         {
-          "include": "#elab-captures"
+          "include": "#macro-captures"
         },
         {
-          "include": "#elab-trailing"
+          "include": "#macro-trailing"
         },
         {
-          "include": "#elab-impl"
+          "include": "#macro-impl"
         },
         {
           "include": "#identifier"
@@ -2925,14 +2922,14 @@
         }
       ]
     },
-    "elab-trailing": {
+    "macro-trailing": {
       "begin": "\\btrailing\\b",
       "beginCaptures": {
         "0": {
           "name": "keyword.declaration.kio"
         }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         {
           "include": "#comment-doc"
@@ -2966,22 +2963,22 @@
         }
       ]
     },
-    "elab-captures": {
+    "macro-captures": {
       "begin": "\\bcaptures\\b",
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#type-tokens" }
       ]
     },
-    "elab-impl": {
+    "macro-impl": {
       "begin": "\\bimpl\\b",
       "beginCaptures": {
         "0": { "name": "keyword.declaration.kio" }
       },
-      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "patterns": [
         { "include": "#comment-doc" },
         { "include": "#comment" },
@@ -3009,7 +3006,7 @@
                 },
                 {
                   "match": "\\bfills\\b(?=[ \\t]*(?:\\)[ \\t]*)?(?://[^\\r\\n]*)?$)",
-                  "name": "meta.ambiguous-elaborator-mode.kio"
+                  "name": "meta.ambiguous-macro-mode.kio"
                 },
                 { "include": "#type-tokens" }
               ]
@@ -3021,7 +3018,7 @@
     },
     "fixed-op-body": {
       "begin": "\\{",
-      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+      "end": "\\}|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3036,7 +3033,7 @@
           "beginCaptures": {
             "0": { "name": "keyword.declaration.kio" }
           },
-          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
+          "end": ";|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|varop|op|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{|\\[|[+\\-*])))",
           "patterns": [
             { "include": "#type-tokens" }
           ]
@@ -3047,7 +3044,7 @@
     },
     "varop-mirror-bracket": {
       "begin": "\\G\\[",
-      "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?!\\G)\\]|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
         "0": {
           "name": "punctuation.bracket.kio"
@@ -3076,7 +3073,7 @@
         },
         {
           "begin": "(?!\\G)(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3114,7 +3111,7 @@
     },
     "varop-mirror-symbol": {
       "begin": "\\G([+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])",
-      "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?!\\G)\\1|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
         "0": {
           "name": "keyword.operator.user.kio"
@@ -3134,7 +3131,7 @@
         },
         {
           "begin": "(?!\\G)(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3171,7 +3168,7 @@
     },
     "varop-head": {
       "begin": "[ \\t]*(?=\\[)",
-      "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?<=\\})|(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "patterns": [
         {
           "begin": "(?=\\[[ \\t]*(?:(?<head_mirror>(?<head_char>[+\\-*/%^~?@#$\\\\'\\x60<>=!&|:])(?:\\g<head_mirror>|[ \\t]*)\\k<head_char+0>))?[ \\t]*\\])\\[",
@@ -3209,7 +3206,7 @@
         },
         {
           "begin": "(?=\\S)",
-          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+          "end": "(?=[;}])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
           "name": "meta.invalid-varop-head.kio",
           "patterns": [
             {
@@ -3255,7 +3252,7 @@
     },
     "invalid-newtype-payload": {
       "begin": "\\{",
-      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3274,7 +3271,7 @@
     },
     "newtype-type-group": {
       "begin": "\\(",
-      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "end": "\\)|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
       "beginCaptures": {
         "0": { "name": "punctuation.bracket.kio" }
       },
@@ -3289,7 +3286,7 @@
     },
     "newtype-type-operand": {
       "begin": "\\G",
-      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|elab|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))|([A-Za-z_][A-Za-z0-9_]*)|(\\.)|(!)|(?<=\\))|(?=;)",
+      "end": "(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))|([A-Za-z_][A-Za-z0-9_]*)|(\\.)|(!)|(?<=\\))|(?=;)",
       "endCaptures": {
         "1": { "name": "variable.other.kio" },
         "2": { "name": "punctuation.separator.kio" },

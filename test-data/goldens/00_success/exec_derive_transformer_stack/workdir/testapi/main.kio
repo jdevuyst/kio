@@ -2,17 +2,17 @@ module testapi/main;
 
 import __intrinsics__;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(Int, String);
 import testapi/io(print);
 
-// The motivating `derive!` use case: composing a `Monad` instance for a
+// The motivating `derive` use case: composing a `Monad` instance for a
 // monad-transformer stack `State_t(Int, Maybe_t(Maybe))` from per-layer
 // rules. `State_t` / `Maybe_t` are kind-`*→*` *transformer* type
 // constructors — a newtype with a kind-`*→*` parameter applied as
 // `m(…)` in its carrier — so the stack `State_t(Int, Maybe_t(Maybe))`
 // nests one transformer carrier inside another. Runs identically on
-// `js` and `rust`; the `derive!` surface form also lowers cleanly to
+// `js` and `rust`; the `derive` surface form also lowers cleanly to
 // the `kio-prime` target (verified by the kio-prime round-trip check).
 pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe }
 
@@ -131,12 +131,12 @@ fn state_t_monad[S][*M](inner: Monad(M), inner_pure: Pure(M)) -> Monad(State_t(S
 // stack — through the abstract higher-kinded carrier at runtime.
 fn run() -> String {
   let stack =
-    derive!(
+    derive(
     , (state_t_monad, maybe_t_monad, maybe_monad, state_t_pure, maybe_t_pure, maybe_pure)
     , Monad(State_t(Int, Maybe_t(Maybe)))
     );
   let stack_pure =
-    derive!((state_t_pure, maybe_t_pure, maybe_pure), Pure(State_t(Int, Maybe_t(Maybe))));
+    derive((state_t_pure, maybe_t_pure, maybe_pure), Pure(State_t(Int, Maybe_t(Maybe))));
   let lifted = Pure.pure(stack_pure)("derive! stack: ok\n"(String));
   let stepped = Monad.bind(stack)(String, String, lifted, .(s) { Pure.pure(stack_pure)(s) });
   let run_fn = State_t.run_state_t(Int, Maybe_t(Maybe), String, stepped);

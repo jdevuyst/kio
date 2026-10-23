@@ -47,7 +47,7 @@ build {
 bridge {
   testapi;
   testapi/**;
-  elab/testapi;
-  queue/elab/testapi;
-  queue/list/elab/testapi
+  macros/testapi;
+  queue/macros/testapi;
+  queue/list/macros/testapi
 }

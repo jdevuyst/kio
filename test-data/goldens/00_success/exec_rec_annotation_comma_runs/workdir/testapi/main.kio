@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi as host;
 import testapi(default Bool);
 import testapi/arith as arith;
@@ -9,7 +9,7 @@ import testapi/io as io;
 import testapi/iter as iter;
 
 rec(iter.loop) fn answer(n: host.I32) -> host.I32 {
-  if! (arith.leq_i32(n, 0)) {
+  if (arith.leq_i32(n, 0)) {
     41
   } else {
     let result = recur(,,, cont ,,,) answer(0);

@@ -1,14 +1,14 @@
 module host/m;
 
-import elab/control(scope);
 import host(foo);
+import macros/control(macro scope);
 
 equiv do_single_expression_reduces() {
-  scope! { foo() };
+  scope { foo() };
   foo()
 }
 
 equiv do_pure_let_reduces() {
-  scope! { let f = foo; f() };
+  scope { let f = foo; f() };
   foo()
 }

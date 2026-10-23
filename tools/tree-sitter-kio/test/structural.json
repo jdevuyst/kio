@@ -163,7 +163,7 @@
   },
   {
     "name": "reference_scalar_grouping_fields",
-    "source": "module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nelab form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nelab later: . -> . { impl (fills) }\nelab scheduled: . -> . { impl (fills) ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }\n",
+    "source": "module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nmacro form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nmacro later: . -> . { impl (fills) }\nmacro scheduled: . -> . { impl (fills) ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }\n",
     "targets": [
       {
         "start": 21,
@@ -430,20 +430,20 @@
         ]
       },
       {
-        "start": 124,
-        "end": 132,
+        "start": 125,
+        "end": 133,
         "text": "captures",
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_captures_clause"
+          "macro_captures_clause"
         ],
         "textmate": [
           "keyword.declaration.kio"
         ]
       },
       {
-        "start": 135,
-        "end": 141,
+        "start": 136,
+        "end": 142,
         "text": "helper",
         "kind": "identifier",
         "owners": [
@@ -454,8 +454,8 @@
         ]
       },
       {
-        "start": 146,
-        "end": 150,
+        "start": 147,
+        "end": 151,
         "text": "Type",
         "kind": "identifier",
         "owners": [
@@ -466,27 +466,15 @@
         ]
       },
       {
-        "start": 155,
-        "end": 159,
+        "start": 156,
+        "end": 160,
         "text": "impl",
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ],
         "textmate": [
           "keyword.declaration.kio"
-        ]
-      },
-      {
-        "start": 160,
-        "end": 161,
-        "text": "(",
-        "kind": "punctuation.bracket",
-        "owners": [
-          "grouped_callable_value"
-        ],
-        "textmate": [
-          "punctuation.bracket.kio"
         ]
       },
       {
@@ -502,8 +490,20 @@
         ]
       },
       {
-        "start": 170,
-        "end": 173,
+        "start": 162,
+        "end": 163,
+        "text": "(",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 171,
+        "end": 174,
         "text": "run",
         "kind": "entity.name.function",
         "owners": [
@@ -511,18 +511,6 @@
         ],
         "textmate": [
           "variable.other.kio"
-        ]
-      },
-      {
-        "start": 173,
-        "end": 174,
-        "text": ")",
-        "kind": "punctuation.bracket",
-        "owners": [
-          "grouped_callable_value"
-        ],
-        "textmate": [
-          "punctuation.bracket.kio"
         ]
       },
       {
@@ -538,20 +526,32 @@
         ]
       },
       {
-        "start": 199,
-        "end": 203,
+        "start": 175,
+        "end": 176,
+        "text": ")",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "grouped_callable_value"
+        ],
+        "textmate": [
+          "punctuation.bracket.kio"
+        ]
+      },
+      {
+        "start": 201,
+        "end": 205,
         "text": "impl",
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ],
         "textmate": [
           "keyword.declaration.kio"
         ]
       },
       {
-        "start": 204,
-        "end": 205,
+        "start": 206,
+        "end": 207,
         "text": "(",
         "kind": "punctuation.bracket",
         "owners": [
@@ -562,8 +562,8 @@
         ]
       },
       {
-        "start": 205,
-        "end": 210,
+        "start": 207,
+        "end": 212,
         "text": "fills",
         "kind": "entity.name.function",
         "owners": [
@@ -574,8 +574,8 @@
         ]
       },
       {
-        "start": 210,
-        "end": 211,
+        "start": 212,
+        "end": 213,
         "text": ")",
         "kind": "punctuation.bracket",
         "owners": [
@@ -586,32 +586,32 @@
         ]
       },
       {
-        "start": 239,
-        "end": 243,
+        "start": 242,
+        "end": 246,
         "text": "impl",
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ],
         "textmate": [
           "keyword.declaration.kio"
         ]
       },
       {
-        "start": 245,
-        "end": 250,
+        "start": 248,
+        "end": 253,
         "text": "fills",
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ],
         "textmate": [
           "keyword.declaration.kio"
         ]
       },
       {
-        "start": 274,
-        "end": 275,
+        "start": 277,
+        "end": 278,
         "text": "(",
         "kind": "punctuation.bracket",
         "owners": [
@@ -622,8 +622,8 @@
         ]
       },
       {
-        "start": 275,
-        "end": 276,
+        "start": 278,
+        "end": 279,
         "text": "(",
         "kind": "punctuation.bracket",
         "owners": [
@@ -634,8 +634,8 @@
         ]
       },
       {
-        "start": 281,
-        "end": 286,
+        "start": 284,
+        "end": 289,
         "text": "drive",
         "kind": "identifier",
         "owners": [
@@ -646,8 +646,8 @@
         ]
       },
       {
-        "start": 286,
-        "end": 287,
+        "start": 289,
+        "end": 290,
         "text": ")",
         "kind": "punctuation.bracket",
         "owners": [
@@ -658,8 +658,8 @@
         ]
       },
       {
-        "start": 287,
-        "end": 288,
+        "start": 290,
+        "end": 291,
         "text": ")",
         "kind": "punctuation.bracket",
         "owners": [
@@ -670,8 +670,8 @@
         ]
       },
       {
-        "start": 322,
-        "end": 323,
+        "start": 325,
+        "end": 326,
         "text": "(",
         "kind": "punctuation.bracket",
         "owners": [
@@ -682,8 +682,8 @@
         ]
       },
       {
-        "start": 323,
-        "end": 324,
+        "start": 326,
+        "end": 327,
         "text": "(",
         "kind": "punctuation.bracket",
         "owners": [
@@ -694,8 +694,8 @@
         ]
       },
       {
-        "start": 332,
-        "end": 336,
+        "start": 335,
+        "end": 339,
         "text": "keep",
         "kind": "entity.name.function",
         "owners": [
@@ -706,8 +706,8 @@
         ]
       },
       {
-        "start": 336,
-        "end": 337,
+        "start": 339,
+        "end": 340,
         "text": ")",
         "kind": "punctuation.bracket",
         "owners": [
@@ -718,8 +718,8 @@
         ]
       },
       {
-        "start": 337,
-        "end": 338,
+        "start": 340,
+        "end": 341,
         "text": ")",
         "kind": "punctuation.bracket",
         "owners": [
@@ -2260,7 +2260,7 @@
   },
   {
     "name": "numbered_bindings_preserve_long_qualified_let_paths",
-    "source": "module m; fn f() { let.x.y() } fn g() { action! { let.x.y } }",
+    "source": "module m; fn f() { let.x.y() } fn g() { action { let.x.y } }",
     "targets": [
       {
         "text": "let",
@@ -2293,8 +2293,8 @@
       },
       {
         "text": "let",
-        "start": 50,
-        "end": 53,
+        "start": 49,
+        "end": 52,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -2302,8 +2302,8 @@
       },
       {
         "text": "x",
-        "start": 54,
-        "end": 55,
+        "start": 53,
+        "end": 54,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -2311,8 +2311,8 @@
       },
       {
         "text": "y",
-        "start": 56,
-        "end": 57,
+        "start": 55,
+        "end": 56,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -2365,12 +2365,12 @@
   },
   {
     "name": "numbered_sequence_binding_complete",
-    "source": "module m;\nfn f() { action! { let .x. <- (); x2; let .x. <- x1; x3 } }\nfn after() { () }\n",
+    "source": "module m;\nfn f() { action { let .x. <- (); x2; let .x. <- x1; x3 } }\nfn after() { () }\n",
     "partial": false,
     "targets": [
       {
-        "start": 29,
-        "end": 32,
+        "start": 28,
+        "end": 31,
         "text": "let",
         "kind": "keyword.declaration",
         "owners": [
@@ -2381,8 +2381,8 @@
         ]
       },
       {
-        "start": 34,
-        "end": 35,
+        "start": 33,
+        "end": 34,
         "text": "x",
         "kind": "variable.parameter",
         "owners": [
@@ -2393,8 +2393,8 @@
         ]
       },
       {
-        "start": 70,
-        "end": 72,
+        "start": 69,
+        "end": 71,
         "text": "fn",
         "kind": "keyword.declaration",
         "owners": [
@@ -3424,7 +3424,7 @@
   },
   {
     "name": "comma_keyword_calls",
-    "source": "module source;\nfn run() { id([ let(x), if!((ok)) { () } else { () } ]) }\n",
+    "source": "module source;\nfn run() { id([ let(x), if((ok)) { () } else { () } ]) }\n",
     "partial": false,
     "targets": [
       {
@@ -3438,9 +3438,9 @@
       },
       {
         "start": 39,
-        "end": 42,
-        "text": "if!",
-        "kind": "keyword.elaborator",
+        "end": 41,
+        "text": "if",
+        "kind": "entity.name.function",
         "owners": [
           "block_call"
         ]
@@ -4033,21 +4033,21 @@
   },
   {
     "name": "nested_control_values",
-    "source": "module source;\nfn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }, .(x) { scope! { x } } ]) }\n",
+    "source": "module source;\nfn run() { id([ scope { let x = f(); if (x) { let(y) } else { scope { z } } }, .(x) { scope { x } } ]) }\n",
     "partial": false,
     "targets": [
       {
-        "start": 79,
-        "end": 85,
-        "text": "scope!",
-        "kind": "keyword.elaborator",
+        "start": 77,
+        "end": 82,
+        "text": "scope",
+        "kind": "entity.name.function",
         "owners": [
           "block_call"
         ]
       },
       {
-        "start": 40,
-        "end": 43,
+        "start": 39,
+        "end": 42,
         "text": "let",
         "kind": "keyword.declaration",
         "owners": [
@@ -4055,8 +4055,8 @@
         ]
       },
       {
-        "start": 63,
-        "end": 66,
+        "start": 61,
+        "end": 64,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -4324,7 +4324,7 @@
   },
   {
     "name": "comma_runs",
-    "source": "module source;\nfn run() { id([* ,,,let(x),,,if!((y)) { y } else { y },,, *]) }\n",
+    "source": "module source;\nfn run() { id([* ,,,let(x),,,if((y)) { y } else { y },,, *]) }\n",
     "partial": false,
     "targets": [
       {
@@ -4338,9 +4338,9 @@
       },
       {
         "start": 44,
-        "end": 47,
-        "text": "if!",
-        "kind": "keyword.elaborator",
+        "end": 46,
+        "text": "if",
+        "kind": "entity.name.function",
         "owners": [
           "block_call"
         ]
@@ -4385,21 +4385,21 @@
   },
   {
     "name": "all_expression_forms",
-    "source": "module source;\nfn run() { id([ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]) }\n",
+    "source": "module source;\nfn run() { id([ do (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply(x), .x. { x1 }, (x, y) ]) }\n",
     "partial": false,
     "targets": [
       {
         "start": 31,
-        "end": 34,
-        "text": "do!",
-        "kind": "keyword.elaborator",
+        "end": 33,
+        "text": "do",
+        "kind": "entity.name.function",
         "owners": [
           "block_call"
         ]
       },
       {
-        "start": 62,
-        "end": 67,
+        "start": 61,
+        "end": 66,
         "text": "recur",
         "kind": "keyword.declaration",
         "owners": [
@@ -4407,8 +4407,8 @@
         ]
       },
       {
-        "start": 101,
-        "end": 104,
+        "start": 100,
+        "end": 103,
         "text": "let",
         "kind": "entity.name.function",
         "owners": [
@@ -5212,22 +5212,22 @@
     ]
   },
   {
-    "name": "owned_elaborator_clause_words",
-    "source": "module source; elab simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }",
+    "name": "owned_macro_clause_words",
+    "source": "module source; macro simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }",
     "targets": [
       {
         "text": "captures",
-        "start": 39,
-        "end": 47,
+        "start": 40,
+        "end": 48,
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_captures_clause"
+          "macro_captures_clause"
         ]
       },
       {
         "text": "captures",
-        "start": 100,
-        "end": 108,
+        "start": 101,
+        "end": 109,
         "kind": "entity.name.function",
         "owners": [
           "call_expr"
@@ -5235,17 +5235,17 @@
       },
       {
         "text": "impl",
-        "start": 56,
-        "end": 60,
+        "start": 57,
+        "end": 61,
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ]
       },
       {
         "text": "impl",
-        "start": 91,
-        "end": 95,
+        "start": 92,
+        "end": 96,
         "kind": "entity.name.function",
         "owners": [
           "call_expr"
@@ -5253,17 +5253,17 @@
       },
       {
         "text": "fills",
-        "start": 62,
-        "end": 67,
+        "start": 63,
+        "end": 68,
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ]
       },
       {
         "text": "fills",
-        "start": 113,
-        "end": 118,
+        "start": 114,
+        "end": 119,
         "kind": "entity.name.function",
         "owners": [
           "call_expr"
@@ -6302,13 +6302,13 @@
   },
   {
     "name": "review_bool_raw_query",
-    "source": "module app; fn run() { if! (.t) { .f } else { .t } }",
+    "source": "module app; fn run() { if (.t) { .f } else { .t } }",
     "partial": false,
     "targets": [
       {
         "text": ".t",
-        "start": 28,
-        "end": 30,
+        "start": 27,
+        "end": 29,
         "kind": "literal.bool",
         "owners": [
           "block_call"
@@ -6316,8 +6316,8 @@
       },
       {
         "text": ".f",
-        "start": 34,
-        "end": 36,
+        "start": 33,
+        "end": 35,
         "kind": "literal.bool",
         "owners": [
           "neutral_block"
@@ -6325,8 +6325,8 @@
       },
       {
         "text": ".t",
-        "start": 46,
-        "end": 48,
+        "start": 45,
+        "end": 47,
         "kind": "literal.bool",
         "owners": [
           "neutral_block"
@@ -6408,7 +6408,7 @@
   },
   {
     "name": "review_scalar_local_binding_role",
-    "source": "module app; fn run(value: .) { let local = value; do! (bind) { let item <- local; item } }",
+    "source": "module app; fn run(value: .) { let local = value; do (bind) { let item <- local; item } }",
     "partial": false,
     "targets": [
       {
@@ -6431,8 +6431,8 @@
       },
       {
         "text": "item",
-        "start": 67,
-        "end": 71,
+        "start": 66,
+        "end": 70,
         "kind": "identifier",
         "owners": [
           "neutral_bind"
@@ -7375,7 +7375,7 @@
   },
   {
     "name": "nested_local_binders",
-    "source": "module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }",
+    "source": "module m; fn f() { let .(left, (rec, right)) = pair; do (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }",
     "partial": false,
     "targets": [
       {
@@ -7408,22 +7408,22 @@
       },
       {
         "text": "rec",
-        "start": 72,
-        "end": 75,
+        "start": 71,
+        "end": 74,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "value",
-        "start": 77,
-        "end": 82,
+        "start": 76,
+        "end": 81,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "recur",
-        "start": 93,
-        "end": 98,
+        "start": 92,
+        "end": 97,
         "kind": "keyword.declaration",
         "owners": []
       }
@@ -8134,35 +8134,35 @@
     "absent": []
   },
   {
-    "name": "order_elab_captures_first",
-    "source": "module m; elab make: . { captures (helper); impl (fills) run; };",
+    "name": "order_macro_captures_first",
+    "source": "module m; macro make: . { captures (helper); impl (fills) run; };",
     "partial": false,
     "targets": [
       {
-        "text": "elab",
+        "text": "macro",
         "start": 10,
-        "end": 14,
+        "end": 15,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "captures",
-        "start": 25,
-        "end": 33,
+        "start": 26,
+        "end": 34,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "impl",
-        "start": 44,
-        "end": 48,
+        "start": 45,
+        "end": 49,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "fills",
-        "start": 50,
-        "end": 55,
+        "start": 51,
+        "end": 56,
         "kind": "keyword.declaration",
         "owners": []
       }
@@ -8206,35 +8206,35 @@
     "absent": []
   },
   {
-    "name": "order_elab_impl_first",
-    "source": "module m; elab make: . { impl (fills) run; captures (helper); };",
+    "name": "order_macro_impl_first",
+    "source": "module m; macro make: . { impl (fills) run; captures (helper); };",
     "partial": false,
     "targets": [
       {
-        "text": "elab",
+        "text": "macro",
         "start": 10,
-        "end": 14,
+        "end": 15,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "captures",
-        "start": 43,
-        "end": 51,
+        "start": 44,
+        "end": 52,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "impl",
-        "start": 25,
-        "end": 29,
+        "start": 26,
+        "end": 30,
         "kind": "keyword.declaration",
         "owners": []
       },
       {
         "text": "fills",
-        "start": 31,
-        "end": 36,
+        "start": 32,
+        "end": 37,
         "kind": "keyword.declaration",
         "owners": []
       }
@@ -9245,24 +9245,24 @@
     "absent": []
   },
   {
-    "name": "order_elab_missing_impl",
-    "source": "module m; elab make: . { captures (helper); };",
+    "name": "order_macro_missing_impl",
+    "source": "module m; macro make: . { captures (helper); };",
     "partial": true,
     "error": true,
     "targets": [],
     "absent": []
   },
   {
-    "name": "order_elab_duplicate_impl",
-    "source": "module m; elab make: . { impl run; impl run; };",
+    "name": "order_macro_duplicate_impl",
+    "source": "module m; macro make: . { impl run; impl run; };",
     "partial": true,
     "error": true,
     "targets": [],
     "absent": []
   },
   {
-    "name": "order_elab_duplicate_captures",
-    "source": "module m; elab make: . { captures (helper); impl run; captures (helper); };",
+    "name": "order_macro_duplicate_captures",
+    "source": "module m; macro make: . { captures (helper); impl run; captures (helper); };",
     "partial": true,
     "error": true,
     "targets": [],
@@ -11623,12 +11623,12 @@
   },
   {
     "name": "let_monadic_rich_patterns_and_discard",
-    "source": "module m; fn run() { do! (bind) { let _ <- action; let .(x: A) <- action; let .(whole: (left: A, right: A)) = pair; whole } }",
+    "source": "module m; fn run() { do (bind) { let _ <- action; let .(x: A) <- action; let .(whole: (left: A, right: A)) = pair; whole } }",
     "targets": [
       {
         "text": "let",
-        "start": 34,
-        "end": 37,
+        "start": 33,
+        "end": 36,
         "kind": "keyword.declaration",
         "owners": [
           "neutral_bind",
@@ -11637,8 +11637,8 @@
       },
       {
         "text": "_",
-        "start": 38,
-        "end": 39,
+        "start": 37,
+        "end": 38,
         "kind": "slot",
         "owners": [
           "neutral_bind"
@@ -11646,8 +11646,8 @@
       },
       {
         "text": "x",
-        "start": 57,
-        "end": 58,
+        "start": 56,
+        "end": 57,
         "kind": "identifier",
         "owners": [
           "local_binding_pattern"
@@ -11655,8 +11655,8 @@
       },
       {
         "text": "whole",
-        "start": 80,
-        "end": 85,
+        "start": 79,
+        "end": 84,
         "kind": "identifier",
         "owners": [
           "local_binding_pattern"
@@ -11816,13 +11816,13 @@
   },
   {
     "name": "neutral_pure_row_let",
-    "source": "module m; fn run() { do! (bind) { let .({field as x}) = row; x } } fn neighbor() { () }",
+    "source": "module m; fn run() { do (bind) { let .({field as x}) = row; x } } fn neighbor() { () }",
     "partial": false,
     "targets": [
       {
         "text": "neighbor",
-        "start": 70,
-        "end": 78,
+        "start": 69,
+        "end": 77,
         "kind": "entity.name.function",
         "owners": [
           "function_definition"
@@ -11832,13 +11832,13 @@
   },
   {
     "name": "neutral_pure_existential_let",
-    "source": "module m; fn run() { do! (bind) { let .(<A> x) = value; x } } fn neighbor() { () }",
+    "source": "module m; fn run() { do (bind) { let .(<A> x) = value; x } } fn neighbor() { () }",
     "partial": false,
     "targets": [
       {
         "text": "neighbor",
-        "start": 65,
-        "end": 73,
+        "start": 64,
+        "end": 72,
         "kind": "entity.name.function",
         "owners": [
           "function_definition"
@@ -12833,13 +12833,13 @@
   },
   {
     "name": "body_recovery_neutral_missing",
-    "source": "module probe; fn run() { do! (chain) { value; fn neighbor() { () }",
+    "source": "module probe; fn run() { do (chain) { value; fn neighbor() { () }",
     "partial": false,
     "targets": [
       {
         "text": "neighbor",
-        "start": 49,
-        "end": 57,
+        "start": 48,
+        "end": 56,
         "kind": "entity.name.function",
         "owners": [
           "fn_decl_head"
@@ -12847,8 +12847,8 @@
       },
       {
         "text": "fn",
-        "start": 46,
-        "end": 48,
+        "start": 45,
+        "end": 47,
         "kind": "keyword.declaration",
         "owners": [
           "fn_decl_head"
@@ -12858,7 +12858,7 @@
   },
   {
     "name": "body_recovery_neutral_balanced",
-    "source": "module probe; fn run() { do! (chain) { value; fn neighbor() { () } } }",
+    "source": "module probe; fn run() { do (chain) { value; fn neighbor() { () } } }",
     "partial": false,
     "absent": [
       "incomplete_expression_block",
@@ -12867,8 +12867,8 @@
     "targets": [
       {
         "text": "neighbor",
-        "start": 49,
-        "end": 57,
+        "start": 48,
+        "end": 56,
         "kind": "identifier",
         "owners": [
           "unowned_function_head"
@@ -12876,8 +12876,8 @@
       },
       {
         "text": "fn",
-        "start": 46,
-        "end": 48,
+        "start": 45,
+        "end": 47,
         "kind": "identifier",
         "owners": [
           "unowned_function_head"
@@ -12885,8 +12885,8 @@
       },
       {
         "text": "}",
-        "start": 69,
-        "end": 70,
+        "start": 68,
+        "end": 69,
         "kind": "punctuation.bracket",
         "owners": [
           "expression_block",
@@ -13803,16 +13803,16 @@
     ]
   },
   {
-    "name": "semicolons_elab_edges",
-    "source": "module source; elab make: . { ; captures(helper); impl run; }",
+    "name": "semicolons_macro_edges",
+    "source": "module source; macro make: . { ; captures(helper); impl run; }",
     "targets": [
       {
         "text": "impl",
-        "start": 50,
-        "end": 54,
+        "start": 51,
+        "end": 55,
         "kind": "keyword.declaration",
         "owners": [
-          "elaborator_impl_clause"
+          "macro_impl_clause"
         ]
       }
     ]
@@ -14115,15 +14115,15 @@
     "targets": []
   },
   {
-    "name": "semicolons_elab_missing",
-    "source": "module source; elab make: . { captures(helper) impl run }",
+    "name": "semicolons_macro_missing",
+    "source": "module source; macro make: . { captures(helper) impl run }",
     "partial": true,
     "error": true,
     "targets": []
   },
   {
-    "name": "semicolons_elab_repeated",
-    "source": "module source; elab make: . { captures(helper);; impl run }",
+    "name": "semicolons_macro_repeated",
+    "source": "module source; macro make: . { captures(helper);; impl run }",
     "partial": true,
     "error": true,
     "targets": []
@@ -15086,9 +15086,9 @@
       }
     ]
   },
-{
-    "name": "bang_marker_edges_preserve_native_suffixes",
-    "source": "module bang_frames;\nimport ops(varop [! !], varop []);\nfn run(x: .) {\n  [!x!];\n  [! x, x!];\n  [![!x!]!];\n  ([!x!]);\n  [!x.>tail!];\n  [x.>helper!];\n  [,x.>helper!];\n  [!helper!(x)!];\n  [!x!\n  ];\n  [!x! // closing marker\n  ];\n  helper!(x);\n  varop!(x);\n  foldl!(x);\n  varop;\n  foldl\n}\n",
+  {
+    "name": "bang_marker_edges_preserve_callable_heads",
+    "source": "module bang_frames;\nimport ops(varop [! !], varop []);\nfn run(x: .) {\n  [!x!];\n  [! x, x!];\n  [![!x!]!];\n  ([!x!]);\n  [!x.>tail!];\n  [x.>helper];\n  [,x.>helper];\n  [!helper(x)!];\n  [!x!\n  ];\n  [!x! // closing marker\n  ];\n  helper(x);\n  varop(x);\n  foldl(x);\n  varop;\n  foldl\n}\n",
     "targets": [
       {
         "text": "x",
@@ -15126,80 +15126,80 @@
         "owners": []
       },
       {
-        "text": "helper!",
+        "text": "helper",
         "start": 137,
-        "end": 144,
-        "kind": "keyword.elaborator",
+        "end": 143,
+        "kind": "entity.name.function",
         "owners": []
       },
       {
-        "text": "helper!",
-        "start": 154,
-        "end": 161,
-        "kind": "keyword.elaborator",
+        "text": "helper",
+        "start": 153,
+        "end": 159,
+        "kind": "entity.name.function",
         "owners": []
       },
       {
-        "text": "helper!",
-        "start": 168,
-        "end": 175,
-        "kind": "keyword.elaborator",
+        "text": "helper",
+        "start": 166,
+        "end": 172,
+        "kind": "entity.name.function",
         "owners": []
       },
       {
-        "text": "helper!",
-        "start": 226,
-        "end": 233,
-        "kind": "keyword.elaborator",
-        "owners": []
-      },
-      {
-        "text": "varop!",
-        "start": 240,
-        "end": 246,
-        "kind": "keyword.elaborator",
-        "owners": []
-      },
-      {
-        "text": "foldl!",
-        "start": 253,
-        "end": 259,
-        "kind": "keyword.elaborator",
+        "text": "helper",
+        "start": 223,
+        "end": 229,
+        "kind": "entity.name.function",
         "owners": []
       },
       {
         "text": "varop",
-        "start": 266,
-        "end": 271,
+        "start": 236,
+        "end": 241,
+        "kind": "entity.name.function",
+        "owners": []
+      },
+      {
+        "text": "foldl",
+        "start": 248,
+        "end": 253,
+        "kind": "entity.name.function",
+        "owners": []
+      },
+      {
+        "text": "varop",
+        "start": 260,
+        "end": 265,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "foldl",
-        "start": 275,
-        "end": 280,
+        "start": 269,
+        "end": 274,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "x",
-        "start": 186,
-        "end": 187,
+        "start": 183,
+        "end": 184,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "x",
-        "start": 198,
-        "end": 199,
+        "start": 195,
+        "end": 196,
         "kind": "identifier",
         "owners": []
       }
     ]
   },
   {
-    "name": "bang_words_require_adjacency_and_maximal_symbols",
-    "source": "x !\nx // gap\n!\nx!? y\nvarop!\nfoldl!\nvarop\nfoldl\n",
+    "name": "bang_operator_adjacency_and_maximal_symbols",
+    "source": "x !\nx // gap\n!\nx!? y\nvarop\nfoldl\nvarop\nfoldl\n",
     "targets": [
       {
         "text": "x",
@@ -15223,30 +15223,30 @@
         "owners": []
       },
       {
-        "text": "varop!",
-        "start": 21,
-        "end": 27,
-        "kind": "keyword.elaborator",
-        "owners": []
-      },
-      {
-        "text": "foldl!",
-        "start": 28,
-        "end": 34,
-        "kind": "keyword.elaborator",
-        "owners": []
-      },
-      {
         "text": "varop",
-        "start": 35,
-        "end": 40,
+        "start": 21,
+        "end": 26,
         "kind": "identifier",
         "owners": []
       },
       {
         "text": "foldl",
-        "start": 41,
-        "end": 46,
+        "start": 27,
+        "end": 32,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "varop",
+        "start": 33,
+        "end": 38,
+        "kind": "identifier",
+        "owners": []
+      },
+      {
+        "text": "foldl",
+        "start": 39,
+        "end": 44,
         "kind": "identifier",
         "owners": []
       }

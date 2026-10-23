@@ -1,13 +1,13 @@
 module testapi/main;
 
-import elab/spine_elaborators(narrow_sum, widen_sum);
+import macros/spine_macros(macro narrow_sum, macro widen_sum);
 import testapi(String);
 import testapi/io(print);
 
 // Build a three-arm sum with two same-typed `String` arms.
-fn triple(s: String) -> String | String | String { widen_sum!(s) }
+fn triple(s: String) -> String | String | String { widen_sum(s) }
 
-// `narrow_sum!`'s forward DEFAULT type rule pins the target straight
+// `narrow_sum`'s forward DEFAULT type rule pins the target straight
 // from the source — no return annotation and no surrounding expected
 // type. The rule's canonical *maximal narrowing* of
 // `String | String | String` drops to the deduplicated single `String`
@@ -19,6 +19,6 @@ fn triple(s: String) -> String | String | String { widen_sum!(s) }
 // context (an annotation or expected type) requesting a less-maximal
 // narrowing, that would override the rule. Here there is no context, so
 // the rule fills in the maximal narrowing.
-fn run(s: String) -> String { let wide = triple(s); let collapsed = narrow_sum!(wide); collapsed }
+fn run(s: String) -> String { let wide = triple(s); let collapsed = narrow_sum(wide); collapsed }
 
 pub fn main() { print(run("narrow_sum inferred: ok\n")) }

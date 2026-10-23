@@ -90,7 +90,7 @@ pub(crate) fn log_shared_package_shape<P: Phase<FnBody = Expr<P>>>(
     }
     let stats = BuildShapeStats::from_package(tree);
     eprintln!(
-        "build-shared-shape: package={} phase={} modules={} uses={} items={} functions={} rec_groups={} type_rec_groups={} aliases={} newtypes={} labels={} elaborator_defs={} equivs={} ops={} export_items={} host_fns={} export_fns={} expr_nodes={} type_nodes={} calls={} rec_calls={} fn_exprs={} lets={} seqs={} field_syntax_calls={} user_elab_calls={} enriched_nodes={} low_nodes={} max_expr_depth={} max_type_depth={}",
+        "build-shared-shape: package={} phase={} modules={} uses={} items={} functions={} rec_groups={} type_rec_groups={} aliases={} newtypes={} labels={} macro_defs={} equivs={} ops={} export_items={} host_fns={} export_fns={} expr_nodes={} type_nodes={} calls={} rec_calls={} fn_exprs={} lets={} seqs={} field_syntax_calls={} user_macro_calls={} enriched_nodes={} low_nodes={} max_expr_depth={} max_type_depth={}",
         package,
         phase,
         stats.modules,
@@ -102,7 +102,7 @@ pub(crate) fn log_shared_package_shape<P: Phase<FnBody = Expr<P>>>(
         stats.aliases,
         stats.newtypes,
         stats.labels,
-        stats.elaborator_defs,
+        stats.macro_defs,
         stats.equivs,
         stats.ops,
         stats.export_items,
@@ -116,7 +116,7 @@ pub(crate) fn log_shared_package_shape<P: Phase<FnBody = Expr<P>>>(
         stats.lets,
         stats.seqs,
         stats.field_syntax_calls,
-        stats.user_elab_calls,
+        stats.user_macro_calls,
         stats.enriched_nodes,
         stats.low_nodes,
         stats.max_expr_depth,
@@ -137,7 +137,7 @@ pub(crate) fn log_package_shape<P: Phase<FnBody = Expr<P>>>(
     }
     let stats = BuildShapeStats::from_package(tree);
     eprintln!(
-        "build-shape: package={} target={} backend={} phase={} subject={} modules={} uses={} items={} functions={} rec_groups={} type_rec_groups={} aliases={} newtypes={} labels={} elaborator_defs={} equivs={} ops={} export_items={} host_fns={} export_fns={} expr_nodes={} type_nodes={} calls={} rec_calls={} fn_exprs={} lets={} seqs={} field_syntax_calls={} user_elab_calls={} enriched_nodes={} low_nodes={} max_expr_depth={} max_type_depth={}",
+        "build-shape: package={} target={} backend={} phase={} subject={} modules={} uses={} items={} functions={} rec_groups={} type_rec_groups={} aliases={} newtypes={} labels={} macro_defs={} equivs={} ops={} export_items={} host_fns={} export_fns={} expr_nodes={} type_nodes={} calls={} rec_calls={} fn_exprs={} lets={} seqs={} field_syntax_calls={} user_macro_calls={} enriched_nodes={} low_nodes={} max_expr_depth={} max_type_depth={}",
         package,
         target.name().escape_debug(),
         backend,
@@ -152,7 +152,7 @@ pub(crate) fn log_package_shape<P: Phase<FnBody = Expr<P>>>(
         stats.aliases,
         stats.newtypes,
         stats.labels,
-        stats.elaborator_defs,
+        stats.macro_defs,
         stats.equivs,
         stats.ops,
         stats.export_items,
@@ -166,7 +166,7 @@ pub(crate) fn log_package_shape<P: Phase<FnBody = Expr<P>>>(
         stats.lets,
         stats.seqs,
         stats.field_syntax_calls,
-        stats.user_elab_calls,
+        stats.user_macro_calls,
         stats.enriched_nodes,
         stats.low_nodes,
         stats.max_expr_depth,
@@ -185,7 +185,7 @@ struct BuildShapeStats {
     aliases: usize,
     newtypes: usize,
     labels: usize,
-    elaborator_defs: usize,
+    macro_defs: usize,
     equivs: usize,
     ops: usize,
     export_items: usize,
@@ -199,7 +199,7 @@ struct BuildShapeStats {
     lets: usize,
     seqs: usize,
     field_syntax_calls: usize,
-    user_elab_calls: usize,
+    user_macro_calls: usize,
     enriched_nodes: usize,
     low_nodes: usize,
     max_expr_depth: usize,
@@ -279,8 +279,8 @@ impl BuildShapeStats {
                     self.visit_expr(&term.body, 1);
                 }
             }
-            Item::Elaborator(def, _) => {
-                self.elaborator_defs += 1;
+            Item::Macro(def, _) => {
+                self.macro_defs += 1;
                 self.visit_type(&def.call_ty, 1);
             }
             Item::Op(op, _) => {
@@ -444,8 +444,8 @@ impl BuildShapeStats {
                 self.visit_expr(&plan.value, depth + 1);
                 self.visit_expr(&plan.body, depth + 1);
             }
-            Expr::UserElaborator { args, .. } => {
-                self.user_elab_calls += 1;
+            Expr::UserMacro { args, .. } => {
+                self.user_macro_calls += 1;
                 self.visit_call_args(args, depth + 1);
             }
             Expr::Ufcs { receiver, args, .. } => {

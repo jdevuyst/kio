@@ -38,12 +38,12 @@ pure fn marked_swap_impl(
 , right: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ { (__intrinsic_pair__(ct, right, left), fills) }
 
-pub elab second : [A][B] A -> B -> B { impl second_impl }
+pub macro second : [A][B] A -> B -> B { impl second_impl }
 
-pub elab duplicate : [A] A -> (A & A) { impl duplicate_impl }
+pub macro duplicate : [A] A -> (A & A) { impl duplicate_impl }
 
-pub elab marked_duplicate : [A] A -> (A & A) { impl(fills) marked_duplicate_impl }
+pub macro marked_duplicate : [A] A -> (A & A) { impl(fills) marked_duplicate_impl }
 
-pub elab swap : [A][B] A -> B -> (B & A) { impl swap_impl }
+pub macro swap : [A][B] A -> B -> (B & A) { impl swap_impl }
 
-pub elab marked_swap : [A][B] A -> B -> (B & A) { impl(fills) marked_swap_impl }
+pub macro marked_swap : [A][B] A -> B -> (B & A) { impl(fills) marked_swap_impl }

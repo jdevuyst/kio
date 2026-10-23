@@ -19,7 +19,7 @@ use std::collections::HashSet;
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 
-use kio_gen::ast::{Base, Term, Type, UserElaboratorImplementation, UserElaboratorTemplate};
+use kio_gen::ast::{Base, Term, Type, UserMacroImplementation, UserMacroTemplate};
 use kio_gen::{generate, mutate, program_seed, render};
 
 const N: u64 = 2000;
@@ -35,7 +35,7 @@ fn block_calls_generate_every_dot_splice_spelling() {
             continue;
         }
         let source = render::render_fn_def(&prog);
-        for (j, token) in [".>if! {", ".>>if! {", "}.<(", "}.<<("].iter().enumerate() {
+        for (j, token) in [".>if {", ".>>if {", "}.<(", "}.<<("].iter().enumerate() {
             if source.contains(token) {
                 seen[j].get_or_insert(seed);
             }
@@ -250,11 +250,11 @@ fn surface_forms_appear_in_corpus() {
         .iter()
         .filter(|p| p.uses_surface && body_has_if_else(&render::render_fn_def(p)))
         .count();
-    let with_elaborator = progs
+    let with_macro = progs
         .iter()
-        .filter(|p| p.uses_surface && body_has_elaborator(&render::render_fn_def(p)))
+        .filter(|p| p.uses_surface && body_has_macro(&render::render_fn_def(p)))
         .count();
-    // Per-form elaborator counts. The above bundles into! + onto!
+    // Per-form macro counts. The above bundles into + onto
     // together; splitting them surfaces an emission asymmetry early
     // (one form going to zero would otherwise hide behind the union).
     let with_into = progs
@@ -282,7 +282,7 @@ fn surface_forms_appear_in_corpus() {
         .filter(|p| p.uses_surface && body_has_atom(&render::render_fn_def(p)))
         .count();
     // Per-spine-form counts. The spine palette is the everyday
-    // material and should dominate the wrap choice; `fit!` is the
+    // material and should dominate the wrap choice; `fit` is the
     // most general form and gets a higher per-form weight. Each form
     // has its own count to surface an emission asymmetry early.
     let with_reorder_sum = progs
@@ -321,8 +321,8 @@ fn surface_forms_appear_in_corpus() {
         .iter()
         .filter(|p| p.uses_surface && body_has_one_sum(&render::render_fn_def(p)))
         .count();
-    // `one_prod!` is currently restricted to atomic sources (the
-    // degenerate-identity case). Like `one_sum!`, this exercises
+    // `one_prod` is currently restricted to atomic sources (the
+    // degenerate-identity case). Like `one_sum`, this exercises
     // the surface-form codepath without committing to the wider
     // applicability cases the spec admits.
     let with_one_prod = progs
@@ -349,28 +349,23 @@ fn surface_forms_appear_in_corpus() {
         .iter()
         .filter(|p| p.uses_surface && body_has_fn_placeholder(&render::render_fn_def(p)))
         .count();
-    let with_user_elaborator_call = progs
+    let with_user_macro_call = progs
         .iter()
-        .filter(|p| p.uses_surface && body_has_user_elaborator_call(&render::render_fn_def(p)))
+        .filter(|p| p.uses_surface && body_has_user_macro_call(&render::render_fn_def(p)))
         .count();
-    let with_user_elaborator_def = progs
+    let with_user_macro_def = progs
         .iter()
-        .filter(|p| p.surface_mode && !p.user_elaborators.is_empty())
+        .filter(|p| p.surface_mode && !p.user_macros.is_empty())
         .count();
-    let mut user_elaborator_templates: HashSet<UserElaboratorTemplate> = HashSet::new();
-    let mut user_elaborator_capture_shapes: HashSet<Vec<String>> = HashSet::new();
+    let mut user_macro_templates: HashSet<UserMacroTemplate> = HashSet::new();
+    let mut user_macro_capture_shapes: HashSet<Vec<String>> = HashSet::new();
     let mut fills_implementations = 0;
-    let mut user_elaborator_body_calls = 0;
+    let mut user_macro_body_calls = 0;
     for p in &progs {
         let fills_in_program = p
-            .user_elaborators
+            .user_macros
             .iter()
-            .filter(|spec| {
-                matches!(
-                    spec.implementation,
-                    UserElaboratorImplementation::FillsIdentity
-                )
-            })
+            .filter(|spec| matches!(spec.implementation, UserMacroImplementation::FillsIdentity))
             .count();
         assert_eq!(
             fills_in_program,
@@ -378,31 +373,31 @@ fn surface_forms_appear_in_corpus() {
             "every surface program must carry exactly one fixed fills witness"
         );
         let mut body_call_names = Vec::new();
-        collect_user_elaborator_call_names(&p.body, &mut body_call_names);
-        user_elaborator_body_calls += body_call_names.len();
+        collect_user_macro_call_names(&p.body, &mut body_call_names);
+        user_macro_body_calls += body_call_names.len();
         for name in body_call_names {
             let spec = p
-                .user_elaborators
+                .user_macros
                 .iter()
                 .find(|spec| spec.name == name)
-                .unwrap_or_else(|| panic!("body calls undeclared user elaborator `{name}`"));
+                .unwrap_or_else(|| panic!("body calls undeclared user macro `{name}`"));
             assert!(
-                matches!(spec.implementation, UserElaboratorImplementation::Late(_)),
-                "random body wrapper called fixed fills elaborator `{name}`"
+                matches!(spec.implementation, UserMacroImplementation::Late(_)),
+                "random body wrapper called fixed fills macro `{name}`"
             );
         }
-        for spec in &p.user_elaborators {
+        for spec in &p.user_macros {
             match spec.implementation {
-                UserElaboratorImplementation::Late(template) => {
-                    user_elaborator_templates.insert(template);
-                    user_elaborator_capture_shapes.insert(
+                UserMacroImplementation::Late(template) => {
+                    user_macro_templates.insert(template);
+                    user_macro_capture_shapes.insert(
                         spec.captures
                             .iter()
                             .map(|capture| format!("{capture:?}"))
                             .collect(),
                     );
                 }
-                UserElaboratorImplementation::FillsIdentity => {
+                UserMacroImplementation::FillsIdentity => {
                     fills_implementations += 1;
                     assert!(
                         spec.captures.is_empty(),
@@ -422,9 +417,9 @@ fn surface_forms_appear_in_corpus() {
         .iter()
         .filter(|p| p.uses_surface && body_has_label_value(&render::render_fn_def(p)))
         .count();
-    let with_match_bang = progs
+    let with_match_macro = progs
         .iter()
-        .filter(|p| p.uses_surface && body_has_match_bang(&render::render_fn_def(p)))
+        .filter(|p| p.uses_surface && body_has_match_macro(&render::render_fn_def(p)))
         .count();
     let with_reserved_id = progs
         .iter()
@@ -439,119 +434,119 @@ fn surface_forms_appear_in_corpus() {
         "no program rendered with surface `if`/`else` across {N} seeds"
     );
     assert!(
-        with_elaborator > 0,
-        "no program rendered with `into!` / `onto!` across {N} seeds"
+        with_macro > 0,
+        "no program rendered with `into` / `onto` across {N} seeds"
     );
     assert!(
         with_into > 0,
-        "no program rendered with `into!` across {N} seeds — \
-         either `into!` is being weighted out, or `body_has_into` \
+        "no program rendered with `into` across {N} seeds — \
+         either `into` is being weighted out, or `body_has_into` \
          needs updating"
     );
     assert!(
         with_onto > 0,
-        "no program rendered with `onto!` across {N} seeds — \
-         either `onto!` is being weighted out, or `body_has_onto` \
+        "no program rendered with `onto` across {N} seeds — \
+         either `onto` is being weighted out, or `body_has_onto` \
          needs updating"
     );
     assert!(
         with_iso > 0,
-        "no program rendered with `iso!` across {N} seeds — \
-         either `iso!` is being weighted out, or `body_has_iso` \
+        "no program rendered with `iso` across {N} seeds — \
+         either `iso` is being weighted out, or `body_has_iso` \
          needs updating"
     );
     assert!(
         with_align > 0,
-        "no program rendered with `align!` across {N} seeds — \
-         either `align!` is being weighted out, or `body_has_align` \
+        "no program rendered with `align` across {N} seeds — \
+         either `align` is being weighted out, or `body_has_align` \
          needs updating"
     );
     assert!(
         with_ease > 0,
-        "no program rendered with `ease!` across {N} seeds — \
-         either `ease!` is being weighted out, or `body_has_ease` \
+        "no program rendered with `ease` across {N} seeds — \
+         either `ease` is being weighted out, or `body_has_ease` \
          needs updating"
     );
     assert!(
         with_atom > 0,
-        "no program rendered with `atom!` across {N} seeds — \
-         either `atom!` is being weighted out, or `body_has_atom` \
+        "no program rendered with `atom` across {N} seeds — \
+         either `atom` is being weighted out, or `body_has_atom` \
          needs updating"
     );
-    // Spine-palette per-form asserts. `fit!` admits identity at
+    // Spine-palette per-form asserts. `fit` admits identity at
     // every type and carries the highest per-form weight, so it
     // should reliably appear in any healthy {N}-program corpus.
     // The reorder / narrow / widen / flatten variants need their
     // axis shape (sum / product) to come up; axis-shaped check
     // positions are scarce enough that the corpus size N is chosen
     // to give every axis-gated form a comfortable floor margin.
-    // `one_sum!` / `one_prod!` need an atomic source AND the
+    // `one_sum` / `one_prod` need an atomic source AND the
     // algebraic-vs-spine subset roll to land on spine AND the
     // per-form weight to hit; floor is 1.
     assert!(
         with_reorder_sum > 0,
-        "no program rendered with `reorder_sum!` across {N} seeds — \
-         either `reorder_sum!` is being weighted out, or \
+        "no program rendered with `reorder_sum` across {N} seeds — \
+         either `reorder_sum` is being weighted out, or \
          `body_has_reorder_sum` needs updating"
     );
     assert!(
         with_reorder_prod > 0,
-        "no program rendered with `reorder_prod!` across {N} seeds — \
-         either `reorder_prod!` is being weighted out, or \
+        "no program rendered with `reorder_prod` across {N} seeds — \
+         either `reorder_prod` is being weighted out, or \
          `body_has_reorder_prod` needs updating"
     );
     assert!(
         with_narrow_sum > 0,
-        "no program rendered with `narrow_sum!` across {N} seeds — \
-         either `narrow_sum!` is being weighted out, or \
+        "no program rendered with `narrow_sum` across {N} seeds — \
+         either `narrow_sum` is being weighted out, or \
          `body_has_narrow_sum` needs updating"
     );
     assert!(
         with_narrow_prod > 0,
-        "no program rendered with `narrow_prod!` across {N} seeds — \
-         either `narrow_prod!` is being weighted out, or \
+        "no program rendered with `narrow_prod` across {N} seeds — \
+         either `narrow_prod` is being weighted out, or \
          `body_has_narrow_prod` needs updating"
     );
     assert!(
         with_widen_sum > 0,
-        "no program rendered with `widen_sum!` across {N} seeds — \
-         either `widen_sum!` is being weighted out, or \
+        "no program rendered with `widen_sum` across {N} seeds — \
+         either `widen_sum` is being weighted out, or \
          `body_has_widen_sum` needs updating"
     );
     assert!(
         with_widen_prod > 0,
-        "no program rendered with `widen_prod!` across {N} seeds — \
-         either `widen_prod!` is being weighted out, or \
+        "no program rendered with `widen_prod` across {N} seeds — \
+         either `widen_prod` is being weighted out, or \
          `body_has_widen_prod` needs updating"
     );
     assert!(
         with_flatten_sum > 0,
-        "no program rendered with `flatten_sum!` across {N} seeds — \
-         either `flatten_sum!` is being weighted out, or \
+        "no program rendered with `flatten_sum` across {N} seeds — \
+         either `flatten_sum` is being weighted out, or \
          `body_has_flatten_sum` needs updating"
     );
     assert!(
         with_flatten_prod > 0,
-        "no program rendered with `flatten_prod!` across {N} seeds — \
-         either `flatten_prod!` is being weighted out, or \
+        "no program rendered with `flatten_prod` across {N} seeds — \
+         either `flatten_prod` is being weighted out, or \
          `body_has_flatten_prod` needs updating"
     );
     assert!(
         with_one_sum > 0,
-        "no program rendered with `one_sum!` across {N} seeds — \
-         either `one_sum!` is being weighted out, or \
+        "no program rendered with `one_sum` across {N} seeds — \
+         either `one_sum` is being weighted out, or \
          `body_has_one_sum` needs updating"
     );
     assert!(
         with_one_prod > 0,
-        "no program rendered with `one_prod!` across {N} seeds — \
-         either `one_prod!` is being weighted out, or \
+        "no program rendered with `one_prod` across {N} seeds — \
+         either `one_prod` is being weighted out, or \
          `body_has_one_prod` needs updating"
     );
     assert!(
         with_fit > 0,
-        "no program rendered with `fit!` across {N} seeds — \
-         either `fit!` is being weighted out, or `body_has_fit` \
+        "no program rendered with `fit` across {N} seeds — \
+         either `fit` is being weighted out, or `body_has_fit` \
          needs updating"
     );
     // Spine should dominate algebraic. The wrap subset roll is
@@ -595,43 +590,43 @@ fn surface_forms_appear_in_corpus() {
         "no program rendered with a `.arg.` placeholder lambda across {N} seeds"
     );
     assert!(
-        with_user_elaborator_def > 0,
-        "no surface-mode program emitted generated `elab` definitions across {N} seeds"
+        with_user_macro_def > 0,
+        "no surface-mode program emitted generated `macro` definitions across {N} seeds"
     );
     assert!(
-        with_user_elaborator_call > 0,
-        "no program rendered with a generated user elaborator call across {N} seeds"
+        with_user_macro_call > 0,
+        "no program rendered with a generated user macro call across {N} seeds"
     );
     assert!(
-        user_elaborator_body_calls > 0,
-        "no generated body contains a structurally recorded user elaborator call across {N} seeds"
+        user_macro_body_calls > 0,
+        "no generated body contains a structurally recorded user macro call across {N} seeds"
     );
-    for template in UserElaboratorTemplate::all() {
+    for template in UserMacroTemplate::all() {
         assert!(
-            user_elaborator_templates.contains(template),
-            "generated user elaborator template {template:?} never appeared across {N} seeds"
+            user_macro_templates.contains(template),
+            "generated user macro template {template:?} never appeared across {N} seeds"
         );
     }
     assert!(
         fills_implementations > 0,
-        "no `impl(fills)` user elaborator appeared across {N} seeds"
+        "no `impl(fills)` user macro appeared across {N} seeds"
     );
     assert!(
-        user_elaborator_capture_shapes.len() >= 2,
-        "generated user elaborator captures did not vary across {N} seeds"
+        user_macro_capture_shapes.len() >= 2,
+        "generated user macro captures did not vary across {N} seeds"
     );
     // Check the generated root modules are written out with
-    // the current elaborator ABI, not just represented in Program metadata.
-    let mut generated_elaborator_modules = 0;
+    // the current macro ABI, not just represented in Program metadata.
+    let mut generated_macro_modules = 0;
     let mut proof_threaded_helper_seen = false;
     for p in progs
         .iter()
-        .filter(|p| p.surface_mode && !p.user_elaborators.is_empty())
+        .filter(|p| p.surface_mode && !p.user_macros.is_empty())
     {
         let pkg = kio_gen::emit::render_package_files(p);
         let generated = pkg
             .iter()
-            .find(|(n, _)| n.ends_with("kio_gen_elaborators.kio"))
+            .find(|(n, _)| n.ends_with("kio_gen_macros.kio"))
             .map(|(_, s)| s.as_str())
             .unwrap_or("");
         let root = pkg
@@ -639,12 +634,12 @@ fn surface_forms_appear_in_corpus() {
             .find(|(n, _)| n == "workdir/prog.kio")
             .map(|(_, s)| s.as_str())
             .unwrap_or("");
-        generated_elaborator_modules += 1;
+        generated_macro_modules += 1;
         assert!(
-            generated.contains("pub elab kio_gen_elab0"),
-            "surface-mode package missing generated `pub elab` declarations"
+            generated.contains("pub macro kio_gen_macro0"),
+            "surface-mode package missing generated `pub macro` declarations"
         );
-        for spec in &p.user_elaborators {
+        for spec in &p.user_macros {
             let fn_needle = format!("pure fn {}(ct: __Comptime__", spec.impl_name);
             let public_fn_needle = format!("pub {fn_needle}");
             assert!(
@@ -658,7 +653,7 @@ fn surface_forms_appear_in_corpus() {
                 spec.impl_name
             );
             match spec.implementation {
-                UserElaboratorImplementation::Late(_) => {
+                UserMacroImplementation::Late(_) => {
                     let declaration = format!("impl {} }}\n", spec.impl_name);
                     assert!(
                         generated.contains(&declaration),
@@ -666,7 +661,7 @@ fn surface_forms_appear_in_corpus() {
                         spec.impl_name
                     );
                 }
-                UserElaboratorImplementation::FillsIdentity => {
+                UserMacroImplementation::FillsIdentity => {
                     let declaration = format!("impl(fills) {} }}\n", spec.impl_name);
                     let signature = format!(
                         "pure fn {}(ct: __Comptime__, fills: __Fill_ctx__, source: __Type__, value: __Checked_term__, target: __Type__) -> __Checked_term__ & __Fill_ctx__",
@@ -676,12 +671,12 @@ fn surface_forms_appear_in_corpus() {
                     assert!(generated.contains(&signature));
                     assert!(generated.contains("(value, __fill__(ct, fills, target, source))"));
                     let witness = format!(
-                        "fn kio_gen_fills_witness(value: I32) -> I32 {{ {}!(value, _) }}",
+                        "fn kio_gen_fills_witness(value: I32) -> I32 {{ {}(value, _) }}",
                         spec.name
                     );
                     assert!(
                         root.contains(&witness),
-                        "the fixed witness must call the selected fills elaborator"
+                        "the fixed witness must call the selected fills macro"
                     );
                 }
             }
@@ -700,16 +695,16 @@ fn surface_forms_appear_in_corpus() {
                 && !generated.contains("__term_let__(\n  , source")
                 && !generated.contains("__type_product__(source")
                 && !generated.contains("__type_sum__(source"),
-            "generated user elaborator module contains a stale no-proof helper call"
+            "generated user macro module contains a stale no-proof helper call"
         );
     }
     assert!(
-        generated_elaborator_modules > 0,
-        "surface-mode package missing generated elaborator module output"
+        generated_macro_modules > 0,
+        "surface-mode package missing generated macro module output"
     );
     assert!(
         proof_threaded_helper_seen,
-        "generated user elaborator helpers are not proof-threaded"
+        "generated user macro helpers are not proof-threaded"
     );
     assert!(
         with_equiv > 0,
@@ -793,8 +788,8 @@ fn surface_forms_appear_in_corpus() {
         "no program rendered with label-value sugar `{{label = e}}` across {N} seeds"
     );
     assert!(
-        with_match_bang > 0,
-        "no program rendered with `match!` across {N} seeds"
+        with_match_macro > 0,
+        "no program rendered with `match` across {N} seeds"
     );
     assert!(
         with_reserved_id > 0,
@@ -819,15 +814,15 @@ fn body_has_tuple_sugar(rendered: &str) -> bool {
 }
 
 fn body_has_if_else(rendered: &str) -> bool {
-    // The surface conditional uses the ordinary imported block elaborator;
+    // The surface conditional uses the ordinary imported block macro;
     // Kio' mode emits `__if_then_else__` instead.
-    rendered.contains("if!(") && rendered.contains("} else {")
+    rendered.contains("if(") && rendered.contains("} else {")
 }
 
-fn body_has_elaborator(rendered: &str) -> bool {
-    // Surface elaborator forms (`iso!`, `into!`, `onto!`, `align!`,
-    // `ease!`, `atom!`) are only emitted in surface mode; Kio' mode
-    // passes through the inner expression. The bang-call is the
+fn body_has_macro(rendered: &str) -> bool {
+    // Surface macro forms (`iso`, `into`, `onto`, `align`,
+    // `ease`, `atom`) are only emitted in surface mode; Kio' mode
+    // passes through the inner expression. The macro call is the
     // unique signal.
     body_has_into(rendered)
         || body_has_onto(rendered)
@@ -838,71 +833,71 @@ fn body_has_elaborator(rendered: &str) -> bool {
 }
 
 fn body_has_into(rendered: &str) -> bool {
-    rendered.contains("into!(")
+    rendered.contains("into(")
 }
 
 fn body_has_onto(rendered: &str) -> bool {
-    rendered.contains("onto!(")
+    rendered.contains("onto(")
 }
 
 fn body_has_iso(rendered: &str) -> bool {
-    rendered.contains("iso!(")
+    rendered.contains("iso(")
 }
 
 fn body_has_align(rendered: &str) -> bool {
-    rendered.contains("align!(")
+    rendered.contains("align(")
 }
 
 fn body_has_ease(rendered: &str) -> bool {
-    rendered.contains("ease!(")
+    rendered.contains("ease(")
 }
 
 fn body_has_atom(rendered: &str) -> bool {
-    rendered.contains("atom!(")
+    rendered.contains("atom(")
 }
 
 fn body_has_reorder_sum(rendered: &str) -> bool {
-    rendered.contains("reorder_sum!(")
+    rendered.contains("reorder_sum(")
 }
 
 fn body_has_reorder_prod(rendered: &str) -> bool {
-    rendered.contains("reorder_prod!(")
+    rendered.contains("reorder_prod(")
 }
 
 fn body_has_narrow_sum(rendered: &str) -> bool {
-    rendered.contains("narrow_sum!(")
+    rendered.contains("narrow_sum(")
 }
 
 fn body_has_narrow_prod(rendered: &str) -> bool {
-    rendered.contains("narrow_prod!(")
+    rendered.contains("narrow_prod(")
 }
 
 fn body_has_widen_sum(rendered: &str) -> bool {
-    rendered.contains("widen_sum!(")
+    rendered.contains("widen_sum(")
 }
 
 fn body_has_widen_prod(rendered: &str) -> bool {
-    rendered.contains("widen_prod!(")
+    rendered.contains("widen_prod(")
 }
 
 fn body_has_flatten_sum(rendered: &str) -> bool {
-    rendered.contains("flatten_sum!(")
+    rendered.contains("flatten_sum(")
 }
 
 fn body_has_flatten_prod(rendered: &str) -> bool {
-    rendered.contains("flatten_prod!(")
+    rendered.contains("flatten_prod(")
 }
 
 fn body_has_one_sum(rendered: &str) -> bool {
-    rendered.contains("one_sum!(")
+    rendered.contains("one_sum(")
 }
 
 fn body_has_one_prod(rendered: &str) -> bool {
-    rendered.contains("one_prod!(")
+    rendered.contains("one_prod(")
 }
 
 fn body_has_fit(rendered: &str) -> bool {
-    rendered.contains("fit!(")
+    rendered.contains("fit(")
 }
 
 fn body_has_ufcs(rendered: &str) -> bool {
@@ -934,8 +929,11 @@ fn body_has_fn_placeholder(rendered: &str) -> bool {
     rendered.contains(".arg. {")
 }
 
-fn body_has_user_elaborator_call(rendered: &str) -> bool {
-    rendered.contains("kio_gen_elab") && rendered.contains("!(")
+fn body_has_user_macro_call(rendered: &str) -> bool {
+    rendered.split("kio_gen_macro").skip(1).any(|suffix| {
+        let digits = suffix.bytes().take_while(u8::is_ascii_digit).count();
+        digits > 0 && suffix[digits..].starts_with('(')
+    })
 }
 
 fn body_has_label_value(rendered: &str) -> bool {
@@ -945,12 +943,12 @@ fn body_has_label_value(rendered: &str) -> bool {
     rendered.contains("{greet = ") || rendered.contains("{count = ")
 }
 
-fn body_has_match_bang(rendered: &str) -> bool {
-    // Surface `match!(<scrutinee>) { … }` is only emitted by the
-    // MatchBang surface render path; the Kio' fallback prints
-    // `__either__(...)`. The `match!` token is unique to the
+fn body_has_match_macro(rendered: &str) -> bool {
+    // Surface `match(<scrutinee>) { … }` is only emitted by the
+    // MatchMacro surface render path; the Kio' fallback prints
+    // `__either__(...)`. The `match` token is unique to the
     // surface form.
-    rendered.contains("match!(")
+    rendered.contains("match(")
 }
 
 fn body_has_reserved_id(rendered: &str) -> bool {
@@ -1104,8 +1102,8 @@ fn term_depth(t: &Term) -> u32 {
         Term::Placeholder { .. } => 0,
         Term::LiteralAliasRef { .. } => 0,
         Term::OpCall { lhs, rhs, .. } => 1 + term_depth(lhs).max(term_depth(rhs)),
-        Term::UserElaborator { inner, .. } => 1 + term_depth(inner),
-        Term::MatchBang {
+        Term::UserMacro { inner, .. } => 1 + term_depth(inner),
+        Term::MatchMacro {
             scrutinee,
             left_body,
             right_body,
@@ -1118,7 +1116,7 @@ fn term_depth(t: &Term) -> u32 {
     }
 }
 
-fn collect_user_elaborator_call_names<'a>(term: &'a Term, names: &mut Vec<&'a str>) {
+fn collect_user_macro_call_names<'a>(term: &'a Term, names: &mut Vec<&'a str>) {
     match term {
         Term::NumLit { .. }
         | Term::StrLit(_)
@@ -1127,42 +1125,42 @@ fn collect_user_elaborator_call_names<'a>(term: &'a Term, names: &mut Vec<&'a st
         | Term::Var(_)
         | Term::Placeholder { .. } => {}
         Term::Lambda { body, .. } | Term::FnPlaceholder { body, .. } => {
-            collect_user_elaborator_call_names(body, names);
+            collect_user_macro_call_names(body, names);
         }
         Term::App(callee, args) => {
-            collect_user_elaborator_call_names(callee, names);
+            collect_user_macro_call_names(callee, names);
             for arg in args {
-                collect_user_elaborator_call_names(arg, names);
+                collect_user_macro_call_names(arg, names);
             }
         }
         Term::Let { rhs, body, .. } => {
-            collect_user_elaborator_call_names(rhs, names);
-            collect_user_elaborator_call_names(body, names);
+            collect_user_macro_call_names(rhs, names);
+            collect_user_macro_call_names(body, names);
         }
         Term::PolyCall { args, .. } | Term::TypeMember { args, .. } => {
             for arg in args {
-                collect_user_elaborator_call_names(arg, names);
+                collect_user_macro_call_names(arg, names);
             }
         }
         Term::IfElse {
             cond, then, else_, ..
         } => {
-            collect_user_elaborator_call_names(cond, names);
-            collect_user_elaborator_call_names(then, names);
-            collect_user_elaborator_call_names(else_, names);
+            collect_user_macro_call_names(cond, names);
+            collect_user_macro_call_names(then, names);
+            collect_user_macro_call_names(else_, names);
         }
         Term::LabelConstruct { payload, .. } => {
-            collect_user_elaborator_call_names(payload, names);
+            collect_user_macro_call_names(payload, names);
         }
-        Term::MatchBang {
+        Term::MatchMacro {
             scrutinee,
             left_body,
             right_body,
             ..
         } => {
-            collect_user_elaborator_call_names(scrutinee, names);
-            collect_user_elaborator_call_names(left_body, names);
-            collect_user_elaborator_call_names(right_body, names);
+            collect_user_macro_call_names(scrutinee, names);
+            collect_user_macro_call_names(left_body, names);
+            collect_user_macro_call_names(right_body, names);
         }
         Term::Into { inner }
         | Term::Onto { inner }
@@ -1182,25 +1180,25 @@ fn collect_user_elaborator_call_names<'a>(term: &'a Term, names: &mut Vec<&'a st
         | Term::OneProd { inner }
         | Term::Fit { inner }
         | Term::LiteralAliasRef { literal: inner, .. } => {
-            collect_user_elaborator_call_names(inner, names);
+            collect_user_macro_call_names(inner, names);
         }
         Term::Ufcs {
             receiver,
             rest_args,
             ..
         } => {
-            collect_user_elaborator_call_names(receiver, names);
+            collect_user_macro_call_names(receiver, names);
             for arg in rest_args {
-                collect_user_elaborator_call_names(arg, names);
+                collect_user_macro_call_names(arg, names);
             }
         }
         Term::OpCall { lhs, rhs, .. } => {
-            collect_user_elaborator_call_names(lhs, names);
-            collect_user_elaborator_call_names(rhs, names);
+            collect_user_macro_call_names(lhs, names);
+            collect_user_macro_call_names(rhs, names);
         }
-        Term::UserElaborator { name, inner } => {
+        Term::UserMacro { name, inner } => {
             names.push(name);
-            collect_user_elaborator_call_names(inner, names);
+            collect_user_macro_call_names(inner, names);
         }
     }
 }
@@ -1260,8 +1258,8 @@ fn contains_poly_call(t: &Term, name: &str) -> bool {
         Term::OpCall { lhs, rhs, .. } => {
             contains_poly_call(lhs, name) || contains_poly_call(rhs, name)
         }
-        Term::UserElaborator { inner, .. } => contains_poly_call(inner, name),
-        Term::MatchBang {
+        Term::UserMacro { inner, .. } => contains_poly_call(inner, name),
+        Term::MatchMacro {
             scrutinee,
             left_body,
             right_body,

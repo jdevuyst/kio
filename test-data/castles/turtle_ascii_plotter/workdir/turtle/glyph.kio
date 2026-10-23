@@ -6,7 +6,7 @@
 /// — it always lays down `stroke_code`.
 module turtle/glyph;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import turtle/num as num;
 
@@ -24,17 +24,17 @@ pub fn is_inked(code: I32) -> Bool { num.not(num.int_eq(code, blank_code())) }
 /// a program that marks with a glyph the plotter does not know still shows up
 /// on the paper instead of vanishing.
 pub fn glyph_of(code: I32) -> String {
-  if! num.int_eq(code, blank_code()) {
+  if(num.int_eq(code, blank_code())) {
     "."
-  } else if! num.int_eq(code, stroke_code()) {
+  } else if(num.int_eq(code, stroke_code())) {
     "*"
-  } else if! num.int_eq(code, 2) {
+  } else if(num.int_eq(code, 2)) {
     "#"
-  } else if! num.int_eq(code, 3) {
+  } else if(num.int_eq(code, 3)) {
     "+"
-  } else if! num.int_eq(code, 4) {
+  } else if(num.int_eq(code, 4)) {
     "o"
-  } else if! num.int_eq(code, 5) {
+  } else if(num.int_eq(code, 5)) {
     "@"
   } else {
     "?"

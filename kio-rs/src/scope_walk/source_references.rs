@@ -44,7 +44,10 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
         });
     }
     let name = &reference.path;
-    if matches!(reference.kind, SourceNameKind::Value | SourceNameKind::Type) {
+    if matches!(
+        reference.kind,
+        SourceNameKind::Value | SourceNameKind::Type | SourceNameKind::Macro
+    ) {
         let origin = if reference.kind == SourceNameKind::Type {
             named_origin(module, reference.span.start, name, Namespace::Type)
         } else {
@@ -65,7 +68,6 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
         };
     }
     if module.items.iter().any(|item| match (reference.kind, item) {
-        (SourceNameKind::Elaborator, Item::Elaborator(def, _)) => def.name == *name,
         (SourceNameKind::Label, Item::LabelForward(def, _)) => def.name == *name,
         (SourceNameKind::Label, Item::Labels(labels, _)) => labels.entries.iter().any(|entry| {
             entry.name == *name && !entry.is_reuse_marker()
@@ -84,7 +86,7 @@ pub fn source_binding(module: &Module, reference: &SourceReference) -> Option<So
         items.iter().find_map(|item| {
             let selected = match reference.kind {
                 SourceNameKind::Label => item.as_label(),
-                SourceNameKind::Elaborator => item.as_local_name_with_span(),
+                SourceNameKind::Macro => None,
                 SourceNameKind::Value | SourceNameKind::Type | SourceNameKind::Equiv => None,
             }?;
             (selected.0 == name).then(|| SourceBinding {
@@ -111,8 +113,8 @@ type OriginMap = HashMap<String, Vec<IndexedOrigin>>;
 #[cfg(feature = "lsp")]
 pub(crate) struct SourceBindingIndex<'a> {
     module: &'a Module,
-    declarations: [OriginMap; 4],
-    imports: [OriginMap; 4],
+    declarations: [OriginMap; 3],
+    imports: [OriginMap; 3],
 }
 
 #[cfg(feature = "lsp")]
@@ -192,18 +194,6 @@ impl<'a> SourceBindingIndex<'a> {
                         }
                     }
                 }
-                Item::Elaborator(def, _) => {
-                    IndexSink {
-                        origins: &mut index.declarations[3],
-                        item: item_index,
-                        eligible_after: item.span().end,
-                    }
-                    .push(
-                        &def.name,
-                        CandidateKind::Function,
-                        CandidateOrigin::Declaration(def.name_span),
-                    );
-                }
                 _ => {}
             }
         }
@@ -222,26 +212,21 @@ impl<'a> SourceBindingIndex<'a> {
             }
             if let ImportKind::Selective { from, items } = &import.kind {
                 for selected in items {
-                    for (slot, name) in [
-                        (2, selected.as_label()),
-                        (3, selected.as_local_name_with_span()),
-                    ] {
-                        if let Some((name, span)) = name {
-                            IndexSink {
-                                origins: &mut index.imports[slot],
-                                item: 0,
-                                eligible_after: import.span.end,
-                            }
-                            .push(
-                                name,
-                                CandidateKind::Function,
-                                CandidateOrigin::Import {
-                                    provider: from.segments.join("/"),
-                                    source: selected.as_name().unwrap_or(name).to_owned(),
-                                    span,
-                                },
-                            );
+                    if let Some((name, span)) = selected.as_label() {
+                        IndexSink {
+                            origins: &mut index.imports[2],
+                            item: 0,
+                            eligible_after: import.span.end,
                         }
+                        .push(
+                            name,
+                            CandidateKind::Function,
+                            CandidateOrigin::Import {
+                                provider: from.segments.join("/"),
+                                source: selected.as_name().unwrap_or(name).to_owned(),
+                                span,
+                            },
+                        );
                     }
                 }
             }
@@ -305,7 +290,7 @@ impl<'a> SourceBindingIndex<'a> {
             SourceNameKind::Value => 0,
             SourceNameKind::Type => 1,
             SourceNameKind::Label => 2,
-            SourceNameKind::Elaborator => 3,
+            SourceNameKind::Macro => 0,
             SourceNameKind::Equiv => return None,
         };
         let active = self.active_item(offset);
@@ -359,7 +344,7 @@ mod tests {
             type Structural = ([Foo] Foo -> Foo) & Foo;
             type Hidden = .;
             pure fn helper(value: .) -> . { value }
-            elab build : [Hidden] Hidden -> Hidden { captures Hidden; impl helper; };";
+            macro build : [Hidden] Hidden -> Hidden { captures Hidden; impl helper; };";
         let module = crate::pass::parser::parse(source).unwrap();
         let references = crate::tokens::source_dependencies(source, &module).unwrap();
         let index = SourceBindingIndex::new(&module);
@@ -465,16 +450,16 @@ mod tests {
 
     #[cfg(feature = "lsp")]
     #[test]
-    fn source_dependency_index_preserves_label_elaborator_and_builtin_origins() {
+    fn source_dependency_index_preserves_label_macro_and_builtin_origins() {
         let source = "module main;
-            import provider({tag}, expand); import provider as q;
+            import provider({tag}, macro expand); import provider as q;
             import __intrinsics__; import __intrinsics__;
             import __comptime__; import __comptime__;
             labels { local: . }; type {forwarded} = {q.tag};
             pure fn helper(value: .) -> . { value }
-            elab build : . -> . { impl helper; };
+            macro build : . -> . { impl helper; };
             fn run() -> . { let _ = {tag = ()}; let _ = {local = ()}; let _ = {forwarded = ()};
-                let _ = expand!(()); let _ = build!(()); let _ = __pair__((), ()); __term_unit__(()) }";
+                let _ = expand(()); let _ = build(()); let _ = __pair__((), ()); __term_unit__(()) }";
         let module = crate::pass::parser::parse(source).unwrap();
         let references = crate::tokens::source_dependencies(source, &module).unwrap();
         let index = SourceBindingIndex::new(&module);
@@ -482,7 +467,7 @@ mod tests {
         for reference in references.iter().filter(|reference| {
             matches!(
                 reference.kind,
-                SourceNameKind::Label | SourceNameKind::Elaborator
+                SourceNameKind::Label | SourceNameKind::Macro
             )
         }) {
             let old = source_binding(&module, reference).unwrap();

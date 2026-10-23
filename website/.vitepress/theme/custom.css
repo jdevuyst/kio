@@ -34,7 +34,7 @@
   --kio-home-fade: rgba(251, 253, 255, 0);
   --kio-tok-keyword-control: var(--kio-bridge);
   --kio-tok-keyword-declaration: #0b6f94;
-  --kio-tok-keyword-elaborator: var(--kio-water-1);
+  --kio-tok-entity-name-macro: var(--kio-water-1);
   --kio-tok-identifier: var(--kio-code-text);
   --kio-tok-operator-builtin: var(--kio-sun-deep);
   --kio-tok-operator-user: var(--kio-sun-deep);
@@ -89,7 +89,7 @@
   --kio-home-fade: rgba(7, 27, 36, 0);
   --kio-tok-keyword-control: #d7a66e;
   --kio-tok-keyword-declaration: #8fd2df;
-  --kio-tok-keyword-elaborator: #5fc3d8;
+  --kio-tok-entity-name-macro: #5fc3d8;
   --kio-tok-identifier: var(--kio-code-text);
   --kio-tok-operator-builtin: #f2c766;
   --kio-tok-operator-user: #f2c766;
@@ -1118,7 +1118,7 @@ body {
 
 .kio-keyword-control { color: var(--kio-tok-keyword-control); }
 .kio-keyword-declaration { color: var(--kio-tok-keyword-declaration); font-weight: 700; }
-.kio-keyword-elaborator { color: var(--kio-tok-keyword-elaborator); font-weight: 700; }
+.kio-entity-name-macro { color: var(--kio-tok-entity-name-macro); font-weight: 700; }
 .kio-identifier { color: var(--kio-tok-identifier); }
 .kio-operator-builtin { color: var(--kio-tok-operator-builtin); }
 .kio-operator-user { color: var(--kio-tok-operator-user); }

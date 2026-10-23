@@ -1,12 +1,12 @@
 module planner/bool;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(default Bool);
 
 pub fn invert(value: Bool) -> Bool {
-  if! value { .f } else { .t }
+  if(value) { .f } else { .t }
 }
 
 pub fn both(left: Bool, right: Bool) -> Bool {
-  if! left { right } else { .f }
+  if(left) { right } else { .f }
 }

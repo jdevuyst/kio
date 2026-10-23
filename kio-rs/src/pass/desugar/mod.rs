@@ -28,7 +28,7 @@
 //! [`Lowered`] boundary.
 //!
 //! Surface forms that survive every pre-typer pass and live on into
-//! [`Lowered`]: user-elaborator calls ([`Expr::UserElaborator`]), field syntax
+//! [`Lowered`]: user-macro calls ([`Expr::UserMacro`]), field syntax
 //! ([`Expr::Elaborator`] for `x.?{foo}` access and
 //! `x.!{foo = y}` update). Both need
 //! synthesized type information the typer produces, so the typer records each
@@ -39,7 +39,7 @@
 //! [`Expr::Ufcs`] also survives this boundary. Dot-splice calls need the
 //! resolved callee type to decide which value-argument slot the receiver
 //! fills, so the typer records their equivalent prefix call or
-//! user-elaborator expansion and substitution erases the node before
+//! user-macro expansion and substitution erases the node before
 //! Prime.
 //!
 //! The per-variant clone-and-recurse boilerplate lives on the
@@ -349,7 +349,7 @@ pub fn desugar_module_with_imports(
                 | Item::LabelForward(_, _)
                 | Item::Newtype(_)
                 | Item::Equiv(_, _)
-                | Item::Elaborator(_, _)
+                | Item::Macro(_, _)
                 | Item::Op(_, _)
                 | Item::VariadicOperator(_, _)
                 | Item::HostType(_) => {}
@@ -1110,9 +1110,7 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
         }
         Expr::Elaborator { call, .. } => elaborator_call_uses_rec_mode(call, mode),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { args, .. } => {
-            args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode))
-        }
+        Expr::UserMacro { args, .. } => args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode)),
         Expr::LabelValue { labels, .. } => labels
             .iter()
             .any(|label| expr_uses_rec_mode(&label.value, mode)),
@@ -1222,7 +1220,7 @@ fn collect_surface_path_head<'a>(
 }
 
 fn collect_surface_capture_head(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     names: &mut std::collections::HashSet<String>,
 ) {
     collect_surface_path_head(capture.segments.iter().map(PathSegment::as_str), names);
@@ -1245,7 +1243,7 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
                 collect_surface_call_arg_names(arg, names);
             }
         }
-        Expr::UserElaborator { name, args, .. } => {
+        Expr::UserMacro { name, args, .. } => {
             names.insert(name.clone());
             for arg in args {
                 collect_surface_call_arg_names(arg, names);
@@ -1508,14 +1506,14 @@ fn collect_surface_item_names(item: &Item<Surface>, names: &mut std::collections
                 collect_surface_expr_names(&term.body, names);
             }
         }
-        Item::Elaborator(elaborator, _) => {
-            names.insert(elaborator.name.clone());
-            collect_all_type_names(&elaborator.call_ty, names);
-            for capture in &elaborator.captures {
+        Item::Macro(macro_def, _) => {
+            names.insert(macro_def.name.clone());
+            collect_all_type_names(&macro_def.call_ty, names);
+            for capture in &macro_def.captures {
                 collect_surface_capture_head(capture, names);
             }
             collect_surface_path_head(
-                elaborator
+                macro_def
                     .implementation
                     .segments()
                     .iter()
@@ -2732,7 +2730,7 @@ impl DesugarVisitor {
                     meta: Meta::new(meta.span),
                 })
             }
-            Expr::UserElaborator {
+            Expr::UserMacro {
                 source_trivia: _,
                 occurrence: _,
                 name,
@@ -2744,7 +2742,7 @@ impl DesugarVisitor {
                 || args.iter().any(call_arg_contains_rec) =>
             {
                 let continuation = self.rec_initial_cont(current_member, ctx);
-                self.transform_deferred_tail_user_elaborator(
+                self.transform_deferred_tail_user_macro(
                     name,
                     form,
                     args,
@@ -2765,7 +2763,7 @@ impl DesugarVisitor {
                 callee_span,
                 args,
                 flavor,
-                bang: Some(bang),
+                macro_call: Some(macro_call),
                 meta,
                 ext,
             } if deferred_tail_ufcs_has_required(&receiver, &args)
@@ -2779,7 +2777,7 @@ impl DesugarVisitor {
                     callee_span,
                     args,
                     flavor,
-                    bang,
+                    macro_call,
                     meta,
                     ext,
                     current_member,
@@ -2803,10 +2801,10 @@ impl DesugarVisitor {
     }
 
     #[allow(clippy::too_many_arguments)] // recursive lowering carries the active CPS continuation
-    fn transform_deferred_tail_user_elaborator(
+    fn transform_deferred_tail_user_macro(
         &mut self,
         name: String,
-        form: crate::ast::UserElaboratorCallForm,
+        form: crate::ast::UserMacroCallForm,
         args: Vec<CallArg<Surface>>,
         meta: Meta<Surface>,
         ext: NodeId,
@@ -2829,7 +2827,7 @@ impl DesugarVisitor {
             defer_callbacks,
             ctx,
         )?;
-        let call = Expr::UserElaborator {
+        let call = Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
@@ -2856,7 +2854,7 @@ impl DesugarVisitor {
         callee_span: Span,
         args: Vec<CallArg<Surface>>,
         flavor: crate::ast::UfcsFlavor,
-        bang: Span,
+        macro_call: Span,
         meta: Meta<Surface>,
         ext: NodeId,
         current_member: &RecMemberPlan,
@@ -2894,7 +2892,7 @@ impl DesugarVisitor {
             callee_span,
             args,
             flavor,
-            bang: Some(bang),
+            macro_call: Some(macro_call),
             meta: Meta::new(span),
             ext: self.state.cloned_elaboration_id(ext),
         };
@@ -3021,11 +3019,11 @@ impl DesugarVisitor {
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
         let needs_local_completion = match &value {
-            Expr::UserElaborator { args, .. } => deferred_tail_args_have_required(args),
+            Expr::UserMacro { args, .. } => deferred_tail_args_have_required(args),
             Expr::Ufcs {
                 receiver,
                 args,
-                bang: Some(_),
+                macro_call: Some(_),
                 ..
             } => deferred_tail_ufcs_has_required(receiver, args),
             _ => false,
@@ -3398,12 +3396,12 @@ impl DesugarVisitor {
                 callee_span,
                 args,
                 flavor,
-                bang,
+                macro_call,
                 meta,
                 ext,
                 ..
             } => {
-                self.state.needs_intrinsics |= bang.is_some();
+                self.state.needs_intrinsics |= macro_call.is_some();
                 let receiver = self.transform_deferred_tail_tree(
                     *receiver,
                     current_member,
@@ -3428,12 +3426,12 @@ impl DesugarVisitor {
                     callee_span,
                     args,
                     flavor,
-                    bang,
+                    macro_call,
                     meta: Meta::new(meta.span),
                     ext: self.state.cloned_elaboration_id(ext),
                 })
             }
-            Expr::UserElaborator {
+            Expr::UserMacro {
                 name,
                 form,
                 args,
@@ -3450,7 +3448,7 @@ impl DesugarVisitor {
                     defer_callbacks,
                     ctx,
                 )?;
-                Ok(Expr::UserElaborator {
+                Ok(Expr::UserMacro {
                     source_trivia: Default::default(),
                     occurrence: Default::default(),
                     name,
@@ -4180,7 +4178,7 @@ impl DesugarVisitor {
             // The carried continuation already includes work after this call;
             // the checked recipe, not the call's source position, decides
             // whether each staged lambda is terminal.
-            Expr::UserElaborator {
+            Expr::UserMacro {
                 source_trivia: _,
                 occurrence: _,
                 name,
@@ -4191,7 +4189,7 @@ impl DesugarVisitor {
             } if deferred_tail_args_have_required(&args)
                 || args.iter().any(call_arg_contains_rec) =>
             {
-                self.transform_deferred_tail_user_elaborator(
+                self.transform_deferred_tail_user_macro(
                     name,
                     form,
                     args,
@@ -4204,7 +4202,7 @@ impl DesugarVisitor {
                     ctx,
                 )
             }
-            Expr::UserElaborator {
+            Expr::UserMacro {
                 source_trivia: _,
                 occurrence: _,
                 name,
@@ -4212,7 +4210,7 @@ impl DesugarVisitor {
                 args,
                 meta,
                 ext,
-            } => self.transform_rec_cps_user_elaborator_args(
+            } => self.transform_rec_cps_user_macro_args(
                 name,
                 form,
                 args,
@@ -4224,7 +4222,7 @@ impl DesugarVisitor {
                 ctx,
             ),
             // Bang-UFCS has the same structural tail authority as a direct
-            // elaborator call; receiver placement does not narrow it.
+            // macro call; receiver placement does not narrow it.
             Expr::Ufcs {
                 source_trivia: _,
                 occurrence: _,
@@ -4233,7 +4231,7 @@ impl DesugarVisitor {
                 callee_span,
                 args,
                 flavor,
-                bang: Some(bang),
+                macro_call: Some(macro_call),
                 meta,
                 ext,
             } if deferred_tail_ufcs_has_required(&receiver, &args)
@@ -4246,7 +4244,7 @@ impl DesugarVisitor {
                     callee_span,
                     args,
                     flavor,
-                    bang,
+                    macro_call,
                     meta,
                     ext,
                     current_member,
@@ -4264,14 +4262,14 @@ impl DesugarVisitor {
                 callee_span,
                 mut args,
                 flavor,
-                bang,
+                macro_call,
                 meta,
                 ext,
             } => {
                 let receiver_contains_rec = expr_contains_rec_call(&receiver);
                 let first_rec_arg = args.iter().position(call_arg_contains_rec);
                 let receiver_is_first = flavor.inserts_first();
-                if bang.is_none()
+                if macro_call.is_none()
                     && receiver_is_first
                     && !receiver_contains_rec
                     && first_rec_arg.is_some()
@@ -4292,7 +4290,7 @@ impl DesugarVisitor {
                             callee_span,
                             args,
                             flavor,
-                            bang,
+                            macro_call,
                             meta,
                             ext,
                         },
@@ -4309,7 +4307,7 @@ impl DesugarVisitor {
                         body,
                         ctx,
                     ))
-                } else if let Some(earlier_index) = if bang.is_none() {
+                } else if let Some(earlier_index) = if macro_call.is_none() {
                     let earlier_end =
                         match (receiver_is_first, receiver_contains_rec, first_rec_arg) {
                             (true, true, _) => None,
@@ -4348,7 +4346,7 @@ impl DesugarVisitor {
                             callee_span,
                             args,
                             flavor,
-                            bang,
+                            macro_call,
                             meta,
                             ext,
                         },
@@ -4366,7 +4364,7 @@ impl DesugarVisitor {
                         ctx,
                     ))
                 } else if receiver_contains_rec
-                    && (bang.is_some() || receiver_is_first || first_rec_arg.is_none())
+                    && (macro_call.is_some() || receiver_is_first || first_rec_arg.is_none())
                 {
                     let span = receiver.span();
                     let name = rec_tmp_name("ufcs_receiver", span, 0);
@@ -4381,7 +4379,7 @@ impl DesugarVisitor {
                             callee_span,
                             args,
                             flavor,
-                            bang,
+                            macro_call,
                             meta,
                             ext,
                         },
@@ -4424,7 +4422,7 @@ impl DesugarVisitor {
                             callee_span,
                             args,
                             flavor,
-                            bang,
+                            macro_call,
                             meta,
                             ext,
                         },
@@ -4457,7 +4455,7 @@ impl DesugarVisitor {
                         callee_span,
                         args,
                         flavor,
-                        bang,
+                        macro_call,
                         meta,
                         ext,
                     };
@@ -4527,10 +4525,10 @@ impl DesugarVisitor {
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn transform_rec_cps_user_elaborator_args(
+    fn transform_rec_cps_user_macro_args(
         &mut self,
         name: String,
-        form: crate::ast::UserElaboratorCallForm,
+        form: crate::ast::UserMacroCallForm,
         mut args: Vec<CallArg<Surface>>,
         mut out: Vec<CallArg<Desugared>>,
         meta: Meta<Surface>,
@@ -4541,7 +4539,7 @@ impl DesugarVisitor {
     ) -> Result<Expr<Desugared>, Error> {
         if args.is_empty() {
             let ext = self.state.cloned_elaboration_id(ext);
-            let value = Expr::UserElaborator {
+            let value = Expr::UserMacro {
                 source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name,
@@ -4556,7 +4554,7 @@ impl DesugarVisitor {
         match first {
             CallArg::Type(ty) => {
                 out.push(CallArg::Type(self.walk_type(ty)?));
-                self.transform_rec_cps_user_elaborator_args(
+                self.transform_rec_cps_user_macro_args(
                     name,
                     form,
                     args,
@@ -4570,11 +4568,11 @@ impl DesugarVisitor {
             }
             CallArg::Value(value) if expr_contains_rec_call(&value) => {
                 let span = value.span();
-                let arg_name = rec_tmp_name("elaborator_arg", span, out.len());
+                let arg_name = rec_tmp_name("macro_arg", span, out.len());
                 let param_ty = self.rec_expr_type_hint(&value, current_member, ctx);
                 let mut next_out = out;
                 next_out.push(CallArg::Value(path_expr(arg_name.clone(), span)));
-                let body = self.transform_rec_cps_user_elaborator_args(
+                let body = self.transform_rec_cps_user_macro_args(
                     name,
                     form,
                     args,
@@ -4598,7 +4596,7 @@ impl DesugarVisitor {
             CallArg::Value(value) => {
                 self.validate_no_bad_rec(&value, ctx)?;
                 out.push(CallArg::Value(self.walk_expr(value)?));
-                self.transform_rec_cps_user_elaborator_args(
+                self.transform_rec_cps_user_macro_args(
                     name,
                     form,
                     args,
@@ -5341,7 +5339,7 @@ impl DesugarVisitor {
                 }
             },
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-            Expr::UserElaborator { args, .. } => {
+            Expr::UserMacro { args, .. } => {
                 for arg in args {
                     if let CallArg::Value(value) = arg {
                         self.validate_no_bad_rec_names(value, ctx)?;
@@ -5993,9 +5991,9 @@ impl SurfaceToDesugared for DesugarVisitor {
         })
     }
 
-    fn visit_expr_user_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
+    fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         self.state.needs_intrinsics = true;
-        let Expr::UserElaborator {
+        let Expr::UserMacro {
             source_trivia: _,
             occurrence: _,
             name,
@@ -6007,7 +6005,7 @@ impl SurfaceToDesugared for DesugarVisitor {
         else {
             unreachable!()
         };
-        Ok(Expr::UserElaborator {
+        Ok(Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
@@ -6030,14 +6028,14 @@ impl SurfaceToDesugared for DesugarVisitor {
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta: Meta { span, .. },
             ext,
         } = e
         else {
             unreachable!()
         };
-        if bang.is_some() {
+        if macro_call.is_some() {
             self.state.needs_intrinsics = true;
         }
         Ok(Expr::Ufcs {
@@ -6051,7 +6049,7 @@ impl SurfaceToDesugared for DesugarVisitor {
                 .map(|arg| self.walk_call_arg(arg))
                 .collect::<Result<_, _>>()?,
             flavor,
-            bang,
+            macro_call,
             meta: Meta::new(span),
             ext: self.state.cloned_elaboration_id(ext),
         })
@@ -7082,7 +7080,7 @@ fn expr_contains_rec_call(expr: &Expr<Surface>) -> bool {
         }
         Expr::Elaborator { call, .. } => elaborator_call_contains_rec(call),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { args, .. } => args.iter().any(call_arg_contains_rec),
+        Expr::UserMacro { args, .. } => args.iter().any(call_arg_contains_rec),
         Expr::LabelValue { labels, .. } => labels
             .iter()
             .any(|label| expr_contains_rec_call(&label.value)),
@@ -7237,7 +7235,7 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
                 pending.push(&plan.body);
                 pending.extend(plan.tail_continuation.iter().map(|value| value.as_ref()));
             }
-            Expr::UserElaborator { args, .. } => {
+            Expr::UserMacro { args, .. } => {
                 pending.extend(args.iter().filter_map(|arg| match arg {
                     CallArg::Value(value) => Some(value),
                     CallArg::Type(_) => None,
@@ -7357,7 +7355,7 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
             collect_identifiers(&plan.value, out);
             collect_identifiers(&plan.body, out);
         }
-        Expr::UserElaborator { name, args, .. } => {
+        Expr::UserMacro { name, args, .. } => {
             out.insert(name.clone());
             for arg in args {
                 if let CallArg::Value(value) = arg {
@@ -7585,7 +7583,7 @@ fn rename_paths(
                 ext,
             }
         }
-        Expr::UserElaborator {
+        Expr::UserMacro {
             source_trivia: _,
             occurrence: _,
             name,
@@ -7593,7 +7591,7 @@ fn rename_paths(
             args,
             meta,
             ext,
-        } => Expr::UserElaborator {
+        } => Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
@@ -7635,11 +7633,11 @@ fn rename_paths(
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta,
             ext,
         } => {
-            if bang.is_none()
+            if macro_call.is_none()
                 && callee_segments.len() == 1
                 && let Some(renamed) = renames.get(&callee_segments[0].name)
             {
@@ -7659,7 +7657,7 @@ fn rename_paths(
                     })
                     .collect(),
                 flavor,
-                bang,
+                macro_call,
                 meta,
                 ext,
             }
@@ -7755,7 +7753,12 @@ mod tests {
     use crate::pass::parser::parse;
 
     fn d(src: &str) -> Module<Desugared> {
-        let m = parse(src).expect("parse");
+        let mut m = parse(src).expect("parse");
+        let calls = crate::scope_walk::macro_calls(&m);
+        let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[])
+            .expect("empty descriptor scope");
+        crate::pass::block_projection::project_module(&mut m, &scope, &calls)
+            .expect("classify blockless source calls");
         desugar_module(m).expect("desugar")
     }
 
@@ -7799,7 +7802,7 @@ mod tests {
                     visit_desugared_expr(expression, visit);
                 }
             }
-            Expr::UserElaborator { args, .. } => visit_desugared_call_args(args, visit),
+            Expr::UserMacro { args, .. } => visit_desugared_call_args(args, visit),
             Expr::LabelValue { labels, .. } => {
                 for label in labels {
                     visit_desugared_expr(&label.value, visit);
@@ -8127,8 +8130,8 @@ mod tests {
     }
 
     #[test]
-    fn lower_fn_placeholder_avoids_authored_bang_callee_name() {
-        let module = d("module x; fn f() -> . -> . { .x. { p1!(x1) } }");
+    fn lower_fn_placeholder_avoids_authored_macro_callee_name() {
+        let module = d("module x; import fixture(macro p1); fn f() -> . -> . { .x. { p1(x1) } }");
         let Expr::FnExpr { sig, body, .. } = desugared_fn_body(&module, "f") else {
             panic!("expected lowered placeholder function")
         };
@@ -8136,8 +8139,8 @@ mod tests {
             panic!("expected one placeholder parameter")
         };
         assert_eq!(param.name, "p1_v2");
-        let Expr::UserElaborator { name, args, .. } = body.as_ref() else {
-            panic!("expected bang-call placeholder body")
+        let Expr::UserMacro { name, args, .. } = body.as_ref() else {
+            panic!("expected macro call placeholder body")
         };
         assert_eq!(name, "p1");
         assert!(matches!(
@@ -8674,7 +8677,7 @@ mod tests {
     #[test]
     fn rec_wrapper_type_name_avoids_an_outside_group_bare_type_capture() {
         assert_rec_wrapper_avoids_outside_source(|wrapper, _| {
-            format!("elab demo : . -> . {{ captures {wrapper}; impl implementation; }};")
+            format!("macro demo : . -> . {{ captures {wrapper}; impl implementation; }};")
         });
     }
 
@@ -8900,19 +8903,21 @@ mod tests {
     #[test]
     fn projected_user_call_survives_desugar_with_ordinary_children() {
         let mut module = parsed(
-            "module x; elab invoke : (. -> .) -> . { trailing thunk; impl implementation } fn f() -> . { invoke! { (); () } }",
+            "module x; macro invoke : (. -> .) -> . { trailing thunk; impl implementation } fn f() -> . { invoke { (); () } }",
         );
         let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[(
             std::path::PathBuf::from("x.kio"),
             module.clone(),
         )])
         .expect("descriptor scope");
-        crate::pass::block_projection::project_module(&mut module, &scope).expect("projection");
+        let macro_calls = crate::scope_walk::macro_calls(&module);
+        crate::pass::block_projection::project_module(&mut module, &scope, &macro_calls)
+            .expect("projection");
         let module = desugar_module(module).expect("desugar projected ordinary call");
-        let Expr::UserElaborator { args, form, .. } = desugared_fn_body(&module, "f") else {
+        let Expr::UserMacro { args, form, .. } = desugared_fn_body(&module, "f") else {
             panic!("ordinary user call")
         };
-        assert_eq!(*form, crate::ast::UserElaboratorCallForm::TrailingBlocks);
+        assert_eq!(*form, crate::ast::UserMacroCallForm::TrailingBlocks);
         let [CallArg::Value(Expr::FnExpr { body, .. })] = args.as_slice() else {
             panic!("one projected thunk")
         };
@@ -8921,8 +8926,10 @@ mod tests {
 
     #[test]
     fn match_ufcs_survives_desugar() {
-        let m = d("module x; fn f(v: I32 | String) -> . { \
-             v.>match!((.(n: I32) { () }, .(s: String) { () }), ()) }");
+        let m = d(
+            "module x; import fixture(macro match); fn f(v: I32 | String) -> . { \
+             v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }",
+        );
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -8931,7 +8938,7 @@ mod tests {
             callee_segments,
             args,
             flavor,
-            bang,
+            macro_call,
             ..
         } = &d.body
         else {
@@ -8940,33 +8947,37 @@ mod tests {
         assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
         assert_eq!(callee_segments, &vec!["match".to_owned()]);
         assert_eq!(*flavor, crate::ast::UfcsFlavor::ReceiverFirst);
-        assert!(bang.is_some());
+        assert!(macro_call.is_some());
         assert_eq!(args.len(), 2);
         assert!(matches!(args[0], CallArg::Value(Expr::Call { .. })));
         assert!(matches!(args[1], CallArg::Value(Expr::Unit { .. })));
     }
 
-    // A recursive direct-lambda argument to a user elaborator is staged for
+    // A recursive direct-lambda argument to a user macro is staged for
     // checked-recipe tail classification. Desugaring grants no authority to
-    // the `match!` spelling, so this fixture reaches that generic path.
+    // the `match` spelling, so this fixture reaches that generic path.
     #[test]
     fn rec_call_in_match_clause_lowers_in_tail_position() {
-        d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }");
+        d(
+            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
+             match(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }",
+        );
     }
 
     #[test]
-    fn placeholder_clauses_in_direct_bang_call_remain_deferred_candidates() {
-        let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             choose!((.x. { x1 }, .x. { recur go(x1) })) }");
+    fn placeholder_clauses_in_direct_macro_call_remain_deferred_candidates() {
+        let module = d(
+            "module x; import fixture(macro choose); rec(loop) fn go(value: .) -> . { \
+             choose((.x. { x1 }, .x. { recur go(x1) })) }",
+        );
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
 
     #[test]
     fn deferred_tail_rec_lambda_requires_continuation_state() {
         let module = parsed(
-            "module x; rec(loop) fn go(value: .) -> . { \
-             hold!(.(_unit: .) { recur go(value) }) }",
+            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
+             hold(.(_unit: .) { recur go(value) }) }",
         );
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("expected rec group")
@@ -9012,7 +9023,7 @@ mod tests {
     fn projected_sequence_desugar(src: &str) -> Result<Module<Desugared>, Error> {
         let mut module = parsed(src);
         let provider = parsed(include_str!(
-            "../../../../test-data/poc/elab/workdir/sequence.kio"
+            "../../../../test-data/poc/macros/workdir/sequence.kio"
         ));
         let module_file = format!("{}.kio", module.path.segments.join("/"));
         let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[
@@ -9020,7 +9031,8 @@ mod tests {
             (std::path::PathBuf::from("sequence.kio"), provider),
         ])
         .expect("sequence descriptor scope");
-        crate::pass::block_projection::project_module(&mut module, &scope)
+        let macro_calls = crate::scope_walk::macro_calls(&module);
+        crate::pass::block_projection::project_module(&mut module, &scope, &macro_calls)
             .expect("project ordinary sequence call");
         desugar_module(module)
     }
@@ -9028,13 +9040,13 @@ mod tests {
     #[test]
     fn monadic_do_recursion_before_first_continuation_lowers() {
         for body in [
-            "do! bind { let next <- recur(cont) go(value); next }",
-            "do! bind { let next = recur(cont) go(value); let out <- next; out }",
-            "do! bind { recur(cont) go(value); value }",
-            "do! bind { do! bind { let next <- recur(cont) go(value); next } }",
+            "do (bind) { let next <- recur(cont) go(value); next }",
+            "do (bind) { let next = recur(cont) go(value); let out <- next; out }",
+            "do (bind) { recur(cont) go(value); value }",
+            "do (bind) { do (bind) { let next <- recur(cont) go(value); next } }",
         ] {
             projected_sequence_desugar(&format!(
-                "module x; import sequence(do); rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . {{ {body} }}"
             ))
             .expect("desugar");
         }
@@ -9055,9 +9067,9 @@ mod tests {
             ),
         ] {
             let source = format!(
-                "module main; import sequence(do);
+                "module main; import sequence(macro do);
                 rec(loop) fn factory[T](value: T) -> [A][B](A & (A -> B)) -> B {{
-                    do! ({receiver}) {{ .[A][B](value: A, next: A -> B) {{ next(value) }} }}
+                    do ({receiver}) {{ .[A][B](value: A, next: A -> B) {{ next(value) }} }}
                 }}"
             );
             let error = projected_sequence_desugar(&source).expect_err(receiver);
@@ -9072,11 +9084,11 @@ mod tests {
             "(.x.{ let ignored = recur(cont) go(value); next(x1) })(Box.unbox(input))",
         ] {
             let source = format!(
-                "module main; import sequence(do);
+                "module main; import sequence(macro do);
                 newtype Box[A] : A {{ constructor box; projector unbox; }};
                 rec(loop) fn go(value: .) -> Box(.) {{
                     let receiver = .[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) {{ {body} }};
-                    do! receiver {{ Box.box(()) }}
+                    do (receiver) {{ Box.box(()) }}
                 }}"
             );
             let error = projected_sequence_desugar(&source).expect_err(body);
@@ -9093,13 +9105,13 @@ mod tests {
     #[test]
     fn monadic_do_recursion_inside_continuation_stays_rejected() {
         for body in [
-            "do! bind { let first <- value; recur(cont) go(first) }",
-            "do! bind { let first <- value; let next <- recur(cont) go(first); next }",
-            "do! bind { value; recur(cont) go(value) }",
-            "do! bind { let next <- .(arg: .) { recur(cont) go(arg) }; value }",
+            "do (bind) { let first <- value; recur(cont) go(first) }",
+            "do (bind) { let first <- value; let next <- recur(cont) go(first); next }",
+            "do (bind) { value; recur(cont) go(value) }",
+            "do (bind) { let next <- .(arg: .) { recur(cont) go(arg) }; value }",
         ] {
             let source = format!(
-                "module x; import sequence(do); rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . {{ {body} }}"
             );
             let err = projected_sequence_desugar(&source).expect_err("escaping recursive call");
             assert!(
@@ -9113,8 +9125,8 @@ mod tests {
 
     #[test]
     fn monadic_do_first_rhs_recursion_still_requires_cont_annotation() {
-        let source = "module x; import sequence(do); rec(loop) fn go(value: .) -> . { \
-            do! bind { let next <- recur go(value); next } }";
+        let source = "module x; import sequence(macro do); rec(loop) fn go(value: .) -> . { \
+            do (bind) { let next <- recur go(value); next } }";
         let err = projected_sequence_desugar(source).expect_err("non-tail recursive call");
         let (_, message) = err.diag();
         assert!(message.contains("not in tail position"), "{message}");
@@ -9122,12 +9134,12 @@ mod tests {
 
     #[test]
     fn rec_group_clones_refresh_replacement_node_ids() {
-        let module = d("module x; \
+        let module = d("module x; import fixture(macro choose); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             rec(loop) { \
               fn first(value: .) -> . { recur second(value) }; \
               fn second(value: .) -> . { \
-                choose!(.(local: .) { choose!(value.?{field}.>identity) }) \
+                choose(.(local: .) { choose(value.?{field}.>identity) }) \
               } \
             }");
         let mut field_ids = Vec::new();
@@ -9139,14 +9151,14 @@ mod tests {
             };
             visit_desugared_expr(&def.body, &mut |expr| match expr {
                 Expr::Elaborator { ext, .. } => field_ids.push(*ext),
-                Expr::UserElaborator { ext, .. } => user_ids.push(*ext),
+                Expr::UserMacro { ext, .. } => user_ids.push(*ext),
                 Expr::Ufcs { ext, .. } => ufcs_ids.push(*ext),
                 _ => {}
             });
         }
         for (kind, ids, count) in [
             ("field", field_ids, 1),
-            ("user elaborator", user_ids, 2),
+            ("user macro", user_ids, 2),
             ("UFCS", ufcs_ids, 1),
         ] {
             assert_eq!(
@@ -9229,17 +9241,21 @@ mod tests {
     }
 
     // Bang-UFCS reaches the same structural staging path; receiver placement
-    // does not distinguish the elaborator or its lambda arguments.
+    // does not distinguish the macro or its lambda arguments.
     #[test]
     fn rec_call_in_match_ufcs_clause_lowers_in_tail_position() {
-        d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             v.>match!((.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }");
+        d(
+            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
+             v.>match((.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }",
+        );
     }
 
     #[test]
-    fn placeholder_clauses_in_ufcs_bang_call_remain_deferred_candidates() {
-        let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             value.>choose!((.x. { x1 }, .x. { recur go(x1) })) }");
+    fn placeholder_clauses_in_ufcs_macro_call_remain_deferred_candidates() {
+        let module = d(
+            "module x; import fixture(macro choose); rec(loop) fn go(value: .) -> . { \
+             value.>choose((.x. { x1 }, .x. { recur go(x1) })) }",
+        );
         assert_one_optional_and_one_required_deferred_tail(desugared_fn_body(&module, "go"));
     }
 
@@ -9247,8 +9263,10 @@ mod tests {
     // lowering before the checked recipe decides the candidate's final role.
     #[test]
     fn rec_cont_call_in_match_clause_lowers() {
-        d("module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__(I32, String, 0))) })) }");
+        d(
+            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
+             match(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__(I32, String, 0))) })) }",
+        );
     }
 
     #[test]
@@ -9271,8 +9289,8 @@ mod tests {
             ),
         ] {
             let module = d(&format!(
-                "module x; rec(loop) fn go(value: (I32 & I32) & I32) -> I32 {{ \
-                 choose!(.({pattern}) {{ recur go({recur}) }}) }}"
+                "module x; import fixture(macro choose); rec(loop) fn go(value: (I32 & I32) & I32) -> I32 {{ \
+                 choose(.({pattern}) {{ recur go({recur}) }}) }}"
             ));
             let mut bound = std::collections::HashSet::new();
             visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
@@ -9296,8 +9314,8 @@ mod tests {
     #[test]
     fn deferred_tail_parameter_patterns_do_not_permit_escaping_recursion() {
         let module = parsed(
-            "module x; rec(loop) fn go(value: I32 & I32) -> I32 { \
-             choose!(.((left: I32, right: I32)) { \
+            "module x; import fixture(macro choose); rec(loop) fn go(value: I32 & I32) -> I32 { \
+             choose(.((left: I32, right: I32)) { \
                .() { recur go((left, right)) } \
              }) }",
         );
@@ -9313,9 +9331,9 @@ mod tests {
 
     #[test]
     fn non_tail_deferred_lambdas_share_one_capture_safe_continuation_shell() {
-        let module = d("module x;
+        let module = d("module x; import fixture(macro match);
             rec(loop) fn go(outer: I32, step: Many) -> I32 {
-              let selected = match!(step, (
+              let selected = match(step, (
                 .(outer: Zero) { zero() },
                 .(_first: First) { add(recur(cont) go(10, step), 1) },
                 .(_second: Second) { add(recur(cont) go(10, step), 2) },
@@ -9345,7 +9363,7 @@ mod tests {
         let elaborated = deferred_continuation_elaborated_value(shell);
         assert!(matches!(
             elaborated,
-            Expr::UserElaborator { name, .. } if name == "match"
+            Expr::UserMacro { name, .. } if name == "match"
         ));
 
         let mut candidates = Vec::new();
@@ -9418,9 +9436,9 @@ mod tests {
 
     #[test]
     fn non_tail_deferred_ufcs_lambdas_use_the_same_function_shell() {
-        let module = d("module x;
+        let module = d("module x; import fixture(macro match);
             rec(loop) fn go(outer: I32, step: Left | Right) -> I32 {
-              let selected = step.>match!((
+              let selected = step.>match((
                 .(_left: Left) { 0 },
                 .(_right: Right) { add(recur(cont) go(outer, step), 1) }
               ));
@@ -9440,7 +9458,7 @@ mod tests {
         let elaborated = deferred_continuation_elaborated_value(&shells[0]);
         assert!(matches!(
             elaborated,
-            Expr::Ufcs { callee_segments, bang: Some(_), .. }
+            Expr::Ufcs { callee_segments, macro_call: Some(_), .. }
                 if callee_segments.len() == 1 && callee_segments[0].as_str() == "match"
         ));
         let mut deferred = 0;
@@ -9481,9 +9499,9 @@ mod tests {
             .map(|index| format!(".(value{index}: I32) {{ recur(cont) go(value{index}) }}"))
             .collect::<Vec<_>>();
         let staged = if width == 1 {
-            format!("hold!({})", candidates[0])
+            format!("hold({})", candidates[0])
         } else {
-            format!("hold!(({}))", candidates.join(", "))
+            format!("hold(({}))", candidates.join(", "))
         };
         let bindings = (0..depth)
             .map(|index| format!("let selected{index} = {staged};"))
@@ -9493,7 +9511,9 @@ mod tests {
         for _ in 0..continuation_size {
             downstream = format!("after({downstream})");
         }
-        format!("module x; rec(loop) fn go(value: I32) -> I32 {{ {bindings} {downstream} }}")
+        format!(
+            "module x; import fixture(macro hold); rec(loop) fn go(value: I32) -> I32 {{ {bindings} {downstream} }}"
+        )
     }
 
     fn deferred_continuation_scaling_sample(
@@ -9614,12 +9634,12 @@ mod tests {
             ),
             (
                 "deferred branches",
-                "take(hold!((.() { recur(cont) go(value) }, .() { supply() })))",
+                "take(hold((.() { recur(cont) go(value) }, .() { supply() })))",
                 true,
             ),
         ] {
             let module = d(&format!(
-                "module x; rec(loop) fn go(value: .) -> . {{ {body} }}"
+                "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . {{ {body} }}"
             ));
             let mut pending_bindings = 0;
             let mut copied_shells = 0;
@@ -9712,11 +9732,13 @@ mod tests {
 
     #[test]
     fn quoted_nested_call_retains_source_order_and_one_recursive_computation() {
-        let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             hold!(take(supply(), recur(cont) go(value))) }");
+        let module = d(
+            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
+             hold(take(supply(), recur(cont) go(value))) }",
+        );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "supply");
-        let Expr::UserElaborator { args, .. } = source else {
-            panic!("the bang call remains the quoted source")
+        let Expr::UserMacro { args, .. } = source else {
+            panic!("the macro call remains the quoted source")
         };
         let [CallArg::Value(value)] = args.as_slice() else {
             panic!("one ordinary call is quoted")
@@ -9734,9 +9756,9 @@ mod tests {
 
     #[test]
     fn deferred_tail_lifted_flow_respects_authored_return_information() {
-        let module = d("module x;
+        let module = d("module x; import fixture(macro hold);
              rec(loop) fn go(value: .) -> . {
-               hold!((
+               hold((
                  .(_unit: .) { recur go(value) },
                  .(_unit: .) -> _ { recur go(value) },
                  .(_unit: .) { () },
@@ -9941,21 +9963,23 @@ mod tests {
     }
 
     #[test]
-    fn rec_cps_bang_ufcs_keeps_non_inert_receiver_quoted() {
-        let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             effect(()).>hold!(recur(cont) go(())) }");
+    fn rec_cps_macro_ufcs_keeps_non_inert_receiver_quoted() {
+        let module = d(
+            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
+             effect(()).>hold(recur(cont) go(())) }",
+        );
         quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let mut quoted_receiver_count = 0;
         visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
             Expr::Ufcs {
                 receiver,
                 callee_segments,
-                bang: Some(_),
+                macro_call: Some(_),
                 ..
             } if callee_segments.len() == 1 && callee_segments[0].as_str() == "hold" => {
                 assert!(
                     is_call_to(receiver, "effect"),
-                    "the non-inert bang-UFCS receiver must remain quoted"
+                    "the non-inert macro UFCS receiver must remain quoted"
                 );
                 quoted_receiver_count += 1;
                 assert!(matches!(expr, Expr::Ufcs { args, .. }
@@ -9964,25 +9988,27 @@ mod tests {
             }
             _ => {}
         });
-        assert_eq!(quoted_receiver_count, 1, "expected one hold! UFCS call");
+        assert_eq!(quoted_receiver_count, 1, "expected one hold UFCS call");
     }
 
     #[test]
-    fn rec_cps_bang_ufcs_keeps_non_inert_written_arg_quoted() {
-        let module = d("module x; rec(loop) fn go(value: .) -> . { \
-             value.>hold!(effect(()), recur(cont) go(())) }");
+    fn rec_cps_macro_ufcs_keeps_non_inert_written_arg_quoted() {
+        let module = d(
+            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
+             value.>hold(effect(()), recur(cont) go(())) }",
+        );
         quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
         let mut quoted_arg_count = 0;
         visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
             Expr::Ufcs {
                 callee_segments,
                 args,
-                bang: Some(_),
+                macro_call: Some(_),
                 ..
             } if callee_segments.len() == 1 && callee_segments[0].as_str() == "hold" => {
                 assert!(
                     matches!(args.first(), Some(CallArg::Value(value)) if is_call_to(value, "effect")),
-                    "the non-inert written bang-UFCS argument must remain quoted"
+                    "the non-inert written macro UFCS argument must remain quoted"
                 );
                 quoted_arg_count += 1;
                 assert!(
@@ -9993,16 +10019,16 @@ mod tests {
             }
             _ => {}
         });
-        assert_eq!(quoted_arg_count, 1, "expected one hold! UFCS call");
+        assert_eq!(quoted_arg_count, 1, "expected one hold UFCS call");
     }
 
-    // A `rec` call in the `match!` scrutinee is *not* tail; the rec
+    // A `rec` call in the `match` scrutinee is *not* tail; the rec
     // lowering rejects a plain (non-`cont`) call there.
     #[test]
     fn rec_call_in_match_scrutinee_is_rejected() {
         let m = parse(
-            "module x; rec(loop) fn go(v: I32 | String) -> I32 { \
-             match!(recur go(__left__(I32, String, 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
+            "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
+             match(recur go(__left__(I32, String, 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
         )
         .expect("parse");
         let err = desugar_module(m).expect_err("expected non-tail rejection");
@@ -10015,8 +10041,10 @@ mod tests {
 
     #[test]
     fn derive_ufcs_survives_desugar() {
-        let m = d("module x; fn f() -> Monad(Maybe) { \
-             maybe_monad.>derive!(Monad(Maybe)) }");
+        let m = d(
+            "module x; import fixture(macro derive); fn f() -> Monad(Maybe) { \
+             maybe_monad.>derive(Monad(Maybe)) }",
+        );
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -10025,7 +10053,7 @@ mod tests {
             callee_segments,
             args,
             flavor,
-            bang,
+            macro_call,
             ..
         } = &d.body
         else {
@@ -10034,18 +10062,19 @@ mod tests {
         assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
         assert_eq!(callee_segments, &vec!["derive".to_owned()]);
         assert_eq!(*flavor, crate::ast::UfcsFlavor::ReceiverFirst);
-        assert!(bang.is_some());
+        assert!(macro_call.is_some());
         assert_eq!(args.len(), 1);
         assert!(matches!(args[0], CallArg::Value(Expr::Call { .. })));
     }
 
     #[test]
-    fn match_elaborator_triggers_intrinsics_injection() {
-        // `match!` always elaborates to intrinsic calls (decision-tree
+    fn match_macro_triggers_intrinsics_injection() {
+        // `match` always elaborates to intrinsic calls (decision-tree
         // `__either__` / `__fst__` / `__snd__`); flag the import. The
         // catch-all `.()` clause exercises the smallest surface
         // shape that triggers the injection.
-        let m = d("module x; fn f[A](v: A) -> . { match!(v, .() { () }) }");
+        let m =
+            d("module x; import fixture(macro match); fn f[A](v: A) -> . { match(v, .() { () }) }");
         assert!(
             m.imports
                 .iter()
@@ -10055,9 +10084,9 @@ mod tests {
 
     #[test]
     fn lift_triggers_intrinsics_injection() {
-        // `into!` / `onto!` may elaborate to identity, but the
+        // `into` / `onto` may elaborate to identity, but the
         // injection is conservative (an unused import is harmless).
-        let m = d("module x; fn f() -> . { into!(()) }");
+        let m = d("module x; import fixture(macro into); fn f() -> . { into(()) }");
         assert!(
             m.imports
                 .iter()

@@ -321,7 +321,7 @@ impl<'a> Recoverer<'a> {
             Item::Labels(_, ext) => match *ext {},
             Item::LabelForward(_, ext) => match *ext {},
             Item::Equiv(_, ext) => match *ext {},
-            Item::Elaborator(_, ext) => match *ext {},
+            Item::Macro(_, ext) => match *ext {},
             Item::Op(_, ext) => match *ext {},
             Item::VariadicOperator(_, ext) => match *ext {},
             Item::RecGroup(_, ext) => match *ext {},
@@ -554,7 +554,7 @@ impl<'a> Recoverer<'a> {
             Expr::RowLet { ext, .. } => match *ext {},
             Expr::Elaborator { ext, .. } => match *ext {},
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-            Expr::UserElaborator { ext, .. } => match *ext {},
+            Expr::UserMacro { ext, .. } => match *ext {},
             Expr::Ufcs { ext, .. } => match *ext {},
             Expr::OpChain { ext, .. } => match *ext {},
             Expr::RecCall { ext, .. } => match *ext {},
@@ -1274,7 +1274,7 @@ impl<'a> Recoverer<'a> {
 
 /// Function literals and paths are already callable values: evaluating them
 /// cannot run a handler factory. Keeping them direct avoids manufacturing a
-/// binding for the common surface-lowered `match!` / `if` shape.
+/// binding for the common surface-lowered `match` / `if` shape.
 fn handler_is_immediate_value(value: &Expr<Prime>) -> bool {
     matches!(value, Expr::FnExpr { .. } | Expr::Path { .. })
 }
@@ -1661,7 +1661,7 @@ fn has_free_value_ref(e: &Expr<Enriched>, name: &str, shadowed: bool) -> bool {
         | Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. }
+        | Expr::UserMacro { ext, .. }
         | Expr::Ufcs { ext, .. }
         | Expr::OpChain { ext, .. }
         | Expr::RecCall { ext, .. }
@@ -1922,27 +1922,27 @@ mod tests {
         path
     }
 
-    fn elab_support_entries() -> Vec<(PathBuf, crate::ast::Module<crate::ast::Surface>)> {
+    fn macro_support_entries() -> Vec<(PathBuf, crate::ast::Module<crate::ast::Surface>)> {
         [
             (
                 "testapi.kio",
-                include_str!("../../../test-data/poc/elab/workdir/testapi.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/testapi.kio"),
             ),
             (
-                "elaborator_util.kio",
-                include_str!("../../../test-data/poc/elab/workdir/elaborator_util.kio"),
+                "macro_util.kio",
+                include_str!("../../../test-data/poc/macros/workdir/macro_util.kio"),
             ),
             (
-                "spine_elaborators.kio",
-                include_str!("../../../test-data/poc/elab/workdir/spine_elaborators.kio"),
+                "spine_macros.kio",
+                include_str!("../../../test-data/poc/macros/workdir/spine_macros.kio"),
             ),
             (
                 "match.kio",
-                include_str!("../../../test-data/poc/elab/workdir/match.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/match.kio"),
             ),
             (
                 "control.kio",
-                include_str!("../../../test-data/poc/elab/workdir/control.kio"),
+                include_str!("../../../test-data/poc/macros/workdir/control.kio"),
             ),
         ]
         .into_iter()
@@ -1965,7 +1965,7 @@ mod tests {
             parse_package_file(&format!("package pkg;\n{s}"), None).expect("parse package file")
         });
         let mut parsed_modules = vec![(module_file_path(module_path), parsed)];
-        parsed_modules.extend(elab_support_entries());
+        parsed_modules.extend(macro_support_entries());
         let (lowered_modules, lowered_package_file) =
             FullPipeline::lower_package(parsed_modules, package_file).expect("lower_package");
         let package_file_entry = lowered_package_file.map(|e| PackageFileEntry {
@@ -2344,7 +2344,7 @@ mod tests {
         );
     }
 
-    /// A `match!` over an n-variant sum recovers to a single n-arm
+    /// A `match` over an n-variant sum recovers to a single n-arm
     /// `EnrichedMatch` — the nested `__either__` chain is collapsed,
     /// not left as nested dispatch nodes.
     #[test]
@@ -2786,15 +2786,15 @@ mod tests {
         }
     }
 
-    /// `if!` / `else` recovers to a first-class `EnrichedConditional`
+    /// `if` / `else` recovers to a first-class `EnrichedConditional`
     /// — the `__if_then_else__` thunk pair is gone.
     #[test]
     fn if_else_recovers_to_enriched_conditional() {
         let m = recover_one(
             "main",
-            "module main; import control(if); \
+            "module main; import control(macro if); \
              default host type Bool role(bool); \
-             fn choose(c: Bool) -> . { if! c { () } else { () } }",
+             fn choose(c: Bool) -> . { if (c) { () } else { () } }",
             None,
         );
         let body = fn_body(&m, "choose");

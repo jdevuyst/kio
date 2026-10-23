@@ -5,7 +5,7 @@ varop [* *] { ; finalize finish; foldl step base // fold tail
 } // varop outer
 ;
 
-elab make: . { ; impl run; captures (first, second) // capture tail
+macro make: . { ; impl run; captures (first, second) // capture tail
 ; // elab close
 } // elab outer
 ;

@@ -7,7 +7,7 @@ import testapi/io(print);
 
 // Church-encoded naturals on `Nat = forall A. ((A -> A) & A) -> A`.
 // `zero` / `succ` / `plus` / `mul` are pure System F polymorphism —
-// no host loop, no newtype, no `match!`, no `if`/`else`. `to_int`
+// no host loop, no newtype, no `match`, no `if`/`else`. `to_int`
 // reifies a `Nat` by instantiating at `I32` and counting via
 // `add_i32(_, 1)` from `0`.
 type Nat = [A] ((A -> A) & A) -> A;

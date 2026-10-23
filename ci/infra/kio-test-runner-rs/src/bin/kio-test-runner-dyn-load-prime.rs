@@ -837,8 +837,8 @@ mod tests {
         // library), a pure-host module, and the manifest are all part of
         // `load_package`'s input and ride through verbatim.
         fs::write(
-            dir.path().join("elab.kio"),
-            "module elab;\n\npub fn dead() -> . { () }\n",
+            dir.path().join("macros.kio"),
+            "module macros;\n\npub fn dead() -> . { () }\n",
         )
         .unwrap();
         fs::write(
@@ -850,7 +850,7 @@ mod tests {
         let img = read_guest_image(dir.path()).expect("read tree");
         assert!(img.contains("module nums;"), "nums included: {img}");
         assert!(img.contains("module main;"), "main included: {img}");
-        assert!(img.contains("module elab;"), "elab included: {img}");
+        assert!(img.contains("module macros;"), "macro included: {img}");
         assert!(img.contains("module hostapi;"), "host included: {img}");
         assert!(img.contains("package g;"), "manifest included: {img}");
     }

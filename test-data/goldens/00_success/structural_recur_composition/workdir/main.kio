@@ -95,19 +95,19 @@ pure fn probe_impl(ct: __Comptime__, _source: __Type__, _input: __Checked_term__
           __if_then_else__(
           , __type_arity_equal__(ct, sibling_result, s.three(ct))
           , .() -> __Checked_term__ { __term_unit__(ct) }
-          , .() -> __Checked_term__ { __elab_error__(ct, "sibling independence mismatch") }
+          , .() -> __Checked_term__ { __macro_error__(ct, "sibling independence mismatch") }
           )
         }
-      , .() -> __Checked_term__ { __elab_error__(ct, "nested captured predecessor mismatch") }
+      , .() -> __Checked_term__ { __macro_error__(ct, "nested captured predecessor mismatch") }
       )
     }
-  , .() -> __Checked_term__ { __elab_error__(ct, "escaped result mismatch") }
+  , .() -> __Checked_term__ { __macro_error__(ct, "escaped result mismatch") }
   )
 }
 
-elab probe : [Source] Source -> . { impl probe_impl }
+macro probe : [Source] Source -> . { impl probe_impl }
 
-fn witness() { probe!(()) }
+fn witness() { probe(()) }
 
 equiv probe_law() {
   witness();

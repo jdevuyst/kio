@@ -11,8 +11,6 @@
 /// measured at run time.
 module forge/disasm;
 
-import elab/control(if);
-import elab/match(match);
 import forge/isa as isa;
 import forge/isa(
 , Add
@@ -36,6 +34,8 @@ import forge/program as p;
 import forge/program(Prog, Symbol, Symbols);
 import forge/text as t;
 import forge/vm(int_eq);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
@@ -48,7 +48,7 @@ fn two(ops: Reg & Reg) -> String {
 
 /// One instruction's mnemonic and operands.
 fn text(i: Ins) -> String {
-  match! i {
+  match(i) {
     (
     , .(x: Loadi) {
         let .(r: Reg, n: I32) = x.?{isa.loadi};
@@ -74,10 +74,10 @@ fn text(i: Ins) -> String {
 }
 
 rec(loop) fn marks_at(syms: Symbols, at: I32) {
-  match! l.un_cons(syms) {
+  match(l.un_cons(syms)) {
     (
     , .(s: Symbol, rest: Symbols) {
-        if! int_eq(s.?{p.sym_addr}, at) {
+        if(int_eq(s.?{p.sym_addr}, at)) {
           t.line(t.cat3("  ", s.?{p.sym_name}, ":"));
           recur marks_at(rest, at)
         } else {
@@ -90,7 +90,7 @@ rec(loop) fn marks_at(syms: Symbols, at: I32) {
 }
 
 rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) {
-  match! l.un_cons(code) {
+  match(l.un_cons(code)) {
     (
     , .(i: Ins, rest: Prog) {
         marks_at(syms, at);
@@ -106,11 +106,11 @@ rec(loop) fn rows(code: Prog, syms: Symbols, at: I32) {
 pub fn listing(code: Prog, syms: Symbols) { rows(code, syms, 0) }
 
 rec(loop) fn joined(syms: Symbols, acc: String, first: Bool) -> String {
-  match! l.un_cons(syms) {
+  match(l.un_cons(syms)) {
     (
     , .(s: Symbol, rest: Symbols) {
         let entry = t.cat3(s.?{p.sym_name}, "=", t.addr(s.?{p.sym_addr}));
-        let next = if! first { entry } else { t.cat3(acc, " ", entry) };
+        let next = if(first) { entry } else { t.cat3(acc, " ", entry) };
         recur joined(rest, next, .f)
       }
     , .(_empty: .) { acc }
@@ -120,7 +120,7 @@ rec(loop) fn joined(syms: Symbols, acc: String, first: Bool) -> String {
 
 /// The symbol table on one line.
 pub fn symbols_text(syms: Symbols) -> String {
-  match! l.un_cons(syms) {
+  match(l.un_cons(syms)) {
     (.(_s: Symbol, _rest: Symbols) { joined(syms, "", .t) }, .(_empty: .) { "(none)" })
   }
 }

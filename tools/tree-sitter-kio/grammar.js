@@ -59,15 +59,15 @@ const TYPE_REFERENCE_NAME = /_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const LABEL_NAME = /[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*/;
 const PLACEHOLDER_STEM = /_?[a-z]+(?:[0-9]*_[a-z]+)*/;
 
-function ordinaryAtoms($, prefix = false) {
+function ordinaryAtoms($) {
   return choice(
     $.variadic_expression, $.incomplete_variadic_expression,
     $.recursive_call_expression, $.incomplete_recursive_call_expression,
-    ...(prefix ? [$.block_prefix_call, $.block_prefix_ufcs] : [$.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr)]),
+    $.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr),
     $.expression_path, $.grouped_expression, $.unit_expression,
     $.bool_literal, $.number_literal, $.string_literal,
-    $.fn_lambda_expr, ...(prefix ? [$.block_prefix_field] : [$.label_value_expr, $.field_expression]),
-    $.placeholder_expression, $.elaborator_name,
+    $.fn_lambda_expr, $.label_value_expr, $.field_expression,
+    $.placeholder_expression,
   );
 }
 
@@ -83,7 +83,6 @@ module.exports = grammar({
     $.comment_doc, $.doc_fence, $.doc_code, $.doc_reference, $.doc_directive,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
     $.doc_literal_fallback, $._doc_line_end,
-    $._elaborator_word,
   ],
   extras: ($) => [/[ \t\r\n]+/, $.comment_doc, $.doc_fence, $.doc_code,
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
@@ -91,16 +90,20 @@ module.exports = grammar({
 
   inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_atom, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body, $._block_splice_receiver],
   conflicts: ($) => [
+    [$.block_value_arguments, $.expression_arguments],
+    [$.block_call, $._ufcs_callable],
+    [$.import_macro_item, $.keyword_declaration],
+    [$._expression_atom, $.block_call, $.call_expr],
+    [$.operator_expression, $._closed_operator_expression],
+    [$.operator_expression, $._closed_operator_expression, $.variadic_element],
     [$.variadic_open, $.type_param_group],
     [$.variadic_elements, $.operator_builtin],
-    [$.elaborator_name, $.expression_path],
-    [$.elaborator_name, $.call_callee],
     [$._raw_unit, $._raw_call_expr],
     [$._local_let_pattern, $.incomplete_numbered_binding],
     [$.build_block],
-    [$.elaborator_body],
+    [$.macro_body],
     [$.callable_path],
-    [$.callable_path, $.elaborator_impl_clause],
+    [$.callable_path, $.macro_impl_clause],
     [$._expression_atom, $.block_call],
     [$._expression_atom, $._grouped_block_call],
     [$.block_ufcs_expr, $.block_ufcs_result_call],
@@ -113,7 +116,7 @@ module.exports = grammar({
     [$._raw_unit, $.call_expr],
     [$._raw_unit, $._expression_atom],
     [$._expression_atom, $.call_expr],
-    [$.elaborator_captures_clause],
+    [$.macro_captures_clause],
     [$.binding_pattern, $._type],
     [$.local_binding_pattern, $._type],
     [$.expression_path, $.call_callee, $.label_path],
@@ -158,7 +161,7 @@ module.exports = grammar({
         $.host_decl,
         prec.right(seq(choice($.function_definition, $.recursive_function_definition,
           $.recursive_function_group, $.type_rec_group, $.newtype_decl_head,
-          $.equiv_definition, $.op_decl, $.variadic_decl, $.elaborator_decl),
+          $.equiv_definition, $.op_decl, $.variadic_decl, $.macro_decl),
         optional($.separator_semicolon))),
         $.labels_decl_head,
         $.literal_definition,
@@ -185,7 +188,7 @@ module.exports = grammar({
 
     _token: ($) => prec(-100, choice(
       alias($._identifier_like, $.identifier),
-      $.elaborator_name, $.unowned_symbol_run,
+      $.unowned_symbol_run,
       $.bool_literal, $.number_literal,
       $.string_literal, $.slot, $.operator_arrow_type, $.operator_arrow_ufcs,
       $.operator_row_suffix, $.operator_builtin, $.module_path_sep, $.operator_run,
@@ -479,7 +482,7 @@ module.exports = grammar({
     keyword_op: ($) => kw("op"),
     keyword_varop: ($) => kw("varop"),
     _keyword_variadic: ($) => token(prec(3, "variadic")),
-    keyword_as: ($) => kw("as"),
+    keyword_as: ($) => "as",
     keyword_type: ($) => kw("type"),
     keyword_default: ($) => kw("default"),
     keyword_pure: ($) => kw("pure"),
@@ -505,22 +508,29 @@ module.exports = grammar({
         seq(
           $.module_path,
           $.bracket_lparen,
-          repeat(choice(
+          optional(sep1(choice(
+            $.import_macro_item,
             $.import_operator_item,
             $.import_label_item,
-            $._import_named_item,
-            $.separator_comma,
-          )),
+            $.import_named_item,
+          ), $.separator_comma)),
           $.bracket_rparen,
         ),
       ),
 
-    _import_named_item: ($) => prec.right(1, choice(
+    import_named_item: ($) => prec.right(1, choice(
       seq(alias($.keyword_default, $.keyword_declaration),
         alias($.uppercase_identifier, $.identifier),
         optional(seq(alias($.keyword_as, $.keyword_declaration), alias($.uppercase_identifier, $.identifier)))),
-      seq(alias($._identifier_like, $.identifier),
-        optional(seq(alias($.keyword_as, $.keyword_declaration), alias($._identifier_like, $.identifier)))),
+      seq(field("source", alias($._identifier_like, $.identifier)),
+        optional(seq(alias($.keyword_as, $.keyword_declaration), field("alias", alias($._identifier_like, $.identifier))))),
+    )),
+
+    import_macro_item: ($) => prec.dynamic(25, seq(
+      alias(kw("macro"), $.keyword_declaration),
+      field("source", alias($._value_identifier_like, $.entity_name_function)),
+      optional(seq(alias($.keyword_as, $.keyword_declaration),
+        field("alias", alias($._value_identifier_like, $.entity_name_function)))),
     )),
 
     import_operator_item: ($) =>
@@ -698,8 +708,8 @@ module.exports = grammar({
     // A complete native block call owns its body before the competing
     // name/operator/label interpretation of the same words.
     block_call: ($) => prec.dynamic(30, prec.right(seq(
-      field('head', alias($.elaborator_name, $.block_head)),
-      optional(field('prefix', choice($.block_value_arguments, $._block_bare_prefix))),
+      field('head', choice($.call_callee, $.grouped_expression)),
+      optional(field('prefix', $.block_value_arguments)),
       field('first', $.neutral_block),
       repeat(field('labelled', $.labelled_block)),
       optional(field('elided', $.elided_block)),
@@ -711,24 +721,6 @@ module.exports = grammar({
         repeat(seq(repeat1($.separator_comma), $._expression)),
         repeat($.separator_comma))),
       $.bracket_rparen,
-    )),
-    _block_bare_prefix: ($) => choice($._block_prefix_atom, $.block_prefix_operator),
-    _block_prefix_atom: ($) => ordinaryAtoms($, true),
-    block_prefix_call: ($) => prec.left(seq(
-      choice($.call_callee, $.elaborator_name, $.block_prefix_call,
-        $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal),
-      $.expression_arguments,
-    )),
-    block_prefix_ufcs: ($) => choice(
-      prec.right(20, seq($._block_prefix_atom, alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
-        choice($._ufcs_callable, $.elaborator_name), optional($._call_args_group))),
-      prec.left(20, seq(choice($.call_callee, $.elaborator_name), optional($._call_args_group),
-        alias($._left_ufcs_arrow, $.operator_arrow_ufcs), $._block_prefix_atom)),
-    ),
-    block_prefix_field: ($) => prec.left(30, seq($._block_prefix_atom, $.operator_row_suffix, $.label_value_expr)),
-    block_prefix_operator: ($) => prec.left(1, seq(
-      $._block_bare_prefix, $._expression_operator,
-      optional($._expression),
     )),
     labelled_block: ($) => seq(field('label', alias($.identifier, $.block_label)), field('body', $.neutral_block)),
     elided_block: ($) => prec.right(seq(field('label', alias($.identifier, $.block_label)), field('body', $.block_call))),
@@ -754,7 +746,7 @@ module.exports = grammar({
       $.variadic_expression, $.incomplete_variadic_expression,
       $.recursive_call_expression, $.incomplete_recursive_call_expression,
       $.bool_literal, $.number_literal, $.string_literal,
-      $.fn_lambda_expr, $.placeholder_expression, $.elaborator_name, $.block_call,
+      $.fn_lambda_expr, $.placeholder_expression, $.block_call,
       $.label_value_expr, alias($._closed_operator_expression, $.operator_expression),
       alias($.block_receiver_call, $.call_expr),
     ),
@@ -785,9 +777,9 @@ module.exports = grammar({
     operator_expression: ($) => choice(
       prec.right(3, seq($._expression_operator, $._expression)),
       $._closed_operator_expression,
-      prec.left(1, seq($._expression, $._expression_operator, $._expression)),
+      prec.dynamic(1, seq($._expression, $._expression_operator, $._expression)),
     ),
-    _closed_operator_expression: ($) => prec.left(2, seq($._expression, $._expression_operator)),
+    _closed_operator_expression: ($) => prec.dynamic(2, seq($._expression, $._expression_operator)),
     _expression_operator: ($) => choice($.operator_run, $.operator_builtin, $.operator_arrow_type),
     placeholder_expression: ($) => seq(
       alias($._placeholder_open, $.separator_dot),
@@ -812,7 +804,7 @@ module.exports = grammar({
     // the structural frame and the lexical words inside its value region.
     variadic_elements: ($) => choice(
       // With a written ! marker, the final ! belongs to the frame, not the
-      // preceding value name's native elaborator suffix.
+      // preceding value name's adjacent operator.
       prec.dynamic(20, seq(alias("!", $.operator_builtin),
         sep1(alias($._bang_frame_element, $.variadic_element), $.separator_comma), alias("!", $.operator_builtin))),
       repeat1($._expression_operator),
@@ -864,10 +856,6 @@ module.exports = grammar({
           alias($._identifier_like, $.identifier),
           repeat(seq($.separator_dot, alias($._expression_name, $.identifier))),
         )),
-        alias($._elaborator_word, $.identifier),
-        seq(alias($._identifier_like, $.identifier),
-          repeat(seq($.separator_dot, alias($._expression_name, $.identifier))),
-          $.separator_dot, alias($._elaborator_word, $.identifier)),
       ),
 
     expression_arguments: ($) => seq(
@@ -926,7 +914,7 @@ module.exports = grammar({
 
     _recursive_annotation_tail: ($) => choice(
       $.recursive_recovery_group, alias($._identifier_like, $.identifier),
-      $.elaborator_name, $.unowned_symbol_run,
+      $.unowned_symbol_run,
       $.bool_literal, $.number_literal,
       $.string_literal, $.slot, $.operator_arrow_type, $.operator_arrow_ufcs,
       $.operator_row_suffix, $.operator_builtin, $.module_path_sep, $.operator_run,
@@ -1004,7 +992,7 @@ module.exports = grammar({
     body_block: ($) => $.expression_block,
 
     _raw_call_expr: ($) => prec.left(seq(
-      choice($.call_callee, $.elaborator_name, alias($._raw_call_expr, $.call_expr),
+      choice($.call_callee, alias($._raw_call_expr, $.call_expr),
         $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal),
       $.expression_arguments,
     )),
@@ -1014,29 +1002,26 @@ module.exports = grammar({
       alias($._raw_call_expr, $.call_expr), alias($._raw_ufcs_expr, $.ufcs_expr),
       $.expression_path, $.grouped_expression, $.unit_expression,
       $.bool_literal, $.number_literal, $.string_literal, $.fn_lambda_expr,
-      $.label_value_expr, $.placeholder_expression, $.elaborator_name,
+      $.label_value_expr, $.placeholder_expression,
     ),
     _raw_ufcs_expr: ($) => choice(
-      prec.right(20, seq($._raw_native_atom,
+      prec.right(20, seq(field("receiver", $._raw_native_atom),
         alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
-        choice($._ufcs_callable, $.elaborator_name), optional($._call_args_group))),
-      prec.left(20, seq(choice($.call_callee, $.elaborator_name), optional($._call_args_group),
-        alias($._left_ufcs_arrow, $.operator_arrow_ufcs), $._expression_atom)),
+        field("callee", $._ufcs_callable), optional($._call_args_group))),
+      prec.left(20, seq(field("callee", $.call_callee), optional($._call_args_group),
+        alias($._left_ufcs_arrow, $.operator_arrow_ufcs), field("receiver", $._expression_atom))),
     ),
     call_expr: ($) => prec.left(seq(
-      choice($.call_callee, $.elaborator_name, $.call_expr,
+      choice($.call_callee, $.call_expr,
         $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal,
         $.variadic_expression, alias($._closed_operator_expression, $.operator_expression)),
       $.expression_arguments,
     )),
     call_callee: ($) => choice(
       alias($._value_identifier_like, $.entity_name_function),
-      alias($._elaborator_word, $.entity_name_function),
       seq(alias($._identifier_like, $.identifier), $.separator_dot,
         repeat(seq(alias($._expression_name, $.identifier), $.separator_dot)),
         alias($._expression_name, $.entity_name_function)),
-      seq(repeat1(seq(alias($._identifier_like, $.identifier), $.separator_dot)),
-        alias($._elaborator_word, $.entity_name_function)),
     ),
 
     ufcs_expr: ($) =>
@@ -1044,19 +1029,19 @@ module.exports = grammar({
         prec.right(
           20,
           seq(
-            choice($._expression_atom, alias($._closed_operator_expression, $.operator_expression)),
+            field("receiver", choice($._expression_atom, alias($._closed_operator_expression, $.operator_expression))),
             alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
-            choice($._ufcs_callable, $.elaborator_name),
+            field("callee", $._ufcs_callable),
             optional($._call_args_group),
           ),
         ),
         prec.left(
           20,
           seq(
-            choice($.call_callee, $.elaborator_name),
+            field("callee", $.call_callee),
             optional($._call_args_group),
             alias($._left_ufcs_arrow, $.operator_arrow_ufcs),
-            $._expression_atom,
+            field("receiver", $._expression_atom),
           ),
         ),
       ),
@@ -1281,7 +1266,7 @@ module.exports = grammar({
         repeat(choice($.comment_doc, $.comment_line)),
       ),
 
-    elaborator_decl: ($) =>
+    macro_decl: ($) =>
       prec.dynamic(50,
         seq(
           optional($._visibility_modifier),
@@ -1289,14 +1274,14 @@ module.exports = grammar({
           alias($._callable_path_segment, $.entity_name_function),
           $.operator_builtin, // `:`
           $._type,
-          $.elaborator_body,
+          $.macro_body,
         ),
       ),
 
-    elaborator_body: ($) =>
+    macro_body: ($) =>
       semicolonBody($, seq(
         repeat(choice($.comment_doc, $.comment_line)),
-        fieldOrders([$.elaborator_impl_clause], [$.elaborator_captures_clause], [$.trailing_block_clause], $.separator_semicolon),
+        fieldOrders([$.macro_impl_clause], [$.macro_captures_clause], [$.trailing_block_clause], $.separator_semicolon),
         repeat(choice($.comment_doc, $.comment_line)),
       )),
 
@@ -1306,7 +1291,7 @@ module.exports = grammar({
       optional(field("label", alias($.identifier, $.block_label))),
     ),
 
-    elaborator_captures_clause: ($) =>
+    macro_captures_clause: ($) =>
       seq(
         alias(token(prec(3, "captures")), $.keyword_declaration),
         choice(
@@ -1321,7 +1306,7 @@ module.exports = grammar({
         repeat(choice($.comment_doc, $.comment_line)),
       ),
 
-    elaborator_impl_clause: ($) =>
+    macro_impl_clause: ($) =>
       seq(
         alias(token(prec(3, "impl")), $.keyword_declaration),
         choice(
@@ -1402,10 +1387,7 @@ module.exports = grammar({
     separator_semicolon: ($) => ";",
     separator_comma: ($) => ",",
     separator_dot: ($) => ".",
-    keyword_declaration: ($) => kw("elab"),
-    // The external word token already authenticates adjacency and the maximal
-    // ordinary symbol word; sharing the ! terminal preserves frame ambiguity.
-    elaborator_name: ($) => prec.dynamic(10, seq($._elaborator_word, "!")),
+    keyword_declaration: ($) => kw("macro"),
     slot: ($) => choice("___", "__", "_"),
 
     bool_literal: ($) => seq(alias($.separator_dot, $.bool_prefix), $.bool_value),

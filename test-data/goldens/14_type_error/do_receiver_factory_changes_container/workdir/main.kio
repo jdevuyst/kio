@@ -1,6 +1,6 @@
 module main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 
 newtype Box[A] : A { constructor box; projector unbox }
 
@@ -9,5 +9,5 @@ newtype Other[A] : A { constructor other; projector unother }
 host fn make_bind[*M][*N]() -> [A][B] (M(A) & (A -> N(B))) -> N(B);
 
 fn run() -> Other(.) {
-  do! make_bind() { let first <- Box.box(()); let second <- Other.other(()); Other.other(second) }
+  do(make_bind()) { let first <- Box.box(()); let second <- Other.other(()); Other.other(second) }
 }

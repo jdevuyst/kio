@@ -101,7 +101,7 @@ fi
 # the copy keeps the assembly buildable without a `kio dep fetch`).
 cp -R "$dyn_load_prime_src/list" "$assembly/list"
 cp -R "$dyn_load_prime_src/loader" "$assembly/loader"
-cp -R "$dyn_load_prime_src/elab" "$assembly/elab"
+cp -R "$dyn_load_prime_src/macros" "$assembly/macros"
 
 cp "$SCRIPT_DIR/driver.kio" "$assembly/driver.kio"
 cp "$SCRIPT_DIR/dyn_load_prime_driver.pkg.kio" "$assembly/dyn_load_prime_driver.pkg.kio"

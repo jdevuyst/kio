@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -12,7 +12,7 @@ type Saved = String & (I32 -> Bool);
 
 rec(iter.loop_reentry) {
   fn save[A](captured: I32, fallback: A, receive: (I32 -> Bool) -> A) -> A {
-    if! arith.leq_i32(captured, 0) {
+    if(arith.leq_i32(captured, 0)) {
       fallback
     } else {
       receive(.(value: I32) -> Bool {
@@ -35,9 +35,9 @@ pub fn main() {
   let first = make_saved(7);
   let second = make_saved(11);
   io.print("ready\n");
-  match! first {
+  match(first) {
     .(first_name: String, first_call: I32 -> Bool) {
-      match! second {
+      match(second) {
         .(second_name: String, second_call: I32 -> Bool) {
           io.print(first_name);
           io.print("\n");

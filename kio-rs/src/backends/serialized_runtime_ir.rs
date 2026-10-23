@@ -1299,7 +1299,7 @@ fn runtime_items(
         Item::LiteralAlias(_, ext) => match *ext {},
         Item::Labels(_, ext) | Item::LabelForward(_, ext) => match *ext {},
         Item::Equiv(_, ext) => match *ext {},
-        Item::Elaborator(_, ext) => match *ext {},
+        Item::Macro(_, ext) => match *ext {},
         Item::Op(_, ext) | Item::VariadicOperator(_, ext) => match *ext {},
     }
 }
@@ -2083,7 +2083,7 @@ fn runtime_expr_expected(
         Expr::Elaborator { ext, .. }
         | Expr::RecOrder { ext, .. }
         | Expr::RecQuote { ext, .. }
-        | Expr::UserElaborator { ext, .. } => match *ext {},
+        | Expr::UserMacro { ext, .. } => match *ext {},
         Expr::FnPlaceholder { ext, .. } => match *ext {},
         Expr::LabelValue { ext, .. } => match *ext {},
         Expr::Ufcs { ext, .. } => match *ext {},
@@ -2761,7 +2761,7 @@ mod tests {
 
             | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
+            | Expr::UserMacro { ext, .. }
 
 
             | Expr::Ufcs { ext, .. }

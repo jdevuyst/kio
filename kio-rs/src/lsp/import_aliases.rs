@@ -34,8 +34,7 @@ impl AliasIndex {
             reference.declaration
                 && matches!(
                     reference.kind,
-                    crate::tokens::SourceNameKind::Value
-                        | crate::tokens::SourceNameKind::Elaborator
+                    crate::tokens::SourceNameKind::Value | crate::tokens::SourceNameKind::Macro
                 )
         }) {
             self.definitions

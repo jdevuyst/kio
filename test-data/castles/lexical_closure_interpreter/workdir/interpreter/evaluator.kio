@@ -1,12 +1,12 @@
 module interpreter/evaluator;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import interpreter/environment as env;
 import interpreter/syntax as ast;
 import interpreter/values as values;
 import list/core as lists;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
@@ -25,27 +25,27 @@ type Stack = lists.List(Frame);
 pub type Result = String | values.Value;
 
 fn evaluate_at(expr: ast.Expr, environment: values.Environment) -> Mode {
-  {evaluate = (expr, environment)}.>widen_sum!(Mode)
+  {evaluate = (expr, environment)}.>widen_sum(Mode)
 }
 
-fn return_value(value: values.Value) -> Mode { {returned = value}.>widen_sum!(Mode) }
+fn return_value(value: values.Value) -> Mode { {returned = value}.>widen_sum(Mode) }
 
-fn fail(message: String) -> Result { message.>widen_sum!(Result) }
+fn fail(message: String) -> Result { message.>widen_sum(Result) }
 
 rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
-  if! arith.leq_i32(fuel, 0) {
+  if(arith.leq_i32(fuel, 0)) {
     fail("evaluation fuel exhausted")
   } else {
     let next_fuel = arith.sub_i32(fuel, 1);
-    match! mode {
+    match(mode) {
       .(pending: Evaluate) {
         let .(expr, environment) = pending.?{evaluate};
-        match! expr {
+        match(expr) {
           .(n: ast.Integer) {
             recur run(return_value(values.integer(n.?{ast.integer})), stack, next_fuel)
           };
           .(v: ast.Variable) {
-            match! env.lookup(v.?{ast.variable}, environment) {
+            match(env.lookup(v.?{ast.variable}, environment)) {
               .(value: values.Value) { recur run(return_value(value), stack, next_fuel) };
               .(error: String) { fail(error) }
             }
@@ -56,33 +56,33 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
           };
           .(call: ast.Application) {
             let .(callee, argument) = call.?{ast.application};
-            let frame = {call_left = (argument, environment)}.>widen_sum!(Frame);
+            let frame = {call_left = (argument, environment)}.>widen_sum(Frame);
             recur run(evaluate_at(callee, environment), lists.cons(frame, stack), next_fuel)
           };
           .(sum: ast.Addition) {
             let .(left, right) = sum.?{ast.addition};
-            let frame = {add_left = (right, environment)}.>widen_sum!(Frame);
+            let frame = {add_left = (right, environment)}.>widen_sum(Frame);
             recur run(evaluate_at(left, environment), lists.cons(frame, stack), next_fuel)
           };
           .(binding: ast.Binding) {
             let .(name, initial, body) = binding.?{ast.binding};
-            let frame = {bind_value = (name, body, environment)}.>widen_sum!(Frame);
+            let frame = {bind_value = (name, body, environment)}.>widen_sum(Frame);
             recur run(evaluate_at(initial, environment), lists.cons(frame, stack), next_fuel)
           }
         }
       };
       .(ready: Returned) {
         let value = ready.?{returned};
-        match! lists.uncons(stack) {
+        match(lists.uncons(stack)) {
           .(frame: Frame, remaining: Stack) {
-            match! frame {
+            match(frame) {
               .(left: Add_left) {
                 let .(right, environment) = left.?{add_left};
-                let saved = {add_right = value}.>widen_sum!(Frame);
+                let saved = {add_right = value}.>widen_sum(Frame);
                 recur run(evaluate_at(right, environment), lists.cons(saved, remaining), next_fuel)
               };
               .(right: Add_right) {
-                match!((right.?{add_right}, value)) {
+                match((right.?{add_right}, value)) {
                   .(a: values.Number, b: values.Number) {
                     let total = arith.add_i32(a.?{values.number}, b.?{values.number});
                     recur run(return_value(values.integer(total)), remaining, next_fuel)
@@ -92,7 +92,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
               };
               .(callee: Call_left) {
                 let .(argument, caller_environment) = callee.?{call_left};
-                let saved = {call_right = value}.>widen_sum!(Frame);
+                let saved = {call_right = value}.>widen_sum(Frame);
                 recur run(
                 , evaluate_at(argument, caller_environment)
                 , lists.cons(saved, remaining)
@@ -100,7 +100,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
                 )
               };
               .(argument: Call_right) {
-                match! argument.?{call_right} {
+                match(argument.?{call_right}) {
                   .(f: values.Closure) {
                     let .(parameter, body, captured) = f.?{values.closure};
                     let local = env.extend(parameter, value, captured);
@@ -115,7 +115,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
               }
             }
           };
-          .() { value.>widen_sum!(Result) }
+          .() { value.>widen_sum(Result) }
         }
       }
     }

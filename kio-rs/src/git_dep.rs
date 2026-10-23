@@ -1073,7 +1073,7 @@ fn read_dep_sig_file(
 /// Because the digest depends only on the signature surface — never on a
 /// body — the two binaries compute the **identical** contract, including
 /// for a dependency whose bodies use surface forms (`if`/`do`/`match`/
-/// elaborators) that the surface-less `kio-prime` lowering would reject in
+/// macros) that the surface-less `kio-prime` lowering would reject in
 /// a full compile (`specs/versioning.md`
 /// § Git-dependency contract gate).
 fn live_contract_snapshot(

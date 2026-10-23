@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi(default String);
 import testapi/io as io;
 import testapi/text as text;
@@ -39,7 +39,7 @@ fn existential() -> String {
 
 fn monadic() -> String {
   let result =
-    do! bind {
+    do(bind) {
       let .(prefix: String) <- pure("do");
       let .(whole: (middle: String, suffix: String)) = ("=", "bind");
       let .(again, last) <- pure(whole);

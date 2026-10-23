@@ -42,7 +42,7 @@ evidence. A nested call may share that finite domain while its result remains
 unfinished; an independently completed nested call contributes only its closed
 result.
 Neither case may inspect an ambient declaration set. A type-producing
-elab likewise uses the one already-resolved implementation and the one
+macro likewise uses the one already-resolved implementation and the one
 checked term it returns, never an ambient declaration search. Adding an
 unrelated module-body declaration therefore cannot change which goals exist,
 the order in which retained actions are consumed, or the result.

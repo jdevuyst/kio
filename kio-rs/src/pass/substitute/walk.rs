@@ -58,7 +58,7 @@ pub(super) trait LoweredToPrePrime {
     fn rewrite_expr_rec_order(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
     fn rewrite_expr_rec_quote(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
-    fn rewrite_expr_user_elaborator(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
+    fn rewrite_expr_user_macro(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
     fn rewrite_expr_ufcs(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error>;
 
@@ -71,9 +71,9 @@ pub(super) trait LoweredToPrePrime {
     /// dispatchers flat-map the results.
     fn rewrite_item_equiv(&mut self, e: &Equiv<Lowered>) -> Result<Vec<Item<PrePrime>>, Error>;
 
-    fn rewrite_item_elaborator(
+    fn rewrite_item_macro(
         &mut self,
-        e: &crate::ast::UserElaboratorDef<Lowered>,
+        e: &crate::ast::UserMacroDef<Lowered>,
     ) -> Result<Vec<Item<PrePrime>>, Error>;
 
     // -------------------------------------------------------------
@@ -367,7 +367,7 @@ pub(super) trait LoweredToPrePrime {
     /// tier 3). Default: none — an implementer with a package
     /// (the full pipeline's `substitute`) overrides this to consult it,
     /// so a Kio' literal produced from an untyped Lowered module (a
-    /// compile-time-eval term, an elaborator template, an emitter test
+    /// compile-time-eval term, a macro template, an emitter test
     /// fixture) still resolves its mandatory annotation.
     fn resolved_literal_by_role(
         &mut self,
@@ -532,7 +532,7 @@ pub(super) trait LoweredToPrePrime {
                 })])
             }
             Item::Equiv(e, _) => self.rewrite_item_equiv(e),
-            Item::Elaborator(s, _) => self.rewrite_item_elaborator(s),
+            Item::Macro(s, _) => self.rewrite_item_macro(s),
             // Host items are inhabited at every phase and pass straight
             // through (signature-type rebrand, no exprs); opaque in Kio'.
             Item::HostType(h) => Ok(vec![Item::HostType(self.walk_host_type(h)?)]),
@@ -742,7 +742,7 @@ pub(super) trait LoweredToPrePrime {
             Expr::Elaborator { .. } => self.rewrite_expr_elaborator(e),
             Expr::RecOrder { .. } => self.rewrite_expr_rec_order(e),
             Expr::RecQuote { .. } => self.rewrite_expr_rec_quote(e),
-            Expr::UserElaborator { .. } => self.rewrite_expr_user_elaborator(e),
+            Expr::UserMacro { .. } => self.rewrite_expr_user_macro(e),
             Expr::Ufcs { .. } => self.rewrite_expr_ufcs(e),
             // Statically uninhabited at Lowered (`label_elab` /
             // `desugar` stripped these at earlier boundaries).

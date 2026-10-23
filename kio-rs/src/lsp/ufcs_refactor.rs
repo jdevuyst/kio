@@ -310,7 +310,7 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                     }
                 }));
             }
-            Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => {
+            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
                 pending.extend(args.iter().filter_map(|arg| {
                     if let CallArg::Value(value) = arg {
                         Some(value)

@@ -1,6 +1,6 @@
 module main;
 
-import elab/control(if);
+import macros/control(macro if);
 
 host type Bool role(bool);
 
@@ -13,5 +13,5 @@ labels State = { first: First_payload, second: Second_payload };
 fn ignore[A](_value: A) { () }
 
 fn run(condition: Bool, state: State, first: First_payload, second: Second_payload) {
-  ignore(if! condition { state.!{second} } else { state.!{first} })
+  ignore(if(condition) { state.!{second} } else { state.!{first} })
 }

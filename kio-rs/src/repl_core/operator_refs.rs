@@ -26,7 +26,7 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
             | Item::LabelForward(_, _)
             | Item::HostType(_)
             | Item::HostFn(_)
-            | Item::Elaborator(_, _)
+            | Item::Macro(_, _)
             | Item::Op(_, _)
             | Item::VariadicOperator(_, _) => {}
         }
@@ -77,9 +77,7 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
                 pending.push(callee);
                 values(args, &mut pending);
             }
-            Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => {
-                values(args, &mut pending)
-            }
+            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => values(args, &mut pending),
             Expr::Ufcs { receiver, args, .. } => {
                 pending.push(receiver);
                 values(args, &mut pending);

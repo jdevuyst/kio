@@ -2,11 +2,11 @@ module bdd/query;
 
 import bdd/logic as logic;
 import bdd/store as table;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as walk;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
@@ -14,17 +14,17 @@ import testapi/iter(loop);
 pub type Assignment = lists.List(I32 & Bool);
 
 pub fn assigned(values: Assignment, variable: I32) -> Bool {
-  match! walk.find(.(key: I32, _value: Bool) { arith.eq_i32(key, variable) }, values) {
+  match(walk.find(.(key: I32, _value: Bool) { arith.eq_i32(key, variable) }, values)) {
     .(_key: I32, value: Bool) { value };
     .() { .f }
   }
 }
 
 pub rec(loop) fn evaluate(store: table.Store, root: table.Node_id, assignment: I32 -> Bool) -> Bool {
-  match! table.lookup(store, root) {
+  match(table.lookup(store, root)) {
     .(node: table.Node) {
       let child =
-        if! assignment(node.?{table.level}) { node.?{table.high} } else { node.?{table.low} };
+        if(assignment(node.?{table.level})) { node.?{table.high} } else { node.?{table.low} };
       recur evaluate(store, child, assignment)
     };
     .() { table.truth(root) }
@@ -32,15 +32,15 @@ pub rec(loop) fn evaluate(store: table.Store, root: table.Node_id, assignment: I
 }
 
 rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment) -> Assignment | . {
-  if! table.same_id(root, table.false_id()) {
-    ().>widen_sum!
-  } else match! table.lookup(store, root) {
+  if(table.same_id(root, table.false_id())) {
+    ().>widen_sum
+  } else match(table.lookup(store, root)) {
     .(node: table.Node) {
       let high = table.same_id(node.?{table.low}, table.false_id());
-      let child = if! high { node.?{table.high} } else { node.?{table.low} };
+      let child = if(high) { node.?{table.high} } else { node.?{table.low} };
       recur choose(store, child, lists.cons((node.?{table.level}, high), values))
     };
-    .() { values.>widen_sum! }
+    .() { values.>widen_sum }
   }
 }
 
@@ -53,11 +53,11 @@ rec(loop) fn collect(
 , pending: lists.List(table.Node_id)
 , seen: lists.List(table.Node_id)
 ) -> lists.List(table.Node_id) {
-  match! lists.uncons(pending) {
+  match(lists.uncons(pending)) {
     .(id: table.Node_id, tail: lists.List(table.Node_id)) {
-      if! logic.or(table.terminal(id), walk.elem(table.same_id, id, seen)) {
+      if(logic.or(table.terminal(id), walk.elem(table.same_id, id, seen))) {
         recur collect(store, tail, seen)
-      } else match! table.lookup(store, id) {
+      } else match(table.lookup(store, id)) {
         .(node: table.Node) {
           recur collect(
           , store
@@ -77,9 +77,9 @@ pub fn node_count(store: table.Store, root: table.Node_id) -> I32 {
 }
 
 fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {
-  if! table.terminal(child) {
+  if(table.terminal(child)) {
     .t
-  } else match! table.lookup(store, child) {
+  } else match(table.lookup(store, child)) {
     .(node: table.Node) { arith.lt_i32(level, node.?{table.level}) };
     .() { .f }
   }

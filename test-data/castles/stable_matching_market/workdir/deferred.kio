@@ -1,6 +1,6 @@
 module deferred;
 
-import elab/control(if);
+import macros/control(macro if);
 import market as market;
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
@@ -28,7 +28,7 @@ fn index(size: I32, recipient: I32, proposer: I32) -> I32 {
 }
 
 rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: I32, position: I32) {
-  if! market.less(position, size) {
+  if(market.less(position, size)) {
     array.array_set(ranks, index(size, recipient, array.array_get(row, position)), position);
     recur rank_row(row, ranks, size, recipient, arith.add_i32(position, 1))
   } else {
@@ -37,7 +37,7 @@ rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: 
 }
 
 rec(loop) fn rank_all(preferences: market.Preferences, ranks: Array(I32), size: I32, recipient: I32) -> Array(I32) {
-  if! market.less(recipient, size) {
+  if(market.less(recipient, size)) {
     rank_row(array.array_get(preferences, recipient), ranks, size, recipient, 0);
     recur rank_all(preferences, ranks, size, arith.add_i32(recipient, 1))
   } else {
@@ -52,13 +52,13 @@ fn engage(outcome: Outcome, proposer: I32, recipient: I32) {
 
 fn offer(work: Work, outcome: Outcome, proposer: I32, recipient: I32) -> Outcome {
   let incumbent = array.array_get(outcome.?{holder}, recipient);
-  if! market.less(incumbent, 0) {
+  if(market.less(incumbent, 0)) {
     engage(outcome, proposer, recipient);
     outcome
   } else {
     let incoming_rank = array.array_get(work.?{ranks}, index(work.?{size}, recipient, proposer));
     let held_rank = array.array_get(work.?{ranks}, index(work.?{size}, recipient, incumbent));
-    if! market.less(incoming_rank, held_rank) {
+    if(market.less(incoming_rank, held_rank)) {
       array.array_set(outcome.?{partner}, incumbent, -1);
       engage(outcome, proposer, recipient);
       array.array_push(work.?{queue}, incumbent);
@@ -73,7 +73,7 @@ fn offer(work: Work, outcome: Outcome, proposer: I32, recipient: I32) -> Outcome
 // The queue contains precisely the proposers whose next proposal is pending.
 // Every rejection and displacement appends one newly free proposer.
 rec(loop) fn process(work: Work, head: I32, outcome: Outcome) -> Outcome {
-  if! market.less(head, array.array_len(work.?{queue})) {
+  if(market.less(head, array.array_len(work.?{queue}))) {
     let proposer = array.array_get(work.?{queue}, head);
     let position = array.array_get(work.?{next_choice}, proposer);
     let recipient = array.array_get(array.array_get(work.?{preferences}, proposer), position);

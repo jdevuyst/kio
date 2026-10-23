@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -11,7 +11,7 @@ import testapi/text as text;
 fn mark(label: String, value: I32) -> I32 { io.print(text.string_concat(label, "\n")); value }
 
 rec(iter.loop_reentry) fn delayed(remaining: I32, left: I32, right: I32) -> I32 -> I32 {
-  if! arith.leq_i32(remaining, 0) {
+  if(arith.leq_i32(remaining, 0)) {
     .(increment: I32) { arith.add_i32(arith.add_i32(left, right), increment) }
   } else {
     .(increment: I32) {

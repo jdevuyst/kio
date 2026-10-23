@@ -798,18 +798,18 @@ mod tests {
     #[test]
     fn dependency_module_classified_by_leading_segment() {
         let mut deps = std::collections::BTreeSet::new();
-        deps.insert("elab".to_owned());
-        assert!(is_dependency_module("elab", &deps));
-        assert!(is_dependency_module("elab/match", &deps));
-        assert!(is_dependency_module("elab/elab/main", &deps));
+        deps.insert("macros".to_owned());
+        assert!(is_dependency_module("macros", &deps));
+        assert!(is_dependency_module("macros/match", &deps));
+        assert!(is_dependency_module("macros/macros/main", &deps));
         assert!(!is_dependency_module("host/m", &deps));
         // Only the *leading* segment counts: a consumer module whose
         // non-leading segment is named like a dependency is not a dep
         // module.
-        assert!(!is_dependency_module("host/elab", &deps));
+        assert!(!is_dependency_module("host/macros", &deps));
 
         let empty = std::collections::BTreeSet::new();
-        assert!(!is_dependency_module("elab/match", &empty));
+        assert!(!is_dependency_module("macros/match", &empty));
     }
 
     /// The no-equiv fast path hinges on `census_equiv_blocks`: it counts
@@ -835,14 +835,14 @@ mod tests {
             lazy("module util;\n\npub fn f() -> . { () }\n"),
         );
         modules.insert(
-            std::path::PathBuf::from("/pkg/elab/law.kio"),
-            lazy("module elab/law;\n\nequiv b() { (); () }\n"),
+            std::path::PathBuf::from("/pkg/macros/law.kio"),
+            lazy("module macros/law;\n\nequiv b() { (); () }\n"),
         );
 
         // Default scoping: `main` is the one in-scope block, `util` has
-        // none, and the `elab/law` dependency block is skipped.
+        // none, and the `macros/law` dependency block is skipped.
         let mut deps = std::collections::BTreeSet::new();
-        deps.insert("elab".to_owned());
+        deps.insert("macros".to_owned());
         assert_eq!(census_equiv_blocks(&modules, &deps), (1, 1));
 
         // `--include-deps` (empty prefix set): the dependency block is

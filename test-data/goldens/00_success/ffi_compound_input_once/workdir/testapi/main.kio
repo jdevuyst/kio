@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, produce);
 
 pub newtype Inner : I32 & I32 { pub constructor inner; pub projector un_inner }
@@ -23,12 +23,12 @@ pub fn make_outer(text: String, left: I32, right: I32) -> Outer {
   Outer.outer((text, Inner.inner((left, right))))
 }
 
-pub fn first(value: I32) -> Choice { Choice.choice(widen_sum!(value, I32 | Inner | Outer)) }
+pub fn first(value: I32) -> Choice { Choice.choice(widen_sum(value, I32 | Inner | Outer)) }
 
 pub fn middle(left: I32, right: I32) -> Choice {
-  Choice.choice(widen_sum!(Inner.inner((left, right)), I32 | Inner | Outer))
+  Choice.choice(widen_sum(Inner.inner((left, right)), I32 | Inner | Outer))
 }
 
 pub fn last(text: String, left: I32, right: I32) -> Choice {
-  Choice.choice(widen_sum!(make_outer(text, left, right), I32 | Inner | Outer))
+  Choice.choice(widen_sum(make_outer(text, left, right), I32 | Inner | Outer))
 }

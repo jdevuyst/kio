@@ -7,9 +7,9 @@
 /// lost.
 module skyline/events;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import skyline/city as city;
 import skyline/list as lst;
 import skyline/logic as logic;
@@ -20,18 +20,18 @@ import testapi/iter(loop);
 /// Which edge of a building an event stands on.
 pub labels Kind = { enter: . } | { leave: . };
 
-pub fn enter_kind() -> Kind { {enter=}.>widen_sum!(Kind) }
+pub fn enter_kind() -> Kind { {enter=}.>widen_sum(Kind) }
 
-pub fn leave_kind() -> Kind { {leave=}.>widen_sum!(Kind) }
+pub fn leave_kind() -> Kind { {leave=}.>widen_sum(Kind) }
 
 pub fn is_enter(k: Kind) -> Bool {
-  match! k {
+  match(k) {
     (.(_e: Enter) { .t }, .(_l: Leave) { .f })
   }
 }
 
 pub fn kind_name(k: Kind) -> String {
-  match! k {
+  match(k) {
     (.(_e: Enter) { "enter" }, .(_l: Leave) { "leave" })
   }
 }
@@ -74,12 +74,12 @@ fn right_edge(b: city.Building) -> Event {
 /// right edges the shorter one goes first, so every departure that cannot
 /// lower the peak happens before the one that can.
 pub fn event_leq(a: Event, b: Event) -> Bool {
-  if! logic.eq(at_of(a), at_of(b)) {
+  if(logic.eq(at_of(a), at_of(b))) {
     let a_enters = is_enter(edge_of(a));
     let b_enters = is_enter(edge_of(b));
-    if! logic.and(a_enters, b_enters) {
+    if(logic.and(a_enters, b_enters)) {
       leq_i32(level_of(b), level_of(a))
-    } else if! logic.or(a_enters, b_enters) {
+    } else if(logic.or(a_enters, b_enters)) {
       a_enters
     } else {
       leq_i32(level_of(a), level_of(b))
@@ -91,10 +91,10 @@ pub fn event_leq(a: Event, b: Event) -> Bool {
 
 /// Ordered insert: `e` lands in front of the first event it precedes.
 pub rec(loop) fn insert(e: Event, es: lst.List(Event)) -> lst.List(Event) {
-  match! es.>lst.List.un_list {
+  match(es.>lst.List.un_list) {
     (
     , .(head: Event, rest: lst.List(Event)) {
-        if! event_leq(e, head) {
+        if(event_leq(e, head)) {
           lst.cons(e, lst.cons(head, rest))
         } else {
           lst.cons(head, recur(cont) insert(e, rest))
@@ -111,7 +111,7 @@ rec(loop) {
     recur collect(bs, lst.nil(Event))
   };
   fn collect(bs: lst.List(city.Building), acc: lst.List(Event)) -> lst.List(Event) {
-    match! bs.>lst.List.un_list {
+    match(bs.>lst.List.un_list) {
       (
       , .(b: city.Building, rest: lst.List(city.Building)) {
           let opened = insert(left_edge(b), acc);

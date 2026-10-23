@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(scope);
+import macros/control(macro scope);
 import testapi/io as io;
 
 pub fn main() {
-  scope! { io.print("thunk\n") }
+  scope { io.print("thunk\n") }
 }

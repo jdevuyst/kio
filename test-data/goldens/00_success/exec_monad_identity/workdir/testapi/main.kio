@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -38,7 +38,7 @@ fn use_instance() -> String {
   let monad = identity_monad();
   let seed = Identity.mk_id("monad on identity"(String));
   let result =
-    do! Monad.bind(monad) {
+    do(Monad.bind(monad)) {
       let prefix <- seed;
       let middle = " ok"(String);
       let trailed <- Identity.mk_id(string_concat(prefix, middle));

@@ -13,10 +13,10 @@
 /// parse reads as `0`.
 module turtle/parse;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as list;
 import list/list(reverse);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32);
 import testapi/fmt(string_to_int);
@@ -28,22 +28,22 @@ import turtle/num as num;
 
 /// The next line, or the empty word at end of input.
 pub fn read_word() -> String {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (.(s: String) { s }, .(_eof: .) { "" })
   }
 }
 
 /// The next line as a base-10 integer.
 pub fn read_number() -> I32 {
-  match! string_to_int(read_word()) {
+  match(string_to_int(read_word())) {
     (.(n: I32) { n }, .(_bad: .) { 0 })
   }
 }
 
 fn parse_pen(word: String) -> cmd.Command {
-  if! string_eq(word, "down") {
+  if(string_eq(word, "down")) {
     cmd.pen(.t)
-  } else if! string_eq(word, "up") {
+  } else if(string_eq(word, "up")) {
     cmd.pen(.f)
   } else {
     cmd.unknown(word)
@@ -51,9 +51,9 @@ fn parse_pen(word: String) -> cmd.Command {
 }
 
 fn parse_turn(word: String) -> cmd.Command {
-  if! string_eq(word, "right") {
+  if(string_eq(word, "right")) {
     cmd.turn(.t)
-  } else if! string_eq(word, "left") {
+  } else if(string_eq(word, "left")) {
     cmd.turn(.f)
   } else {
     cmd.unknown(word)
@@ -65,17 +65,17 @@ fn parse_turn(word: String) -> cmd.Command {
 /// named bindings so the source fixes their order rather than leaning on the
 /// order the arguments of a call happen to be evaluated in.
 fn parse_simple(kw: String) -> cmd.Command {
-  if! string_eq(kw, "pen") {
+  if(string_eq(kw, "pen")) {
     parse_pen(read_word())
-  } else if! string_eq(kw, "move") {
+  } else if(string_eq(kw, "move")) {
     cmd.move(read_number())
-  } else if! string_eq(kw, "turn") {
+  } else if(string_eq(kw, "turn")) {
     parse_turn(read_word())
-  } else if! string_eq(kw, "goto") {
+  } else if(string_eq(kw, "goto")) {
     let x = read_number();
     let y = read_number();
     cmd.goto(x, y)
-  } else if! string_eq(kw, "mark") {
+  } else if(string_eq(kw, "mark")) {
     cmd.mark(read_number())
   } else {
     cmd.unknown(kw)
@@ -94,12 +94,12 @@ rec(loop) {
   /// The descent into a `repeat` body is the one call that is not in tail
   /// position: its result has to come back to be consed onto this block.
   fn parse_block(depth: I32, acc: list.List(cmd.Command)) -> list.List(cmd.Command) {
-    match! read_ascii_line() {
+    match(read_ascii_line()) {
       (
       , .(kw: String) {
-          if! num.and(string_eq(kw, "end"), lt_i32(0, depth)) {
+          if(num.and(string_eq(kw, "end"), lt_i32(0, depth))) {
             reverse(acc)
-          } else if! string_eq(kw, "repeat") {
+          } else if(string_eq(kw, "repeat")) {
             let n = read_number();
             let body = recur(cont) parse_block(add_i32(depth, 1), list.nil(cmd.Command));
             recur parse_block(depth, list.cons(cmd.repeat(n, body), acc))

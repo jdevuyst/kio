@@ -7,13 +7,13 @@
 /// the reader sees is the slack the badness was computed from.
 module justify/render;
 
-import elab/control(if);
-import elab/match(match);
 import justify/dp(Table, table_back, table_best, table_fits);
 import justify/layout(Line, line_badness, line_slack, line_start, line_stop, line_used);
 import justify/list as list;
 import justify/list(List);
 import justify/word(Word, Words, widest, word_text, word_width);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -25,7 +25,7 @@ fn cat(a: String, b: String) -> String { string_concat(a, b) }
 fn cat3(a: String, b: String, c: String) -> String { cat(cat(a, b), c) }
 
 rec(loop) fn repeat_onto(unit: String, n: I32, acc: String) -> String {
-  if! leq_i32(n, 0) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat(acc, unit)) }
+  if(leq_i32(n, 0)) { acc } else { recur repeat_onto(unit, sub_i32(n, 1), cat(acc, unit)) }
 }
 
 fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
@@ -33,9 +33,9 @@ fn repeat(unit: String, n: I32) -> String { repeat_onto(unit, n, "") }
 /// The loop stops at nine places, which is one short of what an `i32` can hold,
 /// so `bound` never has to reach a power of ten that overflows.
 rec(loop) fn decades(n: I32, bound: I32, acc: I32) -> I32 {
-  if! lt_i32(n, bound) {
+  if(lt_i32(n, bound)) {
     acc
-  } else if! leq_i32(9, acc) {
+  } else if(leq_i32(9, acc)) {
     acc
   } else {
     recur decades(n, mul_i32(bound, 10), add_i32(acc, 1))
@@ -56,7 +56,7 @@ fn pad_text(text: String, width: I32, field: I32) -> String {
 /// A break point with no predecessor, or a break point with no candidate starts
 /// to count. There is nothing there, and the table says so.
 fn pad_dash(n: I32, field: I32) -> String {
-  if! lt_i32(n, 0) { cat(repeat(" ", sub_i32(field, 1)), "-") } else { pad_num(n, field) }
+  if(lt_i32(n, 0)) { cat(repeat(" ", sub_i32(field, 1)), "-") } else { pad_num(n, field) }
 }
 
 fn metric_row(index: I32, w: Word, field: I32) -> String {
@@ -68,7 +68,7 @@ fn metric_row(index: I32, w: Word, field: I32) -> String {
 }
 
 rec(loop) fn metrics_onto(xs: Words, index: I32, field: I32, acc: String) -> String {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(w: Word, rest: Words) {
         recur metrics_onto(rest, add_i32(index, 1), field, cat(acc, metric_row(index, w, field)))
@@ -83,15 +83,15 @@ rec(loop) fn metrics_onto(xs: Words, index: I32, field: I32, acc: String) -> Str
 pub fn metrics(xs: Words) -> String { metrics_onto(xs, 0, widest(xs), "") }
 
 rec(loop) fn join_onto(xs: Words, cursor: I32, from: I32, to: I32, acc: String) -> String {
-  if! leq_i32(to, cursor) {
+  if(leq_i32(to, cursor)) {
     acc
-  } else match! xs.>List.unpack {
+  } else match(xs.>List.unpack) {
     (
     , .(w: Word, rest: Words) {
-        if! lt_i32(cursor, from) {
+        if(lt_i32(cursor, from)) {
           recur join_onto(rest, add_i32(cursor, 1), from, to, acc)
         } else {
-          let sep = if! leq_i32(cursor, from) { "" } else { " " };
+          let sep = if(leq_i32(cursor, from)) { "" } else { " " };
           recur join_onto(rest, add_i32(cursor, 1), from, to, cat3(acc, sep, word_text(w)))
         }
       }
@@ -118,7 +118,7 @@ fn line_row(xs: Words, l: Line) -> String {
 }
 
 rec(loop) fn layout_onto(xs: Words, ls: List(Line), acc: String) -> String {
-  match! ls.>List.unpack {
+  match(ls.>List.unpack) {
     (
     , .(l: Line, rest: List(Line)) { recur layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
     , .(_empty: .) { acc }
@@ -133,7 +133,7 @@ pub fn layout(xs: Words, column: I32, ls: List(Line)) -> String {
 }
 
 rec(loop) fn breaks_onto(bs: List(I32), sep: String, acc: String) -> String {
-  match! bs.>List.unpack {
+  match(bs.>List.unpack) {
     (
     , .(b: I32, rest: List(I32)) { recur breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
     , .(_empty: .) { acc }
@@ -148,7 +148,7 @@ fn table_row(j: I32, best: I32, back: I32, fits: I32) -> String {
 }
 
 rec(loop) fn rows_onto(j: I32, best: List(I32), back: List(I32), fits: List(I32), acc: String) -> String {
-  match! best.>List.unpack {
+  match(best.>List.unpack) {
     (
     , .(b: I32, rest: List(I32)) {
         let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));

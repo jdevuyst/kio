@@ -11,8 +11,8 @@ import diff3/list as list;
 import diff3/merge as merge;
 import diff3/prim as prim;
 import diff3/scan as scan;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, mul_i32);
 import testapi/fmt(int_to_string);
@@ -41,7 +41,7 @@ fn conflict_block(reg: merge.Region) -> list.List(String) {
 
 /// The lines one region contributes to the merged document.
 fn emit(reg: merge.Region) -> list.List(String) {
-  match! merge.mark_of(reg) {
+  match(merge.mark_of(reg)) {
     (
     , .(_v: merge.Stable) { merge.base_of(reg) }
     , .(_v: merge.Ours_only) { merge.ours_of(reg) }
@@ -53,7 +53,7 @@ fn emit(reg: merge.Region) -> list.List(String) {
 }
 
 rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String)) -> list.List(String) {
-  match! list.List.unpack(found) {
+  match(list.List.unpack(found)) {
     (
     , .(reg: merge.Region, rest: list.List(merge.Region)) {
         recur merged_from(rest, list.rev_onto(emit(reg), acc))
@@ -74,7 +74,7 @@ fn field(label: String, value: String) { text(prim.cat(label, prim.cat(": ", val
 fn count(label: String, value: I32) { field(label, int_to_string(value)) }
 
 rec(loop) fn print_lines(lines: list.List(String)) {
-  match! list.List.unpack(lines) {
+  match(list.List.unpack(lines)) {
     (
     , .(line: String, rest: list.List(String)) { text(line); recur print_lines(rest) }
     , .(_empty: .) { () }
@@ -83,7 +83,7 @@ rec(loop) fn print_lines(lines: list.List(String)) {
 }
 
 fn status(conflicts: I32) -> String {
-  if! prim.int_eq(conflicts, 0) { "merged" } else { "conflicted" }
+  if(prim.int_eq(conflicts, 0)) { "merged" } else { "conflicted" }
 }
 
 pub fn report(
@@ -108,7 +108,7 @@ pub fn report(
   count("lcs base/theirs", lcs.lcs_len(theirs));
   count("anchors", list.len(found_anchors));
   count("regions", list.len(found));
-  match! merge.tally(found) {
+  match(merge.tally(found)) {
     .(stable: I32, ours_only: I32, theirs_only: I32, both_same: I32, conflicts: I32) {
       count("stable", stable);
       count("ours-changed", ours_only);

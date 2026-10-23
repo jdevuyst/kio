@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import report/aggregate as aggregate;
 import report/events as events;
 import report/model as model;
@@ -10,7 +10,7 @@ import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn consume(state: model.State) -> model.State {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(tag: String) { recur consume(aggregate.accept(state, events.read(tag))) };
     .(_eof: .) { aggregate.finish(state) }
   }

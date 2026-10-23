@@ -14,7 +14,7 @@ pub(crate) fn eval_enabled() -> bool {
 }
 
 #[cfg(feature = "surface")]
-pub(crate) fn user_elaborator_frontend_enabled() -> bool {
+pub(crate) fn user_macro_frontend_enabled() -> bool {
     #[cfg(feature = "cli")]
     {
         frontend_enabled()

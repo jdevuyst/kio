@@ -1,6 +1,6 @@
 module minesweeper_frontier/model;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -18,19 +18,19 @@ pub fn mine_total() -> I32 { 6 }
 pub fn revealed_total() -> I32 { 8 }
 
 pub fn eq_i32(a: I32, b: I32) -> Bool {
-  if! arith.leq_i32(a, b) { arith.leq_i32(b, a) } else { .f }
+  if(arith.leq_i32(a, b)) { arith.leq_i32(b, a) } else { .f }
 }
 
 pub fn bool_to_i32(value: Bool) -> I32 {
-  if! value { 1 } else { 0 }
+  if(value) { 1 } else { 0 }
 }
 
 pub fn less_than(a: I32, b: I32) -> Bool { arith.leq_i32(arith.add_i32(a, 1), b) }
 
 pub fn in_bounds(row: I32, col: I32) -> Bool {
-  if! arith.leq_i32(0, row) {
-    if! arith.leq_i32(0, col) {
-      if! less_than(row, height()) { less_than(col, width()) } else { .f }
+  if(arith.leq_i32(0, row)) {
+    if(arith.leq_i32(0, col)) {
+      if(less_than(row, height())) { less_than(col, width()) } else { .f }
     } else {
       .f
     }
@@ -66,9 +66,9 @@ pub fn build_revealed() -> Array(Bool) {
 }
 
 pub fn mine_at(mines: Array(Bool), row: I32, col: I32) -> Bool {
-  if! in_bounds(row, col) { array.array_get(mines, cell_index(row, col)) } else { .f }
+  if(in_bounds(row, col)) { array.array_get(mines, cell_index(row, col)) } else { .f }
 }
 
 pub fn revealed_at(revealed: Array(Bool), row: I32, col: I32) -> Bool {
-  if! in_bounds(row, col) { array.array_get(revealed, cell_index(row, col)) } else { .f }
+  if(in_bounds(row, col)) { array.array_get(revealed, cell_index(row, col)) } else { .f }
 }

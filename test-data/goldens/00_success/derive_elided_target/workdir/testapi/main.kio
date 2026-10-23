@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 
@@ -19,7 +19,7 @@ fn box_monad() -> Monad(Box) {
 // pins the goal to `Monad(Box)` via the surrounding expected type,
 // the same convention the other solver bangs use for their trailing
 // target slot.
-fn box_instance() -> Monad(Box) { derive!(box_monad) }
+fn box_instance() -> Monad(Box) { derive(box_monad) }
 
 fn use_derived() -> String {
   let monad = box_instance();

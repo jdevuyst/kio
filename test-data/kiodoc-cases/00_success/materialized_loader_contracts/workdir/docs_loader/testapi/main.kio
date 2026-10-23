@@ -4,9 +4,6 @@
 module docs_loader/testapi/main;
 
 import docs_loader/defaults(default_host_adapter, instantiate_checked_default, instantiate_default);
-import docs_loader/elab/control(if);
-import docs_loader/elab/match(match);
-import docs_loader/elab/spine_elaborators(widen_sum);
 import docs_loader/host_descriptor(Host_fn);
 import docs_loader/host_descriptor(host_fn_eq);
 import docs_loader/host_descriptor(mk_host_fn, mk_host_id);
@@ -33,6 +30,9 @@ import docs_loader/loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_bin
 import docs_loader/loader(instantiate);
 import docs_loader/loader({str_in}, {str_out}, {sum_is_left}, {sum_payload}, {unit_in});
 import docs_loader/loader/scan(load_package);
+import docs_loader/macros/control(macro if);
+import docs_loader/macros/match(macro match);
+import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/prime(group_slots_cons, group_slots_nil);
 import docs_loader/result(Call_result, call_done, call_stuck);
 import docs_loader/testapi(Scalar, default Bool, default F64, default I32, default String);
@@ -128,13 +128,13 @@ fn guest_image() -> String {
 // Look up an export and apply it to one marshalled argument, projecting
 // the result through `out`; any diagnostic renders as its message.
 fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> String {
-  match! surf.?{lookup}(name) {
+  match(surf.?{lookup}(name)) {
     (
     , .(g: P) {
-        match! surf.?{apply}((g, surf.?{i32_in}(arg))) {
+        match(surf.?{apply}((g, surf.?{i32_in}(arg)))) {
           (
           , .(r: P) {
-              match! surf.?{i32_out}(r) {
+              match(surf.?{i32_out}(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -148,13 +148,13 @@ fn run_i32[P](surf: Surface(P), name: String, arg: I32) -> String {
 }
 
 fn run_greet[P](surf: Surface(P), who: String) -> String {
-  match! surf.?{lookup}("greet"(String)) {
+  match(surf.?{lookup}("greet"(String))) {
     (
     , .(g: P) {
-        match! surf.?{apply}((g, surf.?{str_in}(who))) {
+        match(surf.?{apply}((g, surf.?{str_in}(who)))) {
           (
           , .(r: P) {
-              match! surf.?{str_out}(r) {
+              match(surf.?{str_out}(r)) {
                 (.(s: String) { s }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -170,10 +170,10 @@ fn run_greet[P](surf: Surface(P), who: String) -> String {
 // A deliberately ill-shaped call — a host-string export applied to an
 // i32 — whose failure names the offending host fn and expected shape.
 fn run_greet_wrong[P](surf: Surface(P)) -> String {
-  match! surf.?{lookup}("greet"(String)) {
+  match(surf.?{lookup}("greet"(String))) {
     (
     , .(g: P) {
-        match! surf.?{apply}((g, surf.?{i32_in}(3(I32)))) {
+        match(surf.?{apply}((g, surf.?{i32_in}(3(I32))))) {
           (.(_r: P) { "unexpectedly succeeded"(String) }, .(d: Diag) { diag_message(d) })
         }
       }
@@ -185,7 +185,7 @@ fn run_greet_wrong[P](surf: Surface(P)) -> String {
 // The multi-value-param export `add3` called directly: its product domain
 // `(I32 & (I32 & I32))` is folded with `pair_in`.
 fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
-  match! surf.?{lookup}("add3"(String)) {
+  match(surf.?{lookup}("add3"(String))) {
     (
     , .(g: P) {
         let arg =
@@ -193,10 +193,10 @@ fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
           , surf.?{i32_in}(a)
           , surf.?{pair_in}((surf.?{i32_in}(b), surf.?{i32_in}(c)))
           ));
-        match! surf.?{apply}((g, arg)) {
+        match(surf.?{apply}((g, arg))) {
           (
           , .(r: P) {
-              match! surf.?{i32_out}(r) {
+              match(surf.?{i32_out}(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -211,7 +211,7 @@ fn run_add3[P](surf: Surface(P), a: I32, b: I32, c: I32) -> String {
 
 // The branching export over both arms: bool marshalling in.
 fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
-  match! surf.?{lookup}("pick"(String)) {
+  match(surf.?{lookup}("pick"(String))) {
     (
     , .(g: P) {
         let arg =
@@ -219,10 +219,10 @@ fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
           , surf.?{bool_in}(b)
           , surf.?{pair_in}((surf.?{i32_in}(x), surf.?{i32_in}(y)))
           ));
-        match! surf.?{apply}((g, arg)) {
+        match(surf.?{apply}((g, arg))) {
           (
           , .(r: P) {
-              match! surf.?{i32_out}(r) {
+              match(surf.?{i32_out}(r)) {
                 (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
               }
             }
@@ -238,19 +238,19 @@ fn run_pick[P](surf: Surface(P), b: Bool, x: I32, y: I32) -> String {
 // A zero-parameter float export (`unit_in`), scaled by a second float
 // export (`f64_in` / `f64_out` marshalling).
 fn run_scaled_gain[P](surf: Surface(P)) -> String {
-  match! surf.?{lookup}("default_gain"(String)) {
+  match(surf.?{lookup}("default_gain"(String))) {
     (
     , .(gain_fn: P) {
-        match! surf.?{apply}((gain_fn, surf.?{unit_in})) {
+        match(surf.?{apply}((gain_fn, surf.?{unit_in}))) {
           (
           , .(gain: P) {
-              match! surf.?{lookup}("scale"(String)) {
+              match(surf.?{lookup}("scale"(String))) {
                 (
                 , .(scale_fn: P) {
-                    match! surf.?{apply}((scale_fn, gain)) {
+                    match(surf.?{apply}((scale_fn, gain))) {
                       (
                       , .(r: P) {
-                          match! surf.?{f64_out}(r) {
+                          match(surf.?{f64_out}(r)) {
                             (.(x: F64) { f64_to_string(x) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -273,22 +273,22 @@ fn run_scaled_gain[P](surf: Surface(P)) -> String {
 
 // A product-returning export decomposed with `pair_out`.
 fn run_divmod[P](surf: Surface(P), a: I32, b: I32) -> String {
-  match! surf.?{lookup}("divmod"(String)) {
+  match(surf.?{lookup}("divmod"(String))) {
     (
     , .(g: P) {
         let arg = surf.?{pair_in}((surf.?{i32_in}(a), surf.?{i32_in}(b)));
-        match! surf.?{apply}((g, arg)) {
+        match(surf.?{apply}((g, arg))) {
           (
           , .(r: P) {
-              match! surf.?{pair_out}(r) {
+              match(surf.?{pair_out}(r)) {
                 (
                 , .(parts: P & P) {
-                    match! parts {
+                    match(parts) {
                       .(q: P, m: P) {
-                        match! surf.?{i32_out}(q) {
+                        match(surf.?{i32_out}(q)) {
                           (
                           , .(qn: I32) {
-                              match! surf.?{i32_out}(m) {
+                              match(surf.?{i32_out}(m)) {
                                 (
                                 , .(mn: I32) {
                                     string_concat(
@@ -321,23 +321,23 @@ fn run_divmod[P](surf: Surface(P), a: I32, b: I32) -> String {
 
 // A sum-returning export consumed with `sum_is_left` / `sum_payload`.
 fn run_classify[P](surf: Surface(P), n: I32) -> String {
-  match! surf.?{lookup}("classify"(String)) {
+  match(surf.?{lookup}("classify"(String))) {
     (
     , .(g: P) {
-        match! surf.?{apply}((g, surf.?{i32_in}(n))) {
+        match(surf.?{apply}((g, surf.?{i32_in}(n)))) {
           (
           , .(r: P) {
-              match! surf.?{sum_is_left}(r) {
+              match(surf.?{sum_is_left}(r)) {
                 (
                 , .(is_left: Bool) {
-                    match! surf.?{sum_payload}(r) {
+                    match(surf.?{sum_payload}(r)) {
                       (
                       , .(payload: P) {
-                          if! is_left {
-                            match! surf.?{str_out}(payload) {
+                          if(is_left) {
+                            match(surf.?{str_out}(payload)) {
                               (.(s: String) { s }, .(d: Diag) { diag_message(d) })
                             }
-                          } else match! surf.?{i32_out}(payload) {
+                          } else match(surf.?{i32_out}(payload)) {
                             (.(m: I32) { int_to_string(m) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -362,9 +362,9 @@ fn run_classify[P](surf: Surface(P), n: I32) -> String {
 fn render_exports[P](surf: Surface(P)) -> String {
   loop(
   , .(st: Export_infos & String) {
-      match! st {
+      match(st) {
         .(rem: Export_infos, acc: String) {
-          match! un_export_infos(rem) {
+          match(un_export_infos(rem)) {
             (
             , .(e: Export_info, rest: Export_infos) {
                 let line =
@@ -375,9 +375,9 @@ fn render_exports[P](surf: Surface(P)) -> String {
                     , string_concat(" : "(String), string_concat(export_info_sig(e), "\n"(String)))
                     )
                   );
-                widen_sum!((rest, string_concat(acc, line)), (Export_infos & String) | String)
+                widen_sum((rest, string_concat(acc, line)), (Export_infos & String) | String)
               }
-            , .(_e: .) { widen_sum!(acc, (Export_infos & String) | String) }
+            , .(_e: .) { widen_sum(acc, (Export_infos & String) | String) }
             )
           }
         }
@@ -392,19 +392,19 @@ fn render_exports[P](surf: Surface(P)) -> String {
 // module-qualified spelling) projects it back; both erase to the
 // identity, so the i32 rides through unchanged.
 fn run_tag_roundtrip[P](surf: Surface(P), x: I32) -> String {
-  match! surf.?{lookup}("Tag.mk_tag"(String)) {
+  match(surf.?{lookup}("Tag.mk_tag"(String))) {
     (
     , .(mk: P) {
-        match! surf.?{apply}((mk, surf.?{i32_in}(x))) {
+        match(surf.?{apply}((mk, surf.?{i32_in}(x)))) {
           (
           , .(tagged: P) {
-              match! surf.?{lookup}("guest.Tag.un_tag"(String)) {
+              match(surf.?{lookup}("guest.Tag.un_tag"(String))) {
                 (
                 , .(un: P) {
-                    match! surf.?{apply}((un, tagged)) {
+                    match(surf.?{apply}((un, tagged))) {
                       (
                       , .(r: P) {
-                          match! surf.?{i32_out}(r) {
+                          match(surf.?{i32_out}(r)) {
                             (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                           }
                         }
@@ -428,31 +428,31 @@ fn run_tag_roundtrip[P](surf: Surface(P), x: I32) -> String {
 // One flow per report line, selected by index (the existential opens once
 // per call; the flows share the record-surface helpers above).
 fn dispatch_flow[P](surf: Surface(P), arg: I32, which: I32) -> String {
-  if! eq_i32(which, 0(I32)) {
+  if(eq_i32(which, 0(I32))) {
     run_greet(surf, "World"(String))
-  } else if! eq_i32(which, 1(I32)) {
+  } else if(eq_i32(which, 1(I32))) {
     run_i32(surf, "quad"(String), arg)
-  } else if! eq_i32(which, 2(I32)) {
+  } else if(eq_i32(which, 2(I32))) {
     run_i32(surf, "use_poly"(String), arg)
-  } else if! eq_i32(which, 3(I32)) {
+  } else if(eq_i32(which, 3(I32))) {
     run_i32(surf, "use_add3"(String), arg)
-  } else if! eq_i32(which, 4(I32)) {
+  } else if(eq_i32(which, 4(I32))) {
     run_add3(surf, 3(I32), 4(I32), 5(I32))
-  } else if! eq_i32(which, 5(I32)) {
+  } else if(eq_i32(which, 5(I32))) {
     run_pick(surf, .t(Bool), 7(I32), 9(I32))
-  } else if! eq_i32(which, 6(I32)) {
+  } else if(eq_i32(which, 6(I32))) {
     run_pick(surf, .f(Bool), 7(I32), 9(I32))
-  } else if! eq_i32(which, 7(I32)) {
+  } else if(eq_i32(which, 7(I32))) {
     run_scaled_gain(surf)
-  } else if! eq_i32(which, 8(I32)) {
+  } else if(eq_i32(which, 8(I32))) {
     run_divmod(surf, 17(I32), 5(I32))
-  } else if! eq_i32(which, 9(I32)) {
+  } else if(eq_i32(which, 9(I32))) {
     run_classify(surf, 4(I32))
-  } else if! eq_i32(which, 10(I32)) {
+  } else if(eq_i32(which, 10(I32))) {
     run_classify(surf, 42(I32))
-  } else if! eq_i32(which, 11(I32)) {
+  } else if(eq_i32(which, 11(I32))) {
     run_greet_wrong(surf)
-  } else if! eq_i32(which, 12(I32)) {
+  } else if(eq_i32(which, 12(I32))) {
     run_tag_roundtrip(surf, arg)
   } else {
     render_exports(surf)
@@ -519,10 +519,10 @@ fn signature_contract() -> Contract {
 // The host's own callback: double an i32 guest value, or report the
 // shape it wanted.
 fn host_double(dom: Value) -> Call_result {
-  match! value_to_scalar(dom) {
+  match(value_to_scalar(dom)) {
     (
     , .(s: Scalar) {
-        match! scalar_as_i32(s) {
+        match(scalar_as_i32(s)) {
           (
           , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
           , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
@@ -555,9 +555,9 @@ fn adapter_with_callbacks() -> Host_adapter {
 }
 
 fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
-  match! call {
+  match(call) {
     .(descriptor: Host_fn, dom: Value) {
-      if! host_fn_eq(descriptor, host_double_descriptor()) {
+      if(host_fn_eq(descriptor, host_double_descriptor())) {
         host_double(dom)
       } else {
         serve_default(descriptor, dom)
@@ -569,16 +569,16 @@ fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
 // Mint the callback handle with `hostfn_in` and pass it into the
 // higher-order export.
 fn run_apply_cb[P](surf: Surface(P), x: I32) -> String {
-  match! surf.?{hostfn_in}(host_double_descriptor()) {
+  match(surf.?{hostfn_in}(host_double_descriptor())) {
     (
     , .(cb: P) {
-        match! surf.?{lookup}("apply_cb"(String)) {
+        match(surf.?{lookup}("apply_cb"(String))) {
           (
           , .(f: P) {
-              match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
+              match(surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x)))))) {
                 (
                 , .(r: P) {
-                    match! surf.?{i32_out}(r) {
+                    match(surf.?{i32_out}(r)) {
                       (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                     }
                   }
@@ -600,7 +600,7 @@ fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
 // Run the selected flow through the prepared default instance; an
 // instantiation failure renders as its diagnostic.
 fn flow(loaded: Loaded | Diag, arg: I32, which: I32) -> String {
-  match! un_inst(loaded) {
+  match(un_inst(loaded)) {
     (.(handle: Loaded) { with_surface(handle, arg, which) }, .(d: Diag) { diag_message(d) })
   }
 }
@@ -609,7 +609,7 @@ fn un_check(r: . | Diag) -> . | Diag { r }
 
 // Contract-match the resolved image against `c`.
 fn loaded_contract(image: Image, c: Contract) -> String {
-  match! un_check(contract_check(image, c)) {
+  match(un_check(contract_check(image, c))) {
     (.(d: Diag) { diag_message(d) }, .(_ok: .) { "ok"(String) })
   }
 }
@@ -617,7 +617,7 @@ fn loaded_contract(image: Image, c: Contract) -> String {
 // Contract-match and on a match call an export through the gated handle —
 // `instantiate_checked_default`, the contract-gated pack.
 fn checked_quad(image: Image, arg: I32) -> String {
-  match! un_inst(instantiate_checked_default(image, good_contract())) {
+  match(un_inst(instantiate_checked_default(image, good_contract()))) {
     (.(handle: Loaded) { with_surface(handle, arg, 1(I32)) }, .(d: Diag) { diag_message(d) })
   }
 }
@@ -630,13 +630,13 @@ fn line(label: String, body: String) -> String {
 /// matching `call` capability, then drives the higher-order callback export
 /// with the minted handle.
 fn callback_demo(image: Image, x: I32) -> String {
-  match! un_inst(instantiate(
+  match(un_inst(instantiate(
   , adapter_with_callbacks()
   , serve_with_callbacks
   , make_lit_default
   , test_bool_default
   , image
-  )) {
+  ))) {
     (
     , .(handle: Loaded) {
         Loaded.get(handle)(.[P](surf: Surface(P)) { run_apply_cb(surf, x) })
@@ -675,7 +675,7 @@ fn run_image(image: Image) {
 /// contract outcomes, a contract-gated call, and a stuck call's reason.
 pub fn main() {
   print(loader_allocator_hygiene_report());
-  match! un_load_outcome(load_package(guest_image())) {
+  match(un_load_outcome(load_package(guest_image()))) {
     (
     , .(im: Lr_image) { run_image(Lr_image.get(im)) }
     , .(d: Lr_diag) { print(diag_message(Lr_diag.get(d))) }

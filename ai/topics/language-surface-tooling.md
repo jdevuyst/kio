@@ -87,13 +87,34 @@ and formatting idempotently do not prove that grouping is correct.
 For operator changes, retain the complete structural classifier: arbitrary
 slot counts do not waive ineffective-`__` rejection or conflicting exposed
 ends. Exercise maximal leading extent before operand checks, opposing claims,
-native suffix ownership and bang adjacency. Frame identity follows structural
+native suffix ownership and macro-head grouping. Frame identity follows structural
 square edges and whole mirrored marker words before binding lookup; a failed
 parse or missing binding cannot select a shorter marker. Keep value-only
 slots/elements distinct from native types at mixed call-argument boundaries.
 The shared lexical rules also apply to independent Prime parsing and all five
 file kinds; dot/bracket roles, signed literals and comment ownership need
 their own witnesses.
+
+## Macro binding and highlighting
+
+Explicit macro selectors and ordinary value introductions share one source-order
+lexical ownership model. Check local/parameter/numbered-family shadowing, import
+aliases, earlier same-module declarations, transparent grouped heads and native
+`let`/`recur` ownership. Kind and visibility checks apply even with empty bodies.
+No provider census, whole-file macro-name set, type-driven fallback or runtime
+provenance may decide call classification.
+Every nonempty written macro block prefix uses ordinary argument-list parentheses,
+including a lone name, signed literal or Boolean literal. Zero-prefix calls
+omit the list; direct empty lists supply Unit, while block-call UFCS rejects
+empty lists. Preserve native `let`/`recur` ownership and ordinary nested
+expression grouping. Explicit list boundaries determine prefix ownership.
+
+Rich tooling refines known macro bindings to the macro token category; standalone
+TextMate and Tree-sitter consumers may retain generic callable coloring. Exercise
+actual REPL scope, Kiodoc assembled/harness scope and display-span mapping,
+module-end doc-comment examples, desktop/browser providers, and edits retracting
+an earlier macro classification. Shared classifier tests do not substitute for
+each provider boundary.
 
 ## Impact checklist
 
@@ -119,8 +140,9 @@ Use that argument to choose the affected surface area:
 - Formatter and style contract: canonical spelling, list layout, shorthand expansion/collapse, and stable round trips.
 - Lowering boundary: every surface-only form disappears before Kio'; phase-local elaboration data must be consumed before the boundary closes.
 - Typechecker behavior: synthesis/checking rules, expected-type flow, open-world argument when name resolution, imports, dispatch, or inference are involved.
-- Normalization behavior: `equiv`, REPL `:normalize`, elab execution, and any compile-time evaluator path that observes the changed semantics.
+- Normalization behavior: `equiv`, REPL `:normalize`, macro execution, and any compile-time evaluator path that observes the changed semantics.
 - Generated corpus: whether `kio-gen-rs` can still generate well-typed programs for the changed language and whether it should generate the new shape.
+- Embedded and noncanonical source: include nested demo and test API modules, Kio driver modules, program templates, shell-embedded examples, and formatter fixtures excluded from ordinary formatting checks. Review matching expected-output changes against the approved syntax change, preserving each fixture's subject and comments.
 - File-kind surface parity: every Kio-family file kind in the shared file-kind vocabulary must be considered together, not by a hard-coded module/package subset. Check `kio fmt`, `kio doc` `variant=KIND`, highlighters, LSP routing, IDE plugins, syntax fixtures, and docs against the whole set.
 - LSP: diagnostics, formatting, semantic tokens, hover, completion, code actions (including the source they generate), definition, references, prepare-rename, and rename. File-kind routing must follow the shared Kio-family predicates rather than ad hoc suffix lists.
 - REPL: command parsing, scope/output, expression queries, completion, highlighting, and multiline input; distinguish the shared inspector core, terminal front end, and browser wrapper.

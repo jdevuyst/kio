@@ -18,15 +18,15 @@ import catalog/domain({checkout}, {copies_out}, {copies_total}, {fines}, {hold},
 import catalog/ledger as ledger;
 import catalog/shelf as shelf;
 import dict/dict as dict;
-import elab/control(if);
-import elab/match(match);
 import list/core as lcore;
 import list/list as list;
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/fmt(bool_to_string);
 
 fn op_text(op: Op) -> String {
-  match! op {
+  match(op) {
     (
     , .(step: Checkout) {
         let .(id: I32, call: I32) = step.?{checkout};
@@ -57,7 +57,7 @@ pub fn transcript_line(index: I32, op: Op, outcome: String) -> String {
 /// The availability flag is padded to one cell so the title column lines
 /// up whether the flag reads `true` or `false`.
 fn avail_cell(available: Bool) -> String {
-  if! available {
+  if(available) {
     bool_to_string(available).>cat("   ")
   } else {
     bool_to_string(available).>cat("  ")

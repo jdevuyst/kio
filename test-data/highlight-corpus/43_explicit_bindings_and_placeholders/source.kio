@@ -1,5 +1,7 @@
 module source;
 
+import library/custom(macro do, macro action);
+
 fn ordinary[A](value: A, pair: A & A) {
     let _ = value;
     let .(typed: A) = value;
@@ -10,7 +12,7 @@ fn ordinary[A](value: A, pair: A & A) {
 }
 
 fn monadic() {
-    do! bind {
+    do (bind) {
         let _ <- action;
         let .(item: A) <- action;
         let .(left, right) = pair;
@@ -29,7 +31,7 @@ fn numbered() {
 }
 
 fn numbered_sequence() {
-    do! bind {
+    do (bind) {
         let .x. <- action;
         print(x2);
         let .y. = x1;
@@ -38,4 +40,4 @@ fn numbered_sequence() {
 }
 
 fn qualified_let() { let.x.y() }
-fn qualified_let_neutral() { action! { let.x.y } }
+fn qualified_let_neutral() { action { let.x.y } }

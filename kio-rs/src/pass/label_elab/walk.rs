@@ -382,8 +382,8 @@ pub trait DesugaredToLowered {
         })
     }
 
-    fn visit_expr_user_elaborator(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
-        let Expr::UserElaborator {
+    fn visit_expr_user_macro(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
+        let Expr::UserMacro {
             source_trivia: _,
             occurrence: _,
             name,
@@ -395,7 +395,7 @@ pub trait DesugaredToLowered {
         else {
             unreachable!()
         };
-        Ok(Expr::UserElaborator {
+        Ok(Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
@@ -425,7 +425,7 @@ pub trait DesugaredToLowered {
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta: Meta { span, .. },
             ext,
         } = e
@@ -448,7 +448,7 @@ pub trait DesugaredToLowered {
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta: Meta::new(span),
             ext,
         })
@@ -629,8 +629,8 @@ pub trait DesugaredToLowered {
             Item::LabelForward(d, _) => self.rewrite_item_label_forward(d),
             Item::TypeRecGroup(group) => self.rewrite_type_rec_group(group),
             Item::Equiv(e, _) => Ok(vec![Item::Equiv(self.walk_equiv(e)?, ())]),
-            Item::Elaborator(s, _) => {
-                let crate::ast::UserElaboratorDef {
+            Item::Macro(s, _) => {
+                let crate::ast::UserMacroDef {
                     vis,
                     name,
                     name_span,
@@ -643,8 +643,8 @@ pub trait DesugaredToLowered {
                     meta: Meta { span, .. },
                     doc,
                 } = s;
-                Ok(vec![Item::Elaborator(
-                    crate::ast::UserElaboratorDef {
+                Ok(vec![Item::Macro(
+                    crate::ast::UserMacroDef {
                         vis,
                         name,
                         name_span,
@@ -937,7 +937,7 @@ pub trait DesugaredToLowered {
                     ext,
                 })
             }
-            Expr::UserElaborator { .. } => self.visit_expr_user_elaborator(e),
+            Expr::UserMacro { .. } => self.visit_expr_user_macro(e),
             Expr::BlockCall { ext, .. } => match ext {},
             Expr::LabelValue {
                 occurrence: _,

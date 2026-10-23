@@ -6,14 +6,14 @@
 /// finished, and only the second sum knows which.
 module os/trace;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import os/config as config;
 import os/num as num;
 import os/proc as proc;
 import os/text as text;
-import testapi(default Bool, I32, String);
+import testapi(I32, String, default Bool);
 import testapi/io(print);
 
 /// What the CPU did.
@@ -36,28 +36,28 @@ pub labels Outcome =
   | { blocked: I32 }
   | { retired: . };
 
-pub fn stalled_event() -> Event { {stalled=}.>widen_sum!(Event) }
+pub fn stalled_event() -> Event { {stalled=}.>widen_sum(Event) }
 
-pub fn ran_event(left: I32) -> Event { {ran = left}.>widen_sum!(Event) }
+pub fn ran_event(left: I32) -> Event { {ran = left}.>widen_sum(Event) }
 
-pub fn hit_event(vp: I32, frame: I32) -> Event { {hit = (vp, frame)}.>widen_sum!(Event) }
+pub fn hit_event(vp: I32, frame: I32) -> Event { {hit = (vp, frame)}.>widen_sum(Event) }
 
 pub fn fault_event(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) -> Event {
-  {fault = (vp, frame, victim_pid, victim_vp)}.>widen_sum!(Event)
+  {fault = (vp, frame, victim_pid, victim_vp)}.>widen_sum(Event)
 }
 
-pub fn nobody() -> Outcome { {nobody=}.>widen_sum!(Outcome) }
+pub fn nobody() -> Outcome { {nobody=}.>widen_sum(Outcome) }
 
-pub fn holds() -> Outcome { {holds=}.>widen_sum!(Outcome) }
+pub fn holds() -> Outcome { {holds=}.>widen_sum(Outcome) }
 
-pub fn preempted() -> Outcome { {preempted=}.>widen_sum!(Outcome) }
+pub fn preempted() -> Outcome { {preempted=}.>widen_sum(Outcome) }
 
-pub fn blocked(wake_at: I32) -> Outcome { {blocked = wake_at}.>widen_sum!(Outcome) }
+pub fn blocked(wake_at: I32) -> Outcome { {blocked = wake_at}.>widen_sum(Outcome) }
 
-pub fn retired() -> Outcome { {retired=}.>widen_sum!(Outcome) }
+pub fn retired() -> Outcome { {retired=}.>widen_sum(Outcome) }
 
 fn victim_text(victim_pid: I32, victim_vp: I32) -> String {
-  if! num.lt(victim_pid, 0) {
+  if(num.lt(victim_pid, 0)) {
     " (was free)"
   } else {
     text.cat4(
@@ -70,7 +70,7 @@ fn victim_text(victim_pid: I32, victim_vp: I32) -> String {
 }
 
 fn event_text(e: Event) -> String {
-  match! e {
+  match(e) {
     (
     , .(_s: Stalled) { "(nothing runnable)" }
     , .(r: Ran) { text.cat3("compute, ", text.num_text(r.?{ran}), " tick(s) left in phase") }
@@ -97,7 +97,7 @@ fn event_text(e: Event) -> String {
 /// The state column, eight characters wide so the event text that follows it
 /// starts in the same place on every line.
 fn state_text(o: Outcome) -> String {
-  match! o {
+  match(o) {
     (
     , .(_n: Nobody) { "idle    " }
     , .(_h: Holds) { "running " }
@@ -109,7 +109,7 @@ fn state_text(o: Outcome) -> String {
 }
 
 fn outcome_note(o: Outcome) -> String {
-  match! o {
+  match(o) {
     (
     , .(_n: Nobody) { "" }
     , .(_h: Holds) { "" }
@@ -124,7 +124,7 @@ pub fn header() { print("tick  cpu  state   event\n") }
 
 /// Print one line of the trace, while the window on the run is still open.
 pub fn emit(tick: I32, pid: I32, e: Event, o: Outcome) {
-  if! num.lt(tick, config.trace_limit()) {
+  if(num.lt(tick, config.trace_limit())) {
     print(text.cat4(
     , text.cat4(text.pad_num(tick, 4), "  ", proc.pid_tag(pid), "   ")
     , state_text(o)

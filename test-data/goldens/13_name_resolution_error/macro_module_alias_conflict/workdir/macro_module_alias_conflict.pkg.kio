@@ -1,0 +1,8 @@
+package macro_module_alias_conflict;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

@@ -66,7 +66,7 @@ pub(super) fn highlight_kio_item_signature(signature: &str) -> String {
     highlight_classified(signature, &tokens)
 }
 
-fn highlight_classified(src: &str, tokens: &[crate::tokens::ClassifiedToken]) -> String {
+pub(super) fn highlight_classified(src: &str, tokens: &[crate::tokens::ClassifiedToken]) -> String {
     let mut out = String::with_capacity(src.len());
     let mut cursor = 0usize;
     for token in tokens {
@@ -92,6 +92,24 @@ fn highlight_classified(src: &str, tokens: &[crate::tokens::ClassifiedToken]) ->
 /// surrounding `<html>` / `<body>` — that is the page builder's
 /// job). The input is assumed already validated.
 pub fn render_html(markdown: &str) -> String {
+    render_html_with_module(markdown, None)
+}
+
+pub(super) fn render_html_with_module(markdown: &str, module_source: Option<&str>) -> String {
+    render_html_with_context(markdown, module_source, &std::collections::HashMap::new())
+}
+
+pub(super) fn render_html_with_context(
+    markdown: &str,
+    module_source: Option<&str>,
+    source_tokens: &std::collections::HashMap<u32, Vec<crate::tokens::ClassifiedToken>>,
+) -> String {
+    let mut contextual = super::highlight::fences(markdown, module_source);
+    contextual.extend(
+        source_tokens
+            .iter()
+            .map(|(span, tokens)| (*span, tokens.clone())),
+    );
     use crate::doc_markup::blocks::{self, Kind};
     let mut out = String::new();
     for block in blocks::parse(markdown) {
@@ -108,7 +126,10 @@ pub fn render_html(markdown: &str) -> String {
                     format!(" class=\"language-{}\"", escape_html(language))
                 };
                 let rendered = if language == "kio" {
-                    highlight_kio(&body)
+                    contextual.get(&block.source.span.start).map_or_else(
+                        || highlight_kio(&body),
+                        |tokens| highlight_classified(&body, tokens),
+                    )
                 } else {
                     escape_html(&body)
                 };

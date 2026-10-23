@@ -1,11 +1,11 @@
 module main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 fn chain[A][B](value: A, next: A -> B) -> B { next(value) }
 
 rec(loop) fn step(value: .) {
-  do! chain { let next <- recur step(value); next }
+  do(chain) { let next <- recur step(value); next }
 }

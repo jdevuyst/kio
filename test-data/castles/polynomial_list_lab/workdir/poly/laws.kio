@@ -4,11 +4,11 @@
 /// faults in the operations on every run, and their verdicts are printed.
 module poly/laws;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as lc;
 import list/list as ll;
 import list/list(varop [] as [* *]);
+import macros/control(macro if);
+import macros/match(macro match);
 import poly/arith as arith;
 import poly/calculus as calculus;
 import poly/core as core;
@@ -54,7 +54,7 @@ fn degree_of_product(claim: String, a: core.Poly, b: core.Poly) -> Check {
 // against multiplication rather than against itself. A `not_divisible` answer is a
 // failure here: these are the instances that were supposed to succeed.
 fn division_identity(claim: String, p: core.Poly, divisor: core.Poly) -> Check {
-  match! division.divmod(p, divisor) {
+  match(division.divmod(p, divisor)) {
     (
     , .(result: Divided) {
         let .(quotient: core.Poly, remainder: core.Poly) = result.?{divided};
@@ -104,7 +104,7 @@ pub fn all_checks() -> lc.List(Check) {
 pub fn passes(checks: lc.List(Check)) -> I32 {
   ll.foldl(
   , .(count: I32, c: Check) -> I32 {
-      if! c.?{holds} { add_i32(count, 1) } else { count }
+      if(c.?{holds}) { add_i32(count, 1) } else { count }
     }
   , 0
   , checks

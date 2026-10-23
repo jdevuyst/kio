@@ -1,10 +1,10 @@
 module interpreter/input;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default Bool);
 import testapi/io as io;
 import testapi/iter(loop);
@@ -13,15 +13,15 @@ import testapi/text as text;
 pub type Tokens = lists.List(String);
 
 rec(loop) fn collect(reversed: Tokens) -> Tokens | String {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(line: String) {
-      if! text.string_eq(line, "end") {
-        traversal.reverse(reversed).>widen_sum!(Tokens | String)
+      if(text.string_eq(line, "end")) {
+        traversal.reverse(reversed).>widen_sum(Tokens | String)
       } else {
         recur collect(lists.cons(line, reversed))
       }
     };
-    .() { "input ended before end marker".>widen_sum!(Tokens | String) }
+    .() { "input ended before end marker".>widen_sum(Tokens | String) }
   }
 }
 

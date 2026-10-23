@@ -1,9 +1,0 @@
-module syntax;
-
-import __comptime__;
-
-pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ {
-  value
-}
-
-pub elab identity : [Source] Source -> Source { impl identity_impl }

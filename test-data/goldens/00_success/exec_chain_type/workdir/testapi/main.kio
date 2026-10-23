@@ -9,7 +9,7 @@ import testapi/io(print);
 type Triple = String & String & String;
 
 // Match-destructure a `Triple` to pull the third element. The
-// `match!` pattern's value-param run mirrors the right-spine of
+// `match` pattern's value-param run mirrors the right-spine of
 // the product, so the third clause-arg binds to the trailing
 // `String`.
 fn third((_a: String, _b: String, c: String)) -> String { c }

@@ -1,0 +1,15 @@
+package projected_type_args_fold_open_target;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main;
+  macros
+}

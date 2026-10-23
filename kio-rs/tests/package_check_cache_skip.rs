@@ -183,7 +183,7 @@ fn package_check_cache_path(root: &Path, package_name: &str) -> PathBuf {
     )
 }
 
-fn identity_user_elaborator_module() -> &'static str {
+fn identity_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
@@ -191,10 +191,10 @@ fn identity_user_elaborator_module() -> &'static str {
      pub pure fn id_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
        value\n\
      }\n\n\
-     pub elab id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
+     pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
 }
 
-fn second_value_user_elaborator_module() -> &'static str {
+fn second_value_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
@@ -202,10 +202,10 @@ fn second_value_user_elaborator_module() -> &'static str {
      pub pure fn second_impl(_ct: __Comptime__, _first_source: __Type__, _first: __Checked_term__, _second_source: __Type__, second: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
        second\n\
      }\n\n\
-     pub elab second_value : [First] First -> [Second] Second -> [Target] Target { impl second_impl; };\n"
+     pub macro second_value : [First] First -> [Second] Second -> [Target] Target { impl second_impl; };\n"
 }
 
-fn source_infer_user_elaborator_module() -> &'static str {
+fn source_infer_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
@@ -220,10 +220,10 @@ fn source_infer_user_elaborator_module() -> &'static str {
          , .(_empty: .) -> __Checked_term__ { value }\n\
          )\n\
      }\n\n\
-     pub elab id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
+     pub macro id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
 }
 
-fn unit_identity_user_elaborator_module() -> &'static str {
+fn unit_identity_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
@@ -231,10 +231,10 @@ fn unit_identity_user_elaborator_module() -> &'static str {
      pub pure fn id_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Target_request) -> __Checked_term__ {\n\
        __term_unit__(ct)\n\
      }\n\n\
-     pub elab id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
+     pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n"
 }
 
-fn unit_infer_user_elaborator_module() -> &'static str {
+fn unit_infer_user_macro_module() -> &'static str {
     "module elaborators;\n\n\
      import __intrinsics__;\n\n\
      import __comptime__;\n\n\
@@ -249,7 +249,7 @@ fn unit_infer_user_elaborator_module() -> &'static str {
          , .(_empty: .) -> __Checked_term__ { __term_unit__(ct) }\n\
          )\n\
      }\n\n\
-     pub elab id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
+     pub macro id_default : [Source] Source -> [Target] Target { impl id_default_impl; };\n"
 }
 
 #[test]
@@ -621,27 +621,27 @@ fn frontend_scheduler_reports_independent_modules_ready_together() {
 }
 
 #[test]
-fn frontend_scheduler_keeps_independent_user_elaborator_consumers_parallel() {
+fn frontend_scheduler_keeps_independent_user_macro_consumers_parallel() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", identity_user_elaborator_module());
+    pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/a.kio",
         "module pkg/a;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_user);\n\n\
-         pub fn a(s: String) -> String { id_user!(s, String) }\n",
+         import elaborators(macro id_user);\n\n\
+         pub fn a(s: String) -> String { id_user(s, String) }\n",
     );
     pkg.write(
         "pkg/b.kio",
         "module pkg/b;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_user);\n\n\
-         pub fn b(s: String) -> String { id_user!(s, String) }\n",
+         import elaborators(macro id_user);\n\n\
+         pub fn b(s: String) -> String { id_user(s, String) }\n",
     );
 
     let (code, log) = kio_check_with_frontend_timing(pkg.path(), true);
@@ -654,32 +654,32 @@ fn frontend_scheduler_keeps_independent_user_elaborator_consumers_parallel() {
         timing.contains("forced_modules=4")
             && timing.contains("summary_levels=2")
             && timing.contains("summary_max_width=2")
-            && timing.contains("user_elaborator_template_eval_ms=")
-            && timing.contains("user_elaborator_template_replay_ms=")
-            && timing.contains("user_elaborator_template_batch_obligations=")
-            && timing.contains("user_elaborator_template_batch_unique=")
-            && timing.contains("user_elaborator_template_batch_duplicates="),
-        "independent user-elaborator consumers should fan out after the elaborator module: {timing}"
+            && timing.contains("user_macro_template_eval_ms=")
+            && timing.contains("user_macro_template_replay_ms=")
+            && timing.contains("user_macro_template_batch_obligations=")
+            && timing.contains("user_macro_template_batch_unique=")
+            && timing.contains("user_macro_template_batch_duplicates="),
+        "independent user-macro consumers should fan out after the macro module: {timing}"
     );
 }
 
 #[test]
-fn user_elaborator_batch_timing_reports_unique_template_keys() {
+fn user_macro_batch_timing_reports_unique_template_keys() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", identity_user_elaborator_module());
+    pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_user);\n\n\
+         import elaborators(macro id_user);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_user!(s, String);\n\
-           id_user!(first, String)\n\
+           let first = id_user(s, String);\n\
+           id_user(first, String)\n\
          }\n",
     );
 
@@ -690,10 +690,10 @@ fn user_elaborator_batch_timing_reports_unique_template_keys() {
         .find(|line| line.starts_with("frontend-timing: pkg "))
         .unwrap_or_else(|| panic!("expected frontend timing line: {log}"));
     assert!(
-        timing.contains("user_elaborator_template_batch_obligations=2")
-            && timing.contains("user_elaborator_template_batch_unique=1")
-            && timing.contains("user_elaborator_template_batch_duplicates=1"),
-        "duplicate deferred user-elaborator shapes should be collapsed before compute: {timing}"
+        timing.contains("user_macro_template_batch_obligations=2")
+            && timing.contains("user_macro_template_batch_unique=1")
+            && timing.contains("user_macro_template_batch_duplicates=1"),
+        "duplicate deferred user-macro shapes should be collapsed before compute: {timing}"
     );
 }
 
@@ -741,46 +741,46 @@ fn typed_cache_misses_when_transitive_same_package_surface_moves() {
 }
 
 #[test]
-fn user_elaborator_template_batch_dedupes_repeated_shape_before_memo_lookup() {
+fn user_macro_template_batch_dedupes_repeated_shape_before_memo_lookup() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", identity_user_elaborator_module());
+    pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_user);\n\n\
+         import elaborators(macro id_user);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_user!(s, String);\n\
-           id_user!(first, String)\n\
+           let first = id_user(s, String);\n\
+           id_user(first, String)\n\
          }\n",
     );
 
     let (code, log) = kio_check_with_extra_env(pkg.path(), false, &[("KIO_DEBUG_MEMO", "1")]);
     assert_eq!(code, 0, "check should succeed: {log}");
-    let user_elaborator_line = log
+    let user_macro_line = log
         .lines()
         .find(|line| {
-            line.starts_with("memo user-elaborator: ")
+            line.starts_with("memo user-macro: ")
                 && line.contains("hits=0")
                 && line.contains("misses=1")
                 && line.contains("first-writes=1")
         })
-        .unwrap_or_else(|| panic!("expected user-elaborator memo stats: {log}"));
+        .unwrap_or_else(|| panic!("expected user-macro memo stats: {log}"));
     assert!(
-        user_elaborator_line.contains("hits=0")
-            && user_elaborator_line.contains("misses=1")
-            && user_elaborator_line.contains("first-writes=1"),
-        "duplicate user-elaborator shapes in one deferred batch should not enter memo lookup twice: {user_elaborator_line}"
+        user_macro_line.contains("hits=0")
+            && user_macro_line.contains("misses=1")
+            && user_macro_line.contains("first-writes=1"),
+        "duplicate user-macro shapes in one deferred batch should not enter memo lookup twice: {user_macro_line}"
     );
 }
 
 #[test]
-fn user_elaborator_template_memo_replays_across_forced_modules() {
+fn user_macro_template_memo_replays_across_forced_modules() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
@@ -790,21 +790,21 @@ fn user_elaborator_template_memo_replays_across_forced_modules() {
         ),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", second_value_user_elaborator_module());
+    pkg.write("elaborators.kio", second_value_user_macro_module());
     pkg.write(
         "pkg/a.kio",
         "module pkg/a;\n\n\
          import pkg(String);\n\n\
-         import elaborators(second_value);\n\n\
-         pub fn a(left: String, from_a: String) -> String { second_value!(left, from_a, String) }\n",
+         import elaborators(macro second_value);\n\n\
+         pub fn a(left: String, from_a: String) -> String { second_value(left, from_a, String) }\n",
     );
     pkg.write(
         "pkg/b.kio",
         "module pkg/b;\n\n\
          import pkg(String);\n\n\
-         import elaborators(second_value);\n\n\
+         import elaborators(macro second_value);\n\n\
          import pkg/a(a);\n\n\
-         pub fn b(left: String, from_b: String) -> String { second_value!(a(left, left), from_b, String) }\n",
+         pub fn b(left: String, from_b: String) -> String { second_value(a(left, left), from_b, String) }\n",
     );
 
     let (code, log) = kio_build_prime_with_extra_env(
@@ -812,20 +812,20 @@ fn user_elaborator_template_memo_replays_across_forced_modules() {
         &[("KIO_DEBUG_MEMO", "1"), ("KIO_DEBUG_MEMO_VERIFY", "1")],
     );
     assert_eq!(code, 0, "Kio' build should succeed: {log}");
-    let user_elaborator_line = log
+    let user_macro_line = log
         .lines()
         .find(|line| {
-            line.starts_with("memo user-elaborator: ")
+            line.starts_with("memo user-macro: ")
                 && line.contains("hits=1")
                 && line.contains("misses=1")
                 && line.contains("first-writes=1")
         })
-        .unwrap_or_else(|| panic!("expected cross-module user-elaborator memo stats: {log}"));
+        .unwrap_or_else(|| panic!("expected cross-module user-macro memo stats: {log}"));
     assert!(
-        user_elaborator_line.contains("hits=1")
-            && user_elaborator_line.contains("misses=1")
-            && user_elaborator_line.contains("first-writes=1"),
-        "same elaborator shape should replay from the in-process package memo in a dependent forced module: {user_elaborator_line}"
+        user_macro_line.contains("hits=1")
+            && user_macro_line.contains("misses=1")
+            && user_macro_line.contains("first-writes=1"),
+        "same macro shape should replay from the in-process package memo in a dependent forced module: {user_macro_line}"
     );
     let emitted_b = fs::read_to_string(pkg.path().join("out/kio-prime/pkg/b.kio"))
         .expect("read emitted pkg/b Kio'");
@@ -837,7 +837,7 @@ fn user_elaborator_template_memo_replays_across_forced_modules() {
 
 #[cfg(feature = "prime")]
 #[test]
-fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() {
+fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
     for (first, second, binders, target) in [
         ("a", "b", "[A][B]", "B"),
         ("b", "a", "[B][A]", "B"),
@@ -852,14 +852,14 @@ fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() 
             ),
         );
         pkg.write("pkg.kio", pkg_root_module());
-        pkg.write("elaborators.kio", second_value_user_elaborator_module());
+        pkg.write("elaborators.kio", second_value_user_macro_module());
         pkg.write(
             &format!("pkg/{first}.kio"),
             &format!(
                 "module pkg/{first};\n\
-                 import elaborators(second_value);\n\
+                 import elaborators(macro second_value);\n\
                  pub fn {first}{binders}(left: A, from_{first}: B) -> B {{
-                     second_value!(left, from_{first}, B)
+                     second_value(left, from_{first}, B)
                  }}\n"
             ),
         );
@@ -867,10 +867,10 @@ fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() 
             &format!("pkg/{second}.kio"),
             &format!(
                 "module pkg/{second};\n\
-                 import elaborators(second_value);\n\
+                 import elaborators(macro second_value);\n\
                  import pkg/{first}({first});\n\
                  pub fn {second}{binders}(left: A, from_{second}: B) -> {target} {{
-                     second_value!({first}(A, A, left, left), from_{second}, {target})
+                     second_value({first}(A, A, left, left), from_{second}, {target})
                  }}\n"
             ),
         );
@@ -883,7 +883,7 @@ fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() 
             assert_eq!(code, 15, "returning B must not satisfy target A: {log}");
             assert!(
                 log.contains(
-                    "user elaborator returned a checked term of type `B` but the declared result type was `A`"
+                    "user macro returned a checked term of type `B` but the declared result type was `A`"
                 ),
                 "the negative control must reach checked-result validation: {log}"
             );
@@ -893,7 +893,7 @@ fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() 
         assert_eq!(code, 0, "{first} before {second}: {log}");
         let stats = log
             .lines()
-            .filter_map(|line| line.strip_prefix("memo user-elaborator: "))
+            .filter_map(|line| line.strip_prefix("memo user-macro: "))
             .filter(|counts| *counts != "hits=0 misses=0 first-writes=0")
             .collect::<Vec<_>>();
         assert_eq!(
@@ -927,22 +927,22 @@ fn user_elaborator_template_memo_preserves_free_binders_in_both_forced_orders() 
 }
 
 #[test]
-fn user_elaborator_infer_branch_memo_hits_repeated_shape() {
+fn user_macro_infer_branch_memo_hits_repeated_shape() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file_no_cache("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_elaborator_module());
+    pkg.write("elaborators.kio", source_infer_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_default);\n\n\
+         import elaborators(macro id_default);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_default!(s, _);\n\
-           let second = id_default!(first, _);\n\
+           let first = id_default(s, _);\n\
+           let second = id_default(first, _);\n\
            second\n\
          }\n",
     );
@@ -952,35 +952,35 @@ fn user_elaborator_infer_branch_memo_hits_repeated_shape() {
     let memo_line = log
         .lines()
         .find(|line| {
-            line.starts_with("memo user-elaborator: ")
+            line.starts_with("memo user-macro: ")
                 && line.contains("hits=1")
                 && line.contains("misses=1")
                 && line.contains("first-writes=1")
         })
-        .unwrap_or_else(|| panic!("expected user-elaborator memo stats: {log}"));
+        .unwrap_or_else(|| panic!("expected user-macro memo stats: {log}"));
     assert!(
         memo_line.contains("hits=1")
             && memo_line.contains("misses=1")
             && memo_line.contains("first-writes=1"),
-        "repeated inferred-target user-elaborator shape should reuse one result: {memo_line}"
+        "repeated inferred-target user-macro shape should reuse one result: {memo_line}"
     );
 }
 
 #[test]
-fn user_elaborator_rechecks_do_not_write_persistent_template_cache() {
+fn user_macro_rechecks_do_not_write_persistent_template_cache() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_elaborator_module());
+    pkg.write("elaborators.kio", source_infer_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_default);\n\n\
-         pub fn run(s: String) -> String { id_default!(s, _) }\n",
+         import elaborators(macro id_default);\n\n\
+         pub fn run(s: String) -> String { id_default(s, _) }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -989,38 +989,38 @@ fn user_elaborator_rechecks_do_not_write_persistent_template_cache() {
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_default);\n\n\
-         pub fn run(s: String) -> String { id_default!(s, _) }\n\n\
+         import elaborators(macro id_default);\n\n\
+         pub fn run(s: String) -> String { id_default(s, _) }\n\n\
          pub fn force_recheck() -> . { () }\n",
     );
     let (code2, log2) = kio_check(pkg.path());
     assert_eq!(code2, 0, "forced recheck should succeed: {log2}");
 
-    let cache_dir = pkg.path().join("out/.kio-cache/user-elaborator");
+    let cache_dir = pkg.path().join("out/.kio-cache/user-macro");
     let template = cache_dir.join("template.bin");
     assert!(
         !cache_dir.exists() && !template.exists(),
-        "user-elaborator templates must remain in-process only; found {} or {}",
+        "user-macro templates must remain in-process only; found {} or {}",
         cache_dir.display(),
         template.display(),
     );
 }
 
 #[test]
-fn typed_cache_misses_when_imported_user_elaborator_impl_changes() {
+fn typed_cache_misses_when_imported_user_macro_impl_changes() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", identity_user_elaborator_module());
+    pkg.write("elaborators.kio", identity_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_user);\n\n\
-         pub fn run(s: String) -> String { id_user!(s, String) }\n",
+         import elaborators(macro id_user);\n\n\
+         pub fn run(s: String) -> String { id_user(s, String) }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -1032,35 +1032,35 @@ fn typed_cache_misses_when_imported_user_elaborator_impl_changes() {
         "second check should establish the warm cache path: {log2}"
     );
 
-    pkg.write("elaborators.kio", unit_identity_user_elaborator_module());
+    pkg.write("elaborators.kio", unit_identity_user_macro_module());
     let (code3, log3) = kio_check(pkg.path());
     assert_ne!(
         code3, 0,
-        "changing only the private elaborator helper must force pkg/main to re-typecheck: {log3}"
+        "changing only the private macro helper must force pkg/main to re-typecheck: {log3}"
     );
     assert!(
         log3.contains("checked term of type `.`")
             && log3.contains("declared result type was `String`"),
-        "the fresh user-elaborator error should be visible, not hidden by typed cache: {log3}"
+        "the fresh user-macro error should be visible, not hidden by typed cache: {log3}"
     );
 }
 
 #[test]
-fn typed_cache_misses_when_imported_user_elaborator_infer_branch_changes() {
+fn typed_cache_misses_when_imported_user_macro_infer_branch_changes() {
     let pkg = TempPkg::new();
     pkg.write(
         "pkg.pkg.kio",
         &package_file("pkg", "bridge {\n  pkg;\n  pkg/**;\n  elaborators;\n}\n"),
     );
     pkg.write("pkg.kio", pkg_root_string_env_module());
-    pkg.write("elaborators.kio", source_infer_user_elaborator_module());
+    pkg.write("elaborators.kio", source_infer_user_macro_module());
     pkg.write(
         "pkg/main.kio",
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
-         import elaborators(id_default);\n\n\
+         import elaborators(macro id_default);\n\n\
          pub fn run(s: String) -> String {\n\
-           let selected = id_default!(s, _);\n\
+           let selected = id_default(s, _);\n\
            selected\n\
          }\n",
     );
@@ -1074,7 +1074,7 @@ fn typed_cache_misses_when_imported_user_elaborator_infer_branch_changes() {
         "second check should establish the warm cache path: {log2}"
     );
 
-    pkg.write("elaborators.kio", unit_infer_user_elaborator_module());
+    pkg.write("elaborators.kio", unit_infer_user_macro_module());
     let (code3, log3) = kio_check(pkg.path());
     assert_ne!(
         code3, 0,
@@ -1082,7 +1082,7 @@ fn typed_cache_misses_when_imported_user_elaborator_infer_branch_changes() {
     );
     assert!(
         log3.contains("expected `String`") || log3.contains("found `()`"),
-        "the fresh user-elaborator infer-branch error should be visible, not hidden by typed cache: {log3}"
+        "the fresh user-macro infer-branch error should be visible, not hidden by typed cache: {log3}"
     );
 }
 

@@ -1,16 +1,16 @@
 module demo/main;
 
 import demo/a as first;
-import demo/a(Num, Original, build, truth, {field});
+import demo/a(Num, Original, macro build, truth, {field});
 import demo/b as second;
 
 fn literal_use() -> Num { truth }
 
 fn shadow(truth: Num) -> Num { truth }
 
-fn bang() { build!(()) }
+fn bang() { build(()) }
 
-fn splice() { ().>build! }
+fn splice() { ().>build }
 
 fn label_use() -> Original { {field=} }
 

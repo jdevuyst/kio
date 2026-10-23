@@ -16,5 +16,5 @@ build {
 
 bridge {
   main;
-  elab
+  macros
 }

@@ -28,7 +28,7 @@ Castles should exercise ordinary surface Kio, not hand-written Kio'
 glue. Avoid `import __intrinsics__;` and raw calls such as `__left__`,
 `__right__`, `__either__`, `__pair__`, `__fst__`, and `__snd__` unless
 the castle is explicitly about Kio' / intrinsic behavior. Prefer
-`widen_sum!`, `match!`, labels/newtypes, tuple syntax, row access, and
+`widen_sum`, `match`, labels/newtypes, tuple syntax, row access, and
 `rec(loop)`. If a candidate builder reaches for raw intrinsics during
 normal castle authoring, treat that as a guidance/brief problem:
 tighten the public surface-level docs or the supervisor brief instead of
@@ -152,32 +152,32 @@ Do these in order. Steps 1–3 are mandatory reading before you touch any
 
    Summarize which freestanding packages and modules are currently
    available. When a current POC package fits the castle naturally — a
-   solver, helper, data structure, elaborator package, or other library
+   solver, helper, data structure, macro package, or other library
    surface — reuse it through the dependency mechanism rather than
-   copying or reimplementing it. For the shared elaborator library
-   (`match!`, `derive!`, the spine palette), depend on the `elab`
+   copying or reimplementing it. For the shared macro library
+   (`match`, `derive`, the spine palette), depend on the `macros`
    package with a `<local>.dep.kio` at the castle's package root:
 
    ```kio
-   // elab.dep.kio
-   dependency elab;
-   source { path "<rel>/elab.pkg.kio"; }
+   // macros.dep.kio
+   dependency macros;
+   source { path "<rel>/macros.pkg.kio"; }
    ```
 
    then import the re-rooted modules using the declarations shown in the
-   current elaborator guides, and add `elab/testapi;` to the
-   castle's `bridge` for the role types the elaborators reach. The
+   current macro guides, and add `macros/testapi;` to the
+   castle's `bridge` for the role types the macros reach. The
    dependency `path` must be relative from the castle package root;
    never write an absolute path, a home-directory path, a temp path, a
    local `file://` URL, or a sibling-worktree path into any checked-in
    castle file. The castle must still be a coherent project with its own
    domain, fixtures, orchestration, and corpus novelty, not a thin
-   wrapper whose only purpose is to call a POC library. Do not vendor elab module files into
-   a castle; depend on `elab` instead. Surface use of the spine-solver
-   and `match!` solver modules is described in the
-   elaborator guides under
+   wrapper whose only purpose is to call a POC library. Do not vendor macro module files into
+   a castle; depend on `macros` instead. Surface use of the spine-solver
+   and `match` solver modules is described in the
+   macro guides under
    [`docs/guides/`](../../../docs/README.md) (e.g.
-   `elaborators.md`, `using-libraries.md`,
+   `macros.md`, `using-libraries.md`,
    `sums.md`) — read the live `docs/` catalog rather than
    trusting a fixed filename here. For other POC packages, do not require
    a hand-written `docs/poc/<name>.md` case study. Their public package
@@ -185,7 +185,7 @@ Do these in order. Steps 1–3 are mandatory reading before you touch any
    --md` in the POC package workdir and use the generated
    `out/docs-md/` pages as the builder-facing API reference.
    When you add the castle's own `<local>.dep.kio` (e.g. depending on
-   `elab` or another POC package), run `kio dep fetch` in the castle
+   `macros` or another POC package), run `kio dep fetch` in the castle
    `workdir` and **commit** the materialized `<local>/…` tree it writes:
    a consumer ships its dependency's materialized closure, so the castle
    source includes the committed re-rooted tree (this is what lets a fresh
@@ -356,8 +356,8 @@ workflow.
    and module declarations the chosen protocol makes available; the
    protocol's export set / entry point; any reusable dependency surface
    the builder should import; generated POC Kiodoc markdown when a POC
-   dependency is in scope; whether imported elaborator forms such as
-   `match!` / `widen_sum!` are expected; and the exact verification
+   dependency is in scope; whether imported macro forms such as
+   `match` / `widen_sum` are expected; and the exact verification
    commands the builder should run.
 3. **Check the brief before spawning.** The desired program shape and
    chosen protocol must agree: do not ask for string slicing, arrays,
@@ -374,8 +374,8 @@ workflow.
    README's § The protocol model and § Exact main protocols.
    For testapi-conformed protocols, `string_to_int`
    belongs in `testapi/fmt` with the parse/format helpers, not in
-   `testapi/text`. If `elab` forms are not expected, say so explicitly and
-   do not include `elab.dep.kio` or an `elab/testapi` bridge entry.
+   `testapi/text`. If `macro` forms are not expected, say so explicitly and
+   do not include `macros.dep.kio` or a `macros/testapi` bridge entry.
    Because the castle corpus treats a declared `read_ascii_line` as a
    stdin-using package, a castle that declares `read_ascii_line` (from
    `testapi-compute` / `testapi-io` or their siblings) requires an

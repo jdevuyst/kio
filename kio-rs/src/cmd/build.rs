@@ -441,8 +441,8 @@ fn build_one_package(
 
     // Phase 1: typecheck. Reuses the full `kio check` pipeline so a
     // package that doesn't typecheck never produces build output. The
-    // returned workspace is at the `Prime` phase: elaborator-position
-    // elaborations (`into!` / `onto!` / `match!`) are already
+    // returned workspace is at the `Prime` phase: macro-position
+    // elaborations (`into` / `onto` / `match`) are already
     // substituted into the AST, so the backend can emit the strict
     // Kio'-shaped tree without consulting a side table.
     //

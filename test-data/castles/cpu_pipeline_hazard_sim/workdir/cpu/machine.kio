@@ -14,7 +14,7 @@ module cpu/machine;
 
 import cpu/isa(Instr, is_halt);
 import cpu/num(and, int_eq, int_lt);
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len, array_make_filled);
@@ -97,8 +97,8 @@ pub fn new_registers() -> Array(I32) { array_make_filled(reg_count, 0) }
 pub fn new_memory() -> Array(I32) { array_make_filled(mem_words, 0) }
 
 rec(loop) fn words_agree(a: Array(I32), b: Array(I32), index: I32) -> Bool {
-  if! int_lt(index, array_len(a)) {
-    if! int_eq(array_get(a, index), array_get(b, index)) {
+  if(int_lt(index, array_len(a))) {
+    if(int_eq(array_get(a, index), array_get(b, index))) {
       recur words_agree(a, b, add_i32(index, 1))
     } else {
       .f

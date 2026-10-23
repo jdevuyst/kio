@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
@@ -15,7 +15,7 @@ fn text(_unit: .) -> String { "nested" }
 fn surface() -> Surface { ({combine}, {text}) }
 
 fn render(value: Surface) -> String {
-  match! value.?{combine}(("argument", value.?{text}(()))) {
+  match(value.?{combine}(("argument", value.?{text}(())))) {
     .(result: String) { result }
   }
 }

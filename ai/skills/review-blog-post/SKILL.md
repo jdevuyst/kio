@@ -55,6 +55,10 @@ of the post body, before any standard footer or disclosure. A small
 code/API update preserving an example's purpose still needs the notice when it
 updates the post for a newer version. Formatting changes are substantive when
 formatting is the post's subject; judge meaning, not changed-line counts.
+Check consolidated notices against actual publication boundaries: related
+unpublished changes may share a succinct notice, while published revisions
+must retain accurate timing and material corrections. Signing and Kio release
+dates do not establish when a website revision became public.
 Report a missing or misleading notice and propose exact text
 without editing. Disclose unavailable publication/history evidence rather than
 assuming the current text proves what readers previously saw. Exact-text

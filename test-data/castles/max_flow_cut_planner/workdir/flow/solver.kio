@@ -1,10 +1,10 @@
 module flow/solver;
 
-import elab/control(if);
-import elab/match(match);
 import flow/math as math;
 import flow/network as net;
 import flow/search as search;
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -17,7 +17,7 @@ pub labels Augmentation = { route: String, amount: I32, cancelled: I32 };
 pub labels Solution = { residual: Array(I32), value: I32, history: Array(Augmentation) };
 
 rec(loop) fn bottleneck(path: Array(I32), residual: Array(I32), index: I32, limit: I32) -> I32 {
-  if! math.less(index, ar.array_len(path)) {
+  if(math.less(index, ar.array_len(path))) {
     recur bottleneck(
     , path
     , residual
@@ -37,13 +37,13 @@ rec(loop) fn send(
 , index: I32
 , cancelled: I32
 ) -> I32 {
-  if! math.less(index, ar.array_len(path)) {
+  if(math.less(index, ar.array_len(path))) {
     let edge_index = ar.array_get(path, index);
     let edge = ar.array_get(network.?{net.edges}, edge_index);
     let back = edge.?{net.reverse};
     ar.array_set(residual, edge_index, a.sub_i32(ar.array_get(residual, edge_index), amount));
     ar.array_set(residual, back, a.add_i32(ar.array_get(residual, back), amount));
-    let cancellation = if! edge.?{net.backward} { amount } else { 0 };
+    let cancellation = if(edge.?{net.backward}) { amount } else { 0 };
     recur send(
     , network
     , residual
@@ -58,9 +58,9 @@ rec(loop) fn send(
 }
 
 rec(loop) fn describe_path(network: net.Network, path: Array(I32), index: I32, route: String) -> String {
-  if! a.leq_i32(0, index) {
+  if(a.leq_i32(0, index)) {
     let edge = ar.array_get(network.?{net.edges}, ar.array_get(path, index));
-    let arrow = if! edge.?{net.backward} { "-cancel->" } else { "->" };
+    let arrow = if(edge.?{net.backward}) { "-cancel->" } else { "->" };
     let next = text.string_concat(
     , route
     , text.string_concat(arrow, fmt.int_to_string(edge.?{net.to}))
@@ -79,7 +79,7 @@ rec(loop) fn improve(
 , value: I32
 , history: Array(Augmentation)
 ) -> Solution {
-  match! search.augmenting_path(network, residual, source, sink) {
+  match(search.augmenting_path(network, residual, source, sink)) {
     .(path: Array(I32)) {
       let amount = bottleneck(path, residual, 1, ar.array_get(residual, ar.array_get(path, 0)));
       let route =

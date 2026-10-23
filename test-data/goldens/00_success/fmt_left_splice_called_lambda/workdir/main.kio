@@ -1,5 +1,5 @@
 module main;
 
-fn last() { fit!(id.<(.() { () }())) }
+fn last() { fit(id.<(.() { () }())) }
 
-fn first() { fit!(id.<<(.() { () }())) }
+fn first() { fit(id.<<(.() { () }())) }

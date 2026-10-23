@@ -95,6 +95,8 @@ let worker: Worker | undefined
 let workerMessageId = 0
 let commandPending = false
 let completionReplace = { start: 0, end: 0 }
+let highlightSeq = 0
+let highlightPending = false
 let completionSeq = 0
 let completionNavigated = false
 const workerPending = new Map<number, WorkerPending>()
@@ -122,6 +124,8 @@ function writePrompt(input = '') {
   cursor = input.length
   if (input.length > 0) {
     term?.write(input)
+    highlightSeq++
+    void highlightLine()
   }
 }
 
@@ -133,6 +137,29 @@ function renderLine() {
   term.write(`\r\x1b[Kkio> ${line}`)
   const back = line.length - cursor
   if (back > 0) term.write(`\x1b[${back}D`)
+  highlightSeq++
+  void highlightLine()
+}
+
+async function highlightLine() {
+  if (highlightPending || status.value !== 'ready' || commandPending) return
+  highlightPending = true
+  try {
+    for (;;) {
+      const seq = highlightSeq
+      const input = line, position = cursor
+      const pos = textEncoder.encode(input.slice(0, position)).length
+      const painted = await callWorker<string>('highlight', { input, pos })
+      if (!term || status.value !== 'ready' || commandPending) return
+      if (seq !== highlightSeq || line !== input || cursor !== position) continue
+      term.write(`\r\x1b[Kkio> ${painted}\x1b[0m`)
+      const back = input.length - position
+      if (back > 0) term.write(`\x1b[${back}D`)
+      return
+    }
+  } catch (error) {
+    console.error('REPL input highlighting failed', error)
+  } finally { highlightPending = false }
 }
 
 function setLine(next: string) {

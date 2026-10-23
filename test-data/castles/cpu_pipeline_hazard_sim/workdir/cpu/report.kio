@@ -26,10 +26,10 @@ import cpu/machine(
 );
 import cpu/machine(Machine, stage_empty);
 import cpu/num(cat, cat3, digits, div, int_eq, int_lt, left, right, spaces);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
-import testapi(Array, I32, String, default Bool);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import testapi(Array, I32, default Bool, default String);
 import testapi/arith(add_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/fmt(int_to_string);
@@ -41,9 +41,9 @@ import testapi/iter(loop);
 /// than at an empty event.
 pub type Event = String | .;
 
-pub fn quiet() -> Event { widen_sum!((), Event) }
+pub fn quiet() -> Event { widen_sum((), Event) }
 
-pub fn noted(text: String) -> Event { widen_sum!(text, Event) }
+pub fn noted(text: String) -> Event { widen_sum(text, Event) }
 
 fn num(value: I32) -> String { int_to_string(value) }
 
@@ -58,12 +58,12 @@ pub fn labeled(label: String, value: String) { line(cat3(label, ": ", value)) }
 fn counted(label: String, value: I32) { labeled(label, num(value)) }
 
 pub fn yes_no(flag: Bool) -> String {
-  if! flag { "yes" } else { "no" }
+  if(flag) { "yes" } else { "no" }
 }
 
 /// One stage column: the instruction's index, or `--` for an empty stage.
 fn cell(slot: I32) -> String {
-  if! stage_empty(slot) { " --" } else { cat(spaces(sub_i32(2, digits(slot))), slot_text(slot)) }
+  if(stage_empty(slot)) { " --" } else { cat(spaces(sub_i32(2, digits(slot))), slot_text(slot)) }
 }
 
 pub fn pipeline_header() { line("cyc |  IF  ID  EX MEM  WB | event") }
@@ -76,13 +76,13 @@ pub fn pipeline_row(m: Machine, event: Event) {
     , cat3(cat(cell(m.?{st_ex}), " "), cat(cell(m.?{st_mem}), " "), cell(m.?{st_wb}))
     );
   let row = cat(cat(right(m.?{cycle}, 3), " | "), stages);
-  match! event {
+  match(event) {
     (.(note: String) { line(cat3(row, " | ", note)) }, .(_nothing: .) { line(cat(row, " |")) })
   }
 }
 
 rec(loop) fn listing_walk(code: Array(Instr), index: I32) {
-  if! int_lt(index, array_len(code)) {
+  if(int_lt(index, array_len(code))) {
     line(cat(
     , left(slot_text(index), add_i32(1, digits(index)), 6)
     , instr_text(array_get(code, index))
@@ -129,8 +129,8 @@ pub fn counters(m: Machine) {
 }
 
 rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
-  if! int_lt(index, array_len(regs)) {
-    let separator = if! int_eq(index, 0) { "" } else { " " };
+  if(int_lt(index, array_len(regs))) {
+    let separator = if(int_eq(index, 0)) { "" } else { " " };
     let entry = cat3(reg_text(index), "=", num(array_get(regs, index)));
     recur reg_walk(regs, add_i32(index, 1), cat3(text, separator, entry))
   } else {
@@ -139,8 +139,8 @@ rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
 }
 
 rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
-  if! int_lt(index, array_len(mem)) {
-    let separator = if! int_eq(index, 0) { "" } else { " " };
+  if(int_lt(index, array_len(mem))) {
+    let separator = if(int_eq(index, 0)) { "" } else { " " };
     let entry = cat(cat3("[", num(index), "]="), num(array_get(mem, index)));
     recur mem_walk(mem, add_i32(index, 1), cat3(text, separator, entry))
   } else {

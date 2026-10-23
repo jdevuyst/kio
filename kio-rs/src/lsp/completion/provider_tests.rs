@@ -4,8 +4,8 @@ use crate::lsp::state::ServerState;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 
-const PROVIDER: &str = "module provider; pub elab choose : (. & .) -> . { trailing product; trailing product fallback; impl build }";
-const CONSUMER: &str = "module app; import provider(choose); fn run() { choose! { () } ";
+const PROVIDER: &str = "module provider; pub macro choose : (. & .) -> . { trailing product; trailing product fallback; impl build }";
+const CONSUMER: &str = "module app; import provider(macro choose); fn run() { choose { () } ";
 
 struct Fixture {
     _directory: tempfile::TempDir,
@@ -234,8 +234,8 @@ fn invalid_current_provider_headers_never_fall_back_to_old_labels() {
         "module nested/provider;",
         "module provider;",
         "module",
-        &PROVIDER.replace("pub elab", "elab"),
-        &PROVIDER.replace("elab choose", "elab renamed"),
+        &PROVIDER.replace("pub macro", "macro"),
+        &PROVIDER.replace("macro choose", "macro renamed"),
         &format!(
             "{PROVIDER} {}",
             PROVIDER.strip_prefix("module provider;").unwrap()

@@ -19,13 +19,13 @@ the host contract, for dynamic-language hosts.
 
 `kio repl` already evaluates expressions against a loaded package. REPL authoring extends this to incrementally enter, revise, and retract definitions in the session, with the session staying a valid module throughout.
 
-## Elab literal inspection
+## Macro literal inspection
 
-Letting elabs inspect natural-number and string literals to support tuple indexing, efficient pattern matching against string literals, and compile-time regular-expression compilation.
+Letting macros inspect natural-number and string literals to support tuple indexing, efficient pattern matching against string literals, and compile-time regular-expression compilation.
 
-## Elab quoting
+## Macro quoting
 
-Giving elabs a quoting facility for producing generated Kio glue from ordinary term syntax, reducing the amount of hand-built term construction in elab code.
+Giving macros a quoting facility for producing generated Kio glue from ordinary term syntax, reducing the amount of hand-built term construction in macro code.
 
 ## Self-hosting
 

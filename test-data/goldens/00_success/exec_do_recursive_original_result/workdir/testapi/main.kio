@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/sequence(do);
+import macros/control(macro if);
+import macros/sequence(macro do);
 import testapi(I32, default Bool);
 import testapi/arith(leq_i32);
 import testapi/io(print);
@@ -12,10 +12,10 @@ newtype Box[A] : A { constructor box; projector unbox }
 fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
 
 rec(loop) fn go(n: I32) {
-  if! leq_i32(n, 0) {
+  if(leq_i32(n, 0)) {
     print("base\n")
   } else {
-    Box.unbox(do! bind {
+    Box.unbox(do(bind) {
       let next = recur(cont) go(0);
       let printed = print("resume\n");
       Box.box(next)

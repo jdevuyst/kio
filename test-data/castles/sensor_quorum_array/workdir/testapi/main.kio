@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(
@@ -46,10 +46,10 @@ rec(loop) fn mark(
 , last: I32
 , count: I32
 ) -> I32 {
-  if! leq_i32(index, last) {
+  if(leq_i32(index, last)) {
     let ok = leq_i32(array_get(limits, index), array_get(reads, index));
     array_set(flags, index, ok);
-    if! ok {
+    if(ok) {
       recur mark(reads, limits, flags, add_i32(index, 1), last, add_i32(count, 1))
     } else {
       recur mark(reads, limits, flags, add_i32(index, 1), last, count)

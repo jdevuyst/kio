@@ -1526,7 +1526,7 @@ fn item_visibilities_mut<P: Phase>(item: &mut Item<P>) -> Vec<&mut crate::ast::V
         Item::Newtype(d) => vec![&mut d.vis, &mut d.constructor.vis, &mut d.projector.vis],
         Item::Labels(d, _) => vec![&mut d.vis],
         Item::LabelForward(d, _) => vec![&mut d.vis],
-        Item::Elaborator(s, _) => vec![&mut s.vis],
+        Item::Macro(s, _) => vec![&mut s.vis],
         Item::Op(d, _) => vec![&mut d.vis],
         Item::VariadicOperator(d, _) => vec![&mut d.vis],
         Item::LiteralAlias(l, _) => vec![&mut l.vis],
@@ -1733,7 +1733,7 @@ fn fresh_provider_alias(module: &crate::ast::Module, to: &crate::ast::ModulePath
             Item::HostFn(h) => {
                 bound.insert(h.name.as_str());
             }
-            Item::Elaborator(s, _) => {
+            Item::Macro(s, _) => {
                 bound.insert(s.name.as_str());
             }
             // Label spellings, equiv, and fixed or variadic operator declarations
@@ -2684,6 +2684,7 @@ fn apply_retype(
                 .newtype_names
                 .difference(&public_names)
                 .map(|name| ImportItem::Name {
+                    macro_span: None,
                     default_span: None,
                     leading_trivia: Vec::new(),
                     name: name.clone(),

@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(
@@ -77,9 +77,9 @@ fn build_log() -> Array(Event) {
 }
 
 rec(loop) fn has_later_key(log: Array(Event), item: Event, index: I32, last: I32) -> Bool {
-  if! leq_i32(index, last) {
+  if(leq_i32(index, last)) {
     let later = array_get(log, index);
-    if! same_key(item, later) {
+    if(same_key(item, later)) {
       .t
     } else {
       recur has_later_key(log, item, add_i32(index, 1), last)
@@ -111,10 +111,10 @@ rec(loop) fn compact_loop(
 , deletes: I32
 , original: I32
 ) -> Compact {
-  if! leq_i32(read, last) {
+  if(leq_i32(read, last)) {
     let item = array_get(log, read);
     let next_read = add_i32(read, 1);
-    if! has_later_key(log, item, next_read, last) {
+    if(has_later_key(log, item, next_read, last)) {
       recur compact_loop(
       , log
       , next_read
@@ -126,7 +126,7 @@ rec(loop) fn compact_loop(
       , deletes
       , original
       )
-    } else if! is_deleted(item) {
+    } else if(is_deleted(item)) {
       recur compact_loop(
       , log
       , next_read
@@ -170,7 +170,7 @@ fn line_count(label: String, value: I32) -> String {
 fn print_count(label: String, value: I32) { print(line_count(label, value)) }
 
 rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32) -> I32 {
-  if! leq_i32(index, last) {
+  if(leq_i32(index, last)) {
     let item = array_get(log, index);
     recur checksum_loop(log, add_i32(index, 1), last, add_i32(total, score(item)))
   } else {
@@ -181,7 +181,7 @@ rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32)
 fn checksum(log: Array(Event), kept: I32) -> I32 { checksum_loop(log, 0, sub_i32(kept, 1), 0) }
 
 rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) {
-  if! leq_i32(index, last) {
+  if(leq_i32(index, last)) {
     print(render(index, array_get(log, index)));
     recur print_rows(log, add_i32(index, 1), last)
   } else {

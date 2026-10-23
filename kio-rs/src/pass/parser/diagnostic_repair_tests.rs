@@ -236,7 +236,7 @@ fn type_reference_wording_preserves_declaration_and_spelling_checks() {
 #[test]
 fn module_header_extra_names_explain_the_path_without_reserving_keywords() {
     for name in [
-        "package", "module", "fn", "type", "newtype", "labels", "elab", "op", "rec", "ordinary",
+        "package", "module", "fn", "type", "newtype", "labels", "macro", "op", "rec", "ordinary",
     ] {
         let source = format!("module {name} main;");
         let error = assert_eager_lazy_error(&source);
@@ -295,7 +295,7 @@ fn legal_contextual_header_names_and_missing_semicolons_keep_their_grammar() {
         "type",
         "newtype",
         "labels",
-        "elab",
+        "macro",
         "op",
         "rec",
         "host",
@@ -429,12 +429,12 @@ fn declaration_and_statement_terminators_name_their_actual_construct() {
         );
     }
     assert_forced_parser_message(
-        "module main; fn value() -> . { do! bind { let local = () } }",
+        "module main; fn value() -> . { do (bind) { let local = () } }",
         "expected `;` after neutral let",
     );
     for tail in [
         "newtype Value : . { constructor mk; projector get; }",
-        "elab value : . -> . { impl value; }",
+        "macro value : . -> . { impl value; }",
         "op + __ { impl value; }",
         "varop [% %] { foldr push empty; }",
     ] {

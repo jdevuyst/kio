@@ -1,0 +1,11 @@
+module continuations/macros/testapi;
+
+import macros/testapi as _rehost_gngbgdhcgphdcphegfhdhegbhagj;
+
+pub type String = _rehost_gngbgdhcgphdcphegfhdhegbhagj.String;
+
+pub type I32 = _rehost_gngbgdhcgphdcphegfhdhegbhagj.I32;
+
+pub type Int = _rehost_gngbgdhcgphdcphegfhdhegbhagj.Int;
+
+pub type Bool = _rehost_gngbgdhcgphdcphegfhdhegbhagj.Bool;

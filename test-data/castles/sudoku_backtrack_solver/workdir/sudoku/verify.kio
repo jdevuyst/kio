@@ -6,7 +6,7 @@
 /// the two would have to be wrong in the same way.
 module sudoku/verify;
 
-import elab/control(if);
+import macros/control(macro if);
 import sudoku/geometry as geo;
 import sudoku/num as num;
 import testapi(Array, I32, default Bool);
@@ -28,9 +28,9 @@ rec(loop) fn scan_units(
 , seen_box: Array(I32)
 , cell: I32
 ) -> Bool {
-  if! leq_i32(cell, geo.last_cell()) {
+  if(leq_i32(cell, geo.last_cell())) {
     let digit = array_get(cells, cell);
-    if! num.is_zero(digit) {
+    if(num.is_zero(digit)) {
       recur scan_units(cells, rows, cols, boxes, seen_row, seen_col, seen_box, add_i32(cell, 1))
     } else {
       let row_slot = geo.flag_at(array_get(rows, cell), digit);
@@ -40,7 +40,7 @@ rec(loop) fn scan_units(
       , unseen(seen_row, row_slot)
       , num.and_bool(unseen(seen_col, col_slot), unseen(seen_box, box_slot))
       );
-      if! fresh {
+      if(fresh) {
         array_set(seen_row, row_slot, 1);
         array_set(seen_col, col_slot, 1);
         array_set(seen_box, box_slot, 1);
@@ -62,9 +62,9 @@ pub fn is_consistent(cells: Array(I32)) -> Bool {
 }
 
 rec(loop) fn all_filled_from(cells: Array(I32), cell: I32) -> Bool {
-  if! leq_i32(cell, geo.last_cell()) {
+  if(leq_i32(cell, geo.last_cell())) {
     let digit = array_get(cells, cell);
-    if! num.and_bool(leq_i32(1, digit), leq_i32(digit, geo.last_digit())) {
+    if(num.and_bool(leq_i32(1, digit), leq_i32(digit, geo.last_digit()))) {
       recur all_filled_from(cells, add_i32(cell, 1))
     } else {
       .f
@@ -78,12 +78,12 @@ rec(loop) fn all_filled_from(cells: Array(I32), cell: I32) -> Bool {
 /// digits drawn from 1..9 in a nine-cell unit is 1..9 exactly once, so the
 /// two halves together are the whole sudoku condition.
 pub fn is_solved(cells: Array(I32)) -> Bool {
-  if! all_filled_from(cells, 0) { is_consistent(cells) } else { .f }
+  if(all_filled_from(cells, 0)) { is_consistent(cells) } else { .f }
 }
 
 rec(loop) fn count_from(cells: Array(I32), cell: I32, found: I32) -> I32 {
-  if! leq_i32(cell, geo.last_cell()) {
-    if! num.is_zero(array_get(cells, cell)) {
+  if(leq_i32(cell, geo.last_cell())) {
+    if(num.is_zero(array_get(cells, cell))) {
       recur count_from(cells, add_i32(cell, 1), found)
     } else {
       recur count_from(cells, add_i32(cell, 1), add_i32(found, 1))
@@ -96,11 +96,11 @@ rec(loop) fn count_from(cells: Array(I32), cell: I32, found: I32) -> I32 {
 pub fn count_givens(cells: Array(I32)) -> I32 { count_from(cells, 0, 0) }
 
 rec(loop) fn keeps_from(givens: Array(I32), cells: Array(I32), cell: I32) -> Bool {
-  if! leq_i32(cell, geo.last_cell()) {
+  if(leq_i32(cell, geo.last_cell())) {
     let given = array_get(givens, cell);
-    if! num.is_zero(given) {
+    if(num.is_zero(given)) {
       recur keeps_from(givens, cells, add_i32(cell, 1))
-    } else if! num.eq_i32(given, array_get(cells, cell)) {
+    } else if(num.eq_i32(given, array_get(cells, cell))) {
       recur keeps_from(givens, cells, add_i32(cell, 1))
     } else {
       .f
@@ -115,8 +115,8 @@ rec(loop) fn keeps_from(givens: Array(I32), cells: Array(I32), cell: I32) -> Boo
 pub fn keeps_givens(givens: Array(I32), cells: Array(I32)) -> Bool { keeps_from(givens, cells, 0) }
 
 rec(loop) fn same_from(left: Array(I32), right: Array(I32), cell: I32) -> Bool {
-  if! leq_i32(cell, geo.last_cell()) {
-    if! num.eq_i32(array_get(left, cell), array_get(right, cell)) {
+  if(leq_i32(cell, geo.last_cell())) {
+    if(num.eq_i32(array_get(left, cell), array_get(right, cell))) {
       recur same_from(left, right, add_i32(cell, 1))
     } else {
       .f

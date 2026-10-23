@@ -33,7 +33,7 @@ impl BuiltinModule {
                 "Compiler-provided module containing the Kio' core value intrinsics."
             }
             Self::Comptime => {
-                "Compiler-provided block import containing reflected type handles, checked-term constructors, diagnostic text, and compile-time recursion helpers for elab implementations."
+                "Compiler-provided block import containing reflected type handles, checked-term constructors, diagnostic text, and compile-time recursion helpers for macro implementations."
             }
         }
     }
@@ -108,7 +108,7 @@ pub fn doc_for_label(label: &str) -> Option<BuiltinDoc> {
             signature: BuiltinSignature::ModuleImport,
             group: "Module",
             summary: BuiltinModule::Comptime.summary(),
-            details: "The import is available only as the block form shown. Its types and values are usable while an elab implementation is evaluated and do not form a runtime library API.",
+            details: "The import is available only as the block form shown. Its types and values are usable while a macro implementation is evaluated and do not form a runtime library API.",
             example: None,
         });
     }
@@ -132,7 +132,7 @@ pub fn render_markdown_guide() -> String {
     let mut out = String::new();
     out.push_str("# Builtin Modules\n\n");
     out.push_str(
-        "Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by elab implementations. Ordinary source should start with surface forms — tuples, labels, `match!`, and structural elabs — and use `__intrinsics__` only when the core operation itself is the subject.\n\n",
+        "Kio has two compiler-provided import blocks. `__intrinsics__` exposes the Kio' core value operations. `__comptime__` exposes the reflection and checked-term helpers used by macro implementations. Ordinary source should start with surface forms — tuples, labels, `match`, and structural macros — and use `__intrinsics__` only when the core operation itself is the subject.\n\n",
     );
     out.push_str(
         "If you are trying to construct or inspect sums and products in a normal\nprogram, use the structural guides instead of this reference. The\n`import __intrinsics__;` snippet below is a reference entry for core-level code,\nnot a package or module starter.\n\n",
@@ -324,7 +324,7 @@ fn comptime_group(builtin: ComptimeBuiltin) -> &'static str {
         | TypeNameParamAritiesFold => "Type Folds",
         TypeDisplay | TypeShortName | TypeNameDisplay | TypeVarDisplay | TypeArityDisplay
         | DiagnosticConcat => "Diagnostics",
-        ElabError | TypeError => "Error Sentinels",
+        MacroError | TypeError => "Error Sentinels",
         StructuralRecur => "Compile-Time Recursion",
         TermType | TermLet | TermFn | TermCall | TermTypeFn | TermTypeApp | TermUnit
         | TermHostConvert | TermSpecialize => "Checked Terms",
@@ -349,7 +349,7 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         TypeVar => "Opaque handle for a reflected type variable.",
         TypeName => "Opaque handle for the named head of a reflected named type.",
         TypeArity => "Opaque arity value used by reflected type variables, names, and binders.",
-        DiagnosticText => "Compile-time text used in elab diagnostics.",
+        DiagnosticText => "Compile-time text used in macro diagnostics.",
         ComptimeBool => {
             "Compile-time boolean type with `role(bool)`. The fixed `__comptime__` block import selects it as the importing module's Boolean default."
         }
@@ -358,7 +358,7 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         }
         FillCtx => "Opaque immutable transcript of explicit fill relations for one marked call.",
         ReflectType => {
-            "Reflects a type argument into an opaque `__Type__` handle. Elabs use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction."
+            "Reflects a type argument into an opaque `__Type__` handle. Macros use it when they need to inspect a type parameter, compare types, or pass a type into checked-term construction."
         }
         TypeView => "Decomposes a reflected type into the compiler's structural type-view shape.",
         TypeIsHost => {
@@ -405,8 +405,8 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         TypeVarDisplay => "Renders a reflected type-variable handle as diagnostic text.",
         TypeArityDisplay => "Renders a reflected arity value as diagnostic text.",
         DiagnosticConcat => "Concatenates two pieces of diagnostic text.",
-        ElabError => {
-            "Builds a checked-term sentinel that reports an elab diagnostic at the call site."
+        MacroError => {
+            "Builds a checked-term sentinel that reports a macro diagnostic at the call site."
         }
         TypeError => "Builds a checked-term sentinel that reports a type error at the call site.",
         StructuralRecur => {
@@ -463,7 +463,7 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "A handle preserves the identity, binders, kind arity, and structural shape of the reflected type. It is inspected and rebuilt only through this module's helpers. It is not a runtime type value, and using it outside compile-time evaluation is invalid."
         }
         CheckedTerm => {
-            "The template is already typed Kio' syntax, not source text or an unchecked AST. Constructors verify their component types while building it, and the elab result is checked against the declared call result before substitution. It cannot be manufactured or inspected at runtime."
+            "The template is already typed Kio' syntax, not source text or an unchecked AST. Constructors verify their component types while building it, and the macro result is checked against the declared call result before substitution. It cannot be manufactured or inspected at runtime."
         }
         TypeVar => {
             "A handle identifies one fresh reflected binder and records that binder's kind arity. Compare handles with `__type_var_equal__` and turn one into a type with `__type_var__`. It has no user-constructible or runtime representation."
@@ -475,19 +475,19 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Arity is a compile-time natural number used for kinds and function parameter packets. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation."
         }
         DiagnosticText => {
-            "Diagnostic text is the only message payload accepted by `__elab_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string."
+            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string."
         }
         ComptimeBool => {
             "The literals `.t` and `.f` form the compile-time predicate result used by reflection helpers and `if`/`else`. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type."
         }
         ComptimeStr => {
-            "String literals in an elab implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code."
+            "String literals in a macro implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code."
         }
         FillCtx => {
             "The compiler supplies one fresh context as the second argument of an `impl(fills)` implementation. `__fill__` returns a descendant context instead of mutating its input, so Kio code threads the returned value explicitly. A context cannot be constructed by source, converted to or from `__Comptime__`, inspected, or allowed to reach runtime."
         }
         ReflectType => {
-            "The type argument must be solved before the helper runs; the result is its exact reflected handle, including nominal identity and kind. An unsolved elab type slot cannot call this helper and is reported as a type-inference error before evaluation."
+            "The type argument must be solved before the helper runs; the result is its exact reflected handle, including nominal identity and kind. An unsolved macro type slot cannot call this helper and is reported as a type-inference error before evaluation."
         }
         TypeView => {
             "After transparent-alias unfolding, returns an eight-arm structural view in this order: unit; bottom; product pair; sum pair; function `(parameters & arity & result)`; forall `(variable & arity & body)`; type variable; named head. Consumers must cover the complete sum. An unresolved type cannot be viewed and leaves elaboration stuck."
@@ -594,11 +594,11 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
         DiagnosticConcat => {
             "Concatenates two diagnostic fragments without inserting whitespace or punctuation. Both inputs must be compile-time diagnostic text; host strings are rejected by the type checker."
         }
-        ElabError => {
-            "Returns a checked-term error sentinel carrying the message. When selected as the elab result, the call fails in the elab-error category (exit 15) at the bang-call site. It does not construct a runtime term."
+        MacroError => {
+            "Returns a checked-term error sentinel carrying the message. When selected as the macro result, the call fails in the macro-error category (exit 15) at the macro call site. It does not construct a runtime term."
         }
         TypeError => {
-            "Returns a checked-term error sentinel carrying the message. When selected as the elab result, the call fails in the ordinary type-error category (exit 14) at the bang-call site. It does not construct a runtime term."
+            "Returns a checked-term error sentinel carrying the message. When selected as the macro result, the call fails in the ordinary type-error category (exit 14) at the macro call site. It does not construct a runtime term."
         }
         StructuralRecur => {
             "Runs `step(recur, fuel, input)` after measuring the initial `fuel`. Unit, literals, structurally determined reflected values, arities, diagnostic text, checked terms, and finite constructor trees with measurable children are measurable; closures, opaque atoms, stuck terms, case splits, and recursive callbacks are not. An initial projected type uses its authenticated alias-unfolded structural carrier as a conservative lower bound; its exact scoped snapshot remains available for whole-handle reflection and fills. An unresolved outer carrier is unmeasurable, and a direct projected value used on a recursive edge must be complete. When an ordinary finite constructor carries a projected field, a known outer structure gives that field the same conservative size in initial and recursive measurements; an unresolved outer field makes the constructor unmeasurable. A structurally determined child can remain measurable even when its parent is open. `recur(next_fuel, next_input)` must give the callback a recursive fuel measure strictly below both the current measure and its stored root measure. Evaluator-created callbacks maintain `current ≤ root`; both bounds are checked independently for a callback constructed directly through the evaluator API. The helper's three operands and the callback's two operands may be written as flattened arguments or as one right-folded product packet. After all operands are evaluated, every fresh invocation uses the initial measure and starts an independent callback root, including nested calls through the same helper and higher-order use. Saved callbacks retain their immutable bounds after the creating invocation returns; sibling applications do not consume each other's bounds. On a callback edge, equal-measure fuel is rejected regardless of value identity, representation, or whether it contains a projected handle. The callback has type `(fuel & input) -> result`, and every path returns the one `result` type. Unmeasurable initial or recursive fuel, a callback that does not strictly descend from its current measure or stay below its stored root leaves the evaluator stuck and is reported as a totality error (exit 16) with root/current/next measures when available. If both callback bounds fail, the diagnostic reports the current edge; the root-specific diagnostic applies only when the current edge descends but the root bound fails. Once an evaluated edge fails, enclosing compile-time computation cannot discard it; that evaluation reports its first totality failure."
@@ -607,10 +607,10 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Reads the exact reflected type stored on a checked term, qualifying host identities consistently with reflected call types. Error sentinels and non-term compile-time values cannot be inspected as terms."
         }
         TermLet => {
-            "Creates a hygienic let binder of `value_type`, checks `value` against it, passes a checked reference to `body`, and returns the body's checked term. A value/type mismatch or non-term callback result makes construction fail and the elab cannot return a valid term."
+            "Creates a hygienic let binder of `value_type`, checks `value` against it, passes a checked reference to `body`, and returns the body's checked term. A value/type mismatch or non-term callback result makes construction fail and the macro cannot return a valid term."
         }
         TermFn => {
-            "Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function with consistent ABI arity, otherwise construction stays stuck and the elab fails."
+            "Creates a hygienic value lambda with the displayed `fn_type`; the callback receives one checked parameter packet and must return a term of the function's result type. The type must be an outer function with consistent ABI arity, otherwise construction stays stuck and the macro fails."
         }
         TermCall => {
             "Creates a checked application after splitting `fn_type` into its parameter packet and result. `fn_value` must have that exact function type and `arg_packet` must have the right-associated parameter type; any mismatch makes construction stay stuck rather than emitting ill-typed Kio'."

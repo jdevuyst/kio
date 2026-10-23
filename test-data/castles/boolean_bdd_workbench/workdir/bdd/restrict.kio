@@ -1,11 +1,11 @@
 module bdd/restrict;
 
 import bdd/store as table;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(reorder_prod);
 import list/core as lists;
 import list/list as walk;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro reorder_prod);
 import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
@@ -15,24 +15,24 @@ type Cached = table.Node_id & table.Node_id;
 labels State = { store: table.Store, cache: lists.List(Cached), hits: I32 };
 
 fn remember(s: State, from: table.Node_id, to: table.Node_id) -> State & table.Node_id {
-  (s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod!(State), to)
+  (s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod(State), to)
 }
 
 rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> State & table.Node_id {
-  match! walk.find(
+  match(walk.find(
   , .(from: table.Node_id, _to: table.Node_id) { table.same_id(from, id) }
   , s.?{cache}
-  ) {
+  )) {
     .(_from: table.Node_id, to: table.Node_id) {
-      (s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod!(State), to)
+      (s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod(State), to)
     };
     .() {
-      match! table.lookup(s.?{store}, id) {
+      match(table.lookup(s.?{store}, id)) {
         .(node: table.Node) {
-          if! arith.eq_i32(node.?{table.level}, variable) {
-            let answer = if! value { node.?{table.high} } else { node.?{table.low} };
+          if(arith.eq_i32(node.?{table.level}, variable)) {
+            let answer = if(value) { node.?{table.high} } else { node.?{table.low} };
             remember(s, id, answer)
-          } else if! arith.lt_i32(variable, node.?{table.level}) {
+          } else if(arith.lt_i32(variable, node.?{table.level})) {
             remember(s, id, id)
           } else {
             let .(after_low: State, low: table.Node_id) = recur(cont) visit(

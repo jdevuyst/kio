@@ -7,9 +7,9 @@
 /// deficit climbs; one that reaches the root drops a level off the whole tree.
 module tree/delete;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
@@ -51,19 +51,19 @@ type Del_out = Del & Tally;
 
 labels Successor = { least: I32 & String } | { no_least: . };
 
-fn held(n: Node) -> Shrunk { {held = n}.>widen_sum!(Shrunk) }
+fn held(n: Node) -> Shrunk { {held = n}.>widen_sum(Shrunk) }
 
-fn deficit(n: Node) -> Shrunk { {deficit = n}.>widen_sum!(Shrunk) }
+fn deficit(n: Node) -> Shrunk { {deficit = n}.>widen_sum(Shrunk) }
 
-fn missing() -> Del { {missing=}.>widen_sum!(Del) }
+fn missing() -> Del { {missing=}.>widen_sum(Del) }
 
-fn least(k: I32, v: String) -> Successor { {least = (k, v)}.>widen_sum!(Successor) }
+fn least(k: I32, v: String) -> Successor { {least = (k, v)}.>widen_sum(Successor) }
 
-fn no_least() -> Successor { {no_least=}.>widen_sum!(Successor) }
+fn no_least() -> Successor { {no_least=}.>widen_sum(Successor) }
 
 fn del_of_shrunk(s: Shrunk) -> Del {
-  match! s {
-    (.(h: Held) { widen_sum!(h) }, .(d: Deficit) { widen_sum!(d) })
+  match(s) {
+    (.(h: Held) { widen_sum(h) }, .(d: Deficit) { widen_sum(d) })
   }
 }
 
@@ -77,7 +77,7 @@ fn del_of_shrunk(s: Shrunk) -> Del {
 /// node its contradictory arguments describe, so it can neither drop a key nor
 /// invent one.
 fn fix_two_left(d: Node, k1: I32, v1: String, r: Node) -> Fixed {
-  match! r.>Node.un_node {
+  match(r.>Node.un_node) {
     (
     , .(_e: Leaf) { (held(two_node(d, k1, v1, r)), tally_zero()) }
     , .(n: Two) {
@@ -97,7 +97,7 @@ fn fix_two_left(d: Node, k1: I32, v1: String, r: Node) -> Fixed {
 }
 
 fn fix_two_right(l: Node, k1: I32, v1: String, d: Node) -> Fixed {
-  match! l.>Node.un_node {
+  match(l.>Node.un_node) {
     (
     , .(_e: Leaf) { (held(two_node(l, k1, v1, d)), tally_zero()) }
     , .(n: Two) {
@@ -117,7 +117,7 @@ fn fix_two_right(l: Node, k1: I32, v1: String, d: Node) -> Fixed {
 }
 
 fn fix_three_left(d: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Fixed {
-  match! m.>Node.un_node {
+  match(m.>Node.un_node) {
     (
     , .(_e: Leaf) { (held(three_node(d, k1, v1, m, k2, v2, r)), tally_zero()) }
     , .(n: Two) {
@@ -136,7 +136,7 @@ fn fix_three_left(d: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r:
 }
 
 fn fix_three_mid(l: Node, k1: I32, v1: String, d: Node, k2: I32, v2: String, r: Node) -> Fixed {
-  match! l.>Node.un_node {
+  match(l.>Node.un_node) {
     (
     , .(_e: Leaf) { (held(three_node(l, k1, v1, d, k2, v2, r)), tally_zero()) }
     , .(n: Two) {
@@ -155,7 +155,7 @@ fn fix_three_mid(l: Node, k1: I32, v1: String, d: Node, k2: I32, v2: String, r: 
 }
 
 fn fix_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, d: Node) -> Fixed {
-  match! m.>Node.un_node {
+  match(m.>Node.un_node) {
     (
     , .(_e: Leaf) { (held(three_node(l, k1, v1, m, k2, v2, d)), tally_zero()) }
     , .(n: Two) {
@@ -177,7 +177,7 @@ fn fix_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, d
 /// slots straight back in; a deficient one goes through the repair for the slot
 /// it occupied.
 fn at_two_left(s: Shrunk, k1: I32, v1: String, r: Node) -> Fixed {
-  match! s {
+  match(s) {
     (
     , .(h: Held) { (held(two_node(h.?{held}, k1, v1, r)), tally_zero()) }
     , .(d: Deficit) { fix_two_left(d.?{deficit}, k1, v1, r) }
@@ -186,7 +186,7 @@ fn at_two_left(s: Shrunk, k1: I32, v1: String, r: Node) -> Fixed {
 }
 
 fn at_two_right(l: Node, k1: I32, v1: String, s: Shrunk) -> Fixed {
-  match! s {
+  match(s) {
     (
     , .(h: Held) { (held(two_node(l, k1, v1, h.?{held})), tally_zero()) }
     , .(d: Deficit) { fix_two_right(l, k1, v1, d.?{deficit}) }
@@ -195,7 +195,7 @@ fn at_two_right(l: Node, k1: I32, v1: String, s: Shrunk) -> Fixed {
 }
 
 fn at_three_left(s: Shrunk, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Fixed {
-  match! s {
+  match(s) {
     (
     , .(h: Held) { (held(three_node(h.?{held}, k1, v1, m, k2, v2, r)), tally_zero()) }
     , .(d: Deficit) { fix_three_left(d.?{deficit}, k1, v1, m, k2, v2, r) }
@@ -204,7 +204,7 @@ fn at_three_left(s: Shrunk, k1: I32, v1: String, m: Node, k2: I32, v2: String, r
 }
 
 fn at_three_mid(l: Node, k1: I32, v1: String, s: Shrunk, k2: I32, v2: String, r: Node) -> Fixed {
-  match! s {
+  match(s) {
     (
     , .(h: Held) { (held(three_node(l, k1, v1, h.?{held}, k2, v2, r)), tally_zero()) }
     , .(d: Deficit) { fix_three_mid(l, k1, v1, d.?{deficit}, k2, v2, r) }
@@ -213,7 +213,7 @@ fn at_three_mid(l: Node, k1: I32, v1: String, s: Shrunk, k2: I32, v2: String, r:
 }
 
 fn at_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, s: Shrunk) -> Fixed {
-  match! s {
+  match(s) {
     (
     , .(h: Held) { (held(three_node(l, k1, v1, m, k2, v2, h.?{held})), tally_zero()) }
     , .(d: Deficit) { fix_three_right(l, k1, v1, m, k2, v2, d.?{deficit}) }
@@ -225,17 +225,17 @@ fn at_three_right(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, s:
 /// and nothing is counted.
 fn lift(dt: Del_out, repair: Shrunk -> (Shrunk & Tally)) -> Del_out {
   let .(d: Del, acc: Tally) = dt;
-  match! d {
+  match(d) {
     (
     , .(h: Held) {
-        let .(s: Shrunk, ev: Tally) = repair(widen_sum!(h, Shrunk));
+        let .(s: Shrunk, ev: Tally) = repair(widen_sum(h, Shrunk));
         (del_of_shrunk(s), tally_add(acc, ev))
       }
     , .(x: Deficit) {
-        let .(s: Shrunk, ev: Tally) = repair(widen_sum!(x, Shrunk));
+        let .(s: Shrunk, ev: Tally) = repair(widen_sum(x, Shrunk));
         (del_of_shrunk(s), tally_add(acc, ev))
       }
-    , .(m: Missing) { (widen_sum!(m), acc) }
+    , .(m: Missing) { (widen_sum(m), acc) }
     )
   }
 }
@@ -243,16 +243,16 @@ fn lift(dt: Del_out, repair: Shrunk -> (Shrunk & Tally)) -> Del_out {
 /// The smallest key of a subtree. `no_least` means the subtree is empty, which
 /// under a node means that node already sits at the bottom of the tree.
 rec(loop) fn min_key(t: Node) -> Successor {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { no_least() }
     , .(n: Two) {
         let .(l: Node, k: I32, v: String, _r: Node) = n.?{two};
-        if! is_leaf(l) { least(k, v) } else { recur min_key(l) }
+        if(is_leaf(l)) { least(k, v) } else { recur min_key(l) }
       }
     , .(n: Three) {
         let .(l: Node, k1: I32, v1: String, _m: Node, _k2: I32, _v2: String, _r: Node) = n.?{three};
-        if! is_leaf(l) { least(k1, v1) } else { recur min_key(l) }
+        if(is_leaf(l)) { least(k1, v1) } else { recur min_key(l) }
       }
     )
   }
@@ -266,13 +266,13 @@ rec(loop) fn min_key(t: Node) -> Successor {
 /// key can actually be taken out. `no_least` says that subtree is empty, which
 /// means the node already *is* the bottom and its key goes directly.
 rec(loop) fn del(t: Node, k: I32) -> Del_out {
-  match! t.>Node.un_node {
+  match(t.>Node.un_node) {
     (
     , .(_e: Leaf) { (missing(), tally_zero()) }
     , .(n: Two) {
         let .(l: Node, k1: I32, v1: String, r: Node) = n.?{two};
-        if! eq_i32(k, k1) {
-          match! min_key(r) {
+        if(eq_i32(k, k1)) {
+          match(min_key(r)) {
             (
             , .(s: Least) {
                 let .(sk: I32, sv: String) = s.?{least};
@@ -282,7 +282,7 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
             , .(_n: No_least) { (del_of_shrunk(deficit(leaf_node())), tally_zero()) }
             )
           }
-        } else if! lt_i32(k, k1) {
+        } else if(lt_i32(k, k1)) {
           let below = recur(cont) del(l, k);
           lift(below, .(x) { at_two_left(x, k1, v1, r) })
         } else {
@@ -292,8 +292,8 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
       }
     , .(n: Three) {
         let .(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) = n.?{three};
-        if! eq_i32(k, k1) {
-          match! min_key(m) {
+        if(eq_i32(k, k1)) {
+          match(min_key(m)) {
             (
             , .(s: Least) {
                 let .(sk: I32, sv: String) = s.?{least};
@@ -303,8 +303,8 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
             , .(_n: No_least) { (del_of_shrunk(held(two_node(l, k2, v2, r))), tally_zero()) }
             )
           }
-        } else if! eq_i32(k, k2) {
-          match! min_key(r) {
+        } else if(eq_i32(k, k2)) {
+          match(min_key(r)) {
             (
             , .(s: Least) {
                 let .(sk: I32, sv: String) = s.?{least};
@@ -314,10 +314,10 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
             , .(_n: No_least) { (del_of_shrunk(held(two_node(l, k1, v1, m))), tally_zero()) }
             )
           }
-        } else if! lt_i32(k, k1) {
+        } else if(lt_i32(k, k1)) {
           let below = recur(cont) del(l, k);
           lift(below, .(x) { at_three_left(x, k1, v1, m, k2, v2, r) })
-        } else if! lt_i32(k, k2) {
+        } else if(lt_i32(k, k2)) {
           let below = recur(cont) del(m, k);
           lift(below, .(x) { at_three_mid(l, k1, v1, x, k2, v2, r) })
         } else {
@@ -332,7 +332,7 @@ rec(loop) fn del(t: Node, k: I32) -> Del_out {
 pub fn delete(t: Tree, k: I32) -> Tree & Tally {
   let size = size_of(t);
   let .(d: Del, acc: Tally) = del(root_of(t), k);
-  match! d {
+  match(d) {
     (
     , .(h: Held) { (make_tree(h.?{held}, sub_i32(size, 1)), acc) }
     , .(x: Deficit) {

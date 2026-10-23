@@ -12,15 +12,15 @@
 /// than a count nobody should believe.
 module gc/verify;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import gc/heap(field_slot, fold_fields, fold_objects, header_map, in_arena);
 import gc/mark(mark_heap, {mark_bits});
 import gc/num(and, int_eq, int_lt);
 import gc/slot(Imm, Ptr, {ptr});
 import gc/sweep(sweep, {live_objects});
-import testapi(Array, default Bool, I32);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32);
 import testapi/array(array_get, array_len);
 import testapi/iter(loop);
@@ -40,7 +40,7 @@ pub labels Verdict = { verified: Audit } | { broken: Audit };
 
 /// In range is not enough: the address has to start an object.
 fn lands_on_header(cells: Array(I32), headers: Array(Bool), addr: I32) -> Bool {
-  if! in_arena(cells, addr) { array_get(headers, addr) } else { .f }
+  if(in_arena(cells, addr)) { array_get(headers, addr) } else { .f }
 }
 
 /// Count one object's pointer fields and how many of them are unsound.
@@ -50,10 +50,10 @@ fn check_fields(cells: Array(I32), headers: Array(Bool), addr: I32, seen: I32 & 
   , addr
   , .(counts, index) {
       let .(pointers: I32, bad: I32) = counts;
-      match! field_slot(cells, addr, index) {
+      match(field_slot(cells, addr, index)) {
         (
         , .(p: Ptr) {
-            if! lands_on_header(cells, headers, p.?{ptr}) {
+            if(lands_on_header(cells, headers, p.?{ptr})) {
               (add_i32(pointers, 1), bad)
             } else {
               (add_i32(pointers, 1), add_i32(bad, 1))
@@ -74,8 +74,8 @@ rec(loop) fn check_roots(
 , index: I32
 , bad: I32
 ) -> I32 {
-  if! int_lt(index, array_len(roots)) {
-    let next_bad = if! lands_on_header(cells, headers, array_get(roots, index)) {
+  if(int_lt(index, array_len(roots))) {
+    let next_bad = if(lands_on_header(cells, headers, array_get(roots, index))) {
       bad
     } else {
       add_i32(bad, 1)
@@ -108,10 +108,10 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
   let bad = check_roots(cells, headers, roots, 0, field_bad);
   let sound = int_eq(bad, 0);
   let reached =
-    if! sound {
-      widen_sum!(reachable_objects(cells, roots), I32 | .)
+    if(sound) {
+      widen_sum(reachable_objects(cells, roots), I32 | .)
     } else {
-      widen_sum!((), I32 | .)
+      widen_sum((), I32 | .)
     };
   let report =
     {
@@ -123,12 +123,12 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
     , dangling = bad
     };
   let intact =
-    match! reached {
+    match(reached) {
       (.(count: I32) { int_eq(count, expected) }, .(_untraversed: .) { .f })
     };
-  if! and(sound, intact) {
-    {verified = report}.>widen_sum!(Verdict)
+  if(and(sound, intact)) {
+    {verified = report}.>widen_sum(Verdict)
   } else {
-    {broken = report}.>widen_sum!(Verdict)
+    {broken = report}.>widen_sum(Verdict)
   }
 }

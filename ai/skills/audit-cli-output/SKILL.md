@@ -49,7 +49,7 @@ A great Kio diagnostic:
    not just the error point.
 4. **`help:`** proposes a concrete fix when one is determinable.
 5. **`did you mean …?`** suggestions where a near-miss is mechanically
-   detectable (typo'd name vs. nearest in scope, wrong elaborator, missing
+   detectable (typo'd name vs. nearest in scope, wrong macro, missing
    import).
 6. **User error vs. bug** — a user-facing diagnostic is a structured,
    span-bearing `Error`; an internal-contract failure is a `panic!` /
@@ -70,7 +70,7 @@ fields as a structural gap (not a per-message finding).
 Grep every `Error::… {` / error-constructor call site
 (`grep -rn 'Error::' kio-rs/src/`). For each, by phase:
 
-- **Type / Elaborator errors** (`14_type_error`, `15_elaborator_error`) — the
+- **Type / Macro errors** (`14_type_error`, `15_macro_error`) — the
   highest-value for secondary labels: does the message point at *both*
   the mismatch site *and* the expected-type / coercion source?
   For imported ordinary and host functions, check direct and straight-alias
@@ -251,7 +251,7 @@ Group findings:
    as `**…**` verbatim instead of ANSI styling or plain text, excluding the
    diagnostic code delimiters specified in §B1.
 5. **Per-site backlog** — diagnostic + general-output sites that could
-   meet the rubric but don't, prioritized (type/elaborator/name-res first for
+   meet the rubric but don't, prioritized (type/macro/name-res first for
    diagnostics).
 6. **`--help` conformance** (§C) — per subcommand: missing synopsis /
    exit-codes block / spec footer; bare `specs/` references; flags in the

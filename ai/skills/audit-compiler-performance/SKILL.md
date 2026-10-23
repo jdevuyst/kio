@@ -112,11 +112,11 @@ Specific fan-outs that must remain parallel when `parallel` is enabled:
 - backend package lowering/emission entry points documented in `backends/mod.rs`;
 - parser / formatter / Kiodoc bulk work where each file or snippet is independent.
 
-User-elaborator evaluator-artifact construction is the narrow exception. Inspect
-`UserElaboratorArtifactTypecheck` in `pass/typecheck_full.rs`: its private
+User-macro evaluator-artifact construction is the narrow exception. Inspect
+`UserMacroArtifactTypecheck` in `pass/typecheck_full.rs`: its private
 deferred-discharge and package-validation entry points must accept no execution
 policy and must share the one `Sequential` policy. Ordinary package, module,
-and user-elaborator-template checking must still default to `AllowParallel`,
+and user-macro-template checking must still default to `AllowParallel`,
 permitting package-module, module-function, and sufficiently wide template-batch
 fan-out. The artifact package entry point propagates the sequential policy
 through both package-module and module-function checking.
@@ -354,7 +354,7 @@ grep -nE 'store_repairs_a_non_file_destination' \
   kio-rs/src/cache/emit.rs
 grep -nE 'flat_file_publish_accepts_a_valid_same_key_peer|flat_file_repair_accepts_a_valid_peer_winning_the_retry|flat_file_repair_rejects_an_invalid_retry_peer_and_cleans_temp' \
   kio-rs/src/cache/mod.rs
-grep -nE 'user_elaborator_artifact_entry_points_are_sequential|user_elaborator_artifact_pairs_are_analysis_scoped_singleflight|reused_structural_interner_does_not_reuse_package_content|imported_consumer_batches_share_one_exact_artifact_per_package_check|eager_result_inference_and_deferred_check_share_one_exact_artifact|staged_provider_helper_reconstructs_imported_surface_elaboration|package_versions_share_structural_types_but_not_content_memos_or_analysis_artifacts|revision_store_reuses_only_exact_versions_and_binds_each_scope|lsp_user_elaborator_memo_survives_repeated_same_snapshot_analysis|lsp_missing_focus_fallback_reuses_worker_memos|lsp_user_elaborator_memo_invalidates_after_provider_edit|user_elaborator_template_memo_replays_across_forced_modules|UserElaboratorArtifactTypecheck' \
+grep -nE 'user_macro_artifact_entry_points_are_sequential|user_macro_artifact_pairs_are_analysis_scoped_singleflight|reused_structural_interner_does_not_reuse_package_content|imported_consumer_batches_share_one_exact_artifact_per_package_check|eager_result_inference_and_deferred_check_share_one_exact_artifact|staged_provider_helper_reconstructs_imported_surface_elaboration|package_versions_share_structural_types_but_not_content_memos_or_analysis_artifacts|revision_store_reuses_only_exact_versions_and_binds_each_scope|lsp_user_macro_memo_survives_repeated_same_snapshot_analysis|lsp_missing_focus_fallback_reuses_worker_memos|lsp_user_macro_memo_invalidates_after_provider_edit|user_macro_template_memo_replays_across_forced_modules|UserMacroArtifactTypecheck' \
   kio-rs/src/pass/typecheck_full.rs kio-rs/src/pass/typecheck_core/intern.rs kio-rs/src/cmd/check.rs kio-rs/tests/package_check_cache_skip.rs
 grep -nE 'focused_retention_is_bounded_by_open_documents|closed_document_rejects_late_focused_result|reopened_document_rejects_a_result_from_its_previous_open_lifetime|repeated_did_open_starts_a_new_focused_lifetime|changed_canonical_identity_starts_a_fresh_focused_lifecycle|newer_same_file_focus_preserves_stale_good_and_supersedes_old_result|close_drops_focused_state_after_canonical_identity_drift|full_analysis_drops_only_covered_nonnewer_focused_shards|successful_full_analysis_rejects_an_older_inflight_focused_result|closed_file_foreground_request_schedules_full_analysis|reopened_document_does_not_publish_a_previous_lifetime_focused_result|failed_full_analysis_retains_focus_and_does_not_advance_its_watermark' \
   kio-rs/src/lsp/state.rs kio-rs/src/lsp/mod.rs
@@ -584,8 +584,8 @@ retain the measurement's stated limits.
   controls for the semantic boundary.
 - **Imported newtype-variance memo** (`pass/typecheck_core/variance.rs`) — strict-positivity checking derives an exact imported provider module's newtype variance table once per request and reuses the ready table at every branching occurrence. Variance composition and the in-progress fail-closed guard are correctness-primary; retaining and reusing a ready provider table is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#imported-newtype-variance-memo).
 
-- **User-elaborator artifact/implementation pairing and analysis reuse** (`pass/typecheck_full.rs`, `pass/typecheck_core/{intern,memo}.rs`) — retains each validated evaluator artifact together with its exact staged implementation and singleflights it by provider module, elaborator name, and ordered capture imports for one immutable analysis. Eager result inference and deferred consumer batches therefore reuse the same exact artifact without carrying it into another analysis. Structural types may be interned across package versions, while all content-dependent `MemoCtx` state belongs to an opaque package-version revision selected by the LSP's package fingerprint and the artifact table belongs to a fresh scope bound to the current package analysis. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#user-elaborator-artifactimplementation-pairing-and-analysis-reuse).   Also check artifact-miss selection before copying: both `filtered_eval_package`
-  and the package-less branch of `staged_user_elaborator_artifact` must use
+- **User-macro artifact/implementation pairing and analysis reuse** (`pass/typecheck_full.rs`, `pass/typecheck_core/{intern,memo}.rs`) — retains each validated evaluator artifact together with its exact staged implementation and singleflights it by provider module, macro name, and ordered capture imports for one immutable analysis. Eager result inference and deferred consumer batches therefore reuse the same exact artifact without carrying it into another analysis. Structural types may be interned across package versions, while all content-dependent `MemoCtx` state belongs to an opaque package-version revision selected by the LSP's package fingerprint and the artifact table belongs to a fresh scope bound to the current package analysis. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#macro-artifactimplementation-pairing-and-analysis-reuse).   Also check artifact-miss selection before copying: both `filtered_eval_package`
+  and the package-less branch of `staged_user_macro_artifact` must use
   `filtered_eval_module` without changing source cutoffs, exact function
   identities, non-function items, metadata, imports or later validation.
   `eval_module_copy_preserves_exact_module_and_clones_only_retained_items`
@@ -594,12 +594,12 @@ retain the measurement's stated limits.
   work assertion even while module equality passes.
   `eval_module_copy_cost` supplies the bounded same-binary legacy/candidate
   comparison; its recorded ordinary-control and body-size measurements are in
-  [the artifact-copy evidence](../../../evidence/compiler-performance.md#elaborator-artifact-selection-before-copying).
+  [the artifact-copy evidence](../../../evidence/compiler-performance.md#macro-artifact-selection-before-copying).
   These establish artifact-copy savings, not per-call body sharing,
   whole-check speedups or a peak-memory win.
 - **Ordered cancellable focused-module force/lower fan-out** (`cmd/check.rs`) — maps the focused request's already-selected conservative same-package dependency closure through the repository parallelism shim. Indexed collection retains sorted module order; errors are selected before target-package merge, and a cancelled or partial batch is never published; only a complete green batch is merged. This is perf-only; the closure itself and its laziness boundary are unchanged. [Recorded comparison and controls](../../../evidence/compiler-performance.md#ordered-cancellable-focused-module-forcelower-fan-out).
 
-- **Run-scoped cross-package typed-module reuse** (`cache/typed.rs`, `cmd/check.rs`, `ci/run-tests.sh`) — stores typed Prime modules under a content-addressed key made from the compiler/cache identity, pipeline, declared module path, exact source, and sorted reachable written-import and elaborator dependency fingerprints; operator and fold callable targets reach providers through those written imports. The package name remains only a diagnostic label: each package's file, bridge contract, build configuration, visibility edges, and assembled Prime artifact are independently rebuilt and validated before or after lookup at their owning boundaries. Ordinary harness-owned paths give already-cache-enabled packages one invocation-scoped shared typed root. A custom `run.sh` remains isolated under its per-case, per-implementation scratch directory unless the regular golden orchestrator activates a fixed harness-owned cohort ID whose canonical exact script paths and Git object IDs are validated and frozen before dispatch; only authenticated cohort members inherit the cohort's separate invocation-scoped root. Relative debug-root overrides are ignored. Package-local clears and `cache ();` / `--no-cache` remain authoritative. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#run-scoped-cross-package-typed-module-reuse).
+- **Run-scoped cross-package typed-module reuse** (`cache/typed.rs`, `cmd/check.rs`, `ci/run-tests.sh`) — stores typed Prime modules under a content-addressed key made from the compiler/cache identity, pipeline, declared module path, exact source, and sorted reachable written-import and macro dependency fingerprints; operator and fold callable targets reach providers through those written imports. The package name remains only a diagnostic label: each package's file, bridge contract, build configuration, visibility edges, and assembled Prime artifact are independently rebuilt and validated before or after lookup at their owning boundaries. Ordinary harness-owned paths give already-cache-enabled packages one invocation-scoped shared typed root. A custom `run.sh` remains isolated under its per-case, per-implementation scratch directory unless the regular golden orchestrator activates a fixed harness-owned cohort ID whose canonical exact script paths and Git object IDs are validated and frozen before dispatch; only authenticated cohort members inherit the cohort's separate invocation-scoped root. Relative debug-root overrides are ignored. Package-local clears and `cache ();` / `--no-cache` remain authoritative. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#run-scoped-cross-package-typed-module-reuse).
 
 - **Disabled semantic-cache zero-work gates** (`cache/{artifact,emit}.rs`, `cmd/{build,check}.rs`, `backends/js/emit.rs`) — a globally disabled cache and a package-local `cache ();` keep semantic validation and uncached emission but bypass package-check whole-source hashing, artifact fingerprint rendering, and JS / Kio-prime emit-key context rendering and serialization. Active package-check caches still warm during `kio build`; active emit and artifact caches retain their original key paths. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#disabled-semantic-cache-zero-work-gates).
 
@@ -808,15 +808,15 @@ Treat conversion-disabled counterfactuals as attribution only, and require
 semantic evidence for each production elimination. A correctness repair explains
 why an obligation exists, not why every internal call must pay for it.
 
-Include representative elaborator-heavy programs, preferring castles for
+Include representative macro-heavy programs, preferring castles for
 realistic feature combinations and using POCs or focused cases for patterns
 those castles do not cover. Trace expansion into Kio' through
 shared optimization and host emission, looking for avoidable closures, adapters,
 intermediate values, repeated traversals and duplicated work. Measure retained
-costs and identify the phase that owns them. Existing elaborators supply useful
+costs and identify the phase that owns them. Existing macros supply useful
 workloads, not compiler privileges: recommendations must apply to general
-resolved/typed structures, including equivalent user-written elaborators, never
-special-case declaration names or package identities. Not every elaborator
+resolved/typed structures, including equivalent user-written macros, never
+special-case declaration names or package identities. Not every macro
 needs a new optimization; findings require concrete unnecessary work or missing
 evidence, not merely an unfamiliar emitted shape.
 

@@ -1,12 +1,12 @@
 module lab/scenario;
 
-import elab/spine_elaborators(widen_sum);
 import lab/clock as clock;
 import lab/replica as replica;
 import lab/report as report;
 import list/core as core;
 import list/list as lists;
 import list/list(varop [] as [* *]);
+import macros/spine_macros(macro widen_sum);
 import result/result as result;
 import testapi(String);
 
@@ -39,9 +39,9 @@ fn after_resolution(
 }
 
 pub fn run() {
-  let alpha = {clock.alpha=}.>widen_sum!(clock.Node);
-  let beta = {clock.beta=}.>widen_sum!(clock.Node);
-  let gamma = {clock.gamma=}.>widen_sum!(clock.Node);
+  let alpha = {clock.alpha=}.>widen_sum(clock.Node);
+  let beta = {clock.beta=}.>widen_sum(clock.Node);
+  let gamma = {clock.gamma=}.>widen_sum(clock.Node);
   let .(a, a1) = replica.write(replica.empty(alpha), 10, 10);
   let .(_a, a2) = replica.write(a, 10, 11);
   let .(b, b1) = replica.write(replica.empty(beta), 10, 20);

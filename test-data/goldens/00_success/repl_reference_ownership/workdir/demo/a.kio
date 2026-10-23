@@ -19,7 +19,7 @@ pub fn field() { () }
 
 pure fn build_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
 
-pub elab build : . -> . { impl build_impl }
+pub macro build : . -> . { impl build_impl }
 
 fn local() -> Num { truth }
 
@@ -27,6 +27,6 @@ fn shadow(truth: Num) -> Num { truth }
 
 fn let_shadow() { let truth = (); truth }
 
-fn bang() { build!(()) }
+fn bang() { build(()) }
 
-fn splice() { ().>build! }
+fn splice() { ().>build }

@@ -1,6 +1,6 @@
 module minesweeper_frontier/counts;
 
-import elab/control(if);
+import macros/control(macro if);
 import minesweeper_frontier/model(
 , bool_to_i32
 , cell_count
@@ -32,7 +32,7 @@ fn neighbor_count(mines: Array(Bool), row: I32, col: I32) -> I32 {
 }
 
 rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
-  if! arith.leq_i32(col, arith.sub_i32(width(), 1)) {
+  if(arith.leq_i32(col, arith.sub_i32(width(), 1))) {
     array.array_set(counts, cell_index(row, col), neighbor_count(mines, row, col));
     recur fill_count_cols(row, arith.add_i32(col, 1), counts, mines)
   } else {
@@ -41,7 +41,7 @@ rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array(I32), mines: Arra
 }
 
 rec(loop) fn fill_count_rows(row: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
-  if! arith.leq_i32(row, arith.sub_i32(height(), 1)) {
+  if(arith.leq_i32(row, arith.sub_i32(height(), 1))) {
     let updated = fill_count_cols(row, 0, counts, mines);
     recur fill_count_rows(arith.add_i32(row, 1), updated, mines)
   } else {
@@ -55,8 +55,8 @@ pub fn build_counts(mines: Array(Bool)) -> Array(I32) {
 }
 
 pub rec(loop) fn sum_revealed_counts(i: I32, counts: Array(I32), revealed: Array(Bool), total: I32) -> I32 {
-  if! arith.leq_i32(i, last_index()) {
-    if! array.array_get(revealed, i) {
+  if(arith.leq_i32(i, last_index())) {
+    if(array.array_get(revealed, i)) {
       recur sum_revealed_counts(
       , arith.add_i32(i, 1)
       , counts

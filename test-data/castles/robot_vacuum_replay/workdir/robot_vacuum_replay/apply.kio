@@ -1,6 +1,6 @@
 module robot_vacuum_replay/apply;
 
-import elab/match(match);
+import macros/match(macro match);
 import robot_vacuum_replay/command(
 , Charge_cmd
 , Clean_cmd
@@ -28,7 +28,7 @@ import robot_vacuum_replay/model(
 );
 
 pub fn apply_command(state: Vacuum, cmd: Command) -> Vacuum {
-  match! cmd {
+  match(cmd) {
     (
     , .(_cmd: Start_cmd) { apply_start(state) }
     , .(_cmd: Pause_cmd) { apply_pause(state) }

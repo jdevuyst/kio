@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
@@ -14,7 +14,7 @@ import testapi/iter(loop);
 // runners supply `leq_<kind>`, so equality stays within the host
 // surface every applicable emitter provides.
 fn i32_eq(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) { leq_i32(b, a) } else { leq_i32(1, 0) }
+  if(leq_i32(a, b)) { leq_i32(b, a) } else { leq_i32(1, 0) }
 }
 
 // Parametric over the payload `A`: return the first element of a
@@ -23,7 +23,7 @@ fn i32_eq(a: I32, b: I32) -> Bool {
 // `A = String`, two distinct monomorphizations of one polymorphic
 // fn operating on a host array.
 pub fn first[A](xs: Array(A)) -> A | . {
-  if! leq_i32(1, array_len(xs)) { widen_sum!(array_get(xs, 0)) } else { widen_sum!(()) }
+  if(leq_i32(1, array_len(xs))) { widen_sum(array_get(xs, 0)) } else { widen_sum(()) }
 }
 
 // Generic reverse: read the host array right-to-left and push each
@@ -36,11 +36,11 @@ fn reverse[A](xs: Array(A)) -> Array(A) {
     , I32
     , .
     , .(i: I32) -> I32 | . {
-        if! leq_i32(0, i) {
+        if(leq_i32(0, i)) {
           array_push(out, array_get(xs, i));
-          widen_sum!(sub_i32(i, 1))
+          widen_sum(sub_i32(i, 1))
         } else {
-          widen_sum!(())
+          widen_sum(())
         }
       }
     , sub_i32(array_len(xs), 1)
@@ -55,19 +55,19 @@ fn reverse[A](xs: Array(A)) -> Array(A) {
 // (still in range).
 fn arrays_equal_step[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A), i: I32) -> I32 | Bool {
   let keep_going =
-    if! leq_i32(i, sub_i32(array_len(p), 1)) {
+    if(leq_i32(i, sub_i32(array_len(p), 1))) {
       eq(array_get(p, i), array_get(q, i))
     } else {
       leq_i32(1, 0)
     };
-  if! keep_going { widen_sum!(add_i32(i, 1)) } else { widen_sum!(leq_i32(array_len(p), i)) }
+  if(keep_going) { widen_sum(add_i32(i, 1)) } else { widen_sum(leq_i32(array_len(p), i)) }
 }
 
 // Element-wise structural equality of two host arrays, parametric
 // over the payload `A` via a supplied `eq`. Used to assert the
 // round-trip `reverse(reverse(xs))` reproduces `xs`.
 fn arrays_equal[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A)) -> Bool {
-  if! i32_eq(array_len(p), array_len(q)) {
+  if(i32_eq(array_len(p), array_len(q))) {
     loop(I32, Bool, .(i: I32) -> I32 | Bool { arrays_equal_step(eq, p, q, i) }, 0)
   } else {
     leq_i32(1, 0)
@@ -75,13 +75,13 @@ fn arrays_equal[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A)) -> Bool {
 }
 
 fn show_first_i32(r: I32 | .) -> String {
-  match! r {
+  match(r) {
     (.(n: I32) { int_to_string(n) }, .(_empty: .) { "none" })
   }
 }
 
 fn show_first_str(r: String | .) -> String {
-  match! r {
+  match(r) {
     (.(s: String) { s }, .(_empty: .) { "none" })
   }
 }

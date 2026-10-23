@@ -2,10 +2,10 @@
 module testapi/main;
 
 import defaults as defaults;
-import elab/match(match);
 import imageio as imageio;
 import loader as loader;
 import loader/scan as scan;
+import macros/match(macro match);
 import prime as prime;
 import result as result;
 import testapi as testapi;
@@ -16,10 +16,10 @@ import testapi/text as text;
 import value as value;
 
 fn scalar_text(v: value.Value) -> testapi.String {
-  match! value.value_to_scalar(v) {
+  match(value.value_to_scalar(v)) {
     (
     , .(s: testapi.Scalar) {
-        match! scalar.scalar_as_i32(s) {
+        match(scalar.scalar_as_i32(s)) {
           (
           , .(n: testapi.I32) { fmt.int_to_string(n) }
           , .(_not_i32: .) { "not an i32"(testapi.String) }
@@ -32,13 +32,13 @@ fn scalar_text(v: value.Value) -> testapi.String {
 }
 
 fn invoke(image: loader.Image, name: testapi.String) -> testapi.String {
-  match! loader.export_term(image, name) {
+  match(loader.export_term(image, name)) {
     (
     , .(term: prime.Term) {
-        match! defaults.eval_default(term) {
+        match(defaults.eval_default(term)) {
           (
           , .(function: result.Ev_done) {
-              match! defaults.apply_default(function.>result.Ev_done.get, value.vunit()) {
+              match(defaults.apply_default(function.>result.Ev_done.get, value.vunit())) {
                 (
                 , .(answer: result.Ev_done) { scalar_text(answer.>result.Ev_done.get) }
                 , .(_stuck: result.Ev_stuck) { "call stuck"(testapi.String) }
@@ -55,7 +55,7 @@ fn invoke(image: loader.Image, name: testapi.String) -> testapi.String {
 }
 
 fn report_values(label: testapi.String, source: testapi.String) {
-  match! loader.un_load_outcome(scan.load_package(source)) {
+  match(loader.un_load_outcome(scan.load_package(source))) {
     (
     , .(loaded: loader.Lr_image) {
         let image = loaded.>loader.Lr_image.get;
@@ -117,7 +117,7 @@ fn header_image(header: testapi.String) -> testapi.String {
 
 fn report_header(label: testapi.String, header: testapi.String) {
   let outcome =
-    match! loader.un_load_outcome(scan.load_package(header_image(header))) {
+    match(loader.un_load_outcome(scan.load_package(header_image(header)))) {
       (
       , .(_loaded: loader.Lr_image) { "loaded"(testapi.String) }
       , .(failed: loader.Lr_diag) { loader.diag_bare_message(failed.>loader.Lr_diag.get) }

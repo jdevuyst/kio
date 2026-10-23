@@ -5,9 +5,9 @@ import catalog/domain(Call_list, Failure, Member, Member_index);
 import catalog/domain(fine_rate);
 import catalog/domain({fines}, {held});
 import dict/dict as dict;
-import elab/control(if);
-import elab/match(match);
 import list/list as list;
+import macros/control(macro if);
+import macros/match(macro match);
 import result/result as result;
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, mul_i32);
@@ -16,7 +16,7 @@ pub type Member_result = result.Result(Member, Failure);
 
 pub fn find(members: Member_index, id: I32) -> Member_result {
   let .(missing: Member_result) = result.err(dom.fail_unknown_member(id));
-  match! dict.get(dom.cmp_i32, members, id) {
+  match(dict.get(dom.cmp_i32, members, id)) {
     (.(who: Member) { result.ok(who) }, .(_absent: .) { missing })
   }
 }
@@ -32,7 +32,7 @@ pub fn give_back(who: Member, call: I32, days_late: I32) -> Member {
   let .(holding: Call_list) =
     list.filter(
     , .(other: I32) {
-        if! eq_i32(other, call) { .f } else { .t }
+        if(eq_i32(other, call)) { .f } else { .t }
       }
     , who.?{held}
     );

@@ -12,4 +12,4 @@ pure fn arrange_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
 
-pub elab arrange : [A][B][C] A -> B -> C -> (A & (B & C)) { trailing product; impl arrange_impl }
+pub macro arrange : [A][B][C] A -> B -> C -> (A & (B & C)) { trailing product; impl arrange_impl }

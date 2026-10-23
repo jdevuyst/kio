@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(default Bool);
 import testapi/io as io;
 import testapi/iter(loop);
@@ -14,15 +14,15 @@ fn query(predicate: (Bool & Bool) -> Bool, left: Bool, right: Bool) -> Bool {
 fn evaluate(factory: . -> Bool -> Bool, value: Bool) -> Bool { factory()(value) }
 
 rec(loop) fn prefix(go: Bool) -> Bool {
-  if! invoke(.() { io.print("predicate\n"); go }) { recur prefix(.f) } else { .t }
+  if(invoke(.() { io.print("predicate\n"); go })) { recur prefix(.f) } else { .t }
 }
 
 rec(loop) fn receiver(go: Bool) -> Bool {
-  if!(.() -> _ { io.print("predicate\n"); go }.>invoke) { recur receiver(.f) } else { .t }
+  if(.() -> _ { io.print("predicate\n"); go }.>invoke) { recur receiver(.f) } else { .t }
 }
 
 rec(loop) fn typed(go: Bool) -> Bool {
-  if! query(.(left: Bool, right: Bool) -> Bool { io.print("predicate\n"); left }, go, .t) {
+  if(query(.(left: Bool, right: Bool) -> Bool { io.print("predicate\n"); left }, go, .t)) {
     recur typed(.f)
   } else {
     .t
@@ -30,12 +30,12 @@ rec(loop) fn typed(go: Bool) -> Bool {
 }
 
 rec(loop) fn contextual(go: Bool) -> Bool {
-  if! evaluate(
+  if(evaluate(
   , .() {
       .(value) { io.print("predicate\n"); value }
     }
   , go
-  ) {
+  )) {
     recur contextual(.f)
   } else {
     .t
@@ -43,7 +43,7 @@ rec(loop) fn contextual(go: Bool) -> Bool {
 }
 
 fn report(value: Bool) {
-  if! value { io.print("true\n") } else { io.print("false\n") }
+  if(value) { io.print("true\n") } else { io.print("false\n") }
 }
 
 pub fn main() {

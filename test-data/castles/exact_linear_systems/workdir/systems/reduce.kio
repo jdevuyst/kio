@@ -1,11 +1,11 @@
 module systems/reduce;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as c;
 import list/list as l;
 import list_host as integers;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import systems/matrix as m;
 import systems/rational as q;
 import testapi(I32, default Bool);
@@ -15,12 +15,12 @@ import testapi/iter(loop);
 pub labels Reduction = { reduced: m.Matrix, pivots: c.List(I32), swaps: I32 };
 
 rec(loop) fn find_pivot(matrix: m.Matrix, column: I32, row: I32) -> I32 | . {
-  if! a.leq_i32(l.length(matrix), row) {
-    ().>widen_sum!
-  } else if! q.is_zero(m.at(m.row_at(matrix, row), column)) {
+  if(a.leq_i32(l.length(matrix), row)) {
+    ().>widen_sum
+  } else if(q.is_zero(m.at(m.row_at(matrix, row), column))) {
     recur find_pivot(matrix, column, a.add_i32(row, 1))
   } else {
-    row.>widen_sum!
+    row.>widen_sum
   }
 }
 
@@ -29,7 +29,7 @@ fn eliminate(matrix: m.Matrix, pivot_row: I32, column: I32) -> m.Matrix {
   l.map(
   , .(row_index) {
       let row = m.row_at(matrix, row_index);
-      if! integers.eq_i32(row_index, pivot_row) {
+      if(integers.eq_i32(row_index, pivot_row)) {
         row
       } else {
         m.subtract_multiple(row, pivot, m.at(row, column))
@@ -41,14 +41,14 @@ fn eliminate(matrix: m.Matrix, pivot_row: I32, column: I32) -> m.Matrix {
 
 rec(loop) fn columns(matrix: m.Matrix, variables: I32, column: I32, pivots: c.List(I32), swaps: I32) -> Reduction {
   let rank = l.length(pivots);
-  if! a.leq_i32(variables, column) {
+  if(a.leq_i32(variables, column)) {
     {reduced = matrix, pivots, swaps}
-  } else match! find_pivot(matrix, column, rank) {
+  } else match(find_pivot(matrix, column, rank)) {
     .(found: I32) {
       let switched = m.swap(matrix, rank, found);
       let pivot = m.row_at(switched, rank);
       let normalized = m.replace(switched, rank, m.scale(pivot, m.at(pivot, column)));
-      let next_swaps = if! integers.eq_i32(found, rank) { swaps } else { a.add_i32(swaps, 1) };
+      let next_swaps = if(integers.eq_i32(found, rank)) { swaps } else { a.add_i32(swaps, 1) };
       recur columns(
       , eliminate(normalized, rank, column)
       , variables
@@ -66,8 +66,8 @@ pub fn rref(matrix: m.Matrix, variables: I32) -> Reduction {
 }
 
 pub fn contradictory(row: m.Row, variables: I32) -> Bool {
-  if! m.all_zero(l.take(variables, row)) {
-    if! q.is_zero(m.at(row, variables)) { .f } else { .t }
+  if(m.all_zero(l.take(variables, row))) {
+    if(q.is_zero(m.at(row, variables))) { .f } else { .t }
   } else {
     .f
   }

@@ -1,12 +1,12 @@
 //! Type checking for full Kio (System F core + the elaboration-aware
-//! positions for user-elaborator calls and field syntax).
+//! positions for user-macro calls and field syntax).
 //!
 //! Most of the typer machinery is shared with the kio-prime binary's
 //! standalone Kio'-only typer through [`crate::pass::typecheck_core`]
 //! (`ModuleEnv<P>`, `TypeCtx<P>`, the synth/check/apply family,
 //! the `Typer<P>` dispatch trait, …). This module retains only the
 //! pieces that depend on the elaboration table — recursive-order obligations,
-//! user-elaborator action preparation, `synth_field_access` / `synth_field_update`
+//! user-macro action preparation, `synth_field_access` / `synth_field_update`
 //! — plus the [`Elaborations`]
 //! type itself and the `LoweredTyper` that wires `Typer<Lowered>`
 //! to the elaboration-aware `synth_expr` / `check_value_against`.
@@ -46,7 +46,7 @@
 //!   are validated and their schemes flow through to the
 //!   consuming module; host items are ambient for their
 //!   owning root tree.
-//! - Field access/update and user-defined elaborator calls recorded
+//! - Field access/update and user-defined macro calls recorded
 //!   in [`Elaborations`] and substituted into the AST during the
 //!   `Lowered → Prime` transition by `crate::pass::substitute`.
 //! - Export signatures validated against the package
@@ -60,8 +60,8 @@
 //!
 //! Call-argument parsing is intentionally permissive; type-argument
 //! slots reinterpret value-shaped syntax through shared typecheck_core
-//! helpers so functions, dot-splice calls, elaborator forms, and user
-//! elaborators agree on the same boundary behavior.
+//! helpers so functions, dot-splice calls, macro forms, and user
+//! macros agree on the same boundary behavior.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -91,13 +91,13 @@ use crate::pass::typecheck_core::apply::{
 // `typecheck_core` so they are usable without pulling in the
 // elaboration machinery.
 use crate::pass::typecheck_core::{
-    DeclarationPhase, PendingRecOrderState, TypeMemoKey, Typer, TyperPhase,
-    UserElaboratorArtifactKey, UserElaboratorEvalArtifactPair, UserElaboratorMemoInputKey,
-    UserElaboratorMemoKey, UserElaboratorPreparedKey, UserElaboratorPreparedPurpose,
-    UserElaboratorTemplate, UserElaboratorTemplateGeneratedImport, UserElaboratorTemplateResult,
-    check_well_formed_type, collect_free_type_vars, compute_kind, display_type, fresh_type_var,
-    intrinsic_call, lookup_newtype_by_name, right_fold_product, source_type_spelling, subst_type,
-    synth_literal, synth_path, synth_seq, ty_path, ty_product, ty_sum,
+    DeclarationPhase, PendingRecOrderState, TypeMemoKey, Typer, TyperPhase, UserMacroArtifactKey,
+    UserMacroEvalArtifactPair, UserMacroMemoInputKey, UserMacroMemoKey, UserMacroPreparedKey,
+    UserMacroPreparedPurpose, UserMacroTemplate, UserMacroTemplateGeneratedImport,
+    UserMacroTemplateResult, check_well_formed_type, collect_free_type_vars, compute_kind,
+    display_type, fresh_type_var, intrinsic_call, lookup_newtype_by_name, right_fold_product,
+    source_type_spelling, subst_type, synth_literal, synth_path, synth_seq, ty_path, ty_product,
+    ty_sum,
 };
 type InternedType = crate::pass::typecheck_core::InternedType<Lowered>;
 type RecordedTypeResolution = crate::pass::typecheck_core::RecordedTypeResolution<Lowered>;
@@ -115,14 +115,14 @@ type ModuleEnv<'m, P = Lowered> = crate::pass::typecheck_core::ModuleEnv<'m, P>;
 type LoweredPackage = crate::pass::resolve::Package<Lowered>;
 type Type = crate::ast::Type<Lowered>;
 type ReflectableType = crate::normalization::ReflectedType;
-const USER_ELABORATOR_PAR_BATCH_MIN: usize = 8;
+const USER_MACRO_PAR_BATCH_MIN: usize = 8;
 use crate::error::Error;
 use crate::pass::resolve::{LocatedError, NominalProvider, NominalSelection, Package};
 use crate::span::Span;
 
-struct UserElaboratorArtifactTypecheck;
+struct UserMacroArtifactTypecheck;
 
-impl UserElaboratorArtifactTypecheck {
+impl UserMacroArtifactTypecheck {
     // Evaluator-artifact construction can run in a singleflight winner;
     // nested Rayon work could starve while sibling workers wait for that winner.
     const EXECUTION: crate::pass::typecheck_core::TypecheckExecution =
@@ -153,8 +153,8 @@ impl UserElaboratorArtifactTypecheck {
     }
 }
 
-const USER_ELABORATOR_REFLECTION_INFER_MESSAGE: &str =
-    "`_` cannot be reflected by a user elaborator; write the type explicitly";
+const USER_MACRO_REFLECTION_INFER_MESSAGE: &str =
+    "`_` cannot be reflected by a user macro; write the type explicitly";
 
 // `TyperPhase` and the `Typer<P>` dispatch trait live in
 // `crate::pass::typecheck_core`; the Prime implementation lives in
@@ -325,7 +325,7 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
         let synth = synth_expr(e, tcx)?;
         // Record the synthesized type at the expression's span in the
         // position-keyed index for the LSP's hover, goto-definition,
-        // and references queries. The post-elaborator synthesized type is what
+        // and references queries. The post-macro synthesized type is what
         // hover should show, so the recording sits at the dispatch
         // boundary after every `synth_expr` arm has resolved the
         // expression's type (including the elaboration-bearing arms,
@@ -342,13 +342,13 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
         check_value_against(e, expected, tcx)
     }
 
-    fn check_user_elaborator_item<'m>(
-        elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
+    fn check_user_macro_item<'m>(
+        macro_def: &'m crate::ast::UserMacroDef<Lowered>,
         item_index: usize,
         env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
         elaborations: &mut Elaborations,
     ) -> Result<(), Error> {
-        check_user_elaborator_item(elaborator, item_index, env, elaborations)
+        check_user_macro_item(macro_def, item_index, env, elaborations)
     }
 
     fn record_type_resolution<'m>(
@@ -568,7 +568,7 @@ fn optional_type_slot_type(span: Span) -> Type {
 }
 
 #[derive(Clone)]
-enum UserElaboratorSignatureSlot {
+enum UserMacroSignatureSlot {
     Type {
         param: TypeParam,
     },
@@ -581,14 +581,14 @@ enum UserElaboratorSignatureSlot {
 }
 
 #[derive(Clone)]
-struct UserElaboratorSignatureLayout {
-    slots: Vec<UserElaboratorSignatureSlot>,
-    layers: Vec<UserElaboratorSignatureLayer>,
+struct UserMacroSignatureLayout {
+    slots: Vec<UserMacroSignatureSlot>,
+    layers: Vec<UserMacroSignatureLayer>,
     result_ty: InternedType,
 }
 
 #[derive(Clone)]
-struct UserElaboratorSignatureLayer {
+struct UserMacroSignatureLayer {
     type_params: Vec<TypeParam>,
     value_param: Option<InternedType>,
     value_abi_arity: usize,
@@ -597,23 +597,23 @@ struct UserElaboratorSignatureLayer {
 /// Goal-free output of the ordinary application frontier.  The source index
 /// is stable across successive callable layers; `expanded_*` describes the
 /// semantic right-spine slots occupied by the one source expression.
-pub(crate) struct TypedUserElaboratorCall {
-    pub(crate) layers: Vec<TypedUserElaboratorCallLayer>,
+pub(crate) struct TypedUserMacroCall {
+    pub(crate) layers: Vec<TypedUserMacroCallLayer>,
     pub(crate) result_ty: Option<InternedType>,
 }
 
-pub(crate) struct TypedUserElaboratorCallLayer {
-    pub(crate) type_slots: Vec<TypedUserElaboratorTypeSlot>,
-    pub(crate) sources: Vec<TypedUserElaboratorCallSource>,
+pub(crate) struct TypedUserMacroCallLayer {
+    pub(crate) type_slots: Vec<TypedUserMacroTypeSlot>,
+    pub(crate) sources: Vec<TypedUserMacroCallSource>,
     pub(crate) value_layer_consumed: bool,
 }
 
-pub(crate) struct TypedUserElaboratorTypeSlot {
+pub(crate) struct TypedUserMacroTypeSlot {
     pub(crate) resolved: Option<InternedType>,
     pub(crate) occurrence: Option<InternedType>,
 }
 
-pub(crate) struct TypedUserElaboratorCallSource {
+pub(crate) struct TypedUserMacroCallSource {
     pub(crate) source_index: usize,
     pub(crate) source: Expr,
     pub(crate) expanded_start: usize,
@@ -621,23 +621,23 @@ pub(crate) struct TypedUserElaboratorCallSource {
     pub(crate) expected: InternedType,
 }
 
-/// Definition-side facts for one user-elaborator call before the shared
+/// Definition-side facts for one user-macro call before the shared
 /// application frontier closes its type slots.  Reflection and evaluator work
 /// deliberately stay out of this state: the consuming `into_ready` transition
 /// is the only point at which goal-free types become ABI values.
-pub(crate) struct PreparedUserElaboratorAction<'m> {
+pub(crate) struct PreparedUserMacroAction<'m> {
     node_id: NodeId,
     name: String,
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
-    elaborator_module: Option<&'m Module>,
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
+    macro_module: Option<&'m Module>,
     call_ty: InternedType,
     args: Vec<CallArgRef<'m, Lowered>>,
-    layout: UserElaboratorSignatureLayout,
-    type_slot_modes: Vec<UserElaboratorTypeSlotMode>,
+    layout: UserMacroSignatureLayout,
+    type_slot_modes: Vec<UserMacroTypeSlotMode>,
     span: Span,
 }
 
-pub(crate) enum ProjectedUserElaboratorSlot {
+pub(crate) enum ProjectedUserMacroSlot {
     Type {
         layer: usize,
         slot: usize,
@@ -664,12 +664,12 @@ pub(crate) struct ProjectedResidualValueInput {
     pub(crate) lexical_binders: Vec<TypeParam>,
 }
 
-pub(crate) struct ProjectedUserElaboratorCallShape {
-    pub(crate) layers: Vec<ProjectedUserElaboratorCallLayerShape>,
+pub(crate) struct ProjectedUserMacroCallShape {
+    pub(crate) layers: Vec<ProjectedUserMacroCallLayerShape>,
     pub(crate) observed_types: Vec<InternedType>,
 }
 
-pub(crate) struct ProjectedUserElaboratorCallLayerShape {
+pub(crate) struct ProjectedUserMacroCallLayerShape {
     pub(crate) type_slots: Vec<Option<InternedType>>,
     pub(crate) value_layer_consumed: bool,
     pub(crate) expanded_value_slots: usize,
@@ -689,30 +689,24 @@ impl FrozenProjectedResidualAbi {
     }
 }
 
-pub(crate) struct ProjectedUserElaboratorAbiPlan {
-    pub(crate) slots: Vec<ProjectedUserElaboratorSlot>,
+pub(crate) struct ProjectedUserMacroAbiPlan {
+    pub(crate) slots: Vec<ProjectedUserMacroSlot>,
     pub(crate) frozen_residual: FrozenProjectedResidualAbi,
     pub(crate) terminal_result: ProjectedResidualTypeInput,
 }
 
-impl<'m> PreparedUserElaboratorAction<'m> {
+impl<'m> PreparedUserMacroAction<'m> {
     fn validate_trailing_call(
         &self,
-        call: &TypedUserElaboratorCall,
+        call: &TypedUserMacroCall,
         tcx: &TypeCtx<'_, '_>,
     ) -> Result<(), Error> {
-        let blocks = &self.elaborator.trailing_blocks;
+        let blocks = &self.macro_def.trailing_blocks;
         if blocks.is_empty() {
             return Ok(());
         }
         let error = |span, message: &str| {
-            trailing_block_declaration_error(
-                span,
-                message,
-                self.elaborator,
-                self.elaborator_module,
-                tcx,
-            )
+            trailing_block_declaration_error(span, message, self.macro_def, self.macro_module, tcx)
         };
         for (index, declared) in self.layout.layers.iter().enumerate() {
             let Some(selected) = call.layers.get(index) else {
@@ -791,8 +785,8 @@ impl<'m> PreparedUserElaboratorAction<'m> {
         &self.args
     }
 
-    pub(crate) fn schedule(&self) -> crate::ast::ElaboratorSchedule {
-        self.elaborator.schedule
+    pub(crate) fn schedule(&self) -> crate::ast::MacroSchedule {
+        self.macro_def.schedule
     }
 
     pub(crate) fn terminal_type_only_layer(&self) -> Option<(usize, &[TypeParam])> {
@@ -813,11 +807,11 @@ impl<'m> PreparedUserElaboratorAction<'m> {
             .sum::<usize>();
         assert!(
             slot < self.layout.layers[layer].type_params.len(),
-            "an elaborator transcript type slot exceeded its declaration layer"
+            "a macro transcript type slot exceeded its declaration layer"
         );
         matches!(
             self.type_slot_modes[preceding_slots + slot],
-            UserElaboratorTypeSlotMode::Optional
+            UserMacroTypeSlotMode::Optional
         )
     }
 
@@ -831,14 +825,14 @@ impl<'m> PreparedUserElaboratorAction<'m> {
 
     pub(crate) fn projected_abi_plan(
         &self,
-        call: &ProjectedUserElaboratorCallShape,
+        call: &ProjectedUserMacroCallShape,
         tcx: &TypeCtx<'_, '_>,
-    ) -> ProjectedUserElaboratorAbiPlan {
+    ) -> ProjectedUserMacroAbiPlan {
         let mut slots = Vec::with_capacity(self.layout.slots.len());
         let mut substitutions = HashMap::new();
         let mut lexical_binders = Vec::new();
         let mut reserved =
-            generated_elaborator_type_names_projected(&self.layout, &call.observed_types, tcx);
+            generated_macro_type_names_projected(&self.layout, &call.observed_types, tcx);
         let type_count = self
             .layout
             .layers
@@ -849,7 +843,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
             .layout
             .slots
             .iter()
-            .filter(|slot| matches!(slot, UserElaboratorSignatureSlot::Value { .. }))
+            .filter(|slot| matches!(slot, UserMacroSignatureSlot::Value { .. }))
             .count();
         let mut generated_type_params = Vec::with_capacity(type_count);
         let mut bound_value_names = Vec::with_capacity(value_count);
@@ -880,7 +874,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                     generated_type_params.push(None);
                     None
                 } else {
-                    let generated = generated_elaborator_type_param(param, &mut reserved);
+                    let generated = generated_macro_type_param(param, &mut reserved);
                     let generated_ty = InternedType::fresh_canonical(Type::Path {
                         segments: vec![PathSegment::new(generated.name.clone(), self.span)],
                         args: Vec::new(),
@@ -894,7 +888,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                         lexical_binders: lexical_binders.clone(),
                     })
                 };
-                slots.push(ProjectedUserElaboratorSlot::Type {
+                slots.push(ProjectedUserMacroSlot::Type {
                     layer: layer_index,
                     slot: layer_slot,
                     result_focus: !shadowed
@@ -903,7 +897,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                 });
             }
             let final_value_slot = self.layout.slots.iter().rposition(
-                |slot| matches!(slot, UserElaboratorSignatureSlot::Value { layer, .. } if *layer == layer_index),
+                |slot| matches!(slot, UserMacroSignatureSlot::Value { layer, .. } if *layer == layer_index),
             );
             slots.extend(
                 self.layout
@@ -911,7 +905,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                     .iter()
                     .enumerate()
                     .filter_map(|(slot_index, slot)| match slot {
-                        UserElaboratorSignatureSlot::Value {
+                        UserMacroSignatureSlot::Value {
                             ty,
                             layer,
                             expanded_start,
@@ -920,7 +914,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                             let consumed =
                                 call_layer.is_some_and(|layer| layer.value_layer_consumed);
                             let (ty, expanded_start, expanded_width) =
-                                projected_user_elaborator_value_slot(
+                                projected_user_macro_value_slot(
                                     ty,
                                     &substitutions,
                                     *expanded_start,
@@ -945,7 +939,8 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                                     Type::Unit { .. }
                                 );
                             let residual = (!consumed).then(|| {
-                                let name = format!("__ct_elab_value{layer_index}_i{value_index}__");
+                                let name =
+                                    format!("__ct_macro_value{layer_index}_i{value_index}__");
                                 ProjectedResidualValueInput {
                                     name,
                                     ty: ty.clone(),
@@ -955,7 +950,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                             bound_value_names
                                 .push(residual.as_ref().map(|residual| residual.name.clone()));
                             value_index += 1;
-                            Some(ProjectedUserElaboratorSlot::Value {
+                            Some(ProjectedUserMacroSlot::Value {
                                 layer: *layer,
                                 expanded_start,
                                 expanded_width,
@@ -963,8 +958,8 @@ impl<'m> PreparedUserElaboratorAction<'m> {
                                 residual,
                             })
                         }
-                        UserElaboratorSignatureSlot::Type { .. }
-                        | UserElaboratorSignatureSlot::Value { .. } => None,
+                        UserMacroSignatureSlot::Type { .. }
+                        | UserMacroSignatureSlot::Value { .. } => None,
                     }),
             );
         }
@@ -978,7 +973,7 @@ impl<'m> PreparedUserElaboratorAction<'m> {
             ),
             lexical_binders,
         };
-        ProjectedUserElaboratorAbiPlan {
+        ProjectedUserMacroAbiPlan {
             slots,
             frozen_residual: FrozenProjectedResidualAbi {
                 generated_type_params,
@@ -998,26 +993,23 @@ impl<'m> PreparedUserElaboratorAction<'m> {
 
     pub(crate) fn into_ready(
         self,
-        typed: TypedUserElaboratorCall,
+        typed: TypedUserMacroCall,
         tcx: &mut TypeCtx<'m, '_>,
-    ) -> Result<ReadyUserElaboratorAction, Error> {
-        let captures = resolve_user_elaborator_captures_for_call(
-            self.elaborator,
-            tcx,
-            self.elaborator_module,
-        )?;
+    ) -> Result<ReadyUserMacroAction, Error> {
+        let captures =
+            resolve_user_macro_captures_for_call(self.macro_def, tcx, self.macro_module)?;
         self.into_ready_with_captures(typed, captures, None, tcx)
     }
 
     fn into_ready_with_captures(
         self,
-        typed: TypedUserElaboratorCall,
-        captures: ResolvedUserElaboratorCaptures,
+        typed: TypedUserMacroCall,
+        captures: ResolvedUserMacroCaptures,
         frozen_residual: Option<&FrozenProjectedResidualAbi>,
         tcx: &mut TypeCtx<'m, '_>,
-    ) -> Result<ReadyUserElaboratorAction, Error> {
+    ) -> Result<ReadyUserMacroAction, Error> {
         self.validate_trailing_call(&typed, tcx)?;
-        let completed = complete_user_elaborator_abi(
+        let completed = complete_user_macro_abi(
             &self.layout,
             &self.type_slot_modes,
             &typed,
@@ -1025,20 +1017,20 @@ impl<'m> PreparedUserElaboratorAction<'m> {
             tcx,
             self.span,
         )?;
-        let mut abi_inputs = vec![UserElaboratorTemplateInput::ComptimeProof];
+        let mut abi_inputs = vec![UserMacroTemplateInput::ComptimeProof];
         abi_inputs.extend(captures.inputs);
         abi_inputs.extend(completed.inputs);
-        let mut input_keys = user_elaborator_input_keys(&abi_inputs);
+        let mut input_keys = user_macro_input_keys(&abi_inputs);
         if let Some(result_ty) = &typed.result_ty {
-            input_keys.push(UserElaboratorTemplateInputKey::ResidualShape(
+            input_keys.push(UserMacroTemplateInputKey::ResidualShape(
                 crate::ast::convert_type::<Lowered, UncheckedPrime>(result_ty.as_type()),
             ));
         }
-        Ok(ReadyUserElaboratorAction {
-            schedule: self.elaborator.schedule,
+        Ok(ReadyUserMacroAction {
+            schedule: self.macro_def.schedule,
             node_id: self.node_id,
             name: self.name,
-            elaborator_module_path: self.elaborator_module.map(module_path_string),
+            macro_module_path: self.macro_module.map(module_path_string),
             values: completed.values,
             abi_inputs,
             input_keys,
@@ -1058,35 +1050,29 @@ impl<'m> PreparedUserElaboratorAction<'m> {
         proof: crate::pass::typecheck_core::apply::fills::MarkedComptimeProof,
         fills: crate::pass::typecheck_core::apply::fills::FillContext,
         tcx: &mut TypeCtx<'m, '_>,
-    ) -> Result<ReadyProjectedUserElaboratorAction<'m>, Error> {
-        assert_eq!(
-            self.elaborator.schedule,
-            crate::ast::ElaboratorSchedule::Fills
-        );
+    ) -> Result<ReadyProjectedUserMacroAction<'m>, Error> {
+        assert_eq!(self.macro_def.schedule, crate::ast::MacroSchedule::Fills);
         assert!(fills.matches_proof(&proof));
         assert_eq!(declared_inputs.len(), self.layout.slots.len());
         for (slot, value) in self.layout.slots.iter().zip(&declared_inputs) {
             match slot {
-                UserElaboratorSignatureSlot::Type { .. } => {
+                UserMacroSignatureSlot::Type { .. } => {
                     let projected = crate::normalization::projected_value_from_value(value)
-                        .expect("a projected elaborator type slot retained an ordinary value");
+                        .expect("a projected macro type slot retained an ordinary value");
                     assert!(projected.is_type() && projected.matches_proof(&proof));
                 }
-                UserElaboratorSignatureSlot::Value { .. } => match value {
+                UserMacroSignatureSlot::Value { .. } => match value {
                     crate::normalization::Value::CheckedTerm(_) => {}
                     crate::normalization::Value::Projected(projected) => {
                         assert!(!projected.is_type() && projected.matches_proof(&proof));
                     }
-                    _ => unreachable!("a projected elaborator value slot changed handle class"),
+                    _ => unreachable!("a projected macro value slot changed handle class"),
                 },
             }
         }
-        let captures = resolve_user_elaborator_captures_for_call(
-            self.elaborator,
-            tcx,
-            self.elaborator_module,
-        )?;
-        Ok(ReadyProjectedUserElaboratorAction {
+        let captures =
+            resolve_user_macro_captures_for_call(self.macro_def, tcx, self.macro_module)?;
+        Ok(ReadyProjectedUserMacroAction {
             action: self,
             captures,
             declared_inputs,
@@ -1097,16 +1083,16 @@ impl<'m> PreparedUserElaboratorAction<'m> {
     }
 }
 
-pub(crate) struct ReadyProjectedUserElaboratorAction<'m> {
-    action: PreparedUserElaboratorAction<'m>,
-    captures: ResolvedUserElaboratorCaptures,
+pub(crate) struct ReadyProjectedUserMacroAction<'m> {
+    action: PreparedUserMacroAction<'m>,
+    captures: ResolvedUserMacroCaptures,
     declared_inputs: Vec<crate::normalization::Value>,
     frozen_residual: FrozenProjectedResidualAbi,
     proof: crate::pass::typecheck_core::apply::fills::MarkedComptimeProof,
     fills: crate::pass::typecheck_core::apply::fills::FillContext,
 }
 
-impl ReadyProjectedUserElaboratorAction<'_> {
+impl ReadyProjectedUserMacroAction<'_> {
     /// Exact declaration-order binders shared by residual input scopes and the
     /// eventual eta plan; recipe closure must not reconstruct them from names.
     pub(crate) fn residual_lexical_binders(&self) -> impl Iterator<Item = &TypeParam> {
@@ -1130,7 +1116,7 @@ impl ReadyProjectedUserElaboratorAction<'_> {
             self.captures
                 .inputs
                 .iter()
-                .map(user_elaborator_template_input_value),
+                .map(user_macro_template_input_value),
         );
         values.extend(self.declared_inputs.iter().cloned());
         crate::normalization::right_fold_product_values(values)
@@ -1138,16 +1124,16 @@ impl ReadyProjectedUserElaboratorAction<'_> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UserElaboratorTypeSlotMode {
+enum UserMacroTypeSlotMode {
     Required,
     Optional,
 }
 
 #[derive(Clone, Debug)]
-enum UserElaboratorTemplateInput {
+enum UserMacroTemplateInput {
     ComptimeProof,
     Type(ReflectableType),
-    OptionalType(UserElaboratorOptionalTypeInput),
+    OptionalType(UserMacroOptionalTypeInput),
     Term {
         value_index: usize,
         value_ty: ReflectableType,
@@ -1162,13 +1148,13 @@ enum UserElaboratorTemplateInput {
 }
 
 #[derive(Clone, Debug)]
-enum UserElaboratorOptionalTypeInput {
+enum UserMacroOptionalTypeInput {
     Known(ReflectableType),
     Infer,
 }
 
 #[derive(Clone, Debug)]
-enum UserElaboratorTemplateInputKey {
+enum UserMacroTemplateInputKey {
     ComptimeProof,
     Type(crate::ast::Type<UncheckedPrime>),
     OptionalTypeKnown(crate::ast::Type<UncheckedPrime>),
@@ -1179,12 +1165,12 @@ enum UserElaboratorTemplateInputKey {
 }
 
 #[derive(Clone)]
-struct ResolvedUserElaboratorCaptures {
-    inputs: Vec<UserElaboratorTemplateInput>,
-    imports: Vec<UserElaboratorTemplateGeneratedImport>,
+struct ResolvedUserMacroCaptures {
+    inputs: Vec<UserMacroTemplateInput>,
+    imports: Vec<UserMacroTemplateGeneratedImport>,
 }
 
-impl ResolvedUserElaboratorCaptures {
+impl ResolvedUserMacroCaptures {
     fn empty() -> Self {
         Self {
             inputs: Vec::new(),
@@ -1212,10 +1198,10 @@ struct ResolvedCaptureVisibilityEdge {
     target: String,
 }
 
-fn user_elaborator_signature_layout(
+fn user_macro_signature_layout(
     call_ty: &InternedType,
     alias_ctx: &AliasCtx<'_, '_>,
-) -> UserElaboratorSignatureLayout {
+) -> UserMacroSignatureLayout {
     let mut slots = Vec::new();
     let mut layers = Vec::new();
     let mut cur = call_ty.clone();
@@ -1237,7 +1223,7 @@ fn user_elaborator_signature_layout(
             let Type::Forall { param, body, .. } = cur.clone_type() else {
                 break;
             };
-            slots.push(UserElaboratorSignatureSlot::Type {
+            slots.push(UserMacroSignatureSlot::Type {
                 param: param.clone(),
             });
             bound.insert(param.name.clone());
@@ -1253,25 +1239,24 @@ fn user_elaborator_signature_layout(
         } = cur.clone_type()
         else {
             if !type_params.is_empty() {
-                layers.push(UserElaboratorSignatureLayer {
+                layers.push(UserMacroSignatureLayer {
                     type_params,
                     value_param: None,
                     value_abi_arity: 0,
                 });
             }
-            return UserElaboratorSignatureLayout {
+            return UserMacroSignatureLayout {
                 slots,
                 layers,
                 result_ty: cur,
             };
         };
         let value_param = InternedType::fresh_with_identity(*param, identity_canonical);
-        let expanded_value_slots =
-            user_elaborator_expanded_value_slot_count(&value_param, alias_ctx);
+        let expanded_value_slots = user_macro_expanded_value_slot_count(&value_param, alias_ctx);
         let mut expanded_start = 0usize;
-        for ty in user_elaborator_value_slot_types(&value_param, abi_arity) {
-            let expanded_width = user_elaborator_expanded_value_slot_count(&ty, alias_ctx).max(1);
-            slots.push(UserElaboratorSignatureSlot::Value {
+        for ty in user_macro_value_slot_types(&value_param, abi_arity) {
+            let expanded_width = user_macro_expanded_value_slot_count(&ty, alias_ctx).max(1);
+            slots.push(UserMacroSignatureSlot::Value {
                 ty,
                 layer,
                 expanded_start,
@@ -1281,9 +1266,9 @@ fn user_elaborator_signature_layout(
         }
         debug_assert!(
             abi_arity == 0 || expanded_start == expanded_value_slots,
-            "the elaborator ABI view must cover the semantic value packet"
+            "the macro ABI view must cover the semantic value packet"
         );
-        layers.push(UserElaboratorSignatureLayer {
+        layers.push(UserMacroSignatureLayer {
             type_params,
             value_param: Some(value_param),
             value_abi_arity: abi_arity,
@@ -1295,7 +1280,7 @@ fn user_elaborator_signature_layout(
 fn trailing_block_declaration_error(
     span: Span,
     message: &str,
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
+    macro_def: &crate::ast::UserMacroDef<Lowered>,
     module: Option<&Module>,
     tcx: &TypeCtx<'_, '_>,
 ) -> Error {
@@ -1306,24 +1291,24 @@ fn trailing_block_declaration_error(
                 .env
                 .package
                 .and_then(|package| package.module(&module_path_string(module)))
-                .expect("a resolved imported elaborator has a package module entry");
+                .expect("a resolved imported macro has a package module entry");
             error.with_secondary_in_file(
                 entry.file_path.clone(),
-                elaborator.name_span,
+                macro_def.name_span,
                 "trailing blocks declared here",
             )
         }
-        _ => error.with_secondary(elaborator.name_span, "trailing blocks declared here"),
+        _ => error.with_secondary(macro_def.name_span, "trailing blocks declared here"),
     }
 }
 
 fn validate_trailing_declaration(
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
-    layout: &UserElaboratorSignatureLayout,
+    macro_def: &crate::ast::UserMacroDef<Lowered>,
+    layout: &UserMacroSignatureLayout,
     aliases: &AliasCtx<'_, '_>,
     tcx: &TypeCtx<'_, '_>,
 ) -> Result<(), Error> {
-    if elaborator.trailing_blocks.is_empty() {
+    if macro_def.trailing_blocks.is_empty() {
         return Ok(());
     }
     let mut bound = aliases.binder_local_names();
@@ -1373,7 +1358,7 @@ fn validate_trailing_declaration(
     // Every nonfinal written source takes one ordinary right-spine slot. The
     // final source can own the remaining product packet of the final layer.
     // This checks possible complete source layouts, not private ABI grouping.
-    let blocks = &elaborator.trailing_blocks;
+    let blocks = &macro_def.trailing_blocks;
     for last in final_layer.max(blocks.len() - 1)..slots.len() {
         let first = last + 1 - blocks.len();
         if trailing_declaration_candidate(&slots[first..=last], &params, blocks, tcx)? {
@@ -1397,7 +1382,7 @@ fn validate_trailing_declaration(
         blocks[0].meta.span,
         "trailing block descriptors are incompatible with the final public value inputs",
     )
-    .with_secondary(elaborator.call_ty.span(), "public call type declared here"))
+    .with_secondary(macro_def.call_ty.span(), "public call type declared here"))
 }
 
 fn trailing_declaration_open_candidate(
@@ -1824,14 +1809,14 @@ fn sequence_slot_type(ty: &InternedType, aliases: &AliasCtx<'_, '_>) -> bool {
     .is_ok()
 }
 
-fn user_elaborator_value_slot_types(param: &InternedType, abi_arity: usize) -> Vec<InternedType> {
+fn user_macro_value_slot_types(param: &InternedType, abi_arity: usize) -> Vec<InternedType> {
     Type::right_spine_take(param.as_type(), abi_arity)
         .into_iter()
         .map(|ty| InternedType::fresh_with_identity(ty.clone(), param.identity_is_canonical()))
         .collect()
 }
 
-fn user_elaborator_expanded_value_slot_count(
+fn user_macro_expanded_value_slot_count(
     param: &InternedType,
     alias_ctx: &AliasCtx<'_, '_>,
 ) -> usize {
@@ -1857,7 +1842,7 @@ fn user_elaborator_expanded_value_slot_count(
     }
 }
 
-fn projected_user_elaborator_value_slot(
+fn projected_user_macro_value_slot(
     ty: &InternedType,
     substitutions: &HashMap<String, Type>,
     expanded_start: usize,
@@ -1875,24 +1860,24 @@ fn projected_user_elaborator_value_slot(
         layer_width
             .checked_sub(expanded_start)
             .filter(|width| *width != 0)
-            .expect("a projected elaborator value slot exceeded its frozen call layer")
+            .expect("a projected macro value slot exceeded its frozen call layer")
     });
     (ty, expanded_start, expanded_width)
 }
 
-struct CompletedUserElaboratorAbi {
-    inputs: Vec<UserElaboratorTemplateInput>,
+struct CompletedUserMacroAbi {
+    inputs: Vec<UserMacroTemplateInput>,
     values: Vec<Expr>,
     value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     /// Enclosing source binders complete the replay allocator's namespace but
-    /// do not affect the reusable elaborator template or its memo key.
+    /// do not affect the reusable macro template or its memo key.
     ambient_type_names: HashSet<String>,
     terminal_result_ty: Option<InternedType>,
 }
 
 fn typed_source_slot_types(
-    source: &TypedUserElaboratorCallSource,
+    source: &TypedUserMacroCallSource,
     tcx: &TypeCtx<'_, '_>,
 ) -> Vec<InternedType> {
     if source.expanded_width == 1 {
@@ -1930,7 +1915,7 @@ fn reserve_module_nominal_type_names(module: &Module, reserved: &mut HashSet<Str
     }
 }
 
-fn generated_elaborator_scope_type_names(tcx: &TypeCtx<'_, '_>) -> HashSet<String> {
+fn generated_macro_scope_type_names(tcx: &TypeCtx<'_, '_>) -> HashSet<String> {
     let mut reserved = tcx.in_scope_type_param_binders();
     reserve_module_nominal_type_names(tcx.env.module, &mut reserved);
     for usage in &tcx.env.module.imports {
@@ -1947,12 +1932,12 @@ fn generated_elaborator_scope_type_names(tcx: &TypeCtx<'_, '_>) -> HashSet<Strin
     reserved
 }
 
-fn generated_elaborator_type_names(
-    layout: &UserElaboratorSignatureLayout,
-    typed: &TypedUserElaboratorCall,
+fn generated_macro_type_names(
+    layout: &UserMacroSignatureLayout,
+    typed: &TypedUserMacroCall,
     tcx: &TypeCtx<'_, '_>,
 ) -> HashSet<String> {
-    let mut reserved = generated_elaborator_scope_type_names(tcx);
+    let mut reserved = generated_macro_scope_type_names(tcx);
 
     collect_free_type_vars(layout.result_ty.as_type(), &mut reserved);
     for layer in &layout.layers {
@@ -1982,12 +1967,12 @@ fn generated_elaborator_type_names(
     reserved
 }
 
-fn generated_elaborator_type_names_projected(
-    layout: &UserElaboratorSignatureLayout,
+fn generated_macro_type_names_projected(
+    layout: &UserMacroSignatureLayout,
     observed_types: &[InternedType],
     tcx: &TypeCtx<'_, '_>,
 ) -> HashSet<String> {
-    let mut reserved = generated_elaborator_scope_type_names(tcx);
+    let mut reserved = generated_macro_scope_type_names(tcx);
     collect_free_type_vars(layout.result_ty.as_type(), &mut reserved);
     for layer in &layout.layers {
         for param in &layer.type_params {
@@ -2003,17 +1988,14 @@ fn generated_elaborator_type_names_projected(
     reserved
 }
 
-fn generated_elaborator_type_param(
-    original: &TypeParam,
-    reserved: &mut HashSet<String>,
-) -> TypeParam {
+fn generated_macro_type_param(original: &TypeParam, reserved: &mut HashSet<String>) -> TypeParam {
     // Declaration binders are reserved before allocation, so the generated
     // name always differs from the source binder while retaining its legal
     // TypeParam spelling and exact kind.
     let name = fresh_type_var(&original.name, reserved);
     assert!(
         reserved.insert(name.clone()),
-        "a generated elaborator type binder must be fresh"
+        "a generated macro type binder must be fresh"
     );
     original.renamed(name)
 }
@@ -2025,7 +2007,7 @@ fn type_mentions_free_param(ty: &Type, name: &str) -> bool {
 }
 
 fn type_slot_occurs_only_in_result(
-    layout: &UserElaboratorSignatureLayout,
+    layout: &UserMacroSignatureLayout,
     layer_index: usize,
     layer_slot: usize,
 ) -> bool {
@@ -2053,17 +2035,17 @@ fn type_slot_occurs_only_in_result(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn complete_user_elaborator_abi(
-    layout: &UserElaboratorSignatureLayout,
-    type_slot_modes: &[UserElaboratorTypeSlotMode],
-    typed: &TypedUserElaboratorCall,
+fn complete_user_macro_abi(
+    layout: &UserMacroSignatureLayout,
+    type_slot_modes: &[UserMacroTypeSlotMode],
+    typed: &TypedUserMacroCall,
     frozen_residual: Option<&FrozenProjectedResidualAbi>,
     tcx: &TypeCtx<'_, '_>,
     span: Span,
-) -> Result<CompletedUserElaboratorAbi, Error> {
+) -> Result<CompletedUserMacroAbi, Error> {
     assert!(
         typed.layers.len() <= layout.layers.len(),
-        "the shared call transcript exceeded the elaborator declaration"
+        "the shared call transcript exceeded the macro declaration"
     );
     let source_count = typed
         .layers
@@ -2075,7 +2057,7 @@ fn complete_user_elaborator_abi(
     let mut values = vec![None; source_count];
     for (layer_index, layer) in typed.layers.iter().enumerate() {
         for source in &layer.sources {
-            let reflected = reflect_elaborator_interned_type(&source.expected, tcx)?;
+            let reflected = reflect_macro_interned_type(&source.expected, tcx)?;
             let replacement = crate::normalization::CheckedTermTemplateSource {
                 ty: reflected.as_type().clone(),
                 force_if_unused: layout.layers[layer_index].value_abi_arity == 0,
@@ -2109,7 +2091,7 @@ fn complete_user_elaborator_abi(
     let mut residual_layers = Vec::new();
     let mut residual_prefix_type_params = Vec::new();
     let mut residual_reflection_binders = Vec::new();
-    let mut generated_type_names = generated_elaborator_type_names(layout, typed, tcx);
+    let mut generated_type_names = generated_macro_type_names(layout, typed, tcx);
     let mut type_mode_index = 0usize;
     let mut abi_value_index = 0usize;
 
@@ -2140,24 +2122,24 @@ fn complete_user_elaborator_abi(
                         resolved
                     }
                     None => {
-                        if !matches!(mode, UserElaboratorTypeSlotMode::Optional) {
+                        if !matches!(mode, UserMacroTypeSlotMode::Optional) {
                             return Err(Error::type_(
                                 span,
                                 format!(
-                                    "cannot infer type argument `[{}]` of this elaborator call",
+                                    "cannot infer type argument `[{}]` of this macro call",
                                     param.name
                                 ),
                             ));
                         }
                         assert!(
                             type_slot_occurs_only_in_result(layout, layer_index, layer_slot),
-                            "an open elaborator ABI dependency passed action-readiness checking"
+                            "an open macro ABI dependency passed action-readiness checking"
                         );
                         if let Some(occurrence) = &slot.occurrence {
                             substitutions.insert(param.name.clone(), occurrence.clone_type());
                         }
-                        inputs.push(UserElaboratorTemplateInput::OptionalType(
-                            UserElaboratorOptionalTypeInput::Infer,
+                        inputs.push(UserMacroTemplateInput::OptionalType(
+                            UserMacroOptionalTypeInput::Infer,
                         ));
                         continue;
                     }
@@ -2167,7 +2149,7 @@ fn complete_user_elaborator_abi(
                     .and_then(|frozen| frozen.generated_type_params[frozen_type_index].as_ref())
                     .cloned()
                     .unwrap_or_else(|| {
-                        generated_elaborator_type_param(param, &mut generated_type_names)
+                        generated_macro_type_param(param, &mut generated_type_names)
                     });
                 let generated_ty = Type::Path {
                     segments: vec![PathSegment::new(generated.name.clone(), span)],
@@ -2181,17 +2163,15 @@ fn complete_user_elaborator_abi(
             substitutions
                 .entry(param.name.clone())
                 .or_insert_with(|| resolved.clone_type());
-            let reflected = reflect_elaborator_interned_type_with_binders(
+            let reflected = reflect_macro_interned_type_with_binders(
                 &resolved,
                 tcx,
                 &residual_reflection_binders,
             )?;
             inputs.push(match mode {
-                UserElaboratorTypeSlotMode::Required => {
-                    UserElaboratorTemplateInput::Type(reflected)
-                }
-                UserElaboratorTypeSlotMode::Optional => UserElaboratorTemplateInput::OptionalType(
-                    UserElaboratorOptionalTypeInput::Known(reflected),
+                UserMacroTypeSlotMode::Required => UserMacroTemplateInput::Type(reflected),
+                UserMacroTypeSlotMode::Optional => UserMacroTemplateInput::OptionalType(
+                    UserMacroOptionalTypeInput::Known(reflected),
                 ),
             });
         }
@@ -2207,9 +2187,9 @@ fn complete_user_elaborator_abi(
             .unwrap_or_default();
         let mut residual_values = Vec::new();
         for slot in layout.slots.iter().filter(|slot| {
-            matches!(slot, UserElaboratorSignatureSlot::Value { layer, .. } if *layer == layer_index)
+            matches!(slot, UserMacroSignatureSlot::Value { layer, .. } if *layer == layer_index)
         }) {
-            let UserElaboratorSignatureSlot::Value {
+            let UserMacroSignatureSlot::Value {
                 ty,
                 expanded_start,
                 expanded_width,
@@ -2222,7 +2202,7 @@ fn complete_user_elaborator_abi(
                 subst_type(ty.as_type(), &substitutions),
                 ty.identity_is_canonical(),
             );
-            let reflected = reflect_elaborator_interned_type_with_binders(
+            let reflected = reflect_macro_interned_type_with_binders(
                 &resolved,
                 tcx,
                 &residual_reflection_binders,
@@ -2243,7 +2223,7 @@ fn complete_user_elaborator_abi(
                             source_slot_tys: slot_tys
                                 .iter()
                                 .map(|ty| {
-                                    reflect_elaborator_interned_type(ty, tcx)
+                                    reflect_macro_interned_type(ty, tcx)
                                         .map(|reflected| reflected.as_type().clone())
                                 })
                                 .collect::<Result<_, _>>()?,
@@ -2261,7 +2241,7 @@ fn complete_user_elaborator_abi(
                         source_slots.is_empty()
                             && *expanded_width == 1
                             && matches!(unfolded, Type::Unit { .. }),
-                        "only a source-empty implicit Unit may omit an elaborator source"
+                        "only a source-empty implicit Unit may omit a macro source"
                     );
                     let source_index = values.len();
                     let source_ty = reflected.as_type().clone();
@@ -2279,7 +2259,7 @@ fn complete_user_elaborator_abi(
                         source_slot_tys: vec![source_ty],
                     });
                 }
-                inputs.push(UserElaboratorTemplateInput::Term {
+                inputs.push(UserMacroTemplateInput::Term {
                     value_index: abi_value_index,
                     value_ty: reflected,
                 });
@@ -2289,9 +2269,9 @@ fn complete_user_elaborator_abi(
                     .and_then(|frozen| frozen.bound_value_names[abi_value_index].as_ref())
                     .cloned()
                     .unwrap_or_else(|| {
-                        format!("__ct_elab_value{layer_index}_i{abi_value_index}__")
+                        format!("__ct_macro_value{layer_index}_i{abi_value_index}__")
                     });
-                inputs.push(UserElaboratorTemplateInput::BoundTerm {
+                inputs.push(UserMacroTemplateInput::BoundTerm {
                     name: name.clone(),
                     value_ty: reflected.clone(),
                 });
@@ -2332,7 +2312,7 @@ fn complete_user_elaborator_abi(
     assert_eq!(
         type_mode_index,
         type_slot_modes.len(),
-        "the elaborator type-mode ABI drifted from its callable layout"
+        "the macro type-mode ABI drifted from its callable layout"
     );
     let terminal_result_ty = if residual_layers.is_empty() {
         typed.result_ty.clone()
@@ -2345,7 +2325,7 @@ fn complete_user_elaborator_abi(
             layout.result_ty.identity_is_canonical(),
         ))
     };
-    Ok(CompletedUserElaboratorAbi {
+    Ok(CompletedUserMacroAbi {
         inputs,
         values,
         value_adapter: crate::normalization::CheckedTermTemplateValueAdapter {
@@ -2361,33 +2341,33 @@ fn complete_user_elaborator_abi(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UserElaboratorCaptureSpelling {
+enum UserMacroCaptureSpelling {
     Type,
     Value,
     Member,
 }
 
-fn classify_user_elaborator_capture(
-    capture: &crate::ast::UserElaboratorCapture,
-) -> Result<UserElaboratorCaptureSpelling, Error> {
+fn classify_user_macro_capture(
+    capture: &crate::ast::UserMacroCapture,
+) -> Result<UserMacroCaptureSpelling, Error> {
     let Some(first) = capture.segments.first() else {
-        return Err(Error::type_(capture.span, "empty elaborator capture"));
+        return Err(Error::type_(capture.span, "empty macro capture"));
     };
     let Some(last) = capture.segments.last() else {
-        return Err(Error::type_(capture.span, "empty elaborator capture"));
+        return Err(Error::type_(capture.span, "empty macro capture"));
     };
     if capture.segments.len() == 1 && crate::naming::is_type_name(first.as_str()) {
-        return Ok(UserElaboratorCaptureSpelling::Type);
+        return Ok(UserMacroCaptureSpelling::Type);
     }
     if capture.segments.len() == 1 && crate::naming::is_value_name(first.as_str()) {
-        return Ok(UserElaboratorCaptureSpelling::Value);
+        return Ok(UserMacroCaptureSpelling::Value);
     }
     if capture.segments.len() > 1 && crate::naming::is_value_name(last.as_str()) {
-        return Ok(UserElaboratorCaptureSpelling::Member);
+        return Ok(UserMacroCaptureSpelling::Member);
     }
     Err(Error::type_(
         capture.span,
-        "elaborator captures must be a type name, a value name, or a dotted path ending in a \
+        "macro captures must be a type name, a value name, or a dotted path ending in a \
          value member name",
     ))
 }
@@ -2463,7 +2443,7 @@ fn env_owner<'m>(env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>) -> S
 }
 
 fn resolve_capture_type_owner_with_provider<'m>(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     provider: &NominalProvider<'m, Lowered>,
 ) -> Result<(String, crate::ast::Visibility), Error> {
@@ -2473,7 +2453,7 @@ fn resolve_capture_type_owner_with_provider<'m>(
     }
     Err(Error::name_res(
         capture.span,
-        format!("elaborator capture `{name}` does not resolve to a type in this module"),
+        format!("macro capture `{name}` does not resolve to a type in this module"),
     ))
 }
 
@@ -2507,7 +2487,7 @@ fn resolve_type_name_owner_with_provider<'m>(
 }
 
 fn resolve_capture_fn_owner<'m>(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
 ) -> Result<ResolvedCaptureTermPath, Error> {
     let name = capture.segments[0].as_str();
@@ -2544,13 +2524,13 @@ fn resolve_capture_fn_owner<'m>(
     }
     Err(Error::name_res(
         capture.span,
-        format!("elaborator capture `{name}` does not resolve to a function in this module"),
+        format!("macro capture `{name}` does not resolve to a function in this module"),
     ))
 }
 
 #[cfg(all(test, feature = "surface"))]
 fn resolve_capture_member_owner<'m>(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
 ) -> Result<ResolvedCaptureTermPath, Error> {
     let nominal_provider = NominalProvider::new(Some(env.module), env.package);
@@ -2558,7 +2538,7 @@ fn resolve_capture_member_owner<'m>(
 }
 
 fn resolve_capture_member_owner_with_provider<'m>(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     _nominal_provider: &NominalProvider<'m, Lowered>,
 ) -> Result<ResolvedCaptureTermPath, Error> {
@@ -2616,7 +2596,7 @@ fn resolve_capture_member_owner_with_provider<'m>(
     Err(Error::name_res(
         capture.span,
         format!(
-            "elaborator capture `{}` does not resolve to a supported function or newtype member",
+            "macro capture `{}` does not resolve to a supported function or newtype member",
             capture
                 .segments
                 .iter()
@@ -2628,7 +2608,7 @@ fn resolve_capture_member_owner_with_provider<'m>(
 }
 
 fn resolve_capture_newtype_member<'m>(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     type_segments: &[PathSegment],
     display_name: &str,
@@ -2674,8 +2654,8 @@ fn resolve_capture_newtype_member<'m>(
     }))
 }
 
-fn validate_user_elaborator_capture_source_order<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
+fn validate_user_macro_capture_source_order<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
     item_index: usize,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
 ) -> Result<(), Error> {
@@ -2699,10 +2679,10 @@ fn validate_user_elaborator_capture_source_order<'m>(
         .module
         .items
         .get(..item_index)
-        .expect("elaborator item index belongs to its module");
-    for capture in &elaborator.captures {
-        let in_scope = match classify_user_elaborator_capture(capture)? {
-            UserElaboratorCaptureSpelling::Type => {
+        .expect("macro item index belongs to its module");
+    for capture in &macro_def.captures {
+        let in_scope = match classify_user_macro_capture(capture)? {
+            UserMacroCaptureSpelling::Type => {
                 let name = capture.segments[0].as_str();
                 if env.env_type_names.contains(name) {
                     env.module
@@ -2719,7 +2699,7 @@ fn validate_user_elaborator_capture_source_order<'m>(
                             .any(|item| item_declares_type(item, name))
                 }
             }
-            UserElaboratorCaptureSpelling::Value => {
+            UserMacroCaptureSpelling::Value => {
                 let name = capture.segments[0].as_str();
                 if env.env_fn_defs.contains_key(name) {
                     env.module
@@ -2735,7 +2715,7 @@ fn validate_user_elaborator_capture_source_order<'m>(
                         )
                 }
             }
-            UserElaboratorCaptureSpelling::Member => {
+            UserMacroCaptureSpelling::Member => {
                 let qualifier = capture.segments[0].as_str();
                 if let Some(target) = env.qualified_imports.get(qualifier) {
                     if module_path_string(target) != env.module_path {
@@ -2774,13 +2754,13 @@ fn validate_user_elaborator_capture_source_order<'m>(
             return Err(Error::name_res(
                 capture.span,
                 format!(
-                    "elaborator capture `{rendered}` is not in scope before elaborator `{}`",
-                    elaborator.name
+                    "macro capture `{rendered}` is not in scope before macro `{}`",
+                    macro_def.name
                 ),
             )
             .with_help(format!(
-                "move the declaration of `{rendered}` above elaborator `{}`",
-                elaborator.name
+                "move the declaration of `{rendered}` above macro `{}`",
+                macro_def.name
             )));
         }
     }
@@ -2788,10 +2768,10 @@ fn validate_user_elaborator_capture_source_order<'m>(
 }
 
 fn capture_import(
-    imports: &mut Vec<UserElaboratorTemplateGeneratedImport>,
+    imports: &mut Vec<UserMacroTemplateGeneratedImport>,
     owner_module_path: &str,
     module: &Module,
-) -> UserElaboratorTemplateGeneratedImport {
+) -> UserMacroTemplateGeneratedImport {
     if let Some(import) = imports
         .iter()
         .find(|import| import.module_path == owner_module_path)
@@ -2802,7 +2782,7 @@ fn capture_import(
     for import in imports.iter() {
         requalifier.add_generated_import(&import.module_path, &import.alias);
     }
-    let import = UserElaboratorTemplateGeneratedImport {
+    let import = UserMacroTemplateGeneratedImport {
         module_path: owner_module_path.to_owned(),
         alias: requalifier.ensure_module_import(owner_module_path),
     };
@@ -2813,9 +2793,9 @@ fn capture_import(
 }
 
 fn captured_term_for_replay(
-    capture: &crate::ast::UserElaboratorCapture,
+    capture: &crate::ast::UserMacroCapture,
     resolved: &ResolvedCaptureTermPath,
-    imports: &mut Vec<UserElaboratorTemplateGeneratedImport>,
+    imports: &mut Vec<UserMacroTemplateGeneratedImport>,
     module: &Module,
 ) -> Expr {
     if let Some(owner_module_path) = &resolved.owner_module_path {
@@ -2834,7 +2814,7 @@ fn captured_type_for_term_replay<'m>(
     owner_module_path: &str,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     nominal_provider: &NominalProvider<'m, Lowered>,
-    imports: &mut Vec<UserElaboratorTemplateGeneratedImport>,
+    imports: &mut Vec<UserMacroTemplateGeneratedImport>,
     identity_canonical: bool,
 ) -> Type {
     match ty {
@@ -2977,7 +2957,7 @@ fn captured_term_type_for_replay<'m>(
     resolved: &ResolvedCaptureTermPath,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     nominal_provider: &NominalProvider<'m, Lowered>,
-    imports: &mut Vec<UserElaboratorTemplateGeneratedImport>,
+    imports: &mut Vec<UserMacroTemplateGeneratedImport>,
 ) -> Type {
     if ty.identity_is_canonical() {
         return captured_type_for_term_replay(
@@ -3005,7 +2985,7 @@ fn captured_term_type_for_replay<'m>(
 
 fn canonicalize_captured_generated_imports<P>(
     ty: &crate::ast::Type<P>,
-    imports: &[UserElaboratorTemplateGeneratedImport],
+    imports: &[UserMacroTemplateGeneratedImport],
 ) -> crate::ast::Type<P>
 where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
@@ -3015,7 +2995,7 @@ where
 
 fn canonicalize_captured_generated_imports_with_bound<P>(
     ty: &crate::ast::Type<P>,
-    imports: &[UserElaboratorTemplateGeneratedImport],
+    imports: &[UserMacroTemplateGeneratedImport],
     bound: &HashSet<String>,
 ) -> crate::ast::Type<P>
 where
@@ -3130,8 +3110,8 @@ fn visibility_owner_path(path: &str, span: Span) -> crate::ast::ModulePath {
     }
 }
 
-fn require_elaborator_target_visibility(
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
+fn require_macro_target_visibility(
+    macro_def: &crate::ast::UserMacroDef<Lowered>,
     owner_module_path: Option<&str>,
     visibility: &crate::ast::Visibility,
     env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
@@ -3141,25 +3121,21 @@ fn require_elaborator_target_visibility(
     let owner = owner_module_path
         .map(|path| visibility_owner_path(path, span))
         .unwrap_or_else(|| env.module.path.clone());
-    if crate::pass::resolve::visibility_covers(
-        visibility,
-        &owner,
-        &elaborator.vis,
-        &env.module.path,
-    ) {
+    if crate::pass::resolve::visibility_covers(visibility, &owner, &macro_def.vis, &env.module.path)
+    {
         Ok(())
     } else {
         let error = Error::type_(
             span,
             format!(
-                "{target} must be at least as visible as elaborator `{}`",
-                elaborator.name
+                "{target} must be at least as visible as macro `{}`",
+                macro_def.name
             ),
         );
         if owner.segments == env.module.path.segments {
             Err(error.with_help(format!(
-                "give {target} visibility equal to or wider than elaborator `{}`",
-                elaborator.name
+                "give {target} visibility equal to or wider than macro `{}`",
+                macro_def.name
             )))
         } else {
             Err(error)
@@ -3167,13 +3143,13 @@ fn require_elaborator_target_visibility(
     }
 }
 
-fn validate_user_elaborator_implementation_binding<'m>(
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
+fn validate_user_macro_implementation_binding<'m>(
+    macro_def: &crate::ast::UserMacroDef<Lowered>,
     tcx: &TypeCtx<'m, '_>,
 ) -> Result<(), Error> {
-    let segments = elaborator.implementation.segments();
+    let segments = macro_def.implementation.segments();
     let Some(last) = segments.last() else {
-        unreachable!("the parser emits a nonempty elaborator implementation path")
+        unreachable!("the parser emits a nonempty macro implementation path")
     };
     let rendered = segments
         .iter()
@@ -3195,38 +3171,38 @@ fn validate_user_elaborator_implementation_binding<'m>(
         Some(binder) => binder,
         None if is_unshadowed_comptime_value => return Ok(()),
         None => unreachable!(
-            "synthesized elaborator implementation path `{rendered}` did not record a binder"
+            "synthesized macro implementation path `{rendered}` did not record a binder"
         ),
     };
     if matches!(binder, ResolvedBinder::NewtypeMember { .. }) {
         return Err(Error::type_(
-            elaborator.implementation.span(),
+            macro_def.implementation.span(),
             format!(
-                "newtype member `{rendered}` cannot implement elaborator `{}` because it does not have the elaborator ABI",
-                elaborator.name
+                "newtype member `{rendered}` cannot implement macro `{}` because it does not have the macro ABI",
+                macro_def.name
             ),
         )
         .with_help(
-            "define a function that accepts the elaborator's reflected ABI inputs and returns `__Checked_term__`, then name that function after `impl`",
+            "define a function that accepts the macro's reflected ABI inputs and returns `__Checked_term__`, then name that function after `impl`",
         ));
     }
     Ok(())
 }
 
-fn resolve_user_elaborator_captures<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
+fn resolve_user_macro_captures<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     tcx: &mut TypeCtx<'m, '_>,
-) -> Result<ResolvedUserElaboratorCaptures, Error> {
-    if elaborator.captures.is_empty() {
-        return Ok(ResolvedUserElaboratorCaptures::empty());
+) -> Result<ResolvedUserMacroCaptures, Error> {
+    if macro_def.captures.is_empty() {
+        return Ok(ResolvedUserMacroCaptures::empty());
     }
     let nominal_provider = NominalProvider::new(Some(env.module), env.package);
     let mut inputs = Vec::new();
     let mut imports = Vec::new();
-    for capture in &elaborator.captures {
-        match classify_user_elaborator_capture(capture)? {
-            UserElaboratorCaptureSpelling::Type => {
+    for capture in &macro_def.captures {
+        match classify_user_macro_capture(capture)? {
+            UserMacroCaptureSpelling::Type => {
                 let name = capture.segments[0].as_str();
                 let host_capture = env.env_type_names.contains(name);
                 let owner_visibility = if host_capture {
@@ -3239,8 +3215,8 @@ fn resolve_user_elaborator_captures<'m>(
                     )?)
                 };
                 if let Some((owner, vis)) = &owner_visibility {
-                    require_elaborator_target_visibility(
-                        elaborator,
+                    require_macro_target_visibility(
+                        macro_def,
                         Some(owner),
                         vis,
                         env,
@@ -3264,17 +3240,17 @@ fn resolve_user_elaborator_captures<'m>(
                 };
                 let replay_ty = canonicalize_captured_generated_imports(&replay_ty, &imports);
                 let reflected = if host_capture {
-                    reflect_elaborator_type(replay_ty, tcx)?
+                    reflect_macro_type(replay_ty, tcx)?
                 } else {
-                    user_elaborator_reflectable_type(replay_ty)?
+                    user_macro_reflectable_type(replay_ty)?
                 };
-                inputs.push(UserElaboratorTemplateInput::Type(reflected));
+                inputs.push(UserMacroTemplateInput::Type(reflected));
             }
-            UserElaboratorCaptureSpelling::Value => {
+            UserMacroCaptureSpelling::Value => {
                 let resolved = resolve_capture_fn_owner(capture, env)?;
                 for edge in &resolved.visibility_edges {
-                    require_elaborator_target_visibility(
-                        elaborator,
+                    require_macro_target_visibility(
+                        macro_def,
                         edge.owner_module_path.as_deref(),
                         &edge.visibility,
                         env,
@@ -3302,16 +3278,16 @@ fn resolve_user_elaborator_captures<'m>(
                 );
                 let term_ty = crate::ast::convert_type::<Lowered, UncheckedPrime>(&term_ty);
                 let term = crate::normalization::CheckedTerm::new(term_expr, term_ty);
-                inputs.push(UserElaboratorTemplateInput::CapturedTerm {
+                inputs.push(UserMacroTemplateInput::CapturedTerm {
                     term: crate::normalization::EvalRef::new(term),
                 });
             }
-            UserElaboratorCaptureSpelling::Member => {
+            UserMacroCaptureSpelling::Member => {
                 let resolved =
                     resolve_capture_member_owner_with_provider(capture, env, &nominal_provider)?;
                 for edge in &resolved.visibility_edges {
-                    require_elaborator_target_visibility(
-                        elaborator,
+                    require_macro_target_visibility(
+                        macro_def,
                         edge.owner_module_path.as_deref(),
                         &edge.visibility,
                         env,
@@ -3339,16 +3315,16 @@ fn resolve_user_elaborator_captures<'m>(
                 );
                 let term_ty = crate::ast::convert_type::<Lowered, UncheckedPrime>(&term_ty);
                 let term = crate::normalization::CheckedTerm::new(term_expr, term_ty);
-                inputs.push(UserElaboratorTemplateInput::CapturedTerm {
+                inputs.push(UserMacroTemplateInput::CapturedTerm {
                     term: crate::normalization::EvalRef::new(term),
                 });
             }
         }
     }
-    Ok(ResolvedUserElaboratorCaptures { inputs, imports })
+    Ok(ResolvedUserMacroCaptures { inputs, imports })
 }
 
-fn user_elaborator_semantic_function_type(
+fn user_macro_semantic_function_type(
     ty: &InternedType,
     span: Span,
     alias_ctx: &AliasCtx<'_, '_>,
@@ -3360,7 +3336,7 @@ fn user_elaborator_semantic_function_type(
     );
     match unfolded {
         Type::Function { param, ret, .. } => Ok((
-            user_elaborator_semantic_value_slot_types(
+            user_macro_semantic_value_slot_types(
                 InternedType::fresh_with_identity(*param, identity_canonical),
                 alias_ctx,
             ),
@@ -3369,14 +3345,14 @@ fn user_elaborator_semantic_function_type(
         other => Err(Error::type_(
             span,
             format!(
-                "user elaborator implementation must be a function, found `{}`",
+                "user macro implementation must be a function, found `{}`",
                 display_type(&other)
             ),
         )),
     }
 }
 
-fn user_elaborator_semantic_value_slot_types(
+fn user_macro_semantic_value_slot_types(
     mut param: InternedType,
     alias_ctx: &AliasCtx<'_, '_>,
 ) -> Vec<InternedType> {
@@ -3407,7 +3383,7 @@ fn user_elaborator_semantic_value_slot_types(
     }
 }
 
-fn check_user_elaborator_param(
+fn check_user_macro_param(
     actual: &InternedType,
     expected: &Type,
     span: Span,
@@ -3429,7 +3405,7 @@ fn check_user_elaborator_param(
         Err(Error::type_(
             span,
             format!(
-                "user elaborator implementation has `{}` for {description}, but the ABI expects \
+                "user macro implementation has `{}` for {description}, but the ABI expects \
                  `{}`",
                 display_type(actual.as_type()),
                 display_type(expected)
@@ -3438,23 +3414,23 @@ fn check_user_elaborator_param(
     }
 }
 
-fn user_elaborator_implementation_type_slot_modes<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
-    layout: &UserElaboratorSignatureLayout,
+fn user_macro_implementation_type_slot_modes<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
+    layout: &UserMacroSignatureLayout,
     tcx: &mut TypeCtx<'m, '_>,
-) -> Result<Vec<UserElaboratorTypeSlotMode>, Error> {
-    let span = elaborator.meta.span;
+) -> Result<Vec<UserMacroTypeSlotMode>, Error> {
+    let span = macro_def.meta.span;
     let refl_type_ty = refl_type("__Type__", span);
     let checked_term_ty = checked_term_type(span);
     let optional_type_ty = optional_type_slot_type(span);
     let alias_ctx = tcx.env.alias_ctx();
-    let implementation = &elaborator.implementation;
+    let implementation = &macro_def.implementation;
     #[cfg(test)]
-    record_user_elaborator_implementation_synthesis();
+    record_user_macro_implementation_synthesis();
     let implementation_synth = synth_path(implementation.segments(), implementation.span(), tcx)?;
     let implementation_leaf = implementation
         .last()
-        .expect("the parser emits a nonempty elaborator implementation path");
+        .expect("the parser emits a nonempty macro implementation path");
     <LoweredTyper as crate::pass::typecheck_core::Typer<Lowered>>::record_position_type(
         implementation.span(),
         implementation_synth.ty.clone(),
@@ -3467,27 +3443,26 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
             tcx,
         );
     }
-    validate_user_elaborator_implementation_binding(elaborator, tcx)?;
+    validate_user_macro_implementation_binding(macro_def, tcx)?;
     let implementation_ty = implementation_synth.into_mono_interned()?;
     // The implementation contract is one semantic product packet. Its
     // concrete function value may bind that packet as one value or flatten
     // the product into multiple binders, so stored ABI arity is not the
     // definition-side slot authority.
-    let (params, ret) =
-        user_elaborator_semantic_function_type(&implementation_ty, span, &alias_ctx)?;
-    let capture_spellings = elaborator
+    let (params, ret) = user_macro_semantic_function_type(&implementation_ty, span, &alias_ctx)?;
+    let capture_spellings = macro_def
         .captures
         .iter()
-        .map(classify_user_elaborator_capture)
+        .map(classify_user_macro_capture)
         .collect::<Result<Vec<_>, _>>()?;
-    let fills_schedule = elaborator.schedule == crate::ast::ElaboratorSchedule::Fills;
+    let fills_schedule = macro_def.schedule == crate::ast::MacroSchedule::Fills;
     let capability_count = if fills_schedule { 2 } else { 1 };
     let expected_param_count = capability_count + capture_spellings.len() + layout.slots.len();
     if params.len() != expected_param_count {
         return Err(Error::type_(
             span,
             format!(
-                "user elaborator implementation ABI expects {expected_param_count} value \
+                "user macro implementation ABI expects {expected_param_count} value \
                  parameters, but implementation has {}",
                 params.len()
             ),
@@ -3495,7 +3470,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
     }
 
     let mut param_index = 0usize;
-    check_user_elaborator_param(
+    check_user_macro_param(
         &params[param_index],
         &comptime_proof_type(span),
         span,
@@ -3505,7 +3480,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
     param_index += 1;
 
     if fills_schedule {
-        check_user_elaborator_param(
+        check_user_macro_param(
             &params[param_index],
             &fill_ctx_type(span),
             span,
@@ -3517,12 +3492,12 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
 
     for spelling in capture_spellings {
         let expected = match spelling {
-            UserElaboratorCaptureSpelling::Type => refl_type_ty.clone(),
-            UserElaboratorCaptureSpelling::Value | UserElaboratorCaptureSpelling::Member => {
+            UserMacroCaptureSpelling::Type => refl_type_ty.clone(),
+            UserMacroCaptureSpelling::Value | UserMacroCaptureSpelling::Member => {
                 checked_term_ty.clone()
             }
         };
-        check_user_elaborator_param(
+        check_user_macro_param(
             &params[param_index],
             &expected,
             span,
@@ -3535,7 +3510,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
     let mut type_slot_modes = Vec::new();
     for slot in &layout.slots {
         match slot {
-            UserElaboratorSignatureSlot::Type { param, .. } => {
+            UserMacroSignatureSlot::Type { param, .. } => {
                 let actual = &params[param_index];
                 if crate::pass::typecheck_core::require_type_equiv_state(
                     actual.as_type(),
@@ -3547,7 +3522,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
                 )
                 .is_ok()
                 {
-                    type_slot_modes.push(UserElaboratorTypeSlotMode::Required);
+                    type_slot_modes.push(UserMacroTypeSlotMode::Required);
                 } else if !fills_schedule
                     && crate::pass::typecheck_core::require_type_equiv_state(
                         actual.as_type(),
@@ -3559,7 +3534,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
                     )
                     .is_ok()
                 {
-                    type_slot_modes.push(UserElaboratorTypeSlotMode::Optional);
+                    type_slot_modes.push(UserMacroTypeSlotMode::Optional);
                 } else {
                     let expected = if fills_schedule {
                         "`__Type__`"
@@ -3569,7 +3544,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
                     return Err(Error::type_(
                         span,
                         format!(
-                            "user elaborator implementation has `{}` for type slot `[{}]`, but \
+                            "user macro implementation has `{}` for type slot `[{}]`, but \
                              the ABI expects {expected}",
                             display_type(actual.as_type()),
                             param.name
@@ -3577,8 +3552,8 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
                     ));
                 }
             }
-            UserElaboratorSignatureSlot::Value { .. } => {
-                check_user_elaborator_param(
+            UserMacroSignatureSlot::Value { .. } => {
+                check_user_macro_param(
                     &params[param_index],
                     &checked_term_ty,
                     span,
@@ -3594,7 +3569,7 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
     } else {
         checked_term_ty
     };
-    check_user_elaborator_param(
+    check_user_macro_param(
         &ret,
         &expected_return,
         span,
@@ -3606,41 +3581,41 @@ fn user_elaborator_implementation_type_slot_modes<'m>(
 
 #[cfg(test)]
 thread_local! {
-    static USER_ELABORATOR_IMPLEMENTATION_SYNTHESES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    static USER_MACRO_IMPLEMENTATION_SYNTHESES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 #[cfg(test)]
-fn record_user_elaborator_implementation_synthesis() {
-    USER_ELABORATOR_IMPLEMENTATION_SYNTHESES.with(|count| count.set(count.get() + 1));
+fn record_user_macro_implementation_synthesis() {
+    USER_MACRO_IMPLEMENTATION_SYNTHESES.with(|count| count.set(count.get() + 1));
 }
 
 #[cfg(test)]
-fn reset_user_elaborator_implementation_syntheses() {
-    USER_ELABORATOR_IMPLEMENTATION_SYNTHESES.with(|count| count.set(0));
+fn reset_user_macro_implementation_syntheses() {
+    USER_MACRO_IMPLEMENTATION_SYNTHESES.with(|count| count.set(0));
 }
 
 #[cfg(test)]
-fn user_elaborator_implementation_syntheses() -> usize {
-    USER_ELABORATOR_IMPLEMENTATION_SYNTHESES.with(std::cell::Cell::get)
+fn user_macro_implementation_syntheses() -> usize {
+    USER_MACRO_IMPLEMENTATION_SYNTHESES.with(std::cell::Cell::get)
 }
 
-fn check_user_elaborator_item<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
+fn check_user_macro_item<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
     item_index: usize,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     elaborations: &mut Elaborations,
 ) -> Result<(), Error> {
-    check_well_formed_type(&elaborator.call_ty)?;
+    check_well_formed_type(&macro_def.call_ty)?;
     let mut tcx = TypeCtx::new(env, elaborations).at_item(item_index);
-    crate::pass::typecheck_core::check_callable_spine_kinds(&elaborator.call_ty, &mut tcx)?;
+    crate::pass::typecheck_core::check_callable_spine_kinds(&macro_def.call_ty, &mut tcx)?;
     let alias_ctx = env.alias_ctx();
-    let call_ty = InternedType::fresh(elaborator.call_ty.clone());
-    let layout = user_elaborator_signature_layout(&call_ty, &alias_ctx);
-    validate_trailing_declaration(elaborator, &layout, &alias_ctx, &tcx)?;
-    validate_user_elaborator_capture_source_order(elaborator, item_index, env)?;
-    resolve_user_elaborator_captures(elaborator, env, &mut tcx)?;
+    let call_ty = InternedType::fresh(macro_def.call_ty.clone());
+    let layout = user_macro_signature_layout(&call_ty, &alias_ctx);
+    validate_trailing_declaration(macro_def, &layout, &alias_ctx, &tcx)?;
+    validate_user_macro_capture_source_order(macro_def, item_index, env)?;
+    resolve_user_macro_captures(macro_def, env, &mut tcx)?;
     tcx.pure_context = true;
-    user_elaborator_implementation_type_slot_modes(elaborator, &layout, &mut tcx)?;
+    user_macro_implementation_type_slot_modes(macro_def, &layout, &mut tcx)?;
     Ok(())
 }
 
@@ -3750,14 +3725,14 @@ impl crate::pass::typecheck_core::DeclarationPhase for Lowered {
 // =========================================================================
 
 /// Type-check every module in `package`, produce a
-/// [`Prime`](crate::ast::Prime)-phase package with the elaborator-position
+/// [`Prime`](crate::ast::Prime)-phase package with the macro-position
 /// elaborations substituted into the AST in place of the surface
-/// `into!` / `onto!` / `match!` nodes, then validate the substituted
+/// `into` / `onto` / `match` nodes, then validate the substituted
 /// package with the standalone Kio' typer. Bails on the first error.
 ///
 /// `Package<Prime>` is the semantic contract every backend
 /// ultimately realizes: the Prime AST carries no `Expr::Elaborator`
-/// / `Expr::UserElaborator` nodes (their extension types are `Never`),
+/// / `Expr::UserMacro` nodes (their extension types are `Never`),
 /// so the elaboration the typer recorded lives in-tree rather than
 /// in a pointer-keyed side table — the type system enforces the contract.
 pub fn check_package(
@@ -3959,8 +3934,8 @@ struct RecordedCallPlan {
 }
 
 /// Carries typer-time replacement trees for surface elaboration forms and
-/// compiler-private Lowered carriers. Surface forms such as `into!`, `onto!`,
-/// and `match!` record the Kio' trees that realize their runtime semantics;
+/// compiler-private Lowered carriers. Surface forms such as `into`, `onto`,
+/// and `match` record the Kio' trees that realize their runtime semantics;
 /// `Expr::RecOrder` resolves an explicit recursive-CPS ordering/type-flow
 /// direction and records either an ordinary `let` (with its exact binder type
 /// retained alongside) or its type-only body. Entries are keyed by [`NodeId`],
@@ -4034,8 +4009,8 @@ pub struct Elaborations {
     /// from the lambda body alone.
     fn_param_types:
         HashMap<(String, crate::ast::ExpressionOccurrenceId, usize), RecordedTypeResolution>,
-    generated_imports: HashMap<String, Vec<UserElaboratorTemplateGeneratedImport>>,
-    prime_requalification_imports: HashMap<String, Vec<UserElaboratorTemplateGeneratedImport>>,
+    generated_imports: HashMap<String, Vec<UserMacroTemplateGeneratedImport>>,
+    prime_requalification_imports: HashMap<String, Vec<UserMacroTemplateGeneratedImport>>,
     generated_type_aliases: HashMap<String, Vec<PrimeLocalTypeAlias>>,
     /// Position-keyed index of the typer's output — per-expression
     /// synthesized types and per-path-segment resolved binders.
@@ -4045,18 +4020,18 @@ pub struct Elaborations {
     /// without re-running the typer. See [`PositionIndex`] for the data shape
     /// and the merge / disjointness contract.
     position_index: PositionIndex,
-    /// **Deferred-elaboration queue.** A closed-result user elaborator can
+    /// **Deferred-elaboration queue.** A closed-result user macro can
     /// leave glue production until the module boundary: its ordinary call
     /// plan already fixes the result type, and the queued obligation later
-    /// runs the elaborator and checks its returned term against that type.
-    /// A type-producing elaborator instead runs while its application frontier
+    /// runs the macro and checks its returned term against that type.
+    /// A type-producing macro instead runs while its application frontier
     /// is live; the returned checked term constrains that owner's output goal,
     /// and its already-computed template is queued only for uniform recording.
     /// Draining happens in [`Self::discharge_deferred`] while the module's alias
     /// context remains available, and records each resulting Kio' tree into
     /// `entries` for the Lowered → Prime substitution pass.
     ///
-    /// The queue is keyed by `(elaborator name, reified source, reified
+    /// The queue is keyed by `(macro name, reified source, reified
     /// target)` so structurally identical obligations are comparable
     /// across sites before glue production.
     deferred: Vec<DeferredElaboration>,
@@ -4085,49 +4060,49 @@ struct RecordedRecOrderRuntime {
 }
 
 /// A single deferred elaboration obligation. Closed-result obligations carry
-/// the result type against which discharge checks the elaborator's returned
+/// the result type against which discharge checks the macro's returned
 /// term. Type-producing obligations carry a template already evaluated on the
 /// live application frontier, where that returned term constrained the output
-/// goal; discharge reuses the template without running the elaborator again.
+/// goal; discharge reuses the template without running the macro again.
 ///
 /// Owned (not borrowed): the discharge runs after the per-fn-body typer
-/// borrows have dropped, so `value` is a clone of the elaborator's inner
+/// borrows have dropped, so `value` is a clone of the macro's inner
 /// expression and the types are owned. The clone shares `NodeId`s with
 /// the original (the parser issues them and they survive `Clone`), so
 /// the elaboration the discharge records under `node_id` lands on the
 /// surface node the `substitute` pass looks up.
 #[derive(Debug)]
 enum DeferredElaboration {
-    UserElaborator(Box<DeferredUserElaboratorElaboration>),
+    UserMacro(Box<DeferredUserMacroElaboration>),
 }
 
 #[derive(Debug)]
-pub(crate) struct DeferredUserElaboratorElaboration {
+pub(crate) struct DeferredUserMacroElaboration {
     node_id: NodeId,
     name: String,
-    elaborator_module_path: Option<String>,
+    macro_module_path: Option<String>,
     values: Vec<Expr>,
-    abi_inputs: Vec<UserElaboratorTemplateInput>,
-    input_keys: Vec<UserElaboratorTemplateInputKey>,
-    capture_imports: Vec<UserElaboratorTemplateGeneratedImport>,
+    abi_inputs: Vec<UserMacroTemplateInput>,
+    input_keys: Vec<UserMacroTemplateInputKey>,
+    capture_imports: Vec<UserMacroTemplateGeneratedImport>,
     value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
     result_ty: Option<InternedType>,
-    precomputed_template: Option<UserElaboratorTemplateResult>,
+    precomputed_template: Option<UserMacroTemplateResult>,
     quoted_public_recipe: Option<Box<QuotedPublicRecipe>>,
     span: Span,
 }
 
-pub(crate) struct ReadyUserElaboratorAction {
-    schedule: crate::ast::ElaboratorSchedule,
+pub(crate) struct ReadyUserMacroAction {
+    schedule: crate::ast::MacroSchedule,
     node_id: NodeId,
     name: String,
-    elaborator_module_path: Option<String>,
+    macro_module_path: Option<String>,
     values: Vec<Expr>,
-    abi_inputs: Vec<UserElaboratorTemplateInput>,
-    input_keys: Vec<UserElaboratorTemplateInputKey>,
-    capture_imports: Vec<UserElaboratorTemplateGeneratedImport>,
+    abi_inputs: Vec<UserMacroTemplateInput>,
+    input_keys: Vec<UserMacroTemplateInputKey>,
+    capture_imports: Vec<UserMacroTemplateGeneratedImport>,
     value_adapter: crate::normalization::CheckedTermTemplateValueAdapter,
     residual_abstraction: crate::pass::substitute::EtaPlan<UncheckedPrime>,
     ambient_type_names: HashSet<String>,
@@ -4135,43 +4110,43 @@ pub(crate) struct ReadyUserElaboratorAction {
     span: Span,
 }
 
-pub(crate) struct StagedReadyUserElaboratorEvaluation {
-    obligation: DeferredUserElaboratorElaboration,
+pub(crate) struct StagedReadyUserMacroEvaluation {
+    obligation: DeferredUserMacroElaboration,
     returned: crate::normalization::Value,
     initial_fill_context: crate::normalization::Value,
-    artifact: std::sync::Arc<UserElaboratorEvalArtifactPair>,
+    artifact: std::sync::Arc<UserMacroEvalArtifactPair>,
 }
 
-pub(crate) struct StagedReadyProjectedUserElaboratorEvaluation<'m> {
-    ready: ReadyProjectedUserElaboratorAction<'m>,
+pub(crate) struct StagedReadyProjectedUserMacroEvaluation<'m> {
+    ready: ReadyProjectedUserMacroAction<'m>,
     returned: crate::normalization::Value,
 }
 
-struct EvaluatedUserElaboratorPacket {
+struct EvaluatedUserMacroPacket {
     returned: crate::normalization::Value,
-    artifact: std::sync::Arc<UserElaboratorEvalArtifactPair>,
+    artifact: std::sync::Arc<UserMacroEvalArtifactPair>,
 }
 
-impl StagedReadyUserElaboratorEvaluation {
+impl StagedReadyUserMacroEvaluation {
     pub(crate) fn eval_ctx(&self) -> crate::normalization::AuthenticatedEvalCtx<'_> {
-        user_elaborator_eval_ctx_from_artifact(&self.artifact)
+        user_macro_eval_ctx_from_artifact(&self.artifact)
     }
 }
 
-impl ReadyUserElaboratorAction {
-    pub(crate) fn schedule(&self) -> crate::ast::ElaboratorSchedule {
+impl ReadyUserMacroAction {
+    pub(crate) fn schedule(&self) -> crate::ast::MacroSchedule {
         self.schedule
     }
 
     fn into_obligation(
         self,
         result_ty: Option<InternedType>,
-        precomputed_template: Option<UserElaboratorTemplateResult>,
-    ) -> DeferredUserElaboratorElaboration {
-        DeferredUserElaboratorElaboration {
+        precomputed_template: Option<UserMacroTemplateResult>,
+    ) -> DeferredUserMacroElaboration {
+        DeferredUserMacroElaboration {
             node_id: self.node_id,
             name: self.name,
-            elaborator_module_path: self.elaborator_module_path,
+            macro_module_path: self.macro_module_path,
             values: self.values,
             abi_inputs: self.abi_inputs,
             input_keys: self.input_keys,
@@ -4187,29 +4162,29 @@ impl ReadyUserElaboratorAction {
     }
 }
 
-pub(crate) fn defer_ready_user_elaborator_action(
-    ready: ReadyUserElaboratorAction,
-) -> DeferredUserElaboratorElaboration {
-    assert_eq!(ready.schedule, crate::ast::ElaboratorSchedule::Late);
+pub(crate) fn defer_ready_user_macro_action(
+    ready: ReadyUserMacroAction,
+) -> DeferredUserMacroElaboration {
+    assert_eq!(ready.schedule, crate::ast::MacroSchedule::Late);
     let result_ty = ready
         .terminal_result_ty
         .clone()
-        .expect("a deferred elaborator action has a closed terminal result type");
+        .expect("a deferred macro action has a closed terminal result type");
     ready.into_obligation(Some(result_ty), None)
 }
 
-pub(crate) fn evaluate_ready_user_elaborator_action<'m>(
-    ready: ReadyUserElaboratorAction,
+pub(crate) fn evaluate_ready_user_macro_action<'m>(
+    ready: ReadyUserMacroAction,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<(DeferredUserElaboratorElaboration, InternedType), Error> {
-    assert_eq!(ready.schedule, crate::ast::ElaboratorSchedule::Late);
+) -> Result<(DeferredUserMacroElaboration, InternedType), Error> {
+    assert_eq!(ready.schedule, crate::ast::MacroSchedule::Late);
     assert!(
         ready.terminal_result_ty.is_none(),
-        "only an unresolved type-producing elaborator action evaluates on the frontier"
+        "only an unresolved type-producing macro action evaluates on the frontier"
     );
     let mut obligation = ready.into_obligation(None, None);
-    let key = user_elaborator_template_memo_key(&obligation, tcx.env);
-    let computed = compute_user_elaborator_deferred_template(
+    let key = user_macro_template_memo_key(&obligation, tcx.env);
+    let computed = compute_user_macro_deferred_template(
         &obligation,
         key,
         tcx.env,
@@ -4218,7 +4193,7 @@ pub(crate) fn evaluate_ready_user_elaborator_action<'m>(
     )?;
     let result_ty = match &computed {
         Ok(template) => crate::ast::convert_type::<UncheckedPrime, Lowered>(template.result_ty()),
-        Err(message) => return Err(Error::elaborator(obligation.span, message.clone())),
+        Err(message) => return Err(Error::macro_error(obligation.span, message.clone())),
     };
     check_well_formed_type(&result_ty)?;
     let result_ty = InternedType::fresh_canonical(result_ty);
@@ -4227,26 +4202,26 @@ pub(crate) fn evaluate_ready_user_elaborator_action<'m>(
     Ok((obligation, result_ty))
 }
 
-pub(crate) fn evaluate_ready_fills_user_elaborator_action<'m>(
-    ready: ReadyUserElaboratorAction,
+pub(crate) fn evaluate_ready_fills_user_macro_action<'m>(
+    ready: ReadyUserMacroAction,
     proof: crate::normalization::Value,
     fills: crate::normalization::Value,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<StagedReadyUserElaboratorEvaluation, Error> {
-    assert_eq!(ready.schedule, crate::ast::ElaboratorSchedule::Fills);
+) -> Result<StagedReadyUserMacroEvaluation, Error> {
+    assert_eq!(ready.schedule, crate::ast::MacroSchedule::Fills);
     let obligation = ready.into_obligation(None, None);
     let initial_fill_context = fills.clone();
     let packet =
-        user_elaborator_eval_packet_with_capabilities(&obligation.abi_inputs, Some((proof, fills)));
-    let evaluated = evaluate_user_elaborator_packet(
+        user_macro_eval_packet_with_capabilities(&obligation.abi_inputs, Some((proof, fills)));
+    let evaluated = evaluate_user_macro_packet(
         &obligation.name,
-        obligation.elaborator_module_path.as_deref(),
+        obligation.macro_module_path.as_deref(),
         &obligation.capture_imports,
         obligation.span,
         packet,
         tcx,
     )?;
-    Ok(StagedReadyUserElaboratorEvaluation {
+    Ok(StagedReadyUserMacroEvaluation {
         obligation,
         returned: evaluated.returned,
         initial_fill_context,
@@ -4254,34 +4229,30 @@ pub(crate) fn evaluate_ready_fills_user_elaborator_action<'m>(
     })
 }
 
-pub(crate) fn evaluate_ready_projected_user_elaborator_action<'m>(
-    ready: ReadyProjectedUserElaboratorAction<'m>,
+pub(crate) fn evaluate_ready_projected_user_macro_action<'m>(
+    ready: ReadyProjectedUserMacroAction<'m>,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<StagedReadyProjectedUserElaboratorEvaluation<'m>, Error> {
+) -> Result<StagedReadyProjectedUserMacroEvaluation<'m>, Error> {
     let packet = ready.eval_packet();
-    let evaluated = evaluate_user_elaborator_packet(
+    let evaluated = evaluate_user_macro_packet(
         &ready.action.name,
-        ready
-            .action
-            .elaborator_module
-            .map(module_path_string)
-            .as_deref(),
+        ready.action.macro_module.map(module_path_string).as_deref(),
         &ready.captures.imports,
         ready.action.span,
         packet,
         tcx,
     )?;
-    Ok(StagedReadyProjectedUserElaboratorEvaluation {
+    Ok(StagedReadyProjectedUserMacroEvaluation {
         ready,
         returned: evaluated.returned,
     })
 }
 
-pub(crate) fn prevalidate_ready_projected_user_elaborator_action<'m>(
-    evaluation: StagedReadyProjectedUserElaboratorEvaluation<'m>,
+pub(crate) fn prevalidate_ready_projected_user_macro_action<'m>(
+    evaluation: StagedReadyProjectedUserMacroEvaluation<'m>,
 ) -> Result<
     (
-        ReadyProjectedUserElaboratorAction<'m>,
+        ReadyProjectedUserMacroAction<'m>,
         crate::pass::typecheck_core::apply::fills::ProjectedCheckedResult,
         crate::pass::typecheck_core::apply::fills::FillContext,
     ),
@@ -4291,9 +4262,9 @@ pub(crate) fn prevalidate_ready_projected_user_elaborator_action<'m>(
     let Some((checked, returned_context)) =
         crate::normalization::core_product_value_parts(&evaluation.returned)
     else {
-        return Err(Error::elaborator(
+        return Err(Error::macro_error(
             span,
-            "fills elaborator returned a value other than `__Checked_term__ & __Fill_ctx__`",
+            "fills macro returned a value other than `__Checked_term__ & __Fill_ctx__`",
         ));
     };
     let (checked, returned_context) = prevalidate_projected_returned_values(
@@ -4323,9 +4294,9 @@ fn prevalidate_projected_returned_values(
         .filter(|context| context.matches(initial_context))
         .cloned()
         .ok_or_else(|| {
-            Error::elaborator(
+            Error::macro_error(
                 span,
-                "fills elaborator returned a `__Fill_ctx__` from another invocation",
+                "fills macro returned a `__Fill_ctx__` from another invocation",
             )
         })?;
     let checked = match checked {
@@ -4340,18 +4311,18 @@ fn prevalidate_projected_returned_values(
             let recipe = projected
                 .authenticated_checked_recipe(proof)
                 .ok_or_else(|| {
-                    Error::elaborator(
+                    Error::macro_error(
                         span,
-                        "fills elaborator returned a projected value other than an authenticated `__Checked_term__`",
+                        "fills macro returned a projected value other than an authenticated `__Checked_term__`",
                     )
                 })?;
             prevalidate_projected_checked_error(recipe.checked_error(), span)?;
             crate::pass::typecheck_core::apply::fills::ProjectedCheckedResult::Recipe(recipe)
         }
         _ => {
-            return Err(Error::elaborator(
+            return Err(Error::macro_error(
                 span,
-                "fills elaborator returned a value other than `__Checked_term__`",
+                "fills macro returned a value other than `__Checked_term__`",
             ));
         }
     };
@@ -4372,9 +4343,7 @@ fn prevalidate_projected_checked_error(
 ) -> Result<(), Error> {
     if let Some((kind, message)) = checked_error {
         return Err(match kind {
-            crate::normalization::CheckedTermErrorKind::Elaborator => {
-                Error::elaborator(span, message)
-            }
+            crate::normalization::CheckedTermErrorKind::Macro => Error::macro_error(span, message),
             crate::normalization::CheckedTermErrorKind::Type => Error::type_(span, message),
         });
     }
@@ -4382,17 +4351,17 @@ fn prevalidate_projected_checked_error(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
-    ready: ReadyProjectedUserElaboratorAction<'m>,
-    typed: TypedUserElaboratorCall,
+pub(crate) fn materialize_ready_projected_user_macro_action<'m>(
+    ready: ReadyProjectedUserMacroAction<'m>,
+    typed: TypedUserMacroCall,
     checked: crate::normalization::EvalRef<crate::normalization::CheckedTerm>,
     public_terminal_result: InternedType,
     checked_result: InternedType,
     projected_sources: Vec<crate::pass::typecheck_core::apply::fills::ProjectedTemplateSource>,
     quoted_public_recipe: Option<Box<QuotedPublicRecipe>>,
     tcx: &mut TypeCtx<'m, '_>,
-) -> Result<DeferredUserElaboratorElaboration, Error> {
-    let ReadyProjectedUserElaboratorAction {
+) -> Result<DeferredUserMacroElaboration, Error> {
+    let ReadyProjectedUserMacroAction {
         action,
         captures,
         declared_inputs: _,
@@ -4404,7 +4373,7 @@ pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
     let mut adapter_slots = Vec::with_capacity(projected_sources.len());
     let mut values = Vec::with_capacity(projected_sources.len());
     for (index, source) in projected_sources.into_iter().enumerate() {
-        let reflected = reflect_elaborator_interned_type(&source.ty, tcx)?;
+        let reflected = reflect_macro_interned_type(&source.ty, tcx)?;
         let reflected_ty = reflected.as_type().clone();
         adapter_sources.push(crate::normalization::CheckedTermTemplateSource {
             ty: reflected_ty.clone(),
@@ -4423,7 +4392,7 @@ pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
     }
     let mut ordinary =
         action.into_ready_with_captures(typed, captures, Some(&frozen_residual), tcx)?;
-    assert_eq!(ordinary.schedule, crate::ast::ElaboratorSchedule::Fills);
+    assert_eq!(ordinary.schedule, crate::ast::MacroSchedule::Fills);
     ordinary.values = values;
     ordinary.value_adapter = crate::normalization::CheckedTermTemplateValueAdapter {
         sources: adapter_sources,
@@ -4454,76 +4423,66 @@ pub(crate) fn materialize_ready_projected_user_elaborator_action<'m>(
     )?;
     let mut obligation = ordinary.into_obligation(
         Some(checked_result),
-        Some(Ok(trusted_user_elaborator_template(
-            checked.as_ref().clone(),
-        ))),
+        Some(Ok(trusted_user_macro_template(checked.as_ref().clone()))),
     );
     obligation.quoted_public_recipe = quoted_public_recipe;
     Ok(obligation)
 }
 
-fn evaluate_user_elaborator_packet<'m>(
+fn evaluate_user_macro_packet<'m>(
     name: &str,
-    elaborator_module_path: Option<&str>,
-    capture_imports: &[UserElaboratorTemplateGeneratedImport],
+    macro_module_path: Option<&str>,
+    capture_imports: &[UserMacroTemplateGeneratedImport],
     span: Span,
     packet: crate::normalization::Value,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<EvaluatedUserElaboratorPacket, Error> {
-    let elaborator_module = elaborator_module_for_path(tcx.env, elaborator_module_path);
-    let elaborator_module_path = elaborator_module
+) -> Result<EvaluatedUserMacroPacket, Error> {
+    let macro_module = macro_module_for_path(tcx.env, macro_module_path);
+    let macro_module_path = macro_module
         .map(module_path_string)
         .unwrap_or_else(|| tcx.env.module_path.clone());
     let artifact_pair = tcx
         .env
         .typecheck_scope
-        .user_elaborator_artifacts()
+        .user_macro_artifacts()
         .get_or_try_compute(
-            UserElaboratorArtifactKey::new(
-                elaborator_module_path.clone(),
+            UserMacroArtifactKey::new(
+                macro_module_path.clone(),
                 name.to_owned(),
                 capture_imports.to_vec(),
             ),
-            || {
-                user_elaborator_eval_artifact(
-                    tcx.env,
-                    capture_imports,
-                    name,
-                    span,
-                    elaborator_module,
-                )
-            },
+            || user_macro_eval_artifact(tcx.env, capture_imports, name, span, macro_module),
             |cached| {
-                let fresh = user_elaborator_eval_artifact(
+                let fresh = user_macro_eval_artifact(
                     tcx.env,
                     capture_imports,
                     name,
                     span,
-                    elaborator_module,
+                    macro_module,
                 )
                 .unwrap_or_else(|error| {
                     panic!(
-                        "KIO_DEBUG_MEMO_VERIFY=1: fresh user elaborator artifact validation failed: {}",
+                        "KIO_DEBUG_MEMO_VERIFY=1: fresh user macro artifact validation failed: {}",
                         error.diagnostic().message
                     )
                 });
-                verify_user_elaborator_artifact_memo(cached, &fresh);
+                verify_user_macro_artifact_memo(cached, &fresh);
             },
         )?;
-    let prepared = prepare_user_elaborator_value(
-        UserElaboratorPreparedRequest {
-            elaborator_name: name,
-            purpose: UserElaboratorPreparedPurpose::Template,
-            elaborator_module,
+    let prepared = prepare_user_macro_value(
+        UserMacroPreparedRequest {
+            macro_name: name,
+            purpose: UserMacroPreparedPurpose::Template,
+            macro_module,
         },
         tcx.env,
         artifact_pair.as_ref(),
         &tcx.env.memo,
-        crate::timing::user_elaborator_frontend_enabled(),
+        crate::timing::user_macro_frontend_enabled(),
     )?;
-    let eval_metrics = crate::timing::user_elaborator_frontend_enabled()
+    let eval_metrics = crate::timing::user_macro_frontend_enabled()
         .then(crate::normalization::EvalMetrics::collect);
-    let mut ctx = user_elaborator_eval_ctx_from_artifact(&artifact_pair)
+    let mut ctx = user_macro_eval_ctx_from_artifact(&artifact_pair)
         .with_fn_closure_cache(prepared.fn_closure_cache.clone())
         .with_eval_function_cache(prepared.eval_function_cache.clone())
         .with_type_view_cache(prepared.type_view_cache.clone())
@@ -4531,37 +4490,37 @@ fn evaluate_user_elaborator_packet<'m>(
     if let Some(metrics) = &eval_metrics {
         ctx = ctx.with_metrics(metrics.clone());
     }
-    let eval_start = crate::timing::user_elaborator_frontend_enabled().then(Instant::now);
+    let eval_start = crate::timing::user_macro_frontend_enabled().then(Instant::now);
     #[cfg(test)]
     tcx.env
         .memo
-        .record_user_elaborator_template_execution(&elaborator_module_path, name);
+        .record_user_macro_template_execution(&macro_module_path, name);
     let returned = crate::normalization::apply(prepared.value.clone(), vec![packet], &ctx);
     if let Some(eval_start) = eval_start {
         tcx.env
             .memo
-            .record_user_elaborator_template_eval(eval_start.elapsed());
+            .record_user_macro_template_eval(eval_start.elapsed());
         if let Some(metrics) = eval_metrics {
             tcx.env
                 .memo
-                .record_user_elaborator_eval_metrics(metrics.snapshot());
+                .record_user_macro_eval_metrics(metrics.snapshot());
         }
     }
     if let Some(message) = crate::normalization::structural_recur_stuck_message(&returned, &ctx) {
         return Err(Error::totality(span, message));
     }
     drop(ctx);
-    Ok(EvaluatedUserElaboratorPacket {
+    Ok(EvaluatedUserMacroPacket {
         returned,
         artifact: artifact_pair,
     })
 }
 
-pub(crate) fn complete_ready_fills_user_elaborator_action(
-    mut evaluation: StagedReadyUserElaboratorEvaluation,
+pub(crate) fn complete_ready_fills_user_macro_action(
+    mut evaluation: StagedReadyUserMacroEvaluation,
 ) -> Result<
     (
-        DeferredUserElaboratorElaboration,
+        DeferredUserMacroElaboration,
         InternedType,
         crate::pass::typecheck_core::apply::fills::FillContext,
     ),
@@ -4571,31 +4530,31 @@ pub(crate) fn complete_ready_fills_user_elaborator_action(
     let Some((checked, returned_context)) =
         crate::normalization::core_product_value_parts(&evaluation.returned)
     else {
-        return Err(Error::elaborator(
+        return Err(Error::macro_error(
             span,
-            "fills elaborator returned a value other than `__Checked_term__ & __Fill_ctx__`",
+            "fills macro returned a value other than `__Checked_term__ & __Fill_ctx__`",
         ));
     };
     let initial_context =
         crate::normalization::fill_context_from_value(&evaluation.initial_fill_context)
-            .expect("a marked elaborator evaluation retains its fresh fill context");
+            .expect("a marked macro evaluation retains its fresh fill context");
     let returned_context = crate::normalization::fill_context_from_value(returned_context)
         .filter(|context| context.matches(initial_context))
         .cloned()
         .ok_or_else(|| {
-            Error::elaborator(
+            Error::macro_error(
                 span,
-                "fills elaborator returned a `__Fill_ctx__` from another invocation",
+                "fills macro returned a `__Fill_ctx__` from another invocation",
             )
         })?;
     let ctx = evaluation.eval_ctx();
-    let checked = match decode_user_elaborator_result(checked.clone(), &ctx) {
+    let checked = match decode_user_macro_result(checked.clone(), &ctx) {
         Ok(checked) => checked,
-        Err(UserElaboratorDecodeError::Diagnostic(message)) => {
-            return Err(Error::elaborator(span, message));
+        Err(UserMacroDecodeError::Diagnostic(message)) => {
+            return Err(Error::macro_error(span, message));
         }
-        Err(UserElaboratorDecodeError::Type(message)) => return Err(Error::type_(span, message)),
-        Err(UserElaboratorDecodeError::Totality(message)) => {
+        Err(UserMacroDecodeError::Type(message)) => return Err(Error::type_(span, message)),
+        Err(UserMacroDecodeError::Totality(message)) => {
             return Err(Error::totality(span, message));
         }
     };
@@ -4603,8 +4562,7 @@ pub(crate) fn complete_ready_fills_user_elaborator_action(
     check_well_formed_type(&lowered_result_ty)?;
     let lowered_result_ty = InternedType::fresh_canonical(lowered_result_ty);
     evaluation.obligation.result_ty = Some(lowered_result_ty.clone());
-    evaluation.obligation.precomputed_template =
-        Some(Ok(trusted_user_elaborator_template(checked)));
+    evaluation.obligation.precomputed_template = Some(Ok(trusted_user_macro_template(checked)));
     Ok((evaluation.obligation, lowered_result_ty, returned_context))
 }
 
@@ -4639,7 +4597,7 @@ pub struct PositionIndex {
     /// Per-expression-node synthesized type and local declaration's bound
     /// type. Expression types are recorded at every
     /// `synth_expr` return in `Lowered` mode — the type is the
-    /// **post-elaborator** synthesized type, so hover-on-`into!(e, T)`
+    /// **post-macro** synthesized type, so hover-on-`into(e, T)`
     /// shows `T` rather than `e`'s pre-coerced type.
     types: HashMap<(String, Span), Type>,
     /// Keys whose recorded type carries identity-canonical nominal heads.
@@ -4761,10 +4719,10 @@ pub(crate) struct InlayTypeArguments {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedBinder {
     /// A continuation label belongs to one descriptor of the selected
-    /// elaborator, independently of another declaration's label spelling.
+    /// macro, independently of another declaration's label spelling.
     BlockLabel {
         module_path: String,
-        elaborator: String,
+        macro_name: String,
         ordinal: usize,
         name: String,
         exposure: crate::ast::BlockExposure,
@@ -4835,7 +4793,7 @@ pub enum ResolvedBinder {
 enum DeclarationIdentity {
     BlockLabel {
         module_path: String,
-        elaborator: String,
+        macro_name: String,
         ordinal: usize,
     },
     Fn {
@@ -4874,12 +4832,12 @@ impl DeclarationIdentity {
         match binder {
             ResolvedBinder::BlockLabel {
                 module_path,
-                elaborator,
+                macro_name,
                 ordinal,
                 ..
             } => Some(Self::BlockLabel {
                 module_path: module_path.clone(),
-                elaborator: elaborator.clone(),
+                macro_name: macro_name.clone(),
                 ordinal: *ordinal,
             }),
             ResolvedBinder::Fn { module_path, name } => Some(Self::Fn {
@@ -5963,21 +5921,21 @@ impl Elaborations {
         }
         let memo = &env.memo;
         let obligations = std::mem::take(&mut self.deferred);
-        let mut user_elaborator_batch = Vec::new();
+        let mut user_macro_batch = Vec::new();
         for ob in obligations {
             match ob {
-                DeferredElaboration::UserElaborator(ob) => {
-                    user_elaborator_batch.push(*ob);
+                DeferredElaboration::UserMacro(ob) => {
+                    user_macro_batch.push(*ob);
                 }
             }
         }
-        self.discharge_user_elaborator_batch(&mut user_elaborator_batch, env, memo, execution)?;
+        self.discharge_user_macro_batch(&mut user_macro_batch, env, memo, execution)?;
         rec_quote::finish_expansions(self, env)
     }
 
-    fn discharge_user_elaborator_batch(
+    fn discharge_user_macro_batch(
         &mut self,
-        obligations: &mut Vec<DeferredUserElaboratorElaboration>,
+        obligations: &mut Vec<DeferredUserMacroElaboration>,
         env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
         memo: &crate::pass::typecheck_core::MemoCtx<Lowered>,
         execution: crate::pass::typecheck_core::TypecheckExecution,
@@ -5985,7 +5943,7 @@ impl Elaborations {
         if obligations.is_empty() {
             return Ok(());
         }
-        let record_timing = crate::timing::user_elaborator_frontend_enabled();
+        let record_timing = crate::timing::user_macro_frontend_enabled();
         let elaborations: &Elaborations = self;
         let key_start = record_timing.then(Instant::now);
         let mut unique_by_key = HashMap::new();
@@ -5996,7 +5954,7 @@ impl Elaborations {
                 obligation_unique_indices.push(None);
                 continue;
             }
-            let key = user_elaborator_template_memo_key(ob, env);
+            let key = user_macro_template_memo_key(ob, env);
             let unique_index = match unique_by_key.get_key_value(&key) {
                 Some((stored, &index)) if key.presentation_matches(stored) => index,
                 existing => {
@@ -6011,45 +5969,43 @@ impl Elaborations {
             obligation_unique_indices.push(Some(unique_index));
         }
         if let Some(key_start) = key_start {
-            memo.record_user_elaborator_template_batch_key(key_start.elapsed());
+            memo.record_user_macro_template_batch_key(key_start.elapsed());
         }
-        memo.record_user_elaborator_template_batch(obligations.len(), unique.len());
+        memo.record_user_macro_template_batch(obligations.len(), unique.len());
         let compute_start = record_timing.then(Instant::now);
-        let mut computed: Vec<Option<Result<UserElaboratorTemplateResult, Error>>> = if unique.len()
-            < USER_ELABORATOR_PAR_BATCH_MIN
-            || !execution.parallelizes(unique.len())
-        {
-            unique
-                .iter()
-                .map(|(ob_index, key)| {
-                    Some(compute_user_elaborator_deferred_template(
-                        &obligations[*ob_index],
-                        key.clone(),
-                        env,
-                        elaborations,
-                        memo,
-                    ))
-                })
-                .collect()
-        } else {
-            crate::maybe_par_iter!(&unique)
-                .map(|(ob_index, key)| {
-                    Some(compute_user_elaborator_deferred_template(
-                        &obligations[*ob_index],
-                        key.clone(),
-                        env,
-                        elaborations,
-                        memo,
-                    ))
-                })
-                .collect()
-        };
+        let mut computed: Vec<Option<Result<UserMacroTemplateResult, Error>>> =
+            if unique.len() < USER_MACRO_PAR_BATCH_MIN || !execution.parallelizes(unique.len()) {
+                unique
+                    .iter()
+                    .map(|(ob_index, key)| {
+                        Some(compute_user_macro_deferred_template(
+                            &obligations[*ob_index],
+                            key.clone(),
+                            env,
+                            elaborations,
+                            memo,
+                        ))
+                    })
+                    .collect()
+            } else {
+                crate::maybe_par_iter!(&unique)
+                    .map(|(ob_index, key)| {
+                        Some(compute_user_macro_deferred_template(
+                            &obligations[*ob_index],
+                            key.clone(),
+                            env,
+                            elaborations,
+                            memo,
+                        ))
+                    })
+                    .collect()
+            };
         if let Some(compute_start) = compute_start {
-            memo.record_user_elaborator_template_batch_compute(compute_start.elapsed());
+            memo.record_user_macro_template_batch_compute(compute_start.elapsed());
         }
         let replay_loop_start = record_timing.then(Instant::now);
         let obligations = std::mem::take(obligations);
-        let mut replay_env = UserElaboratorReplayEnv {
+        let mut replay_env = UserMacroReplayEnv {
             module_path: &env.module_path,
             module: env.module,
             elaborations: self,
@@ -6058,9 +6014,9 @@ impl Elaborations {
         };
         for (ob, unique_index) in obligations.into_iter().zip(obligation_unique_indices) {
             let elaborated = match (ob.precomputed_template.as_ref(), unique_index) {
-                (Some(template), None) => user_elaborator_template_to_elaboration(
+                (Some(template), None) => user_macro_template_to_elaboration(
                     template,
-                    UserElaboratorReplayInputs {
+                    UserMacroReplayInputs {
                         values: &ob.values,
                         value_adapter: Some(&ob.value_adapter),
                         residual_eta: Some(&ob.residual_abstraction),
@@ -6073,11 +6029,11 @@ impl Elaborations {
                 )?,
                 (None, Some(unique_index)) => match computed[unique_index]
                     .as_ref()
-                    .expect("unique elaborator template result missing")
+                    .expect("unique macro template result missing")
                 {
-                    Ok(template) => user_elaborator_template_to_elaboration(
+                    Ok(template) => user_macro_template_to_elaboration(
                         template,
-                        UserElaboratorReplayInputs {
+                        UserMacroReplayInputs {
                             values: &ob.values,
                             value_adapter: Some(&ob.value_adapter),
                             residual_eta: Some(&ob.residual_abstraction),
@@ -6091,11 +6047,11 @@ impl Elaborations {
                     Err(_) => {
                         return Err(computed[unique_index]
                             .take()
-                            .expect("unique elaborator template result missing")
+                            .expect("unique macro template result missing")
                             .expect_err("checked error arm above"));
                     }
                 },
-                _ => unreachable!("user elaborator precompute state and batch key disagree"),
+                _ => unreachable!("user macro precompute state and batch key disagree"),
             };
             if elaborated.computation {
                 replay_env.elaborations.record_rec_quote_computation(
@@ -6113,7 +6069,7 @@ impl Elaborations {
             }
         }
         if let Some(replay_loop_start) = replay_loop_start {
-            memo.record_user_elaborator_template_batch_replay_loop(replay_loop_start.elapsed());
+            memo.record_user_macro_template_batch_replay_loop(replay_loop_start.elapsed());
         }
         Ok(())
     }
@@ -6365,10 +6321,7 @@ impl Elaborations {
             .get(&(module_path.to_owned(), fn_id, value_param_index))
     }
 
-    pub fn generated_imports_for(
-        &self,
-        module_path: &str,
-    ) -> &[UserElaboratorTemplateGeneratedImport] {
+    pub fn generated_imports_for(&self, module_path: &str) -> &[UserMacroTemplateGeneratedImport] {
         self.generated_imports
             .get(module_path)
             .map(Vec::as_slice)
@@ -6378,7 +6331,7 @@ impl Elaborations {
     fn record_generated_imports(
         &mut self,
         module_path: &str,
-        imports: &[UserElaboratorTemplateGeneratedImport],
+        imports: &[UserMacroTemplateGeneratedImport],
     ) {
         if imports.is_empty() {
             return;
@@ -6397,7 +6350,7 @@ impl Elaborations {
     pub(crate) fn prime_requalification_imports_for(
         &self,
         module_path: &str,
-    ) -> &[UserElaboratorTemplateGeneratedImport] {
+    ) -> &[UserMacroTemplateGeneratedImport] {
         self.prime_requalification_imports
             .get(module_path)
             .map(Vec::as_slice)
@@ -6407,7 +6360,7 @@ impl Elaborations {
     pub(crate) fn record_prime_requalification_imports(
         &mut self,
         module_path: &str,
-        imports: &[UserElaboratorTemplateGeneratedImport],
+        imports: &[UserMacroTemplateGeneratedImport],
     ) {
         let existing = self
             .prime_requalification_imports
@@ -6519,7 +6472,7 @@ fn elaboration_node_id(e: &Expr) -> Option<NodeId> {
     match e {
         Expr::Elaborator { ext, .. } => Some(*ext),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => Some(*ext),
-        Expr::UserElaborator { ext, .. } => Some(*ext),
+        Expr::UserMacro { ext, .. } => Some(*ext),
         Expr::Ufcs { ext, .. } => Some(*ext),
         _ => None,
     }
@@ -6844,7 +6797,7 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
         Expr::RecQuote { .. } => {
             crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
         }
-        Expr::UserElaborator { .. } => {
+        Expr::UserMacro { .. } => {
             crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
         }
         Expr::Ufcs { .. } => {
@@ -6893,7 +6846,7 @@ pub(crate) fn prepare_literal_annotation(
     tcx: &TypeCtx<'_, '_>,
 ) -> (
     InternedType,
-    Vec<UserElaboratorTemplateGeneratedImport>,
+    Vec<UserMacroTemplateGeneratedImport>,
     Vec<PrimeLocalTypeAlias>,
 ) {
     crate::pass::typecheck_core::assert_goal_free(
@@ -6979,7 +6932,7 @@ fn prime_requalifier_with_namespace(
 fn take_prime_bindings(
     requalifier: &mut crate::pass::typecheck_core::PrimeTypeRequalifier,
 ) -> (
-    Vec<UserElaboratorTemplateGeneratedImport>,
+    Vec<UserMacroTemplateGeneratedImport>,
     Vec<PrimeLocalTypeAlias>,
 ) {
     let imports = requalifier
@@ -6989,7 +6942,7 @@ fn take_prime_bindings(
             let ImportKind::Qualified { path, alias, .. } = import_.kind else {
                 return None;
             };
-            Some(UserElaboratorTemplateGeneratedImport {
+            Some(UserMacroTemplateGeneratedImport {
                 module_path: path
                     .segments
                     .iter()
@@ -7006,7 +6959,7 @@ fn take_prime_bindings(
 
 fn record_prime_bindings(
     tcx: &mut TypeCtx<'_, '_>,
-    imports: &[UserElaboratorTemplateGeneratedImport],
+    imports: &[UserMacroTemplateGeneratedImport],
     aliases: &[PrimeLocalTypeAlias],
 ) {
     let module_path = tcx.env.module_path.clone();
@@ -7019,7 +6972,7 @@ fn record_prime_bindings(
 pub(crate) struct PreparedFieldElaboration {
     pub(crate) result_ty: InternedType,
     pub(crate) replacement: Expr,
-    pub(crate) imports: Vec<UserElaboratorTemplateGeneratedImport>,
+    pub(crate) imports: Vec<UserMacroTemplateGeneratedImport>,
     pub(crate) aliases: Vec<PrimeLocalTypeAlias>,
 }
 
@@ -7516,7 +7469,7 @@ fn label_type_name(label_type: &[PathSegment]) -> &str {
 
 /// The identity-exact path of a field label's generated newtype,
 /// populated by label elaboration ([`crate::pass::label_elab`]). A
-/// `None` here means the elaborator never ran — an earlier-phase
+/// `None` here means the macro never ran — an earlier-phase
 /// contract violation, not a user error.
 fn resolved_label_type(label_type: Option<&[PathSegment]>, span: Span) -> &[PathSegment] {
     label_type.unwrap_or_else(|| {
@@ -8046,7 +7999,7 @@ fn check_value_against<'m>(
         );
     }
     // Pre-handle the remaining Lowered-only elaboration-bearing variants
-    // (field syntax and user-elaborator calls) in check mode. Everything
+    // (field syntax and user-macro calls) in check mode. Everything
     // else — shared function/path/literal handling
     // and the synth-and-equiv fallback — lives in
     // `default_check_value_against` and is shared with PrimeTyper.
@@ -8075,7 +8028,7 @@ fn check_value_against<'m>(
             synth.ty.identity_is_canonical(),
             expected.identity_is_canonical(),
         )?;
-        // The elaborator's type at its own span. A record literal lowers to a
+        // The macro's type at its own span. A record literal lowers to a
         // `FieldUpdate` whose receiver the lowering mints at this very span, so
         // without an entry here the record's interior — field names, `=`, the
         // braces — resolves to that receiver instead of to the record.
@@ -8110,7 +8063,7 @@ fn check_value_against<'m>(
         )?;
         return Ok(());
     }
-    if matches!(e, Expr::UserElaborator { .. } | Expr::RecQuote { .. }) {
+    if matches!(e, Expr::UserMacro { .. } | Expr::RecQuote { .. }) {
         crate::pass::typecheck_core::apply::run_general_ordinary_value(e, Some(expected), tcx)?;
         return Ok(());
     }
@@ -8131,25 +8084,19 @@ fn check_value_against<'m>(
 }
 
 #[cfg(test)]
-fn type_has_free_elaborator_param(ty: &Type, names: &HashSet<String>) -> bool {
+fn type_has_free_macro_param(ty: &Type, names: &HashSet<String>) -> bool {
     match ty {
         Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => false,
-        Type::Goal { args, .. } => args
-            .iter()
-            .any(|arg| type_has_free_elaborator_param(arg, names)),
+        Type::Goal { args, .. } => args.iter().any(|arg| type_has_free_macro_param(arg, names)),
         Type::Path { segments, args, .. } => {
             (segments.len() == 1 && names.contains(segments[0].as_str()))
-                || args
-                    .iter()
-                    .any(|arg| type_has_free_elaborator_param(arg, names))
+                || args.iter().any(|arg| type_has_free_macro_param(arg, names))
         }
         Type::Function { param, ret, .. } => {
-            type_has_free_elaborator_param(param, names)
-                || type_has_free_elaborator_param(ret, names)
+            type_has_free_macro_param(param, names) || type_has_free_macro_param(ret, names)
         }
         Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-            type_has_free_elaborator_param(left, names)
-                || type_has_free_elaborator_param(right, names)
+            type_has_free_macro_param(left, names) || type_has_free_macro_param(right, names)
         }
         Type::Forall { param, body, .. } => {
             let masked: HashSet<String> = names
@@ -8157,13 +8104,13 @@ fn type_has_free_elaborator_param(ty: &Type, names: &HashSet<String>) -> bool {
                 .filter(|name| name.as_str() != param.name.as_str())
                 .cloned()
                 .collect();
-            type_has_free_elaborator_param(body, &masked)
+            type_has_free_macro_param(body, &masked)
         }
         Type::LabelSugar { ext, .. } => match *ext {},
     }
 }
 
-fn reflect_elaborator_type_with_binders(
+fn reflect_macro_type_with_binders(
     ty: Type,
     tcx: &TypeCtx<'_, '_>,
     additional_binders: &[TypeParam],
@@ -8186,7 +8133,7 @@ fn reflect_elaborator_type_with_binders(
                     binder_kinds
                         .insert(binder.name.clone(), binder.effective_kind())
                         .is_none(),
-                    "a generated elaborator binder collided with an ambient type binder"
+                    "a generated macro binder collided with an ambient type binder"
                 );
             }
             crate::pass::resolve::exported_contract_type(&ty, entry, &binder_kinds)
@@ -8194,21 +8141,21 @@ fn reflect_elaborator_type_with_binders(
         .unwrap_or_else(|| ty.clone());
     // Preserve an alias head until compile-time evaluation so its declaring
     // module remains available when the evaluator unfolds an owner-local body.
-    user_elaborator_reflectable_type(reflected)
+    user_macro_reflectable_type(reflected)
 }
 
-fn reflect_elaborator_type(ty: Type, tcx: &TypeCtx<'_, '_>) -> Result<ReflectableType, Error> {
-    reflect_elaborator_type_with_binders(ty, tcx, &[])
+fn reflect_macro_type(ty: Type, tcx: &TypeCtx<'_, '_>) -> Result<ReflectableType, Error> {
+    reflect_macro_type_with_binders(ty, tcx, &[])
 }
 
-fn reflect_elaborator_interned_type(
+fn reflect_macro_interned_type(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
 ) -> Result<ReflectableType, Error> {
     if ty.identity_is_canonical() {
-        user_elaborator_reflectable_type(ty.clone_type())
+        user_macro_reflectable_type(ty.clone_type())
     } else {
-        reflect_elaborator_type(ty.clone_type(), tcx)
+        reflect_macro_type(ty.clone_type(), tcx)
     }
 }
 
@@ -8216,81 +8163,72 @@ pub(crate) fn reflect_projected_type(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
 ) -> Result<crate::normalization::ReflectedType, Error> {
-    reflect_elaborator_interned_type(ty, tcx)
+    reflect_macro_interned_type(ty, tcx)
 }
 
-fn reflect_elaborator_interned_type_with_binders(
+fn reflect_macro_interned_type_with_binders(
     ty: &InternedType,
     tcx: &TypeCtx<'_, '_>,
     additional_binders: &[TypeParam],
 ) -> Result<ReflectableType, Error> {
     if ty.identity_is_canonical() {
-        user_elaborator_reflectable_type(ty.clone_type())
+        user_macro_reflectable_type(ty.clone_type())
     } else {
-        reflect_elaborator_type_with_binders(ty.clone_type(), tcx, additional_binders)
+        reflect_macro_type_with_binders(ty.clone_type(), tcx, additional_binders)
     }
 }
 
-fn user_elaborator_input_keys(
-    inputs: &[UserElaboratorTemplateInput],
-) -> Vec<UserElaboratorTemplateInputKey> {
+fn user_macro_input_keys(inputs: &[UserMacroTemplateInput]) -> Vec<UserMacroTemplateInputKey> {
     inputs
         .iter()
         .map(|input| match input {
-            UserElaboratorTemplateInput::ComptimeProof => {
-                UserElaboratorTemplateInputKey::ComptimeProof
+            UserMacroTemplateInput::ComptimeProof => UserMacroTemplateInputKey::ComptimeProof,
+            UserMacroTemplateInput::Type(t) => UserMacroTemplateInputKey::Type(t.as_type().clone()),
+            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Known(t)) => {
+                UserMacroTemplateInputKey::OptionalTypeKnown(t.as_type().clone())
             }
-            UserElaboratorTemplateInput::Type(t) => {
-                UserElaboratorTemplateInputKey::Type(t.as_type().clone())
+            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Infer) => {
+                UserMacroTemplateInputKey::OptionalTypeInfer
             }
-            UserElaboratorTemplateInput::OptionalType(UserElaboratorOptionalTypeInput::Known(
-                t,
-            )) => UserElaboratorTemplateInputKey::OptionalTypeKnown(t.as_type().clone()),
-            UserElaboratorTemplateInput::OptionalType(UserElaboratorOptionalTypeInput::Infer) => {
-                UserElaboratorTemplateInputKey::OptionalTypeInfer
+            UserMacroTemplateInput::Term { value_ty, .. } => {
+                UserMacroTemplateInputKey::Term(value_ty.as_type().clone())
             }
-            UserElaboratorTemplateInput::Term { value_ty, .. } => {
-                UserElaboratorTemplateInputKey::Term(value_ty.as_type().clone())
+            UserMacroTemplateInput::BoundTerm { value_ty, .. } => {
+                UserMacroTemplateInputKey::Term(value_ty.as_type().clone())
             }
-            UserElaboratorTemplateInput::BoundTerm { value_ty, .. } => {
-                UserElaboratorTemplateInputKey::Term(value_ty.as_type().clone())
-            }
-            UserElaboratorTemplateInput::CapturedTerm { term } => {
-                UserElaboratorTemplateInputKey::CapturedTerm(term.clone_type())
+            UserMacroTemplateInput::CapturedTerm { term } => {
+                UserMacroTemplateInputKey::CapturedTerm(term.clone_type())
             }
         })
         .collect()
 }
 
-fn user_elaborator_item_index(
-    module: &Module,
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
-) -> usize {
+fn user_macro_item_index(module: &Module, macro_def: &crate::ast::UserMacroDef<Lowered>) -> usize {
     module
         .items
         .iter()
         .position(|item| {
             matches!(
                 item,
-                Item::Elaborator(candidate, _) if std::ptr::eq(candidate, elaborator)
+                Item::Macro(candidate, _) if std::ptr::eq(candidate, macro_def)
             )
         })
-        .expect("a resolved elaborator belongs to its definition module")
+        .expect("a resolved macro belongs to its definition module")
 }
 
-fn resolve_user_elaborator_captures_for_call<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
+fn resolve_user_macro_captures_for_call<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
     caller_tcx: &mut TypeCtx<'m, '_>,
-    elaborator_module: Option<&'m Module>,
-) -> Result<ResolvedUserElaboratorCaptures, Error> {
-    let Some(elaborator_module) = elaborator_module else {
-        let item_index = user_elaborator_item_index(caller_tcx.env.module, elaborator);
+    macro_module: Option<&'m Module>,
+) -> Result<ResolvedUserMacroCaptures, Error> {
+    let Some(macro_module) = macro_module else {
+        let item_index = user_macro_item_index(caller_tcx.env.module, macro_def);
         // Captures resolve in the declaration environment. Reusing the caller
         // context here would let a local binder shadow a named capture.
         let definition_env = caller_tcx.env;
         let mut definition_tcx =
             TypeCtx::new(definition_env, caller_tcx.elaborations).at_item(item_index);
-        return resolve_user_elaborator_captures(elaborator, definition_env, &mut definition_tcx);
+        return resolve_user_macro_captures(macro_def, definition_env, &mut definition_tcx);
     };
     let package = caller_tcx.env.package;
     let package_file =
@@ -8301,34 +8239,30 @@ fn resolve_user_elaborator_captures_for_call<'m>(
             .map(|entry| entry.package_name.as_str())
     });
     let definition_env = crate::pass::typecheck_core::ModuleEnv::build_with_typecheck_scope(
-        elaborator_module,
+        macro_module,
         package_file,
         package_name,
         package,
         caller_tcx.env.typecheck_scope.clone(),
     )?;
-    let item_index = user_elaborator_item_index(elaborator_module, elaborator);
+    let item_index = user_macro_item_index(macro_module, macro_def);
     let mut definition_tcx =
         TypeCtx::new(&definition_env, caller_tcx.elaborations).at_item(item_index);
-    resolve_user_elaborator_captures(elaborator, &definition_env, &mut definition_tcx)
+    resolve_user_macro_captures(macro_def, &definition_env, &mut definition_tcx)
 }
 
-fn resolve_user_elaborator_slot_modes_for_call<'m>(
-    elaborator: &'m crate::ast::UserElaboratorDef<Lowered>,
-    layout: &UserElaboratorSignatureLayout,
+fn resolve_user_macro_slot_modes_for_call<'m>(
+    macro_def: &'m crate::ast::UserMacroDef<Lowered>,
+    layout: &UserMacroSignatureLayout,
     caller_tcx: &mut TypeCtx<'m, '_>,
-    elaborator_module: Option<&'m Module>,
-) -> Result<Vec<UserElaboratorTypeSlotMode>, Error> {
-    let Some(elaborator_module) = elaborator_module else {
-        let item_index = user_elaborator_item_index(caller_tcx.env.module, elaborator);
+    macro_module: Option<&'m Module>,
+) -> Result<Vec<UserMacroTypeSlotMode>, Error> {
+    let Some(macro_module) = macro_module else {
+        let item_index = user_macro_item_index(caller_tcx.env.module, macro_def);
         let mut definition_tcx =
             TypeCtx::new(caller_tcx.env, caller_tcx.elaborations).at_item(item_index);
         definition_tcx.pure_context = true;
-        return user_elaborator_implementation_type_slot_modes(
-            elaborator,
-            layout,
-            &mut definition_tcx,
-        );
+        return user_macro_implementation_type_slot_modes(macro_def, layout, &mut definition_tcx);
     };
     let package = caller_tcx.env.package;
     let package_file =
@@ -8339,63 +8273,54 @@ fn resolve_user_elaborator_slot_modes_for_call<'m>(
             .map(|entry| entry.package_name.as_str())
     });
     let definition_env = crate::pass::typecheck_core::ModuleEnv::build_with_typecheck_scope(
-        elaborator_module,
+        macro_module,
         package_file,
         package_name,
         package,
         caller_tcx.env.typecheck_scope.clone(),
     )?;
-    let item_index = user_elaborator_item_index(elaborator_module, elaborator);
+    let item_index = user_macro_item_index(macro_module, macro_def);
     let mut definition_tcx =
         TypeCtx::new(&definition_env, caller_tcx.elaborations).at_item(item_index);
     definition_tcx.pure_context = true;
-    user_elaborator_implementation_type_slot_modes(elaborator, layout, &mut definition_tcx)
+    user_macro_implementation_type_slot_modes(macro_def, layout, &mut definition_tcx)
 }
 
-fn resolve_user_elaborator_for_call<'m>(
+fn resolve_user_macro_for_call<'m>(
     name: &str,
     span: Span,
     tcx: &TypeCtx<'m, '_>,
-) -> Result<
-    (
-        &'m crate::ast::UserElaboratorDef<Lowered>,
-        Option<&'m Module>,
-    ),
-    Error,
-> {
-    if let Some(elaborator) = tcx.env.cross_module_user_elaborators.get(name) {
+) -> Result<(&'m crate::ast::UserMacroDef<Lowered>, Option<&'m Module>), Error> {
+    if let Some(macro_def) = tcx.env.cross_module_user_macros.get(name) {
         Ok((
-            *elaborator,
-            tcx.env
-                .cross_module_user_elaborator_modules
-                .get(name)
-                .copied(),
+            *macro_def,
+            tcx.env.cross_module_user_macro_modules.get(name).copied(),
         ))
-    } else if let Some(elaborator) = tcx.env.user_elaborators.get(name) {
-        Ok((*elaborator, None))
+    } else if let Some(macro_def) = tcx.env.user_macros.get(name) {
+        Ok((*macro_def, None))
     } else {
         Err(Error::type_(
             span,
-            format!("`{name}!` is not an imported user elaborator"),
+            format!("`{name}` is not an imported macro"),
         ))
     }
 }
 
-fn user_elaborator_call_type(
-    elaborator: &crate::ast::UserElaboratorDef<Lowered>,
-    elaborator_module: Option<&Module>,
+fn user_macro_call_type(
+    macro_def: &crate::ast::UserMacroDef<Lowered>,
+    macro_module: Option<&Module>,
     tcx: &TypeCtx<'_, '_>,
 ) -> InternedType {
-    let (call_ty, already_canonical) = match elaborator_module {
-        Some(elaborator_module) => (
+    let (call_ty, already_canonical) = match macro_module {
+        Some(macro_module) => (
             crate::pass::resolve::qualify_contract_type_in_module(
-                &elaborator.call_ty,
-                elaborator_module,
+                &macro_def.call_ty,
+                macro_module,
                 &HashMap::new(),
             ),
             true,
         ),
-        None => (elaborator.call_ty.clone(), false),
+        None => (macro_def.call_ty.clone(), false),
     };
     let (call_ty, identity_canonical) = crate::pass::typecheck_core::canonicalize_for_comparison(
         &call_ty,
@@ -8405,25 +8330,25 @@ fn user_elaborator_call_type(
     InternedType::fresh_with_identity(call_ty, identity_canonical)
 }
 
-pub(crate) fn prepare_user_elaborator_action<'m>(
+pub(crate) fn prepare_user_macro_action<'m>(
     original: &'m Expr,
     tcx: &mut TypeCtx<'m, '_>,
-) -> Result<PreparedUserElaboratorAction<'m>, Error> {
+) -> Result<PreparedUserMacroAction<'m>, Error> {
     let span = original.span();
     let (name, source_args, ufcs) = match original {
-        Expr::UserElaborator { name, args, .. } => (name.as_str(), call_arg_refs(args), None),
+        Expr::UserMacro { name, args, .. } => (name.as_str(), call_arg_refs(args), None),
         Expr::Ufcs {
             receiver,
             callee_segments,
             args,
             flavor,
-            bang: Some(_),
+            macro_call: Some(_),
             ..
         } => {
             debug_assert_eq!(
                 callee_segments.len(),
                 1,
-                "bang UFCS must have a single-segment callee"
+                "macro UFCS must have a single-segment callee"
             );
             (
                 callee_segments[0].as_str(),
@@ -8431,22 +8356,22 @@ pub(crate) fn prepare_user_elaborator_action<'m>(
                 Some((receiver.as_ref(), *flavor)),
             )
         }
-        _ => unreachable!("user-elaborator action preparation received another expression"),
+        _ => unreachable!("user-macro action preparation received another expression"),
     };
-    let (elaborator, elaborator_module) = resolve_user_elaborator_for_call(name, span, tcx)?;
+    let (macro_def, macro_module) = resolve_user_macro_for_call(name, span, tcx)?;
     let trailing_call = matches!(
         original,
-        Expr::UserElaborator {
-            form: crate::ast::UserElaboratorCallForm::TrailingBlocks,
+        Expr::UserMacro {
+            form: crate::ast::UserMacroCallForm::TrailingBlocks,
             ..
         }
     );
-    if !elaborator.trailing_blocks.is_empty() && !trailing_call {
+    if !macro_def.trailing_blocks.is_empty() && !trailing_call {
         return Err(trailing_block_declaration_error(
             span,
-            "this elaborator requires its declared trailing blocks in a direct call",
-            elaborator,
-            elaborator_module,
+            "this macro requires its declared trailing blocks in a direct call",
+            macro_def,
+            macro_module,
             tcx,
         ));
     }
@@ -8460,13 +8385,13 @@ pub(crate) fn prepare_user_elaborator_action<'m>(
             "a trailing-block call infers its type arguments",
         ));
     }
-    let call_ty = user_elaborator_call_type(elaborator, elaborator_module, tcx);
+    let call_ty = user_macro_call_type(macro_def, macro_module, tcx);
     let layout = {
         let alias_ctx = tcx.env.alias_ctx();
-        user_elaborator_signature_layout(&call_ty, &alias_ctx)
+        user_macro_signature_layout(&call_ty, &alias_ctx)
     };
     let type_slot_modes =
-        resolve_user_elaborator_slot_modes_for_call(elaborator, &layout, tcx, elaborator_module)?;
+        resolve_user_macro_slot_modes_for_call(macro_def, &layout, tcx, macro_module)?;
     let args = match ufcs {
         Some((receiver, flavor)) => {
             let alias_ctx = tcx.env.alias_ctx();
@@ -8482,12 +8407,12 @@ pub(crate) fn prepare_user_elaborator_action<'m>(
         }
         None => source_args,
     };
-    Ok(PreparedUserElaboratorAction {
+    Ok(PreparedUserMacroAction {
         node_id: elaboration_node_id(original)
-            .expect("a user-elaborator expression carries an elaboration node"),
-        name: elaborator.name.clone(),
-        elaborator,
-        elaborator_module,
+            .expect("a user-macro expression carries an elaboration node"),
+        name: macro_def.name.clone(),
+        macro_def,
+        macro_module,
         call_ty,
         args,
         layout,
@@ -8656,7 +8581,7 @@ fn collect_eval_fn_refs(
         | crate::ast::Expr::Elaborator { ext, .. }
         | crate::ast::Expr::RecOrder { ext, .. }
         | crate::ast::Expr::RecQuote { ext, .. }
-        | crate::ast::Expr::UserElaborator { ext, .. }
+        | crate::ast::Expr::UserMacro { ext, .. }
         | crate::ast::Expr::Ufcs { ext, .. }
         | crate::ast::Expr::OpChain { ext, .. }
         | crate::ast::Expr::RecCall { ext, .. }
@@ -8707,7 +8632,7 @@ fn use_name_survives_eval_filter(
             return false;
         }
         match item {
-            Item::Elaborator(_, _) => false,
+            Item::Macro(_, _) => false,
             Item::FnDef(_) => selected.contains(&EvalFnIdentity {
                 module_path: from_path.clone(),
                 name: name.to_owned(),
@@ -8790,12 +8715,12 @@ fn filtered_eval_package(
     ))
 }
 
-fn staged_user_elaborator_artifact(
+fn staged_user_macro_artifact(
     env: &ModuleEnv<'_>,
-    elaborator_name: &str,
-    elaborator_module: Option<&Module>,
+    macro_name: &str,
+    macro_module: Option<&Module>,
 ) -> Result<(crate::normalization::EvalArtifactInput, UncheckedPrimeExpr), Error> {
-    let root_module = elaborator_module.unwrap_or(env.module);
+    let root_module = macro_module.unwrap_or(env.module);
     let package = env.package;
     let root_env = eval_module_env(root_module, package, env.typecheck_scope.clone())?;
     let mut staged = Elaborations::new();
@@ -8804,20 +8729,18 @@ fn staged_user_elaborator_artifact(
         .items
         .iter()
         .enumerate()
-        .find(|(_, item)| matches!(item, Item::Elaborator(def, _) if def.name == elaborator_name))
+        .find(|(_, item)| matches!(item, Item::Macro(def, _) if def.name == macro_name))
         .and_then(|(index, item)| match item {
-            Item::Elaborator(def, _) => Some((index, def)),
+            Item::Macro(def, _) => Some((index, def)),
             _ => None,
         })
         .unwrap_or_else(|| {
-            unreachable!(
-                "user elaborator `{elaborator_name}` is missing from its checked definition module"
-            )
+            unreachable!("user macro `{macro_name}` is missing from its checked definition module")
         });
     let mut local = Elaborations::new();
-    check_user_elaborator_item(def, root_item_cutoff, &root_env, &mut local)
+    check_user_macro_item(def, root_item_cutoff, &root_env, &mut local)
         .map_err(|error| eval_source_error(error, root_module, package))?;
-    UserElaboratorArtifactTypecheck::discharge_deferred(&mut local, &root_env)
+    UserMacroArtifactTypecheck::discharge_deferred(&mut local, &root_env)
         .map_err(|error| eval_source_error(error, root_module, package))?;
     staged.merge(local);
 
@@ -8881,7 +8804,7 @@ fn staged_user_elaborator_artifact(
         let mut local = Elaborations::new();
         crate::pass::typecheck_core::check_fn_def(def, item_index, &owner_env, &mut local)
             .map_err(|error| eval_source_error(error, owner_module, owner_package))?;
-        UserElaboratorArtifactTypecheck::discharge_deferred(&mut local, &owner_env)
+        UserMacroArtifactTypecheck::discharge_deferred(&mut local, &owner_env)
             .map_err(|error| eval_source_error(error, owner_module, owner_package))?;
         staged.merge(local);
         let body = substitute::substitute_expr_for_eval(
@@ -8945,26 +8868,25 @@ fn staged_user_elaborator_artifact(
     }
 }
 
-fn user_elaborator_eval_artifact(
+fn user_macro_eval_artifact(
     env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
-    dependencies: &[UserElaboratorTemplateGeneratedImport],
-    elaborator_name: &str,
+    dependencies: &[UserMacroTemplateGeneratedImport],
+    macro_name: &str,
     diagnostic_span: Span,
-    elaborator_module: Option<&Module>,
-) -> Result<UserElaboratorEvalArtifactPair, Error> {
+    macro_module: Option<&Module>,
+) -> Result<UserMacroEvalArtifactPair, Error> {
     #[cfg(test)]
-    record_user_elaborator_artifact_build(elaborator_name, &env.module_path);
-    let (mut artifact, implementation) =
-        staged_user_elaborator_artifact(env, elaborator_name, elaborator_module)?;
+    record_user_macro_artifact_build(macro_name, &env.module_path);
+    let (mut artifact, implementation) = staged_user_macro_artifact(env, macro_name, macro_module)?;
     if !dependencies.is_empty() {
         let (package, primitives) = artifact.into_parts();
         let (mut modules, package_file) = package.into_parts();
-        let dependency_module_path = elaborator_module
+        let dependency_module_path = macro_module
             .map(module_path_string)
             .unwrap_or_else(|| env.module_path.clone());
         let entry = modules
             .get_mut(&dependency_module_path)
-            .expect("evaluator artifact contains the elaborator definition module");
+            .expect("evaluator artifact contains the macro definition module");
         let mut inserted_dependency = false;
         for dependency in dependencies {
             if dependency.module_path == dependency_module_path {
@@ -9021,17 +8943,17 @@ fn user_elaborator_eval_artifact(
         .package()
         .resolve_imports()
         .map_err(LocatedError::into_error)?;
-    let implementation_module_path = elaborator_module
+    let implementation_module_path = macro_module
         .map(module_path_string)
         .unwrap_or_else(|| env.module_path.clone());
-    UserElaboratorEvalArtifactPair::validate(
+    UserMacroEvalArtifactPair::validate(
         artifact,
         implementation,
         implementation_module_path,
     )
     .map_err(|error| {
         let context = format!(
-            "the expanded compile-time implementation of elaborator `{elaborator_name}` is validated at this call"
+            "the expanded compile-time implementation of macro `{macro_name}` is validated at this call"
         );
         if error.source_file().is_some() {
             match env.package.and_then(|package| package.module(&env.module_path)) {
@@ -9046,24 +8968,24 @@ fn user_elaborator_eval_artifact(
     })
 }
 
-fn verify_user_elaborator_artifact_memo(
-    cached: &UserElaboratorEvalArtifactPair,
-    fresh: &UserElaboratorEvalArtifactPair,
+fn verify_user_macro_artifact_memo(
+    cached: &UserMacroEvalArtifactPair,
+    fresh: &UserMacroEvalArtifactPair,
 ) {
     assert_eq!(
         cached.implementation_module_path(),
         fresh.implementation_module_path(),
-        "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different implementation owner"
+        "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo returned a different implementation owner"
     );
     assert_eq!(
         cached.implementation(),
         fresh.implementation(),
-        "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different implementation"
+        "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo returned a different implementation"
     );
     assert_eq!(
         cached.artifact().primitives(),
         fresh.artifact().primitives(),
-        "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different primitive environment"
+        "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo returned a different primitive environment"
     );
     let cached_modules = cached
         .artifact()
@@ -9077,7 +8999,7 @@ fn verify_user_elaborator_artifact_memo(
         .collect::<Vec<_>>();
     assert_eq!(
         cached_modules, fresh_modules,
-        "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned different modules"
+        "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo returned different modules"
     );
     match (
         cached.artifact().package_file(),
@@ -9094,50 +9016,50 @@ fn verify_user_elaborator_artifact_memo(
                 fresh.package_name.as_str(),
                 &fresh.package_file,
             ),
-            "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo returned a different package file"
+            "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo returned a different package file"
         ),
         (None, None) => {}
         _ => panic!(
-            "KIO_DEBUG_MEMO_VERIFY=1: user elaborator artifact memo changed package-file presence"
+            "KIO_DEBUG_MEMO_VERIFY=1: user macro artifact memo changed package-file presence"
         ),
     }
 }
 
 #[cfg(test)]
-static USER_ELABORATOR_ARTIFACT_BUILD_PROBES: std::sync::LazyLock<
+static USER_MACRO_ARTIFACT_BUILD_PROBES: std::sync::LazyLock<
     std::sync::Mutex<HashMap<String, HashMap<String, usize>>>,
 > = std::sync::LazyLock::new(|| std::sync::Mutex::new(HashMap::new()));
 
 #[cfg(test)]
-fn start_user_elaborator_artifact_build_probe(elaborator_name: &str) {
-    let previous = USER_ELABORATOR_ARTIFACT_BUILD_PROBES
+fn start_user_macro_artifact_build_probe(macro_name: &str) {
+    let previous = USER_MACRO_ARTIFACT_BUILD_PROBES
         .lock()
-        .expect("user elaborator artifact build probes lock poisoned")
-        .insert(elaborator_name.to_owned(), HashMap::new());
+        .expect("user macro artifact build probes lock poisoned")
+        .insert(macro_name.to_owned(), HashMap::new());
     assert!(previous.is_none(), "artifact build probe already active");
 }
 
 #[cfg(test)]
-fn record_user_elaborator_artifact_build(elaborator_name: &str, module_path: &str) {
-    if let Some(builds_by_module) = USER_ELABORATOR_ARTIFACT_BUILD_PROBES
+fn record_user_macro_artifact_build(macro_name: &str, module_path: &str) {
+    if let Some(builds_by_module) = USER_MACRO_ARTIFACT_BUILD_PROBES
         .lock()
-        .expect("user elaborator artifact build probes lock poisoned")
-        .get_mut(elaborator_name)
+        .expect("user macro artifact build probes lock poisoned")
+        .get_mut(macro_name)
     {
         *builds_by_module.entry(module_path.to_owned()).or_default() += 1;
     }
 }
 
 #[cfg(test)]
-fn finish_user_elaborator_artifact_build_probe(elaborator_name: &str) -> HashMap<String, usize> {
-    USER_ELABORATOR_ARTIFACT_BUILD_PROBES
+fn finish_user_macro_artifact_build_probe(macro_name: &str) -> HashMap<String, usize> {
+    USER_MACRO_ARTIFACT_BUILD_PROBES
         .lock()
-        .expect("user elaborator artifact build probes lock poisoned")
-        .remove(elaborator_name)
+        .expect("user macro artifact build probes lock poisoned")
+        .remove(macro_name)
         .expect("artifact build probe is active")
 }
 
-pub(crate) fn validate_user_elaborator_eval_artifact(
+pub(crate) fn validate_user_macro_eval_artifact(
     artifact: &crate::normalization::EvalArtifactInput,
     implementation: &UncheckedPrimeExpr,
     implementation_module_path: &str,
@@ -9196,15 +9118,14 @@ pub(crate) fn validate_user_elaborator_eval_artifact(
         .check_no_value_cycles()
         .map_err(LocatedError::into_error)?;
     let type_interner = std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default());
-    let checked = UserElaboratorArtifactTypecheck::check_package(&package, type_interner).map_err(
-        |errors| {
+    let checked =
+        UserMacroArtifactTypecheck::check_package(&package, type_interner).map_err(|errors| {
             errors
                 .into_iter()
                 .next()
                 .expect("collected evaluator artifact errors are non-empty")
                 .into_error()
-        },
-    )?;
+        })?;
     let package = checked.normalized();
     let module = &package
         .module(implementation_module_path)
@@ -9233,8 +9154,8 @@ pub(crate) fn validate_user_elaborator_eval_artifact(
     synth_expr(&implementation, &mut tcx).map(|_| ())
 }
 
-fn user_elaborator_eval_ctx_from_artifact<'m>(
-    prepared: &'m UserElaboratorEvalArtifactPair,
+fn user_macro_eval_ctx_from_artifact<'m>(
+    prepared: &'m UserMacroEvalArtifactPair,
 ) -> crate::normalization::AuthenticatedEvalCtx<'m> {
     let module = prepared
         .artifact()
@@ -9243,30 +9164,30 @@ fn user_elaborator_eval_ctx_from_artifact<'m>(
     crate::normalization::AuthenticatedEvalCtx::for_module(module)
 }
 
-fn user_elaborator_reflectable_type(ty: Type) -> Result<ReflectableType, Error> {
+fn user_macro_reflectable_type(ty: Type) -> Result<ReflectableType, Error> {
     ReflectableType::new(
         crate::ast::convert_type::<Lowered, UncheckedPrime>(&ty),
-        USER_ELABORATOR_REFLECTION_INFER_MESSAGE,
+        USER_MACRO_REFLECTION_INFER_MESSAGE,
     )
 }
 
-fn compute_user_elaborator_deferred_template<'m>(
-    ob: &DeferredUserElaboratorElaboration,
-    key: UserElaboratorMemoKey,
+fn compute_user_macro_deferred_template<'m>(
+    ob: &DeferredUserMacroElaboration,
+    key: UserMacroMemoKey,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     elaborations: &Elaborations,
     memo: &crate::pass::typecheck_core::MemoCtx<Lowered>,
-) -> Result<UserElaboratorTemplateResult, Error> {
-    let elaborator_module = elaborator_module_for_path(env, ob.elaborator_module_path.as_deref());
-    let memo_start = crate::timing::user_elaborator_frontend_enabled().then(Instant::now);
-    let result = memo.user_elaborator_template_or_compute(
+) -> Result<UserMacroTemplateResult, Error> {
+    let macro_module = macro_module_for_path(env, ob.macro_module_path.as_deref());
+    let memo_start = crate::timing::user_macro_frontend_enabled().then(Instant::now);
+    let result = memo.user_macro_template_or_compute(
         key,
         || {
-            let record_timing = crate::timing::user_elaborator_frontend_enabled();
-            let computed = compute_user_elaborator_template(
-                UserElaboratorTemplateRequest {
-                    elaborator_name: &ob.name,
-                    elaborator_module,
+            let record_timing = crate::timing::user_macro_frontend_enabled();
+            let computed = compute_user_macro_template(
+                UserMacroTemplateRequest {
+                    macro_name: &ob.name,
+                    macro_module,
                     abi_inputs: ob.abi_inputs.clone(),
                     capture_imports: ob.capture_imports.clone(),
                     result_ty: ob.result_ty.as_ref(),
@@ -9280,10 +9201,10 @@ fn compute_user_elaborator_deferred_template<'m>(
             Ok(computed)
         },
         |cached| {
-            let fresh = compute_user_elaborator_template(
-                UserElaboratorTemplateRequest {
-                    elaborator_name: &ob.name,
-                    elaborator_module,
+            let fresh = compute_user_macro_template(
+                UserMacroTemplateRequest {
+                    macro_name: &ob.name,
+                    macro_module,
                     abi_inputs: ob.abi_inputs.clone(),
                     capture_imports: ob.capture_imports.clone(),
                     result_ty: ob.result_ty.as_ref(),
@@ -9296,31 +9217,31 @@ fn compute_user_elaborator_deferred_template<'m>(
             )
             .unwrap_or_else(|error| {
                 panic!(
-                    "KIO_DEBUG_MEMO_VERIFY=1: user elaborator fresh validation failed: {}",
+                    "KIO_DEBUG_MEMO_VERIFY=1: user macro fresh validation failed: {}",
                     error.diagnostic().message
                 )
             });
-            verify_user_elaborator_template_memo(cached, &fresh, ob, elaborator_module, env);
+            verify_user_macro_template_memo(cached, &fresh, ob, macro_module, env);
         },
     );
     if let Some(memo_start) = memo_start {
-        memo.record_user_elaborator_template_memo_total(memo_start.elapsed());
+        memo.record_user_macro_template_memo_total(memo_start.elapsed());
     }
     result
 }
 
-fn user_elaborator_template_memo_key(
-    ob: &DeferredUserElaboratorElaboration,
+fn user_macro_template_memo_key(
+    ob: &DeferredUserMacroElaboration,
     env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
-) -> UserElaboratorMemoKey {
-    UserElaboratorMemoKey::new(
-        ob.elaborator_module_path
+) -> UserMacroMemoKey {
+    UserMacroMemoKey::new(
+        ob.macro_module_path
             .clone()
             .unwrap_or_else(|| env.module_path.clone()),
         ob.name.clone(),
         ob.input_keys
             .iter()
-            .map(user_elaborator_memo_input_key)
+            .map(user_macro_memo_input_key)
             .collect(),
     )
     .with_result_type(
@@ -9330,39 +9251,31 @@ fn user_elaborator_template_memo_key(
     )
 }
 
-fn user_elaborator_memo_input_key(
-    input: &UserElaboratorTemplateInputKey,
-) -> UserElaboratorMemoInputKey {
+fn user_macro_memo_input_key(input: &UserMacroTemplateInputKey) -> UserMacroMemoInputKey {
     match input {
-        UserElaboratorTemplateInputKey::ComptimeProof => UserElaboratorMemoInputKey::ComptimeProof,
-        UserElaboratorTemplateInputKey::Type(ty) => UserElaboratorMemoInputKey::Type(
+        UserMacroTemplateInputKey::ComptimeProof => UserMacroMemoInputKey::ComptimeProof,
+        UserMacroTemplateInputKey::Type(ty) => UserMacroMemoInputKey::Type(
             crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
         ),
-        UserElaboratorTemplateInputKey::OptionalTypeKnown(ty) => {
-            UserElaboratorMemoInputKey::OptionalTypeKnown(
+        UserMacroTemplateInputKey::OptionalTypeKnown(ty) => {
+            UserMacroMemoInputKey::OptionalTypeKnown(
                 crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
             )
         }
-        UserElaboratorTemplateInputKey::OptionalTypeInfer => {
-            UserElaboratorMemoInputKey::OptionalTypeInfer
-        }
-        UserElaboratorTemplateInputKey::Term(ty) => UserElaboratorMemoInputKey::Term(
+        UserMacroTemplateInputKey::OptionalTypeInfer => UserMacroMemoInputKey::OptionalTypeInfer,
+        UserMacroTemplateInputKey::Term(ty) => UserMacroMemoInputKey::Term(
             crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
         ),
-        UserElaboratorTemplateInputKey::ResidualShape(ty) => {
-            UserElaboratorMemoInputKey::ResidualShape(
-                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
-            )
-        }
-        UserElaboratorTemplateInputKey::CapturedTerm(ty) => {
-            UserElaboratorMemoInputKey::CapturedTerm(
-                crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
-            )
-        }
+        UserMacroTemplateInputKey::ResidualShape(ty) => UserMacroMemoInputKey::ResidualShape(
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+        ),
+        UserMacroTemplateInputKey::CapturedTerm(ty) => UserMacroMemoInputKey::CapturedTerm(
+            crate::pass::typecheck_core::PresentedTypeMemoKey::from_type(ty),
+        ),
     }
 }
 
-fn elaborator_module_for_path<'m>(
+fn macro_module_for_path<'m>(
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     path: Option<&str>,
 ) -> Option<&'m Module> {
@@ -9371,27 +9284,27 @@ fn elaborator_module_for_path<'m>(
             .and_then(|package| package.module(path))
             .map(|entry| &entry.module)
             .unwrap_or_else(|| {
-                unreachable!("imported user elaborator module `{path}` missing at discharge")
+                unreachable!("imported user macro module `{path}` missing at discharge")
             })
     })
 }
 
-struct UserElaboratorTemplateRequest<'a, 'm> {
-    elaborator_name: &'a str,
-    elaborator_module: Option<&'m Module>,
-    abi_inputs: Vec<UserElaboratorTemplateInput>,
-    capture_imports: Vec<UserElaboratorTemplateGeneratedImport>,
+struct UserMacroTemplateRequest<'a, 'm> {
+    macro_name: &'a str,
+    macro_module: Option<&'m Module>,
+    abi_inputs: Vec<UserMacroTemplateInput>,
+    capture_imports: Vec<UserMacroTemplateGeneratedImport>,
     result_ty: Option<&'a InternedType>,
     span: Span,
 }
 
-struct UserElaboratorPreparedRequest<'a, 'm> {
-    elaborator_name: &'a str,
-    purpose: UserElaboratorPreparedPurpose,
-    elaborator_module: Option<&'m Module>,
+struct UserMacroPreparedRequest<'a, 'm> {
+    macro_name: &'a str,
+    purpose: UserMacroPreparedPurpose,
+    macro_module: Option<&'m Module>,
 }
 
-struct UserElaboratorReplayEnv<'a> {
+struct UserMacroReplayEnv<'a> {
     module_path: &'a str,
     module: &'a Module,
     elaborations: &'a mut Elaborations,
@@ -9399,8 +9312,8 @@ struct UserElaboratorReplayEnv<'a> {
     memo: &'a crate::pass::typecheck_core::MemoCtx<Lowered>,
 }
 
-fn user_elaborator_replay_requalifier(
-    replay: &UserElaboratorReplayEnv<'_>,
+fn user_macro_replay_requalifier(
+    replay: &UserMacroReplayEnv<'_>,
 ) -> crate::pass::typecheck_core::PrimeTypeRequalifier {
     let mut requalifier = crate::pass::typecheck_core::PrimeTypeRequalifier::new(replay.module);
     for import in replay
@@ -9424,31 +9337,27 @@ fn user_elaborator_replay_requalifier(
     requalifier
 }
 
-fn user_elaborator_eval_packet(
-    inputs: &[UserElaboratorTemplateInput],
-) -> crate::normalization::Value {
-    user_elaborator_eval_packet_with_capabilities(inputs, None)
+fn user_macro_eval_packet(inputs: &[UserMacroTemplateInput]) -> crate::normalization::Value {
+    user_macro_eval_packet_with_capabilities(inputs, None)
 }
 
-fn user_elaborator_template_input_value(
-    input: &UserElaboratorTemplateInput,
-) -> crate::normalization::Value {
+fn user_macro_template_input_value(input: &UserMacroTemplateInput) -> crate::normalization::Value {
     match input {
-        UserElaboratorTemplateInput::Type(ty) => crate::normalization::Value::ReflType(ty.clone()),
-        UserElaboratorTemplateInput::CapturedTerm { term } => {
+        UserMacroTemplateInput::Type(ty) => crate::normalization::Value::ReflType(ty.clone()),
+        UserMacroTemplateInput::CapturedTerm { term } => {
             crate::normalization::Value::CheckedTerm(term.clone())
         }
-        UserElaboratorTemplateInput::ComptimeProof
-        | UserElaboratorTemplateInput::OptionalType(_)
-        | UserElaboratorTemplateInput::Term { .. }
-        | UserElaboratorTemplateInput::BoundTerm { .. } => {
+        UserMacroTemplateInput::ComptimeProof
+        | UserMacroTemplateInput::OptionalType(_)
+        | UserMacroTemplateInput::Term { .. }
+        | UserMacroTemplateInput::BoundTerm { .. } => {
             unreachable!("a capture resolved as a declaration ABI slot")
         }
     }
 }
 
-fn user_elaborator_eval_packet_with_capabilities(
-    inputs: &[UserElaboratorTemplateInput],
+fn user_macro_eval_packet_with_capabilities(
+    inputs: &[UserMacroTemplateInput],
     mut capabilities: Option<(crate::normalization::Value, crate::normalization::Value)>,
 ) -> crate::normalization::Value {
     use crate::normalization::Value;
@@ -9456,7 +9365,7 @@ fn user_elaborator_eval_packet_with_capabilities(
     let mut values = Vec::with_capacity(inputs.len() + usize::from(marked));
     for input in inputs {
         let value = match input {
-            UserElaboratorTemplateInput::ComptimeProof => {
+            UserMacroTemplateInput::ComptimeProof => {
                 let proof = capabilities
                     .as_ref()
                     .map(|(proof, _)| proof.clone())
@@ -9469,8 +9378,8 @@ fn user_elaborator_eval_packet_with_capabilities(
                 }
                 continue;
             }
-            UserElaboratorTemplateInput::Type(ty) => Value::ReflType(ty.clone()),
-            UserElaboratorTemplateInput::Term {
+            UserMacroTemplateInput::Type(ty) => Value::ReflType(ty.clone()),
+            UserMacroTemplateInput::Term {
                 value_index,
                 value_ty,
             } => Value::CheckedTerm(crate::normalization::EvalRef::new(
@@ -9479,17 +9388,17 @@ fn user_elaborator_eval_packet_with_capabilities(
                     value_ty.as_type().clone(),
                 ),
             )),
-            UserElaboratorTemplateInput::BoundTerm { name, value_ty } => Value::CheckedTerm(
+            UserMacroTemplateInput::BoundTerm { name, value_ty } => Value::CheckedTerm(
                 crate::normalization::EvalRef::new(crate::normalization::CheckedTerm::local(
                     name.clone(),
                     value_ty.as_type().clone(),
                 )),
             ),
-            UserElaboratorTemplateInput::CapturedTerm { term } => Value::CheckedTerm(term.clone()),
-            UserElaboratorTemplateInput::OptionalType(UserElaboratorOptionalTypeInput::Known(
-                ty,
-            )) => crate::normalization::data_value("__left__", vec![Value::ReflType(ty.clone())]),
-            UserElaboratorTemplateInput::OptionalType(UserElaboratorOptionalTypeInput::Infer) => {
+            UserMacroTemplateInput::CapturedTerm { term } => Value::CheckedTerm(term.clone()),
+            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Known(ty)) => {
+                crate::normalization::data_value("__left__", vec![Value::ReflType(ty.clone())])
+            }
+            UserMacroTemplateInput::OptionalType(UserMacroOptionalTypeInput::Infer) => {
                 crate::normalization::data_value("__right__", vec![Value::Unit])
             }
         };
@@ -9497,31 +9406,31 @@ fn user_elaborator_eval_packet_with_capabilities(
     }
     assert!(
         !marked || capabilities.is_none(),
-        "a marked elaborator packet lost its leading capability slot"
+        "a marked macro packet lost its leading capability slot"
     );
     crate::normalization::right_fold_product_values(values)
 }
 
-fn prepare_user_elaborator_value<'m>(
-    request: UserElaboratorPreparedRequest<'_, 'm>,
+fn prepare_user_macro_value<'m>(
+    request: UserMacroPreparedRequest<'_, 'm>,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
-    artifact_pair: &UserElaboratorEvalArtifactPair,
+    artifact_pair: &UserMacroEvalArtifactPair,
     memo: &crate::pass::typecheck_core::MemoCtx<Lowered>,
     record_timing: bool,
-) -> Result<crate::pass::typecheck_core::PreparedUserElaborator, Error> {
+) -> Result<crate::pass::typecheck_core::PreparedUserMacro, Error> {
     let module_path = request
-        .elaborator_module
+        .macro_module
         .map(module_path_string)
         .unwrap_or_else(|| env.module_path.clone());
-    let key = UserElaboratorPreparedKey::new(
+    let key = UserMacroPreparedKey::new(
         module_path.clone(),
-        request.elaborator_name.to_owned(),
+        request.macro_name.to_owned(),
         request.purpose,
     );
-    memo.user_elaborator_prepared_or_try_compute(key, || {
-        let caches = memo.user_elaborator_prepared_caches_for_module(&module_path);
+    memo.user_macro_prepared_or_try_compute(key, || {
+        let caches = memo.user_macro_prepared_caches_for_module(&module_path);
         let eval_metrics = record_timing.then(crate::normalization::EvalMetrics::collect);
-        let mut ctx = user_elaborator_eval_ctx_from_artifact(artifact_pair)
+        let mut ctx = user_macro_eval_ctx_from_artifact(artifact_pair)
             .with_fn_closure_cache(caches.fn_closure_cache.clone())
             .with_eval_function_cache(caches.eval_function_cache.clone())
             .with_type_view_cache(caches.type_view_cache.clone())
@@ -9536,12 +9445,12 @@ fn prepare_user_elaborator_value<'m>(
             &ctx,
         );
         if let Some(eval_start) = eval_start {
-            memo.record_user_elaborator_prepared_eval(eval_start.elapsed());
+            memo.record_user_macro_prepared_eval(eval_start.elapsed());
             if let Some(metrics) = eval_metrics {
-                memo.record_user_elaborator_eval_metrics(metrics.snapshot());
+                memo.record_user_macro_eval_metrics(metrics.snapshot());
             }
         }
-        Ok(crate::pass::typecheck_core::PreparedUserElaborator::new(
+        Ok(crate::pass::typecheck_core::PreparedUserMacro::new(
             value,
             caches.fn_closure_cache,
             caches.eval_function_cache,
@@ -9551,57 +9460,57 @@ fn prepare_user_elaborator_value<'m>(
     })
 }
 
-fn compute_user_elaborator_template<'m>(
-    request: UserElaboratorTemplateRequest<'_, 'm>,
+fn compute_user_macro_template<'m>(
+    request: UserMacroTemplateRequest<'_, 'm>,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
     elaborations: &Elaborations,
     memo: &crate::pass::typecheck_core::MemoCtx<Lowered>,
     record_timing: bool,
-) -> Result<UserElaboratorTemplateResult, Error> {
-    let elaborator_module_path = request
-        .elaborator_module
+) -> Result<UserMacroTemplateResult, Error> {
+    let macro_module_path = request
+        .macro_module
         .map(module_path_string)
         .unwrap_or_else(|| env.module_path.clone());
     let artifact_pair = env
         .typecheck_scope
-        .user_elaborator_artifacts()
+        .user_macro_artifacts()
         .get_or_try_compute(
-            UserElaboratorArtifactKey::new(
-                elaborator_module_path.clone(),
-                request.elaborator_name.to_owned(),
+            UserMacroArtifactKey::new(
+                macro_module_path.clone(),
+                request.macro_name.to_owned(),
                 request.capture_imports.clone(),
             ),
             || {
-                user_elaborator_eval_artifact(
+                user_macro_eval_artifact(
                     env,
                     &request.capture_imports,
-                    request.elaborator_name,
+                    request.macro_name,
                     request.span,
-                    request.elaborator_module,
+                    request.macro_module,
                 )
             },
             |cached| {
-                let fresh = user_elaborator_eval_artifact(
+                let fresh = user_macro_eval_artifact(
                     env,
                     &request.capture_imports,
-                    request.elaborator_name,
+                    request.macro_name,
                     request.span,
-                    request.elaborator_module,
+                    request.macro_module,
                 )
                 .unwrap_or_else(|error| {
                     panic!(
-                        "KIO_DEBUG_MEMO_VERIFY=1: fresh user elaborator artifact validation failed: {}",
+                        "KIO_DEBUG_MEMO_VERIFY=1: fresh user macro artifact validation failed: {}",
                         error.diagnostic().message
                     )
                 });
-                verify_user_elaborator_artifact_memo(cached, &fresh);
+                verify_user_macro_artifact_memo(cached, &fresh);
             },
         )?;
-    let prepared = prepare_user_elaborator_value(
-        UserElaboratorPreparedRequest {
-            elaborator_name: request.elaborator_name,
-            purpose: UserElaboratorPreparedPurpose::Template,
-            elaborator_module: request.elaborator_module,
+    let prepared = prepare_user_macro_value(
+        UserMacroPreparedRequest {
+            macro_name: request.macro_name,
+            purpose: UserMacroPreparedPurpose::Template,
+            macro_module: request.macro_module,
         },
         env,
         artifact_pair.as_ref(),
@@ -9609,7 +9518,7 @@ fn compute_user_elaborator_template<'m>(
         record_timing,
     )?;
     let eval_metrics = record_timing.then(crate::normalization::EvalMetrics::collect);
-    let mut ctx = user_elaborator_eval_ctx_from_artifact(&artifact_pair);
+    let mut ctx = user_macro_eval_ctx_from_artifact(&artifact_pair);
     ctx = ctx
         .with_fn_closure_cache(prepared.fn_closure_cache.clone())
         .with_eval_function_cache(prepared.eval_function_cache.clone())
@@ -9619,30 +9528,27 @@ fn compute_user_elaborator_template<'m>(
         ctx = ctx.with_metrics(metrics.clone());
     }
     let eval_start = record_timing.then(Instant::now);
-    let elaborator_value = prepared.value.clone();
+    let macro_value = prepared.value.clone();
     #[cfg(test)]
-    memo.record_user_elaborator_template_execution(
-        &elaborator_module_path,
-        request.elaborator_name,
-    );
+    memo.record_user_macro_template_execution(&macro_module_path, request.macro_name);
     let result = crate::normalization::apply(
-        elaborator_value,
-        vec![user_elaborator_eval_packet(&request.abi_inputs)],
+        macro_value,
+        vec![user_macro_eval_packet(&request.abi_inputs)],
         &ctx,
     );
     if let Some(eval_start) = eval_start {
-        memo.record_user_elaborator_template_eval(eval_start.elapsed());
+        memo.record_user_macro_template_eval(eval_start.elapsed());
         if let Some(metrics) = eval_metrics {
-            memo.record_user_elaborator_eval_metrics(metrics.snapshot());
+            memo.record_user_macro_eval_metrics(metrics.snapshot());
         }
     }
-    match decode_user_elaborator_result(result, &ctx) {
+    match decode_user_macro_result(result, &ctx) {
         Ok(checked) => {
             if let Some(target) = request.result_ty {
                 let artifact = artifact_pair.artifact();
                 let artifact_module = &artifact
-                    .module(&elaborator_module_path)
-                    .expect("evaluator artifact contains the elaborator module")
+                    .module(&macro_module_path)
+                    .expect("evaluator artifact contains the macro module")
                     .module;
                 let artifact_env = ModuleEnv::<UncheckedPrime>::build(
                     artifact_module,
@@ -9684,44 +9590,42 @@ fn compute_user_elaborator_template<'m>(
                 {
                     let checked_display = source_type_spelling(checked.ty(), artifact_module, true);
                     return Ok(Err(format!(
-                        "user elaborator returned a checked term of type `{}` but the declared \
+                        "user macro returned a checked term of type `{}` but the declared \
                          result type was `{}`",
                         display_type(&checked_display),
                         display_type(&target_display)
                     )));
                 }
             }
-            Ok(Ok(trusted_user_elaborator_template(checked)))
+            Ok(Ok(trusted_user_macro_template(checked)))
         }
-        Err(UserElaboratorDecodeError::Diagnostic(message)) => Ok(Err(message)),
-        Err(UserElaboratorDecodeError::Type(message)) => Err(Error::type_(request.span, message)),
-        Err(UserElaboratorDecodeError::Totality(message)) => {
-            Err(Error::totality(request.span, message))
-        }
+        Err(UserMacroDecodeError::Diagnostic(message)) => Ok(Err(message)),
+        Err(UserMacroDecodeError::Type(message)) => Err(Error::type_(request.span, message)),
+        Err(UserMacroDecodeError::Totality(message)) => Err(Error::totality(request.span, message)),
     }
 }
 
-struct UserElaboratorReplayInputs<'a> {
+struct UserMacroReplayInputs<'a> {
     values: &'a [Expr],
     value_adapter: Option<&'a crate::normalization::CheckedTermTemplateValueAdapter>,
     residual_eta: Option<&'a crate::pass::substitute::EtaPlan<UncheckedPrime>>,
     ambient_type_names: &'a HashSet<String>,
-    capture_imports: &'a [UserElaboratorTemplateGeneratedImport],
+    capture_imports: &'a [UserMacroTemplateGeneratedImport],
     quoted: Option<(NodeId, Option<&'a QuotedPublicRecipe>)>,
 }
 
-struct UserElaboratorReplayResult {
+struct UserMacroReplayResult {
     expression: UncheckedPrimeExpr,
     computation: bool,
 }
 
-fn user_elaborator_template_to_elaboration(
-    template: &UserElaboratorTemplateResult,
-    inputs: UserElaboratorReplayInputs<'_>,
+fn user_macro_template_to_elaboration(
+    template: &UserMacroTemplateResult,
+    inputs: UserMacroReplayInputs<'_>,
     span: Span,
-    replay: &mut UserElaboratorReplayEnv<'_>,
-) -> Result<UserElaboratorReplayResult, Error> {
-    let UserElaboratorReplayInputs {
+    replay: &mut UserMacroReplayEnv<'_>,
+) -> Result<UserMacroReplayResult, Error> {
+    let UserMacroReplayInputs {
         values,
         value_adapter,
         residual_eta,
@@ -9729,7 +9633,7 @@ fn user_elaborator_template_to_elaboration(
         capture_imports,
         quoted,
     } = inputs;
-    let replay_start = crate::timing::user_elaborator_frontend_enabled().then(Instant::now);
+    let replay_start = crate::timing::user_macro_frontend_enabled().then(Instant::now);
     let mut emitted_computation = false;
     let result = match template {
         Ok(template) => {
@@ -9752,7 +9656,7 @@ fn user_elaborator_template_to_elaboration(
                 let output = replay
                     .elaborations
                     .rec_quote_source_type(source)
-                    .expect("quoted elaborator has a closed public result")
+                    .expect("quoted macro has a closed public result")
                     .clone();
                 public_output_type = Some(rec_quote_source::public_type(
                     &output,
@@ -9827,10 +9731,10 @@ fn user_elaborator_template_to_elaboration(
                     continue;
                 }
                 let alias = capture_requalifier
-                    .get_or_insert_with(|| user_elaborator_replay_requalifier(replay))
+                    .get_or_insert_with(|| user_macro_replay_requalifier(replay))
                     .ensure_module_import(&import.module_path);
                 replay_aliases.insert(import.alias.clone(), Some(alias.clone()));
-                generated_imports.push(UserElaboratorTemplateGeneratedImport {
+                generated_imports.push(UserMacroTemplateGeneratedImport {
                     module_path: import.module_path.clone(),
                     alias,
                 });
@@ -9866,7 +9770,7 @@ fn user_elaborator_template_to_elaboration(
                     replay.module,
                 ));
             }
-            let mut type_requalifier = user_elaborator_replay_requalifier(replay);
+            let mut type_requalifier = user_macro_replay_requalifier(replay);
             let mut raw_to_pre_prime = |expr: &crate::ast::Expr<UncheckedPrime>,
                                         call_span: Span| {
                 let mut expr = expr.clone();
@@ -9882,9 +9786,7 @@ fn user_elaborator_template_to_elaboration(
                     }
                 }
                 let expr = crate::ast::convert_expr::<UncheckedPrime, substitute::PrePrime>(&expr);
-                crate::pass::elaborator_registry::reanchor_elaborator_template_pre_prime(
-                    &expr, call_span,
-                )
+                crate::pass::macro_registry::reanchor_macro_template_pre_prime(&expr, call_span)
             };
             let mut type_to_pre_prime = |ty: &crate::ast::Type<UncheckedPrime>| {
                 crate::normalization::replay_type_to_pre_prime(
@@ -9952,7 +9854,7 @@ fn user_elaborator_template_to_elaboration(
                     let ImportKind::Qualified { path, alias } = import_.kind else {
                         unreachable!("Prime type requalification emits only qualified imports")
                     };
-                    UserElaboratorTemplateGeneratedImport {
+                    UserMacroTemplateGeneratedImport {
                         module_path: module_import_path(&path),
                         alias,
                     }
@@ -9965,28 +9867,26 @@ fn user_elaborator_template_to_elaboration(
             replay
                 .elaborations
                 .record_generated_type_aliases(replay.module_path, &aliases);
-            Ok(UserElaboratorReplayResult {
+            Ok(UserMacroReplayResult {
                 expression: substitute::finish_replayed_elaboration(expr, ambient_type_names),
                 computation: emitted_computation,
             })
         }
-        Err(message) => Err(Error::elaborator(span, message.clone())),
+        Err(message) => Err(Error::macro_error(span, message.clone())),
     };
     if let Some(replay_start) = replay_start {
         replay
             .memo
-            .record_user_elaborator_template_replay(replay_start.elapsed());
+            .record_user_macro_template_replay(replay_start.elapsed());
     }
     result
 }
 
-fn trusted_user_elaborator_template(
-    checked: crate::normalization::CheckedTerm,
-) -> UserElaboratorTemplate {
-    UserElaboratorTemplate { checked }
+fn trusted_user_macro_template(checked: crate::normalization::CheckedTerm) -> UserMacroTemplate {
+    UserMacroTemplate { checked }
 }
 
-fn user_elaborator_result_type_verification_key(
+fn user_macro_result_type_verification_key(
     ty: &crate::ast::Type<UncheckedPrime>,
 ) -> (TypeMemoKey, Vec<usize>) {
     fn collect_abi_arities(ty: &crate::ast::Type<UncheckedPrime>, arities: &mut Vec<usize>) {
@@ -10025,26 +9925,26 @@ fn user_elaborator_result_type_verification_key(
     (TypeMemoKey::from_type(ty), abi_arities)
 }
 
-fn verify_user_elaborator_template_memo<'m>(
-    cached: &UserElaboratorTemplateResult,
-    fresh: &UserElaboratorTemplateResult,
-    obligation: &DeferredUserElaboratorElaboration,
-    elaborator_module: Option<&'m Module>,
+fn verify_user_macro_template_memo<'m>(
+    cached: &UserMacroTemplateResult,
+    fresh: &UserMacroTemplateResult,
+    obligation: &DeferredUserMacroElaboration,
+    macro_module: Option<&'m Module>,
     env: &crate::pass::typecheck_core::ModuleEnv<'m, Lowered>,
 ) {
     match (cached, fresh) {
         (Ok(cached), Ok(fresh)) => {
             assert_eq!(
-                user_elaborator_result_type_verification_key(cached.result_ty()),
-                user_elaborator_result_type_verification_key(fresh.result_ty()),
-                "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo returned a different result type"
+                user_macro_result_type_verification_key(cached.result_ty()),
+                user_macro_result_type_verification_key(fresh.result_ty()),
+                "KIO_DEBUG_MEMO_VERIFY=1: user macro memo returned a different result type"
             );
-            let artifact = user_elaborator_eval_artifact(
+            let artifact = user_macro_eval_artifact(
                 env,
                 &obligation.capture_imports,
                 &obligation.name,
                 obligation.span,
-                elaborator_module,
+                macro_module,
             )
             .unwrap_or_else(|error| {
                 panic!(
@@ -10052,9 +9952,9 @@ fn verify_user_elaborator_template_memo<'m>(
                     error.diagnostic().message
                 )
             });
-            let ctx = user_elaborator_eval_ctx_from_artifact(&artifact);
-            let cached_expr = user_elaborator_template_verification_expr(cached);
-            let fresh_expr = user_elaborator_template_verification_expr(fresh);
+            let ctx = user_macro_eval_ctx_from_artifact(&artifact);
+            let cached_expr = user_macro_template_verification_expr(cached);
+            let fresh_expr = user_macro_template_verification_expr(fresh);
             let cached_value = crate::normalization::eval_authenticated(
                 &cached_expr,
                 &crate::normalization::Env::new(),
@@ -10068,10 +9968,10 @@ fn verify_user_elaborator_template_memo<'m>(
             match crate::normalization::nf_eq_checked(&cached_value, &fresh_value, &ctx) {
                 Ok(equal) => assert!(
                     equal,
-                    "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo returned a different elaboration"
+                    "KIO_DEBUG_MEMO_VERIFY=1: user macro memo returned a different elaboration"
                 ),
                 Err(fault) => panic!(
-                    "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo verification triggered {}",
+                    "KIO_DEBUG_MEMO_VERIFY=1: user macro memo verification triggered {}",
                     crate::normalization::structural_recur_stuck_message(&fault, &ctx)
                         .expect("checked NF equality returns a structural-recursion fault")
                 ),
@@ -10080,17 +9980,17 @@ fn verify_user_elaborator_template_memo<'m>(
         (Err(cached), Err(fresh)) => {
             assert_eq!(
                 cached, fresh,
-                "KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo returned a different diagnostic"
+                "KIO_DEBUG_MEMO_VERIFY=1: user macro memo returned a different diagnostic"
             );
         }
         _ => {
-            panic!("KIO_DEBUG_MEMO_VERIFY=1: user elaborator memo changed success/failure");
+            panic!("KIO_DEBUG_MEMO_VERIFY=1: user macro memo changed success/failure");
         }
     }
 }
 
-fn user_elaborator_template_verification_expr(
-    template: &UserElaboratorTemplate,
+fn user_macro_template_verification_expr(
+    template: &UserMacroTemplate,
 ) -> crate::ast::Expr<UncheckedPrime> {
     let span = Span::new(0, 0);
     let values = (0..template.checked.template_value_arity())
@@ -10106,7 +10006,7 @@ fn user_elaborator_template_verification_expr(
         .collect::<Vec<_>>();
     let mut raw_to_pre_prime = |expr: &crate::ast::Expr<UncheckedPrime>, call_span: Span| {
         let expr = crate::ast::convert_expr::<UncheckedPrime, substitute::PrePrime>(expr);
-        crate::pass::elaborator_registry::reanchor_elaborator_template_pre_prime(&expr, call_span)
+        crate::pass::macro_registry::reanchor_macro_template_pre_prime(&expr, call_span)
     };
     let mut type_to_pre_prime = |ty: &crate::ast::Type<UncheckedPrime>| {
         crate::normalization::replay_type_to_pre_prime(ty, None)
@@ -10120,37 +10020,37 @@ fn user_elaborator_template_verification_expr(
     substitute::finish_replayed_elaboration(expr, &HashSet::new())
 }
 
-enum UserElaboratorDecodeError {
+enum UserMacroDecodeError {
     Diagnostic(String),
     Type(String),
     Totality(String),
 }
 
-fn decode_user_elaborator_result(
+fn decode_user_macro_result(
     value: crate::normalization::Value,
     ctx: &crate::normalization::EvalCtx<'_>,
-) -> Result<crate::normalization::CheckedTerm, UserElaboratorDecodeError> {
+) -> Result<crate::normalization::CheckedTerm, UserMacroDecodeError> {
     use crate::normalization::Value;
     if let Some(message) = crate::normalization::structural_recur_stuck_message(&value, ctx) {
-        return Err(UserElaboratorDecodeError::Totality(message));
+        return Err(UserMacroDecodeError::Totality(message));
     }
     match value {
         Value::CheckedTerm(term) => {
             if let Some((kind, message)) = term.checked_error() {
                 match kind {
-                    crate::normalization::CheckedTermErrorKind::Elaborator => {
-                        Err(UserElaboratorDecodeError::Diagnostic(message.to_owned()))
+                    crate::normalization::CheckedTermErrorKind::Macro => {
+                        Err(UserMacroDecodeError::Diagnostic(message.to_owned()))
                     }
                     crate::normalization::CheckedTermErrorKind::Type => {
-                        Err(UserElaboratorDecodeError::Type(message.to_owned()))
+                        Err(UserMacroDecodeError::Type(message.to_owned()))
                     }
                 }
             } else {
                 Ok(term.canonicalize_generated_names())
             }
         }
-        other => Err(UserElaboratorDecodeError::Diagnostic(format!(
-            "user elaborator returned `{}` instead of `__Checked_term__`",
+        other => Err(UserMacroDecodeError::Diagnostic(format!(
+            "user macro returned `{}` instead of `__Checked_term__`",
             crate::normalization::value_to_string(&other)
         ))),
     }
@@ -10360,9 +10260,9 @@ mod tests {
                 let callback_type = __type_arrow__(ct, unit, zero, thunk);
                 (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills)
             }
-            elab invoke_then : [S][R] (S -> R) -> Later -> R { impl(fills) invoke_then_impl; };
+            macro invoke_then : [S][R] (S -> R) -> Later -> R { impl(fills) invoke_then_impl; };
             rec(drive) fn repeat() -> Later -> . -> . {
-                invoke_then!(.(_unit: .) { .() { (recur(escape) repeat())(later())() } })
+                invoke_then(.(_unit: .) { .() { (recur(escape) repeat())(later())() } })
             }";
         check_package_sources(&[source])
             .expect("the outer callback needs no structural-tail permission");
@@ -10378,9 +10278,9 @@ mod tests {
             pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, _value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) {
                 (__term_unit__(ct), fills)
             }
-            elab ignore : [A] A -> . { impl(fills) ignore_impl; };
+            macro ignore : [A] A -> . { impl(fills) ignore_impl; };
             rec(drive) {
-                fn spin(value: .) -> . { ignore!(. -> ., .x. { recur // keep\n spin(x1) }) };
+                fn spin(value: .) -> . { ignore(. -> ., .x. { recur // keep\n spin(x1) }) };
                 fn saved(value: .) -> . { retain(.() { recur(escape) saved(value) }) }
             }";
         let error = check_package_sources(&[source])
@@ -10402,12 +10302,12 @@ mod tests {
         check_package_sources(&[&repaired])
             .expect("the deferred source-owned escape repair rechecks");
 
-        let source = "module main; import control(if);
+        let source = "module main; import control(macro if);
             default host type Bool role(bool);
             host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
             host fn retain(callback: . -> Bool) -> Bool;
             rec(drive) {
-                fn spin(go: Bool) -> Bool { if! go { recur(// keep\n escape) spin(go) } else { go } };
+                fn spin(go: Bool) -> Bool { if (go) { recur(// keep\n escape) spin(go) } else { go } };
                 fn saved(go: Bool) -> Bool { retain(.() { recur(escape) saved(go) }) }
             }";
         let error = check_package_sources(&[source])
@@ -10755,7 +10655,7 @@ mod tests {
     #[cfg(feature = "lsp")]
     #[test]
     fn source_role_lint_reflected_conditional_commits_only_with_its_outer_root() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn select_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                 _condition_type: __Type__, result_type: __Type__, condition: __Checked_term__, \
                 callback: __Checked_term__, fallback: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
@@ -10764,15 +10664,15 @@ mod tests {
                 (__intrinsic_if_then_else__(ct, result_type, condition, \
                     .() -> __Checked_term__ { result }, .() -> __Checked_term__ { fallback }), fills) \
             } \
-            pub elab select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
+            pub macro select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
         for second in [".", "!"] {
             let main = format!(
-                "module main; import elab(select); \
+                "module main; import macros(macro select); \
                 default host type Flag role(bool); host fn flag() -> Flag; \
                 host fn consume(first: ., second: {second}) -> .; \
-                fn run() -> . {{ consume(select!(flag(), .() {{ () }}, ()), ()) }}"
+                fn run() -> . {{ consume(select(flag(), .() {{ () }}, ()), ()) }}"
             );
-            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             let normalized = crate::pass::alpha_normalize::normalize_package(&package);
             let scope =
                 crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
@@ -10810,7 +10710,7 @@ mod tests {
                 let roles = elaborations.source_role_uses();
                 assert_eq!(roles.len(), 1, "{roles:?}");
                 assert_eq!((&*roles[0].0, &*roles[0].2), ("main", "Flag"));
-                assert_eq!(roles[0].1.start, source_span(&main, "select!(").start);
+                assert_eq!(roles[0].1.start, source_span(&main, "select(").start);
             }
         }
     }
@@ -10887,9 +10787,9 @@ mod tests {
         );
 
         let (inferred, inferred_start, inferred_width) =
-            projected_user_elaborator_value_slot(&symbolic, &substitutions, 0, 1, Some(1));
+            projected_user_macro_value_slot(&symbolic, &substitutions, 0, 1, Some(1));
         let (explicit, explicit_start, explicit_width) =
-            projected_user_elaborator_value_slot(&symbolic, &substitutions, 0, 1, Some(2));
+            projected_user_macro_value_slot(&symbolic, &substitutions, 0, 1, Some(2));
 
         assert!(matches!(inferred.as_type(), Type::Product { .. }));
         assert!(matches!(explicit.as_type(), Type::Product { .. }));
@@ -10923,9 +10823,9 @@ mod tests {
         );
 
         let (first, first_start, first_width) =
-            projected_user_elaborator_value_slot(&symbolic, &substitutions, 0, 1, None);
+            projected_user_macro_value_slot(&symbolic, &substitutions, 0, 1, None);
         let (_, final_start, final_width) =
-            projected_user_elaborator_value_slot(&symbolic, &substitutions, 1, 1, Some(3));
+            projected_user_macro_value_slot(&symbolic, &substitutions, 1, 1, Some(3));
 
         assert!(matches!(
             first.as_type(),
@@ -10942,15 +10842,15 @@ mod tests {
             meta: Meta::new(span),
         });
         let (_, start, width) =
-            projected_user_elaborator_value_slot(&unit, &HashMap::new(), 0, 1, Some(1));
+            projected_user_macro_value_slot(&unit, &HashMap::new(), 0, 1, Some(1));
 
         assert_eq!((start, width), (0, 1));
     }
 
     #[test]
     fn projected_value_slot_ranges_use_each_frozen_call_layer() {
-        let elaborator = r#"
-            module elab;
+        let macro_def = r#"
+            module macros;
             import __comptime__;
             pure fn keep_impl(
               , _ct: __Comptime__
@@ -10966,17 +10866,17 @@ mod tests {
               , _packet_type: __Type__
               , packet: __Checked_term__
               ) -> __Checked_term__ & __Fill_ctx__ { (packet, fills) }
-            pub elab keep :
+            pub macro keep :
               [Packet] Packet -> [Context] Context -> Packet {
               impl(fills) keep_impl;
             };
-            pub elab keep_unit : [Packet] Packet -> Packet {
+            pub macro keep_unit : [Packet] Packet -> Packet {
               impl(fills) keep_unit_impl;
             };
         "#;
         let main = r#"
             module main;
-            import elab(keep, keep_unit);
+            import macros(macro keep, macro keep_unit);
             host type Left;
             host type Right;
             type Pair[A] = A & A;
@@ -10984,32 +10884,32 @@ mod tests {
               , packet: Pair(Left)
               , context: Pair(Right)
               ) -> Pair(Left) {
-              keep!(Pair(Left), packet, Pair(Right), context)
+              keep(Pair(Left), packet, Pair(Right), context)
             }
             fn ufcs(
               , packet: Pair(Left)
               , context: Pair(Right)
               ) -> Pair(Left) {
-              packet.>keep!(Pair(Left), Pair(Right), context)
+              packet.>keep(Pair(Left), Pair(Right), context)
             }
             fn inferred(
               , packet: Pair(Left)
               , context: Pair(Right)
               ) -> Pair(Left) {
-              let result = keep!(packet, context);
+              let result = keep(packet, context);
               result
             }
             fn inferred_ufcs(
               , packet: Pair(Left)
               , context: Pair(Right)
               ) -> Pair(Left) {
-              let result = packet.>keep!(context);
+              let result = packet.>keep(context);
               result
             }
-            fn implicit_unit() -> . { keep_unit!() }
+            fn implicit_unit() -> . { keep_unit() }
         "#;
 
-        check_package_sources(&[elaborator, main])
+        check_package_sources(&[macro_def, main])
             .expect("each projected ABI layer must retain its selected source coordinates");
     }
 
@@ -11027,7 +10927,7 @@ mod tests {
         let checked_error =
             crate::normalization::Value::CheckedTerm(crate::normalization::EvalRef::new(
                 crate::normalization::CheckedTerm::checked_error_for_test(
-                    crate::normalization::CheckedTermErrorKind::Elaborator,
+                    crate::normalization::CheckedTermErrorKind::Macro,
                     "must lose to context authentication",
                 ),
             ));
@@ -11042,19 +10942,19 @@ mod tests {
             Ok(_) => panic!("a foreign context must be rejected before its checked payload"),
         };
         let foreign_diagnostic = match foreign_error {
-            Error::Elaborator(diagnostic) => diagnostic,
+            Error::Macro(diagnostic) => diagnostic,
             other => panic!("a foreign fill context changed error category: {other:?}"),
         };
         assert_eq!(foreign_diagnostic.span, span);
         assert_eq!(
             foreign_diagnostic.message,
-            "fills elaborator returned a `__Fill_ctx__` from another invocation"
+            "fills macro returned a `__Fill_ctx__` from another invocation"
         );
 
         for (kind, message) in [
             (
-                crate::normalization::CheckedTermErrorKind::Elaborator,
-                "projected elaborator failure",
+                crate::normalization::CheckedTermErrorKind::Macro,
+                "projected macro failure",
             ),
             (
                 crate::normalization::CheckedTermErrorKind::Type,
@@ -11076,10 +10976,7 @@ mod tests {
                 Ok(_) => panic!("a checked error must not reach fills result adoption"),
             };
             let diagnostic = match (kind, error) {
-                (
-                    crate::normalization::CheckedTermErrorKind::Elaborator,
-                    Error::Elaborator(diagnostic),
-                )
+                (crate::normalization::CheckedTermErrorKind::Macro, Error::Macro(diagnostic))
                 | (crate::normalization::CheckedTermErrorKind::Type, Error::Type(diagnostic)) => {
                     diagnostic
                 }
@@ -11113,13 +11010,13 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("a foreign context must win before a nested checked error"),
         };
-        let Error::Elaborator(foreign_context_diagnostic) = foreign_context_error else {
+        let Error::Macro(foreign_context_diagnostic) = foreign_context_error else {
             panic!("a foreign fill context changed error category: {foreign_context_error:?}")
         };
         assert_eq!(foreign_context_diagnostic.span, span);
         assert_eq!(
             foreign_context_diagnostic.message,
-            "fills elaborator returned a `__Fill_ctx__` from another invocation"
+            "fills macro returned a `__Fill_ctx__` from another invocation"
         );
 
         let foreign_recipe_error = match prevalidate_projected_returned_values(
@@ -11132,13 +11029,13 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("a foreign recipe must win before its nested checked error"),
         };
-        let Error::Elaborator(foreign_recipe_diagnostic) = foreign_recipe_error else {
+        let Error::Macro(foreign_recipe_diagnostic) = foreign_recipe_error else {
             panic!("a foreign projected recipe changed error category: {foreign_recipe_error:?}")
         };
         assert_eq!(foreign_recipe_diagnostic.span, span);
         assert_eq!(
             foreign_recipe_diagnostic.message,
-            "fills elaborator returned a projected value other than an authenticated `__Checked_term__`"
+            "fills macro returned a projected value other than an authenticated `__Checked_term__`"
         );
 
         let nested_error = match prevalidate_projected_returned_values(
@@ -11153,14 +11050,11 @@ mod tests {
                 panic!("an authenticated nested checked error must stop before fills adoption")
             }
         };
-        let Error::Elaborator(nested_diagnostic) = nested_error else {
+        let Error::Macro(nested_diagnostic) = nested_error else {
             panic!("a nested checked error changed category: {nested_error:?}")
         };
         assert_eq!(nested_diagnostic.span, span);
-        assert_eq!(
-            nested_diagnostic.message,
-            "nested projected elaborator failure"
-        );
+        assert_eq!(nested_diagnostic.message, "nested projected macro failure");
 
         let ordered = crate::normalization::projected_value(ordered);
         let ordered_error = match prevalidate_projected_returned_values(
@@ -11181,7 +11075,7 @@ mod tests {
     }
 
     #[test]
-    fn user_elaborator_artifact_entry_points_are_sequential() {
+    fn user_macro_artifact_entry_points_are_sequential() {
         type DischargeEntry =
             for<'a, 'b, 'm> fn(&'a mut Elaborations, &'b ModuleEnv<'m>) -> Result<(), Error>;
         type PackageEntry = fn(
@@ -11189,14 +11083,14 @@ mod tests {
             std::sync::Arc<crate::pass::typecheck_core::TypeInterner<Lowered>>,
         ) -> Result<CheckedLoweredPackage, Vec<LocatedError>>;
 
-        let _: DischargeEntry = UserElaboratorArtifactTypecheck::discharge_deferred;
-        let _: PackageEntry = UserElaboratorArtifactTypecheck::check_package;
+        let _: DischargeEntry = UserMacroArtifactTypecheck::discharge_deferred;
+        let _: PackageEntry = UserMacroArtifactTypecheck::check_package;
         assert_eq!(
-            UserElaboratorArtifactTypecheck::EXECUTION,
+            UserMacroArtifactTypecheck::EXECUTION,
             crate::pass::typecheck_core::TypecheckExecution::Sequential
         );
         assert!(
-            !UserElaboratorArtifactTypecheck::EXECUTION.parallelizes(usize::MAX),
+            !UserMacroArtifactTypecheck::EXECUTION.parallelizes(usize::MAX),
             "artifact typecheck entry points must suppress nested fan-out"
         );
     }
@@ -11206,7 +11100,12 @@ mod tests {
     /// unit tests directly. The test corpus stays Kio'-shaped, so
     /// label_elab is effectively a phase rebrand here.
     fn lowered_module(src: &str) -> Module {
-        let m = parse(src).expect("parse");
+        let mut m = parse(src).expect("parse");
+        let calls = crate::scope_walk::macro_calls(&m);
+        let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[])
+            .expect("empty descriptor scope");
+        crate::pass::block_projection::project_module(&mut m, &scope, &calls)
+            .expect("classify blockless source calls");
         let m = crate::pass::desugar::desugar_module(m).expect("desugar");
         let parsed = vec![(std::path::PathBuf::from("test.kio"), m)];
         let (mut lowered, _) =
@@ -11215,7 +11114,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_elaborator_type_binder_skips_recursive_group_nominal_names() {
+    fn generated_macro_type_binder_skips_recursive_group_nominal_names() {
         let module = lowered_module(
             "module main; \
              rec { \
@@ -11225,7 +11124,7 @@ mod tests {
         );
         let mut reserved = HashSet::from(["A".to_owned()]);
         reserve_module_nominal_type_names(&module, &mut reserved);
-        let generated = generated_elaborator_type_param(
+        let generated = generated_macro_type_param(
             &TypeParam {
                 presentation: Default::default(),
                 name: "A".to_owned(),
@@ -11242,14 +11141,14 @@ mod tests {
 
     #[cfg(feature = "prime")]
     #[test]
-    fn generated_elaborator_type_binders_use_only_the_callers_type_namespace() {
+    fn generated_macro_type_binders_use_only_the_callers_type_namespace() {
         use crate::backends::kio_prime::emit_module;
         use crate::pipeline::Pipeline;
         use crate::prime::pipeline::PrimePipeline;
 
         fn emit_and_recheck(sources: &[(&str, &str)]) -> String {
             let package = lowered_package(sources);
-            let checked = check_package(&package).expect("typecheck residual elaborator");
+            let checked = check_package(&package).expect("typecheck residual macro");
             let emitted = emit_module(checked.module("main").expect("caller module"));
             let reparsed = checked
                 .modules()
@@ -11296,20 +11195,20 @@ mod tests {
                 "impl(fills) phantom_impl",
             ),
         ] {
-            let elaborator = format!(
-                "module elab; import __comptime__; {implementation} \
-                 pub elab phantom : [Source] Source -> [A] [B] A {{ {declaration}; }};"
+            let macro_def = format!(
+                "module macros; import __comptime__; {implementation} \
+                 pub macro phantom : [Source] Source -> [A] [B] A {{ {declaration}; }};"
             );
-            let main = "module main; import elab(phantom); \
-                pub fn residual() -> [B] . { phantom!((), .) }";
+            let main = "module main; import macros(macro phantom); \
+                pub fn residual() -> [B] . { phantom((), .) }";
             let baseline = emit_and_recheck(&[
-                ("elab.kio", &elaborator),
+                ("macros.kio", &macro_def),
                 ("main.kio", main),
                 ("unrelated.kio", "module unrelated;"),
             ]);
             assert!(baseline.contains(".[B_n2]"), "{baseline}");
             let grown = emit_and_recheck(&[
-                ("elab.kio", &elaborator),
+                ("macros.kio", &macro_def),
                 ("main.kio", main),
                 ("unrelated.kio", "module unrelated; type B_n2 = .;"),
             ]);
@@ -11319,19 +11218,19 @@ mod tests {
             );
 
             for caller in [
-                "module main; import elab(phantom); type B_n2 = .; \
-                 pub fn residual() -> [B] . { phantom!((), .) }",
-                "module main; import elab(phantom); import provider(B_n2); \
-                 pub fn residual() -> [B] . { phantom!((), .) }",
-                "module main; import elab(phantom); \
-                 pub fn residual[B_n2]() -> [B] . { phantom!((), .) }",
-                "module main; import elab(phantom); rec { \
+                "module main; import macros(macro phantom); type B_n2 = .; \
+                 pub fn residual() -> [B] . { phantom((), .) }",
+                "module main; import macros(macro phantom); import provider(B_n2); \
+                 pub fn residual() -> [B] . { phantom((), .) }",
+                "module main; import macros(macro phantom); \
+                 pub fn residual[B_n2]() -> [B] . { phantom((), .) }",
+                "module main; import macros(macro phantom); rec { \
                    type B_n2 = Wrap; \
                    newtype Wrap : B_n2 { constructor mk; projector un; }; \
-                 } pub fn residual() -> [B] . { phantom!((), .) }",
+                 } pub fn residual() -> [B] . { phantom((), .) }",
             ] {
                 let emitted = emit_and_recheck(&[
-                    ("elab.kio", &elaborator),
+                    ("macros.kio", &macro_def),
                     ("main.kio", caller),
                     ("provider.kio", "module provider; pub type B_n2 = .;"),
                 ]);
@@ -11378,7 +11277,7 @@ mod tests {
                 if expr.span() == self.span
                     && matches!(
                         expr,
-                        Expr::Call { .. } | Expr::UserElaborator { .. } | Expr::Ufcs { .. }
+                        Expr::Call { .. } | Expr::UserMacro { .. } | Expr::Ufcs { .. }
                     )
                 {
                     self.found.push(expr.site());
@@ -11572,17 +11471,17 @@ mod tests {
     }
 
     #[test]
-    fn unrelated_elaborator_named_match_keeps_its_selected_behavior() {
-        let elaborator = "module unrelated; import __comptime__; \
+    fn unrelated_macro_named_match_keeps_its_selected_behavior() {
+        let macro_def = "module unrelated; import __comptime__; \
             pure fn select_second(_ct: __Comptime__, _a: __Type__, _b: __Type__, \
                 _first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ { second } \
-            pub elab match : [A][B] A -> B -> B { impl select_second; };";
-        for call in ["match!(.t, .f)", "(.t).>match!(.f)"] {
+            pub macro match : [A][B] A -> B -> B { impl select_second; };";
+        for call in ["match(.t, .f)", "(.t).>match(.f)"] {
             let main = format!(
-                "module main; import unrelated(match); \
+                "module main; import unrelated(macro match); \
                  default host type Flag role(bool); fn run() -> Flag {{ {call} }}"
             );
-            let package = lowered_package(&[("unrelated.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("unrelated.kio", macro_def), ("main.kio", &main)]);
             let complete = check_package_preserving_normalization(&package)
                 .expect("the unrelated declaration supplies the ordinary call type")
                 .complete()
@@ -11619,21 +11518,21 @@ mod tests {
     }
 
     #[test]
-    fn recursive_quotation_storage_stays_absent_for_ordinary_elaborators() {
+    fn recursive_quotation_storage_stays_absent_for_ordinary_macros() {
         let package = lowered_package(&[
-            ("elab.kio", "module elab; import __comptime__;
+            ("macros.kio", "module macros; import __comptime__;
              pure fn identity_impl(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
-             pub elab identity : [A] A -> A { impl identity_impl }"),
-            ("main.kio", "module main; import elab(identity);
+             pub macro identity : [A] A -> A { impl identity_impl }"),
+            ("main.kio", "module main; import macros(macro identity);
              fn id[A](value: A) -> A { value }
-             fn run() -> . { let value = identity!(id(())); value }"),
+             fn run() -> . { let value = identity(id(())); value }"),
         ]);
         let checked = check_package_preserving_normalization(&package).unwrap();
         assert!(checked.elaborations.rec_quote.is_none());
         eprintln!(
             "quotation layout: elaborations={}, deferred={}, optional_inventory={}, optional_recipe={}",
             std::mem::size_of::<Elaborations>(),
-            std::mem::size_of::<DeferredUserElaboratorElaboration>(),
+            std::mem::size_of::<DeferredUserMacroElaboration>(),
             std::mem::size_of::<Option<Box<rec_quote::RecQuoteCaptures>>>(),
             std::mem::size_of::<Option<Box<QuotedPublicRecipe>>>()
         );
@@ -11737,7 +11636,7 @@ mod tests {
                     elaborations
                         .record_rec_quote_source_type(id, InternedType::fresh_canonical(unit_ty()));
                 }
-                let mut replay = UserElaboratorReplayEnv {
+                let mut replay = UserMacroReplayEnv {
                     module_path: "main",
                     module: &module,
                     elaborations: &mut elaborations,
@@ -11829,35 +11728,35 @@ mod tests {
         package
     }
 
-    const ELAB_IMPORTS: &str = "\
-import spine_elaborators(reorder_sum, reorder_prod, narrow_sum, narrow_prod, widen_sum, widen_prod, \
-flatten_sum, flatten_prod, one_sum, one_prod, fit); \
-import match(match);";
+    const MACRO_IMPORTS: &str = "\
+import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, \
+macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit); \
+import match(macro match);";
 
-    const ELAB_SUPPORT_SOURCES: &[(&str, &str)] = &[
+    const MACRO_SUPPORT_SOURCES: &[(&str, &str)] = &[
         (
             "testapi.kio",
-            include_str!("../../../test-data/poc/elab/workdir/testapi.kio"),
+            include_str!("../../../test-data/poc/macros/workdir/testapi.kio"),
         ),
         (
-            "elaborator_util.kio",
-            include_str!("../../../test-data/poc/elab/workdir/elaborator_util.kio"),
+            "macro_util.kio",
+            include_str!("../../../test-data/poc/macros/workdir/macro_util.kio"),
         ),
         (
-            "spine_elaborators.kio",
-            include_str!("../../../test-data/poc/elab/workdir/spine_elaborators.kio"),
+            "spine_macros.kio",
+            include_str!("../../../test-data/poc/macros/workdir/spine_macros.kio"),
         ),
         (
             "match.kio",
-            include_str!("../../../test-data/poc/elab/workdir/match.kio"),
+            include_str!("../../../test-data/poc/macros/workdir/match.kio"),
         ),
         (
             "control.kio",
-            include_str!("../../../test-data/poc/elab/workdir/control.kio"),
+            include_str!("../../../test-data/poc/macros/workdir/control.kio"),
         ),
         (
             "sequence.kio",
-            include_str!("../../../test-data/poc/elab/workdir/sequence.kio"),
+            include_str!("../../../test-data/poc/macros/workdir/sequence.kio"),
         ),
     ];
 
@@ -11895,48 +11794,55 @@ pure fn common3_impl(
   (first, with_third)
 }
 
-pub elab common2 : [Left] Left -> [Right] Right -> [Target] Target {
+pub macro common2 : [Left] Left -> [Right] Right -> [Target] Target {
   impl(fills) common2_impl;
 };
 
-pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target] Target {
+pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target] Target {
   impl(fills) common3_impl;
 };
 "#;
 
-    fn source_uses_imported_elaborator(src: &str) -> bool {
+    fn source_uses_imported_macro(src: &str) -> bool {
         [
-            "reorder_sum!",
-            "reorder_prod!",
-            "narrow_sum!",
-            "narrow_prod!",
-            "widen_sum!",
-            "widen_prod!",
-            "flatten_sum!",
-            "flatten_prod!",
-            "one_sum!",
-            "one_prod!",
-            "fit!",
-            "match!",
+            "reorder_sum",
+            "reorder_prod",
+            "narrow_sum",
+            "narrow_prod",
+            "widen_sum",
+            "widen_prod",
+            "flatten_sum",
+            "flatten_prod",
+            "one_sum",
+            "one_prod",
+            "fit",
+            "match",
         ]
         .iter()
-        .any(|needle| src.contains(needle))
+        .any(|needle| {
+            src.match_indices(needle).any(|(start, _)| {
+                let previous = src[..start].chars().next_back();
+                let following = src[start + needle.len()..].chars().next();
+                !previous.is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+                    && !following.is_some_and(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+            })
+        })
     }
 
     fn source_imports_control_support(src: &str) -> bool {
         src.contains("import control(") || src.contains("import sequence(")
     }
 
-    fn add_elab_imports(src: &str) -> String {
+    fn add_macro_imports(src: &str) -> String {
         let Some(idx) = src.find(';') else {
             return src.to_owned();
         };
-        format!("{}; {ELAB_IMPORTS} {}", &src[..idx], &src[idx + 1..])
+        format!("{}; {MACRO_IMPORTS} {}", &src[..idx], &src[idx + 1..])
     }
 
-    fn lowered_elab_package(src: &str) -> Result<Package, Error> {
-        let mut parsed = vec![parse_package_entry(&add_elab_imports(src))];
-        for (path, support) in ELAB_SUPPORT_SOURCES {
+    fn lowered_macro_package(src: &str) -> Result<Package, Error> {
+        let mut parsed = vec![parse_package_entry(&add_macro_imports(src))];
+        for (path, support) in MACRO_SUPPORT_SOURCES {
             let module = parse_module_file(support).expect("parse support").module;
             parsed.push((PathBuf::from(path), module));
         }
@@ -11948,8 +11854,8 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         Ok(package)
     }
 
-    fn check_elab_src(src: &str) -> Result<(), Error> {
-        let package = lowered_elab_package(src)?;
+    fn check_macro_src(src: &str) -> Result<(), Error> {
+        let package = lowered_macro_package(src)?;
         check_package(&package).map(|_| ()).map_err(|e| e.error)
     }
 
@@ -12089,10 +11995,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         for body in [
             "__if_then_else__(., condition, .() { () }, .() { () })",
             "let choose = __if_then_else__(.); choose(condition, .() { () }, .() { () })",
-            "if! condition { () } else { () }",
+            "if (condition) { () } else { () }",
         ] {
             let consumer = format!(
-                "module main; import __intrinsics__; import control(if); import other as types; import types as real; default type Bool = real.Bool; fn choose(condition: Bool) -> . {{ {body} }}"
+                "module main; import __intrinsics__; import control(macro if); import other as types; import types as real; default type Bool = real.Bool; fn choose(condition: Bool) -> . {{ {body} }}"
             );
             check_package_sources(&[types, other, &consumer])
                 .expect("selected nominal identity cannot be recaptured by an import alias");
@@ -12498,7 +12404,8 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn artifact_source_diagnostic_survives_package_module_and_aux_collectors() {
-        let caller = "module a;\nimport control(scope);\npub fn unrelated() -> . { scope! { () } }";
+        let caller =
+            "module a;\nimport control(macro scope);\npub fn unrelated() -> . { scope { () } }";
         let declaration = "module z;\nimport a as unrelated;\ntype Hidden = .;\npub newtype Exposed : Hidden { pub constructor mk; projector un }";
         let package = lowered_control_package(&[("a.kio", caller), ("z.kio", declaration)]);
         let assert_origin = |error: &LocatedError| {
@@ -12519,7 +12426,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
         .err()
         .expect("focused caller checking finds the artifact declaration error");
         assert_origin(&errors[0]);
-        let call = caller.find("scope!").expect("call") as u32;
+        let call = caller.find("scope {").expect("call") as u32;
         let context = errors[0]
             .error
             .diagnostic()
@@ -12531,7 +12438,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
         let carrier_package = lowered_control_package(&[(
             "carrier.kio",
-            "module carrier; import control(scope); fn inspect() -> . { scope! { () } }",
+            "module carrier; import control(macro scope); fn inspect() -> . { scope { () } }",
         )]);
         let carrier = &carrier_package.module("carrier").expect("carrier").module;
         let error = FullPipeline::typecheck_aux_module(carrier, &package, None)
@@ -12541,7 +12448,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn artifact_source_diagnostic_in_callers_file_keeps_its_declaration_span() {
-        let source = "module a;\nimport control(scope);\ntype Hidden = .;\npub newtype Exposed : Hidden { pub constructor mk; projector un }\nfn unrelated() -> . { scope! { () } }";
+        let source = "module a;\nimport control(macro scope);\ntype Hidden = .;\npub newtype Exposed : Hidden { pub constructor mk; projector un }\nfn unrelated() -> . { scope { () } }";
         let package = lowered_control_package(&[("a.kio", source)]);
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
         let typecheck_scope =
@@ -12556,13 +12463,13 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             typecheck_scope,
         )
         .expect("caller environment");
-        let call = source.find("scope!").expect("call") as u32;
-        let error = user_elaborator_eval_artifact(
+        let call = source.find("scope {").expect("call") as u32;
+        let error = user_macro_eval_artifact(
             &env,
             &[],
             "scope",
             Span::new(call, call + 6),
-            Some(&package.module("control").expect("elaborator").module),
+            Some(&package.module("control").expect("macro").module),
         )
         .expect_err("private payload found during artifact validation");
         let error = LocatedError::new(PathBuf::from("a.kio"), error);
@@ -12592,7 +12499,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             meta: Meta::new(Span::new(9, 16)),
             ext: (),
         };
-        let error = validate_user_elaborator_eval_artifact(&artifact, &implementation, "main")
+        let error = validate_user_macro_eval_artifact(&artifact, &implementation, "main")
             .expect_err("generated expression references an absent value");
         assert_eq!(error.exit_code(), crate::exit_code::ExitCode::NameRes);
         assert!(error.source_file().is_none());
@@ -12638,8 +12545,8 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn ok(src: &str) {
         let result = if source_imports_control_support(src) {
             check_package_sources(&[src])
-        } else if source_uses_imported_elaborator(src) {
-            check_elab_src(src)
+        } else if source_uses_imported_macro(src) {
+            check_macro_src(src)
         } else {
             check_module(&module(src))
         };
@@ -12648,25 +12555,25 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_accepts_nominal_and_identity_receivers() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
-            fn run() -> Box(.) { do! bind { let x <- Box.box(()); Box.box(x) } }");
-        ok("module main; import sequence(do);
+            fn run() -> Box(.) { do (bind) { let x <- Box.box(()); Box.box(x) } }");
+        ok("module main; import sequence(macro do);
             type Identity[A] = A;
             fn bind[A][B](value: Identity(A), next: A -> Identity(B)) -> Identity(B) { next(value) }
-            fn run() -> . { do! bind { let x <- (); x } }");
+            fn run() -> . { do (bind) { let x <- (); x } }");
     }
 
     #[test]
     fn do_contract_rejects_changed_container_but_preserves_ordinary_calls() {
-        let declarations = "module main; import sequence(do);
+        let declarations = "module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
             fn bind[A][B](value: Box(A), next: A -> Other(B)) -> Other(B) { next(Box.unbox(value)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Other(.) {{ do! bind {{ let x <- Box.box(()); Other.other(x) }} }}"
+            fn run() -> Other(.) {{ do(bind) {{ let x <- Box.box(()); Other.other(x) }} }}"
         ));
         assert_eq!(
             message,
@@ -12680,45 +12587,45 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_sequence_requires_unit_but_explicit_discard_accepts_another_payload() {
-        let declarations = "module main; import sequence(do);
+        let declarations = "module main; import sequence(macro do);
             newtype Value : . { constructor value; projector unvalue; };
             newtype Box[A] : A { constructor box; projector unbox; };
             fn bind[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(input)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do! bind {{ Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box(.) {{ do(bind) {{ Box.box(Value.value(())); Box.box(()) }} }}"
         ));
         assert!(message.contains("type mismatch"), "{message}");
         ok(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do! bind {{ let _ <- Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box(.) {{ do(bind) {{ let _ <- Box.box(Value.value(())); Box.box(()) }} }}"
         ));
         ok(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do! bind {{ Box.box(()); Box.box(()) }} }}"
+            fn run() -> Box(.) {{ do(bind) {{ Box.box(()); Box.box(()) }} }}"
         ));
     }
 
     #[test]
     fn do_contract_sequence_accepts_identity_alias_and_abstract_constructor() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             type Identity[A] = A;
             fn bind[A][B](input: Identity(A), next: A -> Identity(B)) -> Identity(B) { next(input) }
-            fn run() -> . { do! bind { (); () } }");
-        ok("module main; import sequence(do);
+            fn run() -> . { do (bind) { (); () } }");
+        ok("module main; import sequence(macro do);
             fn run[*F](bind: [A][B](F(A) & (A -> F(B))) -> F(B), unit: F(.)) -> F(.) {
-                do! bind { unit; unit }
+                do (bind) { unit; unit }
             }");
     }
 
     #[test]
     fn do_contract_rejects_factory_container_changes() {
-        let message = err("module main; import sequence(do);
+        let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
             host fn make_bind[*M][*N]() -> [A][B](M(A) & (A -> N(B))) -> N(B);
             fn run() -> Other(.) {
-                do! make_bind(Box, Other, ()) {
+                do (make_bind(Box, Other, ())) {
                     let first <- Box.box(());
                     let second <- Other.other(());
                     Other.other(second)
@@ -12732,17 +12639,17 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_final_only_accepts_constant_without_instantiating_phantom_slots() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             host fn bind[A][B](value: ., next: A -> .) -> .;
-            fn run() -> . { do! bind { () } }");
+            fn run() -> . { do (bind) { () } }");
     }
 
     #[test]
     fn do_contract_final_only_factory_obeys_ordinary_argument_purity() {
-        let message = err("module main; import sequence(do);
+        let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             host fn make_bind[*M]() -> [A][B](M(A) & (A -> M(B))) -> M(B);
-            pure fn run() -> Box(.) { do! make_bind(Box, ()) { Box.box(()) } }");
+            pure fn run() -> Box(.) { do (make_bind(Box, ())) { Box.box(()) } }");
         assert_eq!(
             message,
             "pure function cannot reference host fn `make_bind`; `pure` means that its call graph contains no host-function calls"
@@ -12751,11 +12658,11 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_final_only_rejects_another_container() {
-        let message = err("module main; import sequence(do);
+        let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
-            fn run() -> Other(.) { do! bind { Other.other(()) } }");
+            fn run() -> Other(.) { do (bind) { Other.other(()) } }");
         assert_eq!(
             message,
             "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
@@ -12764,12 +12671,12 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_final_only_cps_checks_the_original_result() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
-                Box.unbox(do! bind {
+                Box.unbox(do (bind) {
                     let next = recur(cont) go(value);
                     Box.box(next)
                 })
@@ -12778,25 +12685,25 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn fills_recursive_callback_preserves_its_written_public_return() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn invoke_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                 result_type: __Type__, body: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
                 let result = __term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct)); \
                 (result, __fill__(ct, fills, result_type, __term_type__(ct, result))) \
             } \
-            pub elab invoke : [Result] (. -> Result) -> Result { impl(fills) invoke_impl }";
-        let main = "module main; import elab(invoke); \
+            pub macro invoke : [Result] (. -> Result) -> Result { impl(fills) invoke_impl }";
+        let main = "module main; import macros(macro invoke); \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             newtype Other[A] : A { constructor other; projector unother; }; \
             rec(loop) fn go(value: .) -> . { \
-                Box.unbox(invoke!(.(unit: .) -> Box(.) { \
+                Box.unbox(invoke(.(unit: .) -> Box(.) { \
                     let next = recur(cont) go(value); Box.box(next) \
                 })) \
             }";
         for annotation in ["Box(.)", "Box(_)", "_", "Other(.)"] {
             let main = main.replace("-> Box(.) {", &format!("-> {annotation} {{"));
-            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             if matches!(annotation, "Other(.)" | "Box(_)") {
                 let error = check_retained_error(&package);
@@ -12809,7 +12716,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 assert!(error.diagnostic().message.contains(expected), "{error:?}");
             } else {
                 let (checked, scope) = check_retained_success(&package);
-                assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+                assert_eq!(scope.memo().user_macro_template_executions(), 1);
                 let callback = Span::new(
                     main.find(".(unit: .)").unwrap() as u32,
                     main.rfind("}))").unwrap() as u32 + 1,
@@ -12829,16 +12736,16 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn fills_nested_recursive_branches_use_the_lexical_continuation_result() {
-        let provider = include_str!("../../../test-data/poc/elab/workdir/control.kio")
+        let provider = include_str!("../../../test-data/poc/macros/workdir/control.kio")
             .replace("module control;", "module alternate;")
-            .replace("pub elab if :", "pub elab choose :");
-        let main = "module main; import alternate(choose); \
+            .replace("pub macro if :", "pub macro choose :");
+        let main = "module main; import alternate(macro choose); \
                  host type Data; default host type Bool role(bool); \
                  host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
                  rec(loop) fn search(outer: Bool, inner: Bool, value: Data | .) -> Data | . { \
-                   choose! outer { \
-                     choose! inner { value } else { recur search(.f, .f, value) } \
-                   } else { widen_sum!(()) } \
+                   choose (outer) { \
+                     choose (inner) { value } else { recur search(.f, .f, value) } \
+                   } else { widen_sum(()) } \
                  }";
         let package = lowered_control_package(&[("alternate.kio", &provider), ("main.kio", main)]);
         let (checked, _) = check_retained_success(&package);
@@ -12855,13 +12762,13 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             ] {
                 let call = invoke.replace("ANNOTATION", annotation);
                 let main = format!(
-                    "module main; import control(if);
+                    "module main; import control(macro if);
                     default host type Bool role(bool);
                     host fn loop[S][R](step: S -> (S | R), state: S) -> R;
                     host fn make[A]() -> A;
                     fn invoke(predicate: . -> Bool) -> Bool {{ predicate() }}
                     rec(loop) fn repeat(go: Bool) -> Bool {{
-                      if! {call} {{ recur repeat(.f) }} else {{ go }}
+                      if({call}) {{ recur repeat(.f) }} else {{ go }}
                     }}"
                 );
                 let package = lowered_control_package(&[("main.kio", &main)]);
@@ -12874,12 +12781,12 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn ordinary_optional_rec_callback_checks_contextual_lambda_body_once() {
-        let main = "module main; import control(if);
+        let main = "module main; import control(macro if);
             default host type Bool role(bool);
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(factory: . -> (Bool -> Bool), value: Bool) -> Bool { factory()(value) }
             rec(loop) fn repeat(go: Bool) -> Bool {
-              if! invoke(.() { .(value) { value } }, go) {
+              if (invoke(.() { .(value) { value } }, go)) {
                 recur repeat(.f)
               } else { go }
             }";
@@ -12902,24 +12809,24 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn ordinary_optional_rec_callback_keeps_return_annotation_errors() {
-        let message = err("module main; import control(if);
+        let message = err("module main; import control(macro if);
             host type Bool role(bool);
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
-              if! invoke(.() -> . { go }) { recur repeat(.f) } else { go }
+              if (invoke(.() -> . { go })) { recur repeat(.f) } else { go }
             }");
         assert!(message.contains("type mismatch"), "{message}");
     }
 
     #[test]
     fn ordinary_optional_rec_callback_does_not_admit_recursive_closures() {
-        let error = check_package_sources(&["module main; import control(if);
+        let error = check_package_sources(&["module main; import control(macro if);
             host type Bool role(bool);
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
-              if! invoke(.() { recur repeat(go) }) { recur repeat(.f) } else { go }
+              if (invoke(.() { recur repeat(go) })) { recur repeat(.f) } else { go }
             }"])
         .expect_err("a recursive closure still requires a terminal-use proof");
         assert!(matches!(error, Error::Parse(_)), "{error:?}");
@@ -13003,7 +12910,7 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn fills_recursive_recipe_applies_the_outer_continuation_to_an_ordinary_tail() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn select_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                 _condition_type: __Type__, result_type: __Type__, condition: __Checked_term__, \
                 callback: __Checked_term__, fallback: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
@@ -13012,43 +12919,43 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
                 (__intrinsic_if_then_else__(ct, result_type, condition, \
                     .() -> __Checked_term__ { result }, .() -> __Checked_term__ { fallback }), fills) \
             } \
-            pub elab select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
-        let main = "module main; import elab(select); \
+            pub macro select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
+        let main = "module main; import macros(macro select); \
             default host type Bool role(bool); \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(condition: Bool) -> . { \
-                Box.unbox(select!(condition, .() { \
+                Box.unbox(select(condition, .() { \
                     let next = recur(cont) go(condition); Box.box(next) \
                 }, Box.box(()))) \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let (checked, scope) = check_retained_success(&package);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("ordinary tail uses its continuation");
     }
 
     #[test]
     fn fills_recursive_runtime_annotation_preserves_a_qualified_import_alias() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn invoke_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                 result_type: __Type__, body: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
                 let result = __term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct)); \
                 (result, __fill__(ct, fills, result_type, __term_type__(ct, result))) \
             } \
-            pub elab invoke : [Result] (. -> Result) -> Result { impl(fills) invoke_impl }";
-        let main = "module main; import elab(invoke); import carrier as c; \
+            pub macro invoke : [Result] (. -> Result) -> Result { impl(fills) invoke_impl }";
+        let main = "module main; import macros(macro invoke); import carrier as c; \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             host fn finish(value: .) -> c.Wrap; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(value: .) -> c.Wrap { \
-                finish(Box.unbox(invoke!(.(unit: .) -> Box(.) { \
+                finish(Box.unbox(invoke(.(unit: .) -> Box(.) { \
                     let next = recur(cont) go(value); Box.box(()) \
                 }))) \
             }";
         let package = lowered_package(&[
-            ("elab.kio", elaborator),
+            ("macros.kio", macro_def),
             ("main.kio", main),
             ("carrier.kio", "module carrier; pub host type Wrap;"),
         ]);
@@ -13059,13 +12966,13 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_final_only_cps_rejects_a_different_original_container() {
-        let message = err("module main; import sequence(do);
+        let message = err("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
-                Other.unother(do! bind {
+                Other.unother(do (bind) {
                     let next = recur(cont) go(value);
                     Other.other(next)
                 })
@@ -13078,10 +12985,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_cps_observes_a_recursive_receiver_public_result() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             rec(loop) fn factory() -> [A][B](A & (A -> B)) -> B {
-                do! recur(cont) factory() {
+                do (recur(cont) factory()) {
                     let x <- ();
                     .[A][B](value: A, next: A -> B) { next(value) }
                 }
@@ -13092,10 +12999,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn do_contract_unused_recursive_receiver_keeps_selected_target_under_shadowing() {
         for (parameter, arguments) in [("", ""), ("factory: .", "factory")] {
             ok(&format!(
-                "module main; import sequence(do);
+                "module main; import sequence(macro do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 rec(loop) fn factory({parameter}) -> [A][B](A & (A -> B)) -> B {{
-                    do! recur(cont) factory({arguments}) {{
+                    do(recur(cont) factory({arguments})) {{
                         .[A][B](value: A, next: A -> B) {{ next(value) }}
                     }}
                 }}"
@@ -13107,10 +13014,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn do_contract_unused_generic_recursive_receiver_invokes_public_unit_layer() {
         for arguments in ["", "T"] {
             ok(&format!(
-                "module main; import sequence(do);
+                "module main; import sequence(macro do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 rec(loop) fn factory[T]() -> [A][B](A & (A -> B)) -> B {{
-                    do! recur(cont) factory({arguments}) {{
+                    do(recur(cont) factory({arguments})) {{
                         .[A][B](value: A, next: A -> B) {{ next(value) }}
                     }}
                 }}"
@@ -13120,10 +13027,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_unused_recursive_receiver_checks_ordinary_value_arguments() {
-        let message = err("module main; import sequence(do);
+        let message = err("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             rec(loop) fn factory(value: .) -> [A][B](A & (A -> B)) -> B {
-                do! recur(cont) factory(.(x: .) { x }) {
+                do (recur(cont) factory(.(x: .) { x })) {
                     .[A][B](value: A, next: A -> B) { next(value) }
                 }
             }");
@@ -13132,36 +13039,36 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
 
     #[test]
     fn do_contract_cps_observes_a_recursive_final_public_result() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
             fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
             rec(loop) fn go(value: Box(.)) -> Box(.) {
-                Box.box(Box.unbox(do! bind { recur(cont) go(value) }))
+                Box.box(Box.unbox(do (bind) { recur(cont) go(value) }))
             }");
     }
 
     #[test]
     fn do_contract_cps_keeps_outer_final_value_under_an_inner_scope() {
-        ok("module main; import sequence(do);
+        ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             fn bind[A][B](value: A, next: A -> B) -> B { next(value) }
             rec(loop) fn go(value: .) -> . {
-                do! bind { do! bind { let next <- recur(cont) go(value); next } }
+                do (bind) { do (bind) { let next <- recur(cont) go(value); next } }
             }");
     }
 
     #[test]
     fn do_contract_cps_copies_keep_an_outer_continuation_under_its_owner() {
-        ok("module main; import control(if); import sequence(do);
+        ok("module main; import control(macro if); import sequence(macro do);
             default host type Bool role(bool);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             fn bind[A][B](input: A, next: A -> B) -> B { next(input) }
             rec(loop) {
                 fn first(value: .) -> . {
-                    do! bind {
-                        let next = if! .t { recur(cont) second(value) } else { recur(cont) second(value) };
-                        do! bind { let out <- recur(cont) second(next); out }
+                    do (bind) {
+                        let next = if (.t) { recur(cont) second(value) } else { recur(cont) second(value) };
+                        do (bind) { let out <- recur(cont) second(next); out }
                     }
                 };
                 fn second(value: .) -> . { recur first(value) }
@@ -13175,11 +13082,11 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             ".(x: . -> .) -> _ { recur go(__left__(., . -> ., x(()))) }",
         ] {
             ok(&format!(
-                "module main; import sequence(do);
+                "module main; import sequence(macro do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 fn bind[A][B](input: A, next: A -> B) -> B {{ next(input) }}
                 rec(loop) fn go(value: . | (. -> .)) -> . {{
-                    do! bind {{ match! value {{ ({continuation}, .(x: .) {{ x }}) }} }}
+                    do(bind) {{ match(value) {{ ({continuation}, .(x: .) {{ x }}) }} }}
                 }}"
             ));
         }
@@ -13189,16 +13096,16 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn sequence_recipe_failed_root_rolls_back_replacements_and_call_facts() {
         for invalid in [true, false] {
             let output = if invalid { "Other" } else { "Box" };
-            let package = lowered_elab_package(&format!("module main;
-                import sequence(do);
+            let package = lowered_macro_package(&format!("module main;
+                import sequence(macro do);
                 newtype Box[A] : A {{ constructor box; projector unbox; }};
                 newtype Other[A] : A {{ constructor box; projector unbox; }};
                 fn good[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) {{ next(Box.unbox(input)) }}
                 fn second[A][B](input: Box(A), next: A -> {output}(B)) -> {output}(B) {{ next(Box.unbox(input)) }}
                 fn collect(_first: Box(.), _second: {output}(.)) -> . {{ () }}
                 fn run() -> . {{ collect(
-                    do! good {{ let x <- Box.box(()); Box.box(x) }},
-                    do! second {{ let x <- Box.box(()); {output}.box(x) }}
+                    do (good) {{ let x <- Box.box(()); Box.box(x) }},
+                    do(second) {{ let x <- Box.box(()); {output}.box(x) }}
                 ) }}")).expect("lower ordinary sequence package");
             let normalized = crate::pass::alpha_normalize::normalize_package(&package);
             let scope =
@@ -13275,8 +13182,8 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn type_diag(src: &str) -> Diagnostic {
         let result = if source_imports_control_support(src) {
             check_package_sources(&[src])
-        } else if source_uses_imported_elaborator(src) {
-            check_elab_src(src)
+        } else if source_uses_imported_macro(src) {
+            check_macro_src(src)
         } else {
             check_module(&module(src))
         };
@@ -13331,16 +13238,16 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             .module;
         let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
-        let (item_index, elaborator) = module
+        let (item_index, macro_def) = module
             .items
             .iter()
             .enumerate()
             .find_map(|(index, item)| match item {
-                Item::Elaborator(elaborator, _) => Some((index, elaborator)),
+                Item::Macro(macro_def, _) => Some((index, macro_def)),
                 _ => None,
             })
-            .expect("one elaborator");
-        validate_user_elaborator_capture_source_order(elaborator, item_index, &env)
+            .expect("one macro");
+        validate_user_macro_capture_source_order(macro_def, item_index, &env)
     }
 
     #[cfg(feature = "prime")]
@@ -13387,10 +13294,10 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
     fn unchecked_prime_recorded_elaboration_substitutes_to_prime() {
         let span = test_span();
         let node_id = NodeId(42);
-        let original = Expr::UserElaborator {
+        let original = Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
-            form: crate::ast::UserElaboratorCallForm::Ordinary,
+            form: crate::ast::UserMacroCallForm::Ordinary,
             name: "demo".to_owned(),
             args: Vec::new(),
             meta: Meta::new(span),
@@ -13604,13 +13511,13 @@ pub elab common3 : [First] First -> [Second] Second -> [Third] Third -> [Target]
             }
         }
 
-        let source = r#"module main; import sequence(do);
+        let source = r#"module main; import sequence(macro do);
 newtype Left : . { constructor left; projector unleft; };
 newtype Right : . { constructor right; projector unright; };
 newtype Box[A] : A { constructor box; projector unbox; };
 fn pure[A](value: A) -> Box(A) { Box.box(value) }
 fn run[A](first: Left, second: Right) -> Box(Right) {
-  do! (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+  do (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
     next(Box.unbox(value))
   }) {
     let first_value <- pure(first);
@@ -13689,20 +13596,20 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn monadic_bind_types_remain_independent_across_phases() {
         for body in [
-            "do! bind {
+            "do (bind) {
                 let first_value <- pure(first);
                 let second_value <- pure(second);
                 pure(second_value)
             }",
-            "do! bind {
+            "do (bind) {
                 pure(());
                 let first_value <- pure(first);
                 pure(());
                 let second_value <- pure(second);
                 pure(second_value)
             }",
-            "do! bind {
-                let first_value <- do! bind {
+            "do (bind) {
+                let first_value <- do (bind) {
                     pure(());
                     let value <- pure(first);
                     pure(value)
@@ -13714,7 +13621,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                 bind(pure(second), .(second_value: Right) { pure(second_value) })
             })",
         ] {
-            let source = "module main; import sequence(do);
+            let source = "module main; import sequence(macro do);
             newtype Left : . { constructor left; projector unleft; };
             newtype Right : . { constructor right; projector unright; };
             newtype Box[A] : A { constructor box; projector unbox; };
@@ -13774,10 +13681,10 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                 "({receiver})({first}, .({first_param}) {{ ({receiver})({second}, .({second_param}) {{ {final_expr} }}) }})"
             )];
             if result == "Box(Right)" {
-                bodies.push(format!("do! ({receiver}) {{ let {first_let} <- {first}; let {second_let} <- {second}; {final_expr} }}"));
+                bodies.push(format!("do ({receiver}) {{ let {first_let} <- {first}; let {second_let} <- {second}; {final_expr} }}"));
             }
             for body in bodies {
-                let source = "module main; import sequence(do);
+                let source = "module main; import sequence(macro do);
                     newtype Left : . { constructor left; projector unleft; };
                     newtype Right : . { constructor right; projector unright; };
                     newtype Box[A] : A { constructor box; projector unbox; };
@@ -14682,14 +14589,14 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn lowered_control_package_result(sources: &[(&str, &str)]) -> Result<Package, Error> {
         let mut parsed = Vec::new();
         for (_, source) in sources {
-            let source = if source_uses_imported_elaborator(source) {
-                add_elab_imports(source)
+            let source = if source_uses_imported_macro(source) {
+                add_macro_imports(source)
             } else {
                 (*source).to_owned()
             };
             parsed.push(parse_package_entry(&source));
         }
-        for (path, support) in ELAB_SUPPORT_SOURCES {
+        for (path, support) in MACRO_SUPPORT_SOURCES {
             parsed.push((
                 PathBuf::from(path),
                 parse_module_file(support).expect("support").module,
@@ -14723,10 +14630,10 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn surface_if_else_returns_common_arm_type() {
         control_ok(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
              default host type Bool role(bool); host type I32 role(i32); \
              fn pick(c: Bool, a: I32, b: I32) -> I32 { \
-               if! c { a } else { b } \
+               if (c) { a } else { b } \
              }",
         );
     }
@@ -14734,17 +14641,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn surface_if_else_synthesis_is_branch_order_invariant() {
         control_ok(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
             default host type Bool role(bool); \
             host type I32; \
             host fn make[A]() -> A; \
             host fn concrete() -> I32; \
             fn generic_first(c: Bool) -> I32 { \
-              let result = if! c { make() } else { concrete() }; \
+              let result = if (c) { make() } else { concrete() }; \
               result \
             } \
             fn generic_last(c: Bool) -> I32 { \
-              let result = if! c { concrete() } else { make() }; \
+              let result = if (c) { concrete() } else { make() }; \
               result \
             }",
         );
@@ -14753,17 +14660,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_early_expected_reaches_widening_arms_in_both_orders() {
         control_ok(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
             default host type Bool role(bool); \
             host type Left; \
             host type Right; \
             host fn left() -> Left; \
             host fn right() -> Right; \
             fn left_first(condition: Bool) -> Left | Right { \
-              if! condition { widen_sum!(left()) } else { widen_sum!(right()) } \
+              if (condition) { widen_sum(left()) } else { widen_sum(right()) } \
             } \
             fn right_first(condition: Bool) -> Left | Right { \
-              if! condition { widen_sum!(right()) } else { widen_sum!(left()) } \
+              if (condition) { widen_sum(right()) } else { widen_sum(left()) } \
             }",
         );
     }
@@ -14771,11 +14678,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_field_update_uses_an_early_expected_in_both_arm_orders() {
         for body in [
-            "if! condition { state.!{second = replacement} } else { state }",
-            "if! condition { state } else { state.!{second = replacement} }",
+            "if (condition) { state.!{second = replacement} } else { state }",
+            "if (condition) { state } else { state.!{second = replacement} }",
         ] {
             control_ok(&format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  default host type Bool role(bool); \
                  host type First_payload; \
                  host type Second_payload; \
@@ -14791,7 +14698,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn conditional_late_expected_reaches_existing_widening_arm_cursors() {
         let package = lowered_control_package_result(&[(
             "main.kio",
-            "module main; import control(if); \
+            "module main; import control(macro if); \
              default host type Bool role(bool); \
              host type Left; \
              host type Right; \
@@ -14802,13 +14709,13 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
              fn run() -> . { \
                same( \
                  .(condition: Bool) { \
-                   if! condition { widen_sum!(left()) } else { widen_sum!(right()) } \
+                   if (condition) { widen_sum(left()) } else { widen_sum(right()) } \
                  }, \
                  .(_condition: Bool) -> Left | Right { witness() }, \
                ) \
              }",
         )])
-        .expect("late-expected elaborator package lowers");
+        .expect("late-expected macro package lowers");
 
         let (checked, _) = check_retained_success(&package);
         validate_substituted_package(checked.substituted())
@@ -14818,11 +14725,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn surface_if_else_rejects_mismatched_arms_in_both_orders() {
         for branches in [
-            "if! c { left() } else { right() }",
-            "if! c { right() } else { left() }",
+            "if (c) { left() } else { right() }",
+            "if (c) { right() } else { left() }",
         ] {
             let message = control_err(&format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  host type Bool role(bool); \
                  host type Left; \
                  host type Right; \
@@ -14836,9 +14743,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn uncontextual_conditional_preserves_a_complete_function_scheme() {
-        let branches = "if! condition { identity } else { identity }";
+        let branches = "if (condition) { identity } else { identity }";
         let source = format!(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
              default host type Bool role(bool); \
              fn identity[A](value: A) -> A {{ value }} \
              fn select(condition: Bool) -> . {{ \
@@ -14865,11 +14772,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_function_scheme_remains_rejected_in_a_monomorphic_subterm() {
         for branches in [
-            "if! condition { identity_a } else { identity_b }",
-            "if! condition { identity_b } else { identity_a }",
+            "if (condition) { identity_a } else { identity_b }",
+            "if (condition) { identity_b } else { identity_a }",
         ] {
             let source = format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  host type Bool role(bool); \
                  fn identity_a[A](value: A) -> A {{ value }} \
                  fn identity_b[B](value: B) -> B {{ value }} \
@@ -14886,11 +14793,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_function_scheme_is_instantiable_as_an_immediate_callee() {
-        let source = "module main; import control(if); \
+        let source = "module main; import control(macro if); \
              default host type Bool role(bool); \
              fn identity[A](value: A) -> A { value } \
              fn apply[T](condition: Bool, value: T) -> T { \
-               (if! condition { identity } else { identity })(value) \
+               (if (condition) { identity } else { identity })(value) \
              }";
         let package = lowered_control_package(&[("main.kio", source)]);
         let (checked, _scope) = check_retained_success(&package);
@@ -14900,13 +14807,13 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_accepts_a_whole_forall_context() {
-        let source = "module main; import control(if); \
+        let source = "module main; import control(macro if); \
              default host type Bool role(bool); \
              fn identity_a[A](value: A) -> A { value } \
              fn identity_b[B](value: B) -> B { value } \
              fn accept(_function: [T] T -> T) -> . { () } \
              fn run(condition: Bool) -> . { \
-               accept(if! condition { identity_a } else { identity_b }) \
+               accept(if (condition) { identity_a } else { identity_b }) \
              }";
         let package = lowered_control_package(&[("main.kio", source)]);
         let (checked, _scope) = check_retained_success(&package);
@@ -14916,9 +14823,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_function_scheme_constrains_an_inferred_goal() {
-        let branches = "if! condition { identity_a } else { identity_b }";
+        let branches = "if (condition) { identity_a } else { identity_b }";
         let source = format!(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
              default host type Bool role(bool); \
              fn identity_a[A](value: A) -> A {{ value }} \
              fn identity_b[B](value: B) -> B {{ value }} \
@@ -14944,7 +14851,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_function_scheme_completes_before_a_late_equivalent_peer() {
-        let source = "module main; import control(if); \
+        let source = "module main; import control(macro if); \
              default host type Bool role(bool); \
              fn identity_a[A](value: A) -> A { value } \
              fn identity_b[B](value: B) -> B { value } \
@@ -14953,7 +14860,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
              fn run() -> . { \
                same( \
                  .(condition: Bool) { \
-                   if! condition { identity_a } else { identity_b } \
+                   if (condition) { identity_a } else { identity_b } \
                  }, \
                  .(_condition: Bool) -> [T] T -> T { identity_c }, \
                ) \
@@ -14969,15 +14876,15 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, branches) in [
             (
                 "scheme first",
-                "if! condition { identity } else { .[A](value: A) -> A { value } }",
+                "if (condition) { identity } else { .[A](value: A) -> A { value } }",
             ),
             (
                 "value first",
-                "if! condition { .[A](value: A) -> A { value } } else { identity }",
+                "if (condition) { .[A](value: A) -> A { value } } else { identity }",
             ),
         ] {
             let source = format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  default host type Bool role(bool); \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn accept(_function: [T] T -> T) -> . {{ () }} \
@@ -15006,15 +14913,15 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "update second first",
-                "if! condition { state.!{second = second} } else { state.!{first = first} }",
+                "if (condition) { state.!{second = second} } else { state.!{first = first} }",
             ),
             (
                 "update first first",
-                "if! condition { state.!{first = first} } else { state.!{second = second} }",
+                "if (condition) { state.!{first = first} } else { state.!{second = second} }",
             ),
         ] {
             let source = format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  host type Bool role(bool); \
                  host type First_payload; \
                  host type Second_payload; \
@@ -15046,16 +14953,16 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "field update first",
-                "if! condition { state.!{second = replacement} } else { finish!(state, _) }",
+                "if (condition) { state.!{second = replacement} } else { finish(state, _) }",
             ),
             (
                 "action first",
-                "if! condition { finish!(state, _) } else { state.!{second = replacement} }",
+                "if (condition) { finish(state, _) } else { state.!{second = replacement} }",
             ),
         ] {
             let main = format!(
-                "module main; import control(if); \
-                 import elab(finish); \
+                "module main; import control(macro if); \
+                 import macros(macro finish); \
                  host type Bool role(bool); \
                  host type First_payload; \
                  host type Second_payload; \
@@ -15068,7 +14975,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                  }}"
             );
             let package = lowered_control_package(&[
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
             let (error, scope) = check_retained_error_with_scope(&package);
@@ -15084,17 +14991,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             assert_eq!(
                 scope
                     .memo()
-                    .user_elaborator_template_executions_for("elab", "finish"),
+                    .user_macro_template_executions_for("macros", "finish"),
                 1,
                 "the {label} rejected relation must execute finish exactly once"
             );
             assert_eq!(
                 scope
                     .memo()
-                    .user_elaborator_template_executions_for("control", "if"),
+                    .user_macro_template_executions_for("control", "if"),
                 1
             );
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 2);
+            assert_eq!(scope.memo().user_macro_template_executions(), 2);
         }
     }
 
@@ -15103,21 +15010,21 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "update second first",
-                "if! condition { \
+                "if (condition) { \
                    let held = state.!{second = second}; \
                    held \
                  } else { state.!{first = first} }",
             ),
             (
                 "update first first",
-                "if! condition { \
+                "if (condition) { \
                    let held = state.!{first = first}; \
                    held \
                  } else { state.!{second = second} }",
             ),
         ] {
             let source = format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  host type Bool role(bool); \
                  host type First_payload; \
                  host type Second_payload; \
@@ -15145,28 +15052,28 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "generic first",
-                "if! condition { make() } else { finish!((), _) }",
+                "if (condition) { make() } else { finish((), _) }",
             ),
             (
                 "action first",
-                "if! condition { finish!((), _) } else { make() }",
+                "if (condition) { finish((), _) } else { make() }",
             ),
         ] {
             let main = format!(
-                "module main; import control(if); \
-                 import elab(finish); \
+                "module main; import control(macro if); \
+                 import macros(macro finish); \
                  default host type Bool role(bool); \
                  host fn make[A]() -> A; \
                  fn ignore[A](_value: A) -> . {{ () }} \
                  fn run(condition: Bool) -> . {{ ignore({body}) }}"
             );
             let package = lowered_control_package(&[
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 2,
                 "the {label} relation must execute the independent action exactly once"
             );
@@ -15180,31 +15087,31 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "required source first",
-                "if! condition { identity_target!(.(value) { value }) } else { \
-                   finish!(.(value: .) -> . { value }, _) \
+                "if (condition) { identity_target(.(value) { value }) } else { \
+                   finish(.(value: .) -> . { value }, _) \
                  }",
             ),
             (
                 "independent action first",
-                "if! condition { finish!(.(value: .) -> . { value }, _) } else { \
-                   identity_target!(.(value) { value }) \
+                "if (condition) { finish(.(value: .) -> . { value }, _) } else { \
+                   identity_target(.(value) { value }) \
                  }",
             ),
         ] {
             let main = format!(
-                "module main; import control(if); \
-                 import elab(finish, identity_target); \
+                "module main; import control(macro if); \
+                 import macros(macro finish, macro identity_target); \
                  default host type Bool role(bool); \
                  fn ignore[A](_value: A) -> . {{ () }} \
                  fn run(condition: Bool) -> . {{ ignore({body}) }}"
             );
             let package = lowered_control_package(&[
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 3,
                 "the {label} relation must execute each arm action exactly once"
             );
@@ -15217,11 +15124,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn surface_if_else_rejects_an_underdetermined_common_result() {
         let package = lowered_control_package_result(&[(
             "main.kio",
-            "module main; import control(if); \
+            "module main; import control(macro if); \
             host type Bool role(bool); \
             host fn make[A]() -> A; \
             fn pick(c: Bool) -> . { \
-              let _result = if! c { make() } else { make() }; \
+              let _result = if (c) { make() } else { make() }; \
               () \
             }",
         )])
@@ -15234,12 +15141,12 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn nested_if_else_synthesis_is_result_position_invariant() {
         for branches in [
-            "if! first { concrete() } else if! second { make() } else { make() }",
-            "if! first { make() } else if! second { concrete() } else { make() }",
-            "if! first { make() } else if! second { make() } else { concrete() }",
+            "if (first) { concrete() } else if (second) { make() } else { make() }",
+            "if (first) { make() } else if (second) { concrete() } else { make() }",
+            "if (first) { make() } else if (second) { make() } else { concrete() }",
         ] {
             control_ok(&format!(
-                "module main; import control(if); \
+                "module main; import control(macro if); \
                  default host type Bool role(bool); \
                  host type I32; \
                  host fn make[A]() -> A; \
@@ -15255,14 +15162,14 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_result_uses_a_later_connected_sibling() {
         control_ok(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
             default host type Bool role(bool); \
             host type I32; \
             host fn make[A]() -> A; \
             host fn witness() -> I32; \
             fn consume[A](_selected: A, _witness: A) -> . { () } \
             fn run(condition: Bool) -> . { \
-              consume(if! condition { make() } else { make() }, witness()) \
+              consume(if (condition) { make() } else { make() }, witness()) \
             }",
         );
     }
@@ -15270,13 +15177,13 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_result_does_not_read_through_a_later_let_body() {
         let message = control_err(
-            "module main; import control(if); \
+            "module main; import control(macro if); \
             host type Bool role(bool); \
             host type I32; \
             host fn make[A]() -> A; \
             host fn witness() -> I32; \
             fn run(condition: Bool) -> I32 { \
-              let _unresolved = if! condition { make() } else { make() }; \
+              let _unresolved = if (condition) { make() } else { make() }; \
               witness() \
             }",
         );
@@ -15310,20 +15217,20 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         check_package_sources(&[
             COMMON_RESULT_FILLS,
             "module main; \
-             import common(common3); \
+             import common(macro common3); \
              host type Output; \
              host fn make[A]() -> A; \
              host fn concrete() -> Output; \
              fn concrete_first() -> . { \
-               let _selected = common3!(.() { concrete() }, .() { make() }, .() { make() }); \
+               let _selected = common3(.() { concrete() }, .() { make() }, .() { make() }); \
                () \
              } \
              fn concrete_middle() -> . { \
-               let _selected = common3!(.() { make() }, .() { concrete() }, .() { make() }); \
+               let _selected = common3(.() { make() }, .() { concrete() }, .() { make() }); \
                () \
              } \
              fn concrete_last() -> . { \
-               let _selected = common3!(.() { make() }, .() { make() }, .() { concrete() }); \
+               let _selected = common3(.() { make() }, .() { make() }, .() { concrete() }); \
                () \
              }",
         ])
@@ -15346,7 +15253,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         ] {
             let main = format!(
                 "module main; \
-                 import common(common2); \
+                 import common(macro common2); \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -15355,7 +15262,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                    replacement_first: First_payload, \
                    replacement_second: Second_payload \
                  ) -> . {{ \
-                   let _selected = common2!(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
                    () \
                  }}"
             );
@@ -15377,29 +15284,29 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             (
                 "field update first",
                 "state.!{second = replacement}",
-                "finish!(state, _)",
+                "finish(state, _)",
             ),
             (
                 "action first",
-                "finish!(state, _)",
+                "finish(state, _)",
                 "state.!{second = replacement}",
             ),
         ] {
             let main = format!(
                 "module main; \
-                 import common(common2); \
-                 import elab(finish); \
+                 import common(macro common2); \
+                 import macros(macro finish); \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
                  fn reject(state: State, replacement: Second_payload) -> . {{ \
-                   let _selected = common2!(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
                    () \
                  }}"
             );
             let package = lowered_package(&[
                 ("common.kio", COMMON_RESULT_FILLS),
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
             crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
@@ -15414,7 +15321,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                 "the {label} fills source and replacement-first defaults must remain incompatible: {error:#?}"
             );
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 2,
                 "the {label} rejected relation must execute common2 and finish exactly once each"
             );
@@ -15453,7 +15360,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         ] {
             let main = format!(
                 "module main; \
-                 import common(common2); \
+                 import common(macro common2); \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -15462,7 +15369,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                    replacement_first: First_payload, \
                    replacement_second: Second_payload \
                  ) -> . {{ \
-                   let _selected = common2!(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
                    () \
                  }}"
             );
@@ -15481,27 +15388,27 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn fills_relation_probe_executes_an_optional_target_once_in_both_producer_orders() {
         for (label, left, right) in [
-            ("generic first", "make()", "finish!((), _)"),
-            ("action first", "finish!((), _)", "make()"),
+            ("generic first", "make()", "finish((), _)"),
+            ("action first", "finish((), _)", "make()"),
         ] {
             let main = format!(
                 "module main; \
-                 import common(common2); \
-                 import elab(finish); \
+                 import common(macro common2); \
+                 import macros(macro finish); \
                  host fn make[A]() -> A; \
                  fn run() -> . {{ \
-                   let _selected = common2!(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
                    () \
                  }}"
             );
             let package = lowered_package(&[
                 ("common.kio", COMMON_RESULT_FILLS),
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 2,
                 "the {label} relation must execute common2 and the independent action once each"
             );
@@ -15513,36 +15420,36 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn fills_relation_probe_migrates_a_multilayer_action_in_both_producer_orders() {
         for (label, left, right) in [
-            ("generic first", "make()", "relay!(finish!((), _), (), _)"),
+            ("generic first", "make()", "relay(finish((), _), (), _)"),
             (
                 "migrated action first",
-                "relay!(finish!((), _), (), _)",
+                "relay(finish((), _), (), _)",
                 "make()",
             ),
         ] {
             let main = format!(
                 "module main; \
-                 import common(common2); \
-                 import elab(finish, relay); \
+                 import common(macro common2); \
+                 import macros(macro finish, macro relay); \
                  host fn make[A]() -> A; \
                  fn run() -> . {{ \
-                   let _selected = common2!(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
                    () \
                  }}"
             );
             let package = lowered_package(&[
                 ("common.kio", COMMON_RESULT_FILLS),
-                ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+                ("macros.kio", FINAL_SUCCESSOR_MACROS),
                 ("main.kio", &main),
             ]);
-            crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+            crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 3,
                 "the {label} relation must execute common2, finish, and relay exactly once each"
             );
-            let work = crate::pass::typecheck_core::apply::final_elaborator_successor_work();
+            let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
             assert_eq!(
                 work.migrated_descents, 1,
                 "the {label} relation must migrate relay's nonterminal successor exactly once: {work:?}"
@@ -15555,25 +15462,25 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn fills_relation_restart_completes_a_three_producer_two_wave_cohort() {
         let main = "module main; \
-            import common(common3); \
-            import elab(finish); \
+            import common(macro common3); \
+            import macros(macro finish); \
             host fn make[A]() -> A; \
             fn run() -> . { \
-              let _selected = common3!( \
-                .() { make() }, .() { make() }, .() { finish!((), _) } \
+              let _selected = common3( \
+                .() { make() }, .() { make() }, .() { finish((), _) } \
               ); \
               () \
             }";
         let package = lowered_package(&[
             ("common.kio", COMMON_RESULT_FILLS),
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
+            ("macros.kio", FINAL_SUCCESSOR_MACROS),
             ("main.kio", main),
         ]);
         crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
         let (checked, scope) = check_retained_success(&package);
 
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             2,
             "common3 and its independently ready action must each execute once"
         );
@@ -15733,24 +15640,24 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn fills_common_result_in_a_later_conditional_branch_closes_an_earlier_peer() {
         check_package_sources(&[
             COMMON_RESULT_FILLS,
-            "module main; import control(if); \
-             import common(common2); \
+            "module main; import control(macro if); \
+             import common(macro common2); \
              default host type Bool role(bool); \
              host type Output; \
              host fn make[A]() -> A; \
              host fn concrete() -> Output; \
              fn generic_first(condition: Bool) -> . { \
-               let selected = if! condition { \
+               let selected = if (condition) { \
                  make() \
                } else { \
-                 common2!(.() { concrete() }, .() { concrete() }) \
+                 common2(.() { concrete() }, .() { concrete() }) \
                }; \
                let _value = selected(); \
                () \
              } \
              fn fills_first(condition: Bool) -> . { \
-               let selected = if! condition { \
-                 common2!(.() { concrete() }, .() { concrete() }) \
+               let selected = if (condition) { \
+                 common2(.() { concrete() }, .() { concrete() }) \
                } else { \
                  make() \
                }; \
@@ -15764,7 +15671,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn fills_common_result_stages_one_residual_eta_plan_per_partial_call() {
         let main = r#"module main;
-import common(common2);
+import common(macro common2);
 
 host type Output;
 
@@ -15773,12 +15680,12 @@ fn identity[A](value: A) -> A { value }
 fn concrete(value: Output) -> Output { value }
 
 fn generic_first() -> . {
-  let _selected = common2!(.() { identity(_) }, .() { concrete });
+  let _selected = common2(.() { identity(_) }, .() { concrete });
   ()
 }
 
 fn generic_last() -> . {
-  let _selected = common2!(.() { concrete }, .() { identity(_) });
+  let _selected = common2(.() { concrete }, .() { identity(_) });
   ()
 }
 "#;
@@ -15826,12 +15733,12 @@ fn generic_last() -> . {
         check_package_sources(&[
             COMMON_RESULT_FILLS,
             "module main; \
-             import common(common2); \
+             import common(macro common2); \
              host type Output; \
              host fn make[A]() -> A; \
              type Output_fn = . -> Output; \
              fn run() -> . { \
-               let _selected = common2!(.() { make() }, .() { make() }, Output_fn); \
+               let _selected = common2(.() { make() }, .() { make() }, Output_fn); \
                () \
              }",
         ])
@@ -15843,11 +15750,11 @@ fn generic_last() -> . {
         check_package_sources(&[
             COMMON_RESULT_FILLS,
             "module main; \
-             import common(common2); \
+             import common(macro common2); \
              host type Output; \
              host fn make[A]() -> A; \
              type Output_fn = . -> Output; \
-             fn run() -> Output_fn { common2!(.() { make() }, .() { make() }) }",
+             fn run() -> Output_fn { common2(.() { make() }, .() { make() }) }",
         ])
         .expect("an enclosing expected type closes every open retained producer");
     }
@@ -15857,10 +15764,10 @@ fn generic_last() -> . {
         let message = check_package_sources(&[
             COMMON_RESULT_FILLS,
             "module main; \
-             import common(common3); \
+             import common(macro common3); \
              host fn make[A]() -> A; \
              fn reject() -> . { \
-               let _selected = common3!(.() { make() }, .() { make() }, .() { make() }); \
+               let _selected = common3(.() { make() }, .() { make() }, .() { make() }); \
                () \
              }",
         ])
@@ -15878,24 +15785,24 @@ fn generic_last() -> . {
             host type Output; \
             host fn source() -> Input; \
             fn reject() -> Output { \
-              match!(source(), .(value) { value }, Output) \
+              match(source(), .(value) { value }, Output) \
             }");
     }
 
     #[test]
-    fn user_elaborator_captures_prepend_implementation_abi() {
+    fn user_macro_captures_prepend_implementation_abi() {
         ok("module pkg/main; \
             import __comptime__; \
             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; }; \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __elab_error__(ct, \"not evaluated\") \
+                __macro_error__(ct, \"not evaluated\") \
               } \
-            pub elab capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
+            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
     }
 
     #[test]
-    fn user_elaborator_accepts_capture_from_prior_type_rec_group() {
+    fn user_macro_accepts_capture_from_prior_type_rec_group() {
         ok("module pkg/main; \
             import __comptime__; \
             rec { \
@@ -15903,30 +15810,30 @@ fn generic_last() -> . {
               pub type Rep_payload = Rep; \
             } \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __elab_error__(ct, \"not evaluated\") \
+                __macro_error__(ct, \"not evaluated\") \
               } \
-            pub elab capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
+            pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
     }
 
     #[test]
-    fn user_elaborator_rejects_later_type_capture() {
+    fn user_macro_rejects_later_type_capture() {
         let message = name_err(
             "module main; \
              import __comptime__; \
              pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-             elab demo : . -> . { captures Later; impl implementation; }; \
+             macro demo : . -> . { captures Later; impl implementation; }; \
              type Later = .;",
         );
         assert!(
-            message.contains("capture `Later` is not in scope before elaborator `demo`"),
+            message.contains("capture `Later` is not in scope before macro `demo`"),
             "got: {message}"
         );
     }
 
     #[test]
     fn host_source_order_capture_rejects_later_host_type_at_cutoff() {
-        let source = "module x; elab demo : . -> . { captures Later; impl implementation; }; host type Later; fn implementation() -> . { () }";
+        let source = "module x; macro demo : . -> . { captures Later; impl implementation; }; host type Later; fn implementation() -> . { () }";
         let error = capture_source_order_check(&[source], "x")
             .expect_err("the capture cutoff must reject a later local host type");
         let Error::NameRes(diagnostic) = error else {
@@ -15934,7 +15841,7 @@ fn generic_last() -> . {
         };
         assert_eq!(
             diagnostic.message,
-            "elaborator capture `Later` is not in scope before elaborator `demo`"
+            "macro capture `Later` is not in scope before macro `demo`"
         );
         let start = u32::try_from(source.find("Later").unwrap()).unwrap();
         assert_eq!(diagnostic.span, Span::new(start, start + 5));
@@ -15942,7 +15849,7 @@ fn generic_last() -> . {
 
     #[test]
     fn host_source_order_capture_rejects_later_host_value_at_cutoff() {
-        let source = "module x; elab demo : . -> . { captures later; impl implementation; }; host fn later() -> .; fn implementation() -> . { () }";
+        let source = "module x; macro demo : . -> . { captures later; impl implementation; }; host fn later() -> .; fn implementation() -> . { () }";
         let error = capture_source_order_check(&[source], "x")
             .expect_err("the capture cutoff must reject a later local host function");
         let Error::NameRes(diagnostic) = error else {
@@ -15950,7 +15857,7 @@ fn generic_last() -> . {
         };
         assert_eq!(
             diagnostic.message,
-            "elaborator capture `later` is not in scope before elaborator `demo`"
+            "macro capture `later` is not in scope before macro `demo`"
         );
         let start = u32::try_from(source.find("later").unwrap()).unwrap();
         assert_eq!(diagnostic.span, Span::new(start, start + 5));
@@ -15965,12 +15872,12 @@ fn generic_last() -> . {
             let source = format!(
                 "module main; import __comptime__; \
                  pure fn implementation(ct: __Comptime__, _capture: {parameter}) -> __Checked_term__ {{ __term_unit__(ct) }} \
-                 elab demo : . -> . {{ captures {capture}; impl implementation; }}; \
+                 macro demo : . -> . {{ captures {capture}; impl implementation; }}; \
                  {declaration}"
             );
             assert_eq!(
                 name_err(&source),
-                format!("elaborator capture `{capture}` is not in scope before elaborator `demo`")
+                format!("macro capture `{capture}` is not in scope before macro `demo`")
             );
         }
     }
@@ -15978,57 +15885,57 @@ fn generic_last() -> . {
     #[test]
     fn host_source_order_capture_preserves_prior_and_selectively_imported_hosts() {
         let helper = "pure fn implementation(ct: __Comptime__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) }";
-        let elaborator =
-            "elab demo : . -> . { captures (Earlier, earlier); impl implementation; };";
+        let macro_def =
+            "macro demo : . -> . { captures (Earlier, earlier); impl implementation; };";
         ok(&format!(
-            "module main; import __comptime__; host type Earlier; host fn earlier() -> .; {helper} {elaborator}"
+            "module main; import __comptime__; host type Earlier; host fn earlier() -> .; {helper} {macro_def}"
         ));
         check_package_sources(&[
             "module provider; host type Earlier; host fn earlier() -> .;",
-            &format!("module consumer; import __comptime__; import provider(Earlier, earlier); {helper} {elaborator}"),
+            &format!("module consumer; import __comptime__; import provider(Earlier, earlier); {helper} {macro_def}"),
         ])
         .expect("selective host imports retain their existing capture scope");
     }
 
     #[test]
-    fn user_elaborator_rejects_later_function_capture() {
+    fn user_macro_rejects_later_function_capture() {
         let message = name_err(
             "module main; \
              import __comptime__; \
              pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-             elab demo : . -> . { captures later; impl implementation; }; \
+             macro demo : . -> . { captures later; impl implementation; }; \
              fn later() -> . { () }",
         );
         assert!(
-            message.contains("capture `later` is not in scope before elaborator `demo`"),
+            message.contains("capture `later` is not in scope before macro `demo`"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn user_elaborator_rejects_later_newtype_member_capture() {
+    fn user_macro_rejects_later_newtype_member_capture() {
         let message = name_err(
             "module main; \
              import __comptime__; \
              pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-             elab demo : . -> . { captures Later.mk; impl implementation; }; \
+             macro demo : . -> . { captures Later.mk; impl implementation; }; \
              newtype Later : . { constructor mk; projector get; };",
         );
         assert!(
-            message.contains("capture `Later.mk` is not in scope before elaborator `demo`"),
+            message.contains("capture `Later.mk` is not in scope before macro `demo`"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn user_elaborator_rejects_later_local_identity_alias_member_capture() {
+    fn user_macro_rejects_later_local_identity_alias_member_capture() {
         let error = capture_source_order_check(
             &[
                 "module origin; \
                  pub newtype Token : . { pub constructor make; pub projector open; };",
                 "module x; \
                  import origin as imported; \
-                 elab demo : . -> . { captures Later.make; impl later; }; \
+                 macro demo : . -> . { captures Later.make; impl later; }; \
                  type Later = imported.Token; \
                  fn later() -> . { () }",
             ],
@@ -16041,14 +15948,14 @@ fn generic_last() -> . {
         assert!(
             diagnostic
                 .message
-                .contains("capture `Later.make` is not in scope before elaborator `demo`"),
+                .contains("capture `Later.make` is not in scope before macro `demo`"),
             "got: {}",
             diagnostic.message
         );
     }
 
     #[test]
-    fn user_elaborator_accepts_earlier_or_imported_identity_alias_member_capture_order() {
+    fn user_macro_accepts_earlier_or_imported_identity_alias_member_capture_order() {
         capture_source_order_check(
             &[
                 "module origin; \
@@ -16056,7 +15963,7 @@ fn generic_last() -> . {
                 "module x; \
                  import origin as imported; \
                  type Earlier = imported.Token; \
-                 elab demo : . -> . { captures Earlier.make; impl later; }; \
+                 macro demo : . -> . { captures Earlier.make; impl later; }; \
                  fn later() -> . { () }",
             ],
             "x",
@@ -16072,7 +15979,7 @@ fn generic_last() -> . {
                  pub type Token = imported.Token;",
                 "module x; \
                  import relay(Token); \
-                 elab demo : . -> . { captures Token.make; impl later; }; \
+                 macro demo : . -> . { captures Token.make; impl later; }; \
                  fn later() -> . { () }",
             ],
             "x",
@@ -16081,49 +15988,46 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_rejects_later_self_alias_qualified_function_capture() {
+    fn user_macro_rejects_later_self_alias_qualified_function_capture() {
         let message = capture_source_order_err(
             "module x; \
              import x as self_module; \
-             elab demo : . -> . { captures self_module.later; impl later; }; \
+             macro demo : . -> . { captures self_module.later; impl later; }; \
              fn later() -> . { () }",
         );
         assert!(
-            message
-                .contains("capture `self_module.later` is not in scope before elaborator `demo`"),
+            message.contains("capture `self_module.later` is not in scope before macro `demo`"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn user_elaborator_rejects_later_self_alias_qualified_newtype_member_capture() {
+    fn user_macro_rejects_later_self_alias_qualified_newtype_member_capture() {
         let message = capture_source_order_err(
             "module x; \
              import x as self_module; \
-             elab demo : . -> . { captures self_module.Later.mk; impl later; }; \
+             macro demo : . -> . { captures self_module.Later.mk; impl later; }; \
              newtype Later : . { constructor mk; projector get; };",
         );
         assert!(
-            message.contains(
-                "capture `self_module.Later.mk` is not in scope before elaborator `demo`"
-            ),
+            message.contains("capture `self_module.Later.mk` is not in scope before macro `demo`"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn fills_elaborator_implementation_has_a_split_capability_abi() {
+    fn fills_macro_implementation_has_a_split_capability_abi() {
         ok("module main; \
             import __comptime__; \
             pure fn marked( \
               ct: __Comptime__, fills: __Fill_ctx__, source: __Type__, value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
-            elab demo : [Source] Source -> Source { impl(fills) marked; };");
+            macro demo : [Source] Source -> Source { impl(fills) marked; };");
 
         let missing_context = err("module main; \
             import __comptime__; \
             pure fn ordinary(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-            elab demo : . -> . { impl(fills) ordinary; };");
+            macro demo : . -> . { impl(fills) ordinary; };");
         assert!(
             missing_context.contains("ABI expects 2 value parameters")
                 && missing_context.contains("implementation has 1"),
@@ -16134,7 +16038,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pure fn marked(ct: __Comptime__, fills: __Fill_ctx__) \
               -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            elab demo : . -> . { impl marked; };");
+            macro demo : . -> . { impl marked; };");
         assert!(
             context_in_late_mode.contains("ABI expects 1 value parameters")
                 && context_in_late_mode.contains("implementation has 2"),
@@ -16143,7 +16047,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn ordinary_elaborator_skips_marked_projection_and_adoption_work() {
+    fn ordinary_macro_skips_marked_projection_and_adoption_work() {
         use crate::pass::typecheck_core::apply::fills::{
             FillRelationWork, ProjectedHeaderWorkEvent, ProjectedLeafObservation,
             ReturnedFillRelationObservation,
@@ -16158,7 +16062,7 @@ fn generic_last() -> . {
         }
 
         fn observe(implementation: &str) -> Work {
-            let call = "demo!(.() { () })";
+            let call = "demo(.() { () })";
             let source = format!(
                 "module main; \
                  import __comptime__; \
@@ -16167,8 +16071,8 @@ fn generic_last() -> . {
             );
             let package = lowered_package(&[("main.kio", &source)]);
             let original = retained_call_at(&package, "main", source_span(&source, call));
-            let Expr::UserElaborator { args, .. } = &original else {
-                panic!("the same-shape call lost its retained elaborator form")
+            let Expr::UserMacro { args, .. } = &original else {
+                panic!("the same-shape call lost its retained macro form")
             };
             let value_span = args
                 .iter()
@@ -16191,7 +16095,7 @@ fn generic_last() -> . {
 
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 1,
                 "the same-shape implementation must execute exactly once"
             );
@@ -16212,7 +16116,7 @@ fn generic_last() -> . {
             "pure fn implementation( \
                _ct: __Comptime__, _target: __Type__, value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             elab demo : [Target] Target -> Target { impl implementation; };",
+             macro demo : [Target] Target -> Target { impl implementation; };",
         );
         assert!(
             ordinary.projected_sources.is_empty()
@@ -16229,7 +16133,7 @@ fn generic_last() -> . {
              ) -> (__Checked_term__ & __Fill_ctx__) { \
                (value, __fill__(ct, fills, target, __term_type__(ct, value))) \
              } \
-             elab demo : [Target] Target -> Target { impl(fills) implementation; };",
+             macro demo : [Target] Target -> Target { impl(fills) implementation; };",
         );
         assert_eq!(
             marked.projected_sources.len(),
@@ -16296,9 +16200,9 @@ fn generic_last() -> . {
                 _b_type: __Type__, \
                 second: __Checked_term__ \
               ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
-            elab relay : [A] A -> [B] (A & B) -> (A & B) { impl(fills) relay_impl; }; \
+            macro relay : [A] A -> [B] (A & B) -> (A & B) { impl(fills) relay_impl; }; \
             fn run[A](first: A) -> A & . { \
-              let residual = relay!(first); \
+              let residual = relay(first); \
               residual((first, ())) \
             }"])
         .expect("a partial fills call closes through its ordinary residual eta plan");
@@ -16323,11 +16227,11 @@ fn generic_last() -> . {
               let callback_type = __type_arrow__(ct, unit_type, zero, unit_type); \
               (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills) \
             } \
-            elab invoke_then : [S] (S -> S) -> Later -> . { \
+            macro invoke_then : [S] (S -> S) -> Later -> . { \
               impl(fills) invoke_then_impl; \
             }; \
             rec(loop) fn repeat(state: .) -> . { \
-              let residual = invoke_then!(.(_unit: .) { recur(cont) repeat(state) }); \
+              let residual = invoke_then(.(_unit: .) { recur(cont) repeat(state) }); \
               residual(later()) \
             }"])
         .expect_err("a residual function must not capture a lifted recursive callback");
@@ -16380,8 +16284,8 @@ fn generic_last() -> . {
               _a_type: __Type__, _first: __Checked_term__, \
               _b_type: __Type__, second: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
-            elab relay : [A] A -> [B] B -> B { impl(fills) relay_impl; }; \
-            fn run() -> . & . { relay!((), ((), ())) }"])
+            macro relay : [A] A -> [B] B -> B { impl(fills) relay_impl; }; \
+            fn run() -> . & . { relay((), ((), ())) }"])
         .expect("a closed successor-layer source must cross the marked projection gate");
     }
 
@@ -16432,20 +16336,20 @@ fn generic_last() -> . {
                      {relations} \
                    ) \
                  }} \
-                 elab solve : [A] [B] [Fixed] Fixed -> (A & B & Fixed) {{ \
+                 macro solve : [A] [B] [Fixed] Fixed -> (A & B & Fixed) {{ \
                    impl(fills) solve_impl; \
                  }}; \
-                 fn run() -> . {{ let _result = solve!(()); () }}"
+                 fn run() -> . {{ let _result = solve(()); () }}"
             );
             let package = lowered_package(&[("main.kio", &source)]);
-            let original = retained_call_at(&package, "main", source_span(&source, "solve!(())"));
+            let original = retained_call_at(&package, "main", source_span(&source, "solve(())"));
             let observer =
                 crate::pass::typecheck_core::apply::fills::observe_returned_fill_relations_at(
                     "main",
                     original.span(),
                 );
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_retained_call_published(checked.elaborations(), "main", &original);
             let observations = observer.take();
             assert_eq!(
@@ -16506,14 +16410,11 @@ fn generic_last() -> . {
                 ) \
               ) \
             } \
-            elab conflict : [A] . -> A { impl(fills) conflict_impl; }; \
-            fn run() -> . { let _result = conflict!(()); () }";
+            macro conflict : [A] . -> A { impl(fills) conflict_impl; }; \
+            fn run() -> . { let _result = conflict(()); () }";
         let package = lowered_package(&[("main.kio", contradictory)]);
-        let original = retained_call_at(
-            &package,
-            "main",
-            source_span(contradictory, "conflict!(())"),
-        );
+        let original =
+            retained_call_at(&package, "main", source_span(contradictory, "conflict(())"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert!(
             errors.iter().any(|error| matches!(
@@ -16522,7 +16423,7 @@ fn generic_last() -> . {
             )),
             "contradictory fill relations must fail: {errors:?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_retained_call_unpublished(&elaborations, "main", &original);
     }
 
@@ -16536,15 +16437,15 @@ fn generic_last() -> . {
               _ct: __Comptime__, fills: __Fill_ctx__, \
               _first: __Checked_term__, second: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
-            elab sparse : . -> I32 -> . -> I32 -> . -> I32 { \
+            macro sparse : . -> I32 -> . -> I32 -> . -> I32 { \
               impl(fills) sparse_impl; \
             }; \
-            fn run() -> I32 { sparse!(probe(), 0, probe(), 1, probe()) }";
+            fn run() -> I32 { sparse(probe(), 0, probe(), 1, probe()) }";
         let package = lowered_package(&[("main.kio", source)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(source, "sparse!(probe(), 0, probe(), 1, probe())"),
+            source_span(source, "sparse(probe(), 0, probe(), 1, probe())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -16555,7 +16456,7 @@ fn generic_last() -> . {
                 .is_some(),
             "the sparse private ABI must still publish its public call"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
 
         struct ProbeCalls(usize);
         impl crate::pass::visit_mut::TypecheckVisitMut<Prime> for ProbeCalls {
@@ -16590,7 +16491,7 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_open_specialization_argument_closes_before_recipe_materialization() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __intrinsics__; \
             import __comptime__; \
             type Type_pair = __Type__ & __Type__; \
@@ -16680,28 +16581,25 @@ fn generic_last() -> . {
                       ) \
                     }, \
                     .(_failed: Specialize_tail) -> (__Checked_term__ & __Fill_ctx__) { \
-                      (__elab_error__(ct, \"specialization failed\"), fills) \
+                      (__macro_error__(ct, \"specialization failed\"), fills) \
                     } \
                   ) \
                 }, \
                 .() -> (__Checked_term__ & __Fill_ctx__) { \
-                  (__elab_error__(ct, \"expected forall\"), fills) \
+                  (__macro_error__(ct, \"expected forall\"), fills) \
                 } \
               ) \
             } \
-            pub elab specialize_open : [Target] ([A] . -> A) -> Target { \
+            pub macro specialize_open : [Target] ([A] . -> A) -> Target { \
               impl(fills) specialize_open_impl; \
             };";
         let main = "module main; \
-            import elab(specialize_open); \
+            import macros(macro specialize_open); \
             host fn make[A]() -> A; \
-            fn run() -> . { specialize_open!(make) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(
-            &package,
-            "main",
-            source_span(main, "specialize_open!(make)"),
-        );
+            fn run() -> . { specialize_open(make) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original =
+            retained_call_at(&package, "main", source_span(main, "specialize_open(make)"));
         let (checked, scope) = check_retained_success(&package);
         assert!(matches!(
             checked
@@ -16710,13 +16608,13 @@ fn generic_last() -> . {
                 .type_at("main", original.span()),
             Some(Type::Unit { .. })
         ));
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the open specialization argument must zonk before TermTypeApp recipe replay");
     }
 
     #[test]
-    fn user_elaborator_semantic_packet_validates_packed_implementation_slots() {
+    fn user_macro_semantic_packet_validates_packed_implementation_slots() {
         ok("module main; \
             import __comptime__; \
             pure fn identity_impl( \
@@ -16725,7 +16623,7 @@ fn generic_last() -> . {
             ) -> __Checked_term__ { \
               __snd__(__Type__, __Checked_term__, packet) \
             } \
-            elab identity : [Source] Source -> Source { impl identity_impl; };");
+            macro identity : [Source] Source -> Source { impl identity_impl; };");
 
         let message = err("module main; \
             import __comptime__; \
@@ -16735,7 +16633,7 @@ fn generic_last() -> . {
             ) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
-            elab identity : [Source] Source -> Source { impl identity_impl; };");
+            macro identity : [Source] Source -> Source { impl identity_impl; };");
         assert!(
             message.contains("type slot `[Source]`")
                 && message.contains("`__Checked_term__`")
@@ -16745,7 +16643,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_semantic_packet_rejects_explicit_unit_slots() {
+    fn user_macro_semantic_packet_rejects_explicit_unit_slots() {
         for (case, domain, tail, expected) in [
             (
                 "trailing Unit",
@@ -16779,7 +16677,7 @@ fn generic_last() -> . {
                  pure fn identity_impl(packet: {domain}) -> __Checked_term__ {{ \
                      __term_unit__(__fst__(__Comptime__, {tail}, packet)) \
                    }} \
-                 elab identity : [Source] Source -> Source {{ impl identity_impl; }};"
+                 macro identity : [Source] Source -> Source {{ impl identity_impl; }};"
             );
             let message = err(&source);
             assert!(
@@ -16790,7 +16688,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_semantic_packet_invokes_a_direct_flat_implementation() {
+    fn user_macro_semantic_packet_invokes_a_direct_flat_implementation() {
         ok("module main; \
             import __comptime__; \
             pure fn identity_impl( \
@@ -16798,12 +16696,12 @@ fn generic_last() -> . {
               _source: __Type__, \
               value: __Checked_term__ \
             ) -> __Checked_term__ { value } \
-            elab identity : [Source] Source -> Source { impl identity_impl; }; \
-            fn run() -> . { identity!(()) }");
+            macro identity : [Source] Source -> Source { impl identity_impl; }; \
+            fn run() -> . { identity(()) }");
     }
 
     #[test]
-    fn user_elaborator_named_implementation_can_invoke_a_flat_fold_result() {
+    fn user_macro_named_implementation_can_invoke_a_flat_fold_result() {
         let source = "module main; \
             import __comptime__; \
             type Identity_impl = \
@@ -16835,14 +16733,14 @@ fn generic_last() -> . {
               let selected = [% ((), [* (), identity_impl *]) %]; \
               selected(ct, source, value) \
             } \
-            elab identity : [Source] Source -> Source { impl folded_identity_impl; }; \
-            fn run() -> . { identity!(()) }";
+            macro identity : [Source] Source -> Source { impl folded_identity_impl; }; \
+            fn run() -> . { identity(()) }";
         check_package_sources(&[source])
             .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn user_elaborator_named_implementation_can_discard_captured_checked_term() {
+    fn user_macro_named_implementation_can_discard_captured_checked_term() {
         ok("module main; \
             import __comptime__; \
             host fn effect() -> .; \
@@ -16850,30 +16748,30 @@ fn generic_last() -> . {
                 let ignored = effect_term; \
                 __term_unit__(ct) \
               } \
-            elab demo : . -> . { captures effect; impl demo_impl; }; \
-            fn run() -> . { demo!() }");
+            macro demo : . -> . { captures effect; impl demo_impl; }; \
+            fn run() -> . { demo() }");
     }
 
     #[test]
-    fn user_elaborator_named_implementation_rejects_nested_impure_output() {
+    fn user_macro_named_implementation_rejects_nested_impure_output() {
         let error = check_package_sources(&[
             "module inner; \
              import __comptime__; \
              host fn effect() -> .; \
              pub type Effect = (. -> .) & .; \
              pub pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __Checked_term__ { __intrinsic_pair__(ct, effect_term, __term_unit__(ct)) } \
-             pub elab effect_call : . -> Effect { captures effect; impl effect_call_impl; };",
+             pub macro effect_call : . -> Effect { captures effect; impl effect_call_impl; };",
             "module outer; \
              import __comptime__; \
-             import inner(effect_call); \
+             import inner(macro effect_call); \
              pure fn outer_impl(ct: __Comptime__) -> __Checked_term__ { \
-                 let ignored = effect_call!(); \
+                 let ignored = effect_call(); \
                  __term_unit__(ct) \
                } \
-             pub elab outer : . -> . { impl outer_impl; };",
+             pub macro outer : . -> . { impl outer_impl; };",
             "module consumer; \
-             import outer(outer); \
-             fn run() -> . { outer!() }",
+             import outer(macro outer); \
+             fn run() -> . { outer() }",
         ])
         .expect_err(
             "a discarded nested host-function expansion must be rejected in a pure named implementation",
@@ -16889,10 +16787,10 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_bare_comptime_implementation_reports_a_type_error() {
+    fn user_macro_bare_comptime_implementation_reports_a_type_error() {
         let message = err("module main; \
             import __comptime__; \
-            elab demo : . -> . { impl __term_unit__; };");
+            macro demo : . -> . { impl __term_unit__; };");
         assert!(
             message.contains(
                 "polymorphic value used in a monomorphic position; apply it with type arguments first"
@@ -16902,31 +16800,31 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_newtype_member_gets_directed_abi_error() {
+    fn user_macro_newtype_member_gets_directed_abi_error() {
         let error = check_module(&module(
             "module main; \
              newtype Box : . { constructor mk; projector get; }; \
-             elab demo : . -> . { impl Box.mk; };",
+             macro demo : . -> . { impl Box.mk; };",
         ))
-        .expect_err("newtype member cannot satisfy the elaborator ABI");
+        .expect_err("newtype member cannot satisfy the macro ABI");
         let Error::Type(diagnostic) = error else {
             panic!("expected type error, got {error:?}");
         };
         assert!(
-            diagnostic.message.contains("newtype member `Box.mk` cannot implement elaborator `demo` because it does not have the elaborator ABI"),
+            diagnostic.message.contains("newtype member `Box.mk` cannot implement macro `demo` because it does not have the macro ABI"),
             "got: {}",
             diagnostic.message
         );
         assert_eq!(
             diagnostic.help(),
             Some(
-                "define a function that accepts the elaborator's reflected ABI inputs and returns `__Checked_term__`, then name that function after `impl`"
+                "define a function that accepts the macro's reflected ABI inputs and returns `__Checked_term__`, then name that function after `impl`"
             )
         );
     }
 
     #[test]
-    fn generated_elaborator_type_imports_are_injective_and_binder_safe() {
+    fn generated_macro_type_imports_are_injective_and_binder_safe() {
         let module = lowered_module("module current; fn _q0() -> . { () }");
         let mut imports = Vec::new();
         let slash = capture_import(&mut imports, "a/b", &module);
@@ -16975,44 +16873,44 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn public_user_elaborator_cannot_capture_private_type() {
+    fn public_user_macro_cannot_capture_private_type() {
         let message = err("module pkg/main; \
             import __comptime__; \
             newtype Hidden : . { pub constructor mk_hidden; pub projector un_hidden; }; \
             pub pure fn capture_impl() -> . { () } \
-            pub elab capture_demo : [T] . -> . { captures Hidden; impl capture_impl; }; \
+            pub macro capture_demo : [T] . -> . { captures Hidden; impl capture_impl; }; \
             fn keep() -> . { () }");
         assert!(
             message.contains(
-                "captured type `Hidden` must be at least as visible as elaborator `capture_demo`"
+                "captured type `Hidden` must be at least as visible as macro `capture_demo`"
             ),
             "got: {message}"
         );
     }
 
     #[test]
-    fn public_user_elaborator_accepts_private_implementation_function() {
+    fn public_user_macro_accepts_private_implementation_function() {
         ok("module main; \
              import __comptime__; \
              pure fn hidden_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-             pub elab demo : . -> . { impl hidden_impl; };");
+             pub macro demo : . -> . { impl hidden_impl; };");
     }
 
     #[test]
-    fn public_user_elaborator_accepts_qualified_public_implementation_function() {
+    fn public_user_macro_accepts_qualified_public_implementation_function() {
         check_package_sources(&[
             "module pkg/provider; \
              import __comptime__; \
              pub pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
             "module pkg/main; \
              import pkg/provider as provider; \
-             pub elab demo : . -> . { impl provider.implementation; };",
+             pub macro demo : . -> . { impl provider.implementation; };",
         ])
         .expect("qualified public implementation function");
     }
 
     #[test]
-    fn fills_user_elaborator_accepts_qualified_public_implementation_function() {
+    fn fills_user_macro_accepts_qualified_public_implementation_function() {
         check_package_sources(&[
             "module pkg/provider; \
              import __comptime__; \
@@ -17021,27 +16919,27 @@ fn generic_last() -> . {
              ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), ctx) }",
             "module pkg/main; \
              import pkg/provider as provider; \
-             pub elab demo : . -> . { impl(fills) provider.implementation; };",
+             pub macro demo : . -> . { impl(fills) provider.implementation; };",
         ])
         .expect("qualified fills implementation function");
     }
 
     #[test]
-    fn qualified_newtype_member_elaborator_target_gets_directed_abi_error() {
+    fn qualified_newtype_member_macro_target_gets_directed_abi_error() {
         let error = check_package_sources(&[
             "module pkg/provider; \
              pub newtype Box : . { pub constructor mk; pub projector get; };",
             "module pkg/main; \
              import pkg/provider as provider; \
-             elab demo : . -> . { impl provider.Box.mk; };",
+             macro demo : . -> . { impl provider.Box.mk; };",
         ])
-        .expect_err("qualified newtype member cannot satisfy the elaborator ABI");
+        .expect_err("qualified newtype member cannot satisfy the macro ABI");
         let Error::Type(diagnostic) = error else {
             panic!("expected type error, got {error:?}");
         };
         assert!(
             diagnostic.message.contains(
-                "newtype member `provider.Box.mk` cannot implement elaborator `demo` because it does not have the elaborator ABI"
+                "newtype member `provider.Box.mk` cannot implement macro `demo` because it does not have the macro ABI"
             ),
             "got: {}",
             diagnostic.message
@@ -17049,20 +16947,20 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn public_user_elaborator_accepts_scoped_selective_implementation_function() {
+    fn public_user_macro_accepts_scoped_selective_implementation_function() {
         check_package_sources(&[
             "module pkg/provider; \
              import __comptime__; \
              pub(pkg) pure fn implementation(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }",
             "module pkg/main; \
              import pkg/provider(implementation); \
-             pub elab demo : . -> . { impl implementation; };",
+             pub macro demo : . -> . { impl implementation; };",
         ])
-        .expect("compile-time implementation visibility need not match the public elaborator");
+        .expect("compile-time implementation visibility need not match the public macro");
     }
 
     #[test]
-    fn public_user_elaborator_rejects_private_captured_member() {
+    fn public_user_macro_rejects_private_captured_member() {
         let diagnostic = type_diag(
             "module main; \
              import __comptime__; \
@@ -17073,20 +16971,18 @@ fn generic_last() -> . {
                _source: __Type__, \
                value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             pub elab demo : . -> . { captures Token.mk; impl capture_impl; };",
+             pub macro demo : . -> . { captures Token.mk; impl capture_impl; };",
         );
         assert!(
-            diagnostic.message.contains(
-                "captured member `Token.mk` must be at least as visible as elaborator `demo`"
-            ),
+            diagnostic
+                .message
+                .contains("captured member `Token.mk` must be at least as visible as macro `demo`"),
             "got: {}",
             diagnostic.message
         );
         assert_eq!(
             diagnostic.help(),
-            Some(
-                "give captured member `Token.mk` visibility equal to or wider than elaborator `demo`"
-            )
+            Some("give captured member `Token.mk` visibility equal to or wider than macro `demo`")
         );
     }
 
@@ -17102,32 +16998,30 @@ fn generic_last() -> . {
               ct: __Comptime__, \
               _captured: __Checked_term__ \
             ) -> __Checked_term__ { __term_unit__(ct) } \
-            elab demo : . -> . { captures Tag.make; impl capture_impl; };";
+            macro demo : . -> . { captures Tag.make; impl capture_impl; };";
         check_package_sources(&[origin, private_consumer])
-            .expect("a private local alias is visible to a private local elaborator");
+            .expect("a private local alias is visible to a private local macro");
 
-        let public_consumer = private_consumer.replace("elab demo", "pub elab demo");
+        let public_consumer = private_consumer.replace("macro demo", "pub macro demo");
         let error = check_package_sources(&[origin, &public_consumer])
-            .expect_err("a private local alias cannot support a public elaborator capture");
+            .expect_err("a private local alias cannot support a public macro capture");
         let Error::Type(diagnostic) = error else {
             panic!("expected type error, got {error:?}");
         };
         assert_eq!(
             diagnostic.message,
-            "captured type alias `Tag` must be at least as visible as elaborator `demo`"
+            "captured type alias `Tag` must be at least as visible as macro `demo`"
         );
         assert_eq!(
             diagnostic.help(),
-            Some(
-                "give captured type alias `Tag` visibility equal to or wider than elaborator `demo`"
-            )
+            Some("give captured type alias `Tag` visibility equal to or wider than macro `demo`")
         );
 
         let scoped_consumer = private_consumer
             .replace("type Tag", "pub(pkg) type Tag")
-            .replace("elab demo", "pub(pkg) elab demo");
+            .replace("macro demo", "pub(pkg) macro demo");
         check_package_sources(&[origin, &scoped_consumer])
-            .expect("matching scoped alias and elaborator visibility is accepted");
+            .expect("matching scoped alias and macro visibility is accepted");
     }
 
     #[test]
@@ -17145,13 +17039,13 @@ fn generic_last() -> . {
                ct: __Comptime__, \
                _captured: __Checked_term__ \
              ) -> __Checked_term__ { __term_unit__(ct) } \
-             pub elab demo : . -> . { captures Tag.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures Tag.make; impl capture_impl; };",
         ])
         .expect("a public imported identity alias supports a public capture");
     }
 
     #[test]
-    fn imported_elaborator_capture_reports_private_newtype_not_public_member() {
+    fn imported_macro_capture_reports_private_newtype_not_public_member() {
         let error = check_package_sources(&[
             "module provider; \
              newtype Box : . { pub constructor make; pub projector unmake; };",
@@ -17164,21 +17058,21 @@ fn generic_last() -> . {
                _source: __Type__, \
                value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             pub elab demo : . -> . { captures p.Box.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures p.Box.make; impl capture_impl; };",
         ])
-        .expect_err("a public elaborator cannot expose a private captured newtype");
+        .expect_err("a public macro cannot expose a private captured newtype");
         let Error::Type(diagnostic) = error else {
             panic!("expected type error, got {error:?}");
         };
         assert_eq!(
             diagnostic.message,
-            "captured newtype `p.Box` must be at least as visible as elaborator `demo`"
+            "captured newtype `p.Box` must be at least as visible as macro `demo`"
         );
         assert_eq!(diagnostic.help(), None);
     }
 
     #[test]
-    fn imported_elaborator_capture_does_not_offer_to_edit_private_provider_member() {
+    fn imported_macro_capture_does_not_offer_to_edit_private_provider_member() {
         let error = check_package_sources(&[
             "module provider; \
              pub newtype Box : . { constructor make; pub projector unmake; };",
@@ -17191,21 +17085,21 @@ fn generic_last() -> . {
                _source: __Type__, \
                value: __Checked_term__ \
              ) -> __Checked_term__ { value } \
-             pub elab demo : . -> . { captures p.Box.make; impl capture_impl; };",
+             pub macro demo : . -> . { captures p.Box.make; impl capture_impl; };",
         ])
-        .expect_err("a public elaborator cannot expose a private captured member");
+        .expect_err("a public macro cannot expose a private captured member");
         let Error::Type(diagnostic) = error else {
             panic!("expected type error, got {error:?}");
         };
         assert_eq!(
             diagnostic.message,
-            "captured member `p.Box.make` must be at least as visible as elaborator `demo`"
+            "captured member `p.Box.make` must be at least as visible as macro `demo`"
         );
         assert_eq!(diagnostic.help(), None);
     }
 
     #[test]
-    fn user_elaborator_alias_capture_owner_is_exact() {
+    fn user_macro_alias_capture_owner_is_exact() {
         use crate::pass::resolve::Package;
         use crate::pass::typecheck_core::ModuleEnv;
         use std::path::{Path, PathBuf};
@@ -17237,7 +17131,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn imported_elaborator_and_field_slots_keep_declaring_module_identity() {
+    fn imported_macro_and_field_slots_keep_declaring_module_identity() {
         use crate::pass::resolve::Package;
         use crate::pass::typecheck_core::ModuleEnv;
         use std::path::{Path, PathBuf};
@@ -17288,9 +17182,9 @@ fn generic_last() -> . {
                      import label_dep(Slot); import label_shadow as label_dep; \
                      import shadow as dep; import other as types; \
                      pure fn local_impl(ct: __Comptime__, _source: __Type__) -> __Checked_term__ { \
-                         __elab_error__(ct, \"not evaluated\") \
+                         __macro_error__(ct, \"not evaluated\") \
                        } \
-                     elab local : [A] . -> A { impl local_impl; };",
+                     macro local : [A] . -> A { impl local_impl; };",
                 ),
             ),
         ];
@@ -17306,7 +17200,7 @@ fn generic_last() -> . {
             Vec::new(),
             test_span(),
         ));
-        let abi_slots = user_elaborator_value_slot_types(&canonical_pair, 1);
+        let abi_slots = user_macro_value_slot_types(&canonical_pair, 1);
         assert_eq!(abi_slots.len(), 1);
         let Type::Path { segments, .. } = abi_slots[0].as_type() else {
             panic!("expected nominal ABI slot");
@@ -17367,10 +17261,10 @@ fn generic_last() -> . {
                 meta: Meta::new(test_span()),
             }),
         ];
-        let call = Expr::UserElaborator {
+        let call = Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrence::fresh(),
-            form: crate::ast::UserElaboratorCallForm::Ordinary,
+            form: crate::ast::UserMacroCallForm::Ordinary,
             name: "local".to_owned(),
             args: explicit_args,
             meta: Meta::new(test_span()),
@@ -17378,7 +17272,7 @@ fn generic_last() -> . {
         };
         let result_ty =
             crate::pass::typecheck_core::apply::run_general_ordinary_value(&call, None, &mut tcx)
-                .expect("typecheck local elaborator call")
+                .expect("typecheck local macro call")
                 .ty;
         assert!(result_ty.identity_is_canonical());
         let actual_value = Type::synth_path(
@@ -17481,7 +17375,7 @@ fn generic_last() -> . {
         let mut elaborations = Elaborations::new();
         let tcx = TypeCtx::new(&env, &mut elaborations);
 
-        let reflected = reflect_elaborator_type(
+        let reflected = reflect_macro_type(
             Type::synth_path(vec!["String".to_owned()], Vec::new(), test_span()),
             &tcx,
         )
@@ -17521,7 +17415,7 @@ fn generic_last() -> . {
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
         tcx.push_type_param("A", test_span());
 
-        let reflected = reflect_elaborator_type(
+        let reflected = reflect_macro_type(
             Type::synth_path(vec!["A".to_owned()], Vec::new(), test_span()),
             &tcx,
         )
@@ -17540,7 +17434,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_qualified_function_capture_replays_from_owner_alias() {
+    fn user_macro_qualified_function_capture_replays_from_owner_alias() {
         use crate::pass::resolve::Package;
         use crate::pass::typecheck_core::{ModuleEnv, TypeCtx};
         use std::path::{Path, PathBuf};
@@ -17554,9 +17448,9 @@ fn generic_last() -> . {
              import __comptime__; \
              import pkg/helper as h; \
              pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__, _target: __Type__ | .) -> __Checked_term__ { \
-                 __elab_error__(ct, \"not evaluated\") \
+                 __macro_error__(ct, \"not evaluated\") \
                } \
-             pub elab capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
+             pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
         );
         let package = Package::build(
             Path::new(""),
@@ -17569,20 +17463,18 @@ fn generic_last() -> . {
         .unwrap();
         let refl = &package.module("pkg/refl").expect("refl module").module;
         let env = ModuleEnv::build(refl, None, None, Some(&package)).expect("env");
-        let elaborator = refl
+        let macro_def = refl
             .items
             .iter()
             .find_map(|item| match item {
-                crate::ast::Item::Elaborator(elaborator, _) => Some(elaborator),
+                crate::ast::Item::Macro(macro_def, _) => Some(macro_def),
                 _ => None,
             })
-            .expect("elaborator");
+            .expect("macro");
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
-        let captures =
-            resolve_user_elaborator_captures(elaborator, &env, &mut tcx).expect("captures");
-        let Some(UserElaboratorTemplateInput::CapturedTerm { term }) = captures.inputs.first()
-        else {
+        let captures = resolve_user_macro_captures(macro_def, &env, &mut tcx).expect("captures");
+        let Some(UserMacroTemplateInput::CapturedTerm { term }) = captures.inputs.first() else {
             panic!("expected captured checked term");
         };
         let crate::ast::Expr::Path { segments, .. } = term.clone_expr() else {
@@ -17603,40 +17495,36 @@ fn generic_last() -> . {
             "module pkg/types; \
              pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
         );
-        let elaborators = lowered_module(
-            "module pkg/elaborators; \
+        let macros = lowered_module(
+            "module pkg/macros; \
              import __comptime__; \
              import pkg/types(Rep); \
              pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__) -> __Checked_term__ { __term_unit__(ct) } \
-             pub elab capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
+             pub macro capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
         );
         let package = Package::build(
             Path::new(""),
             vec![
                 (PathBuf::from("pkg/types.kio"), types),
-                (PathBuf::from("pkg/elaborators.kio"), elaborators),
+                (PathBuf::from("pkg/macros.kio"), macros),
             ],
             None,
         )
         .expect("package");
-        let elaborators = &package
-            .module("pkg/elaborators")
-            .expect("elaborator module")
-            .module;
-        let env = ModuleEnv::build(elaborators, None, None, Some(&package)).expect("env");
-        let elaborator = elaborators
+        let macros = &package.module("pkg/macros").expect("macro module").module;
+        let env = ModuleEnv::build(macros, None, None, Some(&package)).expect("env");
+        let macro_def = macros
             .items
             .iter()
             .find_map(|item| match item {
-                crate::ast::Item::Elaborator(elaborator, _) => Some(elaborator),
+                crate::ast::Item::Macro(macro_def, _) => Some(macro_def),
                 _ => None,
             })
-            .expect("elaborator");
+            .expect("macro");
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
-        let captures =
-            resolve_user_elaborator_captures(elaborator, &env, &mut tcx).expect("captures");
-        let Some(UserElaboratorTemplateInput::Type(reflected)) = captures.inputs.first() else {
+        let captures = resolve_user_macro_captures(macro_def, &env, &mut tcx).expect("captures");
+        let Some(UserMacroTemplateInput::Type(reflected)) = captures.inputs.first() else {
             panic!("expected reflected type capture")
         };
         let crate::ast::Type::Path { segments, .. } = reflected.as_type() else {
@@ -17655,42 +17543,38 @@ fn generic_last() -> . {
              pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
         );
         let other = lowered_module("module other;");
-        let elaborators = lowered_module(
-            "module pkg/elaborators; \
+        let macros = lowered_module(
+            "module pkg/macros; \
              import __comptime__; \
              import foo/types(Rep); \
              import other as foo; \
              pure fn capture_demo_impl(ct: __Comptime__, _rep: __Type__) -> __Checked_term__ { __term_unit__(ct) } \
-             pub elab capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
+             pub macro capture_demo : . -> . { captures Rep; impl capture_demo_impl; };",
         );
         let package = Package::build(
             Path::new(""),
             vec![
                 (PathBuf::from("foo/types.kio"), types),
                 (PathBuf::from("other.kio"), other),
-                (PathBuf::from("pkg/elaborators.kio"), elaborators),
+                (PathBuf::from("pkg/macros.kio"), macros),
             ],
             None,
         )
         .expect("package");
-        let elaborators = &package
-            .module("pkg/elaborators")
-            .expect("elaborator module")
-            .module;
-        let env = ModuleEnv::build(elaborators, None, None, Some(&package)).expect("env");
-        let elaborator = elaborators
+        let macros = &package.module("pkg/macros").expect("macro module").module;
+        let env = ModuleEnv::build(macros, None, None, Some(&package)).expect("env");
+        let macro_def = macros
             .items
             .iter()
             .find_map(|item| match item {
-                crate::ast::Item::Elaborator(elaborator, _) => Some(elaborator),
+                crate::ast::Item::Macro(macro_def, _) => Some(macro_def),
                 _ => None,
             })
-            .expect("elaborator");
+            .expect("macro");
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
-        let captures =
-            resolve_user_elaborator_captures(elaborator, &env, &mut tcx).expect("captures");
-        let Some(UserElaboratorTemplateInput::Type(reflected)) = captures.inputs.first() else {
+        let captures = resolve_user_macro_captures(macro_def, &env, &mut tcx).expect("captures");
+        let Some(UserMacroTemplateInput::Type(reflected)) = captures.inputs.first() else {
             panic!("expected reflected type capture")
         };
         let crate::ast::Type::Path { segments, .. } = reflected.as_type() else {
@@ -17711,8 +17595,8 @@ fn generic_last() -> . {
                  pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; };",
             ),
             (
-                "pkg/elaborators.kio",
-                "module pkg/elaborators; \
+                "pkg/macros.kio",
+                "module pkg/macros; \
                  import __comptime__; \
                  import _q0/types(Rep); \
                  pub pure fn make_rep_impl( \
@@ -17720,7 +17604,7 @@ fn generic_last() -> . {
                  ) -> __Checked_term__ { \
                    __term_call__(ct, __term_type__(ct, ctor), ctor, __term_unit__(ct)) \
                  } \
-                 pub elab make_rep : [T] . -> Rep { \
+                 pub macro make_rep : [T] . -> Rep { \
                    captures (Rep, Rep.mk_rep); impl make_rep_impl; \
                  };",
             ),
@@ -17728,8 +17612,8 @@ fn generic_last() -> . {
                 "pkg/main.kio",
                 "module pkg/main; \
                  import _q0/types(Rep); \
-                 import pkg/elaborators(make_rep); \
-                 fn run() -> Rep { make_rep!(., ()) }",
+                 import pkg/macros(macro make_rep); \
+                 fn run() -> Rep { make_rep(., ()) }",
             ),
         ]);
 
@@ -17737,18 +17621,18 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_generated_dependency_rebuilds_artifact_type_scope() {
+    fn user_macro_generated_dependency_rebuilds_artifact_type_scope() {
         let package = lowered_package(&[
             (
                 "provider/types.kio",
                 "module provider/types; pub type Shared = .;",
             ),
             (
-                "elab.kio",
-                "module elab; \
+                "macros.kio",
+                "module macros; \
                  import __comptime__; \
                  pure fn demo_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) } \
-                 elab demo : . -> . { impl demo_impl; };",
+                 macro demo : . -> . { impl demo_impl; };",
             ),
         ]);
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -17760,7 +17644,7 @@ fn generic_last() -> . {
                 ),
             );
         let package = normalized.package();
-        let module = &package.module("elab").expect("elaborator module").module;
+        let module = &package.module("macros").expect("macro module").module;
         let env = ModuleEnv::build_with_typecheck_scope(
             module,
             None,
@@ -17769,12 +17653,12 @@ fn generic_last() -> . {
             typecheck_scope,
         )
         .expect("environment");
-        let dependency = UserElaboratorTemplateGeneratedImport {
+        let dependency = UserMacroTemplateGeneratedImport {
             module_path: "provider/types".to_owned(),
             alias: "_q0".to_owned(),
         };
 
-        let prepared = user_elaborator_eval_artifact(
+        let prepared = user_macro_eval_artifact(
             &env,
             std::slice::from_ref(&dependency),
             "demo",
@@ -17783,7 +17667,10 @@ fn generic_last() -> . {
         )
         .expect("evaluator artifact");
         let artifact = prepared.artifact();
-        let entry = artifact.package().module("elab").expect("artifact module");
+        let entry = artifact
+            .package()
+            .module("macros")
+            .expect("artifact module");
         assert!(entry.module.imports.iter().any(|import_| {
             matches!(
                 &import_.kind,
@@ -17890,7 +17777,7 @@ fn generic_last() -> . {
                 checked.elaborations(),
             )
             .expect("assemble fixture");
-            UserElaboratorEvalArtifactPair::validate(
+            UserMacroEvalArtifactPair::validate(
                 input,
                 UncheckedPrimeExpr::Path {
                     occurrence: Default::default(),
@@ -17902,24 +17789,24 @@ fn generic_last() -> . {
             )
             .expect("validate owner")
         };
-        verify_user_elaborator_artifact_memo(&prepare("left"), &prepare("right"));
+        verify_user_macro_artifact_memo(&prepare("left"), &prepare("right"));
     }
 
     #[test]
-    fn user_elaborator_artifact_pairs_are_analysis_scoped_singleflight() {
-        fn key(alias: &str) -> UserElaboratorArtifactKey {
-            UserElaboratorArtifactKey::new(
-                "elab/match".to_owned(),
+    fn user_macro_artifact_pairs_are_analysis_scoped_singleflight() {
+        fn key(alias: &str) -> UserMacroArtifactKey {
+            UserMacroArtifactKey::new(
+                "macros/match".to_owned(),
                 "match".to_owned(),
-                vec![UserElaboratorTemplateGeneratedImport {
+                vec![UserMacroTemplateGeneratedImport {
                     module_path: "model/types".to_owned(),
                     alias: alias.to_owned(),
                 }],
             )
         }
 
-        fn empty_artifact(implementation_name: &str) -> UserElaboratorEvalArtifactPair {
-            UserElaboratorEvalArtifactPair::unit_for_test(implementation_name)
+        fn empty_artifact(implementation_name: &str) -> UserMacroEvalArtifactPair {
+            UserMacroEvalArtifactPair::unit_for_test(implementation_name)
         }
 
         let builds = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -17936,7 +17823,7 @@ fn generic_last() -> . {
                 let package = first_package.clone();
                 std::thread::spawn(move || {
                     package
-                        .user_elaborator_artifacts()
+                        .user_macro_artifacts()
                         .get_or_try_compute(
                             key("_q0"),
                             || {
@@ -17963,7 +17850,7 @@ fn generic_last() -> . {
         assert_eq!(segments[0].as_str(), "first");
 
         let distinct_artifact = first_package
-            .user_elaborator_artifacts()
+            .user_macro_artifacts()
             .get_or_try_compute(
                 key("_q1"),
                 || {
@@ -17980,24 +17867,20 @@ fn generic_last() -> . {
         assert_eq!(segments[0].as_str(), "different_captures");
         assert_eq!(builds.load(std::sync::atomic::Ordering::Relaxed), 2);
 
-        let first_error = first_package
-            .user_elaborator_artifacts()
-            .get_or_try_compute(
-                key("failure"),
-                || Err::<UserElaboratorEvalArtifactPair, _>(Span::new(10, 11)),
-                |_| {},
-            );
+        let first_error = first_package.user_macro_artifacts().get_or_try_compute(
+            key("failure"),
+            || Err::<UserMacroEvalArtifactPair, _>(Span::new(10, 11)),
+            |_| {},
+        );
         assert!(matches!(first_error, Err(span) if span == Span::new(10, 11)));
-        let second_error = first_package
-            .user_elaborator_artifacts()
-            .get_or_try_compute(
-                key("failure"),
-                || Err::<UserElaboratorEvalArtifactPair, _>(Span::new(20, 21)),
-                |_| {},
-            );
+        let second_error = first_package.user_macro_artifacts().get_or_try_compute(
+            key("failure"),
+            || Err::<UserMacroEvalArtifactPair, _>(Span::new(20, 21)),
+            |_| {},
+        );
         assert!(matches!(second_error, Err(span) if span == Span::new(20, 21)));
         let recovered = first_package
-            .user_elaborator_artifacts()
+            .user_macro_artifacts()
             .get_or_try_compute(
                 key("failure"),
                 || {
@@ -18011,7 +17894,7 @@ fn generic_last() -> . {
             panic!("expected paired staged implementation")
         };
         assert_eq!(segments[0].as_str(), "recovered");
-        let artifact_stats = first_package.user_elaborator_artifacts().snapshot();
+        let artifact_stats = first_package.user_macro_artifacts().snapshot();
         assert_eq!(artifact_stats.hits, 7);
         assert_eq!(artifact_stats.misses, 5);
         assert_eq!(artifact_stats.first_writes, 3);
@@ -18028,7 +17911,7 @@ fn generic_last() -> . {
             &package, persistent,
         );
         let second_artifact = second_package
-            .user_elaborator_artifacts()
+            .user_macro_artifacts()
             .get_or_try_compute(
                 key("_q0"),
                 || {
@@ -18047,42 +17930,42 @@ fn generic_last() -> . {
 
     #[test]
     fn reused_structural_interner_does_not_reuse_package_content() {
-        const ELABORATOR: &str = "package_content_probe";
+        const MACRO: &str = "package_content_probe";
 
         fn package(message: &str) -> Package {
             let provider = format!(
-                "module probe/elaborators; \
+                "module probe/macros; \
                  import __comptime__; \
                  pure fn package_content_probe_impl( \
                    ct: __Comptime__, _source: __Type__, _value: __Checked_term__ \
-                 ) -> __Checked_term__ {{ __elab_error__(ct, \"{message}\") }} \
-                 pub elab package_content_probe : [Source] Source -> Source {{ \
+                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\") }} \
+                 pub macro package_content_probe : [Source] Source -> Source {{ \
                    impl package_content_probe_impl; \
                  }};"
             );
             lowered_package(&[
-                ("probe/elaborators.kio", &provider),
+                ("probe/macros.kio", &provider),
                 (
                     "probe/main.kio",
                     "module probe/main; \
-                     import probe/elaborators(package_content_probe); \
-                     fn run() -> . { package_content_probe!(()) }",
+                     import probe/macros(macro package_content_probe); \
+                     fn run() -> . { package_content_probe(()) }",
                 ),
             ])
         }
 
         fn diagnostic_message(result: Result<Elaborations, Vec<LocatedError>>) -> String {
-            let errors = result.expect_err("the probe elaborator should reject its call");
+            let errors = result.expect_err("the probe macro should reject its call");
             errors
                 .first()
-                .expect("one elaborator diagnostic")
+                .expect("one macro diagnostic")
                 .error
                 .diagnostic()
                 .message
                 .clone()
         }
 
-        start_user_elaborator_artifact_build_probe(ELABORATOR);
+        start_user_macro_artifact_build_probe(MACRO);
         let interner =
             std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::<Lowered>::default());
 
@@ -18102,7 +17985,7 @@ fn generic_last() -> . {
         assert!(first.contains("package A implementation"), "got: {first}");
         assert!(second.contains("package B implementation"), "got: {second}");
         assert_eq!(
-            finish_user_elaborator_artifact_build_probe(ELABORATOR)
+            finish_user_macro_artifact_build_probe(MACRO)
                 .values()
                 .sum::<usize>(),
             2,
@@ -18112,32 +17995,32 @@ fn generic_last() -> . {
 
     #[test]
     fn imported_consumer_batches_share_one_exact_artifact_per_package_check() {
-        const ELABORATOR: &str = "artifact_build_probe";
-        start_user_elaborator_artifact_build_probe(ELABORATOR);
+        const MACRO: &str = "artifact_build_probe";
+        start_user_macro_artifact_build_probe(MACRO);
         let package = lowered_package(&[
             (
-                "probe/elaborators.kio",
-                "module probe/elaborators; \
+                "probe/macros.kio",
+                "module probe/macros; \
                  import __comptime__; \
                  pure fn artifact_build_probe_impl( \
                    _ct: __Comptime__, _source: __Type__, value: __Checked_term__ \
                  ) -> __Checked_term__ { value } \
-                 pub elab artifact_build_probe : [Source] Source -> Source { \
+                 pub macro artifact_build_probe : [Source] Source -> Source { \
                    impl artifact_build_probe_impl; \
                  };",
             ),
             (
                 "probe/a.kio",
                 "module probe/a; \
-                 import probe/elaborators(artifact_build_probe); \
-                 fn keep(value: .) -> . { artifact_build_probe!(value) }",
+                 import probe/macros(macro artifact_build_probe); \
+                 fn keep(value: .) -> . { artifact_build_probe(value) }",
             ),
             (
                 "probe/b.kio",
                 "module probe/b; \
-                 import probe/elaborators(artifact_build_probe); \
+                 import probe/macros(macro artifact_build_probe); \
                  newtype Wrapped : . { constructor wrap; projector unwrap; }; \
-                 fn keep(value: Wrapped) -> Wrapped { artifact_build_probe!(value) }",
+                 fn keep(value: Wrapped) -> Wrapped { artifact_build_probe(value) }",
             ),
         ]);
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -18152,16 +18035,16 @@ fn generic_last() -> . {
             scope.clone(),
             crate::pass::typecheck_core::TypecheckExecution::AllowParallel,
         )
-        .expect("natural user elaborator package checks");
+        .expect("natural user macro package checks");
 
-        let builds_by_module = finish_user_elaborator_artifact_build_probe(ELABORATOR);
+        let builds_by_module = finish_user_macro_artifact_build_probe(MACRO);
         assert_eq!(builds_by_module.len(), 1);
         assert_eq!(builds_by_module.values().sum::<usize>(), 1);
         assert!(
             builds_by_module.contains_key("probe/a") || builds_by_module.contains_key("probe/b"),
             "one imported consumer wins the package-scoped singleflight"
         );
-        let prepared = scope.memo().snapshot().user_elaborator_prepared;
+        let prepared = scope.memo().snapshot().user_macro_prepared;
         assert_eq!(
             prepared.misses, 1,
             "first distinct template prepares the value"
@@ -18175,35 +18058,35 @@ fn generic_last() -> . {
 
     #[test]
     fn eager_result_inference_and_deferred_check_share_one_exact_artifact() {
-        const ELABORATOR: &str = "eager_deferred_artifact_probe";
-        start_user_elaborator_artifact_build_probe(ELABORATOR);
+        const MACRO: &str = "eager_deferred_artifact_probe";
+        start_user_macro_artifact_build_probe(MACRO);
         let package = lowered_package(&[
             (
-                "probe/elaborators.kio",
-                "module probe/elaborators; \
+                "probe/macros.kio",
+                "module probe/macros; \
                  import __comptime__; \
                  pure fn eager_deferred_artifact_probe_impl( \
                    _ct: __Comptime__, _source: __Type__, value: __Checked_term__, \
                    _target: __Type__ | . \
                  ) -> __Checked_term__ { value } \
-                 pub elab eager_deferred_artifact_probe : [Source] Source -> [Target] Target { \
+                 pub macro eager_deferred_artifact_probe : [Source] Source -> [Target] Target { \
                    impl eager_deferred_artifact_probe_impl; \
                  };",
             ),
             (
                 "probe/a_eager.kio",
                 "module probe/a_eager; \
-                 import probe/elaborators(eager_deferred_artifact_probe); \
+                 import probe/macros(macro eager_deferred_artifact_probe); \
                  fn keep() -> . { \
-                   let inferred = eager_deferred_artifact_probe!(()); \
+                   let inferred = eager_deferred_artifact_probe(()); \
                    inferred \
                  }",
             ),
             (
                 "probe/b_deferred.kio",
                 "module probe/b_deferred; \
-                 import probe/elaborators(eager_deferred_artifact_probe); \
-                 fn keep() -> . { eager_deferred_artifact_probe!(()) }",
+                 import probe/macros(macro eager_deferred_artifact_probe); \
+                 fn keep() -> . { eager_deferred_artifact_probe(()) }",
             ),
         ]);
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -18218,29 +18101,29 @@ fn generic_last() -> . {
             scope.clone(),
             crate::pass::typecheck_core::TypecheckExecution::Sequential,
         )
-        .expect("eager and deferred user elaborator calls check");
+        .expect("eager and deferred user macro calls check");
 
         assert_eq!(
-            finish_user_elaborator_artifact_build_probe(ELABORATOR),
+            finish_user_macro_artifact_build_probe(MACRO),
             HashMap::from([("probe/a_eager".to_owned(), 1)]),
             "the later deferred call reuses the artifact built for eager result inference"
         );
         let snapshot = scope.memo().snapshot();
         assert_eq!(
-            snapshot.user_elaborator.misses, 2,
+            snapshot.user_macro.misses, 2,
             "the inferred and expected result inputs produce distinct templates"
         );
-        assert_eq!(snapshot.user_elaborator.first_writes, 2);
-        assert_eq!(snapshot.user_elaborator_prepared.misses, 1);
-        assert_eq!(snapshot.user_elaborator_prepared.hits, 1);
+        assert_eq!(snapshot.user_macro.first_writes, 2);
+        assert_eq!(snapshot.user_macro_prepared.misses, 1);
+        assert_eq!(snapshot.user_macro_prepared.hits, 1);
     }
 
     #[test]
     fn staged_provider_helper_reconstructs_imported_surface_elaboration() {
         const INNER: &str = "nested_artifact_inner";
         const OUTER: &str = "nested_artifact_outer";
-        start_user_elaborator_artifact_build_probe(INNER);
-        start_user_elaborator_artifact_build_probe(OUTER);
+        start_user_macro_artifact_build_probe(INNER);
+        start_user_macro_artifact_build_probe(OUTER);
         let package = lowered_package(&[
             (
                 "probe/inner.kio",
@@ -18249,7 +18132,7 @@ fn generic_last() -> . {
                  pure fn nested_artifact_inner_impl( \
                    _ct: __Comptime__, _source: __Type__, value: __Checked_term__ \
                  ) -> __Checked_term__ { value } \
-                 pub elab nested_artifact_inner : [Source] Source -> Source { \
+                 pub macro nested_artifact_inner : [Source] Source -> Source { \
                    impl nested_artifact_inner_impl; \
                  };",
             ),
@@ -18257,30 +18140,30 @@ fn generic_last() -> . {
                 "probe/outer.kio",
                 "module probe/outer; \
                  import __comptime__; \
-                 import probe/inner(nested_artifact_inner); \
+                 import probe/inner(macro nested_artifact_inner); \
                  pure fn nested_artifact_outer_impl( \
                    _ct: __Comptime__, _source: __Type__, value: __Checked_term__ \
-                 ) -> __Checked_term__ { nested_artifact_inner!(value) } \
-                 pub elab nested_artifact_outer : [Source] Source -> Source { \
+                 ) -> __Checked_term__ { nested_artifact_inner(value) } \
+                 pub macro nested_artifact_outer : [Source] Source -> Source { \
                    impl nested_artifact_outer_impl; \
                  };",
             ),
             (
                 "probe/consumer.kio",
                 "module probe/consumer; \
-                 import probe/outer(nested_artifact_outer); \
-                 fn keep() -> . { nested_artifact_outer!(()) }",
+                 import probe/outer(macro nested_artifact_outer); \
+                 fn keep() -> . { nested_artifact_outer(()) }",
             ),
         ]);
 
         check_package(&package).expect("provider helper surface elaboration is reconstructed");
 
         assert_eq!(
-            finish_user_elaborator_artifact_build_probe(INNER),
+            finish_user_macro_artifact_build_probe(INNER),
             HashMap::from([("probe/outer".to_owned(), 1)])
         );
         assert_eq!(
-            finish_user_elaborator_artifact_build_probe(OUTER),
+            finish_user_macro_artifact_build_probe(OUTER),
             HashMap::from([("probe/consumer".to_owned(), 1)])
         );
     }
@@ -18290,9 +18173,9 @@ fn generic_last() -> . {
         elaborations: &mut Elaborations,
         values: &[Expr],
         arg: crate::ast::Type<UncheckedPrime>,
-        capture_imports: &[UserElaboratorTemplateGeneratedImport],
+        capture_imports: &[UserMacroTemplateGeneratedImport],
         ambient_type_names: &HashSet<String>,
-    ) -> UserElaboratorReplayResult {
+    ) -> UserMacroReplayResult {
         let span = test_span();
         let unit = crate::ast::Type::<UncheckedPrime>::Unit {
             meta: Meta::new(span),
@@ -18309,18 +18192,18 @@ fn generic_last() -> . {
             arg,
             unit.clone(),
         );
-        let template = Ok(trusted_user_elaborator_template(checked));
+        let template = Ok(trusted_user_macro_template(checked));
         let memo = crate::pass::typecheck_core::MemoCtx::default();
-        let mut replay = UserElaboratorReplayEnv {
+        let mut replay = UserMacroReplayEnv {
             module_path: "caller",
             module,
             elaborations,
             package: None,
             memo: &memo,
         };
-        user_elaborator_template_to_elaboration(
+        user_macro_template_to_elaboration(
             &template,
-            UserElaboratorReplayInputs {
+            UserMacroReplayInputs {
                 values,
                 value_adapter: None,
                 residual_eta: None,
@@ -18373,11 +18256,11 @@ fn generic_last() -> . {
         use crate::pass::typecheck_core::PrimeTypeRequalifier;
 
         let module = lowered_module("module caller; import earlier/helper as _q0;");
-        let local = UserElaboratorTemplateGeneratedImport {
+        let local = UserMacroTemplateGeneratedImport {
             module_path: "caller".to_owned(),
             alias: "local".to_owned(),
         };
-        let external = UserElaboratorTemplateGeneratedImport {
+        let external = UserMacroTemplateGeneratedImport {
             module_path: "external/helper".to_owned(),
             alias: "external".to_owned(),
         };
@@ -18497,7 +18380,7 @@ fn generic_last() -> . {
                 Vec::new(),
                 span,
             ),
-            &[UserElaboratorTemplateGeneratedImport {
+            &[UserMacroTemplateGeneratedImport {
                 module_path: "captured/types".to_owned(),
                 alias: "_q0".to_owned(),
             }],
@@ -18532,14 +18415,14 @@ fn generic_last() -> . {
             },
             unit.clone(),
         );
-        let template = Ok(trusted_user_elaborator_template(checked));
-        let current_capture_imports = [UserElaboratorTemplateGeneratedImport {
+        let template = Ok(trusted_user_macro_template(checked));
+        let current_capture_imports = [UserMacroTemplateGeneratedImport {
             module_path: "current/helper".to_owned(),
             alias: "_q0".to_owned(),
         }];
         let memo = crate::pass::typecheck_core::MemoCtx::default();
         let mut elaborations = Elaborations::new();
-        let mut replay = UserElaboratorReplayEnv {
+        let mut replay = UserMacroReplayEnv {
             module_path: "caller",
             module: &module,
             elaborations: &mut elaborations,
@@ -18547,9 +18430,9 @@ fn generic_last() -> . {
             memo: &memo,
         };
 
-        let replayed = user_elaborator_template_to_elaboration(
+        let replayed = user_macro_template_to_elaboration(
             &template,
-            UserElaboratorReplayInputs {
+            UserMacroReplayInputs {
                 values: &[],
                 value_adapter: None,
                 residual_eta: None,
@@ -18574,12 +18457,12 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_memo_verification_ignores_call_site_spans() {
+    fn user_macro_memo_verification_ignores_call_site_spans() {
         let template_at = |span| {
             let ty = crate::ast::Type::<UncheckedPrime>::Unit {
                 meta: Meta::new(span),
             };
-            trusted_user_elaborator_template(crate::normalization::CheckedTerm::template_value(
+            trusted_user_macro_template(crate::normalization::CheckedTerm::template_value(
                 0,
                 ty.clone(),
             ))
@@ -18592,8 +18475,8 @@ fn generic_last() -> . {
             TypeMemoKey::from_type(second.result_ty()),
         );
         assert_eq!(
-            user_elaborator_template_verification_expr(&first),
-            user_elaborator_template_verification_expr(&second),
+            user_macro_template_verification_expr(&first),
+            user_macro_template_verification_expr(&second),
         );
 
         let function_at = |abi_arity| crate::ast::Type::<UncheckedPrime>::Function {
@@ -18610,8 +18493,8 @@ fn generic_last() -> . {
             TypeMemoKey::from_type(&binary),
         );
         assert_ne!(
-            user_elaborator_result_type_verification_key(&unary),
-            user_elaborator_result_type_verification_key(&binary),
+            user_macro_result_type_verification_key(&unary),
+            user_macro_result_type_verification_key(&binary),
         );
     }
 
@@ -18625,27 +18508,27 @@ fn generic_last() -> . {
             "module pkg/other; \
              pub fn other() -> . { () }",
         );
-        let elaborators = lowered_module(
-            "module pkg/elaborators; \
+        let macros = lowered_module(
+            "module pkg/macros; \
              import __comptime__; \
              import pkg/helper as h; \
              pub pure fn capture_impl(ct: __Comptime__, helper: __Checked_term__) -> __Checked_term__ { \
                __term_call__(ct, __term_type__(ct, helper), helper, __term_unit__(ct)) \
              } \
-             pub elab capture_demo : . -> . { captures h.helper; impl capture_impl; };",
+             pub macro capture_demo : . -> . { captures h.helper; impl capture_impl; };",
         );
         let main = lowered_module(
             "module pkg/main; \
-             import pkg/elaborators(capture_demo); \
+             import pkg/macros(macro capture_demo); \
              import pkg/other as h; \
-             pub fn run() -> . { capture_demo!() }",
+             pub fn run() -> . { capture_demo() }",
         );
         let package = Package::build(
             Path::new(""),
             vec![
                 (PathBuf::from("pkg/helper.kio"), helper),
                 (PathBuf::from("pkg/other.kio"), other),
-                (PathBuf::from("pkg/elaborators.kio"), elaborators),
+                (PathBuf::from("pkg/macros.kio"), macros),
                 (PathBuf::from("pkg/main.kio"), main),
             ],
             None,
@@ -19208,8 +19091,8 @@ fn generic_last() -> . {
             "default host type Second role(bool); default host type First role(bool);",
         ] {
             let source = format!(
-                "module main; import control(if); {declarations} \
-                 fn pick(c: First) -> First {{ if! c {{ .t(First) }} else {{ .f(First) }} }}"
+                "module main; import control(macro if); {declarations} \
+                 fn pick(c: First) -> First {{ if(c) {{ .t(First) }} else {{ .f(First) }} }}"
             );
             let msg = err(&source);
             assert!(
@@ -19223,9 +19106,9 @@ fn generic_last() -> . {
 
     #[test]
     fn if_else_ignores_bool_role_declared_later() {
-        ok("module main; import control(if); \
+        ok("module main; import control(macro if); \
              default host type First role(bool); \
-             fn pick(c: First) -> First { if! c { .t(First) } else { .f(First) } } \
+             fn pick(c: First) -> First { if (c) { .t(First) } else { .f(First) } } \
              host type Later role(bool);");
     }
 
@@ -19234,12 +19117,12 @@ fn generic_last() -> . {
         check_package_sources(&[
             "module first; host type Bool role(bool);",
             "module second; host type Bool role(bool);",
-            "module consumer; import control(if); \
+            "module consumer; import control(macro if); \
              import __intrinsics__; \
              import first as first; \
              import second as second; \
              default type First = first.Bool; \
-             fn pick(c: First) -> First { if! c { .t(First) } else { .f(First) } } \
+             fn pick(c: First) -> First { if (c) { .t(First) } else { .f(First) } } \
              type Later = second.Bool;",
         ])
         .expect("an ordinary later alias does not change the selected default");
@@ -19249,9 +19132,9 @@ fn generic_last() -> . {
     fn default_source_order_preserves_imported_selection() {
         check_package_sources(&[
             "module provider; pub host type Bool role(bool);",
-            "module consumer; import control(if); \
+            "module consumer; import control(macro if); \
              import provider(default Bool); \
-             fn pick(c: Bool) -> Bool { if! c { .t(Bool) } else { .f(Bool) } } \
+             fn pick(c: Bool) -> Bool { if (c) { .t(Bool) } else { .f(Bool) } } \
              host type Later role(bool);",
         ])
         .expect("an imported default remains selected before a later local declaration");
@@ -19267,10 +19150,10 @@ fn generic_last() -> . {
             ),
             (
                 "consumer.kio",
-                "module consumer; import control(if); \
+                "module consumer; import control(macro if); \
              import provider(Flag); \
              import base as base; \
-             fn pick(c: Flag) -> Flag { if! c { .t(Flag) } else { .f(Flag) } } \
+             fn pick(c: Flag) -> Flag { if (c) { .t(Flag) } else { .f(Flag) } } \
              type Flag = base.Bool;",
             ),
         ]);
@@ -19332,41 +19215,41 @@ fn generic_last() -> . {
 
     #[test]
     fn role_source_order_ignores_later_host_in_equiv() {
-        ok("module main; import control(if); \
+        ok("module main; import control(macro if); \
             default host type First role(bool); \
             equiv choose(c: First) { \
-              if! c { .t(First) } else { .f(First) }; \
-              if! c { .t(First) } else { .f(First) } \
+              if (c) { .t(First) } else { .f(First) }; \
+              if (c) { .t(First) } else { .f(First) } \
             } \
             host type Later role(bool);");
     }
 
     #[test]
-    fn role_source_order_ignores_later_host_in_elaborator_implementation() {
-        ok("module main; import control(if); \
+    fn role_source_order_ignores_later_host_in_macro_implementation() {
+        ok("module main; import control(macro if); \
             import __comptime__; \
             pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                if! .t(Comptime_bool) { __term_unit__(ct) } else { __term_unit__(ct) } \
+                if (.t(Comptime_bool)) { __term_unit__(ct) } else { __term_unit__(ct) } \
               } \
-            elab choose : . -> . { impl choose_impl; }; \
+            macro choose : . -> . { impl choose_impl; }; \
             host type Later role(bool);");
     }
 
     #[test]
-    fn role_source_order_uses_definition_site_for_imported_elaborator_recheck() {
+    fn role_source_order_uses_definition_site_for_imported_macro_recheck() {
         check_package_sources(&[
-            "module provider; import control(if); \
+            "module provider; import control(macro if); \
              import __comptime__; \
              pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                 if! .t(Comptime_bool) { __term_unit__(ct) } else { __term_unit__(ct) } \
+                 if (.t(Comptime_bool)) { __term_unit__(ct) } else { __term_unit__(ct) } \
                } \
-             pub elab choose : . -> . { impl choose_impl; }; \
+             pub macro choose : . -> . { impl choose_impl; }; \
              host type Later role(bool);",
             "module consumer; \
-             import provider(choose); \
-             fn run() -> . { choose!() }",
+             import provider(macro choose); \
+             fn run() -> . { choose() }",
         ])
-        .expect("an imported elaborator is rechecked in its definition scope");
+        .expect("an imported macro is rechecked in its definition scope");
     }
 
     #[test]
@@ -19393,8 +19276,9 @@ fn generic_last() -> . {
 
     #[test]
     fn surface_if_else_without_default_bool_errors() {
-        let message =
-            err("module main; import control(if); fn pick() -> . { if! () { () } else { () } }");
+        let message = err(
+            "module main; import control(macro if); fn pick() -> . { if () { () } else { () } }",
+        );
         assert!(
             message.contains("no type is selected as the default boolean type"),
             "got: {message}"
@@ -19441,10 +19325,10 @@ fn generic_last() -> . {
         let adapter = "module pkg/adapter; \
              import pkg/host as host; \
              pub type Bool = host.Bool;";
-        let consumer = "module pkg/consumer; import control(if); \
+        let consumer = "module pkg/consumer; import control(macro if); \
              import pkg/adapter as adapter; \
              default pub type Bool = adapter.Bool; \
-             fn pick(c: Bool) -> . { if! c { () } else { () } }";
+             fn pick(c: Bool) -> . { if (c) { () } else { () } }";
         let package = lowered_control_package(&[
             ("pkg/host.kio", host),
             ("pkg/adapter.kio", adapter),
@@ -19713,23 +19597,23 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn type_only_unit_domains_have_named_host_value_bang_and_ufcs_parity() {
-        let elaborator = "module elab; \
+    fn type_only_unit_domains_have_named_host_value_macro_and_ufcs_parity() {
+        let macro_def = "module macros; \
             import __comptime__; \
-            pure fn bang_unit_impl(ct: __Comptime__, _a: __Type__) -> __Checked_term__ { \
+            pure fn macro_unit_impl(ct: __Comptime__, _a: __Type__) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
-            pub elab bang_unit : [A] . -> . { impl bang_unit_impl; }; \
-            pure fn bang_identity_impl( \
+            pub macro macro_unit : [A] . -> . { impl macro_unit_impl; }; \
+            pure fn macro_identity_impl( \
                 _ct: __Comptime__, \
                 _a: __Type__, \
                 value: __Checked_term__ \
               ) -> __Checked_term__ { \
                 value \
               } \
-            pub elab bang_identity : [A] A -> A { impl bang_identity_impl; };";
+            pub macro macro_identity : [A] A -> A { impl macro_identity_impl; };";
         let main = "module main; \
-            import elab(bang_unit, bang_identity); \
+            import macros(macro macro_unit, macro macro_identity); \
             host type N; \
             type Unit_alias = .; \
             host fn host_nil[A]() -> A; \
@@ -19775,28 +19659,28 @@ fn generic_last() -> . {
               consume_unit_function(unit_nullary(N)); \
               unit_nullary(N, ()); \
               ().>unit_nullary(N); \
-              consume_unit_function(bang_identity!(.)); \
-              consume_unit_function(bang_identity!(Unit_alias)); \
-              bang_identity!(., ()); \
-              ().>bang_identity!(.); \
-              ().>>bang_identity!(.); \
-              bang_identity!(.).<(); \
-              bang_identity!(.).<<(); \
-              ().>bang_identity!(Unit_alias); \
-              consume_unit_function(bang_unit!(N)); \
-              bang_unit!(N, ()); \
-              ().>bang_unit!(N); \
+              consume_unit_function(macro_identity(.)); \
+              consume_unit_function(macro_identity(Unit_alias)); \
+              macro_identity(., ()); \
+              ().>macro_identity(.); \
+              ().>>macro_identity(.); \
+              macro_identity(.).<(); \
+              macro_identity(.).<<(); \
+              ().>macro_identity(Unit_alias); \
+              consume_unit_function(macro_unit(N)); \
+              macro_unit(N, ()); \
+              ().>macro_unit(N); \
               exercise_poly_value(identity); \
               exercise_poly_value(host_identity); \
               exercise_nil_value(host_nil); \
               consume_n_function(identity(N)); \
               consume_n_function(host_identity(N)); \
-              consume_n_function(bang_identity!(N)); \
+              consume_n_function(macro_identity(N)); \
               consume_staged_unit_function(staged(.)); \
               consume_unit_function(().>staged(.)); \
               consume_unit_product_function(product(.)) \
             }";
-        check_package_sources(&[elaborator, main])
+        check_package_sources(&[macro_def, main])
             .expect("application must depend on the instantiated function type alone");
     }
 
@@ -19819,17 +19703,17 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn user_elaborator_empty_call_does_not_instantiate_a_bare_leading_forall() {
+    fn user_macro_empty_call_does_not_instantiate_a_bare_leading_forall() {
         let message = package_type_err(&[
-            "module elab; \
+            "module macros; \
              import __comptime__; \
              pure fn probe_impl(ct: __Comptime__, a: __Type__) -> __Checked_term__ { \
-                 __elab_error__(ct, __type_display__(ct, a)) \
+                 __macro_error__(ct, __type_display__(ct, a)) \
                } \
-             pub elab probe : [A] A { impl probe_impl; };",
+             pub macro probe : [A] A { impl probe_impl; };",
             "module main; \
-             import elab(probe); \
-             fn run() -> . { probe!() }",
+             import macros(macro probe); \
+             fn run() -> . { probe() }",
         ]);
         assert!(message.contains("[A] A"), "got: {message}");
     }
@@ -19840,16 +19724,17 @@ fn generic_last() -> . {
             fn explicit(value: [A] A) -> . { value(.) } \
             fn inferred(value: [A] A) -> . { value(_) }");
 
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn probe_impl(ct: __Comptime__, a: __Type__) -> __Checked_term__ { \
-                __elab_error__(ct, __type_display__(ct, a)) \
+                __macro_error__(ct, __type_display__(ct, a)) \
               } \
-            pub elab probe : [A] A { impl probe_impl; };";
-        for call in ["probe!(.)", "probe!(_)"] {
-            let main = format!("module main; import elab(probe); fn run() -> . {{ {call} }}");
-            match check_package_sources(&[elaborator, &main]) {
-                Err(Error::Elaborator(Diagnostic { message, .. })) => {
+            pub macro probe : [A] A { impl probe_impl; };";
+        for call in ["probe(.)", "probe(_)"] {
+            let main =
+                format!("module main; import macros(macro probe); fn run() -> . {{ {call} }}");
+            match check_package_sources(&[macro_def, &main]) {
+                Err(Error::Macro(Diagnostic { message, .. })) => {
                     assert_eq!(message, ".", "{call} reflected the wrong type")
                 }
                 other => panic!("{call} must reach its evaluator with `A = .`, got {other:?}"),
@@ -19876,25 +19761,25 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn returned_forall_contextual_instantiation_records_ordinary_bang_layer_parity() {
-        let elaborator = "module elab; \
+    fn returned_forall_contextual_instantiation_records_ordinary_macro_layer_parity() {
+        let macro_def = "module macros; \
             import __comptime__; \
-            pure fn bang_return_poly_impl( \
+            pure fn macro_return_poly_impl( \
                 _ct: __Comptime__, \
                 _a: __Type__, \
                 value: __Checked_term__ \
               ) -> __Checked_term__ { value } \
-            pub elab bang_return_poly : . -> [A] A -> A { impl bang_return_poly_impl; };";
+            pub macro macro_return_poly : . -> [A] A -> A { impl macro_return_poly_impl; };";
         let main = "module main; \
-            import elab(bang_return_poly); \
+            import macros(macro macro_return_poly); \
             host type N; \
             fn return_poly(_unit: .)[A](value: A) -> A { value } \
             fn ordinary() -> N -> N { return_poly() } \
-            fn bang() -> N -> N { bang_return_poly!() }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn macro_call() -> N -> N { macro_return_poly() }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let (checked, _) = check_retained_success(&package);
 
-        for call in ["bang_return_poly!()", "return_poly()"] {
+        for call in ["macro_return_poly()", "return_poly()"] {
             assert_eq!(
                 checked.elaborations().call_splits_for("main", {
                     let sites = call_sites_at(
@@ -19910,7 +19795,7 @@ fn generic_last() -> . {
             );
         }
         validate_substituted_package(checked.substituted())
-            .expect("ordinary and bang returned-forall splits survive Prime validation");
+            .expect("ordinary and macro returned-forall splits survive Prime validation");
     }
 
     #[test]
@@ -19991,23 +19876,23 @@ fn generic_last() -> . {
 
     // ---- Spine-form synth / check end-to-end ---------------------------
     //
-    // These exercise the spine forms (`narrow_prod!`, `fit!`, …) through
-    // the imported user-elaborator path (`spine_elaborators.kio`, injected
-    // by `check_elab_src`). Two forms in particular — `narrow_prod!` and
-    // `fit!` — are large enough to exercise both the check path (explicit
+    // These exercise the spine forms (`narrow_prod`, `fit`, …) through
+    // the imported user-macro path (`spine_macros.kio`, injected
+    // by `check_macro_src`). Two forms in particular — `narrow_prod` and
+    // `fit` — are large enough to exercise both the check path (explicit
     // expected type from the surrounding fn's return slot) and the
     // synth path (explicit trailing type-argument). Smoke-test the
     // rest as ok-paths.
 
     #[test]
     fn narrow_prod_check_against_return_works() {
-        // `narrow_prod!` from `(. & Bool & .)` to `(. & .)`: drop the
+        // `narrow_prod` from `(. & Bool & .)` to `(. & .)`: drop the
         // middle `Bool` slot. Source is a right-associative product
         // spine with 3 slots; target has 2 slots
         // (2 slots). Engine accepts because the target multiset is
         // a sub-multiset of the source's.
         ok("module x; host type Bool; \
-            fn drop_middle(x: (. & Bool & .)) -> (. & .) { narrow_prod!(x) }");
+            fn drop_middle(x: (. & Bool & .)) -> (. & .) { narrow_prod(x) }");
     }
 
     #[test]
@@ -20018,90 +19903,90 @@ fn generic_last() -> . {
         // only target source).
         ok("module x; host type Bool; \
             fn drop_middle(x: (. & Bool & .)) -> (. & .) { \
-                let y = narrow_prod!(x, (. & .)); y \
+                let y = narrow_prod(x, (. & .)); y \
             }");
     }
 
     #[test]
     fn fit_check_with_simple_widen_works() {
-        // `fit!` over `.` to `(. | Bool)`: widen the source from a
-        // singleton sum to a 2-arm target. The spine `fit!` recurses
+        // `fit` over `.` to `(. | Bool)`: widen the source from a
+        // singleton sum to a 2-arm target. The spine `fit` recurses
         // and runs widen-sum on the leaf.
         ok("module x; host type Bool; \
-            fn lift(x: .) -> (. | Bool) { fit!(x) }");
+            fn lift(x: .) -> (. | Bool) { fit(x) }");
     }
 
     #[test]
     fn fit_synth_with_explicit_target_works() {
-        // `fit!` with the trailing type-arg as the only target source.
+        // `fit` with the trailing type-arg as the only target source.
         ok("module x; host type Bool; \
             fn lift(x: .) -> (. | Bool) { \
-                let y = fit!(x, (. | Bool)); y \
+                let y = fit(x, (. | Bool)); y \
             }");
     }
 
     #[test]
     fn one_sum_target_inferred_from_uniform_arms() {
-        // `one_sum!` accepts target elision when every non-`!` arm
+        // `one_sum` accepts target elision when every non-`!` arm
         // of the source has the same type. Source is `(. | .)`;
-        // the inferred target is `.`, and `one_sum!(e)` synthesizes
+        // the inferred target is `.`, and `one_sum(e)` synthesizes
         // type `.`.
         ok("module x; \
             fn collapse(x: (. | .)) -> . { \
-                let y = one_sum!(x); y \
+                let y = one_sum(x); y \
             }");
     }
 
     #[test]
     fn one_prod_target_inferred_from_uniform_slots() {
-        // `one_prod!` accepts target elision when every product slot
+        // `one_prod` accepts target elision when every product slot
         // has the same type. Source is `(. & .)`; the inferred
-        // target is `.`, and `one_prod!(e)` synthesizes type `.`.
+        // target is `.`, and `one_prod(e)` synthesizes type `.`.
         ok("module x; \
             fn pick(x: (. & .)) -> . { \
-                let y = one_prod!(x); y \
+                let y = one_prod(x); y \
             }");
     }
 
     #[test]
     fn fit_no_target_errors_in_synth_mode() {
-        // Spine forms other than `one_sum!` / `one_prod!` require an
+        // Spine forms other than `one_sum` / `one_prod` require an
         // explicit target or a surrounding expected type. In a `let`
-        // RHS with no annotation, `fit!(e)` has neither and must
+        // RHS with no annotation, `fit(e)` has neither and must
         // error.
-        let res = check_elab_src(
+        let res = check_macro_src(
             "module x; \
-             fn lone(x: .) -> . { let _y = fit!(x); () }",
+             fn lone(x: .) -> . { let _y = fit(x); () }",
         );
         match res {
-            Err(Error::Elaborator(Diagnostic { message, .. })) => {
+            Err(Error::Macro(Diagnostic { message, .. })) => {
                 assert!(
-                    message.contains("elaborator needs an explicit or expected target type"),
+                    message.contains("macro needs an explicit or expected target type"),
                     "got: {message}"
                 );
             }
-            other => panic!("expected missing-target Elaborator error, got {other:?}"),
+            other => panic!("expected missing-target macro error, got {other:?}"),
         }
     }
 
     #[test]
     fn widen_prod_check_against_return_works() {
-        // `widen_prod!` extends a source product with `.` slots — a
+        // `widen_prod` extends a source product with `.` slots — a
         // unit-only widening so we don't need to bring in duplication.
         // Source is `.`; target is `(. & .)`. The engine synthesizes
         // the extra slot from the source's identity unit.
         ok("module x; \
-            fn pad(x: .) -> (. & .) { widen_prod!(x) }");
+            fn pad(x: .) -> (. & .) { widen_prod(x) }");
     }
 
     #[test]
     fn widen_sum_check_against_return_works() {
-        // `widen_sum!` extends a source sum with an unreachable arm.
+        // `widen_sum` extends a source sum with an unreachable arm.
         // Source is `.`; target is `(. | Bool)`. The engine
         // synthesizes the extra arm as unreachable (the source flows
         // into the `.` arm).
         ok("module x; host type Bool; \
-            fn extend(x: .) -> (. | Bool) { widen_sum!(x) }");
+            fn extend(x: .) -> (. | Bool) { widen_sum(x) }");
     }
 
     #[test]
@@ -20135,38 +20020,38 @@ fn generic_last() -> . {
 
     #[test]
     fn narrow_sum_check_against_return_works() {
-        // `narrow_sum!` collapses same-typed arms. Source `(. | .)`
+        // `narrow_sum` collapses same-typed arms. Source `(. | .)`
         // becomes target `.` (the singleton spine of length 1 — i.e., not
-        // a top-level sum). Per `narrow_sum!`'s rule, identical-typed
+        // a top-level sum). Per `narrow_sum`'s rule, identical-typed
         // arms are codiagonally collapsed.
         ok("module x; \
-            fn collapse(x: (. | .)) -> . { narrow_sum!(x) }");
+            fn collapse(x: (. | .)) -> . { narrow_sum(x) }");
     }
 
     #[test]
     fn reorder_prod_check_against_return_works() {
-        // `reorder_prod!` permutes factors. Source `(. & Bool)`,
+        // `reorder_prod` permutes factors. Source `(. & Bool)`,
         // target `(Bool & .)`. Same multiset; the engine swaps the
         // factors.
         ok("module x; host type Bool; \
-            fn swap(x: (. & Bool)) -> (Bool & .) { reorder_prod!(x) }");
+            fn swap(x: (. & Bool)) -> (Bool & .) { reorder_prod(x) }");
     }
 
     #[test]
     fn reorder_sum_check_against_return_works() {
-        // `reorder_sum!` permutes arms. Source `(. | Bool)`, target
+        // `reorder_sum` permutes arms. Source `(. | Bool)`, target
         // `(Bool | .)`. Same multiset; the engine swaps the arms.
         ok("module x; host type Bool; \
-            fn swap_sum(x: (. | Bool)) -> (Bool | .) { reorder_sum!(x) }");
+            fn swap_sum(x: (. | Bool)) -> (Bool | .) { reorder_sum(x) }");
     }
 
     #[test]
     fn flatten_sum_check_against_return_works() {
-        // `flatten_sum!` un-nests the outer left sum. Source
+        // `flatten_sum` un-nests the outer left sum. Source
         // `((. | Bool) | Bool)` (a left-leaning 3-arm sum); target
         // `(. | (Bool | Bool))` (right-associative). One rewrite.
         ok("module x; host type Bool; \
-            fn flat(x: ((. | Bool) | Bool)) -> (. | (Bool | Bool)) { flatten_sum!(x) }");
+            fn flat(x: ((. | Bool) | Bool)) -> (. | (Bool | Bool)) { flatten_sum(x) }");
     }
 
     #[test]
@@ -20175,83 +20060,83 @@ fn generic_last() -> . {
         // type-arg supplies the target.
         ok("module x; host type Bool; \
             fn flat(x: ((. | Bool) | Bool)) -> (. | (Bool | Bool)) { \
-                let y = flatten_sum!(x, (. | (Bool | Bool))); y \
+                let y = flatten_sum(x, (. | (Bool | Bool))); y \
             }");
     }
 
     #[test]
     fn flatten_prod_check_against_return_works() {
-        // `flatten_prod!` un-nests the outer left product. Source
+        // `flatten_prod` un-nests the outer left product. Source
         // `((. & Bool) & Bool)`; target `(. & (Bool & Bool))`.
         ok("module x; host type Bool; \
-            fn flat(x: ((. & Bool) & Bool)) -> (. & (Bool & Bool)) { flatten_prod!(x) }");
+            fn flat(x: ((. & Bool) & Bool)) -> (. & (Bool & Bool)) { flatten_prod(x) }");
     }
 
     #[test]
     fn flatten_prod_synth_with_explicit_target_works() {
         ok("module x; host type Bool; \
             fn flat(x: ((. & Bool) & Bool)) -> (. & (Bool & Bool)) { \
-                let y = flatten_prod!(x, (. & (Bool & Bool))); y \
+                let y = flatten_prod(x, (. & (Bool & Bool))); y \
             }");
     }
 
     #[test]
     fn flatten_sum_no_target_errors_in_synth_mode() {
-        // Spine forms (other than `one_sum!` / `one_prod!`) require
+        // Spine forms (other than `one_sum` / `one_prod`) require
         // explicit target or surrounding expected type. Without
         // either, error.
-        let res = check_elab_src(
+        let res = check_macro_src(
             "module x; host type Bool; \
-             fn lone(x: ((. | Bool) | Bool)) -> . { let _y = flatten_sum!(x); () }",
+             fn lone(x: ((. | Bool) | Bool)) -> . { let _y = flatten_sum(x); () }",
         );
         match res {
-            Err(Error::Elaborator(Diagnostic { message, .. })) => {
+            Err(Error::Macro(Diagnostic { message, .. })) => {
                 assert!(
-                    message.contains("elaborator needs an explicit or expected target type"),
+                    message.contains("macro needs an explicit or expected target type"),
                     "got: {message}"
                 );
             }
-            other => panic!("expected missing-target Elaborator error, got {other:?}"),
+            other => panic!("expected missing-target macro error, got {other:?}"),
         }
     }
 
     #[test]
     fn flatten_sum_source_shape_error_surfaces() {
-        let res = check_elab_src(
+        let res = check_macro_src(
             "module x; host type Bool; \
-             fn bad(x: ((. | Bool) | Bool)) -> (. & (Bool & Bool)) { flatten_sum!(x) }",
+             fn bad(x: ((. | Bool) | Bool)) -> (. & (Bool & Bool)) { flatten_sum(x) }",
         );
         match res {
-            Err(Error::Elaborator(Diagnostic { message, .. })) => {
+            Err(Error::Macro(Diagnostic { message, .. })) => {
                 assert!(
                     message.contains("sum source has no left-nested sum to flatten"),
                     "got: {message}"
                 );
             }
-            other => panic!("expected Elaborator source-shape error, got {other:?}"),
+            other => panic!("expected macro source-shape error, got {other:?}"),
         }
     }
 
     #[test]
     fn fit_function_bottom_return_widens_to_unit_return() {
-        // fit!'s Bottom-source carve-out: source function `I32 -> !`
+        // fit's Bottom-source carve-out: source function `I32 -> !`
         // is coerced into `I32 -> .` by walking the function-arrow
         // covariantly on the return. Without the carve-out, the
         // leaf would reject "non-matching atoms"; with it, the
         // return is `__absurd__`-coerced.
         ok("module x; \
             fn always_diverge(_unused: .) -> ! { always_diverge(()) } \
-            fn widen() -> . -> . { fit!(always_diverge) }");
+            fn widen() -> . -> . { fit(always_diverge) }");
     }
 
     #[test]
     fn fit_bottom_source_top_level_works() {
-        // fit!(x: !, A) succeeds for any atomic A. We use a fn that
+        // fit(x: !, A) succeeds for any atomic A. We use a fn that
         // recurses (to avoid needing a `!`-valued literal) and pipe
-        // its result through fit! with a concrete target.
+        // its result through fit with a concrete target.
         ok("module x; \
             fn diverge() -> ! { diverge() } \
-            fn use_diverge() -> . { fit!(diverge(), .) }");
+            fn use_diverge() -> . { fit(diverge(), .) }");
     }
 
     #[test]
@@ -20502,7 +20387,7 @@ fn generic_last() -> . {
     /// Whole-receiver mismatch: receiver wider than the callee's
     /// first param. Strict dispatch rejects without trying to project a
     /// sub-conjunct; the user has to narrow with
-    /// `onto!` first.
+    /// `onto` first.
     #[test]
     fn ufcs_whole_receiver_mismatch_rejected() {
         let m = module(
@@ -20593,7 +20478,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn elaborator_implementation_path_reuses_one_synthesis_for_whole_and_leaf_positions() {
+    fn macro_implementation_path_reuses_one_synthesis_for_whole_and_leaf_positions() {
         let provider = concat!(
             "module provider;\n",
             "import __comptime__;\n",
@@ -20602,11 +20487,11 @@ fn generic_last() -> . {
         let main = concat!(
             "module main;\n",
             "import provider as helper;\n",
-            "elab unit : . -> . { impl helper.unit_impl; };\n",
+            "macro unit : . -> . { impl helper.unit_impl; };\n",
         );
         let whole = source_span(main, "helper.unit_impl");
         let leaf = source_span(main, "unit_impl");
-        reset_user_elaborator_implementation_syntheses();
+        reset_user_macro_implementation_syntheses();
         let package = lowered_package(&[("provider.kio", provider), ("main.kio", main)]);
         let elaborations =
             check_package_collect_elaborations(&package).expect("qualified implementation checks");
@@ -20625,24 +20510,24 @@ fn generic_last() -> . {
                 if module_path == "provider" && name == "unit_impl"
         ));
         assert_eq!(
-            user_elaborator_implementation_syntheses(),
+            user_macro_implementation_syntheses(),
             1,
             "publishing a second position must not synthesize the implementation again"
         );
     }
 
     #[test]
-    fn single_segment_elaborator_implementation_has_one_shared_position() {
+    fn single_segment_macro_implementation_has_one_shared_position() {
         let source = concat!(
             "module main;\n",
             "import __comptime__;\n",
             "pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }\n",
-            "elab unit : . -> . { impl unit_impl; };\n",
+            "macro unit : . -> . { impl unit_impl; };\n",
         );
         let start = source.rfind("unit_impl").expect("implementation path");
         let whole = Span::new(start as u32, (start + "unit_impl".len()) as u32);
         let leaf = whole;
-        reset_user_elaborator_implementation_syntheses();
+        reset_user_macro_implementation_syntheses();
         let elaborations = collect_elabs(source);
         let index = elaborations.position_index();
 
@@ -20657,7 +20542,7 @@ fn generic_last() -> . {
                 if module_path == "main" && name == "unit_impl"
         ));
         assert_eq!(
-            user_elaborator_implementation_syntheses(),
+            user_macro_implementation_syntheses(),
             1,
             "one-segment whole/leaf equality must not trigger a second synthesis"
         );
@@ -21836,31 +21721,31 @@ fn generic_last() -> . {
                 _b: __Type__, \
                 tail: __Checked_term__ \
               ) -> __Checked_term__ { tail } \
-            pub elab staged : [A] (A & A) -> [B] B -> B { impl staged_impl; };";
+            pub macro staged : [A] (A & A) -> [B] B -> B { impl staged_impl; };";
         let main = "module main; \
-            import provider(ordinary, staged); \
+            import provider(ordinary, macro staged); \
             host type I32; \
             host type N; \
             fn ordinary_direct(left: I32, right: I32, tail: N) -> N { \
               ordinary(I32, (left, right), N, tail) \
             } \
-            fn bang_direct(left: I32, right: I32, tail: N) -> N { \
-              staged!(I32, (left, right), N, tail) \
+            fn macro_direct(left: I32, right: I32, tail: N) -> N { \
+              staged(I32, (left, right), N, tail) \
             } \
             fn ordinary_receiver_first(left: I32, right: I32, tail: N) -> N { \
               (left, right).>ordinary(I32, N, tail) \
             } \
-            fn bang_receiver_first(left: I32, right: I32, tail: N) -> N { \
-              (left, right).>staged!(I32, N, tail) \
+            fn macro_receiver_first(left: I32, right: I32, tail: N) -> N { \
+              (left, right).>staged(I32, N, tail) \
             } \
             fn ordinary_receiver_last(left: I32, right: I32, tail: N) -> N { \
               tail.>>ordinary(I32, (left, right), N) \
             } \
-            fn bang_receiver_last(left: I32, right: I32, tail: N) -> N { \
-              tail.>>staged!(I32, (left, right), N) \
+            fn macro_receiver_last(left: I32, right: I32, tail: N) -> N { \
+              tail.>>staged(I32, (left, right), N) \
             }";
         check_package_sources(&[provider, main])
-            .expect("ordinary, bang, and UFCS calls use the same lexical packet boundary");
+            .expect("ordinary, macro, and UFCS calls use the same lexical packet boundary");
     }
 
     #[test]
@@ -22545,23 +22430,23 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn recursive_value_shaped_type_argument_bang_control() {
+    fn recursive_value_shaped_type_argument_macro_control() {
         check_package_sources(&[
-            "module elab; \
+            "module macros; \
              import __comptime__; \
              pure fn same_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) \
                -> __Checked_term__ { value } \
-             pub elab same : [T] T -> T { impl same_impl; };",
+             pub macro same : [T] T -> T { impl same_impl; };",
             "module main; \
-             import elab(same); \
+             import macros(macro same); \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              type Identity[A] = A; \
              rec(loop) fn value(n: I32) -> I32 { \
-               same!(Identity(I32), recur(cont) value(0)) \
+               same(Identity(I32), recur(cont) value(0)) \
              }",
         ])
-        .expect("bang calls retain the uniform named-callable type-slot contract");
+        .expect("macro calls retain the uniform named-callable type-slot contract");
     }
 
     #[test]
@@ -22607,12 +22492,12 @@ fn generic_last() -> . {
 
     #[test]
     fn recursive_partial_let_inside_plain_do_uses_ordinary_let_flow() {
-        check_package_sources(&["module x; import control(scope); \
+        check_package_sources(&["module x; import control(macro scope); \
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
-            rec(loop) fn value(n: I32) -> Box(I32) { scope! { \
+            rec(loop) fn value(n: I32) -> Box(I32) { scope { \
               let .(box: Box(_)) = choose_box(0, recur(cont) value(0)); \
               box \
             } }"])
@@ -22667,14 +22552,14 @@ fn generic_last() -> . {
 
     #[test]
     fn recursive_callee_synthesizes_before_arguments() {
-        let source = "module x; import control(if); \
+        let source = "module x; import control(macro if); \
             default host type Bool role(bool); \
             default host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             host fn condition() -> Bool; \
             fn identity(value: Bool) -> Bool { value } \
             rec(loop) fn choose(n: I32) -> Bool { \
-              (if! recur(cont) choose(0) { identity } else { identity })(condition()) \
+              (if (recur(cont) choose(0)) { identity } else { identity })(condition()) \
             }";
         let package = lowered_package(&[("x.kio", source)]);
         let checked = check_package_preserving_normalization(&package)
@@ -22685,7 +22570,7 @@ fn generic_last() -> . {
 
     #[test]
     fn recursive_branch_keeps_bare_parameter_bound() {
-        let source = "module x; import control(if); \
+        let source = "module x; import control(macro if); \
             default host type Bool role(bool); \
             host type I32 role(i32); \
             host type String role(str); \
@@ -22695,7 +22580,7 @@ fn generic_last() -> . {
             rec(loop) { \
               pub fn spaces(n: I32) -> String { recur pad(n, empty()) }; \
               fn pad(n: I32, acc: String) -> String { \
-                if! done(n) { acc } else { recur pad(n, acc) } \
+                if (done(n)) { acc } else { recur pad(n, acc) } \
               } \
             }";
         check_package_sources(&[source])
@@ -23546,13 +23431,13 @@ fn generic_last() -> . {
 
     #[test]
     fn deferred_omitted_return_lambda_threads_expected_through_plain_do_tail() {
-        ok("module x; import control(scope); \
+        ok("module x; import control(macro scope); \
             host type Witness; \
             host fn tick() -> .; \
             host fn witness() -> Witness; \
             host fn make[A]() -> A; \
             fn consume[T](_make: . -> T, _value: T) -> . { () } \
-            fn run() -> . { consume(.() { scope! { tick(); make() } }, witness()) }");
+            fn run() -> . { consume(.() { scope { tick(); make() } }, witness()) }");
     }
 
     #[test]
@@ -23568,7 +23453,7 @@ fn generic_last() -> . {
 
     #[test]
     fn deferred_omitted_return_lambda_threads_expected_into_if_else_branches() {
-        ok("module x; import control(if); \
+        ok("module x; import control(macro if); \
             default host type Bool role(bool); \
             host type Witness; \
             host fn condition() -> Bool; \
@@ -23576,7 +23461,7 @@ fn generic_last() -> . {
             host fn make[A]() -> A; \
             fn consume[T](_make: . -> T, _value: T) -> . { () } \
             fn run() -> . { \
-              consume(.() { if! condition() { make() } else { make() } }, witness()) \
+              consume(.() { if (condition()) { make() } else { make() } }, witness()) \
             }");
     }
 
@@ -23663,7 +23548,7 @@ fn generic_last() -> . {
 
     #[test]
     fn retained_if_else_rejects_incompatible_common_result() {
-        let message = err("module x; import control(if); \
+        let message = err("module x; import control(macro if); \
             host type Bool role(bool); \
             host type Left; \
             host type Right; \
@@ -23673,7 +23558,7 @@ fn generic_last() -> . {
             fn consume[T](_f: Bool -> T, _value: T) -> . { () } \
             fn run() -> . { \
               consume(.(condition: Bool) { \
-                if! condition { left() } else { make() } \
+                if (condition) { left() } else { make() } \
               }, right()) \
             }");
         assert!(
@@ -23696,12 +23581,12 @@ fn generic_last() -> . {
             }");
     }
 
-    const RETAINED_ACTION_ELABORATORS: &str = "module elab; \
+    const RETAINED_ACTION_MACROS: &str = "module macros; \
         import __comptime__; \
         type Optional_type = __Type__ | .; \
         pure fn same_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) \
           -> __Checked_term__ { value } \
-        pub elab same : [T] T -> T { impl same_impl; }; \
+        pub macro same : [T] T -> T { impl same_impl; }; \
         pure fn infer_pair_impl( \
             _ct: __Comptime__, \
             _source: __Type__, \
@@ -23709,7 +23594,7 @@ fn generic_last() -> . {
             _a: Optional_type, \
             _b: Optional_type \
           ) -> __Checked_term__ { value } \
-        pub elab infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
+        pub macro infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
         pure fn first_impl( \
             _ct: __Comptime__, \
             _a: __Type__, \
@@ -23717,9 +23602,9 @@ fn generic_last() -> . {
             _b: __Type__, \
             _second: __Checked_term__ \
           ) -> __Checked_term__ { first } \
-        pub elab first : [A] A -> [B] B -> A { impl first_impl; };";
+        pub macro first : [A] A -> [B] B -> A { impl first_impl; };";
 
-    const TERMINAL_FILLS_ELABORATOR: &str = "module elab; \
+    const TERMINAL_FILLS_MACRO: &str = "module macros; \
         import __comptime__; \
         pure fn infer_impl( \
             ct: __Comptime__, \
@@ -23730,9 +23615,9 @@ fn generic_last() -> . {
           ) -> (__Checked_term__ & __Fill_ctx__) { \
             (value, __fill__(ct, fills, target, source)) \
           } \
-        pub elab infer : [Source] Source -> [Target] Target { impl(fills) infer_impl; };";
+        pub macro infer : [Source] Source -> [Target] Target { impl(fills) infer_impl; };";
 
-    const MIXED_TERMINAL_FILLS_ELABORATOR: &str = "module elab; \
+    const MIXED_TERMINAL_FILLS_MACRO: &str = "module macros; \
         import __comptime__; \
         pure fn infer_pair_impl( \
             ct: __Comptime__, fills: __Fill_ctx__, \
@@ -23743,9 +23628,9 @@ fn generic_last() -> . {
               __fill__(ct, fills, target, __type_unit__(ct)) \
             ) \
           } \
-        pub elab infer_pair : [Source] Source -> [Target] Source & Target { impl(fills) infer_pair_impl; };";
+        pub macro infer_pair : [Source] Source -> [Target] Source & Target { impl(fills) infer_pair_impl; };";
 
-    const CROSS_LAYER_FILLS_ELABORATOR: &str = "module elab; \
+    const CROSS_LAYER_FILLS_MACRO: &str = "module macros; \
         import __comptime__; \
         pure fn relay_impl( \
             ct: __Comptime__, fills: __Fill_ctx__, \
@@ -23755,9 +23640,9 @@ fn generic_last() -> . {
           ) -> (__Checked_term__ & __Fill_ctx__) { \
             (middle, __fill__(ct, fills, target, middle_type)) \
           } \
-        pub elab relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl(fills) relay_impl; };";
+        pub macro relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl(fills) relay_impl; };";
 
-    const WHOLE_HEADER_FILLS_ELABORATOR: &str = "module elab; \
+    const WHOLE_HEADER_FILLS_MACRO: &str = "module macros; \
         import __comptime__; \
         pure fn relay_impl( \
             ct: __Comptime__, fills: __Fill_ctx__, \
@@ -23765,26 +23650,26 @@ fn generic_last() -> . {
           ) -> (__Checked_term__ & __Fill_ctx__) { \
             (value, __fill__(ct, fills, target, source)) \
           } \
-        pub elab relay : [Target][Source] Source -> Target { impl(fills) relay_impl; };";
+        pub macro relay : [Target][Source] Source -> Target { impl(fills) relay_impl; };";
 
-    const FINAL_SUCCESSOR_ELABORATORS: &str = "module elab; \
+    const FINAL_SUCCESSOR_MACROS: &str = "module macros; \
         import __comptime__; \
         type Optional_type = __Type__ | .; \
         pure fn identity_target_impl( \
             _ct: __Comptime__, _a: Optional_type, \
             _source: __Checked_term__, value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab identity_target : [A] (A -> A) -> (A -> A) { impl identity_target_impl; }; \
+        pub macro identity_target : [A] (A -> A) -> (A -> A) { impl identity_target_impl; }; \
         pure fn finish_impl( \
             _ct: __Comptime__, _source: __Type__, value: __Checked_term__, \
             _target: Optional_type \
           ) -> __Checked_term__ { value } \
-        pub elab finish : [Source] Source -> [Target] Target { impl finish_impl; }; \
+        pub macro finish : [Source] Source -> [Target] Target { impl finish_impl; }; \
         pure fn relay_impl( \
             _ct: __Comptime__, _source: __Type__, _source_value: __Checked_term__, \
             _middle: __Type__, middle: __Checked_term__, _target: Optional_type \
           ) -> __Checked_term__ { middle } \
-        pub elab relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl relay_impl; };";
+        pub macro relay : [Source] Source -> [Middle] Middle -> [Target] Target { impl relay_impl; };";
 
     fn assert_terminal_public_layer_work(
         reserved_slots: usize,
@@ -23831,13 +23716,13 @@ fn generic_last() -> . {
         }
     }
 
-    fn assert_final_elaborator_successor_work(
+    fn assert_final_macro_successor_work(
         terminal_continues: usize,
         migrated_descents: usize,
         earlier_terminal_yields: usize,
         earlier_nonterminal_yields: usize,
     ) {
-        let work = crate::pass::typecheck_core::apply::final_elaborator_successor_work();
+        let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
         assert_eq!(
             work.terminal_continues, terminal_continues,
             "Final successor work: {work:?}"
@@ -23867,7 +23752,7 @@ fn generic_last() -> . {
             _a: __Type__, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab required : [Source] Source -> [A] A -> A { impl required_impl; }; \
+        pub macro required : [Source] Source -> [A] A -> A { impl required_impl; }; \
         pure fn optional_impl( \
             _ct: __Comptime__, \
             _source: __Type__, \
@@ -23875,7 +23760,7 @@ fn generic_last() -> . {
             _a: Optional_type, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab optional : [Source] Source -> [A] A -> A { impl optional_impl; }; \
+        pub macro optional : [Source] Source -> [A] A -> A { impl optional_impl; }; \
         pub fn ordinary_phantom[Left][Right][Phantom](left: Left, right: Right) \
           -> Left & Right { (left, right) } \
         pure fn required_phantom_impl( \
@@ -23885,7 +23770,7 @@ fn generic_last() -> . {
             _phantom: __Type__, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab required_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl required_phantom_impl; }; \
+        pub macro required_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl required_phantom_impl; }; \
         pure fn optional_phantom_impl( \
             _ct: __Comptime__, \
             _left: __Type__, \
@@ -23893,7 +23778,7 @@ fn generic_last() -> . {
             _phantom: Optional_type, \
             value: __Checked_term__ \
           ) -> __Checked_term__ { value } \
-        pub elab optional_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl optional_phantom_impl; };";
+        pub macro optional_phantom : [Left] [Right] [Phantom] (Left & Right) -> (Left & Right) { impl optional_phantom_impl; };";
 
     fn source_span(source: &str, needle: &str) -> Span {
         let start = source.find(needle).expect("test expression is present");
@@ -23911,8 +23796,14 @@ fn generic_last() -> . {
 
         impl crate::pass::visit_mut::TypecheckVisitMut<Lowered> for Finder {
             fn visit_expr(&mut self, expr: &mut Expr) {
-                let is_call = matches!(expr, Expr::UserElaborator { .. })
-                    || matches!(expr, Expr::Ufcs { bang: Some(_), .. });
+                let is_call = matches!(expr, Expr::UserMacro { .. })
+                    || matches!(
+                        expr,
+                        Expr::Ufcs {
+                            macro_call: Some(_),
+                            ..
+                        }
+                    );
                 if is_call && expr.span() == self.span {
                     self.found.push(expr.clone());
                 }
@@ -24198,7 +24089,7 @@ fn generic_last() -> . {
         );
         assert!(
             elaborations.deferred.iter().all(|deferred| match deferred {
-                DeferredElaboration::UserElaborator(obligation) => obligation.node_id != node_id,
+                DeferredElaboration::UserMacro(obligation) => obligation.node_id != node_id,
             }),
             "failed retained call escaped in the deferred queue"
         );
@@ -24245,7 +24136,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn retained_fixed_result_elaborator_closes_and_evaluates_once() {
+    fn retained_fixed_result_macro_closes_and_evaluates_once() {
         check_package_sources(&["module main; \
             host type I32; \
             host fn witness() -> I32; \
@@ -24255,16 +24146,14 @@ fn generic_last() -> . {
         .expect("ordinary identity call closes in the surrounding retained frontier");
 
         let main = "module main; \
-            import elab(same); \
+            import macros(macro same); \
             host type I32; \
             host fn witness() -> I32; \
             fn consume[T](_f: T -> T, _value: T) -> . { () } \
-            fn run() -> . { consume(.(value) { same!(value) }, witness()) }";
-        let package = lowered_package(&[
-            ("elab.kio", RETAINED_ACTION_ELABORATORS),
-            ("main.kio", main),
-        ]);
-        let original = retained_call_at(&package, "main", source_span(main, "same!(value)"));
+            fn run() -> . { consume(.(value) { same(value) }, witness()) }";
+        let package =
+            lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "same(value)"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -24274,29 +24163,27 @@ fn generic_last() -> . {
                 .is_some(),
             "closed fixed-result action publishes its replacement"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("closed fixed-result action survives standalone Prime validation");
     }
 
     #[test]
-    fn retained_multi_goal_type_producing_elaborator_closes_and_evaluates_once() {
+    fn retained_multi_goal_type_producing_macro_closes_and_evaluates_once() {
         let main = "module main; \
-            import elab(infer_pair); \
+            import macros(macro infer_pair); \
             default host type I32 role(i32); \
             default host type String role(str); \
             fn run() -> I32 & String { \
-              let pair = infer_pair!((0, \"closed\")); \
+              let pair = infer_pair((0, \"closed\")); \
               pair \
             }";
-        let package = lowered_package(&[
-            ("elab.kio", RETAINED_ACTION_ELABORATORS),
-            ("main.kio", main),
-        ]);
+        let package =
+            lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair!((0, \"closed\"))"),
+            source_span(main, "infer_pair((0, \"closed\"))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -24328,25 +24215,25 @@ fn generic_last() -> . {
                 && !crate::pass::typecheck_core::type_contains_goal(right),
             "the type-producing call published a residual result: {left:?} & {right:?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("closed multi-goal action survives standalone Prime validation");
     }
 
     #[test]
     fn retained_initial_layer_optional_result_evaluates_once_and_closes_its_goal() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn infer_unit_impl(ct: __Comptime__, _a: Optional_type) -> __Checked_term__ { \
               __term_unit__(ct) \
             } \
-            pub elab infer_unit : [A] . -> A { impl infer_unit_impl; };";
+            pub macro infer_unit : [A] . -> A { impl infer_unit_impl; };";
         let main = "module main; \
-            import elab(infer_unit); \
-            fn run() -> . { let _inferred = infer_unit!(); () }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_unit!()"));
+            import macros(macro infer_unit); \
+            fn run() -> . { let _inferred = infer_unit(); () }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer_unit()"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -24359,14 +24246,14 @@ fn generic_last() -> . {
             ),
             "the evaluator-returned Unit type must close the initial A occurrence"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the initial-owner type-producing action survives Prime validation");
     }
 
     #[test]
     fn optional_absence_requires_the_exact_result_binder() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn infer_unit_impl( \
@@ -24374,12 +24261,12 @@ fn generic_last() -> . {
                 _phantom: Optional_type, \
                 _result: Optional_type \
               ) -> __Checked_term__ { __term_unit__(ct) } \
-            pub elab infer_unit : [Phantom][Result] . -> Result { impl infer_unit_impl; };";
+            pub macro infer_unit : [Phantom][Result] . -> Result { impl infer_unit_impl; };";
         let main = "module main; \
-            import elab(infer_unit); \
-            fn run() -> . { let _inferred = infer_unit!(_, _); () }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_unit!(_, _)"));
+            import macros(macro infer_unit); \
+            fn run() -> . { let _inferred = infer_unit(_, _); () }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer_unit(_, _)"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert!(
@@ -24391,7 +24278,7 @@ fn generic_last() -> . {
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "a phantom Optional slot must block evaluator execution"
         );
@@ -24399,7 +24286,7 @@ fn generic_last() -> . {
 
     #[test]
     fn optional_absence_rejects_a_binder_shadowed_before_the_result() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn infer_unit_impl( \
@@ -24407,16 +24294,16 @@ fn generic_last() -> . {
                 _outer: Optional_type, \
                 _inner: Optional_type \
               ) -> __Checked_term__ { __term_unit__(ct) } \
-            pub elab infer_unit : [Shadowed] . -> [Shadowed] Shadowed { impl infer_unit_impl; };";
+            pub macro infer_unit : [Shadowed] . -> [Shadowed] Shadowed { impl infer_unit_impl; };";
         let main = "module main; \
-            import elab(infer_unit); \
-            fn run() -> . { let _inferred = infer_unit!(_)(_); () }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_unit!(_)"));
+            import macros(macro infer_unit); \
+            fn run() -> . { let _inferred = infer_unit(_)(_); () }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer_unit(_)"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "an Optional slot shadowed before the result must block evaluator execution"
         );
@@ -24434,75 +24321,75 @@ fn generic_last() -> . {
     fn phantom_type_binders_follow_public_inference_across_call_forms() {
         // The product domain makes first/last receiver placement observably
         // distinct; `Phantom` remains unconstrained in every spelling.
-        for (form, ordinary_call, elaborator_call) in [
+        for (form, ordinary_call, macro_call) in [
             (
                 "prefix",
                 "ordinary_phantom(_, _, _, 0, \"right\")",
-                "ELAB!(_, _, _, 0, \"right\")",
+                "MACRO(_, _, _, 0, \"right\")",
             ),
             (
                 "fully-elided prefix",
                 "ordinary_phantom(0, \"right\")",
-                "ELAB!(0, \"right\")",
+                "MACRO(0, \"right\")",
             ),
             (
                 "receiver-first UFCS",
                 "0.>ordinary_phantom(_, _, _, \"right\")",
-                "0.>ELAB!(_, _, _, \"right\")",
+                "0.>MACRO(_, _, _, \"right\")",
             ),
             (
                 "fully-elided receiver-first UFCS",
                 "0.>ordinary_phantom(\"right\")",
-                "0.>ELAB!(\"right\")",
+                "0.>MACRO(\"right\")",
             ),
             (
                 "receiver-last UFCS",
                 "\"right\".>>ordinary_phantom(_, _, _, 0)",
-                "\"right\".>>ELAB!(_, _, _, 0)",
+                "\"right\".>>MACRO(_, _, _, 0)",
             ),
             (
                 "fully-elided receiver-last UFCS",
                 "\"right\".>>ordinary_phantom(0)",
-                "\"right\".>>ELAB!(0)",
+                "\"right\".>>MACRO(0)",
             ),
             (
                 "argument-first UFCS",
                 "ordinary_phantom(_, _, _, \"right\").<<0",
-                "ELAB!(_, _, _, \"right\").<<0",
+                "MACRO(_, _, _, \"right\").<<0",
             ),
             (
                 "fully-elided argument-first UFCS",
                 "ordinary_phantom(\"right\").<<0",
-                "ELAB!(\"right\").<<0",
+                "MACRO(\"right\").<<0",
             ),
             (
                 "argument-last UFCS",
                 "ordinary_phantom(_, _, _, 0).<\"right\"",
-                "ELAB!(_, _, _, 0).<\"right\"",
+                "MACRO(_, _, _, 0).<\"right\"",
             ),
             (
                 "fully-elided argument-last UFCS",
                 "ordinary_phantom(0).<\"right\"",
-                "ELAB!(0).<\"right\"",
+                "MACRO(0).<\"right\"",
             ),
         ] {
             for (callable, call, retained) in [
                 ("ordinary", ordinary_call.to_owned(), false),
                 (
                     "Required",
-                    elaborator_call.replace("ELAB", "required_phantom"),
+                    macro_call.replace("MACRO", "required_phantom"),
                     true,
                 ),
                 (
                     "Optional",
-                    elaborator_call.replace("ELAB", "optional_phantom"),
+                    macro_call.replace("MACRO", "optional_phantom"),
                     true,
                 ),
             ] {
                 let case = format!("{callable} {form}");
                 let main = format!(
                     "module main; \
-                 import provider(ordinary_phantom, required_phantom, optional_phantom); \
+                 import provider(ordinary_phantom, macro required_phantom, macro optional_phantom); \
                  host type I32 role(i32); \
                  host type String role(str); \
                  fn run() -> I32 & String {{ {call} }}"
@@ -24527,27 +24414,27 @@ fn generic_last() -> . {
                     assert_retained_call_unpublished(&elaborations, "main", &original);
                 }
                 assert_eq!(
-                    scope.memo().user_elaborator_template_executions(),
+                    scope.memo().user_macro_template_executions(),
                     0,
-                    "{case} evaluated an elaborator with an unsolved public phantom binder"
+                    "{case} evaluated a macro with an unsolved public phantom binder"
                 );
             }
         }
     }
 
     #[test]
-    fn optional_elaborator_abi_cannot_generalize_an_unsolved_public_call() {
+    fn optional_macro_abi_cannot_generalize_an_unsolved_public_call() {
         for (case, call, retained) in [
             ("ordinary prefix", "ordinary(0, _)", false),
-            ("Required prefix", "required!(0, _)", true),
-            ("Optional prefix", "optional!(0, _)", true),
+            ("Required prefix", "required(0, _)", true),
+            ("Optional prefix", "optional(0, _)", true),
             ("ordinary UFCS", "0.>ordinary(_)", false),
-            ("Required UFCS", "0.>required!(_)", true),
-            ("Optional UFCS", "0.>optional!(_)", true),
+            ("Required UFCS", "0.>required(_)", true),
+            ("Optional UFCS", "0.>optional(_)", true),
         ] {
             let main = format!(
                 "module main; \
-                 import provider(ordinary, required, optional); \
+                 import provider(ordinary, macro required, macro optional); \
                  default host type I32 role(i32); \
                  fn run() -> . {{ let _residual = {call}; () }}"
             );
@@ -24570,26 +24457,26 @@ fn generic_last() -> . {
                 assert_retained_call_unpublished(&elaborations, "main", &original);
             }
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 0,
-                "{case} evaluated an elaborator before its public call was selected"
+                "{case} evaluated a macro before its public call was selected"
             );
         }
     }
 
     #[test]
-    fn elaborator_abi_waits_for_public_residual_constraints() {
+    fn macro_abi_waits_for_public_residual_constraints() {
         for (case, call, retained) in [
             ("ordinary prefix", "ordinary(0, _)", false),
-            ("Required prefix", "required!(0, _)", true),
-            ("Optional prefix", "optional!(0, _)", true),
+            ("Required prefix", "required(0, _)", true),
+            ("Optional prefix", "optional(0, _)", true),
             ("ordinary UFCS", "0.>ordinary(_)", false),
-            ("Required UFCS", "0.>required!(_)", true),
-            ("Optional UFCS", "0.>optional!(_)", true),
+            ("Required UFCS", "0.>required(_)", true),
+            ("Optional UFCS", "0.>optional(_)", true),
         ] {
             let main = format!(
                 "module main; \
-                 import provider(ordinary, required, optional); \
+                 import provider(ordinary, macro required, macro optional); \
                  default host type I32 role(i32); \
                  fn consume[T](_function: T -> T, _value: T) -> . {{ () }} \
                  fn run() -> . {{ consume({call}, ()) }}"
@@ -24612,9 +24499,9 @@ fn generic_last() -> . {
                 );
             }
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 usize::from(retained),
-                "{case} did not use exactly one closed elaborator action"
+                "{case} did not use exactly one closed macro action"
             );
             validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
                 panic!("{case} did not survive Prime validation: {error:?}")
@@ -24623,20 +24510,20 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn exact_polytype_inference_has_ordinary_bang_and_ufcs_parity() {
+    fn exact_polytype_inference_has_ordinary_macro_and_ufcs_parity() {
         let main = "module main; \
-            import provider(ordinary, required, optional); \
+            import provider(ordinary, macro required, macro optional); \
             fn identity[A](value: A) -> A { value } \
             fn accept(_value: [A] A -> A) -> . { () } \
             fn ordinary_direct() -> . { accept(ordinary((), identity)) } \
-            fn required_direct() -> . { accept(required!((), identity)) } \
-            fn optional_direct() -> . { accept(optional!((), identity)) } \
+            fn required_direct() -> . { accept(required((), identity)) } \
+            fn optional_direct() -> . { accept(optional((), identity)) } \
             fn ordinary_first() -> . { accept(().>ordinary(identity)) } \
-            fn required_first() -> . { accept(().>required!(identity)) } \
-            fn optional_first() -> . { accept(().>optional!(identity)) } \
+            fn required_first() -> . { accept(().>required(identity)) } \
+            fn optional_first() -> . { accept(().>optional(identity)) } \
             fn ordinary_last() -> . { accept(identity.>>ordinary(())) } \
-            fn required_last() -> . { accept(identity.>>required!(())) } \
-            fn optional_last() -> . { accept(identity.>>optional!(())) }";
+            fn required_last() -> . { accept(identity.>>required(())) } \
+            fn optional_last() -> . { accept(identity.>>optional(())) }";
         let package = lowered_package(&[
             ("provider.kio", CALL_SHAPE_PARITY_PROVIDER),
             ("main.kio", main),
@@ -24676,18 +24563,18 @@ fn generic_last() -> . {
                 _t: __Type__, \
                 _values: __Checked_term__ \
               ) -> __Checked_term__ { __term_unit__(ct) } \
-            pub elab same_poly : [T] (T & T) -> . { impl same_poly_impl; };";
+            pub macro same_poly : [T] (T & T) -> . { impl same_poly_impl; };";
         let accepted = "module accepted; \
-            import provider(same_poly); \
+            import provider(macro same_poly); \
             fn identity_a[A](value: A) -> A { value } \
             fn identity_b[B](value: B) -> B { value } \
-            fn run() -> . { same_poly!(identity_a, identity_b) }";
+            fn run() -> . { same_poly(identity_a, identity_b) }";
         let accepted_package =
             lowered_package(&[("provider.kio", provider), ("accepted.kio", accepted)]);
         let accepted_call = retained_call_at(
             &accepted_package,
             "accepted",
-            source_span(accepted, "same_poly!(identity_a, identity_b)"),
+            source_span(accepted, "same_poly(identity_a, identity_b)"),
         );
         let (checked, scope) = check_retained_success(&accepted_package);
         assert!(
@@ -24697,19 +24584,19 @@ fn generic_last() -> . {
                 .is_some(),
             "alpha-equivalent exact schemes should publish one elaboration"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
 
         let rejected = "module rejected; \
-            import provider(same_poly); \
+            import provider(macro same_poly); \
             fn identity[A](value: A) -> A { value } \
             fn erase[B](_value: B) -> . { () } \
-            fn run() -> . { same_poly!(identity, erase) }";
+            fn run() -> . { same_poly(identity, erase) }";
         let rejected_package =
             lowered_package(&[("provider.kio", provider), ("rejected.kio", rejected)]);
         let rejected_call = retained_call_at(
             &rejected_package,
             "rejected",
-            source_span(rejected, "same_poly!(identity, erase)"),
+            source_span(rejected, "same_poly(identity, erase)"),
         );
         let (elaborations, scope, errors) =
             check_retained_module_error(&rejected_package, "rejected");
@@ -24721,7 +24608,7 @@ fn generic_last() -> . {
         );
         assert_retained_call_unpublished(&elaborations, "rejected", &rejected_call);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "a conflicting exact scheme must fail before evaluator execution"
         );
@@ -24742,8 +24629,8 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn named_elaborator_admits_a_higher_kinded_callable_spine() {
-        let elaborator = "module elab; \
+    fn named_macro_admits_a_higher_kinded_callable_spine() {
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn hkt_identity_impl( \
                 _ct: __Comptime__, \
@@ -24751,24 +24638,23 @@ fn generic_last() -> . {
                 _a: __Type__, \
                 value: __Checked_term__ \
               ) -> __Checked_term__ { value } \
-            pub elab hkt_identity : [*F][A] F(A) -> F(A) { impl hkt_identity_impl; };";
+            pub macro hkt_identity : [*F][A] F(A) -> F(A) { impl hkt_identity_impl; };";
         let main = "module main; \
-            import elab(hkt_identity); \
+            import macros(macro hkt_identity); \
             newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-            fn run(value: Box(.)) -> Box(.) { hkt_identity!(Box, ., value) }";
-        check_package_sources(&[elaborator, main])
-            .expect("a named elaborator callable spine admits a higher-kinded binder");
+            fn run(value: Box(.)) -> Box(.) { hkt_identity(Box, ., value) }";
+        check_package_sources(&[macro_def, main])
+            .expect("a named macro callable spine admits a higher-kinded binder");
     }
 
     #[test]
     fn fills_terminal_public_layer_determines_an_omitted_result_in_its_parent() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer); \
-            fn run() -> . { let _result = infer!(()); () }";
-        let package =
-            lowered_package(&[("elab.kio", TERMINAL_FILLS_ELABORATOR), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer!(())"));
+            import macros(macro infer); \
+            fn run() -> . { let _result = infer(()); () }";
+        let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer(())"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(matches!(
@@ -24778,7 +24664,7 @@ fn generic_last() -> . {
                 .type_at("main", original.span()),
             Some(Type::Unit { .. })
         ));
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 0, 1, 1, 0);
         validate_substituted_package(checked.substituted())
             .expect("a parent-owned omitted terminal result survives Prime validation");
@@ -24788,11 +24674,10 @@ fn generic_last() -> . {
     fn fills_terminal_public_layer_applies_outer_expected_before_the_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer); \
-            fn run() -> . { infer!(()) }";
-        let package =
-            lowered_package(&[("elab.kio", TERMINAL_FILLS_ELABORATOR), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer!(())"));
+            import macros(macro infer); \
+            fn run() -> . { infer(()) }";
+        let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer(())"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(matches!(
@@ -24802,7 +24687,7 @@ fn generic_last() -> . {
                 .type_at("main", original.span()),
             Some(Type::Unit { .. })
         ));
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 1, 0, 1, 0);
         validate_substituted_package(checked.substituted())
             .expect("an outer expected type closes the parent terminal goal before the action");
@@ -24812,15 +24697,14 @@ fn generic_last() -> . {
     fn fills_terminal_public_layer_remains_underdetermined_with_two_open_types() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer); \
+            import macros(macro infer); \
             host fn make[A]() -> A; \
-            fn run() -> . { let _result = infer!(.(_unit: .) { make() }); () }";
-        let package =
-            lowered_package(&[("elab.kio", TERMINAL_FILLS_ELABORATOR), ("main.kio", main)]);
+            fn run() -> . { let _result = infer(.(_unit: .) { make() }); () }";
+        let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer!(.(_unit: .) { make() })"),
+            source_span(main, "infer(.(_unit: .) { make() })"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -24833,7 +24717,7 @@ fn generic_last() -> . {
             "two open fill endpoints must remain underdetermined: {errors:#?}"
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 0, 1, 1, 0);
     }
 
@@ -24841,15 +24725,14 @@ fn generic_last() -> . {
     fn fills_rejects_an_open_ordinary_source_before_the_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer); \
+            import macros(macro infer); \
             host fn make[A](callback: . -> .) -> A; \
-            fn run() -> . { let _result = infer!(make(.() { () })); () }";
-        let package =
-            lowered_package(&[("elab.kio", TERMINAL_FILLS_ELABORATOR), ("main.kio", main)]);
+            fn run() -> . { let _result = infer(make(.() { () })); () }";
+        let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer!(make(.() { () }))"),
+            source_span(main, "infer(make(.() { () }))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         let error = errors
@@ -24870,7 +24753,7 @@ fn generic_last() -> . {
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "source eligibility must fail before evaluator execution"
         );
@@ -24879,21 +24762,21 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_admits_a_checked_lambda_whose_only_open_type_is_its_body_result() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn accept_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _result: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab accept : [Result] (. -> Result) -> . { impl(fills) accept_impl; };";
+            pub macro accept : [Result] (. -> Result) -> . { impl(fills) accept_impl; };";
         let main = "module main; \
-            import elab(accept); \
-            fn run() -> . { accept!(.(_unit: .) { () }) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            import macros(macro accept); \
+            fn run() -> . { accept(.(_unit: .) { () }) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "accept!(.(_unit: .) { () })"),
+            source_span(main, "accept(.(_unit: .) { () })"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -24904,29 +24787,29 @@ fn generic_last() -> . {
                 .is_some(),
             "the checked lambda must publish after its retained body closes the result"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the checked open-result lambda survives standalone Prime validation");
     }
 
     #[test]
     fn fills_admits_an_interleaved_hkt_checked_lambda_with_an_open_body_result() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn accept_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _result: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab accept : [Result] ([*F] F(.) -> [A] A -> Result) -> . { \
+            pub macro accept : [Result] ([*F] F(.) -> [A] A -> Result) -> . { \
               impl(fills) accept_impl; \
             };";
         let main = "module main; \
-            import elab(accept); \
+            import macros(macro accept); \
             fn run() -> . { \
-              accept!(.[*F](first: F(.))[A](second: A) { () }) \
+              accept(.[*F](first: F(.))[A](second: A) { () }) \
             }";
-        let call = "accept!(.[*F](first: F(.))[A](second: A) { () })";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let call = "accept(.[*F](first: F(.))[A](second: A) { () })";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
         let (checked, scope) = check_retained_success(&package);
 
@@ -24937,25 +24820,25 @@ fn generic_last() -> . {
                 .is_some(),
             "the interleaved HKT header must leave only its final result open"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the interleaved HKT checked lambda survives Prime validation");
     }
 
     #[test]
     fn fills_admits_a_type_only_checked_lambda_with_an_open_body_result() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn accept_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _result: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab accept : [Result] ([A] . -> Result) -> . { impl(fills) accept_impl; };";
+            pub macro accept : [Result] ([A] . -> Result) -> . { impl(fills) accept_impl; };";
         let main = "module main; \
-            import elab(accept); \
-            fn run() -> . { accept!(.[A]() { () }) }";
-        let call = "accept!(.[A]() { () })";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            import macros(macro accept); \
+            fn run() -> . { accept(.[A]() { () }) }";
+        let call = "accept(.[A]() { () })";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
         let (checked, scope) = check_retained_success(&package);
 
@@ -24966,30 +24849,30 @@ fn generic_last() -> . {
                 .is_some(),
             "the explicit empty value layer must remain an ABI-zero checked header"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the type-only checked lambda survives standalone Prime validation");
     }
 
     #[test]
     fn fills_rejects_a_checked_lambda_with_an_open_parameter_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn accept_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _param: __Type__, _result: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab accept : [Param][Result] (Param -> Result) -> . { \
+            pub macro accept : [Param][Result] (Param -> Result) -> . { \
               impl(fills) accept_impl; \
             };";
         let main = "module main; \
-            import elab(accept); \
-            fn run() -> . { accept!(.(value) { () }) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            import macros(macro accept); \
+            fn run() -> . { accept(.(value) { () }) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "accept!(.(value) { () })"),
+            source_span(main, "accept(.(value) { () })"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         let source = source_span(main, ".(value) { () }");
@@ -25007,31 +24890,31 @@ fn generic_last() -> . {
 
         assert_eq!(error.diagnostic().span, source);
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
 
     #[test]
     fn fills_rejects_an_ignored_open_recipe_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn ignore_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab ignore : [T] T -> . { impl(fills) ignore_impl; };";
+            pub macro ignore : [T] T -> . { impl(fills) ignore_impl; };";
         let main = "module main; \
-            import elab(ignore); \
+            import macros(macro ignore); \
             host fn make[A](callback: . -> .) -> A; \
-            fn run() -> . { ignore!(make(.() { () })) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { ignore(make(.() { () })) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "ignore!(make(.() { () }))"),
+            source_span(main, "ignore(make(.() { () }))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "source eligibility must reject before the ignored-source action executes"
         );
@@ -25054,13 +24937,13 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_nested_body_free_calls_complete_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect : [T] T -> . { impl(fills) inspect_impl; };";
+            pub macro inspect : [T] T -> . { impl(fills) inspect_impl; };";
         let mut sources = vec!["combine(identity(raw), identity(()))".to_owned()];
         for depth in [1, 2, 8, 32] {
             let mut source = "raw".to_owned();
@@ -25070,44 +24953,44 @@ fn generic_last() -> . {
             sources.push(source);
         }
         for source in sources {
-            let body = format!("inspect!({source})");
+            let body = format!("inspect({source})");
             let main = format!(
-                "module main; import elab(inspect); \
+                "module main; import macros(macro inspect); \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn combine[A][B](left: A, right: B) -> A & B {{ (left, right) }} \
                  fn run[A](raw: A) -> . {{ {body} }}"
             );
-            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             let original = retained_call_at(&package, "main", source_span(&main, &body));
             let (checked, scope) = check_retained_success(&package);
             assert_retained_call_published(checked.elaborations(), "main", &original);
             validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
                 panic!("nested body-free source `{source}` must remain valid Prime: {error:#?}")
             });
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
         }
     }
 
     #[test]
     fn fills_nested_body_free_calls_check_ignored_arguments_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect : [T] T -> . { impl(fills) inspect_impl; };";
+            pub macro inspect : [T] T -> . { impl(fills) inspect_impl; };";
         let main = "module main; \
-            import elab(inspect); \
+            import macros(macro inspect); \
             host type Needed; host type Other; \
             fn identity[A](value: A) -> A { value } \
             host fn needs(value: Needed) -> Needed; \
-            fn run(raw: Other) -> . { inspect!(identity(needs(raw))) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run(raw: Other) -> . { inspect(identity(needs(raw))) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect!(identity(needs(raw)))"),
+            source_span(main, "inspect(identity(needs(raw)))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert!(
@@ -25116,30 +24999,30 @@ fn generic_last() -> . {
                 .any(|error| error.diagnostic().message.contains("type mismatch")),
             "an ignored nested argument must still satisfy its ordinary parameter type: {errors:#?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&elaborations, "main", &original);
     }
 
     #[test]
-    fn fills_direct_qualified_field_source_preserves_owner_under_renamed_elaborator() {
-        let elaborator = "module provider; \
+    fn fills_direct_qualified_field_source_preserves_owner_under_renamed_macro() {
+        let macro_def = "module provider; \
             import __comptime__; import testapi(Bool); \
             pure fn relay_impl( \
               _ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
-            pub elab relay : [T] T -> Bool { impl(fills) relay_impl; };";
+            pub macro relay : [T] T -> Bool { impl(fills) relay_impl; };";
         for receiver in ["card", "identity(card)"] {
-            let call = format!("relay!({receiver}.?{{chosen.flag}})");
+            let call = format!("relay({receiver}.?{{chosen.flag}})");
             let main = format!(
                 "module main; \
-                 import provider(relay); import testapi(Bool); \
+                 import provider(macro relay); import testapi(Bool); \
                  import decoy as selected; import selected as chosen; \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn run(card: chosen.Card) -> Bool {{ {call} }}"
             );
             let sources = [
-                ("provider.kio", elaborator),
+                ("provider.kio", macro_def),
                 ("testapi.kio", "module testapi; host type Bool role(bool);"),
                 (
                     "selected.kio",
@@ -25159,10 +25042,9 @@ fn generic_last() -> . {
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             let (checked, scope) = check_retained_success(&package);
             assert_retained_call_published(checked.elaborations(), "main", &original);
-            validate_substituted_package(checked.substituted()).expect(
-                "qualified field under an ordinary fills elaborator must remain valid Prime",
-            );
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            validate_substituted_package(checked.substituted())
+                .expect("qualified field under an ordinary fills macro must remain valid Prime");
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
         }
     }
 
@@ -25181,8 +25063,8 @@ fn generic_last() -> . {
         }
 
         fn retained_value_arg_span(call: &Expr) -> Span {
-            let Expr::UserElaborator { args, .. } = call else {
-                panic!("the inspected call lost its retained elaborator form")
+            let Expr::UserMacro { args, .. } = call else {
+                panic!("the inspected call lost its retained macro form")
             };
             let spans = args
                 .iter()
@@ -25195,20 +25077,20 @@ fn generic_last() -> . {
             spans[0]
         }
 
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect : [T] T -> . { impl(fills) inspect_impl; };";
+            pub macro inspect : [T] T -> . { impl(fills) inspect_impl; };";
         let cases = [
             Case {
                 label: "let-bound generic result",
                 body: "let completed = \
                     drive(.(current: State) { advance(current) }, seed); \
-                    inspect!(completed)",
-                call: Some("inspect!(completed)"),
+                    inspect(completed)",
+                call: Some("inspect(completed)"),
                 step: ".(current: State) { advance(current) }",
                 producer: None,
                 body_execution: Some(0),
@@ -25216,7 +25098,7 @@ fn generic_last() -> . {
             },
             Case {
                 label: "inline generic result with an explicit outer result",
-                body: "inspect!(drive(_, Done, \
+                body: "inspect(drive(_, Done, \
                     .(current: State) { advance(current) }, seed \
                 ))",
                 call: None,
@@ -25227,7 +25109,7 @@ fn generic_last() -> . {
             },
             Case {
                 label: "inline generic result with only a concrete step result",
-                body: "inspect!(drive( \
+                body: "inspect(drive( \
                     .(current: State) -> State | Done { advance(current) }, seed \
                 ))",
                 call: None,
@@ -25238,7 +25120,7 @@ fn generic_last() -> . {
             },
             Case {
                 label: "inline generic result with an omitted step result",
-                body: "inspect!(drive( \
+                body: "inspect(drive( \
                     .(current: State) { advance(current) }, seed \
                 ))",
                 call: None,
@@ -25252,7 +25134,7 @@ fn generic_last() -> . {
         for case in cases {
             let main = format!(
                 "module main; \
-                 import elab(inspect); \
+                 import macros(macro inspect); \
                  host type State; \
                  host type Done; \
                  host fn drive[S][R](step: S -> (S | R), state: S) -> R; \
@@ -25260,7 +25142,7 @@ fn generic_last() -> . {
                  fn run(seed: State) -> . {{ {} }}",
                 case.body
             );
-            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             let original = retained_call_at(
                 &package,
                 "main",
@@ -25279,7 +25161,7 @@ fn generic_last() -> . {
                 validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
                     panic!("{} must survive Prime validation: {error:#?}", case.label)
                 });
-                scope.memo().user_elaborator_template_executions()
+                scope.memo().user_macro_template_executions()
             } else {
                 let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
                 assert_eq!(
@@ -25294,7 +25176,7 @@ fn generic_last() -> . {
                 assert_eq!(diagnostic.span, projected_span);
                 assert_eq!(
                     diagnostic.message,
-                    "this value source needs a complete type before an `impl(fills)` elaborator can run"
+                    "this value source needs a complete type before an `impl(fills)` macro can run"
                 );
                 assert_eq!(
                     diagnostic.help(),
@@ -25303,7 +25185,7 @@ fn generic_last() -> . {
                     )
                 );
                 assert_retained_call_unpublished(&elaborations, "main", &original);
-                scope.memo().user_elaborator_template_executions()
+                scope.memo().user_macro_template_executions()
             };
             assert_eq!(
                 action_executions,
@@ -25323,7 +25205,7 @@ fn generic_last() -> . {
             );
             let observed_entries = crate::pass::typecheck_core::apply::take_lambda_body_entries()
                 .into_iter()
-                .map(|entry| (entry.span, entry.elaborator_executions))
+                .map(|entry| (entry.span, entry.macro_executions))
                 .collect::<Vec<_>>();
             let expected_entries = case
                 .body_execution
@@ -25339,27 +25221,27 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_checks_a_later_open_source_after_a_closed_source_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn check_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _second: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab check : . -> [T] T -> . { impl(fills) check_impl; };";
+            pub macro check : . -> [T] T -> . { impl(fills) check_impl; };";
         let main = "module main; \
-            import elab(check); \
+            import macros(macro check); \
             host fn known() -> .; \
             host fn make[A](callback: . -> .) -> A; \
-            fn run() -> . { check!(known(), make(.() { () })) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { check(known(), make(.() { () })) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "check!(known(), make(.() { () }))"),
+            source_span(main, "check(known(), make(.() { () }))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "a later open source must reject before the action executes"
         );
@@ -25382,7 +25264,7 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_rejects_a_producer_free_open_recipe_before_a_result_fill() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn fill_result_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
@@ -25390,18 +25272,18 @@ fn generic_last() -> . {
             ) -> (__Checked_term__ & __Fill_ctx__) { \
               (__term_unit__(ct), __fill__(ct, fills, t, __type_unit__(ct))) \
             } \
-            pub elab fill_result : [T] T -> T { impl(fills) fill_result_impl; };";
+            pub macro fill_result : [T] T -> T { impl(fills) fill_result_impl; };";
         for source in ["phantom(())", "identity(phantom(()))"] {
-            let call = format!("fill_result!({source})");
+            let call = format!("fill_result({source})");
             let producer_free_main = format!(
                 "module main; \
-                 import elab(fill_result); \
+                 import macros(macro fill_result); \
                  host fn phantom[A, B](value: A) -> B; \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn run() -> . {{ let _result = {call}; () }}"
             );
             let producer_free_package =
-                lowered_package(&[("elab.kio", elaborator), ("main.kio", &producer_free_main)]);
+                lowered_package(&[("macros.kio", macro_def), ("main.kio", &producer_free_main)]);
             let producer_free_original = retained_call_at(
                 &producer_free_package,
                 "main",
@@ -25425,15 +25307,15 @@ fn generic_last() -> . {
                 source_span(&producer_free_main, source)
             );
             assert_retained_call_unpublished(&elaborations, "main", &producer_free_original);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+            assert_eq!(scope.memo().user_macro_template_executions(), 0);
         }
     }
 
     #[test]
     fn fills_empty_prefix_sources_share_explicit_unit_eligibility() {
         for shape in ["A", "Box(A)", "A & .", ". -> A"] {
-            let elaborator = format!(
-                "module elab; import __comptime__; \
+            let macro_def = format!(
+                "module macros; import __comptime__; \
                  pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
                  pub type Shape[A] = {shape}; \
                  pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
@@ -25441,25 +25323,25 @@ fn generic_last() -> . {
                    -> __Checked_term__ & __Fill_ctx__ {{ \
                    (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
                  }} \
-                 pub elab fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
+                 pub macro fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
             );
             for source in ["make()", "make(())"] {
-                let call = format!("fill!({source})");
+                let call = format!("fill({source})");
                 for binding in ["result", ".(result: .)"] {
                     let main = format!(
-                        "module main; import elab(Shape, fill); \
+                        "module main; import macros(Shape, macro fill); \
                          host fn make[A]() -> Shape(A); \
                          fn run() -> . {{ let {binding} = {call}; result }}"
                     );
                     let package =
-                        lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+                        lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
                     let original = retained_call_at(&package, "main", source_span(&main, &call));
                     if binding == "result" {
                         assert_fills_source_rejected_before_action(&package, &main, &call, source);
                     } else {
                         let (checked, scope) = check_retained_success(&package);
                         assert_retained_call_published(checked.elaborations(), "main", &original);
-                        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+                        assert_eq!(scope.memo().user_macro_template_executions(), 1);
                         validate_substituted_package(checked.substituted()).expect(
                             "context-closed sources must survive standalone Prime validation",
                         );
@@ -25472,8 +25354,8 @@ fn generic_last() -> . {
     #[test]
     fn fills_nested_empty_prefix_sources_preserve_explicit_unit_eligibility() {
         for shape in ["A", "Box(A)"] {
-            let elaborator = format!(
-                "module elab; import __comptime__; \
+            let macro_def = format!(
+                "module macros; import __comptime__; \
                  pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
                  pub type Shape[A] = {shape}; \
                  pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
@@ -25481,17 +25363,17 @@ fn generic_last() -> . {
                    -> __Checked_term__ & __Fill_ctx__ {{ \
                    (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
                  }} \
-                 pub elab fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
+                 pub macro fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
             );
             for source in ["identity(make())", "identity(make(()))"] {
-                let call = format!("fill!({source})");
+                let call = format!("fill({source})");
                 let main = format!(
-                    "module main; import elab(Shape, fill); \
+                    "module main; import macros(Shape, macro fill); \
                      host fn make[A]() -> Shape(A); \
                      fn identity[A](value: A) -> A {{ value }} \
                      fn run() -> . {{ let result = {call}; result }}"
                 );
-                let package = lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+                let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
                 assert_fills_source_rejected_before_action(&package, &main, &call, source);
             }
         }
@@ -25516,27 +25398,27 @@ fn generic_last() -> . {
             .unwrap_or_else(|| panic!("{source} must fail eligibility: {errors:#?}"));
         assert_eq!(error.diagnostic().span, source_span(main, source));
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
 
     #[test]
     fn fills_computed_input_cannot_be_rescued_by_a_later_callback_body() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
               target: __Type__, _value: __Checked_term__, _callback: __Checked_term__) \
               -> __Checked_term__ & __Fill_ctx__ { \
               (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
             } \
-            pub elab fill : [A] A -> (. -> A) -> A { impl(fills) fill_impl }";
-        let main = "module main; import elab(fill); \
+            pub macro fill : [A] A -> (. -> A) -> A { impl(fills) fill_impl }";
+        let main = "module main; import macros(macro fill); \
             host fn make[A]() -> A; \
-            fn run() -> . { let result = fill!(make(), .() { () }); result }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { let result = fill(make(), .() { () }); result }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         assert_fills_source_rejected_before_action(
             &package,
             main,
-            "fill!(make(), .() { () })",
+            "fill(make(), .() { () })",
             "make()",
         );
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
@@ -25548,28 +25430,28 @@ fn generic_last() -> . {
             ("A & .", "(make(), ())"),
             ("(A & .) & .", "((make(), ()), ())"),
         ] {
-            let elaborator = format!(
-                "module elab; import __comptime__; \
+            let macro_def = format!(
+                "module macros; import __comptime__; \
                  pure fn fill_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                    target: __Type__, _value: __Checked_term__) \
                    -> __Checked_term__ & __Fill_ctx__ {{ \
                    (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
                  }} \
-                 pub elab fill : [A] ({shape}) -> A {{ impl(fills) fill_impl }}"
+                 pub macro fill : [A] ({shape}) -> A {{ impl(fills) fill_impl }}"
             );
-            let call = format!("fill!({source})");
+            let call = format!("fill({source})");
             let main = format!(
-                "module main; import elab(fill); host fn make[A]() -> A; \
+                "module main; import macros(macro fill); host fn make[A]() -> A; \
                  fn run() -> . {{ let result = {call}; result }}"
             );
-            let package = lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
             assert_fills_source_rejected_before_action(&package, &main, &call, "make()");
         }
     }
 
     #[test]
     fn fills_rejects_a_producer_with_a_known_nominal_shell_and_open_interior() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pub newtype Box[A] : A { constructor mk_box; projector un_box; }; \
             pure fn ignore_impl( \
@@ -25578,16 +25460,16 @@ fn generic_last() -> . {
             ) -> (__Checked_term__ & __Fill_ctx__) { \
               (__term_unit__(ct), __fill__(ct, fills, a, __type_unit__(ct))) \
             } \
-            pub elab ignore : [A] Box(A) -> A { impl(fills) ignore_impl; };";
+            pub macro ignore : [A] Box(A) -> A { impl(fills) ignore_impl; };";
         let main = "module main; \
-            import elab(Box, ignore); \
+            import macros(Box, macro ignore); \
             host fn boxed[A](callback: . -> .) -> Box(A); \
-            fn run() -> . { let _result = ignore!(boxed(.() { () })); () }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { let _result = ignore(boxed(.() { () })); () }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "ignore!(boxed(.() { () }))"),
+            source_span(main, "ignore(boxed(.() { () }))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         let error = errors
@@ -25607,23 +25489,23 @@ fn generic_last() -> . {
             source_span(main, "boxed(.() { () })")
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
 
     #[test]
     fn fills_keeps_a_closed_ordinary_producer_on_the_normal_action_path() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn ignore_impl( \
               ct: __Comptime__, fills: __Fill_ctx__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab ignore : . -> . { impl(fills) ignore_impl; };";
+            pub macro ignore : . -> . { impl(fills) ignore_impl; };";
         let main = "module main; \
-            import elab(ignore); \
+            import macros(macro ignore); \
             host fn known() -> .; \
-            fn run() -> . { ignore!(known()) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "ignore!(known())"));
+            fn run() -> . { ignore(known()) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "ignore(known())"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -25633,33 +25515,33 @@ fn generic_last() -> . {
                 .is_some(),
             "a closed ordinary producer must remain available after the action"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the closed ordinary producer survives standalone Prime validation");
     }
 
     #[test]
     fn fills_completes_a_bounded_computed_field_source_before_the_action() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect : [T] T -> . { impl(fills) inspect_impl; };";
+            pub macro inspect : [T] T -> . { impl(fills) inspect_impl; };";
         let main = "module main; \
-            import elab(inspect); \
+            import macros(macro inspect); \
             host type String role(str); \
             labels { lookup[P]: String -> (P | .) }; \
             type Surface[P] = Lookup(P); \
             fn run[P](surface: Surface(P), name: String) -> . { \
-              inspect!(surface.?{lookup}(name)) \
+              inspect(surface.?{lookup}(name)) \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect!(surface.?{lookup}(name))"),
+            source_span(main, "inspect(surface.?{lookup}(name))"),
         );
         let field =
             retained_field_access_at(&package, "main", source_span(main, "surface.?{lookup}"));
@@ -25679,42 +25561,45 @@ fn generic_last() -> . {
                 .is_some(),
             "the field access must publish exactly with its enclosing retained call"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("a completed computed-field source survives standalone Prime validation");
     }
 
     #[test]
     fn fills_projects_a_pending_computed_receiver_header_and_checks_its_body() {
-        let declarations = "module main; import elab(observe); \
+        let declarations = "module main; import macros(macro observe); \
             host type Bool role(bool); labels Record = { flag: Bool }; \
             fn record(value: Bool) -> Record { {flag = value} } \
             fn produced[A](make: . -> A) -> A { make(()) } \
             fn identity[A](value: A) -> A { value }";
-        let call = "observe!(identity(produced(.() -> Record { observe!(value); record(value) }).?{flag}))";
+        let call =
+            "observe(identity(produced(.() -> Record { observe(value); record(value) }).?{flag}))";
         let main = format!("{declarations} fn run(value: Bool) -> . {{ {call} }}");
-        let package =
-            lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+        let package = lowered_package(&[
+            ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+            ("main.kio", &main),
+        ]);
         let original = retained_call_at(&package, "main", source_span(&main, call));
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let (checked, scope) = check_retained_success(&package);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 2);
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
         assert_eq!(
             crate::pass::typecheck_core::apply::take_lambda_body_entries(),
             vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
-                span: source_span(&main, ".() -> Record { observe!(value); record(value) }"),
-                elaborator_executions: 1,
+                span: source_span(&main, ".() -> Record { observe(value); record(value) }"),
+                macro_executions: 1,
             }],
         );
         assert_retained_call_published(checked.elaborations(), "main", &original);
         validate_substituted_package(checked.substituted())
             .expect("the projected field receiver remains valid Prime");
 
-        let bad_lambda = ".() -> Record { observe!(value); () }";
-        let bad_call = format!("observe!(identity(produced({bad_lambda}).?{{flag}}))");
+        let bad_lambda = ".() -> Record { observe(value); () }";
+        let bad_call = format!("observe(identity(produced({bad_lambda}).?{{flag}}))");
         let bad_main = format!("{declarations} fn run(value: Bool) -> . {{ {bad_call} }}");
         let bad_package = lowered_package(&[
-            ("elab.kio", WRITTEN_CALLBACK_OBSERVER),
+            ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
             ("main.kio", &bad_main),
         ]);
         let bad_original =
@@ -25722,7 +25607,7 @@ fn generic_last() -> . {
         let (elaborations, bad_scope, errors) = check_retained_module_error(&bad_package, "main");
         assert_eq!(errors.len(), 1, "{errors:#?}");
         assert!(errors[0].diagnostic().message.contains("type mismatch"));
-        assert_eq!(bad_scope.memo().user_elaborator_template_executions(), 2);
+        assert_eq!(bad_scope.memo().user_macro_template_executions(), 2);
         assert_retained_call_unpublished(&elaborations, "main", &bad_original);
 
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
@@ -25733,25 +25618,20 @@ fn generic_last() -> . {
                 .message
                 .contains("type mismatch")
         );
-        assert_eq!(
-            sequential_scope
-                .memo()
-                .user_elaborator_template_executions(),
-            2
-        );
+        assert_eq!(sequential_scope.memo().user_macro_template_executions(), 2);
         assert_eq!(
             crate::pass::typecheck_core::apply::take_lambda_body_entries(),
             vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                 span: source_span(&bad_main, bad_lambda),
-                elaborator_executions: 1,
+                macro_executions: 1,
             }],
         );
 
-        let open_call = "observe!(unknown().?{flag})";
+        let open_call = "observe(unknown().?{flag})";
         let open_main =
             format!("{declarations} host fn unknown[A]() -> A; fn run() -> . {{ {open_call} }}");
         let open_package = lowered_package(&[
-            ("elab.kio", WRITTEN_CALLBACK_OBSERVER),
+            ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
             ("main.kio", &open_main),
         ]);
         let open_original =
@@ -25761,35 +25641,35 @@ fn generic_last() -> . {
         assert_eq!(open_errors.len(), 1, "{open_errors:#?}");
         assert_eq!(
             open_errors[0].diagnostic().message,
-            "this value source needs a complete type before an `impl(fills)` elaborator can run"
+            "this value source needs a complete type before an `impl(fills)` macro can run"
         );
-        assert_eq!(open_scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(open_scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&open_elaborations, "main", &open_original);
     }
 
     #[test]
     fn fills_rejects_a_pending_computed_field_source_without_publication() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect : [T] T -> . { impl(fills) inspect_impl; };";
+            pub macro inspect : [T] T -> . { impl(fills) inspect_impl; };";
         let main = "module main; \
-            import elab(inspect); \
+            import macros(macro inspect); \
             host type String role(str); \
             labels { identity: [A] A -> A }; \
             type Surface = Identity; \
             fn run(surface: Surface) -> . { \
-              inspect!(surface.?{identity}(\"value\")) \
+              inspect(surface.?{identity}(\"value\")) \
             }";
         let source = "surface.?{identity}(\"value\")";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect!(surface.?{identity}(\"value\"))"),
+            source_span(main, "inspect(surface.?{identity}(\"value\"))"),
         );
         let field =
             retained_field_access_at(&package, "main", source_span(main, "surface.?{identity}"));
@@ -25813,7 +25693,7 @@ fn generic_last() -> . {
                 "add a type argument or annotation, or complete the value in an ordinary `let` first"
             )
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert!(
             elaborations.elaboration_for("main", &field).is_none(),
@@ -25823,28 +25703,28 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_rolls_back_a_completed_field_source_when_a_later_source_fails() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn inspect_impl( \
               ct: __Comptime__, fills: __Fill_ctx__, \
               _t: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub elab inspect_two : [T] T -> . -> . { impl(fills) inspect_impl; };";
+            pub macro inspect_two : [T] T -> . -> . { impl(fills) inspect_impl; };";
         let main = "module main; \
-            import elab(inspect_two); \
+            import macros(macro inspect_two); \
             host type String role(str); \
             labels { lookup[P]: String -> (P | .) }; \
             type Surface[P] = Lookup(P); \
             fn run[P](surface: Surface(P), name: String) -> . { \
-              inspect_two!(surface.?{lookup}(name), \"wrong\"(String)) \
+              inspect_two(surface.?{lookup}(name), \"wrong\"(String)) \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
             source_span(
                 main,
-                "inspect_two!(surface.?{lookup}(name), \"wrong\"(String))",
+                "inspect_two(surface.?{lookup}(name), \"wrong\"(String))",
             ),
         );
         let field =
@@ -25859,7 +25739,7 @@ fn generic_last() -> . {
             diagnostic.message.contains("type mismatch"),
             "unexpected later-source diagnostic: {diagnostic:#?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert!(
             elaborations.elaboration_for("main", &field).is_none(),
@@ -25871,11 +25751,10 @@ fn generic_last() -> . {
     fn fills_explicit_terminal_type_uses_the_ordinary_public_roundtrip() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer); \
-            fn run() -> . { infer!((), .) }";
-        let package =
-            lowered_package(&[("elab.kio", TERMINAL_FILLS_ELABORATOR), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer!((), .)"));
+            import macros(macro infer); \
+            fn run() -> . { infer((), .) }";
+        let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "infer((), .)"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -25884,7 +25763,7 @@ fn generic_last() -> . {
                 .elaboration_for("main", &original)
                 .is_some()
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
         validate_substituted_package(checked.substituted())
             .expect("an explicit terminal type survives the ordinary roundtrip");
@@ -25892,24 +25771,24 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_partial_terminal_type_prefix_reuses_the_residual_eta_plan() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn phantom_impl( \
                 _ct: __Comptime__, fills: __Fill_ctx__, \
                 _source: __Type__, value: __Checked_term__, \
                 _a: __Type__, _b: __Type__ \
               ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
-            pub elab phantom : [Source] Source -> [A] [B] A { impl(fills) phantom_impl; };";
+            pub macro phantom : [Source] Source -> [A] [B] A { impl(fills) phantom_impl; };";
         for (call, residual_type, returns_function) in [
-            ("phantom!((), .)", "[B] .", false),
-            ("phantom!(.(_unit: .) { () }, . -> .)", "[B] . -> .", true),
+            ("phantom((), .)", "[B] .", false),
+            ("phantom(.(_unit: .) { () }, . -> .)", "[B] . -> .", true),
         ] {
             crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
             let main = format!(
-                "module main; import elab(phantom); \
+                "module main; import macros(macro phantom); \
                  fn run() -> {residual_type} {{ {call} }}"
             );
-            let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             let original = retained_call_at(&package, "main", source_span(&main, call));
             let (checked, scope) = check_retained_success(&package);
 
@@ -25936,7 +25815,7 @@ fn generic_last() -> . {
                     .elaboration_for("main", &original)
                     .is_some()
             );
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
             validate_substituted_package(checked.substituted())
                 .expect("a partial terminal prefix keeps its exact residual binder in Prime");
@@ -25947,14 +25826,14 @@ fn generic_last() -> . {
     fn fills_terminal_public_layer_observes_a_mixed_open_result_header() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer_pair); \
+            import macros(macro infer_pair); \
             host fn make[A]() -> A; \
-            fn run() -> . & . { infer_pair!(make()) }";
+            fn run() -> . & . { infer_pair(make()) }";
         let package = lowered_package(&[
-            ("elab.kio", MIXED_TERMINAL_FILLS_ELABORATOR),
+            ("macros.kio", MIXED_TERMINAL_FILLS_MACRO),
             ("main.kio", main),
         ]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_pair!(make())"));
+        let original = retained_call_at(&package, "main", source_span(main, "infer_pair(make())"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -25963,7 +25842,7 @@ fn generic_last() -> . {
                 .elaboration_for("main", &original)
                 .is_some()
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 1, 0, 1, 1);
         validate_substituted_package(checked.substituted())
             .expect("a mixed open terminal result survives Prime validation");
@@ -25973,17 +25852,17 @@ fn generic_last() -> . {
     fn fills_terminal_public_layer_applies_a_partial_outer_expected_before_the_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
-            import elab(infer_pair); \
+            import macros(macro infer_pair); \
             fn consume[T](_value: (. -> .) & T) -> . { () } \
-            fn run() -> . { consume(infer_pair!(.(value) { value })) }";
+            fn run() -> . { consume(infer_pair(.(value) { value })) }";
         let package = lowered_package(&[
-            ("elab.kio", MIXED_TERMINAL_FILLS_ELABORATOR),
+            ("macros.kio", MIXED_TERMINAL_FILLS_MACRO),
             ("main.kio", main),
         ]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair!(.(value) { value })"),
+            source_span(main, "infer_pair(.(value) { value })"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26002,7 +25881,7 @@ fn generic_last() -> . {
                 .elaboration_for("main", &original)
                 .is_some()
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 0, 1, 1, 1);
         validate_substituted_package(checked.substituted())
             .expect("a partial outer expected closes the projected public plan before evaluation");
@@ -26011,7 +25890,7 @@ fn generic_last() -> . {
     #[test]
     fn fills_partial_value_layer_before_terminal_reserves_no_public_goal() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn relay_impl( \
                 ct: __Comptime__, fills: __Fill_ctx__, \
@@ -26020,12 +25899,12 @@ fn generic_last() -> . {
               ) -> (__Checked_term__ & __Fill_ctx__) { \
                 (__term_unit__(ct), fills) \
               } \
-            pub elab relay : [A] A -> [B] B -> [Target] . { impl(fills) relay_impl; };";
+            pub macro relay : [A] A -> [B] B -> [Target] . { impl(fills) relay_impl; };";
         let main = "module main; \
-            import elab(relay); \
-            fn run[A](first: A) -> [B] B -> [Target] . { relay!(first) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "relay!(first)"));
+            import macros(macro relay); \
+            fn run[A](first: A) -> [B] B -> [Target] . { relay(first) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "relay(first)"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26034,7 +25913,7 @@ fn generic_last() -> . {
                 .elaboration_for("main", &original)
                 .is_some()
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 0, 0);
         validate_substituted_package(checked.substituted())
             .expect("a genuine pre-terminal residual survives Prime validation");
@@ -26042,7 +25921,7 @@ fn generic_last() -> . {
 
     #[test]
     fn retained_mixed_terminal_slots_accept_known_required_and_infer_optional() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
@@ -26052,17 +25931,17 @@ fn generic_last() -> . {
                 _a: __Type__, \
                 _b: Optional_type \
               ) -> __Checked_term__ { value } \
-            pub elab mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
+            pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
-            import elab(mixed_pair); \
+            import macros(macro mixed_pair); \
             default host type I32 role(i32); \
             default host type String role(str); \
-            fn run() -> I32 & String { mixed_pair!((0, \"closed\"), I32, _) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> I32 & String { mixed_pair((0, \"closed\"), I32, _) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair!((0, \"closed\"), I32, _)"),
+            source_span(main, "mixed_pair((0, \"closed\"), I32, _)"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26073,14 +25952,14 @@ fn generic_last() -> . {
                 .is_some(),
             "known A and inferred Optional B must publish the action"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("mixed terminal slot modes survive Prime validation");
     }
 
     #[test]
     fn retained_mixed_terminal_required_infer_rejects_before_evaluation() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
@@ -26090,20 +25969,20 @@ fn generic_last() -> . {
                 _a: __Type__, \
                 _b: Optional_type \
               ) -> __Checked_term__ { value } \
-            pub elab mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
+            pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
-            import elab(mixed_pair); \
+            import macros(macro mixed_pair); \
             default host type I32 role(i32); \
             default host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair!((0, \"closed\"), _, _); \
+              let _pair = mixed_pair((0, \"closed\"), _, _); \
               () \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair!((0, \"closed\"), _, _)"),
+            source_span(main, "mixed_pair((0, \"closed\"), _, _)"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26115,13 +25994,13 @@ fn generic_last() -> . {
             "the Required terminal slot must reject before evaluation: {errors:#?}"
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
 
     #[test]
     fn retained_omitted_mixed_terminal_required_infer_rejects_before_evaluation() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn mixed_pair_impl( \
@@ -26131,20 +26010,20 @@ fn generic_last() -> . {
                 _a: __Type__, \
                 _b: Optional_type \
               ) -> __Checked_term__ { value } \
-            pub elab mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
+            pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
-            import elab(mixed_pair); \
+            import macros(macro mixed_pair); \
             default host type I32 role(i32); \
             default host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair!((0, \"closed\")); \
+              let _pair = mixed_pair((0, \"closed\")); \
               () \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair!((0, \"closed\"))"),
+            source_span(main, "mixed_pair((0, \"closed\"))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26156,14 +26035,14 @@ fn generic_last() -> . {
             "the omitted Required terminal slot must reject before evaluation: {errors:#?}"
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert_terminal_public_layer_work(2, 1, 0, 1, 1, 0);
     }
 
     #[test]
     fn retained_terminal_successor_keeps_same_index_shadowed_binders_independent() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn shadow_impl( \
@@ -26172,13 +26051,13 @@ fn generic_last() -> . {
                 _value: __Checked_term__, \
                 _target: Optional_type \
               ) -> __Checked_term__ { __term_unit__(ct) } \
-            pub elab shadow : [A] A -> [A] A { impl shadow_impl; };";
+            pub macro shadow : [A] A -> [A] A { impl shadow_impl; };";
         let main = "module main; \
-            import elab(shadow); \
+            import macros(macro shadow); \
             default host type I32 role(i32); \
-            fn run() -> . { shadow!(0) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "shadow!(0)"));
+            fn run() -> . { shadow(0) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "shadow(0)"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26191,7 +26070,7 @@ fn generic_last() -> . {
             ),
             "the terminal slot-0 binder must not reuse the preceding layer's slot-0 type"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 1, 0, 1, 0);
         validate_substituted_package(checked.substituted())
             .expect("same-index shadowed terminal binders survive Prime validation");
@@ -26200,18 +26079,16 @@ fn generic_last() -> . {
     #[test]
     fn retained_terminal_optional_explicit_infer_executes_without_an_expected_type() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
-            import elab(finish); \
+            import macros(macro finish); \
             fn run() -> . { \
-              let selected = finish!((), _); \
+              let selected = finish((), _); \
               selected \
             }";
-        let package = lowered_package(&[
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
-            ("main.kio", main),
-        ]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish!((), _)"));
+        let package =
+            lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "finish((), _)"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26225,12 +26102,12 @@ fn generic_last() -> . {
             "the checked action result must close the explicit optional target"
         );
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             1,
             "the optional target must remain open until the Late action executes"
         );
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_elaborator_successor_work(0, 0, 0, 1);
+        assert_final_macro_successor_work(0, 0, 0, 1);
         validate_substituted_package(checked.substituted())
             .expect("the action-inferred terminal result survives standalone Prime validation");
     }
@@ -26238,7 +26115,7 @@ fn generic_last() -> . {
     #[test]
     fn retained_terminal_successor_crosses_nested_source_closes_once() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn nested_target_impl( \
@@ -26249,18 +26126,18 @@ fn generic_last() -> . {
                 middle: __Checked_term__, \
                 _target: Optional_type \
               ) -> __Checked_term__ { middle } \
-            pub elab nested_target : [Source] Source -> [Middle] Middle -> [Target] Target { impl nested_target_impl; };";
+            pub macro nested_target : [Source] Source -> [Middle] Middle -> [Target] Target { impl nested_target_impl; };";
         let main = "module main; \
-            import elab(nested_target); \
+            import macros(macro nested_target); \
             host fn make[A]() -> A; \
             fn settle(_value: .) -> . { () } \
             fn consume[T](_first: T, _second: T) -> . { () } \
-            fn run() -> . { consume(nested_target!(settle(make()), ()), ()) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { consume(nested_target(settle(make()), ()), ()) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "nested_target!(settle(make()), ())"),
+            source_span(main, "nested_target(settle(make()), ())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26281,24 +26158,22 @@ fn generic_last() -> . {
             ),
             "the nested terminal successor publishes its concrete result type"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 1, 0, 1, 0);
         validate_substituted_package(checked.substituted())
             .expect("the transferred terminal successor survives standalone Prime validation");
     }
 
     #[test]
-    fn final_terminal_elaborator_successor_continues_without_yielding_pending() {
+    fn final_terminal_macro_successor_continues_without_yielding_pending() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
-            import elab(finish); \
-            fn run() -> . { finish!((), .) }";
-        let package = lowered_package(&[
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
-            ("main.kio", main),
-        ]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish!((), .)"));
+            import macros(macro finish); \
+            fn run() -> . { finish((), .) }";
+        let package =
+            lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "finish((), .)"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
         result.expect("the terminal successor must finish in its forced Final turn");
@@ -26307,26 +26182,24 @@ fn generic_last() -> . {
             elaborations.elaboration_for("main", &original).is_some(),
             "the Final terminal successor must publish once after its child closes"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_elaborator_successor_work(1, 0, 0, 0);
+        assert_final_macro_successor_work(1, 0, 0, 0);
         let (checked, _) = check_retained_success(&package);
         validate_substituted_package(checked.substituted())
             .expect("the Final terminal successor survives standalone Prime validation");
     }
 
     #[test]
-    fn final_nonterminal_elaborator_successor_migrates_before_descent() {
+    fn final_nonterminal_macro_successor_migrates_before_descent() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
-            import elab(relay); \
-            fn run() -> . { relay!((), (), .) }";
-        let package = lowered_package(&[
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
-            ("main.kio", main),
-        ]);
-        let original = retained_call_at(&package, "main", source_span(main, "relay!((), (), .)"));
+            import macros(macro relay); \
+            fn run() -> . { relay((), (), .) }";
+        let package =
+            lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "relay((), (), .)"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
         result.expect("the nonterminal successor must migrate in its forced Final turn");
@@ -26335,29 +26208,27 @@ fn generic_last() -> . {
             elaborations.elaboration_for("main", &original).is_some(),
             "the migrated Final successor must publish once after every child closes"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_elaborator_successor_work(0, 1, 1, 0);
+        assert_final_macro_successor_work(0, 1, 1, 0);
         let (checked, _) = check_retained_success(&package);
         validate_substituted_package(checked.substituted())
             .expect("the migrated Final successor survives standalone Prime validation");
     }
 
     #[test]
-    fn earlier_elaborator_successor_modes_keep_the_existing_yield_boundary() {
-        crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+    fn earlier_macro_successor_modes_keep_the_existing_yield_boundary() {
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
-            import elab(finish, relay); \
-            fn terminal() -> . { finish!((), .) } \
-            fn nonterminal() -> . { relay!((), (), .) }";
-        let package = lowered_package(&[
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
-            ("main.kio", main),
-        ]);
+            import macros(macro finish, macro relay); \
+            fn terminal() -> . { finish((), .) } \
+            fn nonterminal() -> . { relay((), (), .) }";
+        let package =
+            lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
         let (checked, scope) = check_retained_success(&package);
 
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 2);
-        let work = crate::pass::typecheck_core::apply::final_elaborator_successor_work();
+        assert_eq!(scope.memo().user_macro_template_executions(), 2);
+        let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
         assert_eq!(work.terminal_continues, 0);
         assert_eq!(work.migrated_descents, 0);
         assert_eq!(work.earlier_terminal_yields, 2);
@@ -26369,27 +26240,25 @@ fn generic_last() -> . {
     #[test]
     fn failed_final_terminal_successor_does_not_publish_after_one_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
-        crate::pass::typecheck_core::apply::reset_final_elaborator_successor_work();
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
-            import elab(finish); \
+            import macros(macro finish); \
             host type String role(str); \
-            fn run() -> String { finish!((), String) }";
-        let package = lowered_package(&[
-            ("elab.kio", FINAL_SUCCESSOR_ELABORATORS),
-            ("main.kio", main),
-        ]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish!((), String)"));
+            fn run() -> String { finish((), String) }";
+        let package =
+            lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "finish((), String)"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
         let error = result.expect_err("the Unit action result must reject the String target");
 
-        let Error::Elaborator(diagnostic) = &error else {
-            panic!("the incoherent checked result must be an elaborator error: {error:#?}");
+        let Error::Macro(diagnostic) = &error else {
+            panic!("the incoherent checked result must be a macro error: {error:#?}");
         };
         assert_eq!(diagnostic.span, original.span());
         assert_eq!(
             diagnostic.message,
-            "user elaborator returned a checked term of type `.` but the declared result type was `String`"
+            "user macro returned a checked term of type `.` but the declared result type was `String`"
         );
         assert!(
             elaborations.elaboration_for("main", &original).is_none(),
@@ -26399,20 +26268,20 @@ fn generic_last() -> . {
             elaborations.deferred.is_empty(),
             "the failed forced-Final action must not leave a deferred obligation"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_elaborator_successor_work(1, 0, 0, 0);
+        assert_final_macro_successor_work(1, 0, 0, 0);
 
         let (errored, error_scope, errors) = check_retained_module_error(&package, "main");
-        let [Error::Elaborator(diagnostic)] = errors.as_slice() else {
-            panic!("the module check must report one elaborator error: {errors:#?}");
+        let [Error::Macro(diagnostic)] = errors.as_slice() else {
+            panic!("the module check must report one macro error: {errors:#?}");
         };
         assert_eq!(diagnostic.span, original.span());
         assert_eq!(
             diagnostic.message,
-            "user elaborator returned a checked term of type `.` but the declared result type was `String`"
+            "user macro returned a checked term of type `.` but the declared result type was `String`"
         );
-        assert_eq!(error_scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(error_scope.memo().user_macro_template_executions(), 1);
         assert!(
             errored.elaboration_for("main", &original).is_none(),
             "the failed module check must not publish a replacement"
@@ -26435,7 +26304,7 @@ fn generic_last() -> . {
 
     #[test]
     fn failed_nested_terminal_successor_rolls_back_without_evaluation() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn missing_terminal_impl( \
@@ -26447,18 +26316,18 @@ fn generic_last() -> . {
                 _a: Optional_type, \
                 _b: __Type__ \
               ) -> __Checked_term__ { middle } \
-            pub elab missing_terminal : [Source] Source -> [Middle] Middle -> [A] [B] A { impl missing_terminal_impl; };";
+            pub macro missing_terminal : [Source] Source -> [Middle] Middle -> [A] [B] A { impl missing_terminal_impl; };";
         let main = "module main; \
-            import elab(missing_terminal); \
+            import macros(macro missing_terminal); \
             host fn make[A]() -> A; \
             fn settle(_value: .) -> . { () } \
             fn consume[T](_first: T, _second: T) -> . { () } \
-            fn run() -> . { consume(missing_terminal!(settle(make()), ()), ()) }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            fn run() -> . { consume(missing_terminal(settle(make()), ()), ()) }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "missing_terminal!(settle(make()), ())"),
+            source_span(main, "missing_terminal(settle(make()), ())"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26471,7 +26340,7 @@ fn generic_last() -> . {
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "a failing terminal successor must not execute its prepared action"
         );
@@ -26507,8 +26376,8 @@ fn generic_last() -> . {
             } else {
                 format!("factory(), {argument}")
             };
-            let elaborator = format!(
-                "module elab; import __comptime__; \
+            let macro_def = format!(
+                "module macros; import __comptime__; \
                  pure fn relay_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                    _receiver_type: __Type__, result_type: __Type__, \
                    {parameters}) \
@@ -26516,23 +26385,23 @@ fn generic_last() -> . {
                    {projection} \
                    let result = __term_call__(ct, __term_type__(ct, body), body, receiver); \
                    (result, __fill__(ct, fills, result_type, __term_type__(ct, result))) }} \
-                 pub elab relay : [Receiver][Result] {slots} -> Result {{ impl(fills) relay_impl }}"
+                 pub macro relay : [Receiver][Result] {slots} -> Result {{ impl(fills) relay_impl }}"
             );
             let main = format!(
-                "module main; import elab(relay); \
+                "module main; import macros(macro relay); \
                  host fn factory() -> [A] A -> A; \
-                 fn run() -> . {{ let result = relay!({arguments}); result }}"
+                 fn run() -> . {{ let result = relay({arguments}); result }}"
             );
-            let package = lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, ".(identity) { identity(()) }"),
-                    elaborator_executions: 1,
+                    macro_executions: 1,
                 }],
             );
             let events = crate::pass::typecheck_core::apply::fills::projected_header_work();
@@ -26581,24 +26450,24 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_linked_header_does_not_infer_an_unresolved_receiver_from_the_body() {
-        let elaborator = "module elab; import __comptime__; \
+        let macro_def = "module macros; import __comptime__; \
             pure fn relay_impl(ct: __Comptime__, fills: __Fill_ctx__, \
               _receiver_type: __Type__, result_type: __Type__, \
               receiver: __Checked_term__, body: __Checked_term__) \
               -> __Checked_term__ & __Fill_ctx__ { \
               let result = __term_call__(ct, __term_type__(ct, body), body, receiver); \
               (result, __fill__(ct, fills, result_type, __term_type__(ct, result))) } \
-            pub elab relay : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { impl(fills) relay_impl }";
-        let main = "module main; import elab(relay); host fn factory[T]() -> T; \
-            fn run() -> . { let result = relay!(factory(), .(identity) { identity(()) }); result }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+            pub macro relay : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { impl(fills) relay_impl }";
+        let main = "module main; import macros(macro relay); host fn factory[T]() -> T; \
+            fn run() -> . { let result = relay(factory(), .(identity) { identity(()) }); result }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let (error, scope) = check_retained_error_with_scope(&package);
         assert!(
             error.diagnostic().message.contains("needs a complete type"),
             "{error:?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
     }
 
@@ -26607,16 +26476,14 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         let main = "module main; \
-            import elab(relay); \
-            fn run() -> . { relay!(.(value: .) { value }, ()) }";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+            import macros(macro relay); \
+            fn run() -> . { relay(.(value: .) { value }, ()) }";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay!(.(value: .) { value }, ())"),
+            source_span(main, "relay(.(value: .) { value }, ())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26628,7 +26495,7 @@ fn generic_last() -> . {
             "the cross-layer lambda call must publish after exact-parent header work"
         );
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             1,
             "the action must execute exactly once after both source headers install"
         );
@@ -26659,11 +26526,11 @@ fn generic_last() -> . {
         );
     }
 
-    const WRITTEN_CALLBACK_OBSERVER: &str = "module elab; import __comptime__; \
+    const WRITTEN_CALLBACK_OBSERVER: &str = "module macros; import __comptime__; \
         pure fn observe_impl(ct: __Comptime__, fills: __Fill_ctx__, \
             _source: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ \
             { (__term_unit__(ct), fills) }; \
-        pub elab observe : [Source] Source -> . { impl(fills) observe_impl }";
+        pub macro observe : [Source] Source -> . { impl(fills) observe_impl }";
 
     #[test]
     fn fills_computed_tuple_headers_close_from_ordinary_arguments() {
@@ -26675,17 +26542,19 @@ fn generic_last() -> . {
             "(identity(\"value\"), value)",
             "(value, (\"value\".>identity, ()))",
         ] {
-            let call = format!("observe!({source})");
+            let call = format!("observe({source})");
             let main = format!(
-                "module main; import elab(observe); default host type String role(str); \
+                "module main; import macros(macro observe); default host type String role(str); \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn run[T](value: T) -> . {{ {call} }}"
             );
-            let package =
-                lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+            let package = lowered_package(&[
+                ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+                ("main.kio", &main),
+            ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_retained_call_published(checked.elaborations(), "main", &original);
             validate_substituted_package(checked.substituted())
                 .expect("computed tuple components retain ordinary Prime validity");
@@ -26700,19 +26569,21 @@ fn generic_last() -> . {
             format!("(produce({first}), produce({second}))"),
             format!("(seed, (produce({first}), produce({second})))"),
         ] {
-            let call = format!("observe!({source})");
+            let call = format!("observe({source})");
             let main = format!(
-                "module main; import elab(observe); host type State; \
+                "module main; import macros(macro observe); host type State; \
                  host fn produce[A](callback: . -> A) -> A; \
                  host fn identity[A](value: A) -> A; \
                  fn run(seed: State) -> . {{ {call} }}"
             );
-            let package =
-                lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+            let package = lowered_package(&[
+                ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+                ("main.kio", &main),
+            ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 [first, second]
@@ -26720,7 +26591,7 @@ fn generic_last() -> . {
                     .map(
                         |lambda| crate::pass::typecheck_core::apply::LambdaBodyEntry {
                             span: source_span(&main, lambda),
-                            elaborator_executions: 1,
+                            macro_executions: 1,
                         }
                     )
                     .collect::<Vec<_>>(),
@@ -26742,14 +26613,14 @@ fn generic_last() -> . {
                 format!("(produce({lambda}), seed)"),
                 format!("(seed, (seed, produce({lambda})))"),
             ] {
-                let call = format!("observe!({source})");
+                let call = format!("observe({source})");
                 let main = format!(
-                    "module main; import elab(observe); host type State; \
+                    "module main; import macros(macro observe); host type State; \
                      host fn produce[A](callback: . -> A) -> A; \
                      fn run(seed: State) -> . {{ {call} }}"
                 );
                 let package = lowered_package(&[
-                    ("elab.kio", WRITTEN_CALLBACK_OBSERVER),
+                    ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
                     ("main.kio", &main),
                 ]);
                 let original = retained_call_at(&package, "main", source_span(&main, &call));
@@ -26767,7 +26638,7 @@ fn generic_last() -> . {
                         })
                 );
                 assert_eq!(
-                    scope.memo().user_elaborator_template_executions(),
+                    scope.memo().user_macro_template_executions(),
                     action_executions
                 );
                 let expected_entries = if action_executions == 0 {
@@ -26775,7 +26646,7 @@ fn generic_last() -> . {
                 } else {
                     vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                         span: source_span(&main, lambda),
-                        elaborator_executions: 1,
+                        macro_executions: 1,
                     }]
                 };
                 assert_eq!(
@@ -26823,22 +26694,24 @@ fn generic_last() -> . {
                 "choose(LAMBDA, ())",
             ),
         ] {
-            let call = format!("observe!({})", producer.replace("LAMBDA", lambda));
+            let call = format!("observe({})", producer.replace("LAMBDA", lambda));
             let main = format!(
-                "module main; import elab(observe); host type State; host type Done; \
+                "module main; import macros(macro observe); host type State; host type Done; \
                  {declarations} {signature} {{ {call} }}"
             );
-            let package =
-                lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+            let package = lowered_package(&[
+                ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+                ("main.kio", &main),
+            ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, lambda),
-                    elaborator_executions: 1,
+                    macro_executions: 1,
                 }],
             );
             assert_retained_call_published(checked.elaborations(), "main", &original);
@@ -26855,15 +26728,17 @@ fn generic_last() -> . {
             ".(state: State) -> State | _ { advance(state) }",
             ".(state) -> State | Done { advance(state) }",
         ] {
-            let call = format!("observe!(dispatch({lambda}, seed))");
+            let call = format!("observe(dispatch({lambda}, seed))");
             let main = format!(
-                "module main; import elab(observe); host type State; host type Done; \
+                "module main; import macros(macro observe); host type State; host type Done; \
                  host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done; \
                  fn run(seed: State) -> . {{ {call} }}"
             );
-            let package =
-                lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+            let package = lowered_package(&[
+                ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+                ("main.kio", &main),
+            ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
@@ -26874,7 +26749,7 @@ fn generic_last() -> . {
                     .message
                     .contains("needs a complete type")
             );
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+            assert_eq!(scope.memo().user_macro_template_executions(), 0);
             assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
             assert_retained_call_unpublished(&elaborations, "main", &original);
             assert_eq!(elaborations.type_resolution_count(), 0);
@@ -26886,27 +26761,29 @@ fn generic_last() -> . {
     fn fills_written_callback_bad_body_rolls_back_pending_call_facts() {
         for producer in ["dispatch(LAMBDA, seed)", "identity(dispatch(LAMBDA, seed))"] {
             let lambda = ".(state: State) -> State | Done { () }";
-            let call = format!("observe!({})", producer.replace("LAMBDA", lambda));
+            let call = format!("observe({})", producer.replace("LAMBDA", lambda));
             let main = format!(
-                "module main; import elab(observe); host type State; host type Done; \
+                "module main; import macros(macro observe); host type State; host type Done; \
              host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn identity[A](value: A) -> A; \
              fn run(seed: State) -> . {{ {call} }}"
             );
-            let package =
-                lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+            let package = lowered_package(&[
+                ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+                ("main.kio", &main),
+            ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             crate::pass::typecheck_core::apply::reset_public_header_work();
             let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
             assert_eq!(errors.len(), 1, "{errors:#?}");
             assert!(errors[0].diagnostic().message.contains("type mismatch"));
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, lambda),
-                    elaborator_executions: 1,
+                    macro_executions: 1,
                 }],
             );
             assert_retained_call_unpublished(&elaborations, "main", &original);
@@ -26924,18 +26801,21 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_written_callback_export_failure_preserves_later_publication() {
-        let bad = "observe!(identity(dispatch(.(state: State) -> State | Done { () }, seed)))";
-        let good = "observe!(identity(dispatch(.(state: State) -> State | Done { advance(state) }, seed)))";
+        let bad = "observe(identity(dispatch(.(state: State) -> State | Done { () }, seed)))";
+        let good =
+            "observe(identity(dispatch(.(state: State) -> State | Done { advance(state) }, seed)))";
         let main = format!(
-            "module main; import elab(observe); host type State; host type Done; \
+            "module main; import macros(macro observe); host type State; host type Done; \
              host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              host fn identity[A](value: A) -> A; \
              fn bad(seed: State) -> . {{ {bad} }}; \
              fn good(seed: State) -> . {{ {good} }}"
         );
-        let package =
-            lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+        let package = lowered_package(&[
+            ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+            ("main.kio", &main),
+        ]);
         let bad_call = retained_call_at(&package, "main", source_span(&main, bad));
         let good_call = retained_call_at(&package, "main", source_span(&main, good));
         let normalized = crate::pass::alpha_normalize::normalize_package(&package);
@@ -27002,16 +26882,18 @@ fn generic_last() -> . {
     #[test]
     fn fills_written_callback_computed_callee_exports_through_bridge() {
         let lambda = ".(state: State) -> State | Done { advance(state) }";
-        let call = format!("observe!(make_identity()(dispatch({lambda}, seed)))");
+        let call = format!("observe(make_identity()(dispatch({lambda}, seed)))");
         let main = format!(
-            "module main; import elab(observe); host type State; host type Done; \
+            "module main; import macros(macro observe); host type State; host type Done; \
              host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              host fn make_identity() -> [A] A -> A; \
              fn run(seed: State) -> . {{ {call} }}"
         );
-        let package =
-            lowered_package(&[("elab.kio", WRITTEN_CALLBACK_OBSERVER), ("main.kio", &main)]);
+        let package = lowered_package(&[
+            ("macros.kio", WRITTEN_CALLBACK_OBSERVER),
+            ("main.kio", &main),
+        ]);
         let original = retained_call_at(&package, "main", source_span(&main, &call));
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         crate::pass::typecheck_core::apply::reset_public_header_work();
@@ -27019,12 +26901,12 @@ fn generic_last() -> . {
         let work = crate::pass::typecheck_core::apply::public_header_work();
         assert!(work.bridge_exports > 0, "{work:?}");
         assert!(work.pending_exports > 0, "{work:?}");
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_eq!(
             crate::pass::typecheck_core::apply::take_lambda_body_entries(),
             vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                 span: source_span(&main, lambda),
-                elaborator_executions: 1,
+                macro_executions: 1,
             }]
         );
         assert_retained_call_published(checked.elaborations(), "main", &original);
@@ -27033,24 +26915,24 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn fills_written_callback_header_pass_suspends_outer_nested_elaborator() {
-        let elaborator = format!(
+    fn fills_written_callback_header_pass_suspends_outer_nested_macro() {
+        let macro_def = format!(
             "{WRITTEN_CALLBACK_OBSERVER}; \
              pure fn relay_impl(_ct: __Comptime__, fills: __Fill_ctx__, \
                  _source: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ \
                  {{ (value, fills) }}; \
-             pub elab relay : [Source] Source -> Source {{ impl(fills) relay_impl }}"
+             pub macro relay : [Source] Source -> Source {{ impl(fills) relay_impl }}"
         );
         let lambda = ".(state: State) -> State | Done { advance(state) }";
-        let call = format!("observe!(identity(relay!(dispatch({lambda}, seed))))");
+        let call = format!("observe(identity(relay(dispatch({lambda}, seed))))");
         let main = format!(
-            "module main; import elab(observe, relay); host type State; host type Done; \
+            "module main; import macros(macro observe, macro relay); host type State; host type Done; \
              host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
              host fn advance(state: State) -> State | Done; \
              fn identity[A](value: A) -> A {{ value }}; \
              fn run(seed: State) -> . {{ {call} }}"
         );
-        let package = lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+        let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
         let original = retained_call_at(&package, "main", source_span(&main, &call));
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         crate::pass::typecheck_core::apply::reset_public_header_work();
@@ -27093,8 +26975,8 @@ fn generic_last() -> . {
                 .message
                 .contains("needs a complete type")
         );
-        assert!(crate::pass::typecheck_core::apply::public_header_work().blocked_elaborators > 0);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert!(crate::pass::typecheck_core::apply::public_header_work().blocked_macros > 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(elaborations.type_resolution_count(), 0);
@@ -27103,44 +26985,44 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_written_callback_header_pass_does_not_enter_immediate_or_nested_action() {
-        let elaborator = format!(
+        let macro_def = format!(
             "{WRITTEN_CALLBACK_OBSERVER}; \
              pure fn relay_impl(_ct: __Comptime__, fills: __Fill_ctx__, \
                  _source: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ \
                  {{ (value, fills) }}; \
-             pub elab relay : [Source] Source -> Source {{ impl(fills) relay_impl }}"
+             pub macro relay : [Source] Source -> Source {{ impl(fills) relay_impl }}"
         );
         for (lambda, producer, actions) in [
             (".(state: State) -> Done { finish() }", "(LAMBDA)(seed)", 0),
             (
-                ".(state: State) -> State | Done { relay!(advance(state)) }",
+                ".(state: State) -> State | Done { relay(advance(state)) }",
                 "dispatch(LAMBDA, seed)",
                 2,
             ),
         ] {
-            let call = format!("observe!({})", producer.replace("LAMBDA", lambda));
+            let call = format!("observe({})", producer.replace("LAMBDA", lambda));
             let main = format!(
-                "module main; import elab(observe, relay); host type State; host type Done; \
+                "module main; import macros(macro observe, macro relay); host type State; host type Done; \
                  host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R; \
                  host fn advance(state: State) -> State | Done; host fn finish() -> Done; \
                  fn run(seed: State) -> . {{ {call} }}"
             );
-            let package = lowered_package(&[("elab.kio", &elaborator), ("main.kio", &main)]);
+            let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             if actions == 0 {
                 let (error, scope) = check_retained_error_with_scope(&package);
                 assert!(error.diagnostic().message.contains("needs a complete type"));
-                assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+                assert_eq!(scope.memo().user_macro_template_executions(), 0);
                 assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
                 continue;
             }
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), actions);
+            assert_eq!(scope.memo().user_macro_template_executions(), actions);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, lambda),
-                    elaborator_executions: 1,
+                    macro_executions: 1,
                 }],
                 "the outer action precedes the body and its nested action",
             );
@@ -27154,16 +27036,14 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let main = "module main; \
-            import elab(relay); \
-            fn run() -> . { relay!(.[A](value: A) { value }, ()) }";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+            import macros(macro relay); \
+            fn run() -> . { relay(.[A](value: A) { value }, ()) }";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay!(.[A](value: A) { value }, ())"),
+            source_span(main, "relay(.[A](value: A) { value }, ())"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -27173,7 +27053,7 @@ fn generic_last() -> . {
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             1,
             "the header permits the action, but its transcript supplies no result anchor"
         );
@@ -27207,15 +27087,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let main = "module main; \
-            import elab(relay); \
+            import macros(macro relay); \
             fn run() -> . { \
-              relay!(.[*F](first: F(.))[A](second: A) -> _ { second }, ()) \
+              relay(.[*F](first: F(.))[A](second: A) -> _ { second }, ()) \
             }";
-        let call = "relay!(.[*F](first: F(.))[A](second: A) -> _ { second }, ())";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+        let call = "relay(.[*F](first: F(.))[A](second: A) -> _ { second }, ())";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -27224,7 +27102,7 @@ fn generic_last() -> . {
             source_span(main, ".[*F](first: F(.))[A](second: A) -> _ { second }"),
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
         use crate::pass::typecheck_core::apply::fills::{
             ProjectedHeaderPhase as Phase, ProjectedHeaderWorkEvent as Event,
@@ -27252,15 +27130,13 @@ fn generic_last() -> . {
     #[test]
     fn fills_expected_polymorphic_lambda_may_omit_its_return_annotation() {
         let main = "module main; \
-            import elab(relay); \
+            import macros(macro relay); \
             fn run() -> . { \
-              relay!([A] A -> A, .[A](value) { value }, ()) \
+              relay([A] A -> A, .[A](value) { value }, ()) \
             }";
-        let call = "relay!([A] A -> A, .[A](value) { value }, ())";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+        let call = "relay([A] A -> A, .[A](value) { value }, ())";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
         let (checked, scope) = check_retained_success(&package);
 
@@ -27271,7 +27147,7 @@ fn generic_last() -> . {
                 .is_some(),
             "a complete expected function type must admit the omitted return annotation"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the checked polymorphic lambda survives Prime validation");
     }
@@ -27289,24 +27165,24 @@ fn generic_last() -> . {
                 ".[F](value: F) { outer }",
             ),
         ] {
-            let call = format!("relay!({lambda})");
+            let call = format!("relay({lambda})");
             let main = format!(
-                "module main; import elab(relay); host type String role(str); \
+                "module main; import macros(macro relay); host type String role(str); \
                  {signature} {{ {call} }}"
             );
             let package = lowered_package(&[
-                ("elab.kio", WHOLE_HEADER_FILLS_ELABORATOR),
+                ("macros.kio", WHOLE_HEADER_FILLS_MACRO),
                 ("main.kio", &main),
             ]);
             let original = retained_call_at(&package, "main", source_span(&main, &call));
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
             let (checked, scope) = check_retained_success(&package);
-            assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+            assert_eq!(scope.memo().user_macro_template_executions(), 1);
             assert_eq!(
                 crate::pass::typecheck_core::apply::take_lambda_body_entries(),
                 vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                     span: source_span(&main, lambda),
-                    elaborator_executions: 1,
+                    macro_executions: 1,
                 }],
                 "the generic source body must enter once, after the finite fill action"
             );
@@ -27319,13 +27195,13 @@ fn generic_last() -> . {
     #[test]
     fn fills_ambient_polymorphic_bad_body_rolls_back_all_call_facts() {
         let lambda = ".[A](value: A) { () }";
-        let call = format!("relay!({lambda})");
+        let call = format!("relay({lambda})");
         let main = format!(
-            "module main; import elab(relay); host type String role(str); \
+            "module main; import macros(macro relay); host type String role(str); \
              fn run() -> [B] B -> String {{ {call} }}"
         );
         let package = lowered_package(&[
-            ("elab.kio", WHOLE_HEADER_FILLS_ELABORATOR),
+            ("macros.kio", WHOLE_HEADER_FILLS_MACRO),
             ("main.kio", &main),
         ]);
         let original = retained_call_at(&package, "main", source_span(&main, &call));
@@ -27333,12 +27209,12 @@ fn generic_last() -> . {
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(errors.len(), 1, "{errors:#?}");
         assert!(errors[0].diagnostic().message.contains("type mismatch"));
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_eq!(
             crate::pass::typecheck_core::apply::take_lambda_body_entries(),
             vec![crate::pass::typecheck_core::apply::LambdaBodyEntry {
                 span: source_span(&main, lambda),
-                elaborator_executions: 1,
+                macro_executions: 1,
             }]
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
@@ -27350,15 +27226,15 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_ambient_polymorphic_failure_preserves_later_independent_publication() {
-        let bad = "relay!(.[A](value: A) { () })";
-        let good = "relay!(.[A](value: A) { \"ok\" })";
+        let bad = "relay(.[A](value: A) { () })";
+        let good = "relay(.[A](value: A) { \"ok\" })";
         let main = format!(
-            "module main; import elab(relay); host type String role(str); \
+            "module main; import macros(macro relay); host type String role(str); \
              fn bad() -> [B] B -> String {{ {bad} }}; \
              fn good() -> [B] B -> String {{ {good} }}"
         );
         let package = lowered_package(&[
-            ("elab.kio", WHOLE_HEADER_FILLS_ELABORATOR),
+            ("macros.kio", WHOLE_HEADER_FILLS_MACRO),
             ("main.kio", &main),
         ]);
         let bad_call = retained_call_at(&package, "main", source_span(&main, bad));
@@ -27426,25 +27302,25 @@ fn generic_last() -> . {
             pub host fn loop[S][R](step: S -> (S | R), initial: S) -> R;";
         let lambda = ".[A](_value: A) { recur run(value) }";
         let main = format!(
-            "module main; import elab(invoke); import host(loop); \
-             rec(loop) fn run(value: .) -> . {{ invoke!({lambda}) }}"
+            "module main; import macros(macro invoke); import host(loop); \
+             rec(loop) fn run(value: .) -> . {{ invoke({lambda}) }}"
         );
         for (header, expected_success) in [
             ("[Source] Source -> .", false),
             ("[Result] ([A] A -> Result) -> Result", true),
         ] {
-            let elaborator = format!(
-                "module elab; import __comptime__; \
+            let macro_def = format!(
+                "module macros; import __comptime__; \
                  pure fn invoke_impl(ct: __Comptime__, fills: __Fill_ctx__, \
                    _type: __Type__, callback: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) {{ \
                    let specialized = __term_type_app__(ct, callback, __type_unit__(ct)); \
                    (__term_call__(ct, __term_type__(ct, specialized), specialized, __term_unit__(ct)), fills) \
                  }} \
-                 pub elab invoke : {header} {{ impl(fills) invoke_impl; }}"
+                 pub macro invoke : {header} {{ impl(fills) invoke_impl; }}"
             );
             let package = lowered_package(&[
                 ("host.kio", host),
-                ("elab.kio", &elaborator),
+                ("macros.kio", &macro_def),
                 ("main.kio", &main),
             ]);
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
@@ -27469,7 +27345,7 @@ fn generic_last() -> . {
                         .contains("independently known result type"),
                     "{error:#?}"
                 );
-                assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+                assert_eq!(scope.memo().user_macro_template_executions(), 1);
                 assert!(
                     crate::pass::typecheck_core::apply::take_lambda_body_entries()
                         .iter()
@@ -27481,20 +27357,20 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_ambient_result_cannot_supply_a_missing_parameter_header() {
-        let call = "relay!(.[A](value) { \"ok\" })";
+        let call = "relay(.[A](value) { \"ok\" })";
         let main = format!(
-            "module main; import elab(relay); host type String role(str); \
+            "module main; import macros(macro relay); host type String role(str); \
              fn run() -> [B] B -> String {{ {call} }}"
         );
         let package = lowered_package(&[
-            ("elab.kio", WHOLE_HEADER_FILLS_ELABORATOR),
+            ("macros.kio", WHOLE_HEADER_FILLS_MACRO),
             ("main.kio", &main),
         ]);
         let original = retained_call_at(&package, "main", source_span(&main, call));
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(errors.len(), 1, "{errors:#?}");
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
         assert!(crate::pass::typecheck_core::apply::take_lambda_body_entries().is_empty());
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(elaborations.type_resolution_count(), 0);
@@ -27506,16 +27382,14 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         let main = "module main; \
-            import elab(relay); \
-            fn run() -> . { relay!(.[A](value: A) -> A { value }, ()) }";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+            import macros(macro relay); \
+            fn run() -> . { relay(.[A](value: A) -> A { value }, ()) }";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay!(.[A](value: A) -> A { value }, ())"),
+            source_span(main, "relay(.[A](value: A) -> A { value }, ())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -27527,7 +27401,7 @@ fn generic_last() -> . {
             "the annotated polymorphic lambda must publish after exact-parent header work"
         );
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             1,
             "the action must execute exactly once after the closed polymorphic header installs"
         );
@@ -27564,16 +27438,14 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         crate::pass::typecheck_core::apply::fills::reset_pair_wrapper_finalizations();
         let main = "module main; \
-            import elab(relay); \
-            fn run() -> . { relay!(((), ((), ())), ()) }";
-        let package = lowered_package(&[
-            ("elab.kio", CROSS_LAYER_FILLS_ELABORATOR),
-            ("main.kio", main),
-        ]);
+            import macros(macro relay); \
+            fn run() -> . { relay(((), ((), ())), ()) }";
+        let package =
+            lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay!(((), ((), ())), ())"),
+            source_span(main, "relay(((), ((), ())), ())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -27584,7 +27456,7 @@ fn generic_last() -> . {
                 .is_some(),
             "the cross-layer pair call must publish after its exact-parent close"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(1, 1, 1, 0, 1, 0);
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
@@ -27672,8 +27544,8 @@ fn generic_last() -> . {
         }
 
         fn retained_value_arg_span(call: &Expr, value_index: usize) -> Span {
-            let Expr::UserElaborator { args, .. } = call else {
-                panic!("the causal match call lost its retained elaborator form")
+            let Expr::UserMacro { args, .. } = call else {
+                panic!("the causal match call lost its retained macro form")
             };
             args.iter()
                 .filter_map(|arg| match arg {
@@ -27702,7 +27574,7 @@ fn generic_last() -> . {
             assert_eq!(
                 entries
                     .iter()
-                    .map(|entry| entry.elaborator_executions)
+                    .map(|entry| entry.macro_executions)
                     .collect::<Vec<_>>(),
                 expected_executions,
                 "{label} entered its lambda bodies on the wrong side of match evaluation"
@@ -27742,14 +27614,14 @@ fn generic_last() -> . {
             expected_leaves: Vec<Leaf>,
             expected_pair_closes: usize,
         ) {
-            let spanned_source = add_elab_imports(source);
+            let spanned_source = add_macro_imports(source);
             let original = retained_call_at(package, "main", source_span(&spanned_source, call));
             let projected_span = retained_value_arg_span(&original, 1);
             reset_observations(projected_span);
             let (checked, scope) = check_retained_success(package);
 
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 1,
                 "{label} must evaluate match exactly once"
             );
@@ -27777,7 +27649,7 @@ fn generic_last() -> . {
             source: &str,
             call: &str,
         ) {
-            let spanned_source = add_elab_imports(source);
+            let spanned_source = add_macro_imports(source);
             let original = retained_call_at(package, "main", source_span(&spanned_source, call));
             let projected_span = retained_value_arg_span(&original, 1);
             reset_observations(projected_span);
@@ -27797,7 +27669,7 @@ fn generic_last() -> . {
                 });
             assert_eq!(source_error.diagnostic().span, projected_span);
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 0,
                 "{label} must fail before match evaluation"
             );
@@ -27823,13 +27695,13 @@ fn generic_last() -> . {
         let canonical_source = format!(
             "module main; {common} \
              fn run(source: Left | Right) -> I32 -> I32 {{ \
-               match! source {{ ({left}, {right}) }} \
+               match(source) {{ ({left}, {right}) }} \
              }}"
         );
         let canonical_clauses = format!("({left}, {right})");
-        let canonical_call = format!("match! source {{ {canonical_clauses} }}");
+        let canonical_call = format!("match(source) {{ {canonical_clauses} }}");
         let canonical_package =
-            lowered_elab_package(&canonical_source).expect("lower canonical match package");
+            lowered_macro_package(&canonical_source).expect("lower canonical match package");
 
         assert_success(
             "canonical pending pair",
@@ -27842,7 +27714,7 @@ fn generic_last() -> . {
             1,
         );
 
-        let bypass_spanned_source = add_elab_imports(&canonical_source);
+        let bypass_spanned_source = add_macro_imports(&canonical_source);
         let bypass_original = retained_call_at(
             &canonical_package,
             "main",
@@ -27854,10 +27726,7 @@ fn generic_last() -> . {
         let (baseline_elaborations, baseline_scope, baseline_result) =
             check_retained_function_from_final_preflight(&canonical_package, "main", "run");
         baseline_result.expect("the certified pair must complete from FinalPreflight");
-        assert_eq!(
-            baseline_scope.memo().user_elaborator_template_executions(),
-            1
-        );
+        assert_eq!(baseline_scope.memo().user_macro_template_executions(), 1);
         assert_retained_call_published(&baseline_elaborations, "main", &bypass_original);
         assert_source_topology(
             "certified canonical pair from FinalPreflight",
@@ -27892,7 +27761,7 @@ fn generic_last() -> . {
             "the bypass must expose the incomplete source: {bypass_error:#?}"
         );
         assert_eq!(bypass_error.diagnostic().span, bypass_projected_span);
-        assert_eq!(bypass_scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(bypass_scope.memo().user_macro_template_executions(), 0);
         assert_retained_call_unpublished(&bypass_elaborations, "main", &bypass_original);
         assert_source_topology(
             "certificate-bypassed canonical pair",
@@ -27912,14 +27781,14 @@ fn generic_last() -> . {
         drop(bypass);
 
         let ordinary_source_expr = format!("exact({left}, {right})");
-        let ordinary_call = format!("match! source {{ {ordinary_source_expr} }}");
+        let ordinary_call = format!("match(source) {{ {ordinary_source_expr} }}");
         let ordinary_source = format!(
             "module main; {common} \
              fn exact[A][B](left: A, right: B) -> A & B {{ (left, right) }} \
              fn run(source: Left | Right) -> I32 -> I32 {{ {ordinary_call} }}"
         );
         let ordinary_package =
-            lowered_elab_package(&ordinary_source).expect("lower ordinary-wrapper match package");
+            lowered_macro_package(&ordinary_source).expect("lower ordinary-wrapper match package");
         assert_incomplete_source_failure(
             "ordinary exact-scheme wrapper",
             &ordinary_package,
@@ -27928,7 +27797,7 @@ fn generic_last() -> . {
         );
 
         let opaque_source_expr = format!("complete_product({left}, {right})");
-        let opaque_call = format!("match! source {{ {opaque_source_expr} }}");
+        let opaque_call = format!("match(source) {{ {opaque_source_expr} }}");
         let opaque_source = format!(
             "module main; {common} \
              type Result_fn = I32 -> I32; \
@@ -27939,7 +27808,7 @@ fn generic_last() -> . {
              fn run(source: Left | Right) -> Result_fn {{ {opaque_call} }}"
         );
         let opaque_package =
-            lowered_elab_package(&opaque_source).expect("lower opaque-wrapper match package");
+            lowered_macro_package(&opaque_source).expect("lower opaque-wrapper match package");
         assert_success(
             "opaque complete-product wrapper",
             &opaque_package,
@@ -27953,13 +27822,13 @@ fn generic_last() -> . {
 
         let middle = ".(_middle: Middle) { identity_i32 }";
         let nested_clauses = format!("({left}, {middle}, {right})");
-        let nested_call = format!("match! source {{ {nested_clauses} }}");
+        let nested_call = format!("match(source) {{ {nested_clauses} }}");
         let nested_source = format!(
             "module main; host type Middle; {common} \
              fn run(source: Left | Middle | Right) -> I32 -> I32 {{ {nested_call} }}"
         );
         let nested_package =
-            lowered_elab_package(&nested_source).expect("lower nested-pair match package");
+            lowered_macro_package(&nested_source).expect("lower nested-pair match package");
         assert_success(
             "nested canonical pair",
             &nested_package,
@@ -27976,7 +27845,7 @@ fn generic_last() -> . {
         );
 
         let closed_clauses = "(left_clause, right_clause)";
-        let closed_call = format!("match! source {{ {closed_clauses} }}");
+        let closed_call = format!("match(source) {{ {closed_clauses} }}");
         let closed_source = format!(
             "module main; \
              host type Left; host type Right; host type I32 role(i32); \
@@ -27989,7 +27858,7 @@ fn generic_last() -> . {
              }}"
         );
         let closed_package =
-            lowered_elab_package(&closed_source).expect("lower closed-pair match package");
+            lowered_macro_package(&closed_source).expect("lower closed-pair match package");
         assert_success(
             "closed canonical pair",
             &closed_package,
@@ -28026,7 +27895,7 @@ fn generic_last() -> . {
             Expr,
             crate::pass::typecheck_core::apply::fills::ReturnedFillRelationObserver,
         ) {
-            let spanned_source = add_elab_imports(source);
+            let spanned_source = add_macro_imports(source);
             let original = retained_call_at(package, "main", source_span(&spanned_source, call));
             let observer =
                 crate::pass::typecheck_core::apply::fills::observe_returned_fill_relations_at(
@@ -28077,7 +27946,7 @@ fn generic_last() -> . {
             );
         }
 
-        let success_call = r#"match! source {
+        let success_call = r#"match(source) {
               (
                 .(_boxed_i32: Box(I32)) -> String { make_string() },
                 .(_other: Other) -> String { make_string() },
@@ -28098,11 +27967,11 @@ fn generic_last() -> . {
             }}"#
         );
         let success_package =
-            lowered_elab_package(&success_source).expect("lower authored-order success package");
+            lowered_macro_package(&success_source).expect("lower authored-order success package");
         let (success_original, success_observer) =
             observed_call(&success_package, &success_source, success_call);
         let (checked, scope) = check_retained_success(&success_package);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_retained_call_published(checked.elaborations(), "main", &success_original);
         assert_transcript(
             "permuted three-branch match",
@@ -28113,7 +27982,7 @@ fn generic_last() -> . {
         validate_substituted_package(checked.substituted())
             .expect("the authored-order match survives standalone Prime validation");
 
-        let error_call = r#"match! source {
+        let error_call = r#"match(source) {
               (
                 .(_boxed_i32: Box(I32)) -> String { make_string() },
                 .(_other: Other) -> String { make_string() },
@@ -28133,7 +28002,7 @@ fn generic_last() -> . {
             }}"#
         );
         let error_package =
-            lowered_elab_package(&error_source).expect("lower shadowed-result error package");
+            lowered_macro_package(&error_source).expect("lower shadowed-result error package");
         let (error_original, error_observer) =
             observed_call(&error_package, &error_source, error_call);
         let (elaborations, scope, errors) = check_retained_module_error(&error_package, "main");
@@ -28144,7 +28013,7 @@ fn generic_last() -> . {
             )),
             "the shadowed polymorphic I32 result must disagree with preclosed String: {errors:#?}"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_retained_call_unpublished(&elaborations, "main", &error_original);
         assert_transcript(
             "shadowed polymorphic result mismatch",
@@ -28156,7 +28025,7 @@ fn generic_last() -> . {
 
     #[test]
     fn retained_type_producing_result_mismatch_evaluates_once_without_publication() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             pub host type I32; \
             type Optional_type = __Type__ | .; \
@@ -28166,19 +28035,19 @@ fn generic_last() -> . {
                 value: __Checked_term__, \
                 _a: Optional_type \
               ) -> __Checked_term__ { value } \
-            pub elab wrong_shape : [Source] Source -> [A] I32 & A { impl wrong_shape_impl; };";
+            pub macro wrong_shape : [Source] Source -> [A] I32 & A { impl wrong_shape_impl; };";
         let main = "module main; \
-            import elab(I32, wrong_shape); \
+            import macros(I32, macro wrong_shape); \
             default host type String role(str); \
             fn run() -> . { \
-              let _wrong = wrong_shape!(\"not a product\"); \
+              let _wrong = wrong_shape(\"not a product\"); \
               () \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "wrong_shape!(\"not a product\")"),
+            source_span(main, "wrong_shape(\"not a product\")"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -28189,25 +28058,23 @@ fn generic_last() -> . {
             "the evaluator's exact String result must reject the declared product: {errors:#?}"
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
     }
 
     #[test]
-    fn retained_type_producing_elaborator_solves_a_partial_contextual_result() {
+    fn retained_type_producing_macro_solves_a_partial_contextual_result() {
         let main = "module main; \
-            import elab(infer_pair); \
+            import macros(macro infer_pair); \
             default host type I32 role(i32); \
             default host type String role(str); \
             host fn take[H](pair: I32 & H) -> H; \
-            fn run() -> String { take(infer_pair!((0, \"closed\"))) }";
-        let package = lowered_package(&[
-            ("elab.kio", RETAINED_ACTION_ELABORATORS),
-            ("main.kio", main),
-        ]);
+            fn run() -> String { take(infer_pair((0, \"closed\"))) }";
+        let package =
+            lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair!((0, \"closed\"))"),
+            source_span(main, "infer_pair((0, \"closed\"))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -28218,27 +28085,27 @@ fn generic_last() -> . {
                 .is_some(),
             "the returned `I32 & String` term must close `A & B` against `I32 & H`"
         );
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
         validate_substituted_package(checked.substituted())
             .expect("the contextual result survives standalone Prime validation");
     }
 
     #[test]
-    fn unresolved_required_elaborator_dependency_prevents_evaluation() {
-        let elaborator = "module elab; \
+    fn unresolved_required_macro_dependency_prevents_evaluation() {
+        let macro_def = "module macros; \
             import __comptime__; \
             pure fn require_type_impl( \
                 ct: __Comptime__, \
                 required: __Type__ \
               ) -> __Checked_term__ { \
-                __elab_error__(ct, __type_display__(ct, required)) \
+                __macro_error__(ct, __type_display__(ct, required)) \
               } \
-            pub elab require_type : [Required] . -> . { impl require_type_impl; };";
+            pub macro require_type : [Required] . -> . { impl require_type_impl; };";
         let main = "module main; \
-            import elab(require_type); \
-            fn run() -> . { require_type!() }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "require_type!()"));
+            import macros(macro require_type); \
+            fn run() -> . { require_type() }";
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
+        let original = retained_call_at(&package, "main", source_span(main, "require_type()"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert!(
@@ -28251,14 +28118,14 @@ fn generic_last() -> . {
             "the required reflected source type must close before evaluation: {errors:#?}"
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
-        assert_eq!(scope.memo().user_elaborator_template_executions(), 0);
+        assert_eq!(scope.memo().user_macro_template_executions(), 0);
     }
 
     #[test]
-    fn retained_bang_ufcs_places_each_receiver_once() {
+    fn retained_macro_ufcs_places_each_receiver_once() {
         for (case, call, return_ty) in [
-            ("receiver_first", "receiver.>first!(other)", "I32"),
-            ("receiver_last", "receiver.>>first!(other)", "I32"),
+            ("receiver_first", "receiver.>first(other)", "I32"),
+            ("receiver_last", "receiver.>>first(other)", "I32"),
         ] {
             let (receiver_ty, other_ty) = if case == "receiver_first" {
                 ("I32", "String")
@@ -28267,15 +28134,13 @@ fn generic_last() -> . {
             };
             let main = format!(
                 "module main; \
-                 import elab(first); \
+                 import macros(macro first); \
                  host type I32 role(i32); \
                  host type String role(str); \
                  fn run(receiver: {receiver_ty}, other: {other_ty}) -> {return_ty} {{ {call} }}"
             );
-            let package = lowered_package(&[
-                ("elab.kio", RETAINED_ACTION_ELABORATORS),
-                ("main.kio", &main),
-            ]);
+            let package =
+                lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", &main)]);
             let original = retained_call_at(&package, "main", source_span(&main, call));
             let (checked, scope) = check_retained_success(&package);
 
@@ -28287,7 +28152,7 @@ fn generic_last() -> . {
                 "{case} publishes its exact-arity elaboration"
             );
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 1,
                 "{case} evaluates its single receiver splice once"
             );
@@ -28297,11 +28162,11 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn failed_later_sibling_rolls_back_bang_actions_without_evaluation() {
+    fn failed_later_sibling_rolls_back_macro_actions_without_evaluation() {
         let cases = [
-            ("ordinary", "infer_pair!((0, \"closed\"))"),
-            ("receiver_first", "(0, \"closed\").>infer_pair!"),
-            ("receiver_last", "(0, \"closed\").>>infer_pair!"),
+            ("ordinary", "infer_pair((0, \"closed\"))"),
+            ("receiver_first", "(0, \"closed\").>infer_pair"),
+            ("receiver_last", "(0, \"closed\").>>infer_pair"),
         ];
         let mut premature_evaluations = Vec::new();
 
@@ -28309,7 +28174,7 @@ fn generic_last() -> . {
             let run_call = format!("consume({call}, bad())");
             let main = format!(
                 "module main; \
-                 import elab(infer_pair); \
+                 import macros(macro infer_pair); \
                  default host type I32 role(i32); \
                  default host type String role(str); \
                  host fn good_i32() -> I32; \
@@ -28317,10 +28182,8 @@ fn generic_last() -> . {
                  fn consume[T](_value: T, _must_i32: I32) -> . {{ () }} \
                  fn run() -> . {{ {run_call} }}"
             );
-            let package = lowered_package(&[
-                ("elab.kio", RETAINED_ACTION_ELABORATORS),
-                ("main.kio", &main),
-            ]);
+            let package =
+                lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", &main)]);
             let original = retained_call_at(&package, "main", source_span(&main, call));
             let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
             assert!(
@@ -28332,7 +28195,7 @@ fn generic_last() -> . {
                 "{case} must reach the independent later mismatch, got: {errors:#?}"
             );
             assert_retained_call_unpublished(&elaborations, "main", &original);
-            let executions = scope.memo().user_elaborator_template_executions();
+            let executions = scope.memo().user_macro_template_executions();
             if executions != 0 {
                 premature_evaluations.push((case, executions));
             }
@@ -28340,7 +28203,7 @@ fn generic_last() -> . {
             let success_call = format!("consume({call}, good_i32())");
             let success_main = main.replacen(&run_call, &success_call, 1);
             let success_package = lowered_package(&[
-                ("elab.kio", RETAINED_ACTION_ELABORATORS),
+                ("macros.kio", RETAINED_ACTION_MACROS),
                 ("main.kio", &success_main),
             ]);
             let success_original =
@@ -28354,7 +28217,7 @@ fn generic_last() -> . {
                 "{case} success must publish the prepared action"
             );
             assert_eq!(
-                success_scope.memo().user_elaborator_template_executions(),
+                success_scope.memo().user_macro_template_executions(),
                 1,
                 "{case} success must evaluate the type-producing action once"
             );
@@ -28371,7 +28234,7 @@ fn generic_last() -> . {
 
     #[test]
     fn failed_later_retained_action_preflights_before_type_producing_evaluation() {
-        let elaborator = "module elab; \
+        let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
             pure fn infer_pair_impl( \
@@ -28381,29 +28244,29 @@ fn generic_last() -> . {
                 _a: Optional_type, \
                 _b: Optional_type \
               ) -> __Checked_term__ { value } \
-            pub elab infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
+            pub macro infer_pair : [Source] Source -> [A] [B] A & B { impl infer_pair_impl; }; \
             pure fn require_type_impl( \
                 ct: __Comptime__, \
                 required: __Type__ \
               ) -> __Checked_term__ { \
-                __elab_error__(ct, __type_display__(ct, required)) \
+                __macro_error__(ct, __type_display__(ct, required)) \
               } \
-            pub elab require_type : [Required] . -> . { impl require_type_impl; };";
+            pub macro require_type : [Required] . -> . { impl require_type_impl; };";
         let main = "module main; \
-            import elab(infer_pair, require_type); \
+            import macros(macro infer_pair, macro require_type); \
             default host type I32 role(i32); \
             default host type String role(str); \
             fn consume[T](_first: T, _second: .) -> . { () } \
             fn run() -> . { \
-              consume(infer_pair!((0, \"closed\")), require_type!()) \
+              consume(infer_pair((0, \"closed\")), require_type()) \
             }";
-        let package = lowered_package(&[("elab.kio", elaborator), ("main.kio", main)]);
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let first = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair!((0, \"closed\"))"),
+            source_span(main, "infer_pair((0, \"closed\"))"),
         );
-        let second = retained_call_at(&package, "main", source_span(main, "require_type!()"));
+        let second = retained_call_at(&package, "main", source_span(main, "require_type()"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert!(
@@ -28416,14 +28279,14 @@ fn generic_last() -> . {
         assert_retained_call_unpublished(&elaborations, "main", &first);
         assert_retained_call_unpublished(&elaborations, "main", &second);
         assert_eq!(
-            scope.memo().user_elaborator_template_executions(),
+            scope.memo().user_macro_template_executions(),
             0,
             "no ready sibling action may execute before every retained sibling preflights"
         );
     }
 
     #[test]
-    fn retained_capture_inputs_close_in_the_elaborator_definition_environment() {
+    fn retained_capture_inputs_close_in_the_macro_definition_environment() {
         let same_module = "module main; \
             import __comptime__; \
             newtype Local : . { constructor mk_local; projector un_local; }; \
@@ -28433,9 +28296,9 @@ fn generic_last() -> . {
               _source: __Type__, \
               _value: __Checked_term__ \
             ) -> __Checked_term__ { \
-              __elab_error__(ct, __type_display__(ct, captured)) \
+              __macro_error__(ct, __type_display__(ct, captured)) \
             } \
-            elab reveal_capture : [T] T -> . { \
+            macro reveal_capture : [T] T -> . { \
               captures Local; \
               impl reveal_capture_impl; \
             }; \
@@ -28443,27 +28306,27 @@ fn generic_last() -> . {
             host fn witness() -> I32; \
             fn consume[T](_f: T -> ., _value: T) -> . { () } \
             fn run() -> . { \
-              consume(.(value) { reveal_capture!(value) }, witness()) \
+              consume(.(value) { reveal_capture(value) }, witness()) \
             }";
         let same_package = lowered_package(&[("main.kio", same_module)]);
         let (_, same_scope, same_errors) = check_retained_module_error(&same_package, "main");
         let same_message = same_errors
             .iter()
             .find_map(|error| match error {
-                Error::Elaborator(diagnostic) => Some(diagnostic.message.as_str()),
+                Error::Macro(diagnostic) => Some(diagnostic.message.as_str()),
                 _ => None,
             })
             .unwrap_or_else(|| {
-                panic!("same-module elaborator reports its captured type: {same_errors:#?}")
+                panic!("same-module macro reports its captured type: {same_errors:#?}")
             });
         assert_eq!(same_message, "main.Local");
-        assert_eq!(same_scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(same_scope.memo().user_macro_template_executions(), 1);
 
         let owner_types = "module owner/types; \
             pub newtype Owner : . { pub constructor mk_owner; pub projector un_owner; };";
         let other_types = "module other/types; \
             pub newtype Owner : . { pub constructor mk_owner; pub projector un_owner; };";
-        let owner_elab = "module owner/elab; \
+        let owner_macro = "module owner/macros; \
             import __comptime__; \
             import owner/types(Owner); \
             pure fn reveal_capture_impl( \
@@ -28472,25 +28335,25 @@ fn generic_last() -> . {
               _source: __Type__, \
               _value: __Checked_term__ \
             ) -> __Checked_term__ { \
-              __elab_error__(ct, __type_display__(ct, captured)) \
+              __macro_error__(ct, __type_display__(ct, captured)) \
             } \
-            pub elab reveal_capture : [T] T -> . { \
+            pub macro reveal_capture : [T] T -> . { \
               captures Owner; \
               impl reveal_capture_impl; \
             };";
         let imported_main = "module main; \
-            import owner/elab(reveal_capture); \
+            import owner/macros(macro reveal_capture); \
             import other/types(Owner); \
             host type I32; \
             host fn witness() -> I32; \
             fn consume[T](_f: T -> ., _value: T) -> . { () } \
             fn run() -> . { \
-              consume(.(value) { reveal_capture!(value) }, witness()) \
+              consume(.(value) { reveal_capture(value) }, witness()) \
             }";
         let imported_package = lowered_package(&[
             ("owner/types.kio", owner_types),
             ("other/types.kio", other_types),
-            ("owner/elab.kio", owner_elab),
+            ("owner/macros.kio", owner_macro),
             ("main.kio", imported_main),
         ]);
         let (_, imported_scope, imported_errors) =
@@ -28498,22 +28361,19 @@ fn generic_last() -> . {
         let imported_message = imported_errors
             .iter()
             .find_map(|error| match error {
-                Error::Elaborator(diagnostic) => Some(diagnostic.message.as_str()),
+                Error::Macro(diagnostic) => Some(diagnostic.message.as_str()),
                 _ => None,
             })
             .unwrap_or_else(|| {
-                panic!("imported elaborator reports its captured type: {imported_errors:#?}")
+                panic!("imported macro reports its captured type: {imported_errors:#?}")
             });
         assert_eq!(imported_message, "owner/types.Owner");
         assert!(!imported_message.contains("other/types"));
-        assert_eq!(
-            imported_scope.memo().user_elaborator_template_executions(),
-            1
-        );
+        assert_eq!(imported_scope.memo().user_macro_template_executions(), 1);
     }
 
     #[test]
-    fn retained_elaborator_preparation_ignores_caller_local_shadows() {
+    fn retained_macro_preparation_ignores_caller_local_shadows() {
         let same_module = "module main; \
             import __comptime__; \
             host type I32; \
@@ -28526,9 +28386,9 @@ fn generic_last() -> . {
               _source: __Type__, \
               _value: __Checked_term__ \
             ) -> __Checked_term__ { \
-              __elab_error__(ct, __type_display__(ct, __term_type__(ct, captured))) \
+              __macro_error__(ct, __type_display__(ct, __term_type__(ct, captured))) \
             } \
-            elab expose : [T] T -> . { \
+            macro expose : [T] T -> . { \
               captures helper; \
               impl capture_impl; \
             }; \
@@ -28537,25 +28397,23 @@ fn generic_last() -> . {
               _value: T \
             ) -> . { () } \
             fn run() -> . { \
-              consume(.(helper, capture_impl) { expose!(helper) }, shadow()) \
+              consume(.(helper, capture_impl) { expose(helper) }, shadow()) \
             }";
         let same_package = lowered_package(&[("main.kio", same_module)]);
         let (_, same_scope, same_errors) = check_retained_module_error(&same_package, "main");
         let same_message = same_errors
             .iter()
             .find_map(|error| match error {
-                Error::Elaborator(diagnostic) => Some(diagnostic.message.as_str()),
+                Error::Macro(diagnostic) => Some(diagnostic.message.as_str()),
                 _ => None,
             })
             .unwrap_or_else(|| {
-                panic!(
-                    "same-module elaborator reports the captured function type: {same_errors:#?}"
-                )
+                panic!("same-module macro reports the captured function type: {same_errors:#?}")
             });
         assert_eq!(same_message, "main.I32 -> main.I32");
-        assert_eq!(same_scope.memo().user_elaborator_template_executions(), 1);
+        assert_eq!(same_scope.memo().user_macro_template_executions(), 1);
 
-        let owner = "module owner/elab; \
+        let owner = "module owner/macros; \
             import __comptime__; \
             pub host type I32; \
             pub pure fn helper(value: I32) -> I32 { value } \
@@ -28565,14 +28423,14 @@ fn generic_last() -> . {
               _source: __Type__, \
               _value: __Checked_term__ \
             ) -> __Checked_term__ { \
-              __elab_error__(ct, __type_display__(ct, __term_type__(ct, captured))) \
+              __macro_error__(ct, __type_display__(ct, __term_type__(ct, captured))) \
             } \
-            pub elab expose : [T] T -> . { \
+            pub macro expose : [T] T -> . { \
               captures helper; \
               impl capture_impl; \
             };";
         let imported_main = "module main; \
-            import owner/elab(I32, expose); \
+            import owner/macros(I32, macro expose); \
             host type Shadow; \
             host fn shadow() -> Shadow; \
             fn consume[T]( \
@@ -28580,28 +28438,23 @@ fn generic_last() -> . {
               _value: T \
             ) -> . { () } \
             fn run() -> . { \
-              consume(.(helper, capture_impl) { expose!(helper) }, shadow()) \
+              consume(.(helper, capture_impl) { expose(helper) }, shadow()) \
             }";
         let imported_package =
-            lowered_package(&[("owner/elab.kio", owner), ("main.kio", imported_main)]);
+            lowered_package(&[("owner/macros.kio", owner), ("main.kio", imported_main)]);
         let (_, imported_scope, imported_errors) =
             check_retained_module_error(&imported_package, "main");
         let imported_message = imported_errors
             .iter()
             .find_map(|error| match error {
-                Error::Elaborator(diagnostic) => Some(diagnostic.message.as_str()),
+                Error::Macro(diagnostic) => Some(diagnostic.message.as_str()),
                 _ => None,
             })
             .unwrap_or_else(|| {
-                panic!(
-                    "imported elaborator reports the captured function type: {imported_errors:#?}"
-                )
+                panic!("imported macro reports the captured function type: {imported_errors:#?}")
             });
-        assert_eq!(imported_message, "owner/elab.I32 -> owner/elab.I32");
-        assert_eq!(
-            imported_scope.memo().user_elaborator_template_executions(),
-            1
-        );
+        assert_eq!(imported_message, "owner/macros.I32 -> owner/macros.I32");
+        assert_eq!(imported_scope.memo().user_macro_template_executions(), 1);
     }
 
     #[test]
@@ -28829,8 +28682,8 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn type_has_free_elaborator_param_detects_one_sided_occurrence() {
-        // A free elaborator param on *either* side of a function, product,
+    fn type_has_free_macro_param_detects_one_sided_occurrence() {
+        // A free macro param on *either* side of a function, product,
         // or sum must be detected (a disjunction). Demanding it on both
         // sides would miss `A -> Int`, `Int -> A`, `A & Int`, `Int | A`.
         fn p(name: &str) -> Type {
@@ -28854,23 +28707,11 @@ fn generic_last() -> . {
             }
         }
         let names: HashSet<String> = ["A".to_owned()].into_iter().collect();
-        assert!(type_has_free_elaborator_param(
-            &func(p("A"), p("Int")),
-            &names
-        ));
-        assert!(type_has_free_elaborator_param(
-            &func(p("Int"), p("A")),
-            &names
-        ));
-        assert!(type_has_free_elaborator_param(
-            &prod(p("A"), p("Int")),
-            &names
-        ));
-        assert!(type_has_free_elaborator_param(
-            &sum(p("Int"), p("A")),
-            &names
-        ));
-        assert!(!type_has_free_elaborator_param(
+        assert!(type_has_free_macro_param(&func(p("A"), p("Int")), &names));
+        assert!(type_has_free_macro_param(&func(p("Int"), p("A")), &names));
+        assert!(type_has_free_macro_param(&prod(p("A"), p("Int")), &names));
+        assert!(type_has_free_macro_param(&sum(p("Int"), p("A")), &names));
+        assert!(!type_has_free_macro_param(
             &func(p("Int"), p("Int")),
             &names
         ));
@@ -28879,7 +28720,7 @@ fn generic_last() -> . {
     #[test]
     fn ordinary_and_marked_type_captures_use_the_type_namespace() {
         for name in ["Foo", "_Foo"] {
-            let capture = crate::ast::UserElaboratorCapture {
+            let capture = crate::ast::UserMacroCapture {
                 segments: vec![crate::ast::PathSegment::new(
                     name.to_owned(),
                     Span::new(0, 0),
@@ -28887,8 +28728,8 @@ fn generic_last() -> . {
                 span: Span::new(0, 0),
             };
             assert_eq!(
-                classify_user_elaborator_capture(&capture).unwrap(),
-                UserElaboratorCaptureSpelling::Type,
+                classify_user_macro_capture(&capture).unwrap(),
+                UserMacroCaptureSpelling::Type,
                 "{name}"
             );
         }
@@ -28900,17 +28741,14 @@ fn generic_last() -> . {
         // type, a bare value, nor a member — it must be rejected, not waved
         // through as a member capture.
         for name in ["B", "_B"] {
-            let capture = crate::ast::UserElaboratorCapture {
+            let capture = crate::ast::UserMacroCapture {
                 segments: vec![
                     crate::ast::PathSegment::new("a".to_owned(), Span::new(0, 0)),
                     crate::ast::PathSegment::new(name.to_owned(), Span::new(0, 0)),
                 ],
                 span: Span::new(0, 0),
             };
-            assert!(
-                classify_user_elaborator_capture(&capture).is_err(),
-                "{name}"
-            );
+            assert!(classify_user_macro_capture(&capture).is_err(), "{name}");
         }
     }
 
@@ -28936,10 +28774,10 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn elaborator_capture_owner_and_visibility_are_exact() {
-        // A user elaborator's captured items must resolve to their
+    fn macro_capture_owner_and_visibility_are_exact() {
+        // A user macro's captured items must resolve to their
         // *declaring* module (for the generated import) and retain each
-        // declaration's exact visibility (for the elaborator visibility
+        // declaration's exact visibility (for the macro visibility
         // floor). Exercises the member / fn / type owner resolvers directly
         // across qualified, selective, and same-module spellings.
         use crate::pass::resolve::Package;
@@ -28971,7 +28809,7 @@ fn generic_last() -> . {
         let main_mod = &package.module("main").expect("main module").module;
         let env = ModuleEnv::build(main_mod, None, None, Some(&package)).expect("env");
 
-        let cap = |segs: &[&str]| crate::ast::UserElaboratorCapture {
+        let cap = |segs: &[&str]| crate::ast::UserMacroCapture {
             segments: segs
                 .iter()
                 .map(|s| crate::ast::PathSegment::new((*s).to_owned(), Span::new(0, 0)))

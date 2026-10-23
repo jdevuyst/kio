@@ -12,4 +12,4 @@ cd workdir || exit
 cd out/kio-prime || exit
 "$KIO_BIN" build "$KIO_TARGET" || exit
 "$KIO_RUNNER" --package-name exec_kio_prime_roundtrip \
-  --protocol testapi-print-elab-bool-string out/"$KIO_TARGET"
+  --protocol testapi-print-macro-bool-string out/"$KIO_TARGET"

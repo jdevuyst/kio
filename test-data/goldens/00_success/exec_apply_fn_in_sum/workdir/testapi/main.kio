@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 import testapi/arith(add_i32, mul_i32);
 import testapi/fmt(int_to_string);
@@ -15,9 +15,9 @@ import testapi/text(string_concat);
 // called. This pins a function value nested inside a sum arm.
 newtype Result[A][E] : A | E { pub constructor mk_result; pub projector un_result }
 
-fn ok[A][E](v: A) -> Result(A, E) { Result.mk_result(widen_sum!(v, A | E)) }
+fn ok[A][E](v: A) -> Result(A, E) { Result.mk_result(widen_sum(v, A | E)) }
 
-fn err[A][E](v: E) -> Result(A, E) { Result.mk_result(widen_sum!(v, A | E)) }
+fn err[A][E](v: E) -> Result(A, E) { Result.mk_result(widen_sum(v, A | E)) }
 
 // `apply` takes a `Result` whose ok arm holds a function `t -> u`
 // and a `t`. On `ok(f)` it applies the stored function to `x`,
@@ -25,13 +25,13 @@ fn err[A][E](v: E) -> Result(A, E) { Result.mk_result(widen_sum!(v, A | E)) }
 // error through. This projects a function out of a sum arm and calls
 // it — the higher-order nested-value case.
 fn apply[T][U][E](rf: Result(T -> U, E), x: T) -> Result(U, E) {
-  match! rf.>Result.un_result {
+  match(rf.>Result.un_result) {
     (.(f: T -> U) { ok(U, E, f(x)) }, .(g: E) { err(U, E, g) })
   }
 }
 
 fn render(r: Result(I32, String)) -> String {
-  match! r.>Result.un_result {
+  match(r.>Result.un_result) {
     (
     , .(v: I32) { string_concat("ok(", string_concat(int_to_string(v), ")")) }
     , .(m: String) { string_concat("err(\"", string_concat(m, "\")")) }

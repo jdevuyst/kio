@@ -1,6 +1,6 @@
 module main;
 
-import elab/match(match);
+import macros/match(macro match);
 
 host type Value;
 
@@ -8,7 +8,7 @@ host type Other;
 
 fn rejected(source: Value | Other, fallback: Value) {
   let .(_result: Value) =
-    match! source {
+    match(source) {
       (.(value) { value }, .(_other: Other) { fallback })
     };
   ()

@@ -16,8 +16,8 @@ import datalog/list as list;
 import datalog/program as program;
 import datalog/subst as subst;
 import datalog/unify as unify;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32);
 import testapi/iter(loop);
@@ -59,10 +59,10 @@ fn holds(db: Atoms, fact: Atom) -> Bool {
 /// Insert this round's conclusions, keeping the database a set. What was
 /// genuinely new is handed back as the next round's delta.
 rec(loop) fn absorb(db: Atoms, candidates: Atoms, added: Atoms) -> Absorbed {
-  match! candidates.>list.List.un_list {
+  match(candidates.>list.List.un_list) {
     (
     , .(fact: Atom, rest: Atoms) {
-        if! holds(db, fact) {
+        if(holds(db, fact)) {
           recur absorb(db, rest, added)
         } else {
           recur absorb(list.snoc(db, fact), rest, list.snoc(added, fact))
@@ -104,7 +104,7 @@ rec(loop) fn naive_rounds(rules: program.Rules, db: Atoms, index: I32, derivs: I
   let added = list.length(step.?{ab_added});
   let total = add_i32(derivs, attempted);
   let next_trace = list.snoc(trace, round(index, attempted, added));
-  if! eq_i32(added, 0) {
+  if(eq_i32(added, 0)) {
     mk_run(next_trace, total, next_db)
   } else {
     recur naive_rounds(rules, next_db, add_i32(index, 1), total, next_trace)
@@ -134,7 +134,7 @@ rec(loop) fn semi_rounds(
   let added = list.length(next_delta);
   let total = add_i32(derivs, attempted);
   let next_trace = list.snoc(trace, round(index, attempted, added));
-  if! eq_i32(added, 0) {
+  if(eq_i32(added, 0)) {
     mk_run(next_trace, total, next_db)
   } else {
     recur semi_rounds(rules, db, next_db, next_delta, add_i32(index, 1), total, next_trace)
@@ -152,5 +152,5 @@ fn subset(xs: Atoms, ys: Atoms) -> Bool {
 }
 
 pub fn same_fixpoint(xs: Atoms, ys: Atoms) -> Bool {
-  if! subset(xs, ys) { subset(ys, xs) } else { .f }
+  if(subset(xs, ys)) { subset(ys, xs) } else { .f }
 }

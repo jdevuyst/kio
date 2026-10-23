@@ -25,12 +25,12 @@
 //! `kio doc check` honors. Overridden names are left exactly as
 //! written so the author's explicit link wins.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use crate::doc_markup::fences::{Block, scan_blocks};
 #[cfg(test)]
 use crate::doc_markup::rewrite::rewrite_inert;
-use crate::doc_markup::rewrite::{BracketKind, KiodocBracket, rewrite_prose_segment};
+use crate::doc_markup::rewrite::{BracketKind, KiodocBracket, rewrite_prose_segment_with_offsets};
 
 use super::site::SymbolIndex;
 
@@ -47,12 +47,23 @@ pub enum LinkTarget {
 /// tutorial `.md` page resolves against the package's package file.
 /// The renderer builds one [`DirectiveScope`] per page.
 pub trait DirectiveScope {
+    /// Source scope used by self-harness snippets at the end of a module.
+    fn module_source(&self) -> Option<String> {
+        None
+    }
     fn link_target(&self, term: &str) -> LinkTarget;
     /// Render the declaration header of the item named `term`, or
     /// `None` if `term` does not resolve in this scope.
     fn signature(&self, term: &str) -> Option<String>;
     /// Render the full source of the item named `term`, or `None`.
     fn source(&self, term: &str) -> Option<String>;
+    /// Displayed source tokens retain the selected declaration's module position.
+    fn classified_source(
+        &self,
+        _term: &str,
+    ) -> Option<(String, Vec<crate::tokens::ClassifiedToken>)> {
+        None
+    }
     /// Render the bound-value type of the item named `term`, or
     /// `None` when `term` does not resolve or names a type-level name
     /// (which binds no value — `kio doc check` rejects `@type`
@@ -78,23 +89,65 @@ pub fn rewrite(
     rewrite_with(
         prose,
         crate::doc_markup::lexical::inline_literal_end,
-        |parsed| render_bracket(parsed, url_prefix, link_ext, index, scope, overrides),
+        |parsed, _| render_bracket(parsed, url_prefix, link_ext, index, scope, overrides),
     )
+}
+
+/// Generated source fences carry roles from their exact declaration context.
+/// Offsets address the rewritten Markdown and tokens address each displayed body.
+pub(crate) struct Rewritten {
+    pub text: String,
+    pub source_tokens: HashMap<u32, Vec<crate::tokens::ClassifiedToken>>,
+}
+
+pub(crate) fn rewrite_with_context(
+    prose: &str,
+    url_prefix: &str,
+    link_ext: &str,
+    index: &SymbolIndex,
+    scope: &dyn DirectiveScope,
+    overrides: &HashSet<String>,
+) -> Rewritten {
+    let mut source_tokens = HashMap::new();
+    let text = rewrite_with(
+        prose,
+        crate::doc_markup::lexical::inline_literal_end,
+        |parsed, offset| {
+            if let BracketKind::Directive {
+                keyword: "source",
+                term,
+            } = parsed.kind
+                && !overrides.contains(term)
+                && let Some((source, tokens)) = scope.classified_source(term)
+            {
+                source_tokens.insert((offset + 2) as u32, tokens);
+                return format!("\n\n```kio\n{source}\n```\n\n");
+            }
+            render_bracket(parsed, url_prefix, link_ext, index, scope, overrides)
+        },
+    );
+    Rewritten {
+        text,
+        source_tokens,
+    }
 }
 
 fn rewrite_with(
     prose: &str,
     literal_end: fn(&str, usize) -> Option<usize>,
-    mut render: impl FnMut(&KiodocBracket<'_>) -> String,
+    mut render: impl FnMut(&KiodocBracket<'_>, usize) -> String,
 ) -> String {
     let mut out = String::with_capacity(prose.len());
     for block in scan_blocks(prose) {
         match block {
-            Block::Prose(source) => out.push_str(&rewrite_prose_segment(
-                source.text,
-                literal_end,
-                &mut render,
-            )),
+            Block::Prose(source) => {
+                let start = out.len();
+                out.push_str(&rewrite_prose_segment_with_offsets(
+                    source.text,
+                    literal_end,
+                    &mut |parsed, offset| render(parsed, start + offset),
+                ));
+            }
             Block::Fence(fence) => out.push_str(fence.source.text),
         }
     }

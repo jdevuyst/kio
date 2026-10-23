@@ -16,12 +16,12 @@
 /// weight internal nodes order by creation. This message exercises all three.
 module huffman/tree;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import huffman/freq(Count, {count_freq}, {count_symbol});
 import huffman/list(List, cons, nil, of1, reverse);
-import testapi(default Bool, I32);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import testapi(I32, default Bool);
 import testapi/arith(add_i32, lt_i32);
 import testapi/iter(loop);
 
@@ -36,16 +36,16 @@ rec {
 }
 
 pub fn leaf(symbol: I32, weight: I32) -> Node {
-  Node.mk_node({leaf_symbol = symbol, leaf_weight = weight}.>widen_sum!(Node_shape))
+  Node.mk_node({leaf_symbol = symbol, leaf_weight = weight}.>widen_sum(Node_shape))
 }
 
 pub fn fork(weight: I32, key: I32, left: Node, right: Node) -> Node {
   Node.mk_node({fork_weight = weight, fork_key = key, fork_left = left, fork_right = right}
-    .>widen_sum!(Node_shape))
+    .>widen_sum(Node_shape))
 }
 
 pub fn weight(node: Node) -> I32 {
-  match! node.>Node.un_node {
+  match(node.>Node.un_node) {
     (
     , .(_symbol: Leaf_symbol, w: Leaf_weight) { w.?{leaf_weight} }
     , .(w: Fork_weight, _key: Fork_key, _left: Fork_left, _right: Fork_right) { w.?{fork_weight} }
@@ -54,7 +54,7 @@ pub fn weight(node: Node) -> I32 {
 }
 
 pub fn key(node: Node) -> I32 {
-  match! node.>Node.un_node {
+  match(node.>Node.un_node) {
     (
     , .(symbol: Leaf_symbol, _weight: Leaf_weight) { symbol.?{leaf_symbol} }
     , .(_weight: Fork_weight, k: Fork_key, _left: Fork_left, _right: Fork_right) { k.?{fork_key} }
@@ -63,7 +63,7 @@ pub fn key(node: Node) -> I32 {
 }
 
 pub fn is_leaf(node: Node) -> Bool {
-  match! node.>Node.un_node {
+  match(node.>Node.un_node) {
     (
     , .(_symbol: Leaf_symbol, _weight: Leaf_weight) { .t }
     , .(_weight: Fork_weight, _key: Fork_key, _left: Fork_left, _right: Fork_right) { .f }
@@ -74,7 +74,7 @@ pub fn is_leaf(node: Node) -> Bool {
 /// The leaf's symbol, or `fallback` at a fork. The transcript uses it to name a
 /// node; the coder itself always knows which shape it is holding.
 pub fn symbol_or(node: Node, fallback: I32) -> I32 {
-  match! node.>Node.un_node {
+  match(node.>Node.un_node) {
     (
     , .(symbol: Leaf_symbol, _weight: Leaf_weight) { symbol.?{leaf_symbol} }
     , .(_weight: Fork_weight, _key: Fork_key, _left: Fork_left, _right: Fork_right) { fallback }
@@ -86,14 +86,14 @@ pub fn symbol_or(node: Node, fallback: I32) -> I32 {
 fn precedes(a: Node, b: Node) -> Bool {
   let wa = weight(a);
   let wb = weight(b);
-  if! lt_i32(wa, wb) { .t } else if! lt_i32(wb, wa) { .f } else { lt_i32(key(a), key(b)) }
+  if(lt_i32(wa, wb)) { .t } else if(lt_i32(wb, wa)) { .f } else { lt_i32(key(a), key(b)) }
 }
 
 rec(loop) fn insert_ordered(node: Node, nodes: List(Node)) -> List(Node) {
-  match! nodes.>List.un_list {
+  match(nodes.>List.un_list) {
     (
     , .(head: Node, rest: List(Node)) {
-        if! precedes(node, head) {
+        if(precedes(node, head)) {
           cons(node, nodes)
         } else {
           cons(head, recur(cont) insert_ordered(node, rest))
@@ -105,7 +105,7 @@ rec(loop) fn insert_ordered(node: Node, nodes: List(Node)) -> List(Node) {
 }
 
 rec(loop) fn queue_onto(counts: List(Count), acc: List(Node)) -> List(Node) {
-  match! counts.>List.un_list {
+  match(counts.>List.un_list) {
     (
     , .(row: Count, rest: List(Count)) {
         let node = leaf(row.?{count_symbol}, row.?{count_freq});
@@ -135,10 +135,10 @@ fn built(root: Node, log: List(Step)) -> Built { {built_root = root, built_log =
 /// An empty queue cannot arise from a non-empty message, but the walk is total,
 /// so it yields a weightless leaf rather than failing.
 pub rec(loop) fn build(nodes: List(Node), next_key: I32, log: List(Step)) -> Built {
-  match! nodes.>List.un_list {
+  match(nodes.>List.un_list) {
     (
     , .(first: Node, rest: List(Node)) {
-        match! rest.>List.un_list {
+        match(rest.>List.un_list) {
           (
           , .(second: Node, others: List(Node)) {
               let merged = fork(add_i32(weight(first), weight(second)), next_key, first, second);

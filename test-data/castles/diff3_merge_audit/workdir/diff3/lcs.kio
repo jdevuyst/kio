@@ -16,8 +16,8 @@ module diff3/lcs;
 
 import diff3/list as list;
 import diff3/prim as prim;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32);
 import testapi/iter(loop);
@@ -28,13 +28,13 @@ import testapi/text(string_eq);
 pub type Match = I32 & I32;
 
 pub fn base_at(pair: Match) -> I32 {
-  match! pair {
+  match(pair) {
     .(base: I32, _other: I32) { base }
   }
 }
 
 pub fn other_at(pair: Match) -> I32 {
-  match! pair {
+  match(pair) {
     .(_base: I32, other: I32) { other }
   }
 }
@@ -52,7 +52,7 @@ pub labels Dp = {
 /// at the current column. Recursing to the right first means `rest` is the
 /// part of row `i` this cell depends on.
 rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(I32)) -> list.List(I32) {
-  match! list.List.unpack(right) {
+  match(list.List.unpack(right)) {
     (
     , .(other: String, right_rest: list.List(String)) {
         let below_rest = list.tail(below);
@@ -60,7 +60,7 @@ rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(
         let skip_left = list.head_or(below, 0);
         let diagonal = list.head_or(below_rest, 0);
         let skip_right = list.head_or(rest, 0);
-        if! string_eq(line, other) {
+        if(string_eq(line, other)) {
           list.cons(add_i32(diagonal, 1), rest)
         } else {
           list.cons(prim.int_max(skip_left, skip_right), rest)
@@ -72,7 +72,7 @@ rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(
 }
 
 rec(loop) fn build_rows(left: list.List(String), right: list.List(String), floor: list.List(I32)) -> list.List(list.List(I32)) {
-  match! list.List.unpack(left) {
+  match(list.List.unpack(left)) {
     (
     , .(line: String, left_rest: list.List(String)) {
         let below = recur(cont) build_rows(left_rest, right, floor);
@@ -105,11 +105,11 @@ pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
 /// optimal solution that takes the match, so the traceback never needs to
 /// look back.
 rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List(Match)) -> list.List(Match) {
-  if! prim.or(leq_i32(dp.?{left_len}, row), leq_i32(dp.?{right_len}, col)) {
+  if(prim.or(leq_i32(dp.?{left_len}, row), leq_i32(dp.?{right_len}, col))) {
     list.reverse(acc)
-  } else if! string_eq(list.nth_or(dp.?{left}, row, ""), list.nth_or(dp.?{right}, col, "")) {
+  } else if(string_eq(list.nth_or(dp.?{left}, row, ""), list.nth_or(dp.?{right}, col, ""))) {
     recur trace(dp, add_i32(row, 1), add_i32(col, 1), list.cons((row, col), acc))
-  } else if! leq_i32(cell(dp, row, add_i32(col, 1)), cell(dp, add_i32(row, 1), col)) {
+  } else if(leq_i32(cell(dp, row, add_i32(col, 1)), cell(dp, add_i32(row, 1), col))) {
     recur trace(dp, add_i32(row, 1), col, acc)
   } else {
     recur trace(dp, row, add_i32(col, 1), acc)

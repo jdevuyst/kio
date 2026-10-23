@@ -67,24 +67,25 @@ Each case is a directory containing:
 
 - `workdir/` — the directory where the case's Kio commands run. It may
   contain one package or an intentionally invalid package layout. When a
-  case needs the shared POC `elab` library (`derive!`, `match!`, the
+  case needs the shared POC `macros` library (`derive`, `match`, the
   spine palette, …), it declares a **path dependency** on the canonical
-  `elab` package — a `<local>.dep.kio` at the package root:
+  `macros` package — a `<local>.dep.kio` at the package root:
 
   ```kio
-  // elab.dep.kio
-  dependency elab;
-  source { path "<rel>/elab.pkg.kio"; }
+  // macros.dep.kio
+  dependency macros;
+  source { path "<rel>/macros.pkg.kio"; }
   ```
 
-  and imports the re-rooted modules (`use elab/derive …;`,
-  `use elab/match …;`). Depending on elab materializes its modules under
-  an `elab/` tree at the case package root, and that **re-rooted tree is
+  and selects macros from the re-rooted modules
+  (`import macros/derive(macro derive);`,
+  `import macros/match(macro match);`). Depending on macros materializes its
+  modules under a `macros/` tree at the case package root, and that **re-rooted tree is
   committed** — the case ships its dependency's materialized closure, so a
   fresh checkout runs without a fetch step. The committed modules are
-  re-rooted derivatives (`module derive;` → `module elab/derive;`), not
+  re-rooted derivatives (`module derive;` → `module macros/derive;`), not
   copies of the canonical source. Symlinking or byte-copying a *canonical*
-  elab module into a case is still forbidden (it predates dependencies);
+  macro-library module into a case is still forbidden (it predates dependencies);
   CI rejects both via
   [`ci/checks/repo-lint/golden-reference-deps.sh`](../ci/checks/repo-lint/golden-reference-deps.sh),
   while [`ci/checks/repo-lint/dep-materialization.sh`](../ci/checks/repo-lint/dep-materialization.sh)
@@ -235,7 +236,7 @@ Custom case commentary — what the case asserts, the exit-code rationale, links
 
 Per-case `*.kio` files carry **only program-local notes**, and only where the WHY is non-obvious. Don't restate a standard `run.args` case's harness mechanics in the source. Default to no comments in `*.kio` if the code speaks for itself.
 
-**Surface forms in non-`IS_KIO_PRIME` cases.** When a case is not marked `IS_KIO_PRIME`, its `*.kio` sources should use the surface forms described in [`specs/language.md`](../specs/language.md) (operators, tuple literals, `if`/`else`, `match!`, spine elabs such as `widen_sum!` / `fit!`, label-generated sugar, and algebraic elabs when the case is specifically about them) rather than directly calling the underlying Kio' intrinsics. The exception is cases whose *subject* is the intrinsic itself.
+**Surface forms in non-`IS_KIO_PRIME` cases.** When a case is not marked `IS_KIO_PRIME`, its `*.kio` sources should use the surface forms described in [`specs/language.md`](../specs/language.md) (operators, tuple literals, `if`/`else`, `match`, spine macros such as `widen_sum` / `fit`, label-generated sugar, and algebraic macros when the case is specifically about them) rather than directly calling the underlying Kio' intrinsics. The exception is cases whose *subject* is the intrinsic itself.
 
 ### Invoking cases
 

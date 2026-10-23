@@ -1,6 +1,6 @@
 module testapi/opt;
 
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32);
 
 // A labels-shape optional. The `present` label mints a newtype `Present`;
@@ -14,6 +14,6 @@ pub labels { present: I32 };
 
 pub type Option = Present | .;
 
-pub fn some(x: I32) -> Option { widen_sum!({present = x}) }
+pub fn some(x: I32) -> Option { widen_sum({present = x}) }
 
-pub fn none() -> Option { widen_sum!(()) }
+pub fn none() -> Option { widen_sum(()) }

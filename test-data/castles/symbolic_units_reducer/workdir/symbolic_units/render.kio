@@ -1,6 +1,6 @@
 module symbolic_units/render;
 
-import elab/match(match);
+import macros/match(macro match);
 import symbolic_units/model(
 , Expr
 , Kilogram
@@ -21,27 +21,27 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 
 pub rec(loop) fn source(value: Expr) -> String {
-  match! Expr.get(value) {
+  match(Expr.get(value)) {
     (
     , .(_m: Meter) { "m" }
     , .(_s: Second) { "s" }
     , .(_k: Kilogram) { "kg" }
     , .(node: Product) {
-        match! Product.get(node) {
+        match(Product.get(node)) {
           .(left: Expr, right: Expr) {
             text.cat5("(", recur(cont) source(left), " * ", recur(cont) source(right), ")")
           }
         }
       }
     , .(node: Quotient) {
-        match! Quotient.get(node) {
+        match(Quotient.get(node)) {
           .(left: Expr, right: Expr) {
             text.cat5("(", recur(cont) source(left), " / ", recur(cont) source(right), ")")
           }
         }
       }
     , .(node: Pow) {
-        match! Pow.get(node) {
+        match(Pow.get(node)) {
           .(base: Expr, exponent: I32) {
             text.cat4(recur(cont) source(base), "^", fmt.int_to_string(exponent), "")
           }

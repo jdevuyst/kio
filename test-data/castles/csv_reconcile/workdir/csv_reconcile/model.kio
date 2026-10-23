@@ -1,6 +1,6 @@
 module csv_reconcile/model;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 
@@ -72,11 +72,11 @@ pub fn add_credit(state: State, amount: I32) -> State {
 }
 
 pub fn debit_allowed(state: State, amount: I32) -> Bool {
-  if! arith.lt_i32(get_balance(state), amount) { .f } else { .t }
+  if(arith.lt_i32(get_balance(state), amount)) { .f } else { .t }
 }
 
 pub fn apply_debit(state: State, amount: I32) -> State {
-  if! debit_allowed(state, amount) {
+  if(debit_allowed(state, amount)) {
     make_state(
     , arith.sub_i32(get_balance(state), amount)
     , get_credits(state)
@@ -102,5 +102,5 @@ pub fn record_check(state: State) -> State {
 }
 
 pub fn status(state: State) -> String {
-  if! arith.lt_i32(0, get_errors(state)) { "needs-review" } else { "ok" }
+  if(arith.lt_i32(0, get_errors(state))) { "needs-review" } else { "ok" }
 }

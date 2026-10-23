@@ -222,7 +222,7 @@ fn file_parse_preserves_local_grammar_ids_and_deferred_bodies() {
         ),
         (
             root.join("plain.kio"),
-            "module plain; fn first(a: .) -> . { a.>forward } fn second(a: .) -> . { pass!(a.>forward) }".to_owned(),
+            "module plain; import fixture(macro pass); fn first(a: .) -> . { a.>forward } fn second(a: .) -> . { pass(a.>forward) }".to_owned(),
         ),
     ]);
     let overlay = SourceOverlay::complete(root.to_path_buf(), sources.clone());

@@ -18,9 +18,9 @@ use crate::pass::typecheck_core::{publication_validation_work, reset_publication
 use crate::span::Span;
 
 use super::{
-    DeferredElaboration, DeferredUserElaboratorElaboration, Elaborations, Expr, InternedType,
+    DeferredElaboration, DeferredUserMacroElaboration, Elaborations, Expr, InternedType,
     PrimeLocalTypeAlias, RecordedElaboration, ResolvedBinder, Type,
-    UserElaboratorTemplateGeneratedImport,
+    UserMacroTemplateGeneratedImport,
 };
 
 #[cfg(test)]
@@ -186,7 +186,7 @@ enum PublicationCommand<T> {
         lexical_role: Option<String>,
     },
     PrimeRequalificationBindings {
-        imports: Vec<UserElaboratorTemplateGeneratedImport>,
+        imports: Vec<UserMacroTemplateGeneratedImport>,
         aliases: Vec<PrimeLocalTypeAlias>,
     },
     RecOrderBinding {
@@ -198,8 +198,8 @@ enum PublicationCommand<T> {
         node_id: NodeId,
         replacement: StagedLoweredElaboration<T>,
     },
-    UserElaborator {
-        obligation: DeferredUserElaboratorElaboration,
+    UserMacro {
+        obligation: DeferredUserMacroElaboration,
     },
 }
 
@@ -372,9 +372,7 @@ impl<T> PublicationCommand<T> {
                 node_id,
                 replacement: replacement.map_type_slots(map),
             },
-            Self::UserElaborator { obligation } => {
-                PublicationCommand::UserElaborator { obligation }
-            }
+            Self::UserMacro { obligation } => PublicationCommand::UserMacro { obligation },
         }
     }
 }
@@ -1094,7 +1092,7 @@ impl PublicationBuilder {
 
     pub(crate) fn record_prime_requalification_bindings(
         &mut self,
-        imports: Vec<UserElaboratorTemplateGeneratedImport>,
+        imports: Vec<UserMacroTemplateGeneratedImport>,
         aliases: Vec<PrimeLocalTypeAlias>,
     ) {
         if imports.is_empty() && aliases.is_empty() {
@@ -1103,8 +1101,8 @@ impl PublicationBuilder {
         self.push_command(PublicationCommand::PrimeRequalificationBindings { imports, aliases });
     }
 
-    pub(crate) fn record_user_elaborator(&mut self, obligation: DeferredUserElaboratorElaboration) {
-        self.push_command(PublicationCommand::UserElaborator { obligation });
+    pub(crate) fn record_user_macro(&mut self, obligation: DeferredUserMacroElaboration) {
+        self.push_command(PublicationCommand::UserMacro { obligation });
     }
 
     pub(crate) fn reserve_child(
@@ -1852,10 +1850,9 @@ impl ClosedPublicationDelta {
                         RecordedElaboration::Lowered(replacement),
                     );
                 }
-                PublicationCommand::UserElaborator { obligation } => {
-                    elaborations.enqueue_deferred(DeferredElaboration::UserElaborator(Box::new(
-                        obligation,
-                    )));
+                PublicationCommand::UserMacro { obligation } => {
+                    elaborations
+                        .enqueue_deferred(DeferredElaboration::UserMacro(Box::new(obligation)));
                 }
             }
         }
@@ -2144,8 +2141,8 @@ mod tests {
             .expect("scope test type")
     }
 
-    fn generated_import(module_path: &str, alias: &str) -> UserElaboratorTemplateGeneratedImport {
-        UserElaboratorTemplateGeneratedImport {
+    fn generated_import(module_path: &str, alias: &str) -> UserMacroTemplateGeneratedImport {
+        UserMacroTemplateGeneratedImport {
             module_path: module_path.to_owned(),
             alias: alias.to_owned(),
         }
@@ -2162,7 +2159,7 @@ mod tests {
 
     fn record_prime_requalification(
         builder: &mut PublicationBuilder,
-        imports: Vec<UserElaboratorTemplateGeneratedImport>,
+        imports: Vec<UserMacroTemplateGeneratedImport>,
         aliases: Vec<PrimeLocalTypeAlias>,
     ) {
         builder.push_command(PublicationCommand::PrimeRequalificationBindings { imports, aliases });

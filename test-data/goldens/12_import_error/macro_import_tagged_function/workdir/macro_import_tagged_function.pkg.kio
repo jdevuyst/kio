@@ -1,0 +1,8 @@
+package macro_import_tagged_function;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

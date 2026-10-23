@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -19,7 +19,7 @@ fn show_int(n: I32) { print(int_to_string(n)) }
 fn show_string(s: String) { print(s) }
 
 fn handle(v: I32 | String) {
-  match! v { (show_int, show_string) }
+  match(v) { (show_int, show_string) }
 }
 
-pub fn main() { handle(widen_sum!("matched right\n")) }
+pub fn main() { handle(widen_sum("matched right\n")) }

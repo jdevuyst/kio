@@ -1,10 +1,10 @@
 module interpreter/environment;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import interpreter/values as values;
 import list/core as lists;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default Bool);
 import testapi/iter(loop);
 import testapi/text as text;
@@ -16,15 +16,15 @@ pub fn extend(name: String, value: values.Value, environment: values.Environment
 }
 
 pub rec(loop) fn lookup(name: String, environment: values.Environment) -> String | values.Value {
-  match! lists.uncons(environment) {
+  match(lists.uncons(environment)) {
     .(binding: String & values.Value, remaining: values.Environment) {
       let .(key, value) = binding;
-      if! text.string_eq(name, key) {
-        value.>widen_sum!(String | values.Value)
+      if(text.string_eq(name, key)) {
+        value.>widen_sum(String | values.Value)
       } else {
         recur lookup(name, remaining)
       }
     };
-    .() { text.string_concat("unbound variable: ", name).>widen_sum!(String | values.Value) }
+    .() { text.string_concat("unbound variable: ", name).>widen_sum(String | values.Value) }
   }
 }

@@ -24,7 +24,7 @@ bridge {
 
 module kiodoc;
 
-import control(if);
+import control(macro if);
 
 default host type Bool role(bool);
 host type I32 role(i32);
@@ -42,10 +42,10 @@ __INSERT_CODE_HERE__
 The examples use host types `I32`, `Bool`, and `String` with roles `i32`,
 `bool`, and `str`. The host comparisons `eq_i32` and `leq_i32` take two `I32`
 values and return `Bool`; `sub_i32` and `mul_i32` take two `I32` values and
-return `I32`. Import the conditional elab with
-`import elab/control(if);` after following the
-[elab-library setup](using-libraries.md#the-elaborator-library) under
-the dependency name `elab`.
+return `I32`. Import the conditional macro with
+`import macros/control(macro if);` after following the
+[macro-library setup](using-libraries.md#the-macro-library) under
+the dependency name `macros`.
 
 Select `Bool` as this module's Boolean default for the generated branch
 operation, for example `default host type Bool role(bool);`. This is separate
@@ -56,7 +56,7 @@ For a single function, put `rec(loop)` directly before the `fn` keyword:
 
 ```kio {@module}
 pub rec(loop) fn countdown(n: I32) -> I32 {
-  if! leq_i32(n, 0) { n } else { recur countdown(sub_i32(n, 1)) }
+  if(leq_i32(n, 0)) { n } else { recur countdown(sub_i32(n, 1)) }
 }
 ```
 
@@ -97,10 +97,10 @@ function:
 ```kio {@module}
 rec(loop) {
   pub fn even(n: I32) -> Bool {
-    if! eq_i32(n, 0) { .t } else { recur odd(sub_i32(n, 1)) }
+    if(eq_i32(n, 0)) { .t } else { recur odd(sub_i32(n, 1)) }
   };
   fn odd(n: I32) -> Bool {
-    if! eq_i32(n, 0) { .f } else { recur even(sub_i32(n, 1)) }
+    if(eq_i32(n, 0)) { .f } else { recur even(sub_i32(n, 1)) }
   }
 }
 ```
@@ -128,7 +128,7 @@ Use `recur(poly)` when the recursive call supplies a different type argument:
 
 ```kio {@module}
 pub rec(loop) fn steps[A](n: I32, marker: A) -> I32 {
-  if! leq_i32(n, 0) { n } else { recur(poly) steps(String, sub_i32(n, 1), "next") }
+  if(leq_i32(n, 0)) { n } else { recur(poly) steps(String, sub_i32(n, 1), "next") }
 }
 ```
 
@@ -136,7 +136,7 @@ Use `recur(cont)` when the recursive call is not in tail position:
 
 ```kio {@module}
 pub rec(loop) fn fact(n: I32) -> I32 {
-  if! leq_i32(n, 1) { 1 } else { mul_i32(n, recur(cont) fact(sub_i32(n, 1))) }
+  if(leq_i32(n, 1)) { 1 } else { mul_i32(n, recur(cont) fact(sub_i32(n, 1))) }
 }
 ```
 
@@ -153,14 +153,14 @@ immediately. `escape` includes `cont`: writing both is accepted, and the
 formatter removes the redundant `cont`. A type-changing escaping call uses
 `recur(poly, escape)`. `escape` without an enclosing closure is rejected.
 
-A recursive call may appear in the first binding's right-hand side of a monadic `do!` block: `do! chain { let x <- recur(cont) step(v); x }`. That call supplies an ordinary argument to `chain`, so it needs `cont`; it is not inside the callback for the rest of the block. Once a bind or sequenced expression introduces that callback, recursive calls in the remaining block are captured and need `escape`.
+A recursive call may appear in the first binding's right-hand side of a monadic `do` block: `do(chain) { let x <- recur(cont) step(v); x }`. That call supplies an ordinary argument to `chain`, so it needs `cont`; it is not inside the callback for the rest of the block. Once a bind or sequenced expression introduces that callback, recursive calls in the remaining block are captured and need `escape`.
 
-Tail position is broader than the final expression alone: it includes both branches of `if!` **and each `match!` clause body**. A plain `recur` call directly in a `match!` arm — for example reading the next input line and recursing in the non-EOF arm — is a tail call and needs no `recur(cont)`. A `recur` call in the `match!` *scrutinee* (or an `if!` condition, or any other argument position) is not tail and does need `recur(cont)`.
+Tail position is broader than the final expression alone: it includes both branches of `if` **and each `match` clause body**. A plain `recur` call directly in a `match` arm — for example reading the next input line and recursing in the non-EOF arm — is a tail call and needs no `recur(cont)`. A `recur` call in the `match` *scrutinee* (or an `if` condition, or any other argument position) is not tail and does need `recur(cont)`.
 
 ## Calls that outlive their loop step
 
 An escaping call can live inside an explicit lambda, a placeholder lambda, or
-the callback introduced by a monadic `do!` step. The resulting closure can be
+the callback introduced by a monadic `do` step. The resulting closure can be
 returned, stored, or invoked repeatedly after its creating function returns.
 Use a re-entry-capable loop for that group:
 
@@ -178,7 +178,7 @@ The call happens when that closure is invoked:
 ```kio {@module}
 pub rec(loop_reentry) fn later(n: I32) -> . -> I32 {
   .() -> I32 {
-    if! leq_i32(n, 0) { n } else { recur(escape) later(sub_i32(n, 1))() }
+    if(leq_i32(n, 0)) { n } else { recur(escape) later(sub_i32(n, 1))() }
   }
 }
 

@@ -20,11 +20,11 @@
 //! The classifier lives here rather than in [`crate::pass::lexer`]
 //! because the lexer's `TokenKind` (imported as [`LexTokenKind`]) is a
 //! parser-facing enum and the highlighter's kind taxonomy is
-//! cross-cutting (bang-call elaborator fusion, parsed declaration and reference
+//! cross-cutting (scoped macro calls, parsed declaration and reference
 //! roles, etc.) that doesn't belong on
 //! the parser-facing type.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::Write as _;
 
 use crate::ast;
@@ -47,7 +47,7 @@ pub struct ClassifiedToken {
 pub enum SourceNameKind {
     Value,
     Type,
-    Elaborator,
+    Macro,
     Label,
     Equiv,
 }
@@ -124,7 +124,9 @@ pub(crate) struct RecMemberTokenFact {
 pub enum TokenKind {
     KeywordControl,
     KeywordDeclaration,
-    KeywordElaborator,
+    EntityNameMacro,
+    /// A selected macro import or call, sharing the macro wire/CSS category.
+    EntityNameMacroReference,
     Identifier,
     OperatorBuiltin,
     OperatorUser,
@@ -190,7 +192,7 @@ impl TokenKind {
         match self {
             TokenKind::KeywordControl => "keyword.control",
             TokenKind::KeywordDeclaration => "keyword.declaration",
-            TokenKind::KeywordElaborator => "keyword.elaborator",
+            TokenKind::EntityNameMacro | TokenKind::EntityNameMacroReference => "entity.name.macro",
             TokenKind::Identifier => "identifier",
             TokenKind::OperatorBuiltin => "operator.builtin",
             TokenKind::OperatorUser => "operator.user",
@@ -238,7 +240,9 @@ impl TokenKind {
         match self {
             TokenKind::KeywordControl => "kio-keyword-control",
             TokenKind::KeywordDeclaration => "kio-keyword-declaration",
-            TokenKind::KeywordElaborator => "kio-keyword-elaborator",
+            TokenKind::EntityNameMacro | TokenKind::EntityNameMacroReference => {
+                "kio-entity-name-macro"
+            }
             TokenKind::Identifier => "kio-identifier",
             TokenKind::OperatorBuiltin => "kio-operator-builtin",
             TokenKind::OperatorUser => "kio-operator-user",
@@ -351,6 +355,10 @@ fn dump_with_tooling_and_docs(
                 for item in items {
                     walk_item(item, raw, &mut overrides);
                 }
+                mark_macro_calls(
+                    crate::scope_walk::macro_calls_for_items(imports, items),
+                    &mut overrides,
+                );
             }
             ToolingSyntax::Package(package) => {
                 mark_file_name(
@@ -396,6 +404,13 @@ fn dump_with_tooling_and_docs(
         for item in &probe.facts.prefix_items {
             walk_item(item, raw, &mut overrides);
         }
+        mark_macro_calls(
+            crate::scope_walk::macro_calls_for_items(
+                &probe.facts.prefix_imports,
+                &probe.facts.prefix_items,
+            ),
+            &mut overrides,
+        );
     }
     for fact in &probe.facts.keywords {
         overrides.insert(
@@ -519,6 +534,7 @@ pub(crate) fn dump_repl_input(
     source: &str,
     expression_start: usize,
     context: Option<&crate::pass::parser::ExpressionParseContext>,
+    module: Option<&ast::Module<ast::Surface>>,
 ) -> Result<Vec<ClassifiedToken>, Error> {
     let Some(fragment) = source.get(expression_start..) else {
         return dump(source);
@@ -528,16 +544,61 @@ pub(crate) fn dump_repl_input(
     let mut out = dump_lexical(&prefix_raw, &prefix_trailing, prefix);
     let (raw, trailing) = lex_with_trailing(fragment)?;
     let probe = crate::pass::parser::probe_tooling(fragment, None, None, context);
-    out.extend(
-        dump_with_tooling(&raw, &trailing, &probe)
-            .into_iter()
-            .map(|mut token| {
-                token.span.start += expression_start as u32;
-                token.span.end += expression_start as u32;
-                token
-            }),
-    );
+    let mut tokens = dump_with_tooling(&raw, &trailing, &probe);
+    if let (Some(module), Some(crate::pass::parser::ToolingSyntax::Expression(expression))) =
+        (module, &probe.syntax)
+    {
+        let calls = crate::scope_walk::macro_calls_for_expression(module, expression);
+        for token in &mut tokens {
+            if calls.contains(token.span) {
+                token.kind = TokenKind::EntityNameMacroReference;
+            }
+        }
+    }
+    out.extend(tokens.into_iter().map(|mut token| {
+        token.span.start += expression_start as u32;
+        token.span.end += expression_start as u32;
+        token
+    }));
     Ok(out)
+}
+
+/// Classify an exact display slice in its assembled source context.
+/// The caller supplies assembly offsets, so repeated snippet text is unambiguous.
+pub(crate) fn dump_range(
+    source: &str,
+    start: usize,
+    len: usize,
+) -> Result<Vec<ClassifiedToken>, Error> {
+    let end = start + len;
+    let (raw, trailing) = lex_with_trailing(source)?;
+    #[cfg(any(test, feature = "cli"))]
+    let tokens = dump_with_tooling_and_docs(
+        &raw,
+        &trailing,
+        &crate::pass::parser::probe_tooling_source(source, None),
+        false,
+    );
+    #[cfg(not(any(test, feature = "cli")))]
+    let tokens = {
+        let module = crate::pass::parser::parse(source)?;
+        dump_with_ast_overrides_and_docs(
+            &raw,
+            &trailing,
+            source,
+            &ast_overrides(&module, &raw),
+            false,
+        )
+    };
+    Ok(tokens
+        .into_iter()
+        .filter(|token| token.span.start as usize >= start && token.span.end as usize <= end)
+        .map(|mut token| {
+            token.span.start -= start as u32;
+            token.span.end -= start as u32;
+            token
+        })
+        .collect())
 }
 
 /// Classify a standalone type through the type grammar, including its forall
@@ -662,7 +723,32 @@ fn dump_with_ast_overrides(
     dump_with_ast_overrides_and_docs(raw, trailing, source, overrides, true)
 }
 
+#[cfg(test)]
 pub(crate) fn dump_doc_code(source: &str, body_fragment: bool) -> Vec<ClassifiedToken> {
+    dump_doc_code_with_module(source, body_fragment, None)
+}
+
+pub(crate) fn dump_doc_code_with_module(
+    source: &str,
+    body_fragment: bool,
+    module_source: Option<&str>,
+) -> Vec<ClassifiedToken> {
+    if body_fragment && let Some(module_source) = module_source {
+        let mut name = "_doc_highlight_".to_owned();
+        while module_source.contains(&name) || source.contains(&name) {
+            name.push('_');
+        }
+        let prefix = format!("{module_source}\nfn {name}() {{\n");
+        let assembled = format!("{prefix}{source}\n}}");
+        return dump_range(&assembled, prefix.len(), source.len())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|mut token| {
+                token.in_documentation = true;
+                token
+            })
+            .collect();
+    }
     let wrapper;
     let (input, start) = if body_fragment {
         const PREFIX: &str = "fn _doc() {\n";
@@ -729,16 +815,6 @@ fn dump_with_ast_overrides_and_docs(
             }
         }
 
-        if let Some(fused) = try_fuse_elaborator_bang(raw, i)
-            && !overrides
-                .variadic_closing_bangs
-                .contains(&raw[i + 1].span.start)
-        {
-            out.push(fused);
-            i += 2;
-            continue;
-        }
-
         if let Some(fused) = try_fuse_dot_bool(raw, i) {
             out.push(fused);
             i += 2;
@@ -778,7 +854,7 @@ fn dump_with_ast_overrides_and_docs(
     let docs = crate::doc_markup::source::DocSource::from_tokens(source, raw, trailing);
     let mut structured = docs
         .iter()
-        .flat_map(crate::doc_markup::editor::classify)
+        .flat_map(|doc| crate::doc_markup::editor::classify_with_module(doc, Some(source)))
         .peekable();
     let mut refined = Vec::with_capacity(out.len());
     for token in out {
@@ -800,9 +876,6 @@ fn dump_with_ast_overrides_and_docs(
 #[derive(Default)]
 struct AstOverrides {
     kinds: HashMap<u32, TokenKind>,
-    /// A compact `!` frame may put its closing marker immediately after a
-    /// value name. That marker is not an elaborator suffix on the value.
-    variadic_closing_bangs: HashSet<u32>,
     source_references: Option<Vec<SourceReference>>,
     #[cfg(feature = "lsp")]
     source_dependencies: bool,
@@ -885,35 +958,6 @@ fn ast_overrides(module: &ast::Module<ast::Surface>, raw: &[LexToken]) -> AstOve
     overrides
 }
 
-/// If `raw[i]` and `raw[i+1]` together form a bang-call elaborator
-/// (a value-reference name plus contiguous `!`, with no trivia between them), return the
-/// fused token. The contiguity check is the invariant: a space between
-/// (`name !`) breaks the fusion because `!` could just as well be a
-/// user-defined unary op.
-fn try_fuse_elaborator_bang(raw: &[LexToken], i: usize) -> Option<ClassifiedToken> {
-    let head = &raw[i];
-    let next = raw.get(i + 1)?;
-    let LexTokenKind::Ident(name) = &head.kind else {
-        return None;
-    };
-    if !crate::naming::is_value_reference_name(name) || !next.kind.is_sym("!") {
-        return None;
-    }
-    // Adjacency: no trivia on the `!` token, and the ident's end
-    // byte equals the `!`'s start byte. Either condition alone is
-    // enough in practice (the lexer would have to produce one to
-    // produce the other), but checking both keeps the fusion rule
-    // local and easy to reason about.
-    if !next.leading_trivia.is_empty() || head.span.end != next.span.start {
-        return None;
-    }
-    Some(ClassifiedToken {
-        span: Span::new(head.span.start, next.span.end),
-        kind: TokenKind::KeywordElaborator,
-        in_documentation: false,
-    })
-}
-
 /// If `raw[i..i+2]` spells `.t` or `.f` with no whitespace, return
 /// one fused boolean-literal token. The lexer deliberately keeps the
 /// spelling as `SymbolRun(".")` + `Ident("t"|"f")`; the parser and
@@ -947,8 +991,7 @@ fn try_fuse_dot_bool(raw: &[LexToken], i: usize) -> Option<ClassifiedToken> {
 }
 
 /// Map one lexer [`TokenKind`] to its canonical [`TokenKind`].
-/// Bang-call elaborator fusion happens earlier in [`dump`]; by the time
-/// we get here, every token is classified standalone.
+/// Grammar and binding refinements are applied separately by the source walk.
 fn classify(kind: &LexTokenKind) -> TokenKind {
     match kind {
         LexTokenKind::Ident(_) => TokenKind::Identifier,
@@ -1021,6 +1064,20 @@ fn walk_module(m: &ast::Module<ast::Surface>, raw: &[LexToken], overrides: &mut 
     for item in &m.items {
         walk_item(item, raw, overrides);
     }
+    mark_macro_calls(crate::scope_walk::macro_calls(m), overrides);
+}
+
+fn mark_macro_calls(calls: crate::scope_walk::MacroCalls, overrides: &mut AstOverrides) {
+    for (span, _) in calls.iter() {
+        overrides.insert(span.start, TokenKind::EntityNameMacroReference);
+    }
+    if let Some(references) = &mut overrides.source_references {
+        for reference in references {
+            if !reference.declaration && calls.contains(reference.span) {
+                reference.kind = SourceNameKind::Macro;
+            }
+        }
+    }
 }
 
 fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) {
@@ -1041,14 +1098,21 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
                         span,
                         alias,
                         default_span,
+                        macro_span,
                         ..
                     } => {
                         if let Some(span) = default_span {
                             overrides.insert(span.start, TokenKind::KeywordDeclaration);
                         }
-                        overrides.insert(span.start, TokenKind::Identifier);
+                        let kind = if let Some(tag) = macro_span {
+                            overrides.insert(tag.start, TokenKind::KeywordDeclaration);
+                            TokenKind::EntityNameMacroReference
+                        } else {
+                            TokenKind::Identifier
+                        };
+                        overrides.insert(span.start, kind);
                         if let Some(alias) = alias {
-                            overrides.insert(alias.span.start, TokenKind::Identifier);
+                            overrides.insert(alias.span.start, kind);
                             if let Some(keyword) =
                                 find_ident_in_span(raw, Span::new(span.end, alias.span.start), "as")
                             {
@@ -1139,10 +1203,10 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
             }
         }
         ast::Item::Equiv(e, _) => walk_equiv(e, raw, overrides),
-        ast::Item::Elaborator(s, _) => {
-            overrides.source_reference(&s.name, s.name_span, SourceNameKind::Elaborator, true);
-            mark_declaration_keyword(raw, s.meta.span, "elab", overrides);
-            overrides.insert(s.name_span.start, TokenKind::EntityNameFunction);
+        ast::Item::Macro(s, _) => {
+            overrides.source_reference(&s.name, s.name_span, SourceNameKind::Macro, true);
+            mark_declaration_keyword(raw, s.meta.span, "macro", overrides);
+            overrides.insert(s.name_span.start, TokenKind::EntityNameMacro);
             walk_type(&s.call_ty, raw, overrides);
             for block in &s.trailing_blocks {
                 mark_leading_keyword(
@@ -1190,7 +1254,7 @@ fn walk_item(item: &ast::Item<ast::Surface>, raw: &[LexToken], overrides: &mut A
                     overrides.source_path(&capture.segments, SourceNameKind::Value);
                 }
             }
-            if s.schedule == ast::ElaboratorSchedule::Fills {
+            if s.schedule == ast::MacroSchedule::Fills {
                 let end = s.implementation.span().start;
                 if let Some(span) =
                     find_last_ident_in_span(raw, Span::new(s.call_ty.meta().span.end, end), "fills")
@@ -1633,7 +1697,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             blocks,
             ..
         } => {
-            overrides.source_reference(&head.name, head.span, SourceNameKind::Elaborator, false);
+            overrides.source_reference(&head.name, head.span, SourceNameKind::Value, false);
             overrides.insert(head.span.start, TokenKind::EntityNameFunctionReference);
             for value in prefix {
                 walk_expr(value, raw, overrides);
@@ -1857,9 +1921,9 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             }
         },
         RecOrder { ext, .. } | RecQuote { ext, .. } => match *ext {},
-        UserElaborator { name, args, .. } => {
+        UserMacro { name, args, .. } => {
             if let Some(s) = find_ident_in_span(raw, e.meta().span, name) {
-                overrides.source_reference(name, s, SourceNameKind::Elaborator, false);
+                overrides.source_reference(name, s, SourceNameKind::Macro, false);
                 overrides.insert(s.start, TokenKind::EntityNameFunctionReference);
             }
             for arg in args {
@@ -1882,13 +1946,13 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             receiver,
             callee_segments,
             args,
-            bang,
+            macro_call,
             ..
         } => {
             overrides.source_path(
                 callee_segments,
-                if bang.is_some() {
-                    SourceNameKind::Elaborator
+                if macro_call.is_some() {
+                    SourceNameKind::Macro
                 } else {
                     SourceNameKind::Value
                 },
@@ -1923,27 +1987,13 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                 walk_expr(&label.value, raw, overrides);
             }
         }
-        OpChain { kind, meta, .. } => match kind {
+        OpChain { kind, .. } => match kind {
             ast::OpChainKind::Normal { slots, .. } => {
                 for slot in slots {
                     walk_expr(slot, raw, overrides);
                 }
             }
-            ast::OpChainKind::Variadic {
-                close_tokens,
-                elements,
-                ..
-            } => {
-                if close_tokens.as_slice() == ["!]"]
-                    && let Some(marker_index) =
-                        first_token_at_or_after(raw, meta.span.end).checked_sub(2)
-                    && raw[marker_index].kind.is_sym("!")
-                    && raw[marker_index + 1].kind.is_sym("]")
-                {
-                    overrides
-                        .variadic_closing_bangs
-                        .insert(raw[marker_index].span.start);
-                }
+            ast::OpChainKind::Variadic { elements, .. } => {
                 for element in elements {
                     walk_expr(element, raw, overrides);
                 }
@@ -2210,7 +2260,7 @@ mod tests {
             type Alias[A] = A & Thing & q.Thing;
             newtype Box : Thing { constructor make; projector get; };
             fn run[Thing](x: Thing) -> Thing { helper(x) }
-            elab build : [Thing] Thing -> Thing {
+            macro build : [Thing] Thing -> Thing {
                 captures (Thing, helper, Box.make); impl q.helper;
             };
             op _ + _ { impl q.helper; };
@@ -2231,13 +2281,13 @@ mod tests {
                 })
                 .collect()
         }
-        use super::SourceNameKind::{Elaborator, Type, Value};
+        use super::SourceNameKind::{Macro, Type, Value};
         assert_eq!(
             names(&legacy),
             [
                 ("helper", Value, false),
                 ("x", Value, false),
-                ("build", Elaborator, true),
+                ("build", Macro, true),
                 ("Box.make", Value, false),
             ]
         );
@@ -2253,7 +2303,7 @@ mod tests {
                 ("Thing", Type, false),
                 ("helper", Value, false),
                 ("x", Value, false),
-                ("build", Elaborator, true),
+                ("build", Macro, true),
                 ("Thing", Type, false),
                 ("Thing", Type, false),
                 ("Thing", Type, false),
@@ -2275,10 +2325,6 @@ mod tests {
         };
         super::walk_module(&module, &raw, &mut observed);
         assert_eq!(ordinary.kinds, observed.kinds);
-        assert_eq!(
-            ordinary.variadic_closing_bangs,
-            observed.variadic_closing_bangs
-        );
         assert_eq!(legacy, super::source_references(source, &module).unwrap());
         assert_eq!(
             super::dump(source).unwrap(),
@@ -2430,7 +2476,7 @@ mod tests {
                 &["first", "pair", "second", "third"],
             ),
             (
-                "module m; fn f(input: .) { do! input { let .(first: ., second: .) <- input; let .(third: ., fourth: .) = input; (first, second, third, fourth) } }",
+                "module m; fn f(input: .) { do(input) { let .(first: ., second: .) <- input; let .(third: ., fourth: .) = input; (first, second, third, fourth) } }",
                 &["first", "second", "third", "fourth"],
             ),
             (
@@ -2495,7 +2541,7 @@ mod tests {
                 &["first", "second"],
             ),
             (
-                "module m; fn f(input: .) { do! input { let .(first: ., second: ",
+                "module m; fn f(input: .) { do(input) { let .(first: ., second: ",
                 &[],
                 &["first", "second"],
             ),
@@ -2590,16 +2636,16 @@ mod tests {
     }
 
     #[test]
-    fn tooling_bridge_cached_block_call_marks_only_the_elaborator_head() {
-        let source = "module app; fn run(do: .) { do!(do) { let value <- (); value } }";
+    fn tooling_bridge_cached_block_call_marks_only_the_macro_head() {
+        let source = "module app; import syntax(macro do as run_do); fn run(do: .) { run_do(do) { let value <- (); value } }";
         let module = crate::pass::parser::parse(source).unwrap();
         let cached = dump_with_module(source, &module).unwrap();
         let probed = dump(source).unwrap();
         assert_eq!(cached, probed);
-        let keyword = source.find("do!(do)").unwrap() as u32;
+        let keyword = source.find("run_do(do)").unwrap() as u32;
         for (start, expected) in [
-            (keyword, TokenKind::KeywordElaborator),
-            (keyword + 4, TokenKind::Identifier),
+            (keyword, TokenKind::EntityNameMacroReference),
+            (keyword + 7, TokenKind::Identifier),
         ] {
             assert_eq!(
                 cached
@@ -2652,9 +2698,9 @@ mod tests {
             "module app; fn run() { let .(let: .) = (); let }",
             "module app; fn run() { let .(let: ., other: .) = ((), ()); let }",
             "module app; fn run() { let .(let: (left: ., right: .)) = ((), ()); let }",
-            "module app; fn run() { do! bind { let let = (); let } }",
-            "module app; fn run() { do! bind { let let <- (); let } }",
-            "module app; fn run() { do! bind { let .(let: ., other: .) <- (); let } }",
+            "module app; fn run() { do(bind) { let let = (); let } }",
+            "module app; fn run() { do(bind) { let let <- (); let } }",
+            "module app; fn run() { do(bind) { let .(let: ., other: .) <- (); let } }",
         ] {
             let module = crate::pass::parser::parse(source).unwrap();
             let cached = dump_with_module(source, &module).unwrap();
@@ -2679,12 +2725,13 @@ mod tests {
     fn tooling_bridge_cached_module_matches_probe_with_keyword_shaped_names() {
         let source = "module keyword/module;\n\
             import other/host as package;\n\
+            import syntax(macro scope, macro if as branch_if);\n\
             host type Text role(str);\n\
-            pub pure fn module(module: .) -> . { let build = module; scope! { build } }\n\
-            fn branch(if: .) -> . { if! .t { if } else { module(if) } }\n\
+            pub pure fn module(module: .) -> . { let build = module; scope { build } }\n\
+            fn branch(if: .) -> . { branch_if(.t) { if } else { module(if) } }\n\
             newtype Box : . { pub(keyword/module) constructor constructor; projector projector; };\n\
             pub(keyword/module) rec newtype Ring : . { constructor ring; projector unring; };\n\
-            elab macro : . -> . { captures helper.impl; impl(fills) helper.fills; };\n\
+            macro macro : . -> . { captures helper.impl; impl(fills) helper.fills; };\n\
             labels { reused: . }; labels { reused: _ };";
         let module = crate::pass::parser::parse(source).expect("ordinary contextual names");
         let probed = dump(source).unwrap();
@@ -2709,8 +2756,8 @@ mod tests {
         assert_eq!(at("module(module", 7), TokenKind::VariableParameter);
         assert_eq!(at("= module", 2), TokenKind::Identifier);
         assert_eq!(at("let build", 0), TokenKind::KeywordDeclaration);
-        assert_eq!(at("scope! {", 0), TokenKind::KeywordElaborator);
-        assert_eq!(at("if! .t", 0), TokenKind::KeywordElaborator);
+        assert_eq!(at("scope {", 0), TokenKind::EntityNameMacroReference);
+        assert_eq!(at("branch_if(.t)", 0), TokenKind::EntityNameMacroReference);
         assert_eq!(at("{ if }", 2), TokenKind::Identifier);
         assert_eq!(
             at("constructor constructor", 0),
@@ -2821,10 +2868,10 @@ mod tests {
     #[test]
     #[cfg(feature = "repl-core")]
     fn tooling_bridge_repl_fragment_uses_expression_ast_and_shifts_exact_spans() {
-        let expression = ".(module: .) { scope! { module } }";
+        let expression = ".(module: .) { scope { module } }";
         let source = format!(":normalize {expression}");
         let offset = ":normalize ".len();
-        let tokens = dump_repl_input(&source, offset, None).unwrap();
+        let tokens = dump_repl_input(&source, offset, None, None).unwrap();
         let expression_tokens = dump(expression).unwrap();
         let shifted = tokens
             .into_iter()
@@ -2844,8 +2891,28 @@ mod tests {
         assert!(
             shifted
                 .iter()
-                .any(|token| token.kind == TokenKind::KeywordElaborator)
+                .any(|token| token.kind == TokenKind::EntityNameFunctionReference)
         );
+    }
+
+    #[test]
+    fn self_harness_doc_tokens_use_module_end_scope_and_exact_comment_ranges() {
+        let source = "module app;\n/// ```kio {@}\n/// later(()); (.(later: . -> .) { later(()) })(.(x: .) { x })\n/// ```\nfn early() { later(()) }\nmacro later : . -> . { impl implementation; };";
+        let tokens = dump(source).unwrap();
+        let calls: Vec<_> = tokens
+            .iter()
+            .filter(|token| token.kind == TokenKind::EntityNameMacroReference)
+            .collect();
+        assert_eq!(calls.len(), 1, "{tokens:?}");
+        assert_eq!(
+            calls[0].span.start as usize,
+            source.find("later(());").unwrap()
+        );
+        assert_eq!(
+            &source[calls[0].span.start as usize..calls[0].span.end as usize],
+            "later"
+        );
+        assert!(calls[0].in_documentation);
     }
 
     #[test]
@@ -3027,7 +3094,7 @@ mod tests {
               foldr Box.push helpers.empty; \
               finalize helpers.Box.finish; \
             }; \
-            elab demo : . -> . { impl helper.run; };";
+            macro demo : . -> . { impl helper.run; };";
         let classified = dump(source).expect("token dump");
 
         for leaf in ["local", "empty", "push", "finish", "run"] {
@@ -3147,12 +3214,12 @@ mod tests {
 
     #[test]
     fn flat_keyword_inventory_does_not_invent_incomplete_declarations() {
-        let source = "fn newtype type equiv elab module";
+        let source = "fn newtype type equiv macro module";
         let classified = dump(source).expect("lexical fallback token dump");
 
         for (name, kind) in [
             ("newtype", TokenKind::EntityNameFunction),
-            ("elab", TokenKind::KeywordDeclaration),
+            ("macro", TokenKind::KeywordDeclaration),
         ] {
             let token = classified
                 .iter()
@@ -3213,7 +3280,7 @@ mod tests {
     #[test]
     fn unknown_idents_classify_as_identifier() {
         // Anything not in the keyword table is a plain identifier —
-        // `case` retired as a contextual keyword when `match!` clauses
+        // `case` retired as a contextual keyword when `match` clauses
         // became ordinary expressions of function type, so it lexes
         // as a plain ident now.
         let got = dumped("foo Bar _baz qux_2 typename as target rec role constructor case");
@@ -3598,152 +3665,82 @@ mod tests {
     }
 
     #[test]
-    fn representative_elaborator_bang_calls_fuse_into_one_keyword_elaborator() {
-        // Contiguous identifier-plus-bang tokens fuse into one
-        // `keyword.elaborator` span covering both bytes. This loop samples
-        // the elaborator names used across the corpus.
-        for src in [
-            "iso!",
-            "into!",
-            "onto!",
-            "align!",
-            "ease!",
-            "atom!",
-            "reorder_sum!",
-            "reorder_prod!",
-            "narrow_sum!",
-            "narrow_prod!",
-            "widen_sum!",
-            "widen_prod!",
-            "flatten_sum!",
-            "flatten_prod!",
-            "one_sum!",
-            "one_prod!",
-            "fit!",
-            "match!",
-            "derive!",
-        ] {
-            let got = dumped(src);
-            assert_eq!(got.len(), 1, "for {src:?}: got {got:?}");
-            let (start, end, kind) = got[0];
-            assert_eq!(start, 0);
-            assert_eq!(end as usize, src.len());
-            assert_eq!(kind, "keyword.elaborator");
-        }
-    }
-
-    #[test]
-    fn native_bare_bang_ufcs_preserves_separate_arrow_tokens() {
-        let src = "module x;\n\
-                   fn run(r: ., s: .) -> . {\n\
-                     transform!.<r;\n\
-                     transform!.<<r;\n\
-                     r.>transform!.>next;\n\
-                     s.>transform!.>>next;\n\
-                     ()\n\
-                   }";
-        let interesting = dumped_text(src)
-            .into_iter()
-            .filter(|(text, _)| matches!(*text, "transform!" | ".>" | ".>>" | ".<" | ".<<"))
-            .collect::<Vec<_>>();
-        assert_eq!(
-            interesting,
-            [
-                ("transform!", "keyword.elaborator"),
-                (".<", "operator.builtin"),
-                ("transform!", "keyword.elaborator"),
-                (".<<", "operator.builtin"),
-                (".>", "operator.builtin"),
-                ("transform!", "keyword.elaborator"),
-                (".>", "operator.builtin"),
-                (".>", "operator.builtin"),
-                ("transform!", "keyword.elaborator"),
-                (".>>", "operator.builtin"),
-            ]
-        );
-
-        assert_eq!(
-            dumped("foo!=bar"),
-            [
-                (0, 3, "identifier"),
-                (3, 5, "operator.user"),
-                (5, 8, "identifier"),
-            ],
-            "lexical fallback must not guess that a bang-led user operator is an elaborator"
-        );
-    }
-
-    #[test]
-    fn compact_variadic_closing_bang_does_not_fuse_with_element_name() {
-        let source = "module app; import syntax(varop [! !]); \
-            fn run(x: .) { [!x!]; [![!x!]!]; ([!x!]); [!x.>tail!]; [! helper!(x) !] }";
+    fn macro_calls_follow_imports_shadowing_grouping_and_source_order() {
+        let source = "module app; import syntax(macro source as selected, macro x1); \
+            fn outer(x: .) { selected(x); (selected)(x); \
+                (.(selected: . -> .) { selected(()) })(selected(x)); \
+                .x. { x1(()) }; selected(x) } \
+            fn before() { later(()) } \
+            macro later : . -> . { impl implementation; }; \
+            fn after() { later(()) }";
         let classified = dumped_text(source);
         assert_eq!(
             classified
                 .iter()
-                .filter(|(text, _)| *text == "x")
-                .copied()
+                .filter(|(text, _)| *text == "selected")
+                .map(|(_, kind)| *kind)
                 .collect::<Vec<_>>(),
             [
-                ("x", "variable.parameter"),
-                ("x", "identifier"),
-                ("x", "identifier"),
-                ("x", "identifier"),
-                ("x", "identifier"),
-                ("x", "identifier")
+                "entity.name.macro",
+                "entity.name.macro",
+                "entity.name.macro",
+                "variable.parameter",
+                "entity.name.function",
+                "entity.name.macro",
+                "entity.name.macro"
             ]
         );
-        assert!(!classified.iter().any(|(text, _)| *text == "x!"));
-        assert!(classified.contains(&("helper!", "keyword.elaborator")));
-        assert!(classified.contains(&("tail", "entity.name.function")));
+        assert_eq!(
+            classified
+                .iter()
+                .filter(|(text, _)| *text == "x1")
+                .map(|(_, kind)| *kind)
+                .collect::<Vec<_>>(),
+            ["entity.name.macro", "entity.name.function"]
+        );
+        assert_eq!(
+            classified
+                .iter()
+                .filter(|(text, _)| *text == "later")
+                .map(|(_, kind)| *kind)
+                .collect::<Vec<_>>(),
+            [
+                "entity.name.function",
+                "entity.name.macro",
+                "entity.name.macro"
+            ]
+        );
     }
 
     #[test]
-    fn elaborator_bang_call_does_not_fuse_with_intervening_space() {
-        // `iso !` — the space breaks contiguity, so we don't fuse.
-        // `iso` becomes plain identifier and `!` the operator.builtin
-        // standalone.
-        let got = dumped("iso !");
-        assert_eq!(got, vec![(0, 3, "identifier"), (4, 5, "operator.builtin"),]);
+    fn macro_import_edit_retracts_call_refinement() {
+        let source = "module app; import syntax(macro build as make); fn run() { make(()) }";
+        let edited = source.replace("macro build", "build");
+        assert!(dumped_text(source).contains(&("make", "entity.name.macro")));
+        assert!(
+            !dumped_text(&edited)
+                .iter()
+                .any(|(_, kind)| *kind == "entity.name.macro")
+        );
+        assert!(dumped_text(&edited).contains(&("make", "entity.name.function")));
     }
 
     #[test]
-    fn arbitrary_idents_followed_by_bang_fuse_as_elaborators() {
-        let got = dumped("foo!");
-        assert_eq!(got, vec![(0, 4, "keyword.elaborator")]);
-
-        let got = dumped("else!");
-        assert_eq!(got, vec![(0, 5, "keyword.elaborator")]);
-    }
-
-    #[test]
-    fn bang_fusion_uses_the_exact_value_reference_word_role() {
-        for source in ["foo1_bar2!", "_foo__!", "__foo_bar!", "___foo_bar__!"] {
-            assert_eq!(
-                dumped(source),
-                [(0, source.len() as u32, "keyword.elaborator")],
+    fn bang_operator_markers_remain_separate_from_value_names() {
+        for source in ["foo!", "else!", "foo !", "foo!=bar"] {
+            assert!(
+                dumped(source)
+                    .iter()
+                    .all(|(_, _, kind)| *kind != "entity.name.macro"),
                 "{source}"
             );
         }
-        for source in [
-            "Foo!",
-            "_Foo!",
-            "__Foo!",
-            "fooBar!",
-            "a1b!",
-            "foo_1!",
-            "foo__bar!",
-            "_!",
-        ] {
-            let tokens = dumped(source);
-            assert_eq!(tokens.len(), 2, "{source}: {tokens:?}");
-            assert!(
-                tokens
-                    .iter()
-                    .all(|(_, _, kind)| *kind != "keyword.elaborator"),
-                "{source}: {tokens:?}"
-            );
-        }
+        let source = "module app; import syntax(varop [! !], macro helper); \
+            fn run(x: .) { [!x!]; [![!x!]!]; ([!x!]); [!x.>tail!]; [! helper(x) !] }";
+        let classified = dumped_text(source);
+        assert!(!classified.iter().any(|(text, _)| *text == "x!"));
+        assert!(classified.contains(&("helper", "entity.name.macro")));
+        assert!(classified.contains(&("tail", "entity.name.function")));
     }
 
     #[test]
@@ -4286,12 +4283,9 @@ mod tests {
 
     #[test]
     fn parse_failure_falls_back_to_lexical() {
-        // A standalone elaborator bang call doesn't parse as a regular
-        // module, so the dump falls back to dump_lexical and produces the
-        // lex-only result.
-        let src = "iso!";
-        let toks = dumped(src);
-        assert_eq!(toks, vec![(0, 4, "keyword.elaborator")]);
+        // An importless name carries no macro authority.
+        let toks = dumped("iso");
+        assert_eq!(toks, vec![(0, 3, "identifier")]);
     }
 
     #[test]

@@ -156,15 +156,15 @@ fn type_parameter_argument_in_a_value_slot_still_rejects() {
 
 #[cfg(feature = "surface")]
 #[test]
-fn type_parameter_call_argument_fallback_covers_ufcs_and_bang_calls() {
+fn type_parameter_call_argument_fallback_covers_ufcs_and_macro_calls() {
     let source = "module main;
         import __comptime__;
         pure fn implementation(ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
-        elab identity : [A] A -> A { impl implementation; };
+        macro identity : [A] A -> A { impl implementation; };
         fn ordinary[A](value: A) -> A { value }
         fn ufcs[A](value: A) -> A { value.>ordinary(A) }
-        fn bang[A](value: A) -> A { identity!(A, value) }
-        fn bang_ufcs[A](value: A) -> A { value.>identity!(A) }";
+        fn macro_call[A](value: A) -> A { identity(A, value) }
+        fn macro_ufcs[A](value: A) -> A { value.>identity(A) }";
     full_check(&[("main.kio", source)]).expect("all call paths defer type arguments to typing");
 }
 

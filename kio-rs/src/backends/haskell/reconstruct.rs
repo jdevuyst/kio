@@ -588,7 +588,7 @@ mod tests {
         let package = routed_package(&[
             (
                 "control.kio",
-                include_str!("../../../../test-data/poc/elab/workdir/control.kio"),
+                include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
             ),
             ("testapi.kio", "module testapi; host type Bool role(bool);"),
             (
@@ -598,9 +598,9 @@ mod tests {
             ("decoy.kio", "module decoy; pub labels Card = { flag: . };"),
             (
                 "consumer.kio",
-                "module consumer; import control(if); import testapi(default Bool); import decoy as selected; \
+                "module consumer; import control(macro if); import testapi(default Bool); import decoy as selected; \
                  import selected as chosen; fn choose(card: chosen.Card) -> Bool { \
-                 if! card.?{chosen.flag} { .t } else { .f } }",
+                 if (card.?{chosen.flag}) { .t } else { .f } }",
             ),
         ]);
         let definition = function(&package, "consumer", "choose");

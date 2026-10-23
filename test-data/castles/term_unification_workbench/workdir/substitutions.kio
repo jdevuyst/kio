@@ -1,9 +1,9 @@
 module substitutions;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as lists;
 import list/list as traversal;
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import terms as term;
 import testapi(I32, String);
 import testapi/arith as arith;
@@ -18,9 +18,9 @@ pub type Substitution = lists.List(Binding);
 pub fn empty() -> Substitution { lists.nil(_) }
 
 pub fn lookup(bindings: Substitution, id: I32) -> term.Term | . {
-  match! traversal.find(.(binding) { arith.eq_i32(binding.?{key}, id) }, bindings) {
-    .(binding: Binding) { binding.?{replacement}.>widen_sum! };
-    .(_missing: .) { ().>widen_sum! }
+  match(traversal.find(.(binding) { arith.eq_i32(binding.?{key}, id) }, bindings)) {
+    .(binding: Binding) { binding.?{replacement}.>widen_sum };
+    .(_missing: .) { ().>widen_sum }
   }
 }
 
@@ -28,15 +28,15 @@ labels Frame = { symbol: I32, completed: lists.List(term.Term), remaining: lists
 
 rec(loop) {
   fn descend(bindings: Substitution, original: term.Term, parents: lists.List(Frame)) -> term.Term {
-    match! original.>term.Term.unwrap {
+    match(original.>term.Term.unwrap) {
       .(v: term.Variable) {
-        match! lookup(bindings, v.>term.Variable.get) {
+        match(lookup(bindings, v.>term.Variable.get)) {
           .(replacement: term.Term) { recur ascend(bindings, replacement, parents) };
           .(_missing: .) { recur ascend(bindings, original, parents) }
         }
       };
       .(symbol: I32, arguments: lists.List(term.Term)) {
-        match! lists.uncons(arguments) {
+        match(lists.uncons(arguments)) {
           .(first: term.Term, rest: lists.List(term.Term)) {
             recur descend(
             , bindings
@@ -50,10 +50,10 @@ rec(loop) {
     }
   };
   fn ascend(bindings: Substitution, value: term.Term, parents: lists.List(Frame)) -> term.Term {
-    match! lists.uncons(parents) {
+    match(lists.uncons(parents)) {
       .(frame: Frame, outer: lists.List(Frame)) {
         let completed = lists.cons(value, frame.?{completed});
-        match! lists.uncons(frame.?{remaining}) {
+        match(lists.uncons(frame.?{remaining})) {
           .(first: term.Term, rest: lists.List(term.Term)) {
             recur descend(
             , bindings

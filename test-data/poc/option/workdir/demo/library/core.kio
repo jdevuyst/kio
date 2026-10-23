@@ -2,11 +2,16 @@
 /// A ready-to-use library module for your own Kio package.
 module library/core;
 
-import library/elab/match(match);
-import library/elab/spine_elaborators(flatten_sum, narrow_sum, one_sum, widen_sum);
+import library/macros/match(macro match);
+import library/macros/spine_macros(
+, macro flatten_sum
+, macro narrow_sum
+, macro one_sum
+, macro widen_sum
+);
 
 // `Option(A)` is the native sum `Present(A) | .`, not a nominal wrapper, so
-// `match!` / `widen_sum!` / `narrow_sum!` / `flatten_sum!` work on it
+// `match` / `widen_sum` / `narrow_sum` / `flatten_sum` work on it
 // directly. Labeling the present arm — rather than using a bare `A | .` —
 // restores the "this `A` is the present case" signal a reader wants at a
 // callsite while keeping `Option(A)` a genuine sum.
@@ -32,12 +37,12 @@ pub type Option[A] = Present(A) | .;
 // Constructors
 // =====================================================================
 /// `some(x)` is the present case carrying `x`: `{present = x}` builds the
-/// labeled value and `widen_sum!` injects it as the left arm of the
+/// labeled value and `widen_sum` injects it as the left arm of the
 /// `Present(A) | .` sum (target inferred from the return type).
-pub fn some[A](x: A) -> Option(A) { widen_sum!({present = x}) }
+pub fn some[A](x: A) -> Option(A) { widen_sum({present = x}) }
 
 /// `none(A)` is the absent case - the bare `()` arm on the right.
-pub fn none[A] -> Option(A) { widen_sum!(()) }
+pub fn none[A] -> Option(A) { widen_sum(()) }
 
 // =====================================================================
 // Eliminators
@@ -48,7 +53,7 @@ pub fn none[A] -> Option(A) { widen_sum!(()) }
 /// eliminator could be written in terms of it; the module spells them
 /// out directly so each reduces cleanly under `kio test`.
 pub fn option[A][B](default: B, f: A -> B, m: Option(A)) -> B {
-  match! m {
+  match(m) {
     (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { default })
   }
 }
@@ -56,7 +61,7 @@ pub fn option[A][B](default: B, f: A -> B, m: Option(A)) -> B {
 /// `from_option(default, m)` projects the present payload, or returns
 /// `default` when absent.
 pub fn from_option[A](default: A, m: Option(A)) -> A {
-  match! m {
+  match(m) {
     (.(p: Present(A)) { Present.get(p) }, .(_u: .) { default })
   }
 }
@@ -66,14 +71,14 @@ pub fn from_option[A](default: A, m: Option(A)) -> A {
 // =====================================================================
 /// Transforms present payloads and leaves absent options unchanged.
 pub fn map[A][B](f: A -> B, m: Option(A)) -> Option(B) {
-  match! m {
+  match(m) {
     (.(p: Present(A)) { some(f(Present.get(p))) }, .(_u: .) { none(B) })
   }
 }
 
 /// `bind` (monadic `>>=`) chains an `A -> Option(B)` over `Option(A)`.
 pub fn bind[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) {
-  match! m {
+  match(m) {
     (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { none(B) })
   }
 }
@@ -97,7 +102,7 @@ pub fn then[A][B](m: Option(A), n: Option(B)) -> Option(B) {
 /// `or_else(m, alt)` keeps `m` when it is present, falling back to the
 /// alternative `alt` when `m` is absent.
 pub fn or_else[A](m: Option(A), alt: Option(A)) -> Option(A) {
-  match! m {
+  match(m) {
     (.(_p: Present(A)) { m }, .(_u: .) { alt })
   }
 }
@@ -111,14 +116,14 @@ pub fn and_then[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) { bind(m, f)
 // =====================================================================
 /// `to_sum(m)` drops the `present` label, yielding the bare `A | .`.
 pub fn to_sum[A](m: Option(A)) -> A | . {
-  match! m {
-    (.(p: Present(A)) { widen_sum!(Present.get(p), A | .) }, .(_u: .) { widen_sum!((), A | .) })
+  match(m) {
+    (.(p: Present(A)) { widen_sum(Present.get(p), A | .) }, .(_u: .) { widen_sum((), A | .) })
   }
 }
 
 /// `from_sum(s)` re-labels a bare `A | .` as an `Option(A)`.
 pub fn from_sum[A](s: A | .) -> Option(A) {
-  match! s {
+  match(s) {
     (.(v: A) { some(v) }, .(_u: .) { none(A) })
   }
 }

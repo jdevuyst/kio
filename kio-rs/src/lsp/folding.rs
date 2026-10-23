@@ -162,7 +162,7 @@ mod tests {
         let source = concat!(
             "module pkg/main;\n",
             "pub fn f(x: Bool) -> . {\n",
-            "    let r = if true {\n",
+            "    let r = if(true) {\n",
             "        ()\n",
             "    } else {\n",
             "        ()\n",

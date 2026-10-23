@@ -19,7 +19,7 @@
 //! Two colour palettes, one classifier. [`Palette::Ansi`] keeps the
 //! original small 8-colour mapping (legible on any colour terminal,
 //! the universal fallback). [`Palette::TrueColor`] un-collapses the
-//! classifier's finer kinds — declaration / control / elaborator keywords
+//! classifier's finer kinds — declaration / control keywords and macro names
 //! get distinct hues, type names diverge from module paths, bracket
 //! and separator punctuation is de-emphasised rather than left
 //! uncoloured — using a One-Dark-derived 24-bit palette plus italic /
@@ -199,7 +199,8 @@ impl Palette {
             | TokenKind::CommentDocDirective
             | TokenKind::CommentDocFence
             | TokenKind::KeywordDeclaration
-            | TokenKind::KeywordElaborator
+            | TokenKind::EntityNameMacro
+            | TokenKind::EntityNameMacroReference
             | TokenKind::LiteralBool => Style::new().fg(Color::Magenta),
             // Comments — dim.
             TokenKind::CommentLine | TokenKind::CommentDoc => Style::new().dimmed(),
@@ -254,8 +255,10 @@ impl Palette {
             | TokenKind::CommentDocFence => Style::new().fg(Color::Rgb(198, 120, 221)),
             // Declaration keywords — gold.
             TokenKind::KeywordDeclaration => Style::new().fg(Color::Rgb(229, 192, 123)),
-            // Elaborator keywords — teal.
-            TokenKind::KeywordElaborator => Style::new().fg(Color::Rgb(86, 182, 194)),
+            // Macro names — teal.
+            TokenKind::EntityNameMacro | TokenKind::EntityNameMacroReference => {
+                Style::new().fg(Color::Rgb(86, 182, 194))
+            }
             // Boolean literals — orange.
             TokenKind::LiteralBool => Style::new().fg(Color::Rgb(209, 154, 102)),
             // String literals — green.
@@ -313,7 +316,8 @@ impl Palette {
             | TokenKind::CommentDocDirective
             | TokenKind::CommentDocFence
             | TokenKind::KeywordDeclaration
-            | TokenKind::KeywordElaborator
+            | TokenKind::EntityNameMacro
+            | TokenKind::EntityNameMacroReference
             | TokenKind::LiteralBool => "\x1b[35m",
             // Comments — dim.
             TokenKind::CommentLine | TokenKind::CommentDoc => "\x1b[2m",
@@ -368,9 +372,11 @@ impl Palette {
             // Declaration keywords (`fn` / `module` / `pub` / …) —
             // gold, distinct from control flow.
             TokenKind::KeywordDeclaration => "\x1b[38;2;229;192;123m",
-            // Elaborator keywords (`iso!` / `reorder_*` / `fit!` / …) —
+            // Macro names (`iso` / `reorder_*` / `fit` / …) —
             // teal, distinct again.
-            TokenKind::KeywordElaborator => "\x1b[38;2;86;182;194m",
+            TokenKind::EntityNameMacro | TokenKind::EntityNameMacroReference => {
+                "\x1b[38;2;86;182;194m"
+            }
             // Boolean literals — orange.
             TokenKind::LiteralBool => "\x1b[38;2;209;154;102m",
             // String literals — green.
@@ -385,7 +391,7 @@ impl Palette {
             TokenKind::EntityNameFunction
             | TokenKind::EntityNameFunctionReference
             | TokenKind::CommentDocReference => "\x1b[38;2;97;175;239m",
-            // Type definition names — teal (paired with elaborator kinds,
+            // Type definition names — teal (paired with macro kinds,
             // both type-flavoured).
             TokenKind::EntityNameType => "\x1b[38;2;86;182;194m",
             // Module path segments — foreground-grey, underline, so a
@@ -423,6 +429,18 @@ impl Palette {
 /// always a presentational nicety, never load-bearing.
 pub fn highlight(src: &str, palette: Palette) -> String {
     render(src, palette, &BracketEmphasis::none())
+}
+
+/// Render caller-classified source without discarding its surrounding scope.
+pub(crate) fn highlight_classified(
+    src: &str,
+    palette: Palette,
+    tokens: &[ClassifiedToken],
+) -> String {
+    if palette == Palette::Plain {
+        return src.to_owned();
+    }
+    render_tokens(src, palette, &BracketEmphasis::none(), tokens)
 }
 
 /// Highlight a standalone type rendered by the REPL through the type grammar,
@@ -466,7 +484,28 @@ pub fn highlight_input(src: &str, pos: usize, palette: Palette) -> String {
     if palette == Palette::Plain {
         return src.to_owned();
     }
-    let Ok(tokens) = repl_display_tokens(src, None) else {
+    let Ok(tokens) = repl_display_tokens(src, None, None) else {
+        return src.to_owned();
+    };
+    let emphasis = bracket_emphasis_at_tokens(src, pos, &tokens);
+    render_tokens(src, palette, &emphasis, &tokens)
+}
+
+/// Highlight browser or terminal input in the current session's lexical scope.
+pub fn highlight_input_in_session(
+    src: &str,
+    pos: usize,
+    palette: Palette,
+    names: &super::completion::NameSet,
+) -> String {
+    if palette == Palette::Plain {
+        return src.to_owned();
+    }
+    let Ok(tokens) = repl_display_tokens(
+        src,
+        names.expression_parse_context.as_deref(),
+        names.expression_module.as_deref(),
+    ) else {
         return src.to_owned();
     };
     let emphasis = bracket_emphasis_at_tokens(src, pos, &tokens);
@@ -480,9 +519,10 @@ fn display_tokens(src: &str) -> Result<Vec<ClassifiedToken>, crate::error::Error
 fn repl_display_tokens(
     src: &str,
     context: Option<&crate::pass::parser::ExpressionParseContext>,
+    module: Option<&crate::ast::Module<crate::ast::Surface>>,
 ) -> Result<Vec<ClassifiedToken>, crate::error::Error> {
     if let Some(expression_start) = super::completion::expression_input_start(src) {
-        return crate::tokens::dump_repl_input(src, expression_start, context);
+        return crate::tokens::dump_repl_input(src, expression_start, context, module);
     }
     dump(src)
 }
@@ -525,7 +565,7 @@ fn bracket_emphasis_style(is_match: bool) -> nu_ansi_term::Style {
 /// behaviour.
 #[cfg(feature = "repl")]
 pub fn styled_input(src: &str, pos: usize, palette: Palette) -> reedline::StyledText {
-    styled_input_with_context(src, pos, palette, None)
+    styled_input_with_context(src, pos, palette, None, None)
 }
 
 #[cfg(feature = "repl")]
@@ -534,6 +574,7 @@ pub(crate) fn styled_input_with_context(
     pos: usize,
     palette: Palette,
     context: Option<&crate::pass::parser::ExpressionParseContext>,
+    module: Option<&crate::ast::Module<crate::ast::Surface>>,
 ) -> reedline::StyledText {
     use nu_ansi_term::Style;
     use reedline::StyledText;
@@ -543,7 +584,7 @@ pub(crate) fn styled_input_with_context(
         styled.push((Style::new(), src.to_owned()));
         return styled;
     }
-    let tokens = match repl_display_tokens(src, context) {
+    let tokens = match repl_display_tokens(src, context, module) {
         Ok(t) => t,
         // Lexing failed — emit the raw text as one unstyled segment.
         Err(_) => {
@@ -908,7 +949,7 @@ mod tests {
 
     #[test]
     fn truecolor_un_collapses_keyword_classes() {
-        // The 8-colour palette maps control / declaration / elaborator
+        // The 8-colour palette maps control / declaration / macro
         // keywords to one magenta; truecolor gives each its own hue.
         let control = Palette::truecolor()
             .style_for_kind(TokenKind::KeywordControl)
@@ -916,12 +957,12 @@ mod tests {
         let decl = Palette::truecolor()
             .style_for_kind(TokenKind::KeywordDeclaration)
             .expect("declaration keyword is coloured");
-        let elaborator = Palette::truecolor()
-            .style_for_kind(TokenKind::KeywordElaborator)
-            .expect("elaborator keyword is coloured");
+        let macro_style = Palette::truecolor()
+            .style_for_kind(TokenKind::EntityNameMacro)
+            .expect("macro name is coloured");
         assert_ne!(control, decl);
-        assert_ne!(decl, elaborator);
-        assert_ne!(control, elaborator);
+        assert_ne!(decl, macro_style);
+        assert_ne!(control, macro_style);
     }
 
     #[test]
@@ -1084,7 +1125,7 @@ mod tests {
         let all = [
             KeywordControl,
             KeywordDeclaration,
-            KeywordElaborator,
+            EntityNameMacro,
             LiteralBool,
             LiteralString,
             LiteralNumber,

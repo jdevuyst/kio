@@ -17,7 +17,7 @@ fn check(source: &str) -> (i32, String) {
     .unwrap();
     fs::write(
         fixture.path().join("control.kio"),
-        include_str!("../../test-data/poc/elab/workdir/control.kio"),
+        include_str!("../../test-data/poc/macros/workdir/control.kio"),
     )
     .unwrap();
     fs::write(fixture.path().join("main.kio"), source).unwrap();
@@ -39,7 +39,7 @@ fn independent_results_report_the_incoming_expression_as_found() {
         let first_value = first.to_ascii_lowercase();
         let second_value = second.to_ascii_lowercase();
         let source = format!(
-            "module main;\nimport control(if);\ndefault host type Bool role(bool);\nhost type Left;\nhost type Right;\nhost fn left() -> Left;\nhost fn right() -> Right;\nfn caller(c: Bool) {{ let result = if! c {{ {first_value}() }} else {{ {second_value}() }}; () }}\n"
+            "module main;\nimport control(macro if);\ndefault host type Bool role(bool);\nhost type Left;\nhost type Right;\nhost fn left() -> Left;\nhost fn right() -> Right;\nfn caller(c: Bool) {{ let result = if(c) {{ {first_value}() }} else {{ {second_value}() }}; () }}\n"
         );
         let (status, stderr) = check(&source);
         assert_eq!(status, 14, "{stderr}");
@@ -79,7 +79,7 @@ fn ordinary_shared_arguments_keep_their_directional_requirement() {
 #[test]
 fn matching_results_and_arguments_remain_valid() {
     for source in [
-        "module main;\nimport control(if);\ndefault host type Bool role(bool);\nhost type Left;\nhost fn left() -> Left;\nfn caller(c: Bool) { let result = if! c { left() } else { left() }; () }\n",
+        "module main;\nimport control(macro if);\ndefault host type Bool role(bool);\nhost type Left;\nhost fn left() -> Left;\nfn caller(c: Bool) { let result = if(c) { left() } else { left() }; () }\n",
         "module main;\nfn same[A](a: A, b: A) -> A { a }\nfn caller() { same((), ()) }\n",
     ] {
         let (status, stderr) = check(source);

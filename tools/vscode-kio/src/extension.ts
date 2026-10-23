@@ -21,8 +21,8 @@
 //
 // Cross-tokenizer agreement with `kio debug tokens` (the
 // reference) is verified at build time by
-// `ci/checks/orchestrators/highlight-agreement.sh`; this extension just bundles
-// the grammars and wires them into VS Code's API. The highlighting
+// `ci/checks/orchestrators/highlight-agreement.sh`; the extension refines
+// these grammars with source-local macro bindings before painting tokens. The highlighting
 // path runs identically on desktop and web (vscode.dev /
 // github.dev) — no `node:*` imports, WASM loads via the
 // extension's bundled assets. The LSP client (local or remote Node)
@@ -32,6 +32,7 @@
 import * as vscode from "vscode";
 import { Parser, Language, Node, Tree, Edit } from "web-tree-sitter";
 import { docBodies, projectDocNode, docCodeGaps, DocBody, DocSpan } from "./doc-embedded.mjs";
+import { macroScope, type MacroScope } from "./macro-scope.mjs";
 type DocPaint = DocBody & { covered: DocSpan[] };
 
 // Token-kind enum used by the semantic-tokens legend. The order
@@ -39,7 +40,7 @@ type DocPaint = DocBody & { covered: DocSpan[] };
 // must align with `LEGEND.tokenTypes` below.
 const SEMANTIC_KINDS = [
   "keyword", // keyword.control + keyword.declaration
-  "macro", // elaborator names
+  "macro", // macro names
   "type", // type names and references
   "variable", // identifier
   "operator", // operator.builtin + operator.user
@@ -111,8 +112,6 @@ const NODE_KIND: Record<string, SemanticKind> = {
   keyword_equiv: "keyword",
   keyword_constructor: "keyword",
   keyword_projector: "keyword",
-  elaborator_name: "macro",
-  block_head: "macro",
   block_label: "keyword",
   // Module-path segments inside `module a/b;` and import provider paths
   // — surfaced by the structural `module_decl` / `import_decl`
@@ -248,13 +247,13 @@ class KioSemanticTokensProvider
     if (tree === null) return builder.build();
     old?.delete();
     this.trees.set(key, tree);
-    walkTree(tree.rootNode, builder);
+    walkTree(tree.rootNode, builder, undefined, macroScope(tree.rootNode));
     for (const body of docBodies(tree.rootNode)) {
       const embedded = this.embeddedParser.parse(body.source);
       if (embedded !== null) {
         try {
           const paint: DocPaint = { ...body, covered: [] };
-          walkTree(embedded.rootNode, builder, paint);
+          walkTree(embedded.rootNode, builder, paint, macroScope(embedded.rootNode));
           for (const gap of docCodeGaps(body, paint.covered)) builder.push(gap.row, gap.column, gap.end - gap.start, SEMANTIC_KINDS.indexOf("string"), 0);
         }
         finally { embedded.delete(); }
@@ -264,7 +263,8 @@ class KioSemanticTokensProvider
   }
 }
 
-function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocPaint): void {
+function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocPaint, scope?: MacroScope): void {
+  const macros = scope?.heads ?? new Set<number>();
   if (node.type === "doc_kio_code" || node.type === "doc_kio_self_code") {
     if (body !== undefined) emitToken(node, "comment", builder, body);
     return;
@@ -303,6 +303,13 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
   // applies the casing rule directly. The trailing function name
   // is already aliased to `entity_name_function` by the grammar
   // and handled by the default leaf path below.
+  if (node.type === "call_callee" && node.parent?.type === "ERROR") {
+    for (const child of node.children) {
+      if (["identifier", "entity_name_function"].includes(child.type)) emitToken(child, "variable", builder, body);
+      else walkTree(child, builder, body, scope);
+    }
+    return;
+  }
   if (node.type === "call_callee") {
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
@@ -313,10 +320,10 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
         } else if (isExactValueName(child.text)) {
           emitToken(child, "namespace", builder, body);
         } else {
-          walkTree(child, builder, body);
+          walkTree(child, builder, body, scope);
         }
       } else {
-        walkTree(child, builder, body);
+        walkTree(child, builder, body, scope);
       }
     }
     return;
@@ -331,7 +338,7 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
   // leaf-only emit path would skip the alias node and recurse
   // into the unmapped anonymous child, silently dropping the
   // token. Emitting on type-match handles that case cleanly.
-  let kind = NODE_KIND[node.type];
+  let kind = macros.has(node.startIndex) && ["identifier", "entity_name_function"].includes(node.type) ? "macro" as SemanticKind : scope?.functions.has(node.startIndex) && ["identifier", "entity_name_function"].includes(node.type) ? "function" as SemanticKind : NODE_KIND[node.type];
   const parentType = node.parent?.type;
   if (node.type === "keyword_import") {
     kind = parentType !== undefined && ["import_decl", "incomplete_import_decl"].includes(parentType) && node.parent?.firstNamedChild?.id === node.id
@@ -348,7 +355,7 @@ function walkTree(node: Node, builder: vscode.SemanticTokensBuilder, body?: DocP
   }
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
-    if (child !== null) walkTree(child, builder, body);
+    if (child !== null) walkTree(child, builder, body, scope);
   }
 }
 

@@ -1,7 +1,7 @@
 module lru/cache;
 
-import elab/control(if);
 import lru/text as text;
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
@@ -49,7 +49,7 @@ fn victims_array(c: Cache) -> Array(I32) { c.?{victims} }
 fn next(n: I32) -> I32 { add_i32(n, 1) }
 
 pub fn eq_i32(a: I32, b: I32) -> Bool {
-  if! leq_i32(a, b) { leq_i32(b, a) } else { .f }
+  if(leq_i32(a, b)) { leq_i32(b, a) } else { .f }
 }
 
 fn lt_i32(a: I32, b: I32) -> Bool { leq_i32(next(a), b) }
@@ -68,9 +68,9 @@ fn bump_clock(c: Cache) -> I32 {
 }
 
 pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32 {
-  if! leq_i32(limit, i) {
+  if(leq_i32(limit, i)) {
     missing_key()
-  } else if! eq_i32(array_get(keys, i), key) {
+  } else if(eq_i32(array_get(keys, i), key)) {
     i
   } else {
     recur find_key(next(i), limit, key, keys)
@@ -78,9 +78,9 @@ pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32
 }
 
 pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
-  if! leq_i32(limit, i) {
+  if(leq_i32(limit, i)) {
     missing_key()
-  } else if! eq_i32(array_get(keys, i), missing_key()) {
+  } else if(eq_i32(array_get(keys, i), missing_key())) {
     i
   } else {
     recur find_empty_slot(next(i), limit, keys)
@@ -88,9 +88,9 @@ pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
 }
 
 pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array(I32)) -> I32 {
-  if! leq_i32(limit, i) {
+  if(leq_i32(limit, i)) {
     best
-  } else if! lt_i32(array_get(ages, i), array_get(ages, best)) {
+  } else if(lt_i32(array_get(ages, i), array_get(ages, best))) {
     recur find_lru_slot(next(i), limit, i, ages)
   } else {
     recur find_lru_slot(next(i), limit, best, ages)
@@ -201,7 +201,7 @@ pub fn new_cache() -> Cache {
 pub fn get(c: Cache, step: I32, key: I32) -> String {
   let clock = bump_clock(c);
   let slot = find_key(0, array_len(keys_array(c)), key, keys_array(c));
-  if! is_missing(slot) {
+  if(is_missing(slot)) {
     inc_stat(stats_array(c), misses_index());
     render_get_miss(step, key, clock)
   } else {
@@ -214,9 +214,9 @@ pub fn get(c: Cache, step: I32, key: I32) -> String {
 pub fn put(c: Cache, step: I32, key: I32, value: I32) -> String {
   let clock = bump_clock(c);
   let found = find_key(0, array_len(keys_array(c)), key, keys_array(c));
-  if! is_missing(found) {
+  if(is_missing(found)) {
     let empty = find_empty_slot(0, array_len(keys_array(c)), keys_array(c));
-    if! is_missing(empty) {
+    if(is_missing(empty)) {
       let victim = find_lru_slot(1, array_len(keys_array(c)), 0, ages_array(c));
       let old_key = array_get(keys_array(c), victim);
       inc_stat(stats_array(c), evictions_index());

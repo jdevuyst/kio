@@ -37,7 +37,7 @@
 //! blind. The asymmetry — fuzzy completion menu, strict-prefix hints —
 //! is intentional.
 //!
-//! An incomplete input (an unclosed bracket — `:normalize if true {`)
+//! An incomplete input (an unclosed bracket — `:normalize if(true) {`)
 //! suppresses the hint. [`input_is_complete`] is the bracket-balance
 //! predicate; the multi-line session reuses it to drive the validator's
 //! continuation decision, so the two surfaces agree on what "complete"
@@ -141,13 +141,14 @@ impl Highlighter for ReplHighlighter {
     /// the shared [`highlight::styled_input`] classifier, which also
     /// overlays the cursor's bracket match.
     fn highlight(&self, line: &str, cursor: usize) -> StyledText {
-        let context = self
-            .names
-            .lock()
-            .expect("name-set mutex not poisoned")
-            .expression_parse_context
-            .clone();
-        highlight::styled_input_with_context(line, cursor, self.palette, context.as_deref())
+        let names = self.names.lock().expect("name-set mutex not poisoned");
+        highlight::styled_input_with_context(
+            line,
+            cursor,
+            self.palette,
+            names.expression_parse_context.as_deref(),
+            names.expression_module.as_deref(),
+        )
     }
 }
 
@@ -447,7 +448,7 @@ impl Hinter for ReplHinter {
 /// "complete" means. A well-formed single-line command (`:t foo`) has
 /// balanced brackets, so it reports complete and submits on the first
 /// `Enter`; only a command whose argument genuinely opens a bracket —
-/// `:normalize if true {` — continues.
+/// `:normalize if(true) {` — continues.
 pub struct ReplValidator {
     names: Arc<Mutex<NameSet>>,
 }
@@ -547,10 +548,10 @@ mod tests {
     #[test]
     fn route_preserves_trailing_label_replacement_and_keyword_description() {
         let completer = completer_with(NameSet {
-            current_module_src: Some("module app; elab choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }".to_owned()),
+            current_module_src: Some("module app; macro choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }".to_owned()),
             ..NameSet::default()
         });
-        let input = "choose! { () } oth";
+        let input = "choose { () } oth";
         let suggestions = completer.route(input, input.len());
         assert_eq!(suggestions.len(), 1);
         assert_eq!(suggestions[0].value, "otherwise");
@@ -627,7 +628,7 @@ mod tests {
             Palette::truecolor(),
             Arc::new(Mutex::new(NameSet::default())),
         );
-        let styled = hl.highlight("scope! { () }", 0);
+        let styled = hl.highlight("scope { () }", 0);
         assert!(
             styled
                 .buffer
@@ -652,7 +653,65 @@ mod tests {
             "fn x"
         );
         let joined: String = styled.buffer.iter().map(|(_, s)| s.as_str()).collect();
-        assert_eq!(joined, "scope! { () }");
+        assert_eq!(joined, "scope { () }");
+    }
+
+    #[test]
+    fn highlighter_uses_session_scope_and_retracts_after_module_change() {
+        let names = Arc::new(Mutex::new(NameSet {
+            expression_module: Some(Arc::new(
+                crate::pass::parser::parse("module app; import provider(macro build as selected);")
+                    .unwrap(),
+            )),
+            ..Default::default()
+        }));
+        let highlighter = ReplHighlighter::new(Palette::truecolor(), names.clone());
+        let macro_style = Palette::truecolor()
+            .style_for_kind_reedline(crate::tokens::TokenKind::EntityNameMacro)
+            .unwrap();
+        let line = ":normalize .() { selected(()); (.(selected: . -> .) { selected(()) })(.(x: .) { x }) }()";
+        let styled = highlighter.highlight(line, 0);
+        assert_eq!(
+            styled
+                .buffer
+                .iter()
+                .filter(|(style, text)| text == "selected" && *style == macro_style)
+                .count(),
+            1,
+            "{:?}",
+            styled.buffer
+        );
+        let incomplete = highlighter.highlight(":normalize .(selected: . -> .) { selected(", 0);
+        assert!(
+            !incomplete
+                .buffer
+                .iter()
+                .any(|(style, text)| text == "selected" && *style == macro_style),
+            "{:?}",
+            incomplete.buffer
+        );
+        names.lock().unwrap().expression_module = Some(Arc::new(
+            crate::pass::parser::parse("module app; fn selected(x: .) { x }").unwrap(),
+        ));
+        let styled = highlighter.highlight(":normalize selected(())", 0);
+        assert!(
+            !styled
+                .buffer
+                .iter()
+                .any(|(style, text)| text == "selected" && *style == macro_style),
+            "{:?}",
+            styled.buffer
+        );
+        names.lock().unwrap().expression_module = None;
+        let styled = highlighter.highlight(":normalize selected(())", 0);
+        assert!(
+            !styled
+                .buffer
+                .iter()
+                .any(|(style, text)| text == "selected" && *style == macro_style),
+            "{:?}",
+            styled.buffer
+        );
     }
 
     #[test]
@@ -722,6 +781,9 @@ mod tests {
         files.insert(
             root.join("app/syntax.kio"),
             "module app/syntax;\n\
+             import __comptime__;\n\
+             pure fn implementation(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n\
+             pub macro identity : [Source] Source -> Source { impl implementation; };\n\
              pub fn bracket(left: ., right: .) -> . { left }\n\
              pub fn empty() -> . { () }\n\
              pub varop [* *] { foldl bracket empty }\n"
@@ -730,7 +792,7 @@ mod tests {
         files.insert(
             root.join("app/main.kio"),
             "module app/main;\n\
-             import app/syntax(varop [* *]);\n\
+             import app/syntax(varop [* *], macro identity as selected);\n\
              pub fn run() -> . { [* (), () *] }\n"
                 .to_owned(),
         );
@@ -748,6 +810,23 @@ mod tests {
     }
 
     #[test]
+    fn highlighter_preserves_imported_operator_context_with_macro_scope() {
+        let names = Arc::new(Mutex::new(imported_bracket_operator_names()));
+        let highlighter = ReplHighlighter::new(Palette::truecolor(), names);
+        let input = ":normalize selected([* (), () *])";
+        let styled = highlighter.highlight(input, 0);
+        let expected = Palette::truecolor()
+            .style_for_kind_reedline(crate::tokens::TokenKind::EntityNameMacroReference)
+            .unwrap();
+        assert!(
+            styled
+                .buffer
+                .iter()
+                .any(|(style, text)| text == "selected" && *style == expected)
+        );
+    }
+
+    #[test]
     fn validator_completes_single_line_command() {
         assert!(validates_complete(":t foo"));
         assert!(validates_complete(":load pkg/a"));
@@ -762,8 +841,8 @@ mod tests {
 
     #[test]
     fn validator_marks_unclosed_brace_incomplete() {
-        assert!(!validates_complete("if true {"));
-        assert!(!validates_complete(":normalize if true {"));
+        assert!(!validates_complete("if(true) {"));
+        assert!(!validates_complete(":normalize if(true) {"));
     }
 
     #[test]
@@ -849,7 +928,7 @@ mod tests {
 
     #[test]
     fn validator_completes_balanced_multiline() {
-        let balanced = ":normalize if true {\n  ()\n} else {\n  ()\n}";
+        let balanced = ":normalize if(true) {\n  ()\n} else {\n  ()\n}";
         assert!(validates_complete(balanced));
         let long = format!(":t {}", "wrap(".repeat(8) + "x" + &")".repeat(8));
         assert!(validates_complete(&long));
@@ -939,7 +1018,7 @@ mod tests {
             ..NameSet::default()
         };
         let hinter = hinter_with(set);
-        assert!(hint_for(&hinter, ":normalize if! .t {").is_empty());
+        assert!(hint_for(&hinter, ":normalize if(.t) {").is_empty());
         assert!(hint_for(&hinter, ":t foo(x").is_empty());
     }
 
@@ -1136,11 +1215,11 @@ mod tests {
         assert!(input_is_complete(""));
         assert!(input_is_complete(":t foo"));
         assert!(input_is_complete(":t foo(x)"));
-        assert!(input_is_complete(":normalize if true { a } else { a }"));
+        assert!(input_is_complete(":normalize if(true) { a } else { a }"));
         assert!(input_is_complete(
-            ":normalize if true {\n  ()\n} else {\n  ()\n}"
+            ":normalize if(true) {\n  ()\n} else {\n  ()\n}"
         ));
-        assert!(!input_is_complete(":normalize if true {"));
+        assert!(!input_is_complete(":normalize if(true) {"));
         assert!(!input_is_complete(":t foo("));
         assert!(!input_is_complete(":t a[b"));
         assert!(input_is_complete(":t foo)"));

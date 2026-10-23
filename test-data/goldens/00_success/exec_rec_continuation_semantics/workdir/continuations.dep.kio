@@ -4,7 +4,7 @@ source {
   path "../../exec_rec_continuation_resume/workdir/exec_rec_continuation_resume.pkg.kio"
 }
 
-rehost continuations/elab/testapi to elab/testapi;
+rehost continuations/macros/testapi to macros/testapi;
 rehost continuations/testapi to testapi;
 rehost continuations/testapi/arith to testapi/arith;
 rehost continuations/testapi/fmt to testapi/fmt;

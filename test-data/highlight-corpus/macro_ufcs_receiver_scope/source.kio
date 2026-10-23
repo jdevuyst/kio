@@ -1,0 +1,19 @@
+module ufcs_receiver_scope;
+import helpers(macro call);
+
+fn forward(left: ., right: .) {
+  (left, right).>call(());
+  (left, right).>>call(());
+  (left).>call(());
+  ((left, right)).>((call))(())
+}
+
+fn reverse(left: ., right: .) {
+  call(()).<(left, right);
+  call(()).<<(left, right)
+}
+
+fn shadow(call: . -> ., left: ., right: .) {
+  (left, right).>call(());
+  call(()).<(left, right)
+}

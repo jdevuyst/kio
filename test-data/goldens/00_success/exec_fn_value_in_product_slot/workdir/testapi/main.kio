@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/spine_elaborators(one_prod);
+import macros/spine_macros(macro one_prod);
 import testapi(I32, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
@@ -18,7 +18,7 @@ type Bundle[S] = ((I32 & I32) -> I32) & (S -> S);
 fn make_bundle[S](step: S -> S) -> Bundle(S) { (add, step) }
 
 // Project the binary op out of the bundle by its (distinct) type.
-fn plus[S](b: Bundle(S)) -> (I32 & I32) -> I32 { one_prod!(b, (I32 & I32) -> I32) }
+fn plus[S](b: Bundle(S)) -> (I32 & I32) -> I32 { one_prod(b, (I32 & I32) -> I32) }
 
 pub fn main() {
   // Instantiate at `S = I32` with an identity step, then apply the

@@ -2,18 +2,18 @@ module document/commands;
 
 import document/session as session;
 import document/zipper as zipper;
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default Bool);
 import testapi/io as io;
 import testapi/text as text;
 
 fn with_argument(state: session.Session, operation: (session.Session & String) -> session.Session) -> session.Session {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(value: String) {
       io.print(value.>text.string_concat("]\n").>>text.string_concat("  value: ["));
-      if! text.string_eq(value, "") {
+      if(text.string_eq(value, "")) {
         session.error(state, "name must not be empty")
       } else {
         operation(state, value)
@@ -24,13 +24,13 @@ fn with_argument(state: session.Session, operation: (session.Session & String) -
 }
 
 fn rename(state: session.Session, title: String) -> session.Session {
-  session.apply(state, .(cursor: zipper.Cursor) { zipper.rename(cursor, title).>widen_sum! }, .t)
+  session.apply(state, .(cursor: zipper.Cursor) { zipper.rename(cursor, title).>widen_sum }, .t)
 }
 
 fn append(state: session.Session, title: String) -> session.Session {
   session.apply(
   , state
-  , .(cursor: zipper.Cursor) { zipper.append_child(cursor, title).>widen_sum! }
+  , .(cursor: zipper.Cursor) { zipper.append_child(cursor, title).>widen_sum }
   , .t
   )
 }
@@ -45,35 +45,35 @@ fn after(state: session.Session, title: String) -> session.Session {
 
 pub fn execute(state: session.Session, command: String) -> session.Session {
   io.print(command.>text.string_concat("\n").>>text.string_concat("> "));
-  if! text.string_eq(command, "show") {
+  if(text.string_eq(command, "show")) {
     session.show(state)
-  } else if! text.string_eq(command, "where") {
+  } else if(text.string_eq(command, "where")) {
     session.where(state)
-  } else if! text.string_eq(command, "child") {
+  } else if(text.string_eq(command, "child")) {
     session.apply(state, zipper.child, .f)
-  } else if! text.string_eq(command, "next") {
+  } else if(text.string_eq(command, "next")) {
     session.apply(state, zipper.next, .f)
-  } else if! text.string_eq(command, "prev") {
+  } else if(text.string_eq(command, "prev")) {
     session.apply(state, zipper.previous, .f)
-  } else if! text.string_eq(command, "parent") {
+  } else if(text.string_eq(command, "parent")) {
     session.apply(state, zipper.parent, .f)
-  } else if! text.string_eq(command, "root") {
-    session.apply(state, .(cursor: zipper.Cursor) { zipper.root(cursor).>widen_sum! }, .f)
-  } else if! text.string_eq(command, "rename") {
+  } else if(text.string_eq(command, "root")) {
+    session.apply(state, .(cursor: zipper.Cursor) { zipper.root(cursor).>widen_sum }, .f)
+  } else if(text.string_eq(command, "rename")) {
     with_argument(state, rename)
-  } else if! text.string_eq(command, "append") {
+  } else if(text.string_eq(command, "append")) {
     with_argument(state, append)
-  } else if! text.string_eq(command, "before") {
+  } else if(text.string_eq(command, "before")) {
     with_argument(state, before)
-  } else if! text.string_eq(command, "after") {
+  } else if(text.string_eq(command, "after")) {
     with_argument(state, after)
-  } else if! text.string_eq(command, "delete") {
+  } else if(text.string_eq(command, "delete")) {
     session.apply(state, zipper.delete, .t)
-  } else if! text.string_eq(command, "snapshot") {
+  } else if(text.string_eq(command, "snapshot")) {
     with_argument(state, session.snapshot)
-  } else if! text.string_eq(command, "snapshots") {
+  } else if(text.string_eq(command, "snapshots")) {
     session.snapshots(state)
-  } else if! text.string_eq(command, "undo") {
+  } else if(text.string_eq(command, "undo")) {
     session.undo(state)
   } else {
     session.error(state, "unknown command")

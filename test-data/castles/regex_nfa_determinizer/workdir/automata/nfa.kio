@@ -24,8 +24,8 @@ import automata/pattern(
 );
 import automata/seq(List, append, cons, one);
 import automata/symbol(epsilon);
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32);
 import testapi/iter(loop);
@@ -71,9 +71,9 @@ fn postfix(inner: Frag, skip: Bool, again: Bool) -> Frag {
   let s = inner.?{f_next};
   let t = add_i32(s, 1);
   let body = cons(eps(s, inner.?{f_start}), one(eps(inner.?{f_accept}, t)));
-  let bypassed = if! skip { cons(eps(s, t), body) } else { body };
+  let bypassed = if(skip) { cons(eps(s, t), body) } else { body };
   let looped =
-    if! again { cons(eps(inner.?{f_accept}, inner.?{f_start}), bypassed) } else { bypassed };
+    if(again) { cons(eps(inner.?{f_accept}, inner.?{f_start}), bypassed) } else { bypassed };
   frag(s, t, add_i32(s, 2), append(inner.?{f_edges}, looped))
 }
 
@@ -105,7 +105,7 @@ fn parallel(left: Frag, right: Frag) -> Frag {
 /// number going in, and the fragment reports the first free number coming
 /// out.
 rec(loop) fn build(p: Pattern, next: I32) -> Frag {
-  match! p.>Pattern.unpack {
+  match(p.>Pattern.unpack) {
     (
     , .(x: Chr) {
         let t = add_i32(next, 1);

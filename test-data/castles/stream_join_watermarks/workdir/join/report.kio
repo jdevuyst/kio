@@ -1,10 +1,10 @@
 module join/report;
 
-import elab/control(if);
-import elab/match(match);
 import join/model as m;
 import list/core as core;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith as a;
 import testapi/fmt as fmt;
@@ -13,9 +13,9 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 fn same_pair(left: m.Pair, right: m.Pair) -> Bool {
-  if! a.leq_i32(left.?{m.left_id}, right.?{m.left_id}) {
-    if! a.leq_i32(right.?{m.left_id}, left.?{m.left_id}) {
-      if! a.leq_i32(left.?{m.right_id}, right.?{m.right_id}) {
+  if(a.leq_i32(left.?{m.left_id}, right.?{m.left_id})) {
+    if(a.leq_i32(right.?{m.left_id}, left.?{m.left_id})) {
+      if(a.leq_i32(left.?{m.right_id}, right.?{m.right_id})) {
         a.leq_i32(right.?{m.right_id}, left.?{m.right_id})
       } else {
         .f
@@ -29,9 +29,9 @@ fn same_pair(left: m.Pair, right: m.Pair) -> Bool {
 }
 
 fn before(left: m.Pair, right: m.Pair) -> Bool {
-  if! a.lt_i32(left.?{m.left_id}, right.?{m.left_id}) {
+  if(a.lt_i32(left.?{m.left_id}, right.?{m.left_id})) {
     .t
-  } else if! a.lt_i32(right.?{m.left_id}, left.?{m.left_id}) {
+  } else if(a.lt_i32(right.?{m.left_id}, left.?{m.left_id})) {
     .f
   } else {
     a.leq_i32(left.?{m.right_id}, right.?{m.right_id})
@@ -39,9 +39,9 @@ fn before(left: m.Pair, right: m.Pair) -> Bool {
 }
 
 rec(loop) fn insert(pair: m.Pair, sorted: core.List(m.Pair)) -> core.List(m.Pair) {
-  match! core.uncons(sorted) {
+  match(core.uncons(sorted)) {
     .(head: m.Pair, tail: core.List(m.Pair)) {
-      if! before(pair, head) {
+      if(before(pair, head)) {
         core.cons(pair, sorted)
       } else {
         core.cons(head, recur(cont) insert(pair, tail))
@@ -86,7 +86,7 @@ pub fn finish(state: m.State) {
   let unique =
     lists.foldl(
     , .(acc: core.List(m.Pair), pair: m.Pair) {
-        if! lists.elem(same_pair, pair, acc) { acc } else { core.cons(pair, acc) }
+        if(lists.elem(same_pair, pair, acc)) { acc } else { core.cons(pair, acc) }
       }
     , core.nil(_)
     , state.?{m.pairs}
@@ -102,7 +102,7 @@ pub fn finish(state: m.State) {
 }
 
 pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) {
-  if! a.lt_i32(old.?{m.late}, next.?{m.late}) {
+  if(a.lt_i32(old.?{m.late}, next.?{m.late})) {
     io.print(text.string_concat("late rejected ", side));
     number(" id=", event.?{m.id});
     number(" time=", event.?{m.time});
@@ -113,7 +113,7 @@ pub fn admission(side: String, event: m.Event, old: m.State, next: m.State) {
 }
 
 pub fn watermark(side: String, value: I32, old: m.State, next: m.State) {
-  if! a.lt_i32(old.?{m.regressed}, next.?{m.regressed}) {
+  if(a.lt_i32(old.?{m.regressed}, next.?{m.regressed})) {
     io.print(text.string_concat("watermark rejected ", side));
     number(" value=", value);
     io.print("\n")

@@ -1,14 +1,14 @@
 /// This case's loading host: feed each class of malformed image to the loader and print its diagnostic.
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_type, Role, bool_role, i32_role, mk_host_id, mk_role_host_type);
 import lex(Lex_err, lex);
 import loader(Load_outcome, Lr_diag, Lr_image);
 import loader(diag_message, un_load_outcome);
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import parse(P_err, P_ok);
 import parse(parse_toks_scope_fuel, perr_message, scope_nil, scope_push);
 import testapi(I32, String, default Bool);
@@ -20,7 +20,7 @@ import token(Toks);
 // unexpectedly succeeds renders as `(loaded)` so a silently-accepted
 // malformed image fails the case visibly.
 fn diag_of(label: String, out: Load_outcome) -> String {
-  match! un_load_outcome(out) {
+  match(un_load_outcome(out)) {
     (
     , .(_im: Lr_image) { string_concat(label, "(loaded)\n"(String)) }
     , .(d: Lr_diag) {
@@ -35,30 +35,30 @@ fn parser_host_type(local_name: String, role: Role) -> Host_type {
 }
 
 fn resolve_parser_host_type(local_name: String) -> Host_type | String {
-  if! string_eq(local_name, "I32"(String)) {
-    widen_sum!(parser_host_type(local_name, i32_role()), Host_type | String)
+  if(string_eq(local_name, "I32"(String))) {
+    widen_sum(parser_host_type(local_name, i32_role()), Host_type | String)
   } else {
-    widen_sum!(local_name, Host_type | String)
+    widen_sum(local_name, Host_type | String)
   }
 }
 
 fn parser_bool_type() -> Host_type | String {
-  widen_sum!(parser_host_type("Bool"(String), bool_role()), Host_type | String)
+  widen_sum(parser_host_type("Bool"(String), bool_role()), Host_type | String)
 }
 
 // The parser-fuel diagnostic, exercised through the public parser surface
 // with a tiny explicit budget.
 fn fuel_diag() -> String {
-  match! lex("add_i32(1(I32), 2(I32))"(String)) {
+  match(lex("add_i32(1(I32), 2(I32))"(String))) {
     (
     , .(ts: Toks) {
-        match! parse_toks_scope_fuel(
+        match(parse_toks_scope_fuel(
         , ts
         , scope_push("add_i32"(String), scope_nil())
         , resolve_parser_host_type
         , parser_bool_type()
         , 2(I32)
-        ) {
+        )) {
           (
           , .(_t: P_ok) { "(parsed)\n"(String) }
           , .(e: P_err) { string_concat(perr_message(P_err.get(e)), "\n"(String)) }

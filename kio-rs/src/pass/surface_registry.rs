@@ -35,7 +35,7 @@ enum SourceOrigin {
 enum NamedKind {
     Ordinary,
     Literal,
-    Elaborator,
+    Macro,
     GeneratedLabelNominal,
 }
 
@@ -388,12 +388,12 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
                 label_exports.entry(forward.name.clone()).or_insert(label);
             }
             Item::Equiv(_, _) => {}
-            Item::Elaborator(elaborator, _) => {
+            Item::Macro(macro_def, _) => {
                 add_named(
-                    &elaborator.name,
-                    elaborator.name_span,
-                    elaborator.vis.clone(),
-                    NamedKind::Elaborator,
+                    &macro_def.name,
+                    macro_def.name_span,
+                    macro_def.vis.clone(),
+                    NamedKind::Macro,
                     true,
                 );
             }
@@ -716,8 +716,61 @@ fn validate_ordinary_namespace_selection(index: &RegistryIndex) -> Result<(), Lo
             let Some(target) = index.modules.get(&source) else {
                 continue;
             };
-            for name in items.iter().filter_map(ImportItem::as_name) {
-                if target.named_exports.contains_key(name) {
+            for item in items {
+                let ImportItem::Name {
+                    name,
+                    span,
+                    macro_span,
+                    ..
+                } = item
+                else {
+                    continue;
+                };
+                if let Some(declarations) = target.named_exports.get(name) {
+                    let actual_macro = declarations
+                        .iter()
+                        .any(|decl| decl.kind == NamedKind::Macro);
+                    if actual_macro != macro_span.is_some() {
+                        let error = if actual_macro {
+                            Error::import(
+                                *span,
+                                format!("`{name}` in module `{source}` is a macro"),
+                            )
+                            .with_help(format!(
+                                "select its kind explicitly: `import {source}(macro {name});`"
+                            ))
+                            .with_fix(
+                                crate::error::Fix::machine_applicable(
+                                    "Select the macro declaration",
+                                    vec![crate::error::FixEdit::new(
+                                        Span::new(span.start, span.start),
+                                        "macro ",
+                                    )],
+                                ),
+                            )
+                        } else {
+                            Error::import(
+                                *span,
+                                format!("`{name}` in module `{source}` is not a macro"),
+                            )
+                            .with_help(format!(
+                                "import the ordinary declaration with `import {source}({name});`"
+                            ))
+                            .with_fix(
+                                crate::error::Fix::machine_applicable(
+                                    "Select the ordinary declaration",
+                                    vec![crate::error::FixEdit::new(
+                                        macro_span.expect("written macro selection"),
+                                        "",
+                                    )],
+                                ),
+                            )
+                        };
+                        return Err(LocatedError {
+                            file_path: module.file_path.clone(),
+                            error,
+                        });
+                    }
                     continue;
                 }
                 if target.label_exports.contains_key(name) {
@@ -851,9 +904,9 @@ fn named_origins(
                                 NamedKind::Literal => format!(
                                     "`{name}` is imported as a literal alias from `{source}` here"
                                 ),
-                                NamedKind::Elaborator => format!(
-                                    "`{name}` is imported as an elaborator from `{source}` here"
-                                ),
+                                NamedKind::Macro => {
+                                    format!("`{name}` is imported as a macro from `{source}` here")
+                                }
                                 NamedKind::GeneratedLabelNominal => format!(
                                     "`{name}` is imported as a generated label type from `{source}` here"
                                 ),
@@ -956,8 +1009,8 @@ fn named_origins(
                 NamedKind::Literal => {
                     format!("`{}` is declared as a literal alias here", decl.name)
                 }
-                NamedKind::Elaborator => {
-                    format!("`{}` is declared as an elaborator here", decl.name)
+                NamedKind::Macro => {
+                    format!("`{}` is declared as a macro here", decl.name)
                 }
                 NamedKind::GeneratedLabelNominal => format!(
                     "`{}` is generated by a same-module label declaration here",
@@ -1255,7 +1308,7 @@ pub fn validate_package(
     validate_operator_origins(&index)
 }
 
-/// The exact source declaration selected by an ordinary elaborator import.
+/// The exact source declaration selected by an ordinary macro import.
 #[cfg(feature = "surface")]
 #[derive(Clone, Debug)]
 pub(crate) struct BlockDeclaration {
@@ -1305,7 +1358,7 @@ impl PackageBlockScope {
         for (file_path, module) in modules {
             let path = module_path_string(&module.path);
             for item in &module.items {
-                let Item::Elaborator(def, _) = item else {
+                let Item::Macro(def, _) = item else {
                     continue;
                 };
                 let mut labels = BTreeSet::new();
@@ -1320,7 +1373,7 @@ impl PackageBlockScope {
                             file_path: file_path.clone(),
                             error: Error::type_(block.meta.span,
                                 "the first trailing block is unlabeled; later blocks have distinct labels")
-                                .with_secondary(def.name_span, "elaborator declared here"),
+                                .with_secondary(def.name_span, "macro declared here"),
                         });
                     }
                 }
@@ -1343,7 +1396,7 @@ impl PackageBlockScope {
                 let selected = origins
                     .into_iter()
                     .filter_map(|(name, selected)| {
-                        if selected.kind != NamedKind::Elaborator {
+                        if selected.kind != NamedKind::Macro {
                             return None;
                         }
                         let SourceOrigin::Declaration {
@@ -1352,11 +1405,11 @@ impl PackageBlockScope {
                             ..
                         } = selected.origin
                         else {
-                            unreachable!("an elaborator has a source declaration origin")
+                            unreachable!("a macro has a source declaration origin")
                         };
                         let declaration = declarations
                             .get(&(module, declared))
-                            .expect("selected elaborator was projected from this package")
+                            .expect("selected macro was projected from this package")
                             .clone();
                         Some((name, declaration))
                     })
@@ -1869,12 +1922,12 @@ mod tests {
     }
 
     #[test]
-    fn distinct_imported_elaborator_origins_conflict_in_either_import_order() {
-        let first = "module first; pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
-        let second = "module second; pub elab same : [Source] Source -> [Target] Target { impl implementation; };";
+    fn distinct_imported_macro_origins_conflict_in_either_import_order() {
+        let first = "module first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
+        let second = "module second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };";
         for main in [
-            "module main; import first(same); import second(same);",
-            "module main; import second(same); import first(same);",
+            "module main; import first(macro same); import second(macro same);",
+            "module main; import second(macro same); import first(macro same);",
         ] {
             expect_name_error(
                 &[
@@ -1888,10 +1941,10 @@ mod tests {
     }
 
     #[test]
-    fn elaborator_and_function_conflict_in_either_declaration_order() {
+    fn macro_and_function_conflict_in_either_declaration_order() {
         for source in [
-            "module main; fn same() -> . { () } elab same : [Source] Source -> [Target] Target { impl implementation; };",
-            "module main; elab same : [Source] Source -> [Target] Target { impl implementation; }; fn same() -> . { () }",
+            "module main; fn same() -> . { () } macro same : [Source] Source -> [Target] Target { impl implementation; };",
+            "module main; macro same : [Source] Source -> [Target] Target { impl implementation; }; fn same() -> . { () }",
         ] {
             expect_name_error(
                 &[("main.kio", source)],
@@ -1932,11 +1985,11 @@ mod tests {
         let error = validate(&[
             (
                 "first.kio",
-                "module first; pub elab same : [Source] Source -> [Target] Target { impl implementation; };",
+                "module first; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
             ),
             (
                 "second.kio",
-                "module second; pub elab same : [Source] Source -> [Target] Target { impl implementation; };",
+                "module second; pub macro same : [Source] Source -> [Target] Target { impl implementation; };",
             ),
             (
                 "main.kio",
@@ -2297,5 +2350,71 @@ mod tests {
         )
         .expect_err("direct lowering must not select one literal origin");
         assert!(matches!(error.error, Error::NameRes(_)), "got: {error:?}");
+    }
+}
+
+#[cfg(test)]
+mod macro_import_tests {
+    use super::*;
+
+    fn validate(sources: &[(&str, &str)]) -> Result<(), LocatedError> {
+        let modules = sources
+            .iter()
+            .map(|(path, source)| {
+                (
+                    PathBuf::from(path),
+                    crate::pass::parser::parse(source).unwrap(),
+                )
+            })
+            .collect::<Vec<_>>();
+        validate_package(Path::new(""), &modules)
+    }
+
+    #[test]
+    fn qualified_alias_and_macro_binding_conflict_without_body_uses() {
+        let provider = "module provider; pub macro selected: . -> . { impl helper; }";
+        for consumer in [
+            "module consumer; import provider as selected; import provider(macro selected);",
+            "module consumer; import provider(macro selected); import provider as selected;",
+            "module consumer; import provider as selected; macro selected: . -> . { impl helper; }",
+        ] {
+            let error =
+                validate(&[("provider.kio", provider), ("consumer.kio", consumer)]).unwrap_err();
+            assert!(matches!(error.error, Error::NameRes(_)), "{error:?}");
+            assert!(
+                error
+                    .error
+                    .diagnostic()
+                    .message
+                    .contains("more than one source"),
+                "{error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn macro_kind_is_validated_even_without_calls() {
+        let provider =
+            "module provider; pub macro selected: . -> . { impl helper; } pub fn ordinary() { () }";
+        for consumer in [
+            "module consumer; import provider(selected);",
+            "module consumer; import provider(macro ordinary);",
+        ] {
+            let error =
+                validate(&[("provider.kio", provider), ("consumer.kio", consumer)]).unwrap_err();
+            assert!(matches!(error.error, Error::Import(_)), "{error:?}");
+            assert!(
+                error.error.diagnostic().message.contains("macro"),
+                "{error:?}"
+            );
+        }
+        validate(&[
+            ("provider.kio", provider),
+            (
+                "consumer.kio",
+                "module consumer; import provider(macro selected as use_selected, ordinary);",
+            ),
+        ])
+        .unwrap();
     }
 }

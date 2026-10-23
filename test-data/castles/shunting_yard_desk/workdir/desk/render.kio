@@ -5,7 +5,7 @@ import desk/list(List, map);
 import desk/outcome(Failure, fault_of, kind_name, pos_of);
 import desk/step(Step, step_text);
 import desk/token(Placed, placed_text);
-import elab/match(match);
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
@@ -17,7 +17,7 @@ pub fn cat(a: String, b: String) -> String { string_concat(a, b) }
 /// starts from the head rather than from a sentinel empty accumulator — the
 /// separator never has to be trimmed back off.
 rec(loop) fn join_onto(parts: List(String), acc: String) -> String {
-  match! parts.>List.un_list {
+  match(parts.>List.un_list) {
     (
     , .(head: String, rest: List(String)) { recur join_onto(rest, cat(acc, cat(" ", head))) }
     , .(_empty: .) { acc }
@@ -26,7 +26,7 @@ rec(loop) fn join_onto(parts: List(String), acc: String) -> String {
 }
 
 fn join(parts: List(String)) -> String {
-  match! parts.>List.un_list {
+  match(parts.>List.un_list) {
     (.(head: String, rest: List(String)) { join_onto(rest, head) }, .(_empty: .) { "" })
   }
 }

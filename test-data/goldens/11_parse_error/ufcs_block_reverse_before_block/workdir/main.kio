@@ -1,5 +1,5 @@
 module main;
 
-import forms(arrange);
+import forms(macro arrange);
 
-fn subject() -> . & (. & .) { arrange!(()).<() { () } }
+fn subject() -> . & (. & .) { arrange(()).<() { () } }

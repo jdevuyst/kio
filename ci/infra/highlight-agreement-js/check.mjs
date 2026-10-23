@@ -22,6 +22,8 @@ import { fileURLToPath } from "node:url";
 import { checkStructuralHighlighting, checkIncrementalHighlighting } from "./structural-checks.mjs";
 import { checkTextMateHighlighting } from "./textmate-checks.mjs";
 import { checkDocHighlighting, checkDocTextMate, checkDocScannerCosts, checkDocStyling } from "./doc-checks.mjs";
+import { macroScope } from "../../../tools/vscode-kio/src/macro-scope.mts";
+import { checkMacroHighlighting } from "./macro-checks.mjs";
 import { docBodies, projectDocNode, docCodeGaps } from "../../../tools/vscode-kio/src/doc-embedded.mts";
 
 // Both packages ship as CommonJS; ESM-import them through the
@@ -66,8 +68,6 @@ const TS_KIND_MAP = {
   doc_attribute: "comment.doc.attribute",
   doc_literal_fallback: "comment.doc",
   comment_line: "comment.line",
-  elaborator_name: "keyword.elaborator",
-  block_head: "keyword.elaborator",
   block_label: "keyword.control",
   keyword_control: "keyword.control",
   keyword_declaration: "keyword.declaration",
@@ -190,6 +190,10 @@ const EXACT_TYPE_NAME = /^_*[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*$/;
 
 function treeSitterLeaves(root, source, embedded = false) {
   const leaves = [];
+  let context = root;
+  while (context.parent) context = context.parent;
+  const scope = macroScope(context);
+  const macros = scope.heads;
   const stack = [{ node: root, parentType: root.parent?.type ?? null }];
   while (stack.length > 0) {
     const { node, parentType } = stack.pop();
@@ -202,7 +206,7 @@ function treeSitterLeaves(root, source, embedded = false) {
         EXACT_TYPE_NAME.test(source.slice(node.startIndex, node.endIndex));
       leaves.push({
         node,
-        kind: rawCallType ? "entity.name.type" : treeSitterKind(node),
+        kind: macros.has(node.startIndex) && ["identifier", "entity_name_function"].includes(node.type) ? "entity.name.macro" : scope.functions.has(node.startIndex) && ["identifier", "entity_name_function"].includes(node.type) ? "entity.name.function" : rawCallType ? "entity.name.type" : treeSitterKind(node),
       });
       continue;
     }
@@ -258,6 +262,7 @@ function treeSitterTokens(parser, source) {
 }
 
 function treeSitterKind(node) {
+  if (node.type === "entity_name_function" && node.parent?.type === "call_callee" && node.parent.parent?.type === "ERROR") return "identifier";
   const parentType = node.parent?.type;
   if (["ERROR", "unowned_function_head"].includes(parentType) && /^(keyword_|entity_name_|variable_parameter$)/.test(node.type)) {
     return "identifier";
@@ -347,7 +352,7 @@ const TM_SCOPE_MAP = [
   ["string.quoted", "literal.string"],
   ["constant.numeric", "literal.number"],
   ["constant.language.boolean", "literal.bool"],
-  ["entity.name.function.macro.elaborator", "keyword.elaborator"],
+  ["entity.name.macro", "entity.name.macro"],
   ["keyword.control", "keyword.control"],
   ["keyword.declaration.fn-marker", "keyword.declaration"],
   ["keyword.declaration", "keyword.declaration"],
@@ -497,6 +502,7 @@ function checkTextMateLabelFixture(grammar, name, source, tokens) {
 const TEXTMATE_NORMALIZATION = new Set([
   "entity.name.module",
   "entity.name.function",
+  "entity.name.macro",
   "entity.name.type",
   "entity.name.label",
   "variable.parameter",
@@ -742,6 +748,7 @@ async function main() {
   } finally {
     fs.rmdirSync(missingSourceDir);
   }
+  checkMacroHighlighting(treeSitterParser, tmGrammar, fs.readFileSync(new URL("../../../tools/tree-sitter-kio/queries/highlights.scm", import.meta.url), "utf8"));
   checkTextMateLabelSpelling(tmGrammar);
   checkTextMateHighlighting(tmGrammar);
   checkDocHighlighting(treeSitterParser);

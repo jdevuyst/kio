@@ -10,7 +10,7 @@ pure fn identity_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term
   carry(ct, value)
 }
 
-pub elab identity : [Source] Source -> Source { impl identity_impl }
+pub macro identity : [Source] Source -> Source { impl identity_impl }
 
 pub fn id(value: String) -> String { value }
 

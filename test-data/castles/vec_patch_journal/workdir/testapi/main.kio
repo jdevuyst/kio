@@ -7,16 +7,16 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);
 import vec/core(Tree, branch, descend_step, dir_left, dir_right, leaf, leaf_value);
-import vec/elab/control(if);
-import vec/elab/match(match);
-import vec/elab/spine_elaborators(widen_sum);
+import vec/macros/control(macro if);
+import vec/macros/match(macro match);
+import vec/macros/spine_macros(macro widen_sum);
 
-fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A]() -> A | . { widen_sum((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
@@ -56,13 +56,13 @@ fn left(t: Tree(I32)) -> Tree(I32) { descend_step(dir_left(), t) }
 fn right(t: Tree(I32)) -> Tree(I32) { descend_step(dir_right(), t) }
 
 fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
-  if! eq_i32(index, 0) {
+  if(eq_i32(index, 0)) {
     leaf_value(left(left(root)))
-  } else if! eq_i32(index, 1) {
+  } else if(eq_i32(index, 1)) {
     leaf_value(right(left(root)))
-  } else if! eq_i32(index, 2) {
+  } else if(eq_i32(index, 2)) {
     leaf_value(left(right(root)))
-  } else if! eq_i32(index, 3) {
+  } else if(eq_i32(index, 3)) {
     leaf_value(right(right(root)))
   } else {
     absent(I32, ())
@@ -70,22 +70,22 @@ fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
 }
 
 fn in_bounds(index: I32, count: I32) -> Bool {
-  if! leq_i32(0, index) { lt_i32(index, count) } else { .f }
+  if(leq_i32(0, index)) { lt_i32(index, count) } else { .f }
 }
 
 fn at_vec(v: Patch_vec, index: I32) -> I32 | . {
-  if! in_bounds(index, v.?{count}) { leaf_at(v.?{root}, index) } else { absent(I32, ()) }
+  if(in_bounds(index, v.?{count})) { leaf_at(v.?{root}, index) } else { absent(I32, ()) }
 }
 
 fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
   let fresh = leaf(present(value));
-  if! eq_i32(index, 0) {
+  if(eq_i32(index, 0)) {
     branch(branch(fresh, right(left(root))), right(root))
-  } else if! eq_i32(index, 1) {
+  } else if(eq_i32(index, 1)) {
     branch(branch(left(left(root)), fresh), right(root))
-  } else if! eq_i32(index, 2) {
+  } else if(eq_i32(index, 2)) {
     branch(left(root), branch(fresh, right(right(root))))
-  } else if! eq_i32(index, 3) {
+  } else if(eq_i32(index, 3)) {
     branch(left(root), branch(left(right(root)), fresh))
   } else {
     root
@@ -102,7 +102,7 @@ fn set_vec(v: Patch_vec, index: I32, value: I32) -> Patch_vec | . {
 
 fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
   let count = v.?{count};
-  if! lt_i32(count, 4) {
+  if(lt_i32(count, 4)) {
     present(mk_vec(add_i32(count, 1), set_leaf(v.?{root}, count, value)))
   } else {
     absent(Patch_vec, ())
@@ -161,7 +161,7 @@ fn apply_set(st: Journal_state, index: I32, value: I32) -> Journal_state {
 fn fold_checksum(acc: I32, value: I32) -> I32 { add_i32(mul_i32(acc, 17), value) }
 
 rec(loop) fn fold_from(index: I32, acc: I32, v: Patch_vec) -> I32 {
-  if! lt_i32(index, v.?{count}) {
+  if(lt_i32(index, v.?{count})) {
     recur fold_from(
     , add_i32(index, 1)
     , fold_result(acc, .(value: I32) { fold_checksum(acc, value) }, at_vec(v, index))
@@ -188,27 +188,27 @@ fn advance(st: Journal_state) -> Journal_state {
 
 fn apply_step(st: Journal_state) -> Journal_state {
   let step = st.?{step};
-  if! eq_i32(step, 0) {
+  if(eq_i32(step, 0)) {
     apply_set(st, 1, 7)
-  } else if! eq_i32(step, 1) {
+  } else if(eq_i32(step, 1)) {
     apply_read(st, 1)
-  } else if! eq_i32(step, 2) {
+  } else if(eq_i32(step, 2)) {
     apply_set(st, 4, 21)
-  } else if! eq_i32(step, 3) {
+  } else if(eq_i32(step, 3)) {
     apply_set(st, 3, 34)
-  } else if! eq_i32(step, 4) {
+  } else if(eq_i32(step, 4)) {
     checkpoint(st)
-  } else if! eq_i32(step, 5) {
+  } else if(eq_i32(step, 5)) {
     apply_read(st, 4)
-  } else if! eq_i32(step, 6) {
+  } else if(eq_i32(step, 6)) {
     apply_set(st, 0, 2)
-  } else if! eq_i32(step, 7) {
+  } else if(eq_i32(step, 7)) {
     apply_read(st, 0)
-  } else if! eq_i32(step, 8) {
+  } else if(eq_i32(step, 8)) {
     checkpoint(st)
-  } else if! eq_i32(step, 9) {
+  } else if(eq_i32(step, 9)) {
     apply_set(st, 2, 11)
-  } else if! eq_i32(step, 10) {
+  } else if(eq_i32(step, 10)) {
     apply_read(st, 2)
   } else {
     checkpoint(st)
@@ -216,7 +216,7 @@ fn apply_step(st: Journal_state) -> Journal_state {
 }
 
 rec(loop) fn replay(st: Journal_state) -> Journal_state {
-  if! lt_i32(st.?{step}, 12) { recur replay(advance(apply_step(st))) } else { st }
+  if(lt_i32(st.?{step}, 12)) { recur replay(advance(apply_step(st))) } else { st }
 }
 
 fn seed_vector() -> Patch_vec {

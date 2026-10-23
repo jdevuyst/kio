@@ -18,7 +18,7 @@ For each file under `docs/` (`tutorials/`, `guides/`, `hosts/`):
 
 - Identify which spec section(s) the doc is teaching.
 - Read both side by side. Flag any factual claim in the doc that the spec contradicts or doesn't support.
-- Pay particular attention to syntax, semantics of elabs, type-system rules, package structure, and host-integration details — these are where drift bites hardest.
+- Pay particular attention to syntax, semantics of macros, type-system rules, package structure, and host-integration details — these are where drift bites hardest.
 - For each `docs/hosts/<lang>.md`, compare its publication header with
   `specs/backends/<lang>.md`: both must carry exactly one equal `Host API
   stability: evolving|stable` field immediately below the title, followed by
@@ -58,12 +58,12 @@ Run `git log --since="3 months ago" --stat -- specs/` and find commits that chan
 
 ## 4. Removed / renamed features
 
-Grep `docs/` for symbol names, keywords, syntax forms, or elab names. Cross-check each against `specs/`. Anything in docs that no longer appears in the spec is either:
+Grep `docs/` for symbol names, keywords, syntax forms, or macro names. Cross-check each against `specs/`. Anything in docs that no longer appears in the spec is either:
 
 - A teaching-purposes naming choice (fine if explained).
 - A stale reference to a removed/renamed feature (flag).
 
-Particular suspects to grep: any keyword or intrinsic name; every elab name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if!` / `else` / `.stem.` / `literal` / `labels` / `op` / `equiv` usage.
+Particular suspects to grep: any keyword or intrinsic name; every macro name in the current palette — take the enumeration (both the spine and the algebraic families) from [`ai/topics/surface-forms.md`](../../topics/surface-forms.md) rather than hardcoding a list here; any `if` / `else` / `.stem.` / `literal` / `labels` / `op` / `equiv` usage.
 
 ## 5. Standalone learning path
 
@@ -122,13 +122,16 @@ Apply [`docs.md` § Terminology](../../topics/docs.md#terminology). Start from
 tutorials, guide explanations, README claims and CLI workflows, then ask which
 Kio-specific distinctions a reader needs to find in `TERMINOLOGY.md`. Flag
 omissions that leave a concrete confusion unresolved, even when a guide teaches
-the subject; rows/records and library elabs are useful omission controls.
+the subject; rows/records and library macros are useful omission controls.
 Grouped entries and synonym routes count: do not require one entry per heading.
 Then compare glossary entries with their current contract and teaching links,
 and flag textbook material, duplication or peripheral implementation detail.
 Correct existing entries and working links alone do not establish coverage.
-Check that prose distinguishes library elabs from the compiler's elaborator,
-using the vocabulary in the glossary and its authoring guidance.
+Check explanations of macros, elaboration and normalization against the
+terminology owner: macros construct checked code, elaboration translates the
+surface, and the shared evaluator can execute prepared pure macro
+implementations while elaboration is active. Flag false global sequencing
+claims and descriptions of reflected source terms as computed runtime values.
 
 ## How to report
 

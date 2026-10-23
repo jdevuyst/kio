@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(Int, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string, string_to_int);
@@ -8,16 +8,16 @@ import testapi/io(print, read_ascii_line);
 import testapi/text(string_concat);
 
 fn render_line(line: String | .) -> String {
-  match! line {
+  match(line) {
     (.(s: String) { s }, .(_eof: .) { "<eof>" })
   }
 }
 
 fn render_int_line(line: String | .) -> String {
-  match! line {
+  match(line) {
     (
     , .(s: String) {
-        match! string_to_int(s) {
+        match(string_to_int(s)) {
           (.(n: Int) { int_to_string(add(n, 1)) }, .(_bad: .) { "bad-int" })
         }
       }

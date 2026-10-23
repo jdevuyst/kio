@@ -1,6 +1,6 @@
 module main;
 
-import elab/spine_elaborators(one_prod);
+import macros/spine_macros(macro one_prod);
 
 // Bare destructuring with explicit slot types.
 pub fn project_first_explicit[A][B]((x: A, _: B)) -> A { x }
@@ -29,7 +29,7 @@ fn use_nested_let[A][B][C](triple: (A & B) & C) -> B { let .((_: A, y: B), _: C)
 // to `apply` (whose first param has the concrete fn type `((A & B)) ->
 // A`), the lambda is checked against that expected type: the
 // structural-annotation rule resolves `_` against `A`, the cell
-// mechanism binds `_pat` to `(A & B)`, and the inner `match!` clause
+// mechanism binds `_pat` to `(A & B)`, and the inner `match` clause
 // destructures normally. Explicit type-args `A, B` route through the
 // cheap apply path so the lambda reaches `check_fn_against` (the
 // inferred-type-arg path would synth the lambda first and never get
@@ -44,5 +44,5 @@ fn use_anon_fn_pattern[A][B](p: A & B) -> A {
 // pattern). Pins the typer's structural-against-expected rule
 // independently of the pattern-desugar surface.
 fn use_anon_fn_nested_infer[A][B](p: A & B) -> A {
-  apply(A, B, .(pair: _ & B) -> A { one_prod!(pair) }, p)
+  apply(A, B, .(pair: _ & B) -> A { one_prod(pair) }, p)
 }

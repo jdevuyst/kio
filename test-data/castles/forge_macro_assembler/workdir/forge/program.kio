@@ -6,11 +6,11 @@
 /// `Srcs` plus a symbol table, and pass two into a runnable `Prog`.
 module forge/program;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import forge/isa(Ins, Src);
 import forge/list as l;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/iter(loop);
 import testapi/text(string_eq);
@@ -34,15 +34,15 @@ pub type Items = l.List(Item);
 
 pub type Flats = l.List(Flat);
 
-pub fn instr(i: Src) -> Item { {instr = i}.>widen_sum!(Item) }
+pub fn instr(i: Src) -> Item { {instr = i}.>widen_sum(Item) }
 
-pub fn mark(name: String) -> Item { {mark = name}.>widen_sum!(Item) }
+pub fn mark(name: String) -> Item { {mark = name}.>widen_sum(Item) }
 
-pub fn call(name: String) -> Item { {call = name}.>widen_sum!(Item) }
+pub fn call(name: String) -> Item { {call = name}.>widen_sum(Item) }
 
-pub fn flat_instr(i: Src) -> Flat { {instr = i}.>widen_sum!(Flat) }
+pub fn flat_instr(i: Src) -> Flat { {instr = i}.>widen_sum(Flat) }
 
-pub fn flat_mark(name: String) -> Flat { {mark = name}.>widen_sum!(Flat) }
+pub fn flat_mark(name: String) -> Flat { {mark = name}.>widen_sum(Flat) }
 
 /// A macro: a name and the instructions it stands for. A body is plain
 /// straight-line code - no label marks, no nested macro calls - which is
@@ -77,7 +77,7 @@ pub labels { fixed: Ins };
 pub fn fixed(i: Ins) -> Fixed { {fixed = i} }
 
 /// The three ways assembly rejects a program. Each is its own nominal, so
-/// a caller's `match!` has to name every rejection it can receive, and a
+/// a caller's `match` has to name every rejection it can receive, and a
 /// pass that can only fail one way says so in its own return type.
 pub labels { unknown_macro: String };
 
@@ -97,38 +97,38 @@ pub type Reject = Unknown_macro | Undefined_label | Duplicate_label;
 pub type Built = Image | Reject;
 
 pub rec(loop) fn find_macro(ms: Macros, name: String) -> Srcs | . {
-  match! l.un_cons(ms) {
+  match(l.un_cons(ms)) {
     (
     , .(m: Macro, rest: Macros) {
-        if! string_eq(m.?{macro_name}, name) {
-          widen_sum!(m.?{macro_body})
+        if(string_eq(m.?{macro_name}, name)) {
+          widen_sum(m.?{macro_body})
         } else {
           recur find_macro(rest, name)
         }
       }
-    , .(_empty: .) { widen_sum!(()) }
+    , .(_empty: .) { widen_sum(()) }
     )
   }
 }
 
 pub rec(loop) fn find_symbol(ss: Symbols, name: String) -> I32 | . {
-  match! l.un_cons(ss) {
+  match(l.un_cons(ss)) {
     (
     , .(s: Symbol, rest: Symbols) {
-        if! string_eq(s.?{sym_name}, name) {
-          widen_sum!(s.?{sym_addr})
+        if(string_eq(s.?{sym_name}, name)) {
+          widen_sum(s.?{sym_addr})
         } else {
           recur find_symbol(rest, name)
         }
       }
-    , .(_empty: .) { widen_sum!(()) }
+    , .(_empty: .) { widen_sum(()) }
     )
   }
 }
 
 /// Whether `name` is already placed - pass one's duplicate-label check.
 pub fn is_placed(ss: Symbols, name: String) -> Bool {
-  match! find_symbol(ss, name) {
+  match(find_symbol(ss, name)) {
     (.(_at: I32) { .t }, .(_none: .) { .f })
   }
 }

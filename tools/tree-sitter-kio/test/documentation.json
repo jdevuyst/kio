@@ -1,18 +1,70 @@
 [
-  { "name": "doc_empty_eof", "source": "///", "targets": [] },
-  { "name": "doc_space_empty_eof", "source": "/// ", "targets": [] },
-  { "name": "doc_empty_lines", "source": "///\n/// \n///\r\nmodule app;\n", "targets": [] },
+  {
+    "name": "doc_empty_eof",
+    "source": "///",
+    "targets": []
+  },
+  {
+    "name": "doc_space_empty_eof",
+    "source": "/// ",
+    "targets": []
+  },
+  {
+    "name": "doc_empty_lines",
+    "source": "///\n/// \n///\r\nmodule app;\n",
+    "targets": []
+  },
   {
     "name": "doc_literal_fallback_reset",
     "source": "/// ``unmatched\n/// [`neutral1`]\n\n/// [`live1`].\n/// ``unmatched\n/// [`neutral2`]\n// ordinary\n/// [`live2`].\n/// ``unmatched\n/// [`neutral3`]\nmodule app;\n/// [`live3`].\n",
-    "lineLocalNeutral": ["neutral1", "neutral2", "neutral3"],
+    "lineLocalNeutral": [
+      "neutral1",
+      "neutral2",
+      "neutral3"
+    ],
     "targets": [
-      { "start": 22, "end": 30, "text": "neutral1", "kind": "comment.doc.reference", "owners": [] },
-      { "start": 40, "end": 45, "text": "live1", "kind": "comment.doc.reference", "owners": [] },
-      { "start": 71, "end": 79, "text": "neutral2", "kind": "comment.doc.reference", "owners": [] },
-      { "start": 100, "end": 105, "text": "live2", "kind": "comment.doc.reference", "owners": [] },
-      { "start": 131, "end": 139, "text": "neutral3", "kind": "comment.doc.reference", "owners": [] },
-      { "start": 160, "end": 165, "text": "live3", "kind": "comment.doc.reference", "owners": [] }
+      {
+        "start": 22,
+        "end": 30,
+        "text": "neutral1",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 40,
+        "end": 45,
+        "text": "live1",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 71,
+        "end": 79,
+        "text": "neutral2",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 100,
+        "end": 105,
+        "text": "live2",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 131,
+        "end": 139,
+        "text": "neutral3",
+        "kind": "comment.doc.reference",
+        "owners": []
+      },
+      {
+        "start": 160,
+        "end": 165,
+        "text": "live3",
+        "kind": "comment.doc.reference",
+        "owners": []
+      }
     ]
   },
   {
@@ -78,7 +130,9 @@
   },
   {
     "name": "doc_multiline_literal",
-    "lineLocalNeutral": ["live"],
+    "lineLocalNeutral": [
+      "live"
+    ],
     "source": "/// ``start\n/// [`literal`]`` [`live`]\nmodule app;\n",
     "targets": [
       {
@@ -92,7 +146,9 @@
   },
   {
     "name": "doc_unmatched_inline",
-    "lineLocalNeutral": ["live"],
+    "lineLocalNeutral": [
+      "live"
+    ],
     "source": "/// ``unmatched [`live`]\nmodule app;\n",
     "targets": [
       {
@@ -106,7 +162,9 @@
   },
   {
     "name": "doc_paragraph_boundary",
-    "lineLocalNeutral": ["heading"],
+    "lineLocalNeutral": [
+      "heading"
+    ],
     "source": "/// ``unfinished\n/// # [`heading`]\nmodule app;\n",
     "targets": [
       {
@@ -176,11 +234,31 @@
         "text": "[`code`]",
         "kind": "comment.doc.code",
         "vscodeTargets": [
-          { "start": 16, "end": 17, "kind": "punctuation.bracket" },
-          { "start": 17, "end": 18, "kind": "operator.user" },
-          { "start": 18, "end": 22, "kind": "identifier" },
-          { "start": 22, "end": 23, "kind": "operator.user" },
-          { "start": 23, "end": 24, "kind": "punctuation.bracket" }
+          {
+            "start": 16,
+            "end": 17,
+            "kind": "punctuation.bracket"
+          },
+          {
+            "start": 17,
+            "end": 18,
+            "kind": "operator.user"
+          },
+          {
+            "start": 18,
+            "end": 22,
+            "kind": "identifier"
+          },
+          {
+            "start": 22,
+            "end": 23,
+            "kind": "operator.user"
+          },
+          {
+            "start": 23,
+            "end": 24,
+            "kind": "punctuation.bracket"
+          }
         ],
         "owners": []
       },
@@ -202,7 +280,9 @@
   },
   {
     "name": "doc_unfinished_hidden",
-    "lineLocalNeutral": ["still_live"],
+    "lineLocalNeutral": [
+      "still_live"
+    ],
     "source": "/// <!--kio\n/// [`live`]\n/// ```text\n/// [`still_live`]\nmodule app;\n",
     "targets": [
       {
@@ -284,7 +364,11 @@
   },
   {
     "name": "doc_non_fences",
-    "lineLocalNeutral": ["indented", "tabbed", "invalid_info"],
+    "lineLocalNeutral": [
+      "indented",
+      "tabbed",
+      "invalid_info"
+    ],
     "source": "/// ~~~text\n/// [`tilde`]\n///     ```text\n/// [`indented`]\n/// \t```text\n/// [`tabbed`]\n/// ```invalid`info`\n/// [`invalid_info`]\nmodule app;\n",
     "targets": [
       {

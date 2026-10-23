@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, default Bool, default I32, default String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_clone, array_get, array_make_filled, array_set);
@@ -18,22 +18,22 @@ fn gens() -> I32 { 16 }
 // Boolean ops over the `0`/`1` cell encoding. `leq_i32(x, 0)` is
 // true iff `x <= 0`, which (for `0`/`1` cells) means `x == 0`.
 fn not(x: I32) -> I32 {
-  if! leq_i32(x, 0) { 1 } else { 0 }
+  if(leq_i32(x, 0)) { 1 } else { 0 }
 }
 
 fn or(a: I32, b: I32) -> I32 {
-  if! leq_i32(a, 0) { b } else { 1 }
+  if(leq_i32(a, 0)) { b } else { 1 }
 }
 
 fn xor(a: I32, b: I32) -> I32 {
-  if! leq_i32(a, 0) { b } else { not(b) }
+  if(leq_i32(a, 0)) { b } else { not(b) }
 }
 
 // Read cell `i` from `cells`, treating off-grid indices as `0`
 // (the dead boundary condition).
 fn read_cell(cells: Array(I32), i: I32) -> I32 {
-  if! leq_i32(0, i) {
-    if! leq_i32(i, sub_i32(n(), 1)) { array_get(cells, i) } else { 0 }
+  if(leq_i32(0, i)) {
+    if(leq_i32(i, sub_i32(n(), 1))) { array_get(cells, i) } else { 0 }
   } else {
     0
   }
@@ -53,11 +53,11 @@ fn rule30(prev: Array(I32), i: I32) -> I32 {
 // `rule30(prev, i)` into `cells[i]`. State is `i`; `cells` and
 // `prev` are captured from the outer closure.
 fn update_step(cells: Array(I32), prev: Array(I32), i: I32) -> I32 | . {
-  if! leq_i32(i, sub_i32(n(), 1)) {
+  if(leq_i32(i, sub_i32(n(), 1))) {
     array_set(cells, i, rule30(prev, i));
-    widen_sum!(add_i32(i, 1))
+    widen_sum(add_i32(i, 1))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -65,11 +65,11 @@ fn update_step(cells: Array(I32), prev: Array(I32), i: I32) -> I32 | . {
 // character to `acc` per cell — `#` for `1`, `.` for `0`. State
 // is `(acc, i)`.
 fn render_step(cells: Array(I32), acc: String, i: I32) -> (String & I32) | String {
-  if! leq_i32(i, sub_i32(n(), 1)) {
-    let ch = if! leq_i32(array_get(cells, i), 0) { "." } else { "#" };
-    widen_sum!((string_concat(acc, ch), add_i32(i, 1)))
+  if(leq_i32(i, sub_i32(n(), 1))) {
+    let ch = if(leq_i32(array_get(cells, i), 0)) { "." } else { "#" };
+    widen_sum((string_concat(acc, ch), add_i32(i, 1)))
   } else {
-    widen_sum!(acc)
+    widen_sum(acc)
   }
 }
 
@@ -79,7 +79,7 @@ fn render_row(cells: Array(I32)) -> String {
   , String & I32
   , String
   , .(state: String & I32) -> (String & I32) | String {
-      match! state {
+      match(state) {
         .(acc: String, i: I32) { render_step(cells, acc, i) }
       }
     }
@@ -92,13 +92,13 @@ fn render_row(cells: Array(I32)) -> String {
 // rewriting `cells[i]` from the snapshot. State is `gen`; `cells`
 // is captured.
 fn gen_step(cells: Array(I32), gen: I32) -> I32 | . {
-  if! leq_i32(gen, sub_i32(gens(), 1)) {
+  if(leq_i32(gen, sub_i32(gens(), 1))) {
     print(string_concat(render_row(cells), "\n"));
     let prev = array_clone(cells);
     loop(.(i: I32) { update_step(cells, prev, i) }, 0);
-    widen_sum!(add_i32(gen, 1))
+    widen_sum(add_i32(gen, 1))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 

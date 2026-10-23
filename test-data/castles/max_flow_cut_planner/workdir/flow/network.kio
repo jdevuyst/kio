@@ -1,7 +1,7 @@
 module flow/network;
 
-import elab/control(if);
 import flow/math as math;
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith as a;
 import testapi/array as ar;
@@ -21,7 +21,7 @@ pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
 }
 
 rec(loop) fn fill(network: Network, index: I32, residual: Array(I32)) -> Array(I32) {
-  if! math.less(index, ar.array_len(network.?{edges})) {
+  if(math.less(index, ar.array_len(network.?{edges}))) {
     ar.array_push(residual, ar.array_get(network.?{edges}, index).?{capacity});
     recur fill(network, a.add_i32(index, 1), residual)
   } else {

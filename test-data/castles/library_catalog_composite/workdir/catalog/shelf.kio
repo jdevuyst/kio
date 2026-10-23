@@ -4,8 +4,8 @@ import catalog/domain as dom;
 import catalog/domain(Book, Book_index, Failure, Hold_list, Hold_rec);
 import catalog/domain({copies_out}, {copies_total}, {held_call});
 import dict/dict as dict;
-import elab/match(match);
 import list/list as list;
+import macros/match(macro match);
 import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
@@ -16,7 +16,7 @@ pub type Book_result = result.Result(Book, Failure);
 /// domain failure, not an absent value the caller has to think about.
 pub fn find(books: Book_index, call: I32) -> Book_result {
   let .(missing: Book_result) = result.err(dom.fail_unknown_call(call));
-  match! dict.get(dom.cmp_i32, books, call) {
+  match(dict.get(dom.cmp_i32, books, call)) {
     (.(entry: Book) { result.ok(entry) }, .(_absent: .) { missing })
   }
 }

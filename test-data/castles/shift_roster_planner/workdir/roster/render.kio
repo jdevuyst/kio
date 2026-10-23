@@ -1,6 +1,6 @@
 module roster/render;
 
-import elab/control(if);
+import macros/control(macro if);
 import roster/scenario as scenario;
 import roster/scoring as scoring;
 import roster/types(
@@ -62,7 +62,7 @@ fn shift_line(index: I32, s: Shift) -> String {
 }
 
 rec(loop) fn print_shifts(index: I32) {
-  if! lt_i32(index, scenario.shift_count()) {
+  if(lt_i32(index, scenario.shift_count())) {
     print(shift_line(index, scenario.shift_at(index)));
     recur print_shifts(add_i32(index, 1))
   } else {
@@ -81,7 +81,7 @@ fn worker_load_line(worker_id: I32) -> String {
 }
 
 rec(loop) fn print_worker_loads(worker_id: I32) {
-  if! lt_i32(worker_id, scenario.worker_count()) {
+  if(lt_i32(worker_id, scenario.worker_count())) {
     print(worker_load_line(worker_id));
     recur print_worker_loads(add_i32(worker_id, 1))
   } else {

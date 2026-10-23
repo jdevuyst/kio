@@ -115,7 +115,7 @@ turn one match into an ambiguity. The problem is the ambient search, not
 dictionary values or typeclass-like APIs themselves.
 
 Kio represents such evidence as ordinary values and passes it through ordinary
-function parameters. When the `derive!` library elab is convenient, it
+function parameters. When the `derive` library macro is convenient, it
 examines exactly the literal tuple of rule functions supplied at that call
 site:
 
@@ -126,7 +126,7 @@ bridge {
 
 module kiodoc;
 
-import derive(derive);
+import derive(macro derive);
 
 host type String role(str);
 
@@ -135,8 +135,8 @@ __SNIPPET__
 
 Here `Formatter(A)` packages a function from `A` to the host's `String` type.
 Its constructor stores that function; its projector retrieves it. The example
-uses the imported `derive!` elab; [Using libraries](using-libraries.md#the-elaborator-library)
-shows how to add that library and import `elab/derive(derive)`.
+uses the imported `derive` macro; [Using libraries](using-libraries.md#the-macro-library)
+shows how to add that library and import `macros/derive(derive)`.
 
 ```kio {@explicit_evidence}
 newtype Formatter[A] : A -> String { constructor mk_formatter; projector format }
@@ -156,7 +156,7 @@ fn formatter_from_text(text: String) -> Formatter(String) {
 }
 
 fn choose_string_formatter() -> Formatter(String) {
-  derive!((formatter_from_text, listed_text), Formatter(String))
+  derive((formatter_from_text, listed_text), Formatter(String))
 }
 ```
 
@@ -164,14 +164,14 @@ The target requires both listed rules: `listed_text` produces the `String`
 precondition that `formatter_from_text` consumes to produce
 `Formatter(String)`.
 The compatible `unlisted_formatter` rule can produce the requested target
-directly, but it is absent from the tuple. If `derive!` searched the module,
+directly, but it is absent from the tuple. If `derive` searched the module,
 that rule and the listed composition would make the result ambiguous. The
-derivation succeeds because `derive!` considers only the literal tuple and
+derivation succeeds because `derive` considers only the literal tuple and
 composes its two listed rules to reach `Formatter(String)`. Adding an unrelated
 declaration therefore cannot alter this derivation. See the
 [higher-kinded-types case study](../poc/hkt.md#deriving-an-instance-with-derive) for a
 worked instance dictionary and the
-[`derive!` case study](../poc/elab.md#derive--instance-deriving) for the rule
+[`derive` case study](../poc/macros.md#derive--instance-deriving) for the rule
 composition contract.
 
 ## Dependency diamonds keep nominal identities distinct

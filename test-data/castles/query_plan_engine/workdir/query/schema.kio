@@ -6,8 +6,8 @@
 /// hands out, and `col_eq` is the only way two columns are ever compared.
 module query/schema;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import query/list as list;
 import query/value as value;
 import testapi(Bool, I32, String);
@@ -44,39 +44,39 @@ pub labels Col_meta = {
 
 pub labels Table_id = { t_ships: . } | { t_berths: . } | { t_manifests: . };
 
-pub fn ship_id() -> Col { {c_ship_id=}.>widen_sum!(Col) }
+pub fn ship_id() -> Col { {c_ship_id=}.>widen_sum(Col) }
 
-pub fn ship_name() -> Col { {c_ship_name=}.>widen_sum!(Col) }
+pub fn ship_name() -> Col { {c_ship_name=}.>widen_sum(Col) }
 
-pub fn ship_flag() -> Col { {c_ship_flag=}.>widen_sum!(Col) }
+pub fn ship_flag() -> Col { {c_ship_flag=}.>widen_sum(Col) }
 
-pub fn ship_draft() -> Col { {c_ship_draft=}.>widen_sum!(Col) }
+pub fn ship_draft() -> Col { {c_ship_draft=}.>widen_sum(Col) }
 
-pub fn ship_berth() -> Col { {c_ship_berth=}.>widen_sum!(Col) }
+pub fn ship_berth() -> Col { {c_ship_berth=}.>widen_sum(Col) }
 
-pub fn berth_id() -> Col { {c_berth_id=}.>widen_sum!(Col) }
+pub fn berth_id() -> Col { {c_berth_id=}.>widen_sum(Col) }
 
-pub fn berth_depth() -> Col { {c_berth_depth=}.>widen_sum!(Col) }
+pub fn berth_depth() -> Col { {c_berth_depth=}.>widen_sum(Col) }
 
-pub fn berth_zone() -> Col { {c_berth_zone=}.>widen_sum!(Col) }
+pub fn berth_zone() -> Col { {c_berth_zone=}.>widen_sum(Col) }
 
-pub fn berth_zone_id() -> Col { {c_berth_zone_id=}.>widen_sum!(Col) }
+pub fn berth_zone_id() -> Col { {c_berth_zone_id=}.>widen_sum(Col) }
 
-pub fn mf_ship() -> Col { {c_mf_ship=}.>widen_sum!(Col) }
+pub fn mf_ship() -> Col { {c_mf_ship=}.>widen_sum(Col) }
 
-pub fn mf_cargo() -> Col { {c_mf_cargo=}.>widen_sum!(Col) }
+pub fn mf_cargo() -> Col { {c_mf_cargo=}.>widen_sum(Col) }
 
-pub fn mf_tons() -> Col { {c_mf_tons=}.>widen_sum!(Col) }
+pub fn mf_tons() -> Col { {c_mf_tons=}.>widen_sum(Col) }
 
-pub fn total() -> Col { {c_total=}.>widen_sum!(Col) }
+pub fn total() -> Col { {c_total=}.>widen_sum(Col) }
 
-pub fn count() -> Col { {c_count=}.>widen_sum!(Col) }
+pub fn count() -> Col { {c_count=}.>widen_sum(Col) }
 
-pub fn ships_table() -> Table_id { {t_ships=}.>widen_sum!(Table_id) }
+pub fn ships_table() -> Table_id { {t_ships=}.>widen_sum(Table_id) }
 
-pub fn berths_table() -> Table_id { {t_berths=}.>widen_sum!(Table_id) }
+pub fn berths_table() -> Table_id { {t_berths=}.>widen_sum(Table_id) }
 
-pub fn manifests_table() -> Table_id { {t_manifests=}.>widen_sum!(Table_id) }
+pub fn manifests_table() -> Table_id { {t_manifests=}.>widen_sum(Table_id) }
 
 fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -> Col_meta {
   {
@@ -91,7 +91,7 @@ fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -
 /// title's width and at least the widest datum the fixtures put in it, so
 /// no cell ever overflows its column.
 pub fn col_meta(c: Col) -> Col_meta {
-  match! c {
+  match(c) {
     (
     , .(_c: C_ship_id) { meta(1, "s.id", 4, 4, .t) }
     , .(_c: C_ship_name) { meta(2, "ship", 4, 9, .f) }
@@ -125,7 +125,7 @@ pub fn col_eq(a: Col, b: Col) -> Bool { eq_i32(col_code(a), col_code(b)) }
 
 /// The shape of each base table, in the order its columns print.
 pub fn table_cols(t: Table_id) -> Col_list {
-  match! t {
+  match(t) {
     (
     , .(_t: T_ships) { list.of5(ship_id(), ship_name(), ship_flag(), ship_draft(), ship_berth()) }
     , .(_t: T_berths) { list.of4(berth_id(), berth_depth(), berth_zone(), berth_zone_id()) }
@@ -135,7 +135,7 @@ pub fn table_cols(t: Table_id) -> Col_list {
 }
 
 pub fn table_name(t: Table_id) -> String {
-  match! t {
+  match(t) {
     (.(_t: T_ships) { "ships" }, .(_t: T_berths) { "berths" }, .(_t: T_manifests) { "manifests" })
   }
 }

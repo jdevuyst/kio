@@ -1228,10 +1228,11 @@ pub const HOST_CALLBACK_ROUNDTRIP_PROTOCOL_NAME: &str = "host-callback-roundtrip
 pub const HOST_GENERIC_RETURN_ONLY_ROUNDTRIP_PROTOCOL_NAME: &str =
     "host-generic-return-only-roundtrip";
 pub const HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-generic-type-roundtrip";
-pub const HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME: &str = "host-generic-type-elab-roundtrip";
+pub const HOST_GENERIC_TYPE_MACRO_ROUNDTRIP_PROTOCOL_NAME: &str =
+    "host-generic-type-macro-roundtrip";
 pub const HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME: &str = "host-rankn-roundtrip";
 pub const HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME: &str = "host-structural-roundtrip";
-pub const HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME: &str = "host-structural-elab-roundtrip";
+pub const HOST_STRUCTURAL_MACRO_ROUNDTRIP_PROTOCOL_NAME: &str = "host-structural-macro-roundtrip";
 pub const HOST_TYPE_ROUNDTRIP_PROTOCOL_NAME: &str = "host-type-roundtrip";
 pub const HOST_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME: &str = "host-functor-dict-roundtrip";
 pub const HOST_POLY_FUNCTION_NEWTYPE_ROUNDTRIP_PROTOCOL_NAME: &str =
@@ -1249,7 +1250,7 @@ pub const HOST_STAGED_UNIT_CALL_PROTOCOL_NAME: &str = "host-staged-unit-call";
 pub const FACADE_SELECTOR_COLLISIONS_PROTOCOL_NAME: &str = "facade-selector-collisions";
 pub const PUBLIC_WORD_NAMES_PROTOCOL_NAME: &str = "public-word-names";
 pub const MODULE_ALIAS_SCOPE_COLLISION_PROTOCOL_NAME: &str = "module-alias-scope-collision";
-pub const ELAB_PROTOCOL_NAME: &str = "elab-main";
+pub const MACRO_PROTOCOL_NAME: &str = "macro-main";
 pub const ROOT_SCOPED_HOST_ENV_PROTOCOL_NAME: &str = "root-scoped-host-env";
 pub const TESTAPI_PRINT_PROTOCOL_NAME: &str = "testapi-print";
 pub const TESTAPI_PRINT_MARKED_STRING_PROTOCOL_NAME: &str = "testapi-print-marked-string";
@@ -1273,45 +1274,46 @@ pub const SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME: &str = "same-artifact-exchange";
 pub const TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME: &str = "testapi-arith-add-i32";
 pub const TESTAPI_ARITH_ADD_INT_PROTOCOL_NAME: &str = "testapi-arith-add-int";
 
-pub const TESTAPI_ARITH_COLLECTION_ELAB_PROTOCOL_NAME: &str = "testapi-arith-collection-elab";
-pub const TESTAPI_ARITH_COLLECTION_ELAB_NO_BOOL_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-elab-no-bool-format";
-pub const TESTAPI_ARITH_COLLECTION_COMPOSITE_ELAB_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-composite-elab";
-pub const TESTAPI_ARITH_COLLECTION_DICT_ELAB_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-dict-elab";
-pub const TESTAPI_ARITH_COLLECTION_LIST_ELAB_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-list-elab";
-pub const TESTAPI_ARITH_COLLECTION_OPTICS_ELAB_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-optics-elab";
-pub const TESTAPI_ARITH_COLLECTION_QUEUE_ELAB_PROTOCOL_NAME: &str =
-    "testapi-arith-collection-queue-elab";
+pub const TESTAPI_ARITH_COLLECTION_MACRO_PROTOCOL_NAME: &str = "testapi-arith-collection-macro";
+pub const TESTAPI_ARITH_COLLECTION_MACRO_NO_BOOL_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-macro-no-bool-format";
+pub const TESTAPI_ARITH_COLLECTION_COMPOSITE_MACRO_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-composite-macro";
+pub const TESTAPI_ARITH_COLLECTION_DICT_MACRO_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-dict-macro";
+pub const TESTAPI_ARITH_COLLECTION_LIST_MACRO_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-list-macro";
+pub const TESTAPI_ARITH_COLLECTION_OPTICS_MACRO_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-optics-macro";
+pub const TESTAPI_ARITH_COLLECTION_QUEUE_MACRO_PROTOCOL_NAME: &str =
+    "testapi-arith-collection-queue-macro";
 
 pub const TESTAPI_ARRAY_ROOT_PROTOCOL_NAME: &str = "testapi-array-root";
-pub const TESTAPI_ARRAY_ELAB_NO_CLONE_SWAP_PROTOCOL_NAME: &str = "testapi-array-elab-no-clone-swap";
-pub const TESTAPI_ARRAY_ELAB_PUSH_ONLY_PROTOCOL_NAME: &str = "testapi-array-elab-push-only";
-pub const TESTAPI_ARRAY_ELAB_FIXED_PROTOCOL_NAME: &str = "testapi-array-elab-fixed";
-pub const TESTAPI_ARRAY_ELAB_STACK_PROTOCOL_NAME: &str = "testapi-array-elab-stack";
+pub const TESTAPI_ARRAY_MACRO_NO_CLONE_SWAP_PROTOCOL_NAME: &str =
+    "testapi-array-macro-no-clone-swap";
+pub const TESTAPI_ARRAY_MACRO_PUSH_ONLY_PROTOCOL_NAME: &str = "testapi-array-macro-push-only";
+pub const TESTAPI_ARRAY_MACRO_FIXED_PROTOCOL_NAME: &str = "testapi-array-macro-fixed";
+pub const TESTAPI_ARRAY_MACRO_STACK_PROTOCOL_NAME: &str = "testapi-array-macro-stack";
 pub const TESTAPI_ARRAY_GET_FILLED_PROTOCOL_NAME: &str = "testapi-array-get-filled";
 
-pub const TESTAPI_BARE_ARITH_ELAB_I32_PROTOCOL_NAME: &str = "testapi-bare-arith-elab-i32";
+pub const TESTAPI_BARE_ARITH_MACRO_I32_PROTOCOL_NAME: &str = "testapi-bare-arith-macro-i32";
 pub const TESTAPI_BARE_ARITH_BOOL_I32_PROTOCOL_NAME: &str = "testapi-bare-arith-bool-i32";
-pub const TESTAPI_BARE_COLLECTION_ELAB_REDUCED_PROTOCOL_NAME: &str =
-    "testapi-bare-collection-elab-reduced";
-pub const TESTAPI_BARE_COMPUTE_ELAB_I32_REDUCED_PROTOCOL_NAME: &str =
-    "testapi-bare-compute-elab-i32-reduced";
+pub const TESTAPI_BARE_COLLECTION_MACRO_REDUCED_PROTOCOL_NAME: &str =
+    "testapi-bare-collection-macro-reduced";
+pub const TESTAPI_BARE_COMPUTE_MACRO_I32_REDUCED_PROTOCOL_NAME: &str =
+    "testapi-bare-compute-macro-i32-reduced";
 pub const TESTAPI_BIGINT_U128_PROTOCOL_NAME: &str = "testapi-bigint-u128";
 
 pub const TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME: &str = "testapi-compute-root";
 pub const TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME: &str = "testapi-compute-loop";
 pub const TESTAPI_REENTRY_PROTOCOL_NAME: &str = "testapi-reentry";
-pub const TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME: &str =
-    "testapi-compute-elab-no-i32-format";
-pub const TESTAPI_COMPUTE_ELAB_NO_INPUT_PARSE_PROTOCOL_NAME: &str =
-    "testapi-compute-elab-no-input-parse";
-pub const TESTAPI_COMPUTE_LIST_ELAB_PROTOCOL_NAME: &str = "testapi-compute-list-elab";
+pub const TESTAPI_COMPUTE_MACRO_NO_I32_FORMAT_PROTOCOL_NAME: &str =
+    "testapi-compute-macro-no-i32-format";
+pub const TESTAPI_COMPUTE_MACRO_NO_INPUT_PARSE_PROTOCOL_NAME: &str =
+    "testapi-compute-macro-no-input-parse";
+pub const TESTAPI_COMPUTE_LIST_MACRO_PROTOCOL_NAME: &str = "testapi-compute-list-macro";
 pub const TESTAPI_COMPUTE_DIFF_PROTOCOL_NAME: &str = "testapi-compute-diff";
-pub const TESTAPI_COMPUTE_ELAB_INT_PROTOCOL_NAME: &str = "testapi-compute-elab-int";
+pub const TESTAPI_COMPUTE_MACRO_INT_PROTOCOL_NAME: &str = "testapi-compute-macro-int";
 pub const TESTAPI_COMPUTE_REC_BINDER_PROTOCOL_NAME: &str = "testapi-compute-rec-binder";
 pub const TESTAPI_COMPUTE_REC_ORDER_PROTOCOL_NAME: &str = "testapi-compute-rec-order";
 pub const TESTAPI_COMPUTE_REC_PARTIAL_LET_PROTOCOL_NAME: &str = "testapi-compute-rec-partial-let";
@@ -1321,21 +1323,21 @@ pub const TESTAPI_COMPUTE_SUB_PRINT_PROTOCOL_NAME: &str = "testapi-compute-sub-p
 pub const TESTAPI_FLOAT_F32_F64_PROTOCOL_NAME: &str = "testapi-float-f32-f64";
 
 pub const TESTAPI_FMT_ROOT_I32_PROTOCOL_NAME: &str = "testapi-fmt-root-i32";
-pub const TESTAPI_FMT_ELAB_INT_PROTOCOL_NAME: &str = "testapi-fmt-elab-int";
+pub const TESTAPI_FMT_MACRO_INT_PROTOCOL_NAME: &str = "testapi-fmt-macro-int";
 pub const TESTAPI_FMT_ROOT_INT_PROTOCOL_NAME: &str = "testapi-fmt-root-int";
 pub const TESTAPI_FMT_INT_ONLY_PROTOCOL_NAME: &str = "testapi-fmt-int-only";
 
-pub const TESTAPI_PRINT_ELAB_STRING_PROTOCOL_NAME: &str = "testapi-print-elab-string";
-pub const TESTAPI_PRINT_ELAB_CORE_PROTOCOL_NAME: &str = "testapi-print-elab-core";
-pub const TESTAPI_PRINT_ELAB_I32_PROTOCOL_NAME: &str = "testapi-print-elab-i32";
+pub const TESTAPI_PRINT_MACRO_STRING_PROTOCOL_NAME: &str = "testapi-print-macro-string";
+pub const TESTAPI_PRINT_MACRO_CORE_PROTOCOL_NAME: &str = "testapi-print-macro-core";
+pub const TESTAPI_PRINT_MACRO_I32_PROTOCOL_NAME: &str = "testapi-print-macro-i32";
 pub const TESTAPI_PRINT_BOOL_STRING_PROTOCOL_NAME: &str = "testapi-print-bool-string";
-pub const TESTAPI_PRINT_ELAB_I32_INT_PROTOCOL_NAME: &str = "testapi-print-elab-i32-int";
-pub const TESTAPI_PRINT_ELAB_BOOL_STRING_PROTOCOL_NAME: &str = "testapi-print-elab-bool-string";
+pub const TESTAPI_PRINT_MACRO_I32_INT_PROTOCOL_NAME: &str = "testapi-print-macro-i32-int";
+pub const TESTAPI_PRINT_MACRO_BOOL_STRING_PROTOCOL_NAME: &str = "testapi-print-macro-bool-string";
 pub const TESTAPI_PRINT_LOGIC_BOOL_PROTOCOL_NAME: &str = "testapi-print-logic-bool";
 pub const TESTAPI_PRINT_STR_PROTOCOL_NAME: &str = "testapi-print-str";
 
-pub const TESTAPI_TEXT_ELAB_I32_PROTOCOL_NAME: &str = "testapi-text-elab-i32";
-pub const TESTAPI_TEXT_ELAB_INT_PROTOCOL_NAME: &str = "testapi-text-elab-int";
+pub const TESTAPI_TEXT_MACRO_I32_PROTOCOL_NAME: &str = "testapi-text-macro-i32";
+pub const TESTAPI_TEXT_MACRO_INT_PROTOCOL_NAME: &str = "testapi-text-macro-int";
 pub const TESTAPI_TEXT_ROOT_INT_PROTOCOL_NAME: &str = "testapi-text-root-int";
 pub const TESTAPI_TEXT_BOOL_INT_PROTOCOL_NAME: &str = "testapi-text-bool-int";
 pub const TESTAPI_TEXT_CONCAT_PROTOCOL_NAME: &str = "testapi-text-concat";
@@ -1380,10 +1382,10 @@ pub const DYN_LOAD_PRIME_UNSUPPORTED_PROTOCOL_NAMES: &[&str] = &[
     TESTAPI_ARRAY_PROTOCOL_NAME,
     TESTAPI_ARRAY_CLEAR_PROTOCOL_NAME,
     TESTAPI_ARRAY_ROOT_PROTOCOL_NAME,
-    TESTAPI_ARRAY_ELAB_NO_CLONE_SWAP_PROTOCOL_NAME,
-    TESTAPI_ARRAY_ELAB_PUSH_ONLY_PROTOCOL_NAME,
-    TESTAPI_ARRAY_ELAB_FIXED_PROTOCOL_NAME,
-    TESTAPI_ARRAY_ELAB_STACK_PROTOCOL_NAME,
+    TESTAPI_ARRAY_MACRO_NO_CLONE_SWAP_PROTOCOL_NAME,
+    TESTAPI_ARRAY_MACRO_PUSH_ONLY_PROTOCOL_NAME,
+    TESTAPI_ARRAY_MACRO_FIXED_PROTOCOL_NAME,
+    TESTAPI_ARRAY_MACRO_STACK_PROTOCOL_NAME,
     TESTAPI_ARRAY_GET_FILLED_PROTOCOL_NAME,
     TESTAPI_BIGINT_PROTOCOL_NAME,
     TESTAPI_BIGINT_U128_PROTOCOL_NAME,
@@ -1619,10 +1621,10 @@ pub enum RunnerProtocol {
     /// `testapi/main.main`.
     HostGenericReturnOnlyRoundtrip,
     HostGenericTypeRoundtrip,
-    HostGenericTypeElabRoundtrip,
+    HostGenericTypeMacroRoundtrip,
     HostRanknRoundtrip,
     HostStructuralRoundtrip,
-    HostStructuralElabRoundtrip,
+    HostStructuralMacroRoundtrip,
     HostTypeRoundtrip,
     /// `00_success/ffi_host_functor_dict_roundtrip` — a functor/monad
     /// **dictionary** crossing the host boundary. The host fn
@@ -1658,13 +1660,13 @@ pub enum RunnerProtocol {
     /// `staged[A](first: String)[B](second: String) -> String`. The host
     /// receives the canonical flat two-value call and returns `second`.
     HostInterleavedStageRoundtrip,
-    /// `test-data/poc/elab` — a bespoke fixed-env `main`-calling
-    /// protocol. The elab POC's env (`print`, `string_concat`,
+    /// `test-data/poc/macros` — a bespoke fixed-env `main`-calling
+    /// protocol. The macros POC's env (`print`, `string_concat`,
     /// `i32_to_string`, `bool_to_string`) pairs the formatting helpers
     /// with `string_concat`. Like the roundtrip protocols it pins its own
     /// exact environment in its [`ProtocolContract`]; unlike them its
     /// driver just calls exported `main`.
-    Elab,
+    Macro,
     /// `00_success/exec_host_env_root_scoped` — a testapi multi-root
     /// protocol. Two `testapi/<root>` submodules declare the **same
     /// leaf** with **distinct** signatures: `testapi/alpha` declares
@@ -1788,32 +1790,32 @@ pub enum RunnerProtocol {
     TestApiDynLoad,
     TestApiArithAddI32,
     TestApiArithAddInt,
-    TestApiArithCollectionElab,
-    TestApiArithCollectionElabNoBool,
-    TestApiArithCollectionCompositeElab,
-    TestApiArithCollectionDictElab,
-    TestApiArithCollectionListElab,
-    TestApiArithCollectionOpticsElab,
-    TestApiArithCollectionQueueElab,
+    TestApiArithCollectionMacro,
+    TestApiArithCollectionMacroNoBool,
+    TestApiArithCollectionCompositeMacro,
+    TestApiArithCollectionDictMacro,
+    TestApiArithCollectionListMacro,
+    TestApiArithCollectionOpticsMacro,
+    TestApiArithCollectionQueueMacro,
     TestApiArrayRoot,
-    TestApiArrayElabNoCloneSwap,
-    TestApiArrayElabPushOnly,
-    TestApiArrayElabFixed,
-    TestApiArrayElabStack,
+    TestApiArrayMacroNoCloneSwap,
+    TestApiArrayMacroPushOnly,
+    TestApiArrayMacroFixed,
+    TestApiArrayMacroStack,
     TestApiArrayGetFilled,
-    TestApiBareArithElabI32,
+    TestApiBareArithMacroI32,
     TestApiBareArithBoolI32,
-    TestApiBareCollectionElabReduced,
-    TestApiBareComputeElabI32Reduced,
+    TestApiBareCollectionMacroReduced,
+    TestApiBareComputeMacroI32Reduced,
     TestApiBigintU128,
     TestApiComputeRoot,
     TestApiComputeLoop,
     TestApiReentry,
-    TestApiComputeElabNoI32Format,
-    TestApiComputeElabNoInputParse,
-    TestApiComputeListElab,
+    TestApiComputeMacroNoI32Format,
+    TestApiComputeMacroNoInputParse,
+    TestApiComputeListMacro,
     TestApiComputeDiff,
-    TestApiComputeElabInt,
+    TestApiComputeMacroInt,
     TestApiComputeRecBinder,
     TestApiComputeRecOrder,
     TestApiComputeRecPartialLet,
@@ -1821,19 +1823,19 @@ pub enum RunnerProtocol {
     TestApiComputeSubPrint,
     TestApiFloatF32F64,
     TestApiFmtRootI32,
-    TestApiFmtElabInt,
+    TestApiFmtMacroInt,
     TestApiFmtRootInt,
     TestApiFmtIntOnly,
-    TestApiPrintElabString,
-    TestApiPrintElabCore,
-    TestApiPrintElabI32,
+    TestApiPrintMacroString,
+    TestApiPrintMacroCore,
+    TestApiPrintMacroI32,
     TestApiPrintBoolString,
-    TestApiPrintElabI32Int,
-    TestApiPrintElabBoolString,
+    TestApiPrintMacroI32Int,
+    TestApiPrintMacroBoolString,
     TestApiPrintLogicBool,
     TestApiPrintStr,
-    TestApiTextElabI32,
-    TestApiTextElabInt,
+    TestApiTextMacroI32,
+    TestApiTextMacroInt,
     TestApiTextRootInt,
     TestApiTextBoolInt,
     TestApiTextConcat,
@@ -2054,61 +2056,61 @@ const TYPES_TESTAPI_BOOL_I32_INT_STRING: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 
-const TYPES_ELAB_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_BOOL_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_BOOL_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_I32_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_I32_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_I32_INT_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_I32_INT_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_CORE: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_CORE: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_BOOL_INT_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_BOOL_INT_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ELAB_BOOL_I32_INT_STRING: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_MACRO_BOOL_I32_INT_STRING: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
@@ -2126,11 +2128,11 @@ const TYPES_HOST_ARRAY_RETURN_ONLY: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
-const TYPES_ARRAY_ELAB: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+const TYPES_ARRAY_MACRO: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::opaque("testapi", "Array", 1, HostTypeFixture::Array),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
@@ -2166,28 +2168,28 @@ const TYPES_LOGIC_BOOL: &[HostTypeBinding] = &[
 ];
 
 const TYPES_ARITH_COLLECTION_COMPOSITE: &[HostTypeBinding] = &[
-    HostTypeBinding::role("dict/elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("dict/elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("dict/elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("dict/elab/testapi", "String", RoleFixture::String),
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    HostTypeBinding::role("list/elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("list/elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("list/elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("list/elab/testapi", "String", RoleFixture::String),
-    HostTypeBinding::role("result/elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("result/elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("result/elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("result/elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("dict/macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("dict/macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("dict/macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("dict/macros/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("list/macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("list/macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("list/macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("list/macros/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("result/macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("result/macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("result/macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("result/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 
-const fn dependency_elab_type(
+const fn dependency_macro_type(
     module: &'static str,
     leaf: &'static str,
     fixture: RoleFixture,
@@ -2196,75 +2198,75 @@ const fn dependency_elab_type(
 }
 
 const TYPES_ARITH_COLLECTION_DICT: &[HostTypeBinding] = &[
-    dependency_elab_type("dict/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("dict/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("dict/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("dict/elab/testapi", "String", RoleFixture::String),
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("list/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("list/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "String", RoleFixture::String),
+    dependency_macro_type("dict/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("dict/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("dict/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("dict/macros/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("list/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("list/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 const TYPES_ARITH_COLLECTION_LIST: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("list/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("list/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("list/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("list/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 const TYPES_ARITH_COLLECTION_OPTICS: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("optics/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("optics/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("optics/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("optics/elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("optics/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("optics/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("optics/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("optics/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 const TYPES_ARITH_COLLECTION_QUEUE: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("queue/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("queue/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("queue/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("queue/elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("queue/list/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("queue/list/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("queue/list/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("queue/list/elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("queue/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("queue/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("queue/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("queue/macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("queue/list/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("queue/list/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("queue/list/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("queue/list/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 
-const TYPES_COMPUTE_LIST_ELAB: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
-    dependency_elab_type("list/elab/testapi", "Bool", RoleFixture::Bool),
-    dependency_elab_type("list/elab/testapi", "I32", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "Int", RoleFixture::I32),
-    dependency_elab_type("list/elab/testapi", "String", RoleFixture::String),
+const TYPES_COMPUTE_LIST_MACRO: &[HostTypeBinding] = &[
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
+    dependency_macro_type("list/macros/testapi", "Bool", RoleFixture::Bool),
+    dependency_macro_type("list/macros/testapi", "I32", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "Int", RoleFixture::I32),
+    dependency_macro_type("list/macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
@@ -2282,14 +2284,14 @@ const TYPES_HOST_BOX: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 const TYPES_INCOMING_CALLABLE_VIEWS: &[HostTypeBinding] = &[TYPES_HOST_BOX[0], TYPES_HOST_BOX[1]];
-const TYPES_HOST_BOX_ELAB: &[HostTypeBinding] = &[
+const TYPES_HOST_BOX_MACRO: &[HostTypeBinding] = &[
     TYPES_HOST_BOX[0],
     TYPES_HOST_BOX[1],
     TYPES_HOST_BOX[2],
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
 ];
 const TYPES_DYN_LOAD: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
@@ -2299,10 +2301,10 @@ const TYPES_DYN_LOAD: &[HostTypeBinding] = &[
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
 ];
 const TYPES_EXPORT_STRUCTURAL: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "I16", RoleFixture::I16),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
@@ -2341,10 +2343,10 @@ const TYPES_EXPORT_HOST_OWNED: &[HostTypeBinding] = &[
     HostTypeBinding::opaque("testapi", "Token", 0, HostTypeFixture::Token),
 ];
 const TYPES_EXPORT_CALLABLE_SLOTS: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
 ];
 const TYPES_COEXIST: &[HostTypeBinding] = &[
@@ -3559,7 +3561,7 @@ const FNS_DYN_LOAD: &[HostFnBinding] = &[
     ),
 ];
 
-const FNS_ELAB: &[HostFnBinding] = &[
+const FNS_MACRO: &[HostFnBinding] = &[
     host_fn(
         "testapi/fmt",
         "bool_to_string",
@@ -3645,10 +3647,10 @@ const TYPES_OPAQUE_PRODUCT: &[HostTypeBinding] = &[
     HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
 ];
 const TYPES_OPAQUE_COMPOUND: &[HostTypeBinding] = &[
-    HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-    HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-    HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+    HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+    HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
     HostTypeBinding::selected_role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::opaque("testapi", "Box", 1, HostTypeFixture::Box),
 ];
@@ -3946,16 +3948,16 @@ impl RunnerProtocol {
         Self::ModuleAliasScopeCollision,
         Self::HostGenericReturnOnlyRoundtrip,
         Self::HostGenericTypeRoundtrip,
-        Self::HostGenericTypeElabRoundtrip,
+        Self::HostGenericTypeMacroRoundtrip,
         Self::HostRanknRoundtrip,
         Self::HostStructuralRoundtrip,
-        Self::HostStructuralElabRoundtrip,
+        Self::HostStructuralMacroRoundtrip,
         Self::HostTypeRoundtrip,
         Self::HostFunctorDictRoundtrip,
         Self::HostPolyFunctionNewtypeRoundtrip,
         Self::HostPolyUnitPayloadRoundtrip,
         Self::HostInterleavedStageRoundtrip,
-        Self::Elab,
+        Self::Macro,
         Self::RootScopedHostEnv,
         Self::TestApiPrint,
         Self::TestApiPrintMarkedString,
@@ -3975,32 +3977,32 @@ impl RunnerProtocol {
         Self::TestApiDynLoad,
         Self::TestApiArithAddI32,
         Self::TestApiArithAddInt,
-        Self::TestApiArithCollectionElab,
-        Self::TestApiArithCollectionElabNoBool,
-        Self::TestApiArithCollectionCompositeElab,
-        Self::TestApiArithCollectionDictElab,
-        Self::TestApiArithCollectionListElab,
-        Self::TestApiArithCollectionOpticsElab,
-        Self::TestApiArithCollectionQueueElab,
+        Self::TestApiArithCollectionMacro,
+        Self::TestApiArithCollectionMacroNoBool,
+        Self::TestApiArithCollectionCompositeMacro,
+        Self::TestApiArithCollectionDictMacro,
+        Self::TestApiArithCollectionListMacro,
+        Self::TestApiArithCollectionOpticsMacro,
+        Self::TestApiArithCollectionQueueMacro,
         Self::TestApiArrayRoot,
-        Self::TestApiArrayElabNoCloneSwap,
-        Self::TestApiArrayElabPushOnly,
-        Self::TestApiArrayElabFixed,
-        Self::TestApiArrayElabStack,
+        Self::TestApiArrayMacroNoCloneSwap,
+        Self::TestApiArrayMacroPushOnly,
+        Self::TestApiArrayMacroFixed,
+        Self::TestApiArrayMacroStack,
         Self::TestApiArrayGetFilled,
-        Self::TestApiBareArithElabI32,
+        Self::TestApiBareArithMacroI32,
         Self::TestApiBareArithBoolI32,
-        Self::TestApiBareCollectionElabReduced,
-        Self::TestApiBareComputeElabI32Reduced,
+        Self::TestApiBareCollectionMacroReduced,
+        Self::TestApiBareComputeMacroI32Reduced,
         Self::TestApiBigintU128,
         Self::TestApiComputeRoot,
         Self::TestApiComputeLoop,
         Self::TestApiReentry,
-        Self::TestApiComputeElabNoI32Format,
-        Self::TestApiComputeElabNoInputParse,
-        Self::TestApiComputeListElab,
+        Self::TestApiComputeMacroNoI32Format,
+        Self::TestApiComputeMacroNoInputParse,
+        Self::TestApiComputeListMacro,
         Self::TestApiComputeDiff,
-        Self::TestApiComputeElabInt,
+        Self::TestApiComputeMacroInt,
         Self::TestApiComputeRecBinder,
         Self::TestApiComputeRecOrder,
         Self::TestApiComputeRecPartialLet,
@@ -4008,19 +4010,19 @@ impl RunnerProtocol {
         Self::TestApiComputeSubPrint,
         Self::TestApiFloatF32F64,
         Self::TestApiFmtRootI32,
-        Self::TestApiFmtElabInt,
+        Self::TestApiFmtMacroInt,
         Self::TestApiFmtRootInt,
         Self::TestApiFmtIntOnly,
-        Self::TestApiPrintElabString,
-        Self::TestApiPrintElabCore,
-        Self::TestApiPrintElabI32,
+        Self::TestApiPrintMacroString,
+        Self::TestApiPrintMacroCore,
+        Self::TestApiPrintMacroI32,
         Self::TestApiPrintBoolString,
-        Self::TestApiPrintElabI32Int,
-        Self::TestApiPrintElabBoolString,
+        Self::TestApiPrintMacroI32Int,
+        Self::TestApiPrintMacroBoolString,
         Self::TestApiPrintLogicBool,
         Self::TestApiPrintStr,
-        Self::TestApiTextElabI32,
-        Self::TestApiTextElabInt,
+        Self::TestApiTextMacroI32,
+        Self::TestApiTextMacroInt,
         Self::TestApiTextRootInt,
         Self::TestApiTextBoolInt,
         Self::TestApiTextConcat,
@@ -4092,10 +4094,10 @@ impl RunnerProtocol {
                 HOST_GENERIC_RETURN_ONLY_ROUNDTRIP_PROTOCOL_NAME
             }
             Self::HostGenericTypeRoundtrip => HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME,
-            Self::HostGenericTypeElabRoundtrip => HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME,
+            Self::HostGenericTypeMacroRoundtrip => HOST_GENERIC_TYPE_MACRO_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostRanknRoundtrip => HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostStructuralRoundtrip => HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME,
-            Self::HostStructuralElabRoundtrip => HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME,
+            Self::HostStructuralMacroRoundtrip => HOST_STRUCTURAL_MACRO_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostTypeRoundtrip => HOST_TYPE_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostFunctorDictRoundtrip => HOST_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostPolyFunctionNewtypeRoundtrip => {
@@ -4103,7 +4105,7 @@ impl RunnerProtocol {
             }
             Self::HostPolyUnitPayloadRoundtrip => HOST_POLY_UNIT_PAYLOAD_ROUNDTRIP_PROTOCOL_NAME,
             Self::HostInterleavedStageRoundtrip => HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME,
-            Self::Elab => ELAB_PROTOCOL_NAME,
+            Self::Macro => MACRO_PROTOCOL_NAME,
             Self::RootScopedHostEnv => ROOT_SCOPED_HOST_ENV_PROTOCOL_NAME,
             Self::TestApiPrint => TESTAPI_PRINT_PROTOCOL_NAME,
             Self::TestApiPrintMarkedString => TESTAPI_PRINT_MARKED_STRING_PROTOCOL_NAME,
@@ -4123,50 +4125,52 @@ impl RunnerProtocol {
             Self::TestApiDynLoad => TESTAPI_DYN_LOAD_PROTOCOL_NAME,
             Self::TestApiArithAddI32 => TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME,
             Self::TestApiArithAddInt => TESTAPI_ARITH_ADD_INT_PROTOCOL_NAME,
-            Self::TestApiArithCollectionElab => TESTAPI_ARITH_COLLECTION_ELAB_PROTOCOL_NAME,
-            Self::TestApiArithCollectionElabNoBool => {
-                TESTAPI_ARITH_COLLECTION_ELAB_NO_BOOL_PROTOCOL_NAME
+            Self::TestApiArithCollectionMacro => TESTAPI_ARITH_COLLECTION_MACRO_PROTOCOL_NAME,
+            Self::TestApiArithCollectionMacroNoBool => {
+                TESTAPI_ARITH_COLLECTION_MACRO_NO_BOOL_PROTOCOL_NAME
             }
-            Self::TestApiArithCollectionCompositeElab => {
-                TESTAPI_ARITH_COLLECTION_COMPOSITE_ELAB_PROTOCOL_NAME
+            Self::TestApiArithCollectionCompositeMacro => {
+                TESTAPI_ARITH_COLLECTION_COMPOSITE_MACRO_PROTOCOL_NAME
             }
-            Self::TestApiArithCollectionDictElab => {
-                TESTAPI_ARITH_COLLECTION_DICT_ELAB_PROTOCOL_NAME
+            Self::TestApiArithCollectionDictMacro => {
+                TESTAPI_ARITH_COLLECTION_DICT_MACRO_PROTOCOL_NAME
             }
-            Self::TestApiArithCollectionListElab => {
-                TESTAPI_ARITH_COLLECTION_LIST_ELAB_PROTOCOL_NAME
+            Self::TestApiArithCollectionListMacro => {
+                TESTAPI_ARITH_COLLECTION_LIST_MACRO_PROTOCOL_NAME
             }
-            Self::TestApiArithCollectionOpticsElab => {
-                TESTAPI_ARITH_COLLECTION_OPTICS_ELAB_PROTOCOL_NAME
+            Self::TestApiArithCollectionOpticsMacro => {
+                TESTAPI_ARITH_COLLECTION_OPTICS_MACRO_PROTOCOL_NAME
             }
-            Self::TestApiArithCollectionQueueElab => {
-                TESTAPI_ARITH_COLLECTION_QUEUE_ELAB_PROTOCOL_NAME
+            Self::TestApiArithCollectionQueueMacro => {
+                TESTAPI_ARITH_COLLECTION_QUEUE_MACRO_PROTOCOL_NAME
             }
             Self::TestApiArrayRoot => TESTAPI_ARRAY_ROOT_PROTOCOL_NAME,
-            Self::TestApiArrayElabNoCloneSwap => TESTAPI_ARRAY_ELAB_NO_CLONE_SWAP_PROTOCOL_NAME,
-            Self::TestApiArrayElabPushOnly => TESTAPI_ARRAY_ELAB_PUSH_ONLY_PROTOCOL_NAME,
-            Self::TestApiArrayElabFixed => TESTAPI_ARRAY_ELAB_FIXED_PROTOCOL_NAME,
-            Self::TestApiArrayElabStack => TESTAPI_ARRAY_ELAB_STACK_PROTOCOL_NAME,
+            Self::TestApiArrayMacroNoCloneSwap => TESTAPI_ARRAY_MACRO_NO_CLONE_SWAP_PROTOCOL_NAME,
+            Self::TestApiArrayMacroPushOnly => TESTAPI_ARRAY_MACRO_PUSH_ONLY_PROTOCOL_NAME,
+            Self::TestApiArrayMacroFixed => TESTAPI_ARRAY_MACRO_FIXED_PROTOCOL_NAME,
+            Self::TestApiArrayMacroStack => TESTAPI_ARRAY_MACRO_STACK_PROTOCOL_NAME,
             Self::TestApiArrayGetFilled => TESTAPI_ARRAY_GET_FILLED_PROTOCOL_NAME,
-            Self::TestApiBareArithElabI32 => TESTAPI_BARE_ARITH_ELAB_I32_PROTOCOL_NAME,
+            Self::TestApiBareArithMacroI32 => TESTAPI_BARE_ARITH_MACRO_I32_PROTOCOL_NAME,
             Self::TestApiBareArithBoolI32 => TESTAPI_BARE_ARITH_BOOL_I32_PROTOCOL_NAME,
-            Self::TestApiBareCollectionElabReduced => {
-                TESTAPI_BARE_COLLECTION_ELAB_REDUCED_PROTOCOL_NAME
+            Self::TestApiBareCollectionMacroReduced => {
+                TESTAPI_BARE_COLLECTION_MACRO_REDUCED_PROTOCOL_NAME
             }
-            Self::TestApiBareComputeElabI32Reduced => {
-                TESTAPI_BARE_COMPUTE_ELAB_I32_REDUCED_PROTOCOL_NAME
+            Self::TestApiBareComputeMacroI32Reduced => {
+                TESTAPI_BARE_COMPUTE_MACRO_I32_REDUCED_PROTOCOL_NAME
             }
             Self::TestApiBigintU128 => TESTAPI_BIGINT_U128_PROTOCOL_NAME,
             Self::TestApiComputeRoot => TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME,
             Self::TestApiComputeLoop => TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME,
             Self::TestApiReentry => TESTAPI_REENTRY_PROTOCOL_NAME,
-            Self::TestApiComputeElabNoI32Format => TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME,
-            Self::TestApiComputeElabNoInputParse => {
-                TESTAPI_COMPUTE_ELAB_NO_INPUT_PARSE_PROTOCOL_NAME
+            Self::TestApiComputeMacroNoI32Format => {
+                TESTAPI_COMPUTE_MACRO_NO_I32_FORMAT_PROTOCOL_NAME
             }
-            Self::TestApiComputeListElab => TESTAPI_COMPUTE_LIST_ELAB_PROTOCOL_NAME,
+            Self::TestApiComputeMacroNoInputParse => {
+                TESTAPI_COMPUTE_MACRO_NO_INPUT_PARSE_PROTOCOL_NAME
+            }
+            Self::TestApiComputeListMacro => TESTAPI_COMPUTE_LIST_MACRO_PROTOCOL_NAME,
             Self::TestApiComputeDiff => TESTAPI_COMPUTE_DIFF_PROTOCOL_NAME,
-            Self::TestApiComputeElabInt => TESTAPI_COMPUTE_ELAB_INT_PROTOCOL_NAME,
+            Self::TestApiComputeMacroInt => TESTAPI_COMPUTE_MACRO_INT_PROTOCOL_NAME,
             Self::TestApiComputeRecBinder => TESTAPI_COMPUTE_REC_BINDER_PROTOCOL_NAME,
             Self::TestApiComputeRecOrder => TESTAPI_COMPUTE_REC_ORDER_PROTOCOL_NAME,
             Self::TestApiComputeRecPartialLet => TESTAPI_COMPUTE_REC_PARTIAL_LET_PROTOCOL_NAME,
@@ -4174,19 +4178,19 @@ impl RunnerProtocol {
             Self::TestApiComputeSubPrint => TESTAPI_COMPUTE_SUB_PRINT_PROTOCOL_NAME,
             Self::TestApiFloatF32F64 => TESTAPI_FLOAT_F32_F64_PROTOCOL_NAME,
             Self::TestApiFmtRootI32 => TESTAPI_FMT_ROOT_I32_PROTOCOL_NAME,
-            Self::TestApiFmtElabInt => TESTAPI_FMT_ELAB_INT_PROTOCOL_NAME,
+            Self::TestApiFmtMacroInt => TESTAPI_FMT_MACRO_INT_PROTOCOL_NAME,
             Self::TestApiFmtRootInt => TESTAPI_FMT_ROOT_INT_PROTOCOL_NAME,
             Self::TestApiFmtIntOnly => TESTAPI_FMT_INT_ONLY_PROTOCOL_NAME,
-            Self::TestApiPrintElabString => TESTAPI_PRINT_ELAB_STRING_PROTOCOL_NAME,
-            Self::TestApiPrintElabCore => TESTAPI_PRINT_ELAB_CORE_PROTOCOL_NAME,
-            Self::TestApiPrintElabI32 => TESTAPI_PRINT_ELAB_I32_PROTOCOL_NAME,
+            Self::TestApiPrintMacroString => TESTAPI_PRINT_MACRO_STRING_PROTOCOL_NAME,
+            Self::TestApiPrintMacroCore => TESTAPI_PRINT_MACRO_CORE_PROTOCOL_NAME,
+            Self::TestApiPrintMacroI32 => TESTAPI_PRINT_MACRO_I32_PROTOCOL_NAME,
             Self::TestApiPrintBoolString => TESTAPI_PRINT_BOOL_STRING_PROTOCOL_NAME,
-            Self::TestApiPrintElabI32Int => TESTAPI_PRINT_ELAB_I32_INT_PROTOCOL_NAME,
-            Self::TestApiPrintElabBoolString => TESTAPI_PRINT_ELAB_BOOL_STRING_PROTOCOL_NAME,
+            Self::TestApiPrintMacroI32Int => TESTAPI_PRINT_MACRO_I32_INT_PROTOCOL_NAME,
+            Self::TestApiPrintMacroBoolString => TESTAPI_PRINT_MACRO_BOOL_STRING_PROTOCOL_NAME,
             Self::TestApiPrintLogicBool => TESTAPI_PRINT_LOGIC_BOOL_PROTOCOL_NAME,
             Self::TestApiPrintStr => TESTAPI_PRINT_STR_PROTOCOL_NAME,
-            Self::TestApiTextElabI32 => TESTAPI_TEXT_ELAB_I32_PROTOCOL_NAME,
-            Self::TestApiTextElabInt => TESTAPI_TEXT_ELAB_INT_PROTOCOL_NAME,
+            Self::TestApiTextMacroI32 => TESTAPI_TEXT_MACRO_I32_PROTOCOL_NAME,
+            Self::TestApiTextMacroInt => TESTAPI_TEXT_MACRO_INT_PROTOCOL_NAME,
             Self::TestApiTextRootInt => TESTAPI_TEXT_ROOT_INT_PROTOCOL_NAME,
             Self::TestApiTextBoolInt => TESTAPI_TEXT_BOOL_INT_PROTOCOL_NAME,
             Self::TestApiTextConcat => TESTAPI_TEXT_CONCAT_PROTOCOL_NAME,
@@ -4270,12 +4274,12 @@ impl RunnerProtocol {
             HOST_GENERIC_TYPE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostGenericTypeRoundtrip),
             SAME_ARTIFACT_EXCHANGE_PROTOCOL_NAME => Ok(Self::SameArtifactExchange),
             DIRECT_SUM_FORALL_BOUNDARY_PROTOCOL_NAME => Ok(Self::DirectSumForallBoundary),
-            HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME => {
-                Ok(Self::HostGenericTypeElabRoundtrip)
+            HOST_GENERIC_TYPE_MACRO_ROUNDTRIP_PROTOCOL_NAME => {
+                Ok(Self::HostGenericTypeMacroRoundtrip)
             }
             HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostRanknRoundtrip),
             HOST_STRUCTURAL_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostStructuralRoundtrip),
-            HOST_STRUCTURAL_ELAB_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostStructuralElabRoundtrip),
+            HOST_STRUCTURAL_MACRO_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostStructuralMacroRoundtrip),
             HOST_TYPE_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostTypeRoundtrip),
             HOST_FUNCTOR_DICT_ROUNDTRIP_PROTOCOL_NAME => Ok(Self::HostFunctorDictRoundtrip),
             HOST_POLY_FUNCTION_NEWTYPE_ROUNDTRIP_PROTOCOL_NAME => {
@@ -4287,7 +4291,7 @@ impl RunnerProtocol {
             HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME => {
                 Ok(Self::HostInterleavedStageRoundtrip)
             }
-            ELAB_PROTOCOL_NAME => Ok(Self::Elab),
+            MACRO_PROTOCOL_NAME => Ok(Self::Macro),
             ROOT_SCOPED_HOST_ENV_PROTOCOL_NAME => Ok(Self::RootScopedHostEnv),
             TESTAPI_PRINT_PROTOCOL_NAME => Ok(Self::TestApiPrint),
             TESTAPI_PRINT_MARKED_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintMarkedString),
@@ -4307,52 +4311,54 @@ impl RunnerProtocol {
             TESTAPI_DYN_LOAD_PROTOCOL_NAME => Ok(Self::TestApiDynLoad),
             TESTAPI_ARITH_ADD_I32_PROTOCOL_NAME => Ok(Self::TestApiArithAddI32),
             TESTAPI_ARITH_ADD_INT_PROTOCOL_NAME => Ok(Self::TestApiArithAddInt),
-            TESTAPI_ARITH_COLLECTION_ELAB_PROTOCOL_NAME => Ok(Self::TestApiArithCollectionElab),
-            TESTAPI_ARITH_COLLECTION_ELAB_NO_BOOL_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionElabNoBool)
+            TESTAPI_ARITH_COLLECTION_MACRO_PROTOCOL_NAME => Ok(Self::TestApiArithCollectionMacro),
+            TESTAPI_ARITH_COLLECTION_MACRO_NO_BOOL_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionMacroNoBool)
             }
-            TESTAPI_ARITH_COLLECTION_COMPOSITE_ELAB_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionCompositeElab)
+            TESTAPI_ARITH_COLLECTION_COMPOSITE_MACRO_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionCompositeMacro)
             }
-            TESTAPI_ARITH_COLLECTION_DICT_ELAB_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionDictElab)
+            TESTAPI_ARITH_COLLECTION_DICT_MACRO_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionDictMacro)
             }
-            TESTAPI_ARITH_COLLECTION_LIST_ELAB_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionListElab)
+            TESTAPI_ARITH_COLLECTION_LIST_MACRO_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionListMacro)
             }
-            TESTAPI_ARITH_COLLECTION_OPTICS_ELAB_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionOpticsElab)
+            TESTAPI_ARITH_COLLECTION_OPTICS_MACRO_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionOpticsMacro)
             }
-            TESTAPI_ARITH_COLLECTION_QUEUE_ELAB_PROTOCOL_NAME => {
-                Ok(Self::TestApiArithCollectionQueueElab)
+            TESTAPI_ARITH_COLLECTION_QUEUE_MACRO_PROTOCOL_NAME => {
+                Ok(Self::TestApiArithCollectionQueueMacro)
             }
             TESTAPI_ARRAY_ROOT_PROTOCOL_NAME => Ok(Self::TestApiArrayRoot),
-            TESTAPI_ARRAY_ELAB_NO_CLONE_SWAP_PROTOCOL_NAME => Ok(Self::TestApiArrayElabNoCloneSwap),
-            TESTAPI_ARRAY_ELAB_PUSH_ONLY_PROTOCOL_NAME => Ok(Self::TestApiArrayElabPushOnly),
-            TESTAPI_ARRAY_ELAB_FIXED_PROTOCOL_NAME => Ok(Self::TestApiArrayElabFixed),
-            TESTAPI_ARRAY_ELAB_STACK_PROTOCOL_NAME => Ok(Self::TestApiArrayElabStack),
-            TESTAPI_ARRAY_GET_FILLED_PROTOCOL_NAME => Ok(Self::TestApiArrayGetFilled),
-            TESTAPI_BARE_ARITH_ELAB_I32_PROTOCOL_NAME => Ok(Self::TestApiBareArithElabI32),
-            TESTAPI_BARE_ARITH_BOOL_I32_PROTOCOL_NAME => Ok(Self::TestApiBareArithBoolI32),
-            TESTAPI_BARE_COLLECTION_ELAB_REDUCED_PROTOCOL_NAME => {
-                Ok(Self::TestApiBareCollectionElabReduced)
+            TESTAPI_ARRAY_MACRO_NO_CLONE_SWAP_PROTOCOL_NAME => {
+                Ok(Self::TestApiArrayMacroNoCloneSwap)
             }
-            TESTAPI_BARE_COMPUTE_ELAB_I32_REDUCED_PROTOCOL_NAME => {
-                Ok(Self::TestApiBareComputeElabI32Reduced)
+            TESTAPI_ARRAY_MACRO_PUSH_ONLY_PROTOCOL_NAME => Ok(Self::TestApiArrayMacroPushOnly),
+            TESTAPI_ARRAY_MACRO_FIXED_PROTOCOL_NAME => Ok(Self::TestApiArrayMacroFixed),
+            TESTAPI_ARRAY_MACRO_STACK_PROTOCOL_NAME => Ok(Self::TestApiArrayMacroStack),
+            TESTAPI_ARRAY_GET_FILLED_PROTOCOL_NAME => Ok(Self::TestApiArrayGetFilled),
+            TESTAPI_BARE_ARITH_MACRO_I32_PROTOCOL_NAME => Ok(Self::TestApiBareArithMacroI32),
+            TESTAPI_BARE_ARITH_BOOL_I32_PROTOCOL_NAME => Ok(Self::TestApiBareArithBoolI32),
+            TESTAPI_BARE_COLLECTION_MACRO_REDUCED_PROTOCOL_NAME => {
+                Ok(Self::TestApiBareCollectionMacroReduced)
+            }
+            TESTAPI_BARE_COMPUTE_MACRO_I32_REDUCED_PROTOCOL_NAME => {
+                Ok(Self::TestApiBareComputeMacroI32Reduced)
             }
             TESTAPI_BIGINT_U128_PROTOCOL_NAME => Ok(Self::TestApiBigintU128),
             TESTAPI_COMPUTE_ROOT_PROTOCOL_NAME => Ok(Self::TestApiComputeRoot),
             TESTAPI_COMPUTE_LOOP_PROTOCOL_NAME => Ok(Self::TestApiComputeLoop),
             TESTAPI_REENTRY_PROTOCOL_NAME => Ok(Self::TestApiReentry),
-            TESTAPI_COMPUTE_ELAB_NO_I32_FORMAT_PROTOCOL_NAME => {
-                Ok(Self::TestApiComputeElabNoI32Format)
+            TESTAPI_COMPUTE_MACRO_NO_I32_FORMAT_PROTOCOL_NAME => {
+                Ok(Self::TestApiComputeMacroNoI32Format)
             }
-            TESTAPI_COMPUTE_ELAB_NO_INPUT_PARSE_PROTOCOL_NAME => {
-                Ok(Self::TestApiComputeElabNoInputParse)
+            TESTAPI_COMPUTE_MACRO_NO_INPUT_PARSE_PROTOCOL_NAME => {
+                Ok(Self::TestApiComputeMacroNoInputParse)
             }
-            TESTAPI_COMPUTE_LIST_ELAB_PROTOCOL_NAME => Ok(Self::TestApiComputeListElab),
+            TESTAPI_COMPUTE_LIST_MACRO_PROTOCOL_NAME => Ok(Self::TestApiComputeListMacro),
             TESTAPI_COMPUTE_DIFF_PROTOCOL_NAME => Ok(Self::TestApiComputeDiff),
-            TESTAPI_COMPUTE_ELAB_INT_PROTOCOL_NAME => Ok(Self::TestApiComputeElabInt),
+            TESTAPI_COMPUTE_MACRO_INT_PROTOCOL_NAME => Ok(Self::TestApiComputeMacroInt),
             TESTAPI_COMPUTE_REC_BINDER_PROTOCOL_NAME => Ok(Self::TestApiComputeRecBinder),
             TESTAPI_COMPUTE_REC_ORDER_PROTOCOL_NAME => Ok(Self::TestApiComputeRecOrder),
             TESTAPI_COMPUTE_REC_PARTIAL_LET_PROTOCOL_NAME => Ok(Self::TestApiComputeRecPartialLet),
@@ -4360,19 +4366,19 @@ impl RunnerProtocol {
             TESTAPI_COMPUTE_SUB_PRINT_PROTOCOL_NAME => Ok(Self::TestApiComputeSubPrint),
             TESTAPI_FLOAT_F32_F64_PROTOCOL_NAME => Ok(Self::TestApiFloatF32F64),
             TESTAPI_FMT_ROOT_I32_PROTOCOL_NAME => Ok(Self::TestApiFmtRootI32),
-            TESTAPI_FMT_ELAB_INT_PROTOCOL_NAME => Ok(Self::TestApiFmtElabInt),
+            TESTAPI_FMT_MACRO_INT_PROTOCOL_NAME => Ok(Self::TestApiFmtMacroInt),
             TESTAPI_FMT_ROOT_INT_PROTOCOL_NAME => Ok(Self::TestApiFmtRootInt),
             TESTAPI_FMT_INT_ONLY_PROTOCOL_NAME => Ok(Self::TestApiFmtIntOnly),
-            TESTAPI_PRINT_ELAB_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintElabString),
-            TESTAPI_PRINT_ELAB_CORE_PROTOCOL_NAME => Ok(Self::TestApiPrintElabCore),
-            TESTAPI_PRINT_ELAB_I32_PROTOCOL_NAME => Ok(Self::TestApiPrintElabI32),
+            TESTAPI_PRINT_MACRO_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintMacroString),
+            TESTAPI_PRINT_MACRO_CORE_PROTOCOL_NAME => Ok(Self::TestApiPrintMacroCore),
+            TESTAPI_PRINT_MACRO_I32_PROTOCOL_NAME => Ok(Self::TestApiPrintMacroI32),
             TESTAPI_PRINT_BOOL_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintBoolString),
-            TESTAPI_PRINT_ELAB_I32_INT_PROTOCOL_NAME => Ok(Self::TestApiPrintElabI32Int),
-            TESTAPI_PRINT_ELAB_BOOL_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintElabBoolString),
+            TESTAPI_PRINT_MACRO_I32_INT_PROTOCOL_NAME => Ok(Self::TestApiPrintMacroI32Int),
+            TESTAPI_PRINT_MACRO_BOOL_STRING_PROTOCOL_NAME => Ok(Self::TestApiPrintMacroBoolString),
             TESTAPI_PRINT_LOGIC_BOOL_PROTOCOL_NAME => Ok(Self::TestApiPrintLogicBool),
             TESTAPI_PRINT_STR_PROTOCOL_NAME => Ok(Self::TestApiPrintStr),
-            TESTAPI_TEXT_ELAB_I32_PROTOCOL_NAME => Ok(Self::TestApiTextElabI32),
-            TESTAPI_TEXT_ELAB_INT_PROTOCOL_NAME => Ok(Self::TestApiTextElabInt),
+            TESTAPI_TEXT_MACRO_I32_PROTOCOL_NAME => Ok(Self::TestApiTextMacroI32),
+            TESTAPI_TEXT_MACRO_INT_PROTOCOL_NAME => Ok(Self::TestApiTextMacroInt),
             TESTAPI_TEXT_ROOT_INT_PROTOCOL_NAME => Ok(Self::TestApiTextRootInt),
             TESTAPI_TEXT_BOOL_INT_PROTOCOL_NAME => Ok(Self::TestApiTextBoolInt),
             TESTAPI_TEXT_CONCAT_PROTOCOL_NAME => Ok(Self::TestApiTextConcat),
@@ -4472,7 +4478,7 @@ impl RunnerProtocol {
             ),
             Self::ExportMultilabelRoundtrip => invoke_contract(
                 ExportDriver::MultilabelRoundtrip,
-                TYPES_ELAB_I32_STRING,
+                TYPES_MACRO_I32_STRING,
                 FNS_PRINT_STRING,
                 true,
             ),
@@ -4574,7 +4580,7 @@ impl RunnerProtocol {
             ),
             Self::ExportNewtypeSumRoundtrip => invoke_contract(
                 ExportDriver::NewtypeSumRoundtrip,
-                TYPES_ELAB_I32_STRING,
+                TYPES_MACRO_I32_STRING,
                 NO_HOST_FNS,
                 true,
             ),
@@ -4610,7 +4616,7 @@ impl RunnerProtocol {
             ),
             Self::ExportCompoundInputOnce => invoke_contract(
                 ExportDriver::CompoundInputOnce,
-                TYPES_ELAB_I32_STRING,
+                TYPES_MACRO_I32_STRING,
                 FNS_COMPOUND_INPUT_ONCE,
                 true,
             ),
@@ -4693,13 +4699,15 @@ impl RunnerProtocol {
                 FNS_OPAQUE_COMPOUND,
                 true,
             ),
-            Self::HostGenericTypeElabRoundtrip => main_contract(TYPES_HOST_BOX_ELAB, FNS_HOST_BOX),
+            Self::HostGenericTypeMacroRoundtrip => {
+                main_contract(TYPES_HOST_BOX_MACRO, FNS_HOST_BOX)
+            }
             Self::HostRanknRoundtrip => main_contract(TYPES_TESTAPI_STRING, FNS_HOST_RANKN),
             Self::HostStructuralRoundtrip => {
                 main_contract(TYPES_TESTAPI_I32_STRING, FNS_HOST_STRUCTURAL)
             }
-            Self::HostStructuralElabRoundtrip => {
-                main_contract(TYPES_ELAB_I32_STRING, FNS_HOST_STRUCTURAL)
+            Self::HostStructuralMacroRoundtrip => {
+                main_contract(TYPES_MACRO_I32_STRING, FNS_HOST_STRUCTURAL)
             }
             Self::HostTypeRoundtrip => main_contract(TYPES_HOST_TOKEN, FNS_HOST_TOKEN),
             Self::HostFunctorDictRoundtrip => main_contract(TYPES_TESTAPI_STRING, FNS_HOST_FUNCTOR),
@@ -4712,12 +4720,12 @@ impl RunnerProtocol {
             Self::HostInterleavedStageRoundtrip => {
                 main_contract(TYPES_TESTAPI_STRING, FNS_HOST_INTERLEAVED_STAGE)
             }
-            Self::Elab => invoke_contract(
+            Self::Macro => invoke_contract(
                 ExportDriver::Main {
-                    module: "elab/main",
+                    module: "macros/main",
                 },
                 TYPES_TESTAPI_CORE,
-                FNS_ELAB,
+                FNS_MACRO,
                 false,
             ),
             Self::RootScopedHostEnv => invoke_contract(
@@ -4736,19 +4744,19 @@ impl RunnerProtocol {
             Self::TestApiBareCollection => {
                 main_contract(TYPES_TESTAPI_CORE, FNS_BARE_COLLECTION_I32)
             }
-            Self::TestApiArray => main_contract(TYPES_ARRAY_ELAB, FNS_ARRAY_NO_CLEAR),
+            Self::TestApiArray => main_contract(TYPES_ARRAY_MACRO, FNS_ARRAY_NO_CLEAR),
             Self::TestApiArrayClear => main_contract(TYPES_HOST_ARRAY_RETURN_ONLY, FNS_ARRAY_CLEAR),
             Self::TestApiBigint => main_contract(TYPES_BIGINT, FNS_BIGINT),
             Self::TestApiText => main_contract(TYPES_TESTAPI_CORE, FNS_TEXT_I32),
-            Self::TestApiCompute => main_contract(TYPES_ELAB_CORE, FNS_COMPUTE_I32),
+            Self::TestApiCompute => main_contract(TYPES_MACRO_CORE, FNS_COMPUTE_I32),
             Self::TestApiArithCollection => {
                 main_contract(TYPES_TESTAPI_CORE, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiFmt => main_contract(TYPES_ELAB_CORE, FNS_FMT_I32),
+            Self::TestApiFmt => main_contract(TYPES_MACRO_CORE, FNS_FMT_I32),
             Self::TestApiArith => main_contract(TYPES_TESTAPI_I32_STRING, FNS_ARITH_I32),
             Self::TestApiBareArith => main_contract(TYPES_TESTAPI_INT_STRING, FNS_BARE_ARITH_INT),
             Self::TestApiBareCompute => {
-                main_contract(TYPES_ELAB_BOOL_INT_STRING, FNS_BARE_COMPUTE_INT)
+                main_contract(TYPES_MACRO_BOOL_INT_STRING, FNS_BARE_COMPUTE_INT)
             }
             Self::TestApiIo => main_contract(TYPES_TESTAPI_I32_STRING, FNS_IO),
             Self::TestApiFloat => main_contract(TYPES_FLOAT_F64, FNS_FLOAT_F64),
@@ -4756,64 +4764,66 @@ impl RunnerProtocol {
 
             Self::TestApiArithAddI32 => main_contract(TYPES_TESTAPI_I32_STRING, FNS_ARITH_ADD_I32),
             Self::TestApiArithAddInt => main_contract(TYPES_TESTAPI_I32_STRING, FNS_ARITH_ADD_INT),
-            Self::TestApiArithCollectionElab => {
-                main_contract(TYPES_ELAB_CORE, FNS_ARITH_COLLECTION_I32)
+            Self::TestApiArithCollectionMacro => {
+                main_contract(TYPES_MACRO_CORE, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiArithCollectionElabNoBool => {
-                main_contract(TYPES_ELAB_CORE, FNS_ARITH_COLLECTION_NO_BOOL)
+            Self::TestApiArithCollectionMacroNoBool => {
+                main_contract(TYPES_MACRO_CORE, FNS_ARITH_COLLECTION_NO_BOOL)
             }
-            Self::TestApiArithCollectionCompositeElab => {
+            Self::TestApiArithCollectionCompositeMacro => {
                 main_contract(TYPES_ARITH_COLLECTION_COMPOSITE, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiArithCollectionDictElab => {
+            Self::TestApiArithCollectionDictMacro => {
                 main_contract(TYPES_ARITH_COLLECTION_DICT, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiArithCollectionListElab => {
+            Self::TestApiArithCollectionListMacro => {
                 main_contract(TYPES_ARITH_COLLECTION_LIST, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiArithCollectionOpticsElab => {
+            Self::TestApiArithCollectionOpticsMacro => {
                 main_contract(TYPES_ARITH_COLLECTION_OPTICS, FNS_ARITH_COLLECTION_I32)
             }
-            Self::TestApiArithCollectionQueueElab => {
+            Self::TestApiArithCollectionQueueMacro => {
                 main_contract(TYPES_ARITH_COLLECTION_QUEUE, FNS_ARITH_COLLECTION_I32)
             }
 
             Self::TestApiArrayRoot => main_contract(TYPES_ARRAY_ROOT, FNS_ARRAY_NO_CLEAR),
-            Self::TestApiArrayElabNoCloneSwap => {
-                main_contract(TYPES_ARRAY_ELAB, FNS_ARRAY_NO_CLONE_SWAP_STRING_EQ)
+            Self::TestApiArrayMacroNoCloneSwap => {
+                main_contract(TYPES_ARRAY_MACRO, FNS_ARRAY_NO_CLONE_SWAP_STRING_EQ)
             }
-            Self::TestApiArrayElabPushOnly => main_contract(TYPES_ARRAY_ELAB, FNS_ARRAY_PUSH_ONLY),
-            Self::TestApiArrayElabFixed => main_contract(TYPES_ARRAY_ELAB, FNS_ARRAY_FIXED),
-            Self::TestApiArrayElabStack => main_contract(TYPES_ARRAY_ELAB, FNS_ARRAY_STACK),
+            Self::TestApiArrayMacroPushOnly => {
+                main_contract(TYPES_ARRAY_MACRO, FNS_ARRAY_PUSH_ONLY)
+            }
+            Self::TestApiArrayMacroFixed => main_contract(TYPES_ARRAY_MACRO, FNS_ARRAY_FIXED),
+            Self::TestApiArrayMacroStack => main_contract(TYPES_ARRAY_MACRO, FNS_ARRAY_STACK),
             Self::TestApiArrayGetFilled => main_contract(TYPES_ARRAY_ROOT, FNS_ARRAY_GET_FILLED),
 
-            Self::TestApiBareArithElabI32 => {
-                main_contract(TYPES_ELAB_I32_STRING, FNS_BARE_ARITH_I32)
+            Self::TestApiBareArithMacroI32 => {
+                main_contract(TYPES_MACRO_I32_STRING, FNS_BARE_ARITH_I32)
             }
             Self::TestApiBareArithBoolI32 => main_contract(TYPES_TESTAPI_CORE, FNS_BARE_ARITH_I32),
-            Self::TestApiBareCollectionElabReduced => {
-                main_contract(TYPES_ELAB_CORE, FNS_BARE_COLLECTION_REDUCED)
+            Self::TestApiBareCollectionMacroReduced => {
+                main_contract(TYPES_MACRO_CORE, FNS_BARE_COLLECTION_REDUCED)
             }
-            Self::TestApiBareComputeElabI32Reduced => {
-                main_contract(TYPES_ELAB_CORE, FNS_BARE_COMPUTE_I32_REDUCED)
+            Self::TestApiBareComputeMacroI32Reduced => {
+                main_contract(TYPES_MACRO_CORE, FNS_BARE_COMPUTE_I32_REDUCED)
             }
             Self::TestApiBigintU128 => main_contract(TYPES_BIGINT_U128, FNS_BIGINT_U128),
 
             Self::TestApiComputeRoot => main_contract(TYPES_TESTAPI_CORE, FNS_COMPUTE_I32),
             Self::TestApiComputeLoop => main_contract(NO_HOST_TYPES, FNS_COMPUTE_LOOP),
-            Self::TestApiReentry => main_contract(TYPES_ELAB_CORE, FNS_REENTRY),
-            Self::TestApiComputeElabNoI32Format => {
-                main_contract(TYPES_ELAB_CORE, FNS_COMPUTE_NO_I32_FORMAT)
+            Self::TestApiReentry => main_contract(TYPES_MACRO_CORE, FNS_REENTRY),
+            Self::TestApiComputeMacroNoI32Format => {
+                main_contract(TYPES_MACRO_CORE, FNS_COMPUTE_NO_I32_FORMAT)
             }
-            Self::TestApiComputeElabNoInputParse => {
-                main_contract(TYPES_ELAB_CORE, FNS_COMPUTE_NO_INPUT_PARSE)
+            Self::TestApiComputeMacroNoInputParse => {
+                main_contract(TYPES_MACRO_CORE, FNS_COMPUTE_NO_INPUT_PARSE)
             }
-            Self::TestApiComputeListElab => {
-                main_contract(TYPES_COMPUTE_LIST_ELAB, FNS_COMPUTE_NO_I32_FORMAT)
+            Self::TestApiComputeListMacro => {
+                main_contract(TYPES_COMPUTE_LIST_MACRO, FNS_COMPUTE_NO_I32_FORMAT)
             }
-            Self::TestApiComputeDiff => main_contract(TYPES_ELAB_CORE, FNS_COMPUTE_DIFF),
-            Self::TestApiComputeElabInt => {
-                main_contract(TYPES_ELAB_BOOL_INT_STRING, FNS_COMPUTE_INT)
+            Self::TestApiComputeDiff => main_contract(TYPES_MACRO_CORE, FNS_COMPUTE_DIFF),
+            Self::TestApiComputeMacroInt => {
+                main_contract(TYPES_MACRO_BOOL_INT_STRING, FNS_COMPUTE_INT)
             }
             Self::TestApiComputeRecBinder => {
                 main_contract(TYPES_TESTAPI_CORE, FNS_COMPUTE_REC_BINDER)
@@ -4833,27 +4843,29 @@ impl RunnerProtocol {
             Self::TestApiFloatF32F64 => main_contract(TYPES_FLOAT_F32_F64, FNS_FLOAT_F32_F64),
 
             Self::TestApiFmtRootI32 => main_contract(TYPES_TESTAPI_CORE, FNS_FMT_I32),
-            Self::TestApiFmtElabInt => main_contract(TYPES_ELAB_BOOL_INT_STRING, FNS_FMT_INT),
+            Self::TestApiFmtMacroInt => main_contract(TYPES_MACRO_BOOL_INT_STRING, FNS_FMT_INT),
             Self::TestApiFmtRootInt => main_contract(TYPES_TESTAPI_BOOL_INT_STRING, FNS_FMT_INT),
             Self::TestApiFmtIntOnly => main_contract(TYPES_TESTAPI_INT_STRING, FNS_FMT_INT_ONLY),
 
-            Self::TestApiPrintElabString => main_contract(TYPES_ELAB_STRING, FNS_PRINT_STRING),
-            Self::TestApiPrintElabCore => main_contract(TYPES_ELAB_CORE, FNS_PRINT_STRING),
-            Self::TestApiPrintElabI32 => main_contract(TYPES_ELAB_I32_STRING, FNS_PRINT_STRING),
+            Self::TestApiPrintMacroString => main_contract(TYPES_MACRO_STRING, FNS_PRINT_STRING),
+            Self::TestApiPrintMacroCore => main_contract(TYPES_MACRO_CORE, FNS_PRINT_STRING),
+            Self::TestApiPrintMacroI32 => main_contract(TYPES_MACRO_I32_STRING, FNS_PRINT_STRING),
             Self::TestApiPrintBoolString => {
                 main_contract(TYPES_TESTAPI_BOOL_STRING, FNS_PRINT_STRING)
             }
-            Self::TestApiPrintElabI32Int => {
-                main_contract(TYPES_ELAB_I32_INT_STRING, FNS_PRINT_STRING)
+            Self::TestApiPrintMacroI32Int => {
+                main_contract(TYPES_MACRO_I32_INT_STRING, FNS_PRINT_STRING)
             }
-            Self::TestApiPrintElabBoolString => {
-                main_contract(TYPES_ELAB_BOOL_STRING, FNS_PRINT_STRING)
+            Self::TestApiPrintMacroBoolString => {
+                main_contract(TYPES_MACRO_BOOL_STRING, FNS_PRINT_STRING)
             }
             Self::TestApiPrintLogicBool => main_contract(TYPES_LOGIC_BOOL, FNS_PRINT_STRING),
             Self::TestApiPrintStr => main_contract(TYPES_TESTAPI_STR, FNS_PRINT_STR),
 
-            Self::TestApiTextElabI32 => main_contract(TYPES_ELAB_CORE, FNS_TEXT_I32),
-            Self::TestApiTextElabInt => main_contract(TYPES_ELAB_BOOL_I32_INT_STRING, FNS_TEXT_I32),
+            Self::TestApiTextMacroI32 => main_contract(TYPES_MACRO_CORE, FNS_TEXT_I32),
+            Self::TestApiTextMacroInt => {
+                main_contract(TYPES_MACRO_BOOL_I32_INT_STRING, FNS_TEXT_I32)
+            }
             Self::TestApiTextRootInt => {
                 main_contract(TYPES_TESTAPI_BOOL_I32_INT_STRING, FNS_TEXT_I32)
             }
@@ -5879,10 +5891,10 @@ mod tests {
             RunnerProtocol::HostGenericReturnOnlyRoundtrip,
             RunnerProtocol::TestApiArray,
             RunnerProtocol::TestApiArrayRoot,
-            RunnerProtocol::TestApiArrayElabNoCloneSwap,
-            RunnerProtocol::TestApiArrayElabPushOnly,
-            RunnerProtocol::TestApiArrayElabFixed,
-            RunnerProtocol::TestApiArrayElabStack,
+            RunnerProtocol::TestApiArrayMacroNoCloneSwap,
+            RunnerProtocol::TestApiArrayMacroPushOnly,
+            RunnerProtocol::TestApiArrayMacroFixed,
+            RunnerProtocol::TestApiArrayMacroStack,
             RunnerProtocol::TestApiArrayGetFilled,
         ] {
             assert!(
@@ -6167,42 +6179,42 @@ mod tests {
     }
 
     #[test]
-    fn host_generic_type_elab_adds_only_standard_elab_roles() {
+    fn host_generic_type_macro_adds_only_standard_macro_roles() {
         let base = RunnerProtocol::HostGenericTypeRoundtrip.contract();
-        let elab = RunnerProtocol::HostGenericTypeElabRoundtrip.contract();
+        let macro_contract = RunnerProtocol::HostGenericTypeMacroRoundtrip.contract();
         assert_eq!(base.host_types, TYPES_HOST_BOX);
         assert_eq!(base.host_types.len(), 3);
-        assert_eq!(&elab.host_types[..3], base.host_types);
+        assert_eq!(&macro_contract.host_types[..3], base.host_types);
         assert_eq!(
-            &elab.host_types[3..],
+            &macro_contract.host_types[3..],
             &[
-                HostTypeBinding::role("elab/testapi", "Bool", RoleFixture::Bool),
-                HostTypeBinding::role("elab/testapi", "I32", RoleFixture::I32),
-                HostTypeBinding::role("elab/testapi", "Int", RoleFixture::I32),
-                HostTypeBinding::role("elab/testapi", "String", RoleFixture::String),
+                HostTypeBinding::role("macros/testapi", "Bool", RoleFixture::Bool),
+                HostTypeBinding::role("macros/testapi", "I32", RoleFixture::I32),
+                HostTypeBinding::role("macros/testapi", "Int", RoleFixture::I32),
+                HostTypeBinding::role("macros/testapi", "String", RoleFixture::String),
             ]
         );
-        assert_eq!(elab.host_fns, base.host_fns);
-        assert_eq!(elab.execution, base.execution);
-        assert_eq!(elab.testapi_conformed, base.testapi_conformed);
+        assert_eq!(macro_contract.host_fns, base.host_fns);
+        assert_eq!(macro_contract.execution, base.execution);
+        assert_eq!(macro_contract.testapi_conformed, base.testapi_conformed);
     }
 
     #[test]
-    fn dict_collection_protocol_binds_list_elaborator_host_types() {
-        let contract = RunnerProtocol::TestApiArithCollectionDictElab.contract();
+    fn dict_collection_protocol_binds_list_macro_host_types() {
+        let contract = RunnerProtocol::TestApiArithCollectionDictMacro.contract();
         assert_eq!(contract.host_types.len(), 15);
         assert_eq!(
             contract
                 .host_types
                 .iter()
                 .copied()
-                .filter(|binding| binding.module == "list/elab/testapi")
+                .filter(|binding| binding.module == "list/macros/testapi")
                 .collect::<Vec<_>>(),
             vec![
-                HostTypeBinding::role("list/elab/testapi", "Bool", RoleFixture::Bool),
-                HostTypeBinding::role("list/elab/testapi", "I32", RoleFixture::I32),
-                HostTypeBinding::role("list/elab/testapi", "Int", RoleFixture::I32),
-                HostTypeBinding::role("list/elab/testapi", "String", RoleFixture::String),
+                HostTypeBinding::role("list/macros/testapi", "Bool", RoleFixture::Bool),
+                HostTypeBinding::role("list/macros/testapi", "I32", RoleFixture::I32),
+                HostTypeBinding::role("list/macros/testapi", "Int", RoleFixture::I32),
+                HostTypeBinding::role("list/macros/testapi", "String", RoleFixture::String),
             ]
         );
         assert_eq!(contract.host_fns, FNS_ARITH_COLLECTION_I32);
@@ -6215,21 +6227,21 @@ mod tests {
     }
 
     #[test]
-    fn queue_collection_protocol_binds_nested_list_elaborator_host_types() {
-        let contract = RunnerProtocol::TestApiArithCollectionQueueElab.contract();
+    fn queue_collection_protocol_binds_nested_list_macro_host_types() {
+        let contract = RunnerProtocol::TestApiArithCollectionQueueMacro.contract();
         assert_eq!(contract.host_types.len(), 15);
         assert_eq!(
             contract
                 .host_types
                 .iter()
                 .copied()
-                .filter(|binding| binding.module == "queue/list/elab/testapi")
+                .filter(|binding| binding.module == "queue/list/macros/testapi")
                 .collect::<Vec<_>>(),
             vec![
-                HostTypeBinding::role("queue/list/elab/testapi", "Bool", RoleFixture::Bool),
-                HostTypeBinding::role("queue/list/elab/testapi", "I32", RoleFixture::I32),
-                HostTypeBinding::role("queue/list/elab/testapi", "Int", RoleFixture::I32),
-                HostTypeBinding::role("queue/list/elab/testapi", "String", RoleFixture::String),
+                HostTypeBinding::role("queue/list/macros/testapi", "Bool", RoleFixture::Bool),
+                HostTypeBinding::role("queue/list/macros/testapi", "I32", RoleFixture::I32),
+                HostTypeBinding::role("queue/list/macros/testapi", "Int", RoleFixture::I32),
+                HostTypeBinding::role("queue/list/macros/testapi", "String", RoleFixture::String),
             ]
         );
         assert_eq!(contract.host_fns, FNS_ARITH_COLLECTION_I32);
@@ -6392,8 +6404,8 @@ mod tests {
                 RunnerProtocol::HostGenericTypeRoundtrip,
             ),
             (
-                HOST_GENERIC_TYPE_ELAB_ROUNDTRIP_PROTOCOL_NAME,
-                RunnerProtocol::HostGenericTypeElabRoundtrip,
+                HOST_GENERIC_TYPE_MACRO_ROUNDTRIP_PROTOCOL_NAME,
+                RunnerProtocol::HostGenericTypeMacroRoundtrip,
             ),
             (
                 HOST_RANKN_ROUNDTRIP_PROTOCOL_NAME,
@@ -6423,7 +6435,7 @@ mod tests {
                 HOST_INTERLEAVED_STAGE_ROUNDTRIP_PROTOCOL_NAME,
                 RunnerProtocol::HostInterleavedStageRoundtrip,
             ),
-            (ELAB_PROTOCOL_NAME, RunnerProtocol::Elab),
+            (MACRO_PROTOCOL_NAME, RunnerProtocol::Macro),
             (
                 ROOT_SCOPED_HOST_ENV_PROTOCOL_NAME,
                 RunnerProtocol::RootScopedHostEnv,
@@ -6561,7 +6573,7 @@ mod tests {
             RunnerProtocol::HostGenericReturnOnlyRoundtrip,
             RunnerProtocol::HostRanknRoundtrip,
             RunnerProtocol::HostGenericTypeRoundtrip,
-            RunnerProtocol::HostGenericTypeElabRoundtrip,
+            RunnerProtocol::HostGenericTypeMacroRoundtrip,
             RunnerProtocol::HostStructuralRoundtrip,
             RunnerProtocol::HostFunctorDictRoundtrip,
             RunnerProtocol::HostPolyFunctionNewtypeRoundtrip,
@@ -6585,7 +6597,7 @@ mod tests {
         ] {
             assert!(p.is_testapi(), "{p:?} should be testapi-conformed");
         }
-        assert!(!RunnerProtocol::Elab.is_testapi());
+        assert!(!RunnerProtocol::Macro.is_testapi());
     }
 
     #[test]

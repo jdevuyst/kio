@@ -70,7 +70,7 @@ fn numbered_binding_completion_tracks_lexical_owners() {
             vec!["x1"],
         ),
         (
-            "module m; fn run() { action! { let .x. <- (); let .y. <- (); (x1, y|2) } }",
+            "module m; fn run() { action { let .x. <- (); let .y. <- (); (x1, y|2) } }",
             vec!["x1", "y1", "y2"],
             vec!["x2"],
         ),
@@ -110,7 +110,7 @@ fn numbered_binding_completion_tracks_lexical_owners() {
     }
     for marked in [
         "module m; fn run() { let .x. = (); print(x3); let .x. = (); x|",
-        "module m; fn run() { action! { let .x. <- (); print(x3); let .x. <- (); x|",
+        "module m; fn run() { action { let .x. <- (); print(x3); let .x. <- (); x|",
     ] {
         let (source, offset) = probe(marked, None);
         let facts = crate::pass::parser::probe_tooling_source(&source, Some(offset));
@@ -307,31 +307,31 @@ fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
     let mut failures = Vec::new();
     for (prefix, escaping) in [
         ("", false),
-        ("sequence! bind { ", false),
-        ("sequence! bind { let local = parent; ", false),
-        ("sequence! bind { let local <- ", false),
-        ("sequence! bind { let local <- parent; ", true),
-        ("sequence! bind { parent; ", false),
-        ("sequence! bind { parent; let local = parent; ", false),
+        ("sequence(bind) { ", false),
+        ("sequence(bind) { let local = parent; ", false),
+        ("sequence(bind) { let local <- ", false),
+        ("sequence(bind) { let local <- parent; ", true),
+        ("sequence(bind) { parent; ", false),
+        ("sequence(bind) { parent; let local = parent; ", false),
         (
-            "sequence! bind { let .(first, second) <- (parent, parent); ",
+            "sequence(bind) { let .(first, second) <- (parent, parent); ",
             true,
         ),
-        ("scope! { let local = parent; ", false),
-        ("scope! { parent; ", false),
+        ("scope { let local = parent; ", false),
+        ("scope { parent; ", false),
         (
-            "let prior = sequence! bind { let local <- parent; local }; ",
+            "let prior = sequence (bind) { let local <- parent; local }; ",
             false,
         ),
         (
-            "sequence! bind { let local = sequence! bind { let nested <- parent; nested }; ",
+            "sequence(bind) { let local = sequence (bind) { let nested <- parent; nested }; ",
             false,
         ),
         (
-            "sequence! bind { let local <- sequence! bind { let nested <- parent; nested }; ",
+            "sequence(bind) { let local <- sequence (bind) { let nested <- parent; nested }; ",
             true,
         ),
-        ("sequence! bind { .() { ", true),
+        ("sequence(bind) { .() { ", true),
     ] {
         for (tail, slot) in [
             ("", CursorSlot::Value),
@@ -375,19 +375,19 @@ fn neutral_block_completion_keeps_the_lexical_recursive_owner() {
 fn neutral_block_completion_preserves_locals_and_preceding_positions() {
     for (marked, expected) in [
         (
-            "module app; rec(loop) fn run(parent: .) { sequence! bind { let local <- pa|rent; local } }",
+            "module app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- pa|rent; local } }",
             vec!["parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { sequence! bind { let local <- parent; lo|cal } }",
+            "module app; rec(loop) fn run(parent: .) { sequence (bind) { let local <- parent; lo|cal } }",
             vec!["local", "parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { sequence! bind { pa|rent; parent } }",
+            "module app; rec(loop) fn run(parent: .) { sequence (bind) { pa|rent; parent } }",
             vec!["parent"],
         ),
         (
-            "module app; rec(loop) fn run(parent: .) { let prior = sequence! bind { let local <- parent; local }; pa|rent }",
+            "module app; rec(loop) fn run(parent: .) { let prior = sequence (bind) { let local <- parent; local }; pa|rent }",
             vec!["prior", "parent"],
         ),
     ] {
@@ -402,25 +402,21 @@ fn neutral_block_completion_preserves_locals_and_preceding_positions() {
 #[test]
 fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_bodies() {
     for (body, recursive, eligible) in [
-        ("sequence! bind { parent;| }", true, true),
-        ("scope! { parent;| }", true, true),
-        ("sequence! bind { parent; } |", true, false),
-        ("sequence! bind { parent | }", true, false),
-        ("sequence! bind { let local <- ; | }", true, false),
+        ("sequence (bind) { parent;| }", true, true),
+        ("scope { parent;| }", true, true),
+        ("sequence (bind) { parent; } |", true, false),
+        ("sequence (bind) { parent | }", true, false),
+        ("sequence (bind) { let local <- ; | }", true, false),
         (
-            "sequence! bind { let local <- parent; sequence! bind { | } }",
+            "sequence (bind) { let local <- parent; sequence (bind) { | } }",
             true,
             true,
         ),
+        ("sequence(|bind) { let local <- parent; local }", true, true),
+        ("sequence (bind) { let local = |parent; local }", true, true),
+        ("sequence (bind) { let local <- parent; | }", false, false),
         (
-            "sequence!(|bind) { let local <- parent; local }",
-            true,
-            true,
-        ),
-        ("sequence! bind { let local = |parent; local }", true, true),
-        ("sequence! bind { let local <- parent; | }", false, false),
-        (
-            "sequence! bind { let local <- |parent; local }",
+            "sequence (bind) { let local <- |parent; local }",
             false,
             false,
         ),
@@ -444,14 +440,14 @@ fn neutral_block_completion_distinguishes_insertions_from_closed_and_malformed_b
             );
             assert!(names(&result.values).contains(&"parent"), "{marked}");
         }
-        if body == "sequence! bind { parent | }" {
+        if body == "sequence (bind) { parent | }" {
             assert!(result.values.is_empty(), "{marked}: {result:?}");
             assert!(!result.keywords.contains(&"let"), "{marked}: {result:?}");
         }
     }
     for (body, parses) in [
-        ("sequence! bind { parent; parent }", true),
-        ("sequence! bind { parent parent }", false),
+        ("sequence (bind) { parent; parent }", true),
+        ("sequence (bind) { parent parent }", false),
     ] {
         let source = format!("module app; fn run(parent: .) {{ {body} }}");
         assert_eq!(

@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(one_sum, widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro one_sum, macro widen_sum);
 import testapi(default String);
 import testapi/io(print);
 import testapi/iter(loop);
@@ -16,21 +16,21 @@ import testapi/text(string_concat);
 pub rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
 // Convenience constructors over the underlying sum.
-fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
 
 // In-order reverse via `loop`. Used twice by `list_functor` so the
 // mapped output ends up in input order.
 fn reverse_step[A](state: List(A) & List(A)) -> (List(A) & List(A)) | List(A) {
-  match! state {
+  match(state) {
     .(remaining: List(A), output: List(A)) {
-      match! remaining.>List.un_list {
+      match(remaining.>List.un_list) {
         (
         , .(x: A, rest: List(A)) {
-            widen_sum!((rest, push(x, output)), (List(A) & List(A)) | List(A))
+            widen_sum((rest, push(x, output)), (List(A) & List(A)) | List(A))
           }
-        , .(_empty: .) { widen_sum!(output, (List(A) & List(A)) | List(A)) }
+        , .(_empty: .) { widen_sum(output, (List(A) & List(A)) | List(A)) }
         )
       }
     }
@@ -62,14 +62,14 @@ fn list_functor() -> Functor(List) {
       let reversed =
         loop(
         , .(state: List(A) & List(B)) {
-            match! state {
+            match(state) {
               .(remaining: List(A), output: List(B)) {
-                match! remaining.>List.un_list {
+                match(remaining.>List.un_list) {
                   (
                   , .(x: A, rest: List(A)) {
-                      widen_sum!((rest, push(s(x), output)), (List(A) & List(B)) | List(B))
+                      widen_sum((rest, push(s(x), output)), (List(A) & List(B)) | List(B))
                     }
-                  , .(_empty: .) { widen_sum!(output, (List(A) & List(B)) | List(B)) }
+                  , .(_empty: .) { widen_sum(output, (List(A) & List(B)) | List(B)) }
                   )
                 }
               }
@@ -86,21 +86,21 @@ fn list_functor() -> Functor(List) {
 // by a trailing "\n". Used to surface the mapped list as a single
 // printable line.
 fn join_step(state: List(String) & String) -> (List(String) & String) | String {
-  match! state {
+  match(state) {
     .(remaining: List(String), acc: String) {
-      match! remaining.>List.un_list {
+      match(remaining.>List.un_list) {
         (
         , .(x: String, rest: List(String)) {
             let sep =
-              match! rest.>List.un_list {
+              match(rest.>List.un_list) {
                 (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
               };
-            widen_sum!(
+            widen_sum(
             , (rest, string_concat(acc, string_concat(x, sep)))
             , (List(String) & String) | String
             )
           }
-        , .(_empty: .) { widen_sum!(acc, (List(String) & String) | String) }
+        , .(_empty: .) { widen_sum(acc, (List(String) & String) | String) }
         )
       }
     }

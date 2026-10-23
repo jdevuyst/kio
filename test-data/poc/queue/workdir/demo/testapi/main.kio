@@ -1,8 +1,8 @@
 module testapi/main;
 
 import library/core(Bool, Queue, bool_to, empty, is_empty, no, peek, singleton, well_formed, yes);
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import library/queue(
 , concat
 , dequeue
@@ -28,12 +28,12 @@ import testapi/text(string_concat);
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
-fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
 
-fn absent[A]() -> A | . { widen_sum!((), A | .) }
+fn absent[A]() -> A | . { widen_sum((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
@@ -42,7 +42,7 @@ fn show_queue(q: Queue(I32)) -> String {
   let rendered =
     lists.foldl(
     , .(carry: Bool & String, x: I32) -> Bool & String {
-        match! carry {
+        match(carry) {
           .(first: Bool, text: String) {
             let sep = bool_to("", ", ", first);
             (no(), int_to_string(x).>>cat(sep).>>cat(text))
@@ -52,7 +52,7 @@ fn show_queue(q: Queue(I32)) -> String {
     , (yes(), "")
     , to_list(q)
     );
-  match! rendered {
+  match(rendered) {
     .(_first: Bool, body: String) { cat("[", cat(body, "]")) }
   }
 }
@@ -64,7 +64,7 @@ fn show_result[A](result: A | ., render: A -> String) -> String {
 fn show_opt(m: I32 | .) -> String { show_result(m, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
-  match! value {
+  match(value) {
     (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
   }
 }
@@ -92,7 +92,7 @@ pub fn main() {
   , show_opt(fold_result(
     , absent()
     , .(p: I32 & Queue(I32)) {
-        match! p {
+        match(p) {
           .(h: I32, _r: Queue(I32)) { present(h) }
         }
       }
@@ -104,7 +104,7 @@ pub fn main() {
   , fold_result(
     , "none"
     , .(p: I32 & Queue(I32)) {
-        match! p {
+        match(p) {
           .(_h: I32, r: Queue(I32)) { show_queue(r) }
         }
       }
@@ -122,7 +122,7 @@ pub fn main() {
   , show_opt(fold_result(
     , absent()
     , .(p: I32 & Queue(I32)) {
-        match! p {
+        match(p) {
           .(h: I32, _r: Queue(I32)) { present(h) }
         }
       }
@@ -146,8 +146,7 @@ pub fn main() {
     };
   line("dequeue(unit)", show_result(dequeue(unit_queue), show_unit_pair));
   line("dequeue(empty Unit)", show_result(dequeue(no_units), show_unit_pair));
-  let .(sum_queue: Queue(I32 | .)) =
-    from_list([* widen_sum!(7, I32 | .), widen_sum!((), I32 | .) *]);
+  let .(sum_queue: Queue(I32 | .)) = from_list([* widen_sum(7, I32 | .), widen_sum((), I32 | .) *]);
   line("peek(nested number)", show_result(peek(sum_queue), render_sum));
   let sum_tail =
     fold_result(

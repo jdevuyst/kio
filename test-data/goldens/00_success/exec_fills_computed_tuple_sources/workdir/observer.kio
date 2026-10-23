@@ -9,4 +9,4 @@ pure fn retain_impl(
 , value: __Checked_term__
 ) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
 
-pub elab retain : [Source] Source -> Source { impl(fills) retain_impl }
+pub macro retain : [Source] Source -> Source { impl(fills) retain_impl }

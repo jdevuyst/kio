@@ -1,6 +1,6 @@
 module form/report;
 
-import elab/control(if);
+import macros/control(macro if);
 import option/core(Option, none, option, some);
 import result/result(Result, err, fold, ok);
 import testapi(I32, String, default Bool);
@@ -96,9 +96,9 @@ fn validate_country(value: Option(String)) -> Validation_result {
 }
 
 fn validate_age_value(age: I32) -> Validation_result {
-  if! lt_i32(age, 18) {
+  if(lt_i32(age, 18)) {
     fail("age", cat("too young: ", int_to_string(age)))
-  } else if! lt_i32(120, age) {
+  } else if(lt_i32(120, age)) {
     fail("age", cat("too large: ", int_to_string(age)))
   } else {
     pass("age", cat("accepted: ", int_to_string(age)))
@@ -110,7 +110,7 @@ fn validate_age(value: Option(I32)) -> Validation_result {
 }
 
 fn validate_terms_value(accepted: Bool) -> Validation_result {
-  if! accepted { pass("terms", "accepted") } else { fail("terms", "terms not accepted") }
+  if(accepted) { pass("terms", "accepted") } else { fail("terms", "terms not accepted") }
 }
 
 fn validate_terms(value: Option(Bool)) -> Validation_result {

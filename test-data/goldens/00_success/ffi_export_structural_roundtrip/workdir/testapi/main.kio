@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I16, I32, I64, I8, String, U16, U32, U64, U8);
 import testapi/fmt(int_to_string);
 
@@ -12,7 +12,7 @@ pub type Wide_sum = I8 | I16 | I32 | I64 | U8 | U16 | U32 | U64 | Bool | String;
 pub fn pair_swap((n: I32, s: String)) -> String & I32 { (s, n) }
 
 pub fn dispatch_left(s: I32 | String) -> String {
-  match! s {
+  match(s) {
     (.(n: I32) { int_to_string(n) }, .(t: String) { t })
   }
 }
@@ -33,7 +33,7 @@ pub fn rotate((
 )) -> Wide_product { (l, a, b, c, d, e, f, g, h, i, j, k) }
 
 pub fn classify(value: Wide_sum) -> I32 {
-  match! value {
+  match(value) {
     (
     , .(_v: I8) { 1(I32) }
     , .(_v: I16) { 2(I32) }
@@ -51,8 +51,8 @@ pub fn classify(value: Wide_sum) -> I32 {
 
 pub fn echo_sum(value: Wide_sum) -> Wide_sum { value }
 
-pub fn choose_first() -> Wide_sum { widen_sum!(1(I8), Wide_sum) }
+pub fn choose_first() -> Wide_sum { widen_sum(1(I8), Wide_sum) }
 
-pub fn choose_middle() -> Wide_sum { widen_sum!(5(U8), Wide_sum) }
+pub fn choose_middle() -> Wide_sum { widen_sum(5(U8), Wide_sum) }
 
-pub fn choose_last() -> Wide_sum { widen_sum!("ten"(String), Wide_sum) }
+pub fn choose_last() -> Wide_sum { widen_sum("ten"(String), Wide_sum) }

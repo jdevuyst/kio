@@ -1,6 +1,5 @@
 module graph_routes/search;
 
-import elab/control(if);
 import graph_routes/model(
 , Search_state
 , inf
@@ -19,6 +18,7 @@ import graph_routes/model(
 , {round}
 , {visited}
 );
+import macros/control(macro if);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32);
 import testapi/iter(loop);
@@ -44,12 +44,12 @@ fn next_round(s: Search_state) -> Search_state {
 }
 
 fn can_relax(from_cost: I32, old_cost: I32, edge_cost: I32) -> Bool {
-  if! eq_i32(from_cost, inf()) { .f } else { lt_i32(add_i32(from_cost, edge_cost), old_cost) }
+  if(eq_i32(from_cost, inf())) { .f } else { lt_i32(add_i32(from_cost, edge_cost), old_cost) }
 }
 
 fn relax_b(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
   let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
-  if! can_relax(from_cost, db, edge_cost) {
+  if(can_relax(from_cost, db, edge_cost)) {
     rebuild(
     , round
     , cursor
@@ -71,7 +71,7 @@ fn relax_b(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_c(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
   let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
-  if! can_relax(from_cost, dc, edge_cost) {
+  if(can_relax(from_cost, dc, edge_cost)) {
     rebuild(
     , round
     , cursor
@@ -93,7 +93,7 @@ fn relax_c(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_d(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
   let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
-  if! can_relax(from_cost, dd, edge_cost) {
+  if(can_relax(from_cost, dd, edge_cost)) {
     rebuild(
     , round
     , cursor
@@ -115,7 +115,7 @@ fn relax_d(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_e(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
   let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
-  if! can_relax(from_cost, de, edge_cost) {
+  if(can_relax(from_cost, de, edge_cost)) {
     rebuild(
     , round
     , cursor
@@ -137,7 +137,7 @@ fn relax_e(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_f(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
   let .({round, cursor, da, db, dc, dd, de, df, dg, visited, relaxed, blocked}) = s;
-  if! can_relax(from_cost, df, edge_cost) {
+  if(can_relax(from_cost, df, edge_cost)) {
     rebuild(
     , round
     , cursor
@@ -159,23 +159,23 @@ fn relax_f(s: Search_state, from_cost: I32, edge_cost: I32) -> Search_state {
 
 fn relax_candidate(s: Search_state) -> Search_state {
   let current = seen(s);
-  if! eq_i32(current.?{cursor}, 0) {
+  if(eq_i32(current.?{cursor}, 0)) {
     relax_b(current, current.?{da}, 4)
-  } else if! eq_i32(current.?{cursor}, 1) {
+  } else if(eq_i32(current.?{cursor}, 1)) {
     relax_c(current, current.?{da}, 2)
-  } else if! eq_i32(current.?{cursor}, 2) {
+  } else if(eq_i32(current.?{cursor}, 2)) {
     relax_d(current, current.?{db}, 5)
-  } else if! eq_i32(current.?{cursor}, 3) {
+  } else if(eq_i32(current.?{cursor}, 3)) {
     relax_b(current, current.?{dc}, 1)
-  } else if! eq_i32(current.?{cursor}, 4) {
+  } else if(eq_i32(current.?{cursor}, 4)) {
     blocked_edge(current)
-  } else if! eq_i32(current.?{cursor}, 5) {
+  } else if(eq_i32(current.?{cursor}, 5)) {
     relax_e(current, current.?{dc}, 4)
-  } else if! eq_i32(current.?{cursor}, 6) {
+  } else if(eq_i32(current.?{cursor}, 6)) {
     relax_d(current, current.?{de}, 1)
-  } else if! eq_i32(current.?{cursor}, 7) {
+  } else if(eq_i32(current.?{cursor}, 7)) {
     relax_f(current, current.?{dd}, 3)
-  } else if! eq_i32(current.?{cursor}, 8) {
+  } else if(eq_i32(current.?{cursor}, 8)) {
     relax_f(current, current.?{de}, 6)
   } else {
     relax_f(current, current.?{db}, 15)
@@ -183,9 +183,9 @@ fn relax_candidate(s: Search_state) -> Search_state {
 }
 
 pub rec(loop) fn walk(s: Search_state) -> Search_state {
-  if! leq_i32(3, s.?{round}) {
+  if(leq_i32(3, s.?{round})) {
     s
-  } else if! leq_i32(10, s.?{cursor}) {
+  } else if(leq_i32(10, s.?{cursor})) {
     recur walk(next_round(s))
   } else {
     recur walk(advance(relax_candidate(s)))

@@ -37,7 +37,7 @@ varop [] {
   ;
 };
 
-elab choose : [A] A -> A {
+macro choose : [A] A -> A {
   captures (values.default, Box.mk);
   impl
   // before fills
@@ -55,7 +55,7 @@ elab choose : [A] A -> A {
   ;
 };
 
-elab plain : . -> . {
+macro plain : . -> . {
   impl
   // plain elaborator target
   impls.plain;

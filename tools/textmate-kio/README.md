@@ -28,10 +28,13 @@ recognizable declaration. Canonically spaced marked heads retain callable-clause
 scopes. Compact heads beyond the regex engine's authentication capacity retain
 lexical coloring while callable-clause words stay neutral. The tree-sitter
 grammar supplies deeper structural context.
-Inside square value regions, a name-plus-bang at a possible closing edge stays
-neutral: regex context alone does not distinguish a closing `!` marker from a
-native elaborator suffix. Interior calls such as `helper!(arg)` retain their
-elaborator scopes.
+Macro declarations and explicit import tags have syntactic roles. Calls use
+the generic function scope because a standalone grammar cannot recover arbitrary
+lexical macro bindings. The official VS Code overlay refines known macro calls
+from source-local imports, earlier declarations and ordinary binding scopes;
+this refinement runs on desktop and in the browser without a language server.
+Inside square value regions, an ambiguous closing marker stays neutral until
+the surrounding frame establishes its role.
 
 ## Distribution
 

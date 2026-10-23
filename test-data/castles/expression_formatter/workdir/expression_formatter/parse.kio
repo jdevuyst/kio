@@ -1,6 +1,5 @@
 module expression_formatter/parse;
 
-import elab/control(if);
 import expression_formatter/types(
 , Add_token
 , Assignment_name
@@ -47,12 +46,13 @@ import expression_formatter/types(
 , {token_text}
 , {valid_shape}
 );
+import macros/control(macro if);
 import testapi(Int, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat, string_eq, string_len);
 
 fn and_bool(a: Bool, b: Bool) -> Bool {
-  if! a { b } else { .f }
+  if(a) { b } else { .f }
 }
 
 fn normalize(name: String, left: String, grouped: String, factor: String) -> String {

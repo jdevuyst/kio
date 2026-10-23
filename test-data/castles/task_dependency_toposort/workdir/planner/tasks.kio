@@ -1,6 +1,6 @@
 module planner/tasks;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32);
 
@@ -21,19 +21,19 @@ pub fn package_bundle() -> I32 { 5 }
 pub fn release_notes() -> I32 { 6 }
 
 pub fn task_name(task: I32) -> String {
-  if! eq_i32(task, fetch_sources()) {
+  if(eq_i32(task, fetch_sources())) {
     "fetch_sources"
-  } else if! eq_i32(task, inspect_schema()) {
+  } else if(eq_i32(task, inspect_schema())) {
     "inspect_schema"
-  } else if! eq_i32(task, compile_core()) {
+  } else if(eq_i32(task, compile_core())) {
     "compile_core"
-  } else if! eq_i32(task, emit_js()) {
+  } else if(eq_i32(task, emit_js())) {
     "emit_js"
-  } else if! eq_i32(task, emit_rust()) {
+  } else if(eq_i32(task, emit_rust())) {
     "emit_rust"
-  } else if! eq_i32(task, package_bundle()) {
+  } else if(eq_i32(task, package_bundle())) {
     "package_bundle"
-  } else if! eq_i32(task, release_notes()) {
+  } else if(eq_i32(task, release_notes())) {
     "release_notes"
   } else {
     "unknown_task"
@@ -41,19 +41,19 @@ pub fn task_name(task: I32) -> String {
 }
 
 pub fn task_effort(task: I32) -> I32 {
-  if! eq_i32(task, fetch_sources()) {
+  if(eq_i32(task, fetch_sources())) {
     2
-  } else if! eq_i32(task, inspect_schema()) {
+  } else if(eq_i32(task, inspect_schema())) {
     3
-  } else if! eq_i32(task, compile_core()) {
+  } else if(eq_i32(task, compile_core())) {
     8
-  } else if! eq_i32(task, emit_js()) {
+  } else if(eq_i32(task, emit_js())) {
     5
-  } else if! eq_i32(task, emit_rust()) {
+  } else if(eq_i32(task, emit_rust())) {
     5
-  } else if! eq_i32(task, package_bundle()) {
+  } else if(eq_i32(task, package_bundle())) {
     3
-  } else if! eq_i32(task, release_notes()) {
+  } else if(eq_i32(task, release_notes())) {
     1
   } else {
     0

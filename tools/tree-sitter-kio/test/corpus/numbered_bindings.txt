@@ -3,7 +3,7 @@ numbered local and sequence bindings preserve qualified names
 ================================================================================
 module m;
 fn f() { let.x <- (); let .x. = (); print(x2); let .x. = x1; print(x3); () }
-fn g() { action! { let .x. <- (); let .y. = x1; pair(x2, y1) } }
+fn g() { action { let .x. <- (); let .y. = x1; pair(x2, y1) } }
 fn h() { let.x.>f }
 --------------------------------------------------------------------------------
 
@@ -88,7 +88,8 @@ fn h() { let.x.>f }
     (expression_block
       (bracket_lbrace)
       (block_call
-        (block_head)
+        (call_callee
+          (entity_name_function))
         (neutral_block
           (bracket_lbrace)
           (neutral_bind
@@ -150,11 +151,11 @@ numbered introductions do not consume continuing qualified let paths
 ================================================================================
 module m;
 fn f() { let.x.y() }
-fn g() { action! { let.x.y } }
+fn g() { action { let.x.y } }
 fn h() { let.x. // path
  y() }
 fn keyword_call() { let.x.fn() }
-fn keyword_value() { action! { let.x.fn } }
+fn keyword_value() { action { let.x.fn } }
 fn binding() { let .x. // connective
  = (); x1 }
 fn placeholder() { .x. // body
@@ -199,7 +200,8 @@ fn placeholder() { .x. // body
     (expression_block
       (bracket_lbrace)
       (block_call
-        (block_head)
+        (call_callee
+          (entity_name_function))
         (neutral_block
           (bracket_lbrace)
           (expression_path
@@ -264,7 +266,8 @@ fn placeholder() { .x. // body
     (expression_block
       (bracket_lbrace)
       (block_call
-        (block_head)
+        (call_callee
+          (entity_name_function))
         (neutral_block
           (bracket_lbrace)
           (expression_path

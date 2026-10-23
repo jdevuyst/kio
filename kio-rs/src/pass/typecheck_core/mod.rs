@@ -163,18 +163,16 @@ pub(crate) use requalify::{compact_source_type_spelling_with_bound, source_type_
 
 mod memo;
 pub use memo::{
-    MemoCtx, PolymorphicInstantiationKey, UserElaboratorTimingSnapshot, memo_verify_enabled,
+    MemoCtx, PolymorphicInstantiationKey, UserMacroTimingSnapshot, memo_verify_enabled,
 };
 #[cfg(feature = "surface")]
 pub use memo::{
-    PreparedUserElaborator, UserElaboratorMemoKey, UserElaboratorPreparedKey,
-    UserElaboratorPreparedPurpose, UserElaboratorTemplate, UserElaboratorTemplateGeneratedImport,
-    UserElaboratorTemplateResult,
+    PreparedUserMacro, UserMacroMemoKey, UserMacroPreparedKey, UserMacroPreparedPurpose,
+    UserMacroTemplate, UserMacroTemplateGeneratedImport, UserMacroTemplateResult,
 };
 #[cfg(feature = "surface")]
 pub(crate) use memo::{
-    UserElaboratorArtifactKey, UserElaboratorArtifactMemo, UserElaboratorEvalArtifactPair,
-    UserElaboratorMemoInputKey,
+    UserMacroArtifactKey, UserMacroArtifactMemo, UserMacroEvalArtifactPair, UserMacroMemoInputKey,
 };
 
 mod aliases;
@@ -411,7 +409,7 @@ where
 // =========================================================================
 
 /// Phases the typer can run against. Lowered has the elaboration-
-/// bearing variants (`Expr::UserElaborator`, `Expr::Elaborator`)
+/// bearing variants (`Expr::UserMacro`, `Expr::Elaborator`)
 /// inhabited; Prime has them all uninhabited.
 ///
 /// `Elaborations` carries the per-phase completion side channel. At Lowered it
@@ -425,8 +423,8 @@ where
 /// [`typecheck_core`] and are shared across phases via helpers
 /// like [`synth_let`] / [`synth_fn`] / [`synth_call`] (which call
 /// back into `T::synth_expr` for sub-expressions). The elaboration
-/// arms — `Elaborator` / `UserElaborator` — are inhabited
-/// only at Lowered; the Lowered `Typer` impl routes user elaborators through
+/// arms — `Elaborator` / `UserMacro` — are inhabited
+/// only at Lowered; the Lowered `Typer` impl routes user macros through
 /// the ordinary value cursor and field syntax to
 /// `synth_field_access` / `synth_field_update`,
 /// while the Prime impl discharges them via
@@ -560,8 +558,8 @@ where
 
     /// Bidirectional check: verify `e` has type `expected`.
     /// Per-phase because the `Expr::FnExpr` bidirectional check,
-    /// `Expr::UserElaborator` (`iso!` / `into!` / `onto!` / `align!` /
-    /// `ease!`) and `Expr::Elaborator` (field access / update) paths all
+    /// `Expr::UserMacro` (`iso` / `into` / `onto` / `align` /
+    /// `ease`) and `Expr::Elaborator` (field access / update) paths all
     /// need elaboration-aware machinery at Lowered.
     fn check_value_against_interned<'m>(
         e: &'m crate::ast::Expr<P>,
@@ -580,8 +578,8 @@ where
         Self::check_value_against_interned(e, &InternedType::fresh(expected.clone()), tcx)
     }
 
-    fn check_user_elaborator_item<'m>(
-        elaborator: &'m crate::ast::UserElaboratorDef<P>,
+    fn check_user_macro_item<'m>(
+        macro_def: &'m crate::ast::UserMacroDef<P>,
         item_index: usize,
         env: &ModuleEnv<'m, P>,
         elaborations: &mut P::Elaborations,
@@ -744,15 +742,15 @@ where
     /// `fn` body has been typed but while the module's alias context
     /// (`env`) is still live. At Lowered this drains the
     /// `typecheck_full::Elaborations` deferred queue — producing each
-    /// structural elaborator's Kio' glue off the type-checking critical
+    /// structural macro's Kio' glue off the type-checking critical
     /// path and gating it through the coherence check (a mismatch fails
-    /// the build, returning an `Error`). Prime has no surface elaborator
+    /// the build, returning an `Error`). Prime has no surface macro
     /// obligations, so its implementation no-ops even though its narrower
     /// publication table may contain call/lambda completions.
     ///
     /// Separating the type-deciding pass (eager, on the critical path)
     /// from glue production (deferred, here) is the load-bearing
-    /// structure of the elaborator-type-rules feature: type-checking — and
+    /// structure of the macro-type-rules feature: type-checking — and
     /// therefore diagnostics and IDE feedback — completes at type-rule
     /// speed, with the slower glue production batched at the module
     /// boundary.

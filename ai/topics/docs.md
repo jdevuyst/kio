@@ -29,10 +29,13 @@ alone does not make a glossary route unnecessary. Also flag redundant entries,
 generic prerequisite material and peripheral implementation detail. Do not
 require an entry per heading or maintain a separate term registry.
 
-Use *elab* (*elabs* in the plural) for a library-defined `elab` construct;
-its full name is *elaborator macro*, and *type-driven macro* explains its
-purpose. Keep this distinct from the compiler's elaborator and elaboration
-process.
+Use *macro* for a library-defined `macro` construct and *type-driven macro*
+when explaining its distinctive checked-code construction. Keep this distinct
+from elaboration (the compiler's surface-to-core translation) and normalization
+(core reduction). The shared evaluator runs prepared macro implementations
+during elaboration; do not imply that all elaboration must finish before any
+normalization occurs. Reflected source arguments describe code, not its computed
+runtime value.
 
 ## Website and offline bundle inputs
 
@@ -143,7 +146,7 @@ preserve its useful learning obligation and update incoming routes.
 
 **Guides are topic-organized and consumed by someone who already knows the language.** Each guide stands alone; readers come for the specific topic and leave without needing to read the others. A guide either introduces the prerequisites needed for its topic or links to the place in the learning path that does.
 
-**Case studies (`docs/poc/<x>.md`) are reference-grade read-throughs of a single proof-of-concept package.** Each `docs/poc/<x>.md` walks [`test-data/poc/<x>/`](../../test-data/poc/) end to end: it covers the package's whole public surface, explains how the pieces fit, and quotes the package's `equiv` laws. The purpose is to be the *complete* picture of a body of Kio — the thing a topic guide isolates a slice of — and the re-home for material that is per-library semantics rather than language contract (the coercion-elaborator palettes' per-form rules live in [`docs/poc/elab.md`](../../docs/poc/elab.md), not in `specs/`). Two norms set case studies apart from the rest of `docs/`:
+**Case studies (`docs/poc/<x>.md`) are reference-grade read-throughs of a single proof-of-concept package.** Each `docs/poc/<x>.md` walks [`test-data/poc/<x>/`](../../test-data/poc/) end to end: it covers the package's whole public surface, explains how the pieces fit, and quotes the package's `equiv` laws. The purpose is to be the *complete* picture of a body of Kio — the thing a topic guide isolates a slice of — and the re-home for material that is per-library semantics rather than language contract (the coercion-macro palettes' per-form rules live in [`docs/poc/macros.md`](../../docs/poc/macros.md), not in `specs/`). Two norms set case studies apart from the rest of `docs/`:
 
 - **`docs ⊆ POC`.** A case study is **bounded by its backing package**: every type, function, rule, and law it shows must exist in `test-data/poc/<x>/` verbatim. A case study never documents behavior the POC does not exercise, and never reshapes the POC's source to read more nicely — if the POC is wrong, fix the POC (its checks and execution are covered by the POC harness under the configured case and implementation selection), not the prose. The two move together; see § Keeping a case study paired with its POC.
 - **Precision over plain-English-only.** The plain-English-default rule below is **relaxed for case studies**: a case study may be as technically precise as the POC it documents, including PLT vocabulary (DNF, variance, residual normal form, initial-object law) where the POC's behavior genuinely turns on it. Case studies are read by someone who already knows the language and wants the exact contract a package commits to. Still prefer a plain-English gloss when one is as precise, and still link a load-bearing term to where it is defined.
@@ -212,6 +215,12 @@ purpose. Routine spelling, grammar and formatting corrections may remain
 unannounced only when they preserve meaning and do not update the post's account
 of Kio. Formatting changes are substantive when the post describes those
 formatting principles. Judge the nature of the change, not its line count.
+Related changes may share one succinct notice. Before a revision is published,
+consolidate its notices rather than accumulating a date for every local edit.
+After publication, retain accurate timing and any material correction when
+combining notices; do not backdate new substance. Publication means making the
+revised post public, including website publication independently of a Kio
+release or DCO sign-off.
 The notice does not erase historical claims or replace an explicit
 correction when one is needed. Every post or hidden-harness edit, including
 the notice, still needs exact-text approval; this classification grants no

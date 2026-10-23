@@ -44,8 +44,8 @@ trap 'rm -rf "$work"' EXIT INT TERM HUP
 # Vendor the live dyn_load_prime package (every module + its testapi host
 # surface), minus its own manifest. The package's own worked example lives
 # in `testapi/main` and is replaced below by this golden's host. `cp`
-# follows the shared-support-module symlinks (match / spine_elaborators /
-# elaborator_util), so the vendored copy is self-contained.
+# follows the shared-support-module symlinks (match / spine_macros /
+# macro_util), so the vendored copy is self-contained.
 for f in "$PKG_SRC"/*.kio; do
   base=$(basename "$f")
   case "$base" in
@@ -57,7 +57,7 @@ mkdir -p "$work/testapi"
 cp "$PKG_SRC"/testapi/*.kio "$work/testapi/"
 cp -R "$PKG_SRC/list" "$work/list"
 cp -R "$PKG_SRC/loader" "$work/loader"
-cp -R "$PKG_SRC/elab" "$work/elab"
+cp -R "$PKG_SRC/macros" "$work/macros"
 
 # Drop in this golden's host module and manifest (the host's `testapi/main`
 # replaces the package's worked-example entry; the manifest's bridge

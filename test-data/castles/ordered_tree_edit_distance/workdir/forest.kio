@@ -1,6 +1,6 @@
 module forest;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -11,7 +11,7 @@ import testapi/text as text;
 pub labels Tree = { symbols: Array(I32), ends: Array(I32) };
 
 pub fn equal(a: I32, b: I32) -> Bool {
-  if! arith.leq_i32(a, b) { arith.leq_i32(b, a) } else { .f }
+  if(arith.leq_i32(a, b)) { arith.leq_i32(b, a) } else { .f }
 }
 
 pub fn less(a: I32, b: I32) -> Bool { arith.leq_i32(a, arith.sub_i32(b, 1)) }
@@ -39,9 +39,9 @@ pub fn close(tree: Tree, position: I32) { array.array_set(tree.?{ends}, position
 pub fn leaf(tree: Tree, value: I32) { let position = open(tree, value); close(tree, position) }
 
 rec(loop) fn render_forest(tree: Tree, start: I32, stop: I32) -> String {
-  if! less(start, stop) {
+  if(less(start, stop)) {
     let next = after(tree, start);
-    let children = if! less(arith.add_i32(start, 1), next) {
+    let children = if(less(arith.add_i32(start, 1), next)) {
       text.string_concat(
       , "("
       , text.string_concat(recur(cont) render_forest(tree, arith.add_i32(start, 1), next), ")")
@@ -49,7 +49,7 @@ rec(loop) fn render_forest(tree: Tree, start: I32, stop: I32) -> String {
     } else {
       ""
     };
-    let rest = if! less(next, stop) {
+    let rest = if(less(next, stop)) {
       text.string_concat(",", recur(cont) render_forest(tree, next, stop))
     } else {
       ""

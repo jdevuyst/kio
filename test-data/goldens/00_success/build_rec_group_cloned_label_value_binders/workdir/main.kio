@@ -1,13 +1,13 @@
 module main;
 
 import build_rec_group_cloned_label_value_binders(I32, String, default Bool, done, empty, loop);
-import elab/control(if);
+import macros/control(macro if);
 
 labels { text: String };
 
 rec(loop) {
   pub fn spaces(n: I32) -> String { recur pad(n, empty()) };
   fn pad(n: I32, acc: String) -> String {
-    if! done(n) { let wrapped = {text = acc}; wrapped.?{text} } else { recur pad(n, acc) }
+    if(done(n)) { let wrapped = {text = acc}; wrapped.?{text} } else { recur pad(n, acc) }
   }
 }

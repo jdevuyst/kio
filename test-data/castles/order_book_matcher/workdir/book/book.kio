@@ -12,9 +12,9 @@ module book/book;
 
 import book/num(int_eq, not);
 import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, remaining_of, side_of);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
@@ -72,12 +72,12 @@ pub fn asks_of(b: Book) -> Array(Order) { b.?{asks} }
 
 /// The queue an order of this side rests on.
 pub fn own_queue(b: Book, side: Side) -> Array(Order) {
-  if! is_buy(side) { bids_of(b) } else { asks_of(b) }
+  if(is_buy(side)) { bids_of(b) } else { asks_of(b) }
 }
 
 /// The queue an order of this side crosses against.
 pub fn facing_queue(b: Book, side: Side) -> Array(Order) {
-  if! is_buy(side) { asks_of(b) } else { bids_of(b) }
+  if(is_buy(side)) { asks_of(b) } else { bids_of(b) }
 }
 
 pub fn depth(orders: Array(Order)) -> I32 { array_len(orders) }
@@ -91,15 +91,15 @@ pub fn set_at(orders: Array(Order), index: I32, o: Order) { array_set(orders, in
 /// The best price on a queue, or nothing when the queue is empty. The
 /// front of the queue is the best order by construction.
 pub fn best_price(orders: Array(Order)) -> I32 | . {
-  if! is_empty(orders) {
-    widen_sum!((), I32 | .)
+  if(is_empty(orders)) {
+    widen_sum((), I32 | .)
   } else {
-    widen_sum!(price_of(at(orders, 0)), I32 | .)
+    widen_sum(price_of(at(orders, 0)), I32 | .)
   }
 }
 
 rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
-  if! leq_i32(sub_i32(array_len(orders), 1), i) {
+  if(leq_i32(sub_i32(array_len(orders), 1), i)) {
     ()
   } else {
     array_set(orders, i, array_get(orders, add_i32(i, 1)));
@@ -111,7 +111,7 @@ rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
 /// always there -- but the sum still has to be consumed, and consuming it
 /// is the whole of the proof.
 fn drop_back(orders: Array(Order)) {
-  match! array_pop_back(orders) {
+  match(array_pop_back(orders)) {
     (.(_o: Order) { () }, .(_none: .) { () })
   }
 }
@@ -119,9 +119,9 @@ fn drop_back(orders: Array(Order)) {
 pub fn remove_at(orders: Array(Order), index: I32) { shift_down(index, orders); drop_back(orders) }
 
 rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) -> I32 {
-  if! leq_i32(array_len(orders), i) {
+  if(leq_i32(array_len(orders), i)) {
     i
-  } else if! ranks_ahead(side, price, price_of(array_get(orders, i))) {
+  } else if(ranks_ahead(side, price, price_of(array_get(orders, i)))) {
     i
   } else {
     recur rank_index(add_i32(i, 1), side, price, orders)
@@ -129,7 +129,7 @@ rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) ->
 }
 
 rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) {
-  if! leq_i32(j, index) {
+  if(leq_i32(j, index)) {
     ()
   } else {
     array_set(orders, j, array_get(orders, sub_i32(j, 1)));
@@ -153,9 +153,9 @@ fn not_found() -> I32 { -1 }
 pub fn is_found(index: I32) -> Bool { not(int_eq(index, not_found())) }
 
 rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
-  if! leq_i32(array_len(orders), i) {
+  if(leq_i32(array_len(orders), i)) {
     not_found()
-  } else if! int_eq(id_of(array_get(orders, i)), id) {
+  } else if(int_eq(id_of(array_get(orders, i)), id)) {
     i
   } else {
     recur scan_id(add_i32(i, 1), id, orders)
@@ -165,7 +165,7 @@ rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
 pub fn index_of_id(orders: Array(Order), id: I32) -> I32 { scan_id(0, id, orders) }
 
 rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
-  if! leq_i32(array_len(orders), i) {
+  if(leq_i32(array_len(orders), i)) {
     total
   } else {
     recur sum_remaining(add_i32(i, 1), add_i32(total, remaining_of(array_get(orders, i))), orders)

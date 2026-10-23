@@ -342,16 +342,16 @@ fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
     package.write(
         "provider.kio",
         &format!(
-            "{}\npub elab prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+            "{}\npub macro prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
             include_str!("fixtures/trailing-blocks/provider.kio")
         ),
     );
-    package.write("app.kio", "module app; import provider(prefixed);\n");
+    package.write("app.kio", "module app; import provider(macro prefixed);\n");
     let calls = [
-        "().>prefixed!(()) { () } fallback { () }",
-        "().>>prefixed!(()) { () } fallback { () }",
-        "prefixed!(()) { () } fallback { () }.<<()",
-        "prefixed!(()) { () } fallback { () }.<()",
+        "().>prefixed(()) { () } fallback { () }",
+        "().>>prefixed(()) { () } fallback { () }",
+        "prefixed(()) { () } fallback { () }.<<()",
+        "prefixed(()) { () } fallback { () }.<()",
     ];
     let mut transcript = vec![":load app".to_owned()];
     for call in calls {
@@ -387,18 +387,18 @@ fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
         package.path(),
         &[
             ":load app",
-            ":type packet! { () }",
-            ":normalize packet! { () }",
-            ":type enter! { let value = (); value }",
-            ":normalize enter! { let value = (); value }",
-            ":type sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) }",
-            ":normalize sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) }",
+            ":type packet { () }",
+            ":normalize packet { () }",
+            ":type enter { let value = (); value }",
+            ":normalize enter { let value = (); value }",
+            ":type sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }",
+            ":normalize sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }",
             ":quit",
         ],
     );
-    assert!(output.contains("packet! { () } : ."), "{output}");
+    assert!(output.contains("packet { () } : ."), "{output}");
     assert!(
-        output.contains("enter! { let value = (); value } : ."),
+        output.contains("enter { let value = (); value } : ."),
         "{output}"
     );
     assert!(output.contains("provider.Box(.)"), "{output}");
@@ -1961,15 +1961,15 @@ fn repl_query_wrapper_avoids_existing_name_for_type_query() {
 }
 
 #[test]
-fn repl_query_wrapper_stays_distinct_from_elaborator_capture() {
-    let pkg = TempPackage::new("query-wrapper-elaborator-capture");
+fn repl_query_wrapper_stays_distinct_from_macro_capture() {
+    let pkg = TempPackage::new("query-wrapper-macro-capture");
     pkg.write(
         "demo.pkg.kio",
-        "package demo;\n\nbridge { demo/main; demo/elaborators; }\n",
+        "package demo;\n\nbridge { demo/main; demo/macros; }\n",
     );
     pkg.write(
-        "demo/elaborators.kio",
-        "module demo/elaborators;\n\n\
+        "demo/macros.kio",
+        "module demo/macros;\n\n\
          import __comptime__;\n\n\
          pub pure fn _expr0() -> . { () }\n\n\
          pub pure fn captured_call_impl(\n\
@@ -1977,26 +1977,26 @@ fn repl_query_wrapper_stays_distinct_from_elaborator_capture() {
          ) -> __Checked_term__ {\n\
            __term_call__(ct, __term_type__(ct, captured), captured, __term_unit__(ct))\n\
          }\n\n\
-         pub elab captured_call : . -> . { captures _expr0; impl captured_call_impl; };\n",
+         pub macro captured_call : . -> . { captures _expr0; impl captured_call_impl; };\n",
     );
     pkg.write(
         "demo/main.kio",
-        "module demo/main;\n\nimport demo/elaborators(captured_call);\n",
+        "module demo/main;\n\nimport demo/macros(macro captured_call);\n",
     );
 
     let out = run_repl(
         pkg.path(),
         &[
             ":load demo/main",
-            ":pure captured_call!()",
-            ":normalize captured_call!()",
+            ":pure captured_call()",
+            ":normalize captured_call()",
             ":quit",
         ],
     );
 
     assert!(
         out.lines().any(|line| line == "pure") && out.lines().any(|line| line == "()"),
-        "the elaborator's resolved capture must remain distinct from the same-spelled wrapper:\n{out}"
+        "the macro's resolved capture must remain distinct from the same-spelled wrapper:\n{out}"
     );
     assert!(
         !out.contains("duplicate top-level declaration") && !out.contains("does not type-check"),

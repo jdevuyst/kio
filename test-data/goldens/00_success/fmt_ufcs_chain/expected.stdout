@@ -13,10 +13,10 @@ fn bare_forms() {
   receiver.>>T.member;
   T.member.<receiver;
   T.member.<<receiver;
-  receiver.>transform!;
-  receiver.>>transform!;
-  transform!.<receiver;
-  transform!.<<receiver;
+  receiver.>transform;
+  receiver.>>transform;
+  transform.<receiver;
+  transform.<<receiver;
   receiver.>call(());
   call(()).<receiver;
   ()
@@ -59,10 +59,10 @@ fn bare_forms() {
   receiver.>>T.member;
   T.member.<receiver;
   T.member.<<receiver;
-  receiver.>transform!;
-  receiver.>>transform!;
-  transform!.<receiver;
-  transform!.<<receiver;
+  receiver.>transform;
+  receiver.>>transform;
+  transform.<receiver;
+  transform.<<receiver;
   receiver.>call(());
   call(()).<receiver;
   ()

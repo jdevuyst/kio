@@ -1,8 +1,8 @@
 module testapi/main;
 
-import library/elab/control(if);
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/control(macro if);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import library/vec(
 , Vec
 , at
@@ -38,7 +38,7 @@ fn show(label: String, value: String) {
 }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
@@ -61,7 +61,7 @@ fn value_or[A](default: A, result: A | .) -> A {
 fn show_result_i32(label: String, result: I32 | .) { show_result(label, result, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
-  match! value {
+  match(value) {
     (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
   }
 }
@@ -73,7 +73,7 @@ fn vec_to_string(v: Vec(I32)) -> String {
     fold(
     , .(acc: String, n: I32) -> String {
         let piece = int_to_string(n);
-        if! string_is_empty(acc) { piece } else { string_concat(acc, string_concat(", ", piece)) }
+        if(string_is_empty(acc)) { piece } else { string_concat(acc, string_concat(", ", piece)) }
       }
     , ""
     , v
@@ -109,7 +109,7 @@ pub fn main() {
   , fold_result(
     , "none"
     , .(p: I32 & Vec(I32)) -> String {
-        match! p {
+        match(p) {
           .(x: I32, rest: Vec(I32)) {
             string_concat(
             , "popped "
@@ -146,7 +146,7 @@ pub fn main() {
   let render_unit_pair = .(_pair: . & Vec(.)) -> String { "unit pair" };
   show_result("pop_back(Unit)", pop_back(unit_vec), render_unit_pair);
   show_result("pop_back(empty Unit)", pop_back(empty(.)), render_unit_pair);
-  let nested = from_list([* widen_sum!(7, I32 | .), widen_sum!((), I32 | .) *]);
+  let nested = from_list([* widen_sum(7, I32 | .), widen_sum((), I32 | .) *]);
   show_result("at(nested number)", at(nested, 0), render_sum);
   show_result("at(nested unit)", at(nested, 1), render_sum);
   show_result("at(nested missing)", at(nested, 2), render_sum);

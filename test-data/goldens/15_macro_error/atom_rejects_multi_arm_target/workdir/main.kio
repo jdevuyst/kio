@@ -1,0 +1,12 @@
+module main;
+
+import macros/algebraic_macros(macro atom);
+
+newtype A : . { pub constructor mk_a; pub projector un_a }
+
+newtype B : . { pub constructor mk_b; pub projector un_b }
+
+// `atom`'s target must DNF-normalize to a single arm. `(A | B)` is
+// a 2-arm sum target — sum-shape narrowing is `onto` / `align`
+// territory. Exit 15 (macro error).
+fn narrow_to_sum(s: (A | B) | A | B) -> A | B { atom(s) }

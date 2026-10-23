@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, String, default Bool, default I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
@@ -39,21 +39,21 @@ fn values() -> Array(I32) {
 // Pointwise maximum of two I32s, built from `leq_i32` since the
 // host vocabulary has no `max` primitive.
 fn max(a: I32, b: I32) -> I32 {
-  if! leq_i32(a, b) { b } else { a }
+  if(leq_i32(a, b)) { b } else { a }
 }
 
 // Inner DP step: walks capacity `c` from `cap` down to `w` (the
 // current item's weight), updating `dp[c] = max(dp[c], dp[c-w] + v)`.
 // State is `c`. Exit value is `()` — the work is the array mutation.
 fn dp_step(dp: Array(I32), w: I32, v: I32, c: I32) -> I32 | . {
-  if! leq_i32(w, c) {
+  if(leq_i32(w, c)) {
     // c >= w: this item fits at capacity c. Compare keep vs take.
     let keep = array_get(dp, c);
     let take = add_i32(array_get(dp, sub_i32(c, w)), v);
     array_set(dp, c, max(keep, take));
-    widen_sum!(sub_i32(c, 1))
+    widen_sum(sub_i32(c, 1))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -61,13 +61,13 @@ fn dp_step(dp: Array(I32), w: I32, v: I32, c: I32) -> I32 | . {
 // runs the inner DP step from `cap` down to `weights[i]`. State
 // is `i`. Exit value is `()`.
 fn item_step(dp: Array(I32), ws: Array(I32), vs: Array(I32), i: I32) -> I32 | . {
-  if! leq_i32(i, sub_i32(item_count(), 1)) {
+  if(leq_i32(i, sub_i32(item_count(), 1))) {
     let w = array_get(ws, i);
     let v = array_get(vs, i);
     let _ = loop(I32, ., .(c: I32) { dp_step(dp, w, v, c) }, cap());
-    widen_sum!(add_i32(i, 1))
+    widen_sum(add_i32(i, 1))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 

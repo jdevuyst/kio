@@ -22,7 +22,7 @@ A divergence between two conformant implementations on the same input is a spec 
 
 ## Block bodies (`{ … }`)
 
-Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every elab trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
+Executable braced blocks use a **width-driven** layout: named and anonymous function bodies and every macro trailing block follow the same rule. A block stays inline only when its flat body contains no other executable braced block, the complete flat layout fits in the 100-column budget, and no comment or unconditional break prevents flattening. Braces for label construction, field selection, and other non-block lists do not count as executable blocks:
 
 ```kio
 fn id[A](x: A) -> A { x }
@@ -32,42 +32,47 @@ When the block breaks, the opener `{` stays on the head's line, the body sits at
 
 ```kio
 fn choose() {
-  if! ready { run() } else { wait() }
+  if(ready) { run() } else { wait() }
 }
 ```
 
-**Block elab calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every elab head and continuation label, without consulting declarations or exposure kinds. Thus a short `do! bind { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
+**Block macro calls.** An ordered trailing-block chain chooses one outer arm layout. It is compact only when the complete chain fits, every arm is eligible for compact layout, and no comment or unconditional break prevents flattening. Otherwise every arm expands, including empty arms and otherwise-short arms. Expressions inside the arms make independent layout decisions. The rule applies structurally to every macro head and continuation label, without consulting declarations or exposure kinds. Thus a short `do(bind) { run() }` is compact; an enclosing executable block expands around it. Empty blocks are compact `{}` or expanded braces on separate lines.
 
 ```kio
-if! ready {
-  do! bind { run() }
+if(ready) {
+  do(bind) { run() }
 } else {
   wait()
 }
 ```
 
-**Final labelled-block elision.** When the final labelled block contains exactly one complete unspliced block elab call and its parent is not reverse-spliced, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
+**Final labelled-block elision.** When the final labelled block contains exactly one complete unspliced block macro call and its parent is not reverse-spliced, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
 
 ```kio
-if! a { x } else if! b { y } else { z }
+if(a) { x } else if(b) { y } else { z }
 ```
 
-The nested call owns all following labelled blocks and shares the enclosing chain's arm-layout decision. A non-final outer block keeps its braces, as does a block containing several expressions, a local binding, a non-block-call expression, or wrapper-attached comments. For example, the braces in `outer! x { a() } fallback { inner! y { b() } } cleanup { c() }` remain necessary: `cleanup` belongs to `outer`.
+The nested call owns all following labelled blocks and shares the enclosing chain's arm-layout decision. A non-final outer block keeps its braces, as does a block containing several expressions, a local binding, a non-block-call expression, or wrapper-attached comments. For example, the braces in `outer(x) { a() } fallback { inner(y) { b() } } cleanup { c() }` remain necessary: `cleanup` belongs to `outer`.
 
 A spliced child retains its label braces:
-`outer! a { A } label { inner! b { B }.<r }`. Grouping a spliced child does
+`outer(a) { A } label { inner(b) { B }.<r }`. Grouping a spliced child does
 not make it eligible for elision. A reverse-spliced parent also retains its
 own final-label braces, even when the child is unspliced:
-`outer! a { A } label { inner! b { B } }.<r`. The same applies to `.<<` and
+`outer(a) { A } label { inner(b) { B } }.<r`. The same applies to `.<<` and
 grouping around the parent. These braces are required input syntax, not just
 a formatter preference. Direct and forward-spliced chains still elide eligible
 braces; a deeper ordinary chain inside an explicit outer block may also elide.
 
-**Block prefixes.** The formatter prefers a bare unary prefix when the printed expression is unambiguous, such as `if! condition { … }` or `outer! convert!(value) { … }`. Multiple prefix values use `form!(a, b) { … }`; one product uses `form!((a, b)) { … }`. One unit value is `form!() { … }`, distinct from zero prefix values in `form! { … }`. Brace-leading, operator-leading and complete nested block-call prefix expressions retain the parenthesized head. A signed numeric literal may be bare, as in `form! -1 { … }`.
+**Block prefixes.** Every nonempty written prefix uses ordinary argument-list
+parentheses: `if(condition) { … }`, `outer(convert(value)) { … }`, and
+`form(a, b) { … }`. One product uses `form((a, b)) { … }`. Direct
+`form() { … }` supplies one unit value; `form { … }` has no prefix values.
+The formatter retains the prefix-list parentheses for every expression shape,
+including names, literals and operators. Nested block calls stay inside that
+list, as in `outer(inner(value) { child }) { body }`. Comments within the
+prefix list remain attached to their arguments and delimiters.
 
-Grouping also preserves the enclosing first-brace boundary through operator operands, including greedy slots: `outer! left + (inner! value { a() }) { b() }` cannot lose the inner expression boundary. The formatter may group the whole prefix instead when needed by its operator layout. An operator's explicit continuation token supplies its own boundary. Comments around explicit prefix parentheses remain within the prefix; they are not discarded to shorten the head.
-
-Comments between a closing brace and a continuation label stay at that block boundary. They do not change which call owns the label. Parsing and formatting require no elab-provider lookup.
+Comments between a closing brace and a continuation label stay at that block boundary. They do not change which call owns the label. Parsing and formatting require no macro-provider lookup.
 
 ## Spacing
 
@@ -124,7 +129,7 @@ fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
   , xs
   , nil(A, ())
   , .(carry: List(A), x: A) -> List(A) {
-      if! keep(x) { cons(x, carry) } else { carry }
+      if(keep(x)) { cons(x, carry) } else { carry }
     }
   ))
 }
@@ -137,7 +142,7 @@ A1 applies to every comma-separated list that remains comma-separated in canonic
 - Signature value-parameter groups (`fn`, lambdas, `equiv`; `name: T` value params and product-destructuring patterns — `(a: A, b: B)` bare or `name: (a: A, b: B)` as-pattern — in one value group; see [`language.md` § Parameter patterns](language.md#parameter-patterns)).
 - `labels` arm lists.
 - Selective `import` name lists (`import path(foo, bar);`).
-- Product-valued expressions, including preassembled products of `match!` clauses.
+- Product-valued expressions, including preassembled products of `match` clauses.
 - Tuple literals (`(a, b, c)`).
 - Call argument lists (`f(a, b, c)`).
 - Type-application argument lists at use sites (`Foo(A, B)`).
@@ -157,7 +162,7 @@ An external documentation comment remains attached to the forwarding item.
 
 For label construction and update payloads, `kio fmt` uses the shortest canonical payload spelling: `{f = f}` becomes `{f}`, `{m.f = f}` becomes `{m.f}`, and `{f = ()}` becomes `{f=}`. The same rule applies inside update lists, so `r.!{f = f}` becomes `r.!{f}` and `r.!{f = ()}` becomes `r.!{f=}`.
 
-Inline `match!` clauses are entries of a trailing product block, separated by semicolons: `match! v { .() { 0 }; .[B](n: B) -> I32 { 1 } }`. The block uses the block-call layout above. A preassembled product of clauses, supplied as `match! v { clauses }`, keeps the ordinary comma-list layout at the product's definition.
+Inline `match` clauses are entries of a trailing product block, separated by semicolons: `match(v) { .() { 0 }; .[B](n: B) -> I32 { 1 } }`. The block uses the block-call layout above. A preassembled product of clauses, supplied as `match(v) { clauses }`, keeps the ordinary comma-list layout at the product's definition.
 
 **Single-element lists do not break solely because of length.** Comments and
 forced breaks still take precedence; otherwise an over-budget single item
@@ -188,7 +193,7 @@ equiv id_unit_eq {
 }
 ```
 
-The same final-vs-non-final rule applies inside ordinary function bodies and neutral trailing blocks, including `scope! { ... }` and `do! bind { ... }`. A non-final expression keeps a following `;`; the final expression does not. An optional final separator never turns an expression into a discarded statement or changes a block's value. A final binding retains the separator required by its binding grammar.
+The same final-vs-non-final rule applies inside ordinary function bodies and neutral trailing blocks, including `scope { ... }` and `do(bind) { ... }`. A non-final expression keeps a following `;`; the final expression does not. An optional final separator never turns an expression into a discarded statement or changes a block's value. A final binding retains the separator required by its binding grammar.
 
 **`newtype` member blocks.** A `newtype`'s `{ … }` body is a semicolon-clause block of exactly two members — one `constructor` and one `projector`, separated by `;`. The members are an unordered set in the source (either may be written first); `kio fmt` canonicalizes them to `constructor`-then-`projector`.
 
@@ -312,25 +317,25 @@ An ordinary call of a UFCS result keeps its grouping: `(vault.>Vault.open)()`, `
 
 **Left-call splices** preserve their spelling. With no existing arguments, `f.<x` and `f.<<x` emit without an empty `()`; with existing arguments, `f(a).<x` and `f(a).<<x` keep the call on the left. If the inserted right-hand value is compound enough that dropping grouping would change the parse, `kio fmt` emits parentheses, for example `f.<(x.>g)`.
 
-**Elab-form preservation.** Blockless elab calls can use the standalone prefix form (`iso!(r, T)`, `fit!(r, T)`, `checked!(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso!(T)`, `r.>>fit!`, `iso!(T).<<r`, `r.>checked!(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso!`), and nonempty argument lists keep their parentheses (`r.>iso!(T)`).
+**Macro-form preservation.** Blockless macro calls can use the standalone prefix form (`iso(r, T)`, `fit(r, T)`, `checked(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso(T)`, `r.>>fit`, `iso(T).<<r`, `r.>checked(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso`), and nonempty argument lists keep their parentheses (`r.>iso(T)`).
 
 Block calls preserve their direct or spliced spelling in all four directions,
 using the block-prefix and arm-layout rules above. A reverse splice stays
-after the complete labelled-block chain: `f! a { B } label { C }.<r`.
+after the complete labelled-block chain: `f(a) { B } label { C }.<r`.
 The formatter does not move it into the prefix or after only an earlier block.
 An omitted prefix list remains omitted; a spliced additional Unit stays
 explicit as `(())`, not the rejected empty list. Tight receiver grouping and
 the braces protecting a spliced final-label child remain load-bearing.
 
-**User-defined elab declarations.** An elab item writes the declared call type after a colon and the implementation in a body `impl` field:
+**User-defined macro declarations.** A macro item writes the declared call type after a colon and the implementation in a body `impl` field:
 
 ```kio
-pub elab checked : [Source] Source -> [Target] Target { impl checked_impl }
-pub elab identity : [Source] Source -> [Target] Target { impl identity_impl }
-pub elab matching : [Source] Source -> [Target] Target { impl(fills) matching_impl }
+pub macro checked : [Source] Source -> [Target] Target { impl checked_impl }
+pub macro identity : [Source] Source -> [Target] Target { impl identity_impl }
+pub macro matching : [Source] Source -> [Target] Target { impl(fills) matching_impl }
 ```
 
-The call type is rendered by the ordinary type printer. Mixed value/type-binder function types keep the ordinary prefix-binder function-type spelling (`A -> [B] B -> A`); there is no separate elab-signature syntax.
+The call type is rendered by the ordinary type printer. Mixed value/type-binder function types keep the ordinary prefix-binder function-type spelling (`A -> [B] B -> A`); there is no separate macro-signature syntax.
 
 Declaration entries use semicolon separators. Canonical order is `captures`, then every `trailing` descriptor in its original relative order, then `impl`. The descriptor spells `trailing product`, `trailing thunk`, or `trailing sequence`, followed by its label when present. Other declaration entries may move around the descriptors in source, but the descriptors' relative order defines the call's block order and is never sorted.
 
@@ -341,11 +346,16 @@ surrounding spaces; slash-qualified paths and non-path expressions are not
 declaration syntax.
 
 Redundant grouping around named references in `impl`, variadic fold and
-`finalize` fields, captures, recursive capabilities and non-bang UFCS callees
+`finalize` fields, captures, recursive capabilities and UFCS callees
 is omitted. Omitted finalizers stay omitted, while written `finalize ()` stays explicit;
 comments within the removed grouping remain attached to the containing
 declaration or expression. Thus `impl (fills)` formats as `impl fills`, while
 `impl(fills) (helper)` formats as `impl(fills) helper`.
+
+**Native binding ownership.** A macro named `let` uses the same required
+prefix-list parentheses as every macro: `let(value) { body }`. Native
+`let` bindings and `recur` calls retain their structural grammar. Import
+aliases and transparent grouping do not change that ownership.
 
 **Recursive-call annotations.** Recursive calls use `recur`; recursive declarations retain `rec`. Annotations use the order `poly`, `cont`, `escape`, with any implied annotation omitted. Since `escape` entails `cont`, `recur(escape, cont, poly) f(x)` emits as `recur(poly, escape) f(x)`; `recur(cont, poly) f(x)` emits as `recur(poly, cont) f(x)`.
 
@@ -533,7 +543,7 @@ and trailing-whitespace normalization. The 100-column line-length budget does
 **not** apply to comments — long comments stay long. The attachment and
 relocation rules below determine their output positions.
 
-**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, `newtype`, `labels`, either `rec` group, `elab`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
+**Top-level item comments.** Line comments immediately preceding a top-level `import` or item (`fn`, `type`, `literal`, `newtype`, `labels`, either `rec` group, `macro`, `op`, `equiv`, `bridge`) survive a `kio fmt` round-trip. They emit on their own lines at column 0, immediately above the item, in source order. The trivia stays attached to the item it preceded; for `import` statements that the formatter sorts into the canonical block layout, the comments ride with each `import` to its sorted position.
 
 **File-header comments.** Line comments at the very top of a file, immediately preceding the file header — a `module …;` (regular or root module), a `package …;`, or a `dependency …;` — survive a `kio fmt` round-trip. They emit on their own lines at column 0, above the header, in source order, ahead of any `///` module doc-comment. (A `///` run directly above a module header is the module's doc-comment and rides the `///` rule below; the plain `//` header is what this clause preserves.)
 
@@ -543,7 +553,7 @@ relocation rules below determine their output positions.
 
 **Comments are legal anywhere and are never dropped.** A `//` line comment may appear at any position the lexer accepts one; `kio fmt` preserves every comment across a round-trip, subject to the empty-comment-line normalization above. Comments attached to reordered imports or fields move with their owners; within each attached block, source order is preserved. Two placement disciplines apply:
 
-- **Faithful at boundaries.** A comment at a node, container, or element boundary — above an item, above a `let` / statement / `match!` clause / list element, trailing the last token before a closing delimiter (`}` / `)`) or end of file, dangling at the end of a block — is preserved *in place*.
+- **Faithful at boundaries.** A comment at a node, container, or element boundary — above an item, above a `let` / statement / `match` clause / list element, trailing the last token before a closing delimiter (`}` / `)`) or end of file, dangling at the end of a block — is preserved *in place*.
 - **Hoisted otherwise.** A genuinely interstitial comment — wedged on a token that does not start an AST node (a `:`, `->`, `,`, or mid-expression position) — is hoisted to the nearest canonical line above the enclosing construct. It is relocated, never dropped, and source order is preserved across the relocation.
 
 **Idempotence holds after the first pass.** Because an interstitial comment may be relocated on the first format, `kio fmt` is not guaranteed to be a strict no-op on every conceivable input; but the relocation reaches a fixpoint immediately, so `fmt(fmt(s)) == fmt(s)` for every `s`.
@@ -598,8 +608,8 @@ Within an expression body, comments preserve through a `kio fmt` round-trip at t
 - **Above a `let` binding** — comments captured before the `let` keyword.
 - **Between `=` and the value** — comments captured between `=` and the start of the bound expression. The value emits on its own line at +2 indent. The `;` trails the value's last token wherever it lands. This same layout also fires whenever the flat `let X = E;` form would not fit on one line — because it overflows the 100-column budget, or because the value itself forces a break (e.g., trivia captured inside a call's argument list, or any other unconditional multi-line layout). Width pressure, between-`=`-and-value trivia capture, and an already-broken value share one canonical broken shape; the let breaks at `=` first and the value renders inside its +2 nest with whatever further breaks it requires.
 - **Between `;` and the next statement / final expression** — comments captured between the statement-terminating `;` and the next token. (When the next statement is another `let`, that `let`'s own "above the `let` keyword" capture handles it; the formatter does not double-emit.)
-- **Above a `match!` clause** — comments captured before the clause expression.
-- **Inside a `match!` clause body** — comments captured between the clause's `{` and the body expression.
+- **Above a `match` clause** — comments captured before the clause expression.
+- **Inside a `match` clause body** — comments captured between the clause's `{` and the body expression.
 - **Inside a call's argument list** — comments captured before each argument's first token (or before the leading `,` separator). Any comment forces the call into the multi-line A1 layout, with the comment on its own line above its argument's `, arg` line.
 - **Inside a tuple literal** — same per-element capture as call arguments. Any comment forces the tuple into the multi-line A1 layout. Comment preservation applies to source formatting, not to comments inside surface forms eliminated from emitted Kio'.
 - **Inside a label-value `{f = e, g = e'}`** — same per-label capture as tuple elements; the same surface-form comment lifetime applies.
@@ -616,7 +626,7 @@ fn f[A](v: A) {
     // between = and value
     compute();
   // between `;` and the next statement / final expression
-  match! v {
+  match(v) {
     // above the clause
     .() {
       // inside the clause body

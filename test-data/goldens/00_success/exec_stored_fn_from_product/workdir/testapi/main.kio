@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(one_prod, widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro one_prod, macro widen_sum);
 import testapi(I32, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
@@ -11,26 +11,26 @@ import testapi/io(print);
 // callable type when projected, passed polymorphically, and invoked.
 //
 //   - `proj_fn` / `proj_show` return a function value projected out of a
-//     product with `one_prod!`.
+//     product with `one_prod`.
 //   - `wrap_ok` stores a *let-bound* closure passed as a generic value
 //     argument (`v: A` with `A = I32 -> I32`) into a sum arm.
 //   - `box_fn` stores a signature-parameter function into a sum arm.
 type Pair = (I32 -> I32) & (I32 -> String);
 
-fn proj_fn(p: Pair) -> I32 -> I32 { one_prod!(p) }
+fn proj_fn(p: Pair) -> I32 -> I32 { one_prod(p) }
 
-fn proj_show(p: Pair) -> I32 -> String { one_prod!(p) }
+fn proj_show(p: Pair) -> I32 -> String { one_prod(p) }
 
 type Boxed[A] = A | I32;
 
 // Polymorphic injection: stores the generic `v: a` in the left sum arm.
 // The generic argument is deliberately instantiated with a function type.
-fn wrap[A](v: A) -> Boxed(A) { widen_sum!(v) }
+fn wrap[A](v: A) -> Boxed(A) { widen_sum(v) }
 
-fn box_fn(f: I32 -> I32) -> Boxed(I32 -> I32) { widen_sum!(f) }
+fn box_fn(f: I32 -> I32) -> Boxed(I32 -> I32) { widen_sum(f) }
 
 fn run_boxed(b: Boxed(I32 -> I32), x: I32) -> I32 {
-  match! b {
+  match(b) {
     (.(g: I32 -> I32) { g(x) }, .(n: I32) { n })
   }
 }

@@ -1,0 +1,5 @@
+dependency macros;
+
+source {
+  path "../../../../../poc/macros/workdir/macros.pkg.kio"
+}

@@ -9,7 +9,7 @@ The `hkt` package is a **worked example**, not a drop-in library. Its job is
 to exercise Kio's whole higher-kinded-type vocabulary end to end against two
 arity-1 newtypes acting as *brands*, so you can see every piece — kind-`*→*`
 binders, type-constructor application, first-class instance dictionaries,
-`do!` pipelines, and `derive!` — running in one small program.
+`do` pipelines, and `derive` — running in one small program.
 
 Two companion documents cover the same ground from different angles, and this
 case study links to them rather than restating them:
@@ -20,11 +20,11 @@ case study links to them rather than restating them:
   multi-arity type constructors, instance dictionaries, and explicit
   conversions. Read it for the
   *why* behind any mechanism this case study merely *uses*.
-- [`docs/poc/elab.md`](elab.md) is the **elab-POC case study**, where
-  `derive!`'s resolution algorithm — including the recursive and polymorphic
+- [`docs/poc/macros.md`](macros.md) is the **macro-POC case study**, where
+  `derive`'s resolution algorithm — including the recursive and polymorphic
   derivations a monad-transformer stack needs — is exercised against `equiv`
-  laws. This page uses only the simplest `derive!` shape (a single-target
-  pick); the elab POC covers the rest.
+  laws. This page uses only the simplest `derive` shape (a single-target
+  pick); the macro POC covers the rest.
 
 What this page adds is the *single-program* view: how all of those pieces
 sit together in one package whose `main` runs on every backend.
@@ -38,7 +38,7 @@ POC:
   file: a `build { ... }` block targeting `js`, `ts`, `python`, `java`,
   `kio-prime`, `rust`, `go`, `swift`, and `haskell`, and a `bridge { ... }`
   block exposing the `testapi` host modules
-  (`testapi; testapi/**; elab/testapi;`).
+  (`testapi; testapi/**; macros/testapi;`).
 - [`testapi/main.kio`](../../test-data/poc/hkt/workdir/testapi/main.kio) —
   the program: every type constructor, instance dictionary, brand-generic
   operation, and the demonstrative `main`.
@@ -46,14 +46,14 @@ POC:
   (`host type` / `host fn` declarations) standing in for the capabilities a
   real host supplies. The program uses three of them: `String`, `print`, and
   `string_concat`. A user replaces this scaffolding with their own host.
-- `elab/derive.kio` and `elab/elaborator_util.kio` — the imported `derive!`
-  elab and its shared compile-time utilities, brought in through the
-  `elab` dependency (declared by `elab.dep.kio`, materialized under the
-  `elab/` prefix) and imported with `import elab/derive(derive);`. These
-  are the subject of the separate [`elab` POC](../guides/using-libraries.md);
+- `macros/derive.kio` and `macros/macro_util.kio` — the imported `derive`
+  macro and its shared compile-time utilities, brought in through the
+  `macros` dependency (declared by `macros.dep.kio`, materialized under the
+  `macros/` prefix) and imported with `import macros/derive(macro derive);`. These
+  are the subject of the separate [`macros` POC](../guides/using-libraries.md);
   here they are imported and used, not explained.
-- `elab/sequence.kio` supplies `do!`, which runs a sequence using an explicit
-  bind function. The program imports it with `import elab/sequence(do);`.
+- `macros/sequence.kio` supplies `do`, which runs a sequence using an explicit
+  bind function. The program imports it with `import macros/sequence(macro do);`.
 
 Running the package chains `kio check`, `kio test`, the per-backend build, and
 the runner; `main` prints five lines:
@@ -72,7 +72,7 @@ The snippets in this case study thread together — each picks up where the
 previous one left off — and a hidden harness validates them as one growing
 program, the same way the POC's `testapi/main` module is one growing module.
 The harness supplies the host shape the POC's `testapi` modules declare
-(`String`, `print`, `string_concat`) and imports the `derive` and `do` elabs the
+(`String`, `print`, `string_concat`) and imports the `derive` and `do` macros the
 package bridges:
 
 <!--kio {harness=hkt placeholder="__INSERT_CODE_HERE__" accumulate}
@@ -82,8 +82,8 @@ bridge {
 
 module kiodoc;
 
-import derive(derive);
-import sequence(do);
+import derive(macro derive);
+import sequence(macro do);
 
 host type String role(str);
 host fn print(p0: String);
@@ -261,16 +261,16 @@ name — the `rebrand` call in the middle is identical. This is the headline
 point of the concrete-crossing half of the POC: a `[*F]`-generic operation
 applied at two distinct brands.
 
-## Abstract brand crossing in a `do!` block: `pipeline`
+## Abstract brand crossing in a `do` block: `pipeline`
 
 The next two lines exercise the same generic abstraction in a richer body.
 `pipeline` is `[*F]`-generic over a `Monad(F)` dictionary, a `Pure(F)`
 dictionary, and a branded seed; it threads two bind steps interleaved with a
-pure `let`, all via imported `do!` with the *projected* dictionary's `bind`:
+pure `let`, all via imported `do` with the *projected* dictionary's `bind`:
 
 ```kio {@hkt}
 fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
-  do! Monad.bind(monad) {
+  do(Monad.bind(monad)) {
     let prefix <- seed;
     let middle = " ok"(String);
     let trailed <- Pure.lift(pur)(string_concat(prefix, middle));
@@ -281,7 +281,7 @@ fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
 
 `Monad.bind(monad)` projects the `Monad(F)` instance to a value whose
 `[A][B]` polymorphism survives — that is what makes it a valid bind function
-for `do!` against an abstract `F`. Inside the block:
+for `do` against an abstract `F`. Inside the block:
 
 - `let prefix <- seed;` is a bind step: it unwraps `seed : F(String)` and
   names the carrier `prefix : String`.
@@ -292,7 +292,7 @@ for `do!` against an abstract `F`. Inside the block:
   and binds the next step.
 - the final expression is the block's overall `F(String)` result.
 
-The `do!` library applies its projected sequence to `Monad.bind(monad)`.
+The `do` library applies its projected sequence to `Monad.bind(monad)`.
 The sequence contains nested bind calls; the supplied bind expression is
 evaluated exactly once, including when no bind step uses it. Because the whole
 thing is `[*F]`-generic and lifts through
@@ -324,17 +324,17 @@ distinctly; the `pipeline` call is identical between the two.
 > [`higher-kinded-types.md` § Abstract type constructors and generic
 > code](../guides/higher-kinded-types.md#abstract-type-constructors-and-generic-code).
 
-## Deriving an instance with `derive!`
+## Deriving an instance with `derive`
 
 The last line shows that an instance need not be hand-written at all. The
-[`derive!`](../guides/using-libraries.md) elab — imported
+[`derive`](../guides/using-libraries.md) macro — imported
 from the package's `derive` module — constructs a value of a requested target
 type from a tuple of candidate rules, finding the one way they fit. The
 harness imports it the way the POC does (in the POC the module path is
-`elab/derive`):
+`macros/derive`):
 
 ```text
-import derive(derive);
+import derive(macro derive);
 ```
 
 The POC's use is the simplest possible derivation: pick the right base
@@ -345,27 +345,27 @@ return type:
 
 ```kio {@hkt}
 // Candidates type elided as `_`; target inferred from the return type.
-// `derive!` unifies each candidate's result type against the goal
+// `derive` unifies each candidate's result type against the goal
 // `Functor(Identity)` and finds exactly one that fits — `identity_functor`.
-fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
+fn derived_identity_functor() -> Functor(Identity) { derive(_, (box_functor, identity_functor)) }
 ```
 
 The public call type is `[Candidates] Candidates -> [Target] Target`.
 The candidate tuple is the value argument; the leading `_` occupies its
-`Candidates` type slot, not the trailing `Target` slot. `derive!` reads `Functor(Identity)`
+`Candidates` type slot, not the trailing `Target` slot. `derive` reads `Functor(Identity)`
 from the return type, then unifies each candidate's result type against that
 goal: `box_functor` produces `Functor(Box)` (no match), `identity_functor`
 produces `Functor(Identity)` (match). Exactly one candidate fits, so resolution is unambiguous and the
-form elaborates to a plain call to `identity_functor()`. `derive!` is pure
+form elaborates to a plain call to `identity_functor()`. `derive` is pure
 surface convenience — it writes the call you would otherwise write by hand
 and leaves no trace in Kio'.
 
-This single-target pick is the smallest case of `derive!`. The
-[elab case study](elab.md#derive--instance-deriving) also shows recursive
+This single-target pick is the smallest case of `derive`. The
+[macro case study](macros.md#derive--instance-deriving) also shows recursive
 composition of wrapper rules and polymorphic rules whose type argument comes
 from the requested goal. Those examples explain how a derivation builds its
 dependencies before applying the outer rule. The precise resolution contract
-is in [`specs/language.md` § The `derive!` elab](../../specs/language.md#the-derive-elaborator).
+is in [`specs/language.md` § The `derive` macro](../../specs/language.md#the-derive-macro).
 
 The derived instance is used exactly like a hand-written one — project it
 with `Functor.fmap`, apply the mapping function over a branded value, and
@@ -435,9 +435,9 @@ To reuse the HKT pieces in your own package:
 2. Supply a host that provides `String`, `print`, and `string_concat` (or
    adjust the program to your host's capabilities), replacing the `testapi`
    scaffolding.
-3. To use `derive!`, depend on the
-   [`elab` POC](../guides/using-libraries.md), which carries the
-   `derive` elab, and import it with `import elab/derive(derive);`.
+3. To use `derive`, depend on the
+   [`macros` POC](../guides/using-libraries.md), which carries the
+   `derive` macro, and import it with `import macros/derive(macro derive);`.
    Declaring a dependency is documented once in
    [`pkg.md` § Dependency files](../guides/pkg.md#dependency-files).
 
@@ -454,14 +454,14 @@ generic operations.
 - [`higher-kinded-types.md`](../guides/higher-kinded-types.md)
   — the HKT language reference (kinds, application, polymorphic payloads,
   multi-arity, instance dictionaries, and explicit conversions).
-- [The elab POC](elab.md) — the case study where `derive!`'s resolution
+- [The macro POC](macros.md) — the case study where `derive`'s resolution
   (including recursive and polymorphic derivations) is exercised per shape
   against `equiv` laws.
 - [`using-libraries.md`](../guides/using-libraries.md)
-  — the map of the `elab` POC modules, including the `derive` elab.
+  — the map of the `macros` POC modules, including the `derive` macro.
 - [The optics library case study](optics.md) — the companion POC built from
-  function pairs and spine elabs.
-- [`specs/language.md` § The `derive!` elab](../../specs/language.md#the-derive-elaborator)
-  — the `derive!` surface contract.
+  function pairs and spine macros.
+- [`specs/language.md` § The `derive` macro](../../specs/language.md#the-derive-macro)
+  — the `derive` surface contract.
 - [`test-data/poc/hkt/`](../../test-data/poc/hkt/) — the full worked package
   this case study reads through.

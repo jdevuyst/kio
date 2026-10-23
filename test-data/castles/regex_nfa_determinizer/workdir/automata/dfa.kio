@@ -11,7 +11,7 @@ module automata/dfa;
 
 import automata/seq(Ints, List, member, nth_or);
 import automata/symbol(width);
-import elab/match(match);
+import macros/match(macro match);
 import testapi(Bool, I32);
 import testapi/arith(add_i32, mul_i32);
 import testapi/iter(loop);
@@ -33,7 +33,7 @@ pub fn step(d: Dfa, state: I32, sym: I32) -> I32 {
 pub fn is_accepting(d: Dfa, state: I32) -> Bool { member(state, d.?{dfa_accepts}) }
 
 rec(loop) fn walk(d: Dfa, word: Ints, state: I32) -> I32 {
-  match! word.>List.unpack {
+  match(word.>List.unpack) {
     (.(sym: I32, rest: Ints) { recur walk(d, rest, step(d, state, sym)) }, .(_empty: .) { state })
   }
 }

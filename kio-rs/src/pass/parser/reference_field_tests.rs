@@ -1,5 +1,5 @@
 use super::{parse, parse_lazy, probe_tooling};
-use crate::ast::{ElaboratorSchedule, Item, KioFileKind};
+use crate::ast::{Item, KioFileKind, MacroSchedule};
 use crate::pretty::pretty_module;
 
 fn canonical(source: &str) -> String {
@@ -20,16 +20,16 @@ fn grouped_reference_contexts_share_canonical_paths() {
             "op _ + _ { impl helpers.add }",
         ),
         (
-            "elab inspect : . -> . { impl ((helpers.inspect)) }",
-            "elab inspect : . -> . { impl helpers.inspect }",
+            "macro inspect : . -> . { impl ((helpers.inspect)) }",
+            "macro inspect : . -> . { impl helpers.inspect }",
         ),
         (
-            "elab inspect : . -> . { impl(fills) ((helpers.inspect)) }",
-            "elab inspect : . -> . { impl(fills) helpers.inspect }",
+            "macro inspect : . -> . { impl(fills) ((helpers.inspect)) }",
+            "macro inspect : . -> . { impl(fills) helpers.inspect }",
         ),
         (
-            "elab inspect : . -> . { captures ((source), ((Box))); impl helper }",
-            "elab inspect : . -> . { captures (source, Box); impl helper }",
+            "macro inspect : . -> . { captures ((source), ((Box))); impl helper }",
+            "macro inspect : . -> . { captures (source, Box); impl helper }",
         ),
         (
             "rec(((loop))) fn f(x: .) -> . { x }",
@@ -64,23 +64,23 @@ fn grouped_reference_contexts_share_canonical_paths() {
 #[test]
 fn grouped_fills_reference_and_schedule_are_distinct() {
     for (field, expected) in [
-        ("impl fills", ElaboratorSchedule::Late),
-        ("impl (fills)", ElaboratorSchedule::Late),
-        ("impl ((fills))", ElaboratorSchedule::Late),
-        ("impl(fills) fills", ElaboratorSchedule::Fills),
-        ("impl(fills) (fills)", ElaboratorSchedule::Fills),
-        ("impl(fills) ((fills))", ElaboratorSchedule::Fills),
+        ("impl fills", MacroSchedule::Late),
+        ("impl (fills)", MacroSchedule::Late),
+        ("impl ((fills))", MacroSchedule::Late),
+        ("impl(fills) fills", MacroSchedule::Fills),
+        ("impl(fills) (fills)", MacroSchedule::Fills),
+        ("impl(fills) ((fills))", MacroSchedule::Fills),
         (
             "impl (// marker\nfills) // target\n(fills)",
-            ElaboratorSchedule::Fills,
+            MacroSchedule::Fills,
         ),
     ] {
-        let source = format!("module main; elab inspect : . -> . {{ {field} }}");
+        let source = format!("module main; macro inspect : . -> . {{ {field} }}");
         let module = parse(&source).unwrap();
-        let Item::Elaborator(elaborator, _) = &module.items[0] else {
-            panic!("elaborator")
+        let Item::Macro(macro_def, _) = &module.items[0] else {
+            panic!("macro")
         };
-        assert_eq!(elaborator.schedule, expected, "{field}");
+        assert_eq!(macro_def.schedule, expected, "{field}");
         canonical(&source);
     }
 }
@@ -126,7 +126,7 @@ fn grouped_references_preserve_name_only_boundaries() {
     ] {
         for field in [
             format!("op _ + _ {{ impl {target} }}"),
-            format!("elab inspect : . -> . {{ impl {target} }}"),
+            format!("macro inspect : . -> . {{ impl {target} }}"),
             format!("varop [] {{ foldl {target} base }}"),
             format!("varop [] {{ foldl step {target} }}"),
         ] {
@@ -137,7 +137,7 @@ fn grouped_references_preserve_name_only_boundaries() {
         "captures (); impl helper",
         "captures ((source())); impl helper",
     ] {
-        assert!(parse(&format!("module main; elab inspect : . -> . {{ {body} }}")).is_err());
+        assert!(parse(&format!("module main; macro inspect : . -> . {{ {body} }}")).is_err());
     }
     for source in [
         "module main; newtype Box : . { constructor (make); projector get }",
@@ -149,7 +149,7 @@ fn grouped_references_preserve_name_only_boundaries() {
     }
     for declaration in [
         "op _ + _ { impl ((provider/path.add)) }",
-        "elab inspect : . -> . { impl ((provider/path.add)) }",
+        "macro inspect : . -> . { impl ((provider/path.add)) }",
         "varop [] { foldl ((provider/path.add)) base }",
     ] {
         let error = parse(&format!("module main; {declaration}")).unwrap_err();
@@ -166,7 +166,7 @@ fn grouped_references_preserve_name_only_boundaries() {
 fn grouped_reference_comments_survive_removed_tokens_once() {
     for declaration in [
         "op _ + _ { impl (// opener\n(// inner\nadd // leaf\n) // closer\n) }",
-        "elab inspect : . -> . { captures ((// capture\nBox)); impl ((// implementation\nhelper)) }",
+        "macro inspect : . -> . { captures ((// capture\nBox)); impl ((// implementation\nhelper)) }",
         "varop [] { foldl ((// step\nstep)) ((// base\nbase)); finalize ((// absent\n())) }",
         "rec((// capability\nloop // closing\n)) fn f(x: .) -> . { x }",
         "fn f(x: .) -> . { x.>((// callee\nhelper // closing\n)) }",
@@ -189,8 +189,8 @@ fn grouped_reference_comments_survive_removed_tokens_once() {
 fn unfinished_grouped_references_remain_tooling_input() {
     for tail in [
         "op _ + _ { impl ((",
-        "elab inspect : . -> . { impl (fills) (",
-        "elab inspect : . -> . { captures ((",
+        "macro inspect : . -> . { impl (fills) (",
+        "macro inspect : . -> . { captures ((",
         "varop [] { foldl ((step)) ((",
         "rec((",
         "fn f(x: .) { x.>((",
@@ -211,8 +211,8 @@ fn unfinished_grouped_references_remain_tooling_input() {
 fn recovered_reference_closers_never_authorize_normal_input() {
     for declaration in [
         "op _ + _ { impl(fi }",
-        "elab make: . { impl(fi }",
-        "elab make: . { impl f; captures ((Type) }",
+        "macro make: . { impl(fi }",
+        "macro make: . { impl f; captures ((Type) }",
         "varop [] { foldl (step base }",
         "varop [] { foldl step base; finalize ( }",
         "varop [] { foldl step base; finalize (( }",
@@ -227,7 +227,7 @@ fn recovered_reference_closers_never_authorize_normal_input() {
             "lazy parsing accepted {source}"
         );
     }
-    let source = "module main; elab make: . { impl(fi";
+    let source = "module main; macro make: . { impl(fi";
     let probe = probe_tooling(
         source,
         Some(KioFileKind::Module),

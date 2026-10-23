@@ -12,7 +12,7 @@ pure fn arrange_impl(
 , tail: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, __intrinsic_pair__(ct, body, tail)) }
 
-pub elab combine : [A][B][C] A -> B -> C -> (A & (B & C)) {
+pub macro combine : [A][B][C] A -> B -> C -> (A & (B & C)) {
   trailing product;
   trailing product after;
   impl arrange_impl
@@ -26,4 +26,4 @@ pure fn pair_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
 
-pub elab block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }

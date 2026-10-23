@@ -2,8 +2,8 @@ module testapi/main;
 
 import __intrinsics__;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(String, default Bool);
 import testapi/io(print);
 
@@ -14,12 +14,12 @@ import testapi/io(print);
 // should remain in the emitted Kio' source per
 // `specs/prime.md` § What's not in Kio'.
 fn pick(b: Bool, a: String, c: String) -> String | String {
-  if! b { __left__(String, String, a) } else { __right__(String, String, c) }
+  if(b) { __left__(String, String, a) } else { __right__(String, String, c) }
 }
 
 pub fn main() {
   let result = pick(.t, "kio prime\n", "fallback\n");
-  print(match! result {
+  print(match(result) {
     .(s: String) { s }
   })
 }

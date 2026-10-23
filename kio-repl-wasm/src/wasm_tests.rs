@@ -55,7 +55,7 @@ export function exerciseReferenceOwnership(repl) {
     for (const [query, present, absent] of [
       ['truth', ['demo/a:', 'in fn literal_use'], ['demo/b:', 'shadow']],
       ['first.proof', ['demo/a:'], ['demo/b:']],
-      ['build', ['in elaborator build', 'in fn bang', 'in fn splice'], ['demo/b:']],
+      ['build', ['in macro build', 'in fn bang', 'in fn splice'], ['demo/b:']],
       ['{field}', ['demo/a:', 'in fn label_use', 'in fn update', 'in fn access', 'in fn row_let'], ['demo/b:', 'in fn qualified', 'in fn value_use']],
       ['second.{field}', ['demo/b:', 'in fn qualified'], ['demo/a:', 'in fn label_use']],
     ]) {
@@ -99,23 +99,26 @@ export function exerciseTrailingBlocks(repl) {
   };
   try {
     check(turn(':load app').includes('loaded app'), 'fixture load');
+    const macroColor = '\x1b[38;2;86;182;194m';
+    check(repl.highlight(':normalize packet { () }', 0).includes(macroColor + 'packet'), 'retained macro highlight');
+    check(!repl.highlight(':normalize .(packet: . -> .) { packet(()) }', 0).includes(macroColor + 'packet'), 'ordinary parameter shadows macro highlight');
     for (const [input, expected] of [
-      [':normalize packet! { () }', '()'],
-      [':normalize enter! { let value = (); value }', '()'],
+      [':normalize packet { () }', '()'],
+      [':normalize enter { let value = (); value }', '()'],
       [':normalize .() { let .x. = ((), ()); x2 }()', '()'],
-      [':normalize sequence! box_bind { let .x. <- box_pure(()); box_pure(x1) }', 'Box.box(())'],
-      [':normalize sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.box(())'],
-      [':normalize box_bind.>sequence! { box_pure(()) }', 'Box.box(())'],
-      [':normalize box_bind.>>sequence! { box_pure(()) }', 'Box.box(())'],
-      [':normalize sequence! { box_pure(()) }.<<box_bind', 'Box.box(())'],
-      [':normalize sequence! { box_pure(()) }.<box_bind', 'Box.box(())'],
+      [':normalize sequence(box_bind) { let .x. <- box_pure(()); box_pure(x1) }', 'Box.box(())'],
+      [':normalize sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.box(())'],
+      [':normalize box_bind.>sequence { box_pure(()) }', 'Box.box(())'],
+      [':normalize box_bind.>>sequence { box_pure(()) }', 'Box.box(())'],
+      [':normalize sequence { box_pure(()) }.<<box_bind', 'Box.box(())'],
+      [':normalize sequence { box_pure(()) }.<box_bind', 'Box.box(())'],
     ]) {
       const actual = turn(input);
       check(actual === expected, `${input}: ${actual}`);
     }
     for (const [input, present, absent, prefix] of [
-      ['enter! { let local = (); loc', 'local', 'other', 'loc'],
-      ['enter! { let other = (); ', 'other', 'local', ''],
+      ['enter { let local = (); loc', 'local', 'other', 'loc'],
+      ['enter { let other = (); ', 'other', 'local', ''],
       ['.() { let .x. = (); x3; let .x. = (); x', 'x1', 'x3', 'x'],
     ]) {
       const result = repl.complete(input, input.length);
@@ -128,7 +131,7 @@ export function exerciseTrailingBlocks(repl) {
       check(typeof selected.detail === 'string', `${present}: binding detail`);
       check(!result.candidates.some(item => item.label === absent), `${absent}: stale binding`);
     }
-    const continuation = 'two! { () } fall';
+    const continuation = 'two { () } fall';
     const labels = repl.complete(continuation, continuation.length);
     check(labels.replaceStart === continuation.length - 4 && labels.replaceEnd === continuation.length, 'label replacement');
     check(labels.candidates.length === 1 && labels.candidates[0].label === 'fallback' && labels.candidates[0].kind === 'keyword', 'selected label');
@@ -136,7 +139,8 @@ export function exerciseTrailingBlocks(repl) {
       check(repl.complete(input, input.length).candidates.length === 0, `${input}: recursive group required`);
     }
     turn(':reset');
-    check(!repl.complete('packet', 6).candidates.some(item => item.label === 'packet!'), 'reset imports');
+    check(!repl.highlight(':normalize packet { () }', 0).includes(macroColor + 'packet'), 'reset macro highlight');
+    check(!repl.complete('packet', 6).candidates.some(item => item.label === 'packet'), 'reset imports');
     check(repl.complete(continuation, continuation.length).candidates.length === 0, 'reset label provider');
     return 6;
   } finally {

@@ -6,7 +6,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use super::{InternedType, RecordedElaboration, UserElaboratorReplayEnv};
+use super::{InternedType, RecordedElaboration, UserMacroReplayEnv};
 use crate::ast::{
     CallArg, ElaboratorCall, Expr, Lowered, Meta, Param, PathSegment, RecQuotePlan, Signature,
     SignatureParam, Type,
@@ -83,13 +83,13 @@ fn bind(name: String, value: RuntimeExpr, body: RuntimeExpr, span: Span) -> Runt
 pub(super) fn public_type(
     ty: &InternedType,
     ambient: &HashSet<String>,
-    replay: &mut UserElaboratorReplayEnv<'_>,
+    replay: &mut UserMacroReplayEnv<'_>,
 ) -> RuntimeType {
     assert!(
         !crate::pass::typecheck_core::type_contains_goal(ty.as_type()),
         "source composition requires closed types"
     );
-    let mut requalifier = super::user_elaborator_replay_requalifier(replay);
+    let mut requalifier = super::user_macro_replay_requalifier(replay);
     let written = if ty.identity_is_canonical() {
         requalifier.rewrite(ty.as_type(), ambient)
     } else {
@@ -111,7 +111,7 @@ pub(super) fn public_type(
             let crate::ast::ImportKind::Qualified { path, alias } = import.kind else {
                 unreachable!("requalification imports are qualified")
             };
-            super::UserElaboratorTemplateGeneratedImport {
+            super::UserMacroTemplateGeneratedImport {
                 module_path: super::module_import_path(&path),
                 alias,
             }
@@ -129,7 +129,7 @@ pub(super) fn public_type(
 fn ordinary(
     source: &Expr<Lowered>,
     ambient: &HashSet<String>,
-    replay: &mut UserElaboratorReplayEnv<'_>,
+    replay: &mut UserMacroReplayEnv<'_>,
 ) -> RuntimeExpr {
     substitute::substitute_expr_for_replayed_elaboration(
         source,
@@ -153,7 +153,7 @@ impl Completed<'_> {
         body: RuntimeExpr,
         runtime: &RuntimeType,
         ambient: &HashSet<String>,
-        replay: &mut UserElaboratorReplayEnv<'_>,
+        replay: &mut UserMacroReplayEnv<'_>,
     ) -> RuntimeExpr {
         let span = self.source.span();
         match self.computation {
@@ -178,7 +178,7 @@ impl Completed<'_> {
         self,
         continuation: RuntimeExpr,
         ambient: &HashSet<String>,
-        replay: &mut UserElaboratorReplayEnv<'_>,
+        replay: &mut UserMacroReplayEnv<'_>,
     ) -> RuntimeExpr {
         let span = self.source.span();
         match self.computation {
@@ -197,7 +197,7 @@ fn replay_children(
     continuation: RuntimeExpr,
     runtime: &RuntimeType,
     ambient: &HashSet<String>,
-    replay: &mut UserElaboratorReplayEnv<'_>,
+    replay: &mut UserMacroReplayEnv<'_>,
 ) -> Result<RuntimeExpr, Error> {
     use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
 
@@ -261,7 +261,7 @@ fn replay_children(
     struct Restore<'a, 's, 'e, 'r> {
         holes: &'a HashMap<String, Completed<'s>>,
         ambient: &'a HashSet<String>,
-        replay: &'e mut UserElaboratorReplayEnv<'r>,
+        replay: &'e mut UserMacroReplayEnv<'r>,
         error: Option<Error>,
     }
     impl TypecheckVisitMut<PrePrime> for Restore<'_, '_, '_, '_> {
@@ -399,7 +399,7 @@ pub(super) fn compose(
     source: &Expr<Lowered>,
     runtime: &RuntimeType,
     ambient: &HashSet<String>,
-    replay: &mut UserElaboratorReplayEnv<'_>,
+    replay: &mut UserMacroReplayEnv<'_>,
 ) -> Result<Option<RuntimeExpr>, Error> {
     enum Work<'a> {
         Enter(&'a Expr<Lowered>),
@@ -420,9 +420,11 @@ pub(super) fn compose(
                             None
                         }
                     },
-                    Expr::UserElaborator { ext, .. }
+                    Expr::UserMacro { ext, .. }
                     | Expr::Ufcs {
-                        ext, bang: Some(_), ..
+                        ext,
+                        macro_call: Some(_),
+                        ..
                     } => replay.elaborations.rec_quote_computation(*ext).cloned(),
                     _ => {
                         pending.push(Work::Finish(node, ready.len()));
@@ -461,7 +463,7 @@ pub(super) fn compose(
                             Expr::Ufcs {
                                 receiver,
                                 args,
-                                bang: None,
+                                macro_call: None,
                                 ..
                             } => {
                                 pending.push(Work::Enter(receiver));
@@ -548,7 +550,11 @@ pub(super) fn compose(
                             None => body,
                         }
                     }
-                    Expr::Call { .. } | Expr::Ufcs { bang: None, .. } | Expr::Elaborator { .. } => {
+                    Expr::Call { .. }
+                    | Expr::Ufcs {
+                        macro_call: None, ..
+                    }
+                    | Expr::Elaborator { .. } => {
                         replay_children(node, children, k, runtime, ambient, replay)?
                     }
                     _ => {

@@ -1,7 +1,7 @@
 module main;
 
-import forms(block_pair);
+import forms(macro block_pair);
 
 type Alias[A] = A;
 
-fn subject() -> . & . { Alias(.).>block_pair! { () } }
+fn subject() -> . & . { Alias(.).>block_pair { () } }

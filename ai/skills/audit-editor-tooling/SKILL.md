@@ -62,7 +62,7 @@ Check the request-specific rules in `specs/cli.md`, including:
 - Document symbols, folding ranges, inlay hints, and signature help retain
   their specified hierarchy, ranges, supported contexts and refusal cases.
   Public call types and written syntax determine argument display; private
-  elaborator ABI grouping is not source-call authority.
+  macro ABI grouping is not source-call authority.
 - Formatting follows `kio fmt` for the selected file kind and current overlay,
   preserving the documented parse-error no-op and URI rules. Semantic tokens
   use the advertised legend and valid UTF-16 delta encoding, including

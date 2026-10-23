@@ -410,8 +410,8 @@ pub trait SurfaceToDesugared {
         })
     }
 
-    fn visit_expr_user_elaborator(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::UserElaborator {
+    fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
+        let Expr::UserMacro {
             source_trivia: _,
             occurrence: _,
             name,
@@ -423,7 +423,7 @@ pub trait SurfaceToDesugared {
         else {
             unreachable!()
         };
-        Ok(Expr::UserElaborator {
+        Ok(Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
@@ -453,7 +453,7 @@ pub trait SurfaceToDesugared {
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta: Meta { span, .. },
             ext,
         } = e
@@ -476,7 +476,7 @@ pub trait SurfaceToDesugared {
             callee_span,
             args,
             flavor,
-            bang,
+            macro_call,
             meta: Meta::new(span),
             ext,
         })
@@ -668,11 +668,11 @@ pub trait SurfaceToDesugared {
         Ok(Item::Equiv(self.walk_equiv(e)?, ()))
     }
 
-    fn visit_item_elaborator(
+    fn visit_item_macro(
         &mut self,
-        s: crate::ast::UserElaboratorDef<Surface>,
+        s: crate::ast::UserMacroDef<Surface>,
     ) -> Result<Item<Desugared>, Error> {
-        let crate::ast::UserElaboratorDef {
+        let crate::ast::UserMacroDef {
             vis,
             name,
             name_span,
@@ -685,8 +685,8 @@ pub trait SurfaceToDesugared {
             meta: Meta { span, .. },
             doc,
         } = s;
-        Ok(Item::Elaborator(
-            crate::ast::UserElaboratorDef {
+        Ok(Item::Macro(
+            crate::ast::UserMacroDef {
                 vis,
                 name,
                 name_span,
@@ -763,7 +763,7 @@ pub trait SurfaceToDesugared {
             Item::Labels(d, _) => Ok(vec![self.visit_item_labels(d)?]),
             Item::LabelForward(d, _) => Ok(vec![self.visit_item_label_forward(d)?]),
             Item::Equiv(e, _) => Ok(vec![self.visit_item_equiv(e)?]),
-            Item::Elaborator(s, _) => Ok(vec![self.visit_item_elaborator(s)?]),
+            Item::Macro(s, _) => Ok(vec![self.visit_item_macro(s)?]),
             Item::RecGroup(d, _) => self.rewrite_item_rec_group(d),
             Item::TypeRecGroup(group) => {
                 let mut members = Vec::with_capacity(group.members.len());
@@ -1156,7 +1156,7 @@ pub trait SurfaceToDesugared {
             Expr::LabelValue { .. } => self.visit_expr_label_value(e),
             Expr::Elaborator { .. } => self.visit_expr_elaborator(e),
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
-            Expr::UserElaborator { .. } => self.visit_expr_user_elaborator(e),
+            Expr::UserMacro { .. } => self.visit_expr_user_macro(e),
             Expr::BlockCall { .. } => {
                 unreachable!("trailing blocks are projected before desugaring")
             }

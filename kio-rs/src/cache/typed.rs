@@ -492,15 +492,15 @@ mod tests {
                 fingerprint.clone(),
             )],
         );
-        let elaborator = key(
+        let macro_def = key(
             b"module main;",
-            &[TypedModuleDependency::same_package_elaborator_module(
+            &[TypedModuleDependency::same_package_macro_module(
                 PackageModuleKey::new("dep"),
                 fingerprint,
             )],
         );
         assert_ne!(ordinary.hex(), other_module.hex());
-        assert_ne!(ordinary.hex(), elaborator.hex());
+        assert_ne!(ordinary.hex(), macro_def.hex());
     }
 
     #[test]

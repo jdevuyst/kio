@@ -2,13 +2,13 @@ module testapi/main;
 
 import document/commands as commands;
 import document/session as session;
-import elab/match(match);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn replay(state: session.Session) {
-  match! io.read_ascii_line() {
+  match(io.read_ascii_line()) {
     .(command: String) { recur replay(commands.execute(state, command)) };
     .() {
       io.print("end of document session\n");

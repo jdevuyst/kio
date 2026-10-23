@@ -1,11 +1,11 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(default I32, default String);
 import testapi/io(print);
 
-// `match!` clause type parameters bind from the scrutinee for
+// `match` clause type parameters bind from the scrutinee for
 // **label-generated** sums — the exact shape spec § Pattern matching
 // uses as its worked example: `.(v: Ok(A)) { … }` matches an
 // `Ok(_)` branch and binds `A` to the label payload type.
@@ -26,7 +26,7 @@ labels { ok[A]: A, err[A]: A };
 fn summarize[A](label: String, v: A) -> String { label }
 
 fn handle(r: Ok(I32) | Err(String)) -> String {
-  match! r {
+  match(r) {
     (
     , .[A](v: Ok(A)) { summarize("ok branch\n", Ok.get(A, v)) }
     , .[A](e: Err(A)) { summarize("err branch\n", Err.get(A, e)) }
@@ -37,6 +37,6 @@ fn handle(r: Ok(I32) | Err(String)) -> String {
 pub fn main() {
   let v_ok = {ok = 42};
   let v_err = {err = "ignored"};
-  print(handle(widen_sum!(v_ok)));
-  print(handle(widen_sum!(v_err)))
+  print(handle(widen_sum(v_ok)));
+  print(handle(widen_sum(v_err)))
 }

@@ -1,0 +1,9 @@
+module helpers;
+
+import __comptime__;
+
+pure fn identity_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub macro keep : [A] A -> A { impl identity_impl }

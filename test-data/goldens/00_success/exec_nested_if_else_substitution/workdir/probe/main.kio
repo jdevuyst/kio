@@ -2,12 +2,12 @@ module probe/main;
 
 import __intrinsics__;
 
-import elab/control(if);
+import macros/control(macro if);
 import probe(default Bool);
 
 fn gen() -> (. | .) | . {
-  if! .t {
-    __left__(. | ., ., if! .t { __left__(., ., ()) } else { __right__(., ., ()) })
+  if(.t) {
+    __left__(. | ., ., if(.t) { __left__(., ., ()) } else { __right__(., ., ()) })
   } else {
     __right__(. | ., ., ())
   }

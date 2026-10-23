@@ -1,7 +1,9 @@
 module m;
 
+import library/custom(macro do);
+
 fn t() -> T {
-  do! bind {
+  do (bind) {
     let x <- m;
     bind(x)
   }

@@ -22,7 +22,7 @@ fn update_boundary(row: Ready) { row // update receiver
 fn bind_outer(row: Ready) { let .({ready} // binding outer close
 ) // binding equals
 = row; ready }
-fn neutral_bind(row: Ready) { flow! { let .({ready} // neutral binding outer close
+fn neutral_bind(row: Ready) { flow { let .({ready} // neutral binding outer close
 ) = row; ready } }
 KIO
 )

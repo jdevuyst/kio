@@ -47,10 +47,10 @@ build {
 bridge {
   testapi;
   testapi/**;
-  elab/testapi;
+  macros/testapi;
   dict/dict;
-  dict/elab/testapi;
+  dict/macros/testapi;
   dict_host;
   list/core;
-  list/elab/testapi
+  list/macros/testapi
 }

@@ -1,9 +1,9 @@
 module report;
 
 import choice as choice;
-import elab/control(if);
 import list/core as lists;
 import list/list as traversal;
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -44,7 +44,7 @@ pub fn integer_distribution(title: String, choices: choice.Choice(I32), support:
 }
 
 pub fn bool_equal(left: Bool, right: Bool) -> Bool {
-  if! left { right } else if! right { .f } else { .t }
+  if(left) { right } else if(right) { .f } else { .t }
 }
 
 pub fn count(title: String, value: I32) {

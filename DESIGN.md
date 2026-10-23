@@ -29,7 +29,7 @@ alone cannot rule out host bugs or arbitrary logical errors.
 
 Kio builds on System F with higher-kinded quantification and application,
 nominal existentials, sums, and products. Its higher-kinded system is a
-restricted fragment of F-omega. Monadic composition and elaborator macros (elabs)
+restricted fragment of F-omega. Monadic composition and type-driven macros
 add practical expressive power around that foundation. This combination is
 Kio's chosen balance between expressiveness and tractable reasoning.
 
@@ -65,7 +65,7 @@ that bundle the operations generic code needs. A generic function receives the
 chosen dictionary as an argument. This makes the selected implementation
 explicit and permits different implementations for the same type.
 
-The library-defined [`derive!` elab](docs/poc/elab.md#derive--instance-deriving)
+The library-defined [`derive` macro](docs/poc/macros.md#derive--instance-deriving)
 can automate dictionary construction by composing candidate functions supplied
 at its call site. Together, dictionary passing and derivation provide generic
 operations and instance construction associated with traits and type classes.
@@ -112,7 +112,7 @@ parser order or by which interpretation happens to succeed.
 ### An explicit core and an expressive surface
 
 [Kio'](specs/prime.md) is the explicit semantic subset shared with full Kio.
-Surface conveniences, elab calls, and the richer inference of omitted
+Surface conveniences, macro calls, and the richer inference of omitted
 type arguments are resolved before reaching it. Kio' retains bounded local
 checking rules; the distinction concerns which reasoning belongs in the
 surface elaborator and which belongs in the persistent core.
@@ -137,14 +137,15 @@ abstraction.
 
 Kio's small core of syntax and reserved intrinsics supports library-defined
 functions, operators, and control abstractions. Programs declare these locally
-or import them explicitly; `if!`, `match!`, and `do!` are ordinary library
-elabs.
+or import them explicitly; `if`, `match`, and `do` are ordinary library
+macros.
 
 ### Type-driven macros
 
-Kio's [imported elabs](specs/language.md#elaborators-are-imported-not-ambient)
-provide typed compile-time extension at written bang-call sites. They are
-ordinary Kio libraries, selected through normal resolution. Their generated
+Kio's [imported macros](specs/language.md#macros-are-imported-not-ambient)
+provide typed compile-time extension at direct named call sites. Explicit
+`macro` import selectors identify these ordinary Kio library declarations;
+normal lexical resolution selects each call. Their generated
 terms must satisfy the receiving context's contract and become ordinary Kio'.
 This gives users a way to build abstractions without adding a compiler
 primitive for each library operation.

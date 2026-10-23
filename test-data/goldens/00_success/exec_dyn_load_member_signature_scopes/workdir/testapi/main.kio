@@ -1,18 +1,18 @@
 module testapi/main;
 
-import elab/match(match);
 import loader as l;
 import loader/scan as scan;
+import macros/match(macro match);
 import testapi as t;
 import testapi/io as io;
 import testapi/text as text;
 
 fn report_contract(label: t.String, source: t.String, contract: l.Contract) {
   let outcome =
-    match! l.un_load_outcome(scan.load_package(source)) {
+    match(l.un_load_outcome(scan.load_package(source))) {
       (
       , .(loaded: l.Lr_image) {
-          match! l.contract_check(loaded.>l.Lr_image.get, contract) {
+          match(l.contract_check(loaded.>l.Lr_image.get, contract)) {
             (.(diag: l.Diag) { l.diag_message(diag) }, .(_matched: .) { "ok"(t.String) })
           }
         }
@@ -43,7 +43,7 @@ fn report_function(label: t.String, source: t.String, signature: t.String) {
 
 fn report_load(label: t.String, source: t.String) {
   let outcome =
-    match! l.un_load_outcome(scan.load_package(source)) {
+    match(l.un_load_outcome(scan.load_package(source))) {
       (
       , .(_loaded: l.Lr_image) { "loaded"(t.String) }
       , .(rejected: l.Lr_diag) { l.diag_message(rejected.>l.Lr_diag.get) }

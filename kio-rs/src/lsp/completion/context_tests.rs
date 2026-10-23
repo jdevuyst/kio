@@ -183,7 +183,7 @@ fn parser_context_required_named_continuations_remain_available() {
     let mut failures = Vec::new();
     for (kind, source, expected) in [
         ("", "module app; host |", vec!["fn", "pub", "type"]),
-        ("", "module app; elab make: . { impl(|", vec!["fills"]),
+        ("", "module app; macro make: . { impl(|", vec!["fills"]),
         (
             ".dep",
             "dependency app; source { path \"app.pkg.kio\"; } rehost dep/api |",

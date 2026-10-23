@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(one_sum, widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro one_sum, macro widen_sum);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_push, array_set);
@@ -33,27 +33,27 @@ fn make_input() -> Array(I32) {
 // is `()` — the side-effect (the array's mutated cells) carries
 // the work.
 fn shift_step(arr: Array(I32), key: I32, j: I32) -> I32 | . {
-  if! leq_i32(0, j) {
+  if(leq_i32(0, j)) {
     // j >= 0: compare arr[j] against key. If arr[j] > key,
     // shift arr[j] right and continue at j - 1; else write
     // key at arr[j+1] and exit.
     let aj = array_get(arr, j);
-    if! leq_i32(aj, key) {
+    if(leq_i32(aj, key)) {
       // arr[j] <= key — insertion point found, write key
       // at arr[j+1] and exit.
       array_set(arr, add_i32(j, 1), key);
-      widen_sum!(())
+      widen_sum(())
     } else {
       // arr[j] > key — shift arr[j] into arr[j+1] and
       // continue at j - 1.
       array_set(arr, add_i32(j, 1), aj);
-      widen_sum!(sub_i32(j, 1))
+      widen_sum(sub_i32(j, 1))
     }
   } else {
     // j < 0: ran off the left end. Write key at arr[0] and
     // exit.
     array_set(arr, 0, key);
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -62,12 +62,12 @@ fn shift_step(arr: Array(I32), key: I32, j: I32) -> I32 | . {
 // inner shift loop starting at `j = i - 1`. State is `i`. The
 // exit value is `()`.
 fn sort_step(arr: Array(I32), i: I32) -> I32 | . {
-  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
+  if(leq_i32(i, sub_i32(array_len(arr), 1))) {
     let key = array_get(arr, i);
     loop(.(j: I32) { shift_step(arr, key, j) }, sub_i32(i, 1));
-    widen_sum!(add_i32(i, 1))
+    widen_sum(add_i32(i, 1))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -82,14 +82,14 @@ fn insertion_sort(arr: Array(I32)) -> Array(I32) {
 // Inner step of `render_csv`: emits one element per turn,
 // prepending "," to every cell but the first. State is `(acc, i)`.
 fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
-  if! leq_i32(i, sub_i32(array_len(arr), 1)) {
-    widen_sum!(if! leq_i32(i, 0) {
+  if(leq_i32(i, sub_i32(array_len(arr), 1))) {
+    widen_sum(if(leq_i32(i, 0)) {
       (int_to_string(array_get(arr, i)), add_i32(i, 1))
     } else {
       (string_concat(acc, string_concat(",", int_to_string(array_get(arr, i)))), add_i32(i, 1))
     })
   } else {
-    widen_sum!(acc)
+    widen_sum(acc)
   }
 }
 
@@ -100,7 +100,7 @@ fn render_csv(arr: Array(I32)) -> String {
   , String & I32
   , String
   , .(state: String & I32) -> (String & I32) | String {
-      match! state {
+      match(state) {
         .(acc: String, i: I32) { render_step(arr, acc, i) }
       }
     }

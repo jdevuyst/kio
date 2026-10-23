@@ -172,7 +172,7 @@ where
                     CheckedTermNode::Raw(_)
                     | CheckedTermNode::TemplateValue { .. }
                     | CheckedTermNode::Local { .. }
-                    | CheckedTermNode::ElabError { .. } => {}
+                    | CheckedTermNode::MacroError { .. } => {}
                     CheckedTermNode::TermCall { .. } => unreachable!("call scheduled separately"),
                 }
                 pending[start..].reverse();
@@ -306,7 +306,7 @@ where
             .map(clone_expr)
             .unwrap_or_else(|| {
                 unreachable!(
-                    "checked elaborator template value index {index} is outside the current {}-value input",
+                    "checked macro template value index {index} is outside the current {}-value input",
                     values.len()
                 )
             }),
@@ -466,7 +466,7 @@ where
                 node_span,
             )
         }
-        CheckedTermNode::ElabError { .. } => Expr::Unit {
+        CheckedTermNode::MacroError { .. } => Expr::Unit {
             source_trivia: Default::default(), occurrence: Default::default(),
             meta: Meta::new(node_span),
         },
@@ -636,7 +636,7 @@ fn clone_expr(root: &Expr<PrePrime>) -> Expr<PrePrime> {
             | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. }
             | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
+            | Expr::UserMacro { ext, .. }
             | Expr::Ufcs { ext, .. }
             | Expr::OpChain { ext, .. }
             | Expr::EnrichedTuple { ext, .. }

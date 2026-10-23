@@ -10,8 +10,8 @@ module base32/encode;
 import base32/alphabet as alphabet;
 import base32/bits as bits;
 import base32/list as list;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32, mod_i32, sub_i32);
 import testapi/iter(loop);
@@ -22,7 +22,7 @@ fn pad_needed(emitted: I32) -> I32 {
 }
 
 rec(loop) fn pad_out(count: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
-  if! lt_i32(0, count) {
+  if(lt_i32(0, count)) {
     recur pad_out(sub_i32(count, 1), list.cons(alphabet.pad(), done))
   } else {
     done
@@ -35,7 +35,7 @@ rec(loop) fn pad_out(count: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
 /// to a whole quantum.
 fn close(acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
   let tail =
-    if! lt_i32(0, held) {
+    if(lt_i32(0, held)) {
       let value = bits.low_bits(
       , bits.shift_up(acc, sub_i32(alphabet.group_bits(), held))
       , alphabet.group_bits()
@@ -54,7 +54,7 @@ rec(loop) {
   };
   /// Take the next byte into the accumulator, eight bits at a time.
   fn feed(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
-    match! payload.>list.List.un_list {
+    match(payload.>list.List.un_list) {
       (
       , .(byte: I32, rest: alphabet.Bytes) {
           recur drain(
@@ -71,7 +71,7 @@ rec(loop) {
   /// Draw off every whole group the accumulator now holds, high bits
   /// first, and keep only the leftover bits behind.
   fn drain(payload: alphabet.Bytes, acc: I32, held: I32, done: alphabet.Glyphs) -> alphabet.Glyphs {
-    if! lt_i32(held, alphabet.group_bits()) {
+    if(lt_i32(held, alphabet.group_bits())) {
       recur feed(payload, acc, held, done)
     } else {
       let left = sub_i32(held, alphabet.group_bits());

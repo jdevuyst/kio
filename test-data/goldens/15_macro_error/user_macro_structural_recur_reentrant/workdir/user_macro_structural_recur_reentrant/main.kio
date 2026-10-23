@@ -1,0 +1,6 @@
+module user_macro_structural_recur_reentrant/main;
+
+import macros(macro reentrant);
+import user_macro_structural_recur_reentrant(String);
+
+fn trigger(s: String) -> String { reentrant(s, String) }

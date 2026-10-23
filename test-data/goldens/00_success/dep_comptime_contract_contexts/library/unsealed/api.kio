@@ -1,5 +1,5 @@
 module api;
 
-import provider(identity);
+import provider(macro identity);
 
 pub fn keep() { () }

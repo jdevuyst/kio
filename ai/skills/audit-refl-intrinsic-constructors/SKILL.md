@@ -7,7 +7,7 @@ allowed-tools: Read, Grep, Bash
 # Reflection intrinsic constructor audit
 
 Anchors: [`specs/language.md` § Module system](../../../specs/language.md#module-system),
-**Compile-time helper import**, and [`specs/formal/elaboration.md` § 7.4. Elaborator bangs](../../../specs/formal/elaboration.md#74-elaborator-bangs),
+**Compile-time helper import**, and [`specs/formal/elaboration.md` § 7.4. Macro calls](../../../specs/formal/elaboration.md#74-macro-calls),
 the `__comptime__` checked-term ABI. Read the applicable constructor contracts first.
 This audit distinguishes core `__term_*__` constructors from reflected
 intrinsic calls `__intrinsic_*__`. An intrinsic such as `__pair__` has the
@@ -50,7 +50,7 @@ shared or delegated path explicitly rather than requiring a separate local
 match arm. An inventory entry, fallthrough, or unevaluated primitive is not a
 successful implementation of a reducible constructor.
 
-Record existing unit and user-elaborator evidence that reaches each distinct
+Record existing unit and user-macro evidence that reaches each distinct
 path and checks its reconstructed term/type or observable behavior. A search
 hit or unexecuted test is source coverage, not execution evidence. Report
 missing paths and missing evidence separately. Any requested execution follows
@@ -59,8 +59,8 @@ this audit does not require a broad matrix or compiler build by default.
 
 ## 3. Public vocabulary and examples
 
-Inspect the compile-time helper contract and the worked elaborators under
-`test-data/poc/elab/`. Public imports use `__comptime__`; core term builders use
+Inspect the compile-time helper contract and the worked macros under
+`test-data/poc/macros/`. Public imports use `__comptime__`; core term builders use
 the documented `__term_*__` names, while intrinsic-call builders use
 `__intrinsic_*__`. Search for old `__refl__` imports and bare `term_*` builders
 as drift candidates, distinguishing unrelated local helpers and intentional
@@ -68,7 +68,7 @@ rejection tests. Classify canonical source owners rather than treating copied
 dependencies as independent definitions.
 
 Verify the documented hygienic expansion rule: callers do not acquire a
-requirement to import `__intrinsics__` merely because an elaborator emits an
+requirement to import `__intrinsics__` merely because a macro emits an
 intrinsic call. Retain the distinction between core-language construction and
 intrinsic construction; do not widen the builtin surface to make the lists
 agree.

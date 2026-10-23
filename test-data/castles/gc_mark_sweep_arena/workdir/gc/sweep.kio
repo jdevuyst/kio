@@ -5,8 +5,8 @@
 /// compaction is about to hand back.
 module gc/sweep;
 
-import elab/control(if);
 import gc/heap(fold_objects, object_size);
+import macros/control(macro if);
 import testapi(Array, I32, default Bool);
 import testapi/arith(add_i32);
 import testapi/array(array_get);
@@ -19,7 +19,7 @@ pub fn sweep(cells: Array(I32), marks: Array(Bool)) -> Census {
   , .(census, addr) {
       let size = object_size(cells, addr);
       let .(counted: Census) =
-        if! array_get(marks, addr) {
+        if(array_get(marks, addr)) {
           census.!{
           , live_objects = add_i32(census.?{live_objects}, 1)
           , live_cells = add_i32(census.?{live_cells}, size)

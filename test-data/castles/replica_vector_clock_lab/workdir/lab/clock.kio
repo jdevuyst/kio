@@ -1,8 +1,8 @@
 module lab/clock;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -17,7 +17,7 @@ pub labels Relation = { same: . } | { before: . } | { after: . } | { concurrent:
 pub fn zero() -> Clock { {a = 0, b = 0, c = 0} }
 
 fn maximum(x: I32, y: I32) -> I32 {
-  if! arith.lt_i32(x, y) { y } else { x }
+  if(arith.lt_i32(x, y)) { y } else { x }
 }
 
 pub fn join(x: Clock, y: Clock) -> Clock {
@@ -25,7 +25,7 @@ pub fn join(x: Clock, y: Clock) -> Clock {
 }
 
 pub fn tick(node: Node, clock: Clock) -> Clock {
-  match! node {
+  match(node) {
     .(_a: Alpha) { clock.!{a = arith.add_i32(clock.?{a}, 1)} };
     .(_b: Beta) { clock.!{b = arith.add_i32(clock.?{b}, 1)} };
     .(_c: Gamma) { clock.!{c = arith.add_i32(clock.?{c}, 1)} }
@@ -33,30 +33,30 @@ pub fn tick(node: Node, clock: Clock) -> Clock {
 }
 
 pub fn leq(x: Clock, y: Clock) -> Bool {
-  if! arith.leq_i32(x.?{a}, y.?{a}) {
-    if! arith.leq_i32(x.?{b}, y.?{b}) { arith.leq_i32(x.?{c}, y.?{c}) } else { .f }
+  if(arith.leq_i32(x.?{a}, y.?{a})) {
+    if(arith.leq_i32(x.?{b}, y.?{b})) { arith.leq_i32(x.?{c}, y.?{c}) } else { .f }
   } else {
     .f
   }
 }
 
 pub fn compare(x: Clock, y: Clock) -> Relation {
-  if! leq(x, y) {
-    if! leq(y, x) { {same=}.>widen_sum! } else { {before=}.>widen_sum! }
-  } else if! leq(y, x) {
-    {after=}.>widen_sum!
+  if(leq(x, y)) {
+    if(leq(y, x)) { {same=}.>widen_sum } else { {before=}.>widen_sum }
+  } else if(leq(y, x)) {
+    {after=}.>widen_sum
   } else {
-    {concurrent=}.>widen_sum!
+    {concurrent=}.>widen_sum
   }
 }
 
 pub fn equal(x: Clock, y: Clock) -> Bool {
-  if! leq(x, y) { leq(y, x) } else { .f }
+  if(leq(x, y)) { leq(y, x) } else { .f }
 }
 
 pub fn lexical_before(x: Clock, y: Clock) -> Bool {
-  if! arith.eq_i32(x.?{a}, y.?{a}) {
-    if! arith.eq_i32(x.?{b}, y.?{b}) {
+  if(arith.eq_i32(x.?{a}, y.?{a})) {
+    if(arith.eq_i32(x.?{b}, y.?{b})) {
       arith.lt_i32(x.?{c}, y.?{c})
     } else {
       arith.lt_i32(x.?{b}, y.?{b})
@@ -77,7 +77,7 @@ pub fn show(clock: Clock) -> String {
 }
 
 pub fn describe(relation: Relation) -> String {
-  match! relation {
+  match(relation) {
     .(_s: Same) { "same" };
     .(_b: Before) { "before" };
     .(_a: After) { "after" };

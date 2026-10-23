@@ -11,7 +11,7 @@ pure fn identity_target_impl(
 , value: __Checked_term__
 ) -> __Checked_term__ { value }
 
-pub elab identity_target : [A] (A -> A) -> A -> A { impl identity_target_impl }
+pub macro identity_target : [A] (A -> A) -> A -> A { impl identity_target_impl }
 
 pure fn finish_impl(
 , _ct: __Comptime__
@@ -20,4 +20,4 @@ pure fn finish_impl(
 , _target: Optional_type
 ) -> __Checked_term__ { value }
 
-pub elab finish : [Source] Source -> [Target] Target { impl finish_impl }
+pub macro finish : [Source] Source -> [Target] Target { impl finish_impl }

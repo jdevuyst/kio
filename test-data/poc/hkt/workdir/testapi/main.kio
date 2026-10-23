@@ -2,8 +2,8 @@
 /// kinded brands, instance dictionaries, and do-block syntax together.
 module testapi/main;
 
-import elab/derive(derive);
-import elab/sequence(do);
+import macros/derive(macro derive);
+import macros/sequence(macro do);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -106,7 +106,7 @@ fn identity_extract() -> Extract(Identity) {
 // against any brand — callers pick `Box` or `Identity` at the call
 // site. Abstract brand crossing lifts through `Pure.lift(pur)`.
 fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
-  do! Monad.bind(monad) {
+  do(Monad.bind(monad)) {
     let prefix <- seed;
     let middle = " ok"(String);
     let trailed <- Pure.lift(pur)(string_concat(prefix, middle));
@@ -138,7 +138,7 @@ fn run_identity_pipeline(s: String) -> String {
   Identity.un_id(pipeline(monad, identity_pure(), seed))
 }
 
-fn derived_identity_functor() -> Functor(Identity) { derive!(_, (box_functor, identity_functor)) }
+fn derived_identity_functor() -> Functor(Identity) { derive(_, (box_functor, identity_functor)) }
 
 fn run_derived_functor(s: String) -> String {
   let functor = derived_identity_functor();

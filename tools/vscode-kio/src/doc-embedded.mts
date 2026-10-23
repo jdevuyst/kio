@@ -26,8 +26,9 @@ export function docBodies(root: Node): DocBody[] {
     const rows: (DocRow | null)[] = [];
     const lines: string[] = [];
     if (nodes[0].type === "doc_kio_self_code") {
-      lines.push("fn __doc_body() {");
-      rows.push(null);
+      const context = root.text.split("\n");
+      lines.push(...context, "fn __doc_body() {");
+      rows.push(...context.map(() => null), null);
     }
     let row = nodes[0].startPosition.row;
     for (const node of nodes) {

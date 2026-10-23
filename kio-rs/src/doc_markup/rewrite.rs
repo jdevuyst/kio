@@ -167,6 +167,14 @@ pub(crate) fn rewrite_prose_segment(
     literal_end: fn(&str, usize) -> Option<usize>,
     render: &mut impl FnMut(&KiodocBracket<'_>) -> String,
 ) -> String {
+    rewrite_prose_segment_with_offsets(prose, literal_end, &mut |parsed, _| render(parsed))
+}
+
+pub(crate) fn rewrite_prose_segment_with_offsets(
+    prose: &str,
+    literal_end: fn(&str, usize) -> Option<usize>,
+    render: &mut impl FnMut(&KiodocBracket<'_>, usize) -> String,
+) -> String {
     let bytes = prose.as_bytes();
     let len = bytes.len();
     let mut out = String::with_capacity(len);
@@ -194,7 +202,7 @@ pub(crate) fn rewrite_prose_segment(
                     push_char(&mut out, prose, &mut i);
                     continue;
                 }
-                let rendered = render(&parsed);
+                let rendered = render(&parsed, out.len());
                 out.push_str(&rendered);
                 i += consumed;
             }

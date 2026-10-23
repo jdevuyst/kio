@@ -671,18 +671,18 @@ where
                 crate::ast::Item::Equiv(e, witness) => {
                     P::AuxiliaryItems::check_equiv(e, witness, idx, env, elaborations)
                 }
-                crate::ast::Item::Elaborator(s, witness) => {
+                crate::ast::Item::Macro(s, witness) => {
                     let provider = NominalProvider::new(Some(env.module), env.package);
                     check_signature_type_visibility_with_provider(
                         &s.call_ty,
                         &HashSet::new(),
                         &s.vis,
                         &env.module.path,
-                        &format!("elaborator `{}`", s.name),
+                        &format!("macro `{}`", s.name),
                         env,
                         &provider,
                     )?;
-                    P::AuxiliaryItems::check_elaborator(s, witness, idx, env, elaborations)
+                    P::AuxiliaryItems::check_macro(s, witness, idx, env, elaborations)
                 }
                 // Statically uninhabited at every typer phase.
                 crate::ast::Item::LiteralAlias(_, ext) => match *ext {},
@@ -1989,7 +1989,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn ordinary_function_signatures_do_not_impose_elaborator_receiver_layouts() {
+    fn ordinary_function_signatures_do_not_impose_macro_receiver_layouts() {
         check_named_signature(
             "module main; host type Comptime_bool; \
              pure fn ordinary(value: Comptime_bool) -> Comptime_bool { value }",
@@ -2015,7 +2015,7 @@ mod tests {
              pure fn bad(packet: __Comptime__ & .) -> . { () }",
             "bad",
         )
-        .expect("ordinary signature checking does not assign an elaborator ABI");
+        .expect("ordinary signature checking does not assign a macro ABI");
 
         check_named_signature(
             "module main; import __comptime__; \

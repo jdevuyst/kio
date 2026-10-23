@@ -47,7 +47,7 @@ fn project(module: &Module<Lowered>) -> Module<Contract> {
                     Item::TypeRecGroup(def) => Item::TypeRecGroup(convert_type_rec_group(def)),
                     Item::HostFn(def) => Item::HostFn(convert_host_fn(def)),
                     Item::HostType(def) => Item::HostType(convert_host_type(def)),
-                    Item::Equiv(..) | Item::Elaborator(..) => return None,
+                    Item::Equiv(..) | Item::Macro(..) => return None,
                     Item::Labels(_, witness) | Item::LabelForward(_, witness) => match *witness {},
                     Item::Op(_, witness) | Item::VariadicOperator(_, witness) => match *witness {},
                     Item::RecGroup(_, witness) | Item::LiteralAlias(_, witness) => {
@@ -213,10 +213,10 @@ fn bodyless_function_and_auxiliary_items_are_structurally_excluded_from_typing()
     fn equiv(witness: <Contract as Phase>::ItemEquiv) -> Never {
         witness
     }
-    fn elaborator(witness: <Contract as Phase>::ItemElaborator) -> Never {
+    fn macro_def(witness: <Contract as Phase>::ItemMacro) -> Never {
         witness
     }
-    let _ = (body, equiv, elaborator);
+    let _ = (body, equiv, macro_def);
     assert_eq!(std::mem::size_of::<NoBody>(), 0);
 }
 
@@ -285,7 +285,7 @@ fn bodyless_recursive_member_headers_reuse_the_existing_validator() {
 fn signature_only_on_ordinary_phases_still_checks_retained_auxiliary_items() {
     for source in [
         "module claims; fn identity[A](x: A) -> A { x } equiv wrong { (); identity }",
-        "module claims; import __comptime__; pure fn implementation(ct: __Comptime__) -> . { () } elab wrong : . -> . { impl implementation; };",
+        "module claims; import __comptime__; pure fn implementation(ct: __Comptime__) -> . { () } macro wrong : . -> . { impl implementation; };",
     ] {
         let (ordinary, contract) = packages(&[("claims.kio", source)]);
         ordinary.check_in_body_resolution().unwrap();

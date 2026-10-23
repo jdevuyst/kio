@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(default String);
 import testapi/io(print);
 
@@ -10,7 +10,7 @@ fn apply[A](f: . -> A) -> A { f(()) }
 fn classify(source: String | .) -> String {
   let inferred =
     apply(.(_unit: .) {
-      match! source {
+      match(source) {
         (.(text: String) { text }, .(_empty: .) { "unit\n" })
       }
     });
@@ -18,6 +18,6 @@ fn classify(source: String | .) -> String {
 }
 
 pub fn main() {
-  print(classify(widen_sum!("text\n", String | .)));
-  print(classify(widen_sum!((), String | .)))
+  print(classify(widen_sum("text\n", String | .)));
+  print(classify(widen_sum((), String | .)))
 }

@@ -478,7 +478,7 @@ Declarations inside a module section are post-elaboration **Kio'**:
   this distinction; a sealed historical signature is not rewritten to add or
   remove `()`.
 
-No surface-only forms (`elab`, `op`, `match`, `do`, …) appear — they are not
+No surface-only forms (`macro`, `op`, `match`, `do`, …) appear — they are not
 Kio'.
 
 A `newtype` records its elaborated form with its members. For example, after
@@ -820,7 +820,7 @@ contract surface at that commit:
   from the dependency's *signatures alone* — function bodies are never lowered
   or typechecked to compute it — so it digests identically in the full and
   standalone Kio' checking pipelines even when the dependency's bodies use
-  surface forms (block and blockless elab calls) that only the full
+  surface forms (block and blockless macro calls) that only the full
   front-end accepts. A
   surface-only declaration that would enter the contract only *after* surface
   elaboration — notably `labels`, which the full front-end lowers to newtypes —

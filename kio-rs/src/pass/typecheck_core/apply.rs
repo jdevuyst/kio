@@ -191,7 +191,7 @@ fn update_terminal_public_layer_work(update: impl FnOnce(&mut TerminalPublicLaye
 
 #[cfg(all(test, feature = "surface"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) struct FinalElaboratorSuccessorWork {
+pub(crate) struct FinalMacroSuccessorWork {
     pub(crate) terminal_continues: usize,
     pub(crate) migrated_descents: usize,
     pub(crate) earlier_terminal_yields: usize,
@@ -200,8 +200,8 @@ pub(crate) struct FinalElaboratorSuccessorWork {
 
 #[cfg(all(test, feature = "surface"))]
 thread_local! {
-    static FINAL_ELABORATOR_SUCCESSOR_WORK: std::cell::Cell<FinalElaboratorSuccessorWork> =
-        const { std::cell::Cell::new(FinalElaboratorSuccessorWork {
+    static FINAL_MACRO_SUCCESSOR_WORK: std::cell::Cell<FinalMacroSuccessorWork> =
+        const { std::cell::Cell::new(FinalMacroSuccessorWork {
             terminal_continues: 0,
             migrated_descents: 0,
             earlier_terminal_yields: 0,
@@ -210,18 +210,18 @@ thread_local! {
 }
 
 #[cfg(all(test, feature = "surface"))]
-pub(crate) fn reset_final_elaborator_successor_work() {
-    FINAL_ELABORATOR_SUCCESSOR_WORK.with(|work| work.set(FinalElaboratorSuccessorWork::default()));
+pub(crate) fn reset_final_macro_successor_work() {
+    FINAL_MACRO_SUCCESSOR_WORK.with(|work| work.set(FinalMacroSuccessorWork::default()));
 }
 
 #[cfg(all(test, feature = "surface"))]
-pub(crate) fn final_elaborator_successor_work() -> FinalElaboratorSuccessorWork {
-    FINAL_ELABORATOR_SUCCESSOR_WORK.with(std::cell::Cell::get)
+pub(crate) fn final_macro_successor_work() -> FinalMacroSuccessorWork {
+    FINAL_MACRO_SUCCESSOR_WORK.with(std::cell::Cell::get)
 }
 
 #[cfg(all(test, feature = "surface"))]
-fn update_final_elaborator_successor_work(update: impl FnOnce(&mut FinalElaboratorSuccessorWork)) {
-    FINAL_ELABORATOR_SUCCESSOR_WORK.with(|work| {
+fn update_final_macro_successor_work(update: impl FnOnce(&mut FinalMacroSuccessorWork)) {
+    FINAL_MACRO_SUCCESSOR_WORK.with(|work| {
         let mut current = work.get();
         update(&mut current);
         work.set(current);
@@ -420,7 +420,7 @@ fn update_direct_lambda_work(update: impl FnOnce(&mut DirectLambdaWork)) {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct LambdaBodyEntry {
     pub(crate) span: Span,
-    pub(crate) elaborator_executions: usize,
+    pub(crate) macro_executions: usize,
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -460,7 +460,7 @@ pub(crate) fn record_lambda_body_entry(span: Span, tcx: &TypeCtx<'_, '_, crate::
         }
         entries.push(LambdaBodyEntry {
             span,
-            elaborator_executions: tcx.env.memo.user_elaborator_template_executions(),
+            macro_executions: tcx.env.memo.user_macro_template_executions(),
         });
     });
 }
@@ -470,7 +470,7 @@ pub(crate) fn record_lambda_body_entry(span: Span, tcx: &TypeCtx<'_, '_, crate::
 pub(crate) struct PublicHeaderWork {
     pub(crate) pending_exports: usize,
     pub(crate) bridge_exports: usize,
-    pub(crate) blocked_elaborators: usize,
+    pub(crate) blocked_macros: usize,
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -479,7 +479,7 @@ thread_local! {
         const { std::cell::Cell::new(PublicHeaderWork {
             pending_exports: 0,
             bridge_exports: 0,
-            blocked_elaborators: 0,
+            blocked_macros: 0,
         }) };
 }
 
@@ -3444,16 +3444,16 @@ struct SelectedOrdinaryCallValue<'m> {
 }
 
 #[cfg(feature = "surface")]
-struct UserElaboratorCallTranscript {
+struct UserMacroCallTranscript {
     action: crate::ast::NodeId,
     source_span: Span,
-    layers: Vec<UserElaboratorCallTranscriptLayer>,
+    layers: Vec<UserMacroCallTranscriptLayer>,
     next_source_index: usize,
-    terminal_type_layer: Option<UserElaboratorTerminalTypeLayerCapability>,
+    terminal_type_layer: Option<UserMacroTerminalTypeLayerCapability>,
 }
 
 #[cfg(feature = "surface")]
-struct UserElaboratorTerminalTypeLayerCapability {
+struct UserMacroTerminalTypeLayerCapability {
     action: crate::ast::NodeId,
     source_span: Span,
     ordinal: usize,
@@ -3461,12 +3461,12 @@ struct UserElaboratorTerminalTypeLayerCapability {
 }
 
 #[cfg(feature = "surface")]
-impl UserElaboratorCallTranscript {
+impl UserMacroCallTranscript {
     fn terminal_public_layer_ready(&self) -> bool {
         self.terminal_type_layer.as_ref().is_some_and(|terminal| {
             assert!(
                 self.layers.len() <= terminal.ordinal + 1,
-                "an elaborator transcript advanced past its terminal declaration layer"
+                "a macro transcript advanced past its terminal declaration layer"
             );
             self.layers.len() == terminal.ordinal
                 && (terminal.ordinal == 0 || self.layers[terminal.ordinal - 1].value_layer_consumed)
@@ -3477,7 +3477,7 @@ impl UserElaboratorCallTranscript {
         self.terminal_type_layer.as_ref().is_some_and(|terminal| {
             assert!(
                 self.layers.len() <= terminal.ordinal + 1,
-                "an elaborator transcript advanced past its terminal declaration layer"
+                "a macro transcript advanced past its terminal declaration layer"
             );
             self.layers.len() == terminal.ordinal + 1
         })
@@ -3493,16 +3493,16 @@ impl UserElaboratorCallTranscript {
         };
         assert_eq!(
             terminal.action, action,
-            "an elaborator terminal layer returned to another action"
+            "a macro terminal layer returned to another action"
         );
         assert_eq!(
             terminal.source_span, source_span,
-            "an elaborator terminal layer returned to another source"
+            "a macro terminal layer returned to another source"
         );
         assert_eq!(
             self.layers.len(),
             terminal.ordinal + 1,
-            "an elaborator terminal layer completed without recording exactly one layer"
+            "a macro terminal layer completed without recording exactly one layer"
         );
         #[cfg(test)]
         update_terminal_public_layer_work(|work| work.marker_finishes += 1);
@@ -3510,14 +3510,14 @@ impl UserElaboratorCallTranscript {
 }
 
 #[cfg(feature = "surface")]
-struct UserElaboratorCallTranscriptLayer {
+struct UserMacroCallTranscriptLayer {
     type_slots: Vec<Option<ScopedType>>,
-    sources: Vec<UserElaboratorCallTranscriptSource>,
+    sources: Vec<UserMacroCallTranscriptSource>,
     value_layer_consumed: bool,
 }
 
 #[cfg(feature = "surface")]
-struct UserElaboratorCallTranscriptSource {
+struct UserMacroCallTranscriptSource {
     source_index: usize,
     source: crate::ast::Expr<crate::ast::Lowered>,
     expanded_start: usize,
@@ -4233,7 +4233,7 @@ fn open_selecting_goal_call<'m>(
     callee_span: Span,
     call_site: crate::ast::ExpressionSite,
     empty_call_mode: EmptyCallMode,
-    user_elaborator_transcript: Option<UserElaboratorCallTranscript>,
+    user_macro_transcript: Option<UserMacroCallTranscript>,
     store: &mut GoalStore,
     owner: crate::ast::TypeGoalOwner,
     tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -4251,7 +4251,7 @@ fn open_selecting_goal_call<'m>(
             slot_offset,
             callee_span,
             call_site,
-            user_elaborator_transcript,
+            user_macro_transcript,
             None,
             store,
             owner,
@@ -4275,7 +4275,7 @@ fn open_preflighted_selecting_goal_call<'m>(
     slot_offset: usize,
     callee_span: Span,
     call_site: crate::ast::ExpressionSite,
-    user_elaborator_transcript: Option<UserElaboratorCallTranscript>,
+    user_macro_transcript: Option<UserMacroCallTranscript>,
     immediate_lambda: Option<Box<ImmediateLambdaCall<'m>>>,
     store: &mut GoalStore,
     owner: crate::ast::TypeGoalOwner,
@@ -4294,7 +4294,7 @@ fn open_preflighted_selecting_goal_call<'m>(
         callee_span,
         call_site,
         slot_offset,
-        user_elaborator_transcript,
+        user_macro_transcript,
         store,
         tcx,
     )?;
@@ -5432,7 +5432,7 @@ struct OpenGoalCall<'m> {
     callee_span: Span,
     call_site: crate::ast::ExpressionSite,
     slot_offset: usize,
-    user_elaborator_transcript: Option<UserElaboratorCallTranscript>,
+    user_macro_transcript: Option<UserMacroCallTranscript>,
     immediate_lambda: Option<Box<ImmediateLambdaCall<'m>>>,
 }
 
@@ -5477,7 +5477,7 @@ impl<'m> OpenGoalCall<'m> {
         callee_span: Span,
         call_site: crate::ast::ExpressionSite,
         slot_offset: usize,
-        user_elaborator_transcript: Option<UserElaboratorCallTranscript>,
+        user_macro_transcript: Option<UserMacroCallTranscript>,
         store: &mut GoalStore,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<Self, Error> {
@@ -5524,7 +5524,7 @@ impl<'m> OpenGoalCall<'m> {
             callee_span,
             call_site,
             slot_offset,
-            user_elaborator_transcript,
+            user_macro_transcript,
             goal_occurrences,
             store,
             tcx,
@@ -5538,7 +5538,7 @@ impl<'m> OpenGoalCall<'m> {
         callee_span: Span,
         call_site: crate::ast::ExpressionSite,
         slot_offset: usize,
-        user_elaborator_transcript: Option<UserElaboratorCallTranscript>,
+        user_macro_transcript: Option<UserMacroCallTranscript>,
         goal_occurrences: Vec<Option<ScopedType>>,
         store: &GoalStore,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -5618,7 +5618,7 @@ impl<'m> OpenGoalCall<'m> {
             callee_span,
             call_site,
             slot_offset,
-            user_elaborator_transcript,
+            user_macro_transcript,
             immediate_lambda: None,
         })
     }
@@ -6274,10 +6274,10 @@ enum RetainedCallableProgress {
 enum CompletedInFrame {
     Value(ScopedType, usize),
     FunctionScheme(ScopedType, usize),
-    UserElaboratorCall {
+    UserMacroCall {
         output: ScopedType,
         inferred_type_arg_suffix: usize,
-        transcript: UserElaboratorCallTranscript,
+        transcript: UserMacroCallTranscript,
     },
 }
 
@@ -6510,17 +6510,17 @@ impl OrdinaryCallContinuation<'_> {
         }
     }
 
-    fn user_elaborator_transcript(&self) -> Option<&UserElaboratorCallTranscript> {
-        self.open_goal_call()?.user_elaborator_transcript.as_ref()
+    fn user_macro_transcript(&self) -> Option<&UserMacroCallTranscript> {
+        self.open_goal_call()?.user_macro_transcript.as_ref()
     }
 
     fn carries_action_parent_terminal_public_layer(&self) -> bool {
         let Some(call) = self.open_goal_call() else {
             return false;
         };
-        call.user_elaborator_transcript
+        call.user_macro_transcript
             .as_ref()
-            .is_some_and(UserElaboratorCallTranscript::terminal_public_layer_in_flight)
+            .is_some_and(UserMacroCallTranscript::terminal_public_layer_in_flight)
             && !call.goal_occurrences.is_empty()
             && call
                 .goal_occurrences
@@ -6541,19 +6541,19 @@ impl OrdinaryValueCursor<'_> {
     fn result_inferred_type_arg_suffix(&self) -> usize {
         match &self.planned {
             PlannedOrdinaryValue::Call(call) => call.result_inferred_type_arg_suffix(),
-            PlannedOrdinaryValue::UserElaborator(call) => match &call.state {
-                PlannedUserElaboratorCallState::Advancing(call) => {
+            PlannedOrdinaryValue::UserMacro(call) => match &call.state {
+                PlannedUserMacroCallState::Advancing(call) => {
                     call.result_inferred_type_arg_suffix()
                 }
-                PlannedUserElaboratorCallState::Completed {
+                PlannedUserMacroCallState::Completed {
                     inferred_type_arg_suffix,
                     ..
                 }
-                | PlannedUserElaboratorCallState::Ready {
+                | PlannedUserMacroCallState::Ready {
                     inferred_type_arg_suffix,
                     ..
                 } => *inferred_type_arg_suffix,
-                PlannedUserElaboratorCallState::Fills(_) => 0,
+                PlannedUserMacroCallState::Fills(_) => 0,
             },
             _ => 0,
         }
@@ -6871,43 +6871,43 @@ enum FieldContinuation<'m> {
 }
 
 #[cfg(feature = "surface")]
-struct PlannedUserElaboratorCall<'m> {
-    action: Option<crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>>,
-    state: PlannedUserElaboratorCallState<'m>,
+struct PlannedUserMacroCall<'m> {
+    action: Option<crate::pass::typecheck_full::PreparedUserMacroAction<'m>>,
+    state: PlannedUserMacroCallState<'m>,
 }
 
 #[cfg(feature = "surface")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum UserElaboratorExpectedApplication {
+enum UserMacroExpectedApplication {
     Absent,
     Applied,
     Deferred,
 }
 
 #[cfg(feature = "surface")]
-#[allow(clippy::large_enum_variant)] // elaborator continuations reuse the shared ordinary driver
-enum PlannedUserElaboratorCallState<'m> {
+#[allow(clippy::large_enum_variant)] // macro continuations reuse the shared ordinary driver
+enum PlannedUserMacroCallState<'m> {
     Fills(Box<fills::MarkedCallState<'m>>),
     Advancing(OrdinaryCallContinuation<'m>),
     Completed {
         output: ScopedType,
         inferred_type_arg_suffix: usize,
-        transcript: UserElaboratorCallTranscript,
-        expected_application: UserElaboratorExpectedApplication,
+        transcript: UserMacroCallTranscript,
+        expected_application: UserMacroExpectedApplication,
     },
     Ready {
-        action: crate::pass::typecheck_full::ReadyUserElaboratorAction,
+        action: crate::pass::typecheck_full::ReadyUserMacroAction,
         output: ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: UserElaboratorExpectedApplication,
+        expected_application: UserMacroExpectedApplication,
     },
 }
 
 #[cfg(feature = "surface")]
 #[allow(clippy::large_enum_variant)] // this transient handoff is never stored recursively in the driver
-enum ResumedUserElaboratorCall<'m> {
+enum ResumedUserMacroCall<'m> {
     Ready(OrdinaryValueAdvance<'m>),
-    Continue(PlannedUserElaboratorCall<'m>),
+    Continue(PlannedUserMacroCall<'m>),
     DescendMigrated(OrdinaryChildContinuation<'m>),
 }
 
@@ -6942,7 +6942,7 @@ enum PlannedOrdinaryValue<'m> {
     Sequence(SequenceContinuation<'m>),
     Field(FieldContinuation<'m>),
     ComputedCall(ComputedCallContinuation<'m>),
-    UserElaborator(PlannedUserElaboratorCall<'m>),
+    UserMacro(PlannedUserMacroCall<'m>),
     RecOrder(RecOrderContinuation<'m>),
     RecQuote(RecQuoteContinuation<'m>),
     Recursive(OrdinaryRecursiveFamily),
@@ -6971,7 +6971,7 @@ enum OrdinaryValueSeed<'m> {
     ComputedLambdaCall {
         header: super::annotation_plan::LambdaHeaderPlan<'m>,
     },
-    UserElaborator(crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>),
+    UserMacro(crate::pass::typecheck_full::PreparedUserMacroAction<'m>),
     DeferredRecOrder(DeferredTailResolution),
     Recursive(OrdinaryRecursiveFamily),
 }
@@ -6981,14 +6981,14 @@ impl CompletedInFrame {
     fn scoped(&self) -> &ScopedType {
         match self {
             Self::Value(ty, _) | Self::FunctionScheme(ty, _) => ty,
-            Self::UserElaboratorCall { output, .. } => output,
+            Self::UserMacroCall { output, .. } => output,
         }
     }
 
     fn inferred_type_arg_suffix(&self) -> usize {
         match self {
             Self::Value(_, suffix) | Self::FunctionScheme(_, suffix) => *suffix,
-            Self::UserElaboratorCall {
+            Self::UserMacroCall {
                 inferred_type_arg_suffix,
                 ..
             } => *inferred_type_arg_suffix,
@@ -7103,15 +7103,15 @@ impl<'m> OrdinaryValueCursor<'m> {
                         nodes.push(CompletionNode::Lambda(lambda))
                     }
                     PlannedOrdinaryValue::Call(call) => nodes.push(CompletionNode::Call(call)),
-                    PlannedOrdinaryValue::UserElaborator(call) => match &call.state {
-                        PlannedUserElaboratorCallState::Advancing(call) => {
+                    PlannedOrdinaryValue::UserMacro(call) => match &call.state {
+                        PlannedUserMacroCallState::Advancing(call) => {
                             nodes.push(CompletionNode::Call(call))
                         }
-                        PlannedUserElaboratorCallState::Fills(state) => {
+                        PlannedUserMacroCallState::Fills(state) => {
                             state.push_completion_nodes(&mut nodes)
                         }
-                        PlannedUserElaboratorCallState::Completed { .. }
-                        | PlannedUserElaboratorCallState::Ready { .. } => {}
+                        PlannedUserMacroCallState::Completed { .. }
+                        | PlannedUserMacroCallState::Ready { .. } => {}
                     },
                     PlannedOrdinaryValue::PendingRecOrderSource(child)
                     | PlannedOrdinaryValue::Let(LetContinuation::Prefix(child))
@@ -7567,7 +7567,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 callee_span,
                 args,
                 flavor,
-                bang: None,
+                macro_call: None,
                 meta,
                 ext,
             } => {
@@ -7630,9 +7630,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }
                 OrdinaryValueSeed::Recursive(OrdinaryRecursiveFamily::RecQuote)
             }
-            crate::ast::Expr::UserElaborator { .. }
-            | crate::ast::Expr::Ufcs { bang: Some(_), .. } => OrdinaryValueSeed::UserElaborator(
-                crate::pass::typecheck_full::prepare_user_elaborator_action(source, tcx)?,
+            crate::ast::Expr::UserMacro { .. }
+            | crate::ast::Expr::Ufcs {
+                macro_call: Some(_),
+                ..
+            } => OrdinaryValueSeed::UserMacro(
+                crate::pass::typecheck_full::prepare_user_macro_action(source, tcx)?,
             ),
             crate::ast::Expr::RecCall { ext, .. }
             | crate::ast::Expr::RowLet { ext, .. }
@@ -7735,20 +7738,20 @@ impl<'m> OrdinaryValueCursor<'m> {
             OrdinaryValueSeed::ComputedLambdaCall { header } => {
                 PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::PlannedLambda(header))
             }
-            OrdinaryValueSeed::UserElaborator(action) => {
+            OrdinaryValueSeed::UserMacro(action) => {
                 let span = action.span();
                 let callee = Synth::complete_scheme_interned(action.call_ty().clone());
                 let args = action.args().to_vec();
                 let terminal_type_layer =
                     action.terminal_type_only_layer().map(|(ordinal, params)| {
-                        UserElaboratorTerminalTypeLayerCapability {
+                        UserMacroTerminalTypeLayerCapability {
                             action: action.node_id(),
                             source_span: span,
                             ordinal,
                             params: params.to_vec(),
                         }
                     });
-                let transcript = Some(UserElaboratorCallTranscript {
+                let transcript = Some(UserMacroCallTranscript {
                     action: action.node_id(),
                     source_span: span,
                     layers: Vec::new(),
@@ -7770,19 +7773,17 @@ impl<'m> OrdinaryValueCursor<'m> {
                     tcx,
                 )?;
                 let call = OrdinaryCallContinuation::Selecting(Box::new(selecting));
-                if action.schedule() == crate::ast::ElaboratorSchedule::Fills {
-                    return Ok(PlannedOrdinaryValue::UserElaborator(
-                        PlannedUserElaboratorCall {
-                            action: None,
-                            state: PlannedUserElaboratorCallState::Fills(Box::new(
-                                fills::MarkedCallState::project(action, call),
-                            )),
-                        },
-                    ));
+                if action.schedule() == crate::ast::MacroSchedule::Fills {
+                    return Ok(PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                        action: None,
+                        state: PlannedUserMacroCallState::Fills(Box::new(
+                            fills::MarkedCallState::project(action, call),
+                        )),
+                    }));
                 }
-                PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     action: Some(action),
-                    state: PlannedUserElaboratorCallState::Advancing(call),
+                    state: PlannedUserMacroCallState::Advancing(call),
                 })
             }
             OrdinaryValueSeed::DeferredRecOrder(resolution) => {
@@ -7835,8 +7836,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                 return false;
             }
             match &cursor.planned {
-                PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
-                    state: PlannedUserElaboratorCallState::Fills(state),
+                PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state: PlannedUserMacroCallState::Fills(state),
                     ..
                 }) => return state.awaits_expected(),
                 PlannedOrdinaryValue::PendingRecOrderPath
@@ -7849,17 +7850,17 @@ impl<'m> OrdinaryValueCursor<'m> {
                     OrdinaryCallContinuation::AwaitingExpected(_)
                     | OrdinaryCallContinuation::AwaitingReturnedForall { .. },
                 )
-                | PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Completed {
-                            expected_application: UserElaboratorExpectedApplication::Absent,
+                        PlannedUserMacroCallState::Completed {
+                            expected_application: UserMacroExpectedApplication::Absent,
                             ..
                         },
                     ..
                 })
-                | PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Advancing(
+                        PlannedUserMacroCallState::Advancing(
                             OrdinaryCallContinuation::AwaitingExpected(_)
                             | OrdinaryCallContinuation::AwaitingReturnedForall { .. },
                         ),
@@ -7882,11 +7883,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     cursor = body.cursor.as_ref();
                 }
                 PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Successor(child))
-                | PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Advancing(OrdinaryCallContinuation::Successor(
-                            child,
-                        )),
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::Successor(child)),
                     ..
                 })
                 | PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Application {
@@ -7902,7 +7901,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 | PlannedOrdinaryValue::Sequence(_)
                 | PlannedOrdinaryValue::Field(_)
                 | PlannedOrdinaryValue::ComputedCall(_)
-                | PlannedOrdinaryValue::UserElaborator(_)
+                | PlannedOrdinaryValue::UserMacro(_)
                 | PlannedOrdinaryValue::RecOrder(_)
                 | PlannedOrdinaryValue::RecQuote(_)
                 | PlannedOrdinaryValue::Recursive(_) => return false,
@@ -7937,7 +7936,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             | PlannedOrdinaryValue::Sequence(_)
             | PlannedOrdinaryValue::Field(_)
             | PlannedOrdinaryValue::ComputedCall(_)
-            | PlannedOrdinaryValue::UserElaborator(_)
+            | PlannedOrdinaryValue::UserMacro(_)
             | PlannedOrdinaryValue::RecOrder(_)
             | PlannedOrdinaryValue::RecQuote(_)
             | PlannedOrdinaryValue::Recursive(_) => false,
@@ -7961,8 +7960,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             );
             cursor.expected = Some(expected.clone());
             match &mut cursor.planned {
-                PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
-                    state: PlannedUserElaboratorCallState::Fills(state),
+                PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state: PlannedUserMacroCallState::Fills(state),
                     ..
                 }) => {
                     state.supply_expected();
@@ -7977,16 +7976,14 @@ impl<'m> OrdinaryValueCursor<'m> {
                     ..
                 })
                 | PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Successor(child))
-                | PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Advancing(OrdinaryCallContinuation::Successor(
-                            child,
-                        )),
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::Successor(child)),
                     ..
                 }) => cursor = child.cursor.as_mut(),
-                PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Completed {
+                        PlannedUserMacroCallState::Completed {
                             expected_application,
                             ..
                         },
@@ -7994,10 +7991,10 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }) => {
                     assert_eq!(
                         *expected_application,
-                        UserElaboratorExpectedApplication::Absent,
-                        "a completed elaborator call accepted a second expectation"
+                        UserMacroExpectedApplication::Absent,
+                        "a completed macro call accepted a second expectation"
                     );
-                    *expected_application = UserElaboratorExpectedApplication::Deferred;
+                    *expected_application = UserMacroExpectedApplication::Deferred;
                     return;
                 }
                 PlannedOrdinaryValue::PendingRecOrderPath
@@ -8021,9 +8018,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     OrdinaryCallContinuation::AwaitingExpected(_)
                     | OrdinaryCallContinuation::AwaitingReturnedForall { .. },
                 )
-                | PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
-                        PlannedUserElaboratorCallState::Advancing(
+                        PlannedUserMacroCallState::Advancing(
                             OrdinaryCallContinuation::AwaitingExpected(_)
                             | OrdinaryCallContinuation::AwaitingReturnedForall { .. },
                         ),
@@ -8038,7 +8035,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 | PlannedOrdinaryValue::Sequence(_)
                 | PlannedOrdinaryValue::Field(_)
                 | PlannedOrdinaryValue::ComputedCall(_)
-                | PlannedOrdinaryValue::UserElaborator(_)
+                | PlannedOrdinaryValue::UserMacro(_)
                 | PlannedOrdinaryValue::RecOrder(_)
                 | PlannedOrdinaryValue::RecQuote(_)
                 | PlannedOrdinaryValue::Recursive(_) => {
@@ -8084,7 +8081,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             | PlannedOrdinaryValue::Sequence(_)
             | PlannedOrdinaryValue::Field(_)
             | PlannedOrdinaryValue::ComputedCall(_)
-            | PlannedOrdinaryValue::UserElaborator(_)
+            | PlannedOrdinaryValue::UserMacro(_)
             | PlannedOrdinaryValue::RecOrder(_)
             | PlannedOrdinaryValue::RecQuote(_)
             | PlannedOrdinaryValue::Recursive(_) => {
@@ -8163,17 +8160,15 @@ impl<'m> OrdinaryValueCursor<'m> {
                 frontier,
                 tcx,
             ),
-            PlannedOrdinaryValue::UserElaborator(continuation) => {
-                Self::advance_user_elaborator_step(
-                    source,
-                    expected,
-                    continuation,
-                    mode,
-                    demand,
-                    frontier,
-                    tcx,
-                )
-            }
+            PlannedOrdinaryValue::UserMacro(continuation) => Self::advance_user_macro_step(
+                source,
+                expected,
+                continuation,
+                mode,
+                demand,
+                frontier,
+                tcx,
+            ),
             PlannedOrdinaryValue::RecOrder(continuation) => Self::advance_rec_order_step(
                 source,
                 expected,
@@ -9708,7 +9703,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         callee: OwnerBoundSynth,
         args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
         slot_offset: usize,
-        transcript: Option<UserElaboratorCallTranscript>,
+        transcript: Option<UserMacroCallTranscript>,
         expected: Option<OwnerBoundType>,
         empty_call_mode: EmptyCallMode,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
@@ -9795,7 +9790,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             },
             Vec::new(),
             split_after,
-            advancing.call.user_elaborator_transcript.take(),
+            advancing.call.user_macro_transcript.take(),
             Some(expected),
             EmptyCallMode::ResidualTypeApplication,
             frontier,
@@ -9814,8 +9809,8 @@ impl<'m> OrdinaryValueCursor<'m> {
     fn completed_selected_call(
         mut completed: Box<CompletedPathUnitGoalCall<'m>>,
     ) -> CompletedInFrame {
-        match completed.call.user_elaborator_transcript.take() {
-            Some(transcript) => CompletedInFrame::UserElaboratorCall {
+        match completed.call.user_macro_transcript.take() {
+            Some(transcript) => CompletedInFrame::UserMacroCall {
                 output: completed.result,
                 inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
                 transcript,
@@ -9839,7 +9834,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 CompletedInFrame::Value(output, inferred_type_arg_suffix),
                 RetainedCallableProgress::FunctionScheme,
             ) => CompletedInFrame::FunctionScheme(output, inferred_type_arg_suffix),
-            (completed @ CompletedInFrame::UserElaboratorCall { .. }, _) => completed,
+            (completed @ CompletedInFrame::UserMacroCall { .. }, _) => completed,
             (CompletedInFrame::FunctionScheme(_, _), _) => {
                 unreachable!("a selected call was already classified as a function scheme")
             }
@@ -9910,7 +9905,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             callee_span,
             call_site,
             slot_offset: _,
-            user_elaborator_transcript,
+            user_macro_transcript,
             immediate_lambda: _,
         } = completed.call;
         assert_eq!(
@@ -9974,7 +9969,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             callee_span,
             call_site,
             split_after,
-            user_elaborator_transcript,
+            user_macro_transcript,
             activated.binder_occurrences,
             frontier.store(),
             tcx,
@@ -10018,14 +10013,14 @@ impl<'m> OrdinaryValueCursor<'m> {
         })
     }
 
-    fn begin_ready_user_elaborator_terminal_public_layer(
+    fn begin_ready_user_macro_terminal_public_layer(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
         completed: &mut CompletedPathUnitGoalCall<'m>,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<Option<OrdinaryChildContinuation<'m>>, Error> {
-        let Some(transcript) = completed.call.user_elaborator_transcript.as_ref() else {
+        let Some(transcript) = completed.call.user_macro_transcript.as_ref() else {
             return Ok(None);
         };
         if !transcript.terminal_public_layer_ready() {
@@ -10037,12 +10032,12 @@ impl<'m> OrdinaryValueCursor<'m> {
             .expect("a ready terminal public layer retains its capability");
         assert_eq!(
             terminal.action, transcript.action,
-            "an elaborator terminal layer crossed action identities"
+            "a macro terminal layer crossed action identities"
         );
         assert_eq!(
             terminal.source_span,
             source.span(),
-            "an elaborator terminal layer crossed source actions"
+            "a macro terminal layer crossed source actions"
         );
 
         let returned = {
@@ -10069,13 +10064,13 @@ impl<'m> OrdinaryValueCursor<'m> {
         assert_eq!(
             returned_params.len(),
             terminal.params.len(),
-            "an elaborator terminal successor changed binder arity"
+            "a macro terminal successor changed binder arity"
         );
         for (returned, declared) in returned_params.iter().zip(&terminal.params) {
             assert_eq!(
                 returned.effective_kind(),
                 declared.effective_kind(),
-                "an elaborator terminal successor changed binder kind"
+                "a macro terminal successor changed binder kind"
             );
         }
         let callee = Synth::complete_scheme_interned(returned.ty().clone());
@@ -10094,18 +10089,18 @@ impl<'m> OrdinaryValueCursor<'m> {
                 && preflight.shape.type_args.is_empty()
                 && preflight.shape.value_args.is_empty()
                 && preflight.candidates.is_empty(),
-            "an elaborator terminal preflight admitted a value or residual source"
+            "a macro terminal preflight admitted a value or residual source"
         );
         assert_eq!(
             preflight.shape.binders.len(),
             terminal.params.len(),
-            "an elaborator terminal preflight changed binder arity"
+            "a macro terminal preflight changed binder arity"
         );
         for (selected, declared) in preflight.shape.binders.iter().zip(&terminal.params) {
             assert_eq!(
                 selected.effective_kind(),
                 declared.effective_kind(),
-                "an elaborator terminal preflight changed binder kind"
+                "a macro terminal preflight changed binder kind"
             );
         }
 
@@ -10149,11 +10144,11 @@ impl<'m> OrdinaryValueCursor<'m> {
         }
         let transcript = completed
             .call
-            .user_elaborator_transcript
+            .user_macro_transcript
             .take()
             .expect("the terminal successor retained its transcript");
         let returned_owner = frontier.owner();
-        Self::begin_user_elaborator_terminal_public_layer(
+        Self::begin_user_macro_terminal_public_layer(
             source,
             expected,
             OwnerBoundSynth::FunctionScheme {
@@ -10206,7 +10201,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             return Ok(FinishedSelectedLayer::Selecting(Box::new(selecting)));
         }
         if remaining.is_empty() {
-            if let Some(successor) = Self::begin_ready_user_elaborator_terminal_public_layer(
+            if let Some(successor) = Self::begin_ready_user_macro_terminal_public_layer(
                 source,
                 expected.clone(),
                 &mut completed,
@@ -10365,7 +10360,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         },
                         Vec::new(),
                         split_after,
-                        completed.call.user_elaborator_transcript.take(),
+                        completed.call.user_macro_transcript.take(),
                         effective_expected.cloned(),
                         EmptyCallMode::ResidualTypeApplication,
                         frontier,
@@ -10426,15 +10421,15 @@ impl<'m> OrdinaryValueCursor<'m> {
                 };
                 if !goal_free {
                     if mode.executes_relation_actions()
-                        && completed.call.user_elaborator_transcript.is_some()
+                        && completed.call.user_macro_transcript.is_some()
                     {
                         let transcript = completed
                             .call
-                            .user_elaborator_transcript
+                            .user_macro_transcript
                             .take()
-                            .expect("the elaborator transcript was checked above");
+                            .expect("the macro transcript was checked above");
                         return Ok(FinishedSelectedLayer::Ready(
-                            OrdinaryValueAdvance::Complete(CompletedInFrame::UserElaboratorCall {
+                            OrdinaryValueAdvance::Complete(CompletedInFrame::UserMacroCall {
                                 output: completed.result,
                                 inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
                                 transcript,
@@ -10489,7 +10484,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             },
             remaining,
             split_after,
-            completed.call.user_elaborator_transcript.take(),
+            completed.call.user_macro_transcript.take(),
             expected.clone(),
             EmptyCallMode::ImplicitUnit,
             frontier,
@@ -10534,9 +10529,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                 if matches!(
                     &successor.cursor.planned,
                     PlannedOrdinaryValue::Call(call)
-                        if call.user_elaborator_transcript().is_some()
+                        if call.user_macro_transcript().is_some()
                 ) {
-                    // The elaborator wrapper owns cross-layer state (including marked projected
+                    // The macro wrapper owns cross-layer state (including marked projected
                     // sources). Yield the successor before entering it so that state migrates to
                     // the next layer even when the whole successor could otherwise close in one
                     // driver turn.
@@ -11469,7 +11464,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
-        if let Some(successor) = Self::begin_ready_user_elaborator_terminal_public_layer(
+        if let Some(successor) = Self::begin_ready_user_macro_terminal_public_layer(
             source,
             None,
             &mut completed,
@@ -11490,14 +11485,14 @@ impl<'m> OrdinaryValueCursor<'m> {
                 Self::completed_retained_callable(completed, progress),
             ));
         }
-        if mode.executes_relation_actions() && completed.call.user_elaborator_transcript.is_some() {
+        if mode.executes_relation_actions() && completed.call.user_macro_transcript.is_some() {
             let transcript = completed
                 .call
-                .user_elaborator_transcript
+                .user_macro_transcript
                 .take()
-                .expect("the elaborator transcript was checked above");
+                .expect("the macro transcript was checked above");
             return Ok(OrdinaryValueAdvance::Complete(
-                CompletedInFrame::UserElaboratorCall {
+                CompletedInFrame::UserMacroCall {
                     output: completed.result,
                     inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
                     transcript,
@@ -11527,7 +11522,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
-        if let Some(successor) = Self::begin_ready_user_elaborator_terminal_public_layer(
+        if let Some(successor) = Self::begin_ready_user_macro_terminal_public_layer(
             source,
             expected.clone(),
             &mut completed,
@@ -11557,15 +11552,15 @@ impl<'m> OrdinaryValueCursor<'m> {
                     ));
                 }
                 if mode.executes_relation_actions()
-                    && completed.call.user_elaborator_transcript.is_some()
+                    && completed.call.user_macro_transcript.is_some()
                 {
                     let transcript = completed
                         .call
-                        .user_elaborator_transcript
+                        .user_macro_transcript
                         .take()
-                        .expect("the elaborator transcript was checked above");
+                        .expect("the macro transcript was checked above");
                     return Ok(OrdinaryValueAdvance::Complete(
-                        CompletedInFrame::UserElaboratorCall {
+                        CompletedInFrame::UserMacroCall {
                             output: completed.result,
                             inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
                             transcript,
@@ -11599,16 +11594,16 @@ impl<'m> OrdinaryValueCursor<'m> {
         ))
     }
 
-    fn finish_user_elaborator_state(
+    fn finish_user_macro_state(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
-        continuation: PlannedUserElaboratorCall<'m>,
+        continuation: PlannedUserMacroCall<'m>,
         mode: frontier::FrontierMode,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
-        let PlannedUserElaboratorCall { mut action, state } = continuation;
-        if let PlannedUserElaboratorCallState::Ready {
+        let PlannedUserMacroCall { mut action, state } = continuation;
+        if let PlannedUserMacroCallState::Ready {
             action: ready,
             output,
             inferred_type_arg_suffix,
@@ -11617,13 +11612,13 @@ impl<'m> OrdinaryValueCursor<'m> {
         {
             assert!(
                 action.is_none(),
-                "a preflighted elaborator action retained its consumed preparation"
+                "a preflighted macro action retained its consumed preparation"
             );
             assert!(
                 mode.executes_actions(),
-                "a preflighted elaborator action resumed before Final"
+                "a preflighted macro action resumed before Final"
             );
-            return Self::finish_ready_user_elaborator(
+            return Self::finish_ready_user_macro(
                 source,
                 expected.as_ref(),
                 ready,
@@ -11636,36 +11631,36 @@ impl<'m> OrdinaryValueCursor<'m> {
             );
         }
         let state = match state {
-            state @ PlannedUserElaboratorCallState::Completed { .. } => state,
-            PlannedUserElaboratorCallState::Fills(_) => {
-                unreachable!("a fills elaborator bypassed the heap driver")
+            state @ PlannedUserMacroCallState::Completed { .. } => state,
+            PlannedUserMacroCallState::Fills(_) => {
+                unreachable!("a fills macro bypassed the heap driver")
             }
-            PlannedUserElaboratorCallState::Advancing(_) => {
-                unreachable!("an advancing elaborator call bypassed the heap driver")
+            PlannedUserMacroCallState::Advancing(_) => {
+                unreachable!("an advancing macro call bypassed the heap driver")
             }
-            PlannedUserElaboratorCallState::Ready { .. } => {
+            PlannedUserMacroCallState::Ready { .. } => {
                 unreachable!("the preflighted action returned above")
             }
         };
-        let PlannedUserElaboratorCallState::Completed {
+        let PlannedUserMacroCallState::Completed {
             output,
             inferred_type_arg_suffix,
             transcript,
             expected_application,
         } = state
         else {
-            unreachable!("the elaborator call state was normalized above")
+            unreachable!("the macro call state was normalized above")
         };
         assert!(
             !transcript.terminal_public_layer_in_flight(),
-            "an elaborator terminal public layer bypassed the heap driver"
+            "a macro terminal public layer bypassed the heap driver"
         );
 
         let prepared = action
             .as_ref()
-            .expect("a completed elaborator call retains its prepared action");
+            .expect("a completed macro call retains its prepared action");
 
-        let expected_application = Self::retry_deferred_user_elaborator_expected(
+        let expected_application = Self::retry_deferred_user_macro_expected(
             expected.as_ref(),
             &output,
             expected_application,
@@ -11688,9 +11683,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     let Some(slot) = slot else {
                         assert!(
                             optional_absence,
-                            "a required elaborator ABI dependency skipped inference allocation"
+                            "a required macro ABI dependency skipped inference allocation"
                         );
-                        type_slots.push(crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+                        type_slots.push(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
                             resolved: None,
                             occurrence: None,
                         });
@@ -11698,25 +11693,25 @@ impl<'m> OrdinaryValueCursor<'m> {
                     };
                     let occurrence = store.zonk_for_progress(delta, slot.clone(), tcx)?;
                     match store.try_zonk_goal_free(delta, slot.clone(), tcx)? {
-                        Some(closed) => type_slots.push(
-                            crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+                        Some(closed) => {
+                            type_slots.push(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
                                 resolved: Some(closed.ty().clone()),
                                 occurrence: Some(occurrence.ty().clone()),
-                            },
-                        ),
-                        None if optional_absence => type_slots.push(
-                            crate::pass::typecheck_full::TypedUserElaboratorTypeSlot {
+                            })
+                        }
+                        None if optional_absence => {
+                            type_slots.push(crate::pass::typecheck_full::TypedUserMacroTypeSlot {
                                 resolved: None,
                                 occurrence: Some(occurrence.ty().clone()),
-                            },
-                        ),
+                            })
+                        }
                         None if !final_mode => pending = true,
                         None => {
                             let param = prepared.type_slot_param(layer_index, slot_index);
                             return Err(Error::type_(
                                 source.span(),
                                 format!(
-                                    "cannot infer type argument `[{}]` of this elaborator call",
+                                    "cannot infer type argument `[{}]` of this macro call",
                                     param.name
                                 ),
                             ));
@@ -11726,15 +11721,15 @@ impl<'m> OrdinaryValueCursor<'m> {
                 let mut sources = Vec::with_capacity(layer.sources.len());
                 for source in &layer.sources {
                     match store.try_zonk_goal_free(delta, source.expected.clone(), tcx)? {
-                        Some(closed) => sources.push(
-                            crate::pass::typecheck_full::TypedUserElaboratorCallSource {
+                        Some(closed) => {
+                            sources.push(crate::pass::typecheck_full::TypedUserMacroCallSource {
                                 source_index: source.source_index,
                                 source: source.source.clone(),
                                 expanded_start: source.expanded_start,
                                 expanded_width: source.expanded_width,
                                 expected: closed.ty().clone(),
-                            },
-                        ),
+                            })
+                        }
                         None if !final_mode => pending = true,
                         None => {
                             let _ = store.require_goal_free_after_delta(
@@ -11742,11 +11737,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                                 source.expected.clone(),
                                 tcx,
                             )?;
-                            unreachable!("an elaborator source type closed after rejection")
+                            unreachable!("a macro source type closed after rejection")
                         }
                     }
                 }
-                layers.push(crate::pass::typecheck_full::TypedUserElaboratorCallLayer {
+                layers.push(crate::pass::typecheck_full::TypedUserMacroCallLayer {
                     type_slots,
                     sources,
                     value_layer_consumed: layer.value_layer_consumed,
@@ -11757,7 +11752,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             if pending {
                 None
             } else {
-                Some(crate::pass::typecheck_full::TypedUserElaboratorCall {
+                Some(crate::pass::typecheck_full::TypedUserMacroCall {
                     layers,
                     result_ty: result.map(|closed| closed.ty().clone()),
                 })
@@ -11767,9 +11762,9 @@ impl<'m> OrdinaryValueCursor<'m> {
             return Ok(OrdinaryValueAdvance::pending(Self {
                 source,
                 expected,
-                planned: PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     action,
-                    state: PlannedUserElaboratorCallState::Completed {
+                    state: PlannedUserMacroCallState::Completed {
                         output,
                         inferred_type_arg_suffix,
                         transcript,
@@ -11787,9 +11782,9 @@ impl<'m> OrdinaryValueCursor<'m> {
         };
         let ready = action
             .take()
-            .expect("a ready elaborator call consumes its prepared action")
+            .expect("a ready macro call consumes its prepared action")
             .into_ready(typed, tcx)?;
-        if ready.schedule() == crate::ast::ElaboratorSchedule::Fills {
+        if ready.schedule() == crate::ast::MacroSchedule::Fills {
             let marked = fills::MarkedCallState::ready(
                 ready,
                 output,
@@ -11800,13 +11795,13 @@ impl<'m> OrdinaryValueCursor<'m> {
                 return Ok(OrdinaryValueAdvance::pending(Self {
                     source,
                     expected,
-                    planned: PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                    planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                         action: None,
-                        state: PlannedUserElaboratorCallState::Fills(Box::new(marked)),
+                        state: PlannedUserMacroCallState::Fills(Box::new(marked)),
                     }),
                 }));
             }
-            return Self::finish_ready_fills_user_elaborator(
+            return Self::finish_ready_fills_user_macro(
                 source,
                 expected.as_ref(),
                 marked,
@@ -11818,9 +11813,9 @@ impl<'m> OrdinaryValueCursor<'m> {
             return Ok(OrdinaryValueAdvance::pending(Self {
                 source,
                 expected,
-                planned: PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     action: None,
-                    state: PlannedUserElaboratorCallState::Ready {
+                    state: PlannedUserMacroCallState::Ready {
                         action: ready,
                         output,
                         inferred_type_arg_suffix,
@@ -11829,7 +11824,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }),
             }));
         }
-        Self::finish_ready_user_elaborator(
+        Self::finish_ready_user_macro(
             source,
             expected.as_ref(),
             ready,
@@ -11843,14 +11838,14 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     #[allow(clippy::too_many_arguments)] // one terminal-layer handoff carries the complete retained preflight state
-    fn begin_user_elaborator_terminal_public_layer(
+    fn begin_user_macro_terminal_public_layer(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
         callee: OwnerBoundSynth,
         preflight: GeneralGoalCallPreflight<'m>,
         parent_goals: Vec<crate::ast::TypeGoalRef>,
         split_after: usize,
-        transcript: UserElaboratorCallTranscript,
+        transcript: UserMacroCallTranscript,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryChildContinuation<'m>, Error> {
@@ -11864,18 +11859,18 @@ impl<'m> OrdinaryValueCursor<'m> {
                 assert_eq!(
                     store.owner_parent(owner, span)?,
                     Some(parent_owner),
-                    "an elaborator terminal successor opened outside its action owner"
+                    "a macro terminal successor opened outside its action owner"
                 );
                 let retained_callee = callee.into_synth(owner, store, span)?;
                 assert_eq!(
                     retained_callee.ty.as_type(),
                     preflighted_callee.as_type(),
-                    "an elaborator terminal callee changed while entering its child"
+                    "a macro terminal callee changed while entering its child"
                 );
                 assert_eq!(
                     retained_callee.ty.identity_is_canonical(),
                     preflighted_callee.identity_is_canonical(),
-                    "an elaborator terminal callee changed canonical identity in its child"
+                    "a macro terminal callee changed canonical identity in its child"
                 );
                 let GeneralGoalCallPreflight {
                     shape,
@@ -11887,7 +11882,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 assert_eq!(
                     shape.binders.len(),
                     parent_goals.len(),
-                    "an elaborator terminal layer retained the wrong parent-goal count"
+                    "a macro terminal layer retained the wrong parent-goal count"
                 );
                 let occurrences = shape
                     .binders
@@ -11897,7 +11892,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         assert_eq!(
                             goal.owner(),
                             parent_owner,
-                            "an elaborator terminal binder was reserved outside its action parent"
+                            "a macro terminal binder was reserved outside its action parent"
                         );
                         store
                             .scoped_goal_at(goal, Vec::new(), owner, binder.span)
@@ -11928,7 +11923,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 )?;
                 assert_eq!(
                     selecting.call.owner, owner,
-                    "an elaborator terminal selector allocated through another child owner"
+                    "a macro terminal selector allocated through another child owner"
                 );
                 #[cfg(test)]
                 {
@@ -11946,7 +11941,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             })?;
         assert_eq!(
             selecting.call.slot_offset, split_after,
-            "an elaborator terminal selector lost its predecessor call link"
+            "a macro terminal selector lost its predecessor call link"
         );
         let planned =
             PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Selecting(Box::new(selecting)));
@@ -11962,7 +11957,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         })
     }
 
-    fn descend_user_elaborator_successor(
+    fn descend_user_macro_successor(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
         successor: OrdinaryChildContinuation<'m>,
@@ -11994,14 +11989,14 @@ impl<'m> OrdinaryValueCursor<'m> {
         })
     }
 
-    fn resume_advancing_user_elaborator(
+    fn resume_advancing_user_macro(
         expected: Option<OwnerBoundType>,
-        mut action: Option<crate::pass::typecheck_full::PreparedUserElaboratorAction<'m>>,
+        mut action: Option<crate::pass::typecheck_full::PreparedUserMacroAction<'m>>,
         mut projection: Option<fills::MarkedProjection<'m>>,
         call_expected: Option<OwnerBoundType>,
         mode: frontier::FrontierMode,
         advanced: OrdinaryValueAdvance<'m>,
-    ) -> ResumedUserElaboratorCall<'m> {
+    ) -> ResumedUserMacroCall<'m> {
         let state = match advanced {
             OrdinaryValueAdvance::Pending(cursor) | OrdinaryValueAdvance::Waiting(cursor) => {
                 let Self {
@@ -12035,112 +12030,108 @@ impl<'m> OrdinaryValueCursor<'m> {
                             planned: successor_planned,
                         } = *successor.cursor;
                         let PlannedOrdinaryValue::Call(successor_call) = successor_planned else {
-                            unreachable!("an elaborator call successor changed expression family")
+                            unreachable!("a macro call successor changed expression family")
                         };
                         let prepared = action
                             .as_ref()
-                            .expect("an elaborator successor lost its prepared action");
+                            .expect("a macro successor lost its prepared action");
                         let transcript = successor_call
-                            .user_elaborator_transcript()
-                            .expect("an elaborator action migrated into an unrelated successor");
+                            .user_macro_transcript()
+                            .expect("a macro action migrated into an unrelated successor");
                         assert_eq!(
                             transcript.action,
                             prepared.node_id(),
-                            "an elaborator successor crossed action identities"
+                            "a macro successor crossed action identities"
                         );
                         assert_eq!(
                             transcript.source_span,
                             pending_source.span(),
-                            "an elaborator successor crossed source actions"
+                            "a macro successor crossed source actions"
                         );
                         assert!(
                             !transcript.layers.is_empty(),
-                            "an elaborator successor skipped its preceding declaration layer"
+                            "a macro successor skipped its preceding declaration layer"
                         );
                         let continuation = match projection.take() {
-                            Some(projection) => PlannedUserElaboratorCall {
+                            Some(projection) => PlannedUserMacroCall {
                                 action: None,
-                                state: PlannedUserElaboratorCallState::Fills(Box::new(
+                                state: PlannedUserMacroCallState::Fills(Box::new(
                                     fills::MarkedCallState::project_with(
-                                        action.take().expect(
-                                            "a projecting elaborator successor lost its action",
-                                        ),
+                                        action
+                                            .take()
+                                            .expect("a projecting macro successor lost its action"),
                                         successor_call,
                                         projection,
                                     ),
                                 )),
                             },
-                            None => PlannedUserElaboratorCall {
+                            None => PlannedUserMacroCall {
                                 action,
-                                state: PlannedUserElaboratorCallState::Advancing(successor_call),
+                                state: PlannedUserMacroCallState::Advancing(successor_call),
                             },
                         };
                         successor.cursor = Box::new(Self {
                             source: successor_source,
                             expected: successor_expected,
-                            planned: PlannedOrdinaryValue::UserElaborator(continuation),
+                            planned: PlannedOrdinaryValue::UserMacro(continuation),
                         });
                         if mode.executes_relation_actions() {
                             #[cfg(test)]
-                            update_final_elaborator_successor_work(|work| {
+                            update_final_macro_successor_work(|work| {
                                 work.migrated_descents += 1;
                             });
-                            return ResumedUserElaboratorCall::DescendMigrated(successor);
+                            return ResumedUserMacroCall::DescendMigrated(successor);
                         }
                         #[cfg(test)]
-                        update_final_elaborator_successor_work(|work| {
+                        update_final_macro_successor_work(|work| {
                             work.earlier_nonterminal_yields += 1;
                         });
-                        return ResumedUserElaboratorCall::Ready(OrdinaryValueAdvance::pending(
-                            Self {
-                                source: pending_source,
-                                expected,
-                                planned: PlannedOrdinaryValue::Call(
-                                    OrdinaryCallContinuation::Successor(successor),
-                                ),
-                            },
-                        ));
+                        return ResumedUserMacroCall::Ready(OrdinaryValueAdvance::pending(Self {
+                            source: pending_source,
+                            expected,
+                            planned: PlannedOrdinaryValue::Call(
+                                OrdinaryCallContinuation::Successor(successor),
+                            ),
+                        }));
                     }
                     call => call,
                 };
                 let continuation = match projection.take() {
-                    Some(projection) => PlannedUserElaboratorCall {
+                    Some(projection) => PlannedUserMacroCall {
                         action: None,
-                        state: PlannedUserElaboratorCallState::Fills(Box::new(
+                        state: PlannedUserMacroCallState::Fills(Box::new(
                             fills::MarkedCallState::project_with(
-                                action
-                                    .take()
-                                    .expect("a projecting elaborator lost its action"),
+                                action.take().expect("a projecting macro lost its action"),
                                 call,
                                 projection,
                             ),
                         )),
                     },
-                    None => PlannedUserElaboratorCall {
+                    None => PlannedUserMacroCall {
                         action,
-                        state: PlannedUserElaboratorCallState::Advancing(call),
+                        state: PlannedUserMacroCallState::Advancing(call),
                     },
                 };
                 if terminal_successor && mode.executes_relation_actions() {
                     #[cfg(test)]
-                    update_final_elaborator_successor_work(|work| {
+                    update_final_macro_successor_work(|work| {
                         work.terminal_continues += 1;
                     });
-                    return ResumedUserElaboratorCall::Continue(continuation);
+                    return ResumedUserMacroCall::Continue(continuation);
                 }
                 #[cfg(test)]
                 if terminal_successor {
-                    update_final_elaborator_successor_work(|work| {
+                    update_final_macro_successor_work(|work| {
                         work.earlier_terminal_yields += 1;
                     });
                 }
-                return ResumedUserElaboratorCall::Ready(OrdinaryValueAdvance::pending(Self {
+                return ResumedUserMacroCall::Ready(OrdinaryValueAdvance::pending(Self {
                     source: pending_source,
                     expected,
-                    planned: PlannedOrdinaryValue::UserElaborator(continuation),
+                    planned: PlannedOrdinaryValue::UserMacro(continuation),
                 }));
             }
-            OrdinaryValueAdvance::Complete(CompletedInFrame::UserElaboratorCall {
+            OrdinaryValueAdvance::Complete(CompletedInFrame::UserMacroCall {
                 output,
                 inferred_type_arg_suffix,
                 mut transcript,
@@ -12148,20 +12139,20 @@ impl<'m> OrdinaryValueCursor<'m> {
                 if transcript.terminal_public_layer_fulfilled() {
                     let prepared = action
                         .as_ref()
-                        .expect("a completed terminal layer lost its elaborator action");
+                        .expect("a completed terminal layer lost its macro action");
                     transcript.finish_terminal_public_layer(prepared.node_id(), prepared.span());
                 }
                 let expected_application = if expected.is_none() {
-                    UserElaboratorExpectedApplication::Absent
+                    UserMacroExpectedApplication::Absent
                 } else if call_expected.is_some() {
-                    UserElaboratorExpectedApplication::Applied
+                    UserMacroExpectedApplication::Applied
                 } else {
-                    UserElaboratorExpectedApplication::Deferred
+                    UserMacroExpectedApplication::Deferred
                 };
                 if let Some(projection) = projection.take() {
-                    return ResumedUserElaboratorCall::Continue(PlannedUserElaboratorCall {
+                    return ResumedUserMacroCall::Continue(PlannedUserMacroCall {
                         action: None,
-                        state: PlannedUserElaboratorCallState::Fills(Box::new(
+                        state: PlannedUserMacroCallState::Fills(Box::new(
                             fills::MarkedCallState::completed(
                                 action
                                     .take()
@@ -12175,7 +12166,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         )),
                     });
                 }
-                PlannedUserElaboratorCallState::Completed {
+                PlannedUserMacroCallState::Completed {
                     output,
                     inferred_type_arg_suffix,
                     transcript,
@@ -12183,29 +12174,29 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }
             }
             OrdinaryValueAdvance::Complete(_) => {
-                unreachable!("an elaborator call lost its typed completion transcript")
+                unreachable!("a macro call lost its typed completion transcript")
             }
         };
-        ResumedUserElaboratorCall::Continue(PlannedUserElaboratorCall { action, state })
+        ResumedUserMacroCall::Continue(PlannedUserMacroCall { action, state })
     }
 
-    fn retry_deferred_user_elaborator_expected(
+    fn retry_deferred_user_macro_expected(
         expected: Option<&OwnerBoundType>,
         output: &ScopedType,
-        expected_application: UserElaboratorExpectedApplication,
+        expected_application: UserMacroExpectedApplication,
         span: Span,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<UserElaboratorExpectedApplication, Error> {
-        if expected_application != UserElaboratorExpectedApplication::Deferred {
+    ) -> Result<UserMacroExpectedApplication, Error> {
+        if expected_application != UserMacroExpectedApplication::Deferred {
             return Ok(expected_application);
         }
-        let expected = expected.expect("a deferred elaborator expectation lost its cursor type");
+        let expected = expected.expect("a deferred macro expectation lost its cursor type");
         Ok(
             if try_apply_expected_equation(frontier, output.clone(), expected, span, tcx)? {
-                UserElaboratorExpectedApplication::Applied
+                UserMacroExpectedApplication::Applied
             } else {
-                UserElaboratorExpectedApplication::Deferred
+                UserMacroExpectedApplication::Deferred
             },
         )
     }
@@ -12214,13 +12205,13 @@ impl<'m> OrdinaryValueCursor<'m> {
     fn continue_projected_adoption_after_producer(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
-        ready: crate::pass::typecheck_full::ReadyProjectedUserElaboratorAction<'m>,
+        ready: crate::pass::typecheck_full::ReadyProjectedUserMacroAction<'m>,
         checked: fills::ProjectedCheckedResult,
         adoption: fills::FillAdoption,
         mut projection: fills::MarkedProjection<'m>,
         output: ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: UserElaboratorExpectedApplication,
+        expected_application: UserMacroExpectedApplication,
         mode: frontier::FrontierMode,
         demand: OrdinaryCompletionDemand,
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
@@ -12257,9 +12248,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }),
             });
         }
-        let continuation = PlannedUserElaboratorCall {
+        let continuation = PlannedUserMacroCall {
             action: None,
-            state: PlannedUserElaboratorCallState::Fills(Box::new(
+            state: PlannedUserMacroCallState::Fills(Box::new(
                 fills::MarkedCallState::adopting_fills(
                     ready,
                     checked,
@@ -12271,179 +12262,173 @@ impl<'m> OrdinaryValueCursor<'m> {
                 ),
             )),
         };
-        Self::advance_user_elaborator_step(
-            source,
-            expected,
-            continuation,
-            mode,
-            demand,
-            frontier,
-            tcx,
-        )
+        Self::advance_user_macro_step(source, expected, continuation, mode, demand, frontier, tcx)
     }
 
-    fn advance_user_elaborator_step(
+    fn advance_user_macro_step(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
-        continuation: PlannedUserElaboratorCall<'m>,
+        continuation: PlannedUserMacroCall<'m>,
         mode: frontier::FrontierMode,
         demand: OrdinaryCompletionDemand,
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
-        let PlannedUserElaboratorCall { action, state } = continuation;
+        let PlannedUserMacroCall { action, state } = continuation;
         let (mut action, call, mut marked_projection) = match state {
-            PlannedUserElaboratorCallState::Fills(state) => match state.into_advance() {
-                fills::MarkedCallPhase::Project {
-                    action: marked_action,
-                    call,
-                    projection,
-                } => (Some(marked_action), call, Some(projection)),
-                fills::MarkedCallPhase::Completed {
-                    action,
-                    output,
-                    inferred_type_arg_suffix,
-                    transcript,
-                    mut expected_application,
-                    mut projection,
-                } => {
-                    if let Some(request) =
-                        projection.advance_declared_headers(action.span(), frontier, tcx)?
-                    {
-                        let owner = request.parent;
-                        return Ok(OrdinaryDriverStep::AtAncestor {
-                            owner,
-                            resume: Box::new(move |header_frontier, tcx| {
-                                projection.resume_declared_header(
-                                    request,
-                                    action.span(),
-                                    header_frontier,
-                                    tcx,
-                                )?;
-                                let continuation = PlannedUserElaboratorCall {
-                                    action: None,
-                                    state: PlannedUserElaboratorCallState::Fills(Box::new(
-                                        fills::MarkedCallState::completed(
-                                            action,
-                                            output,
-                                            inferred_type_arg_suffix,
-                                            transcript,
-                                            expected_application,
-                                            projection,
-                                        ),
-                                    )),
-                                };
-                                Ok(Box::new(move |frontier, tcx| {
-                                    Self::advance_user_elaborator_step(
-                                        source,
-                                        expected,
-                                        continuation,
-                                        mode,
-                                        demand,
-                                        frontier,
+            PlannedUserMacroCallState::Fills(state) => {
+                match state.into_advance() {
+                    fills::MarkedCallPhase::Project {
+                        action: marked_action,
+                        call,
+                        projection,
+                    } => (Some(marked_action), call, Some(projection)),
+                    fills::MarkedCallPhase::Completed {
+                        action,
+                        output,
+                        inferred_type_arg_suffix,
+                        transcript,
+                        mut expected_application,
+                        mut projection,
+                    } => {
+                        if let Some(request) =
+                            projection.advance_declared_headers(action.span(), frontier, tcx)?
+                        {
+                            let owner = request.parent;
+                            return Ok(OrdinaryDriverStep::AtAncestor {
+                                owner,
+                                resume: Box::new(move |header_frontier, tcx| {
+                                    projection.resume_declared_header(
+                                        request,
+                                        action.span(),
+                                        header_frontier,
                                         tcx,
-                                    )
-                                }))
-                            }),
-                        });
-                    }
-                    expected_application = Self::retry_deferred_user_elaborator_expected(
-                        expected.as_ref(),
-                        &output,
-                        expected_application,
-                        source.span(),
-                        frontier,
-                        tcx,
-                    )?;
-                    let (declared_inputs, frozen_residual) =
-                        projection.declared_inputs(&action, &transcript, frontier, tcx)?;
-                    projection.retain_transcript(transcript);
-                    let (proof, fills) = projection.capabilities();
-                    let ready = action.into_projected_ready(
-                        declared_inputs,
-                        frozen_residual,
-                        proof,
-                        fills,
-                        tcx,
-                    )?;
-                    let evaluation = crate::pass::typecheck_full::evaluate_ready_projected_user_elaborator_action(ready, tcx)?;
-                    let (ready, checked, returned_context) = crate::pass::typecheck_full::prevalidate_ready_projected_user_elaborator_action(evaluation)?;
-                    projection.resolve_deferred_rec_tails(
-                        &checked,
-                        ready.has_residual_abstraction(),
-                        source.span(),
-                    )?;
-                    let adoption = projection.prepare_adoption(
-                        &returned_context,
-                        source.span(),
-                        frontier,
-                        tcx,
-                    )?;
-                    let continuation = PlannedUserElaboratorCall {
-                        action: None,
-                        state: PlannedUserElaboratorCallState::Fills(Box::new(
-                            fills::MarkedCallState::adopting_fills(
-                                ready,
-                                checked,
-                                adoption,
-                                projection,
-                                output,
-                                inferred_type_arg_suffix,
-                                expected_application,
-                            ),
-                        )),
-                    };
-                    return Ok(OrdinaryDriverStep::Continue(Box::new(
-                        move |frontier, tcx| {
-                            Self::advance_user_elaborator_step(
-                                source,
-                                expected,
-                                continuation,
-                                mode,
-                                demand,
-                                frontier,
-                                tcx,
-                            )
-                        },
-                    )));
-                }
-                fills::MarkedCallPhase::AdoptingFills {
-                    ready,
-                    checked,
-                    mut adoption,
-                    mut projection,
-                    output,
-                    inferred_type_arg_suffix,
-                    mut expected_application,
-                } => {
-                    expected_application = Self::retry_deferred_user_elaborator_expected(
-                        expected.as_ref(),
-                        &output,
-                        expected_application,
-                        source.span(),
-                        frontier,
-                        tcx,
-                    )?;
-                    let advance = adoption.advance(
-                        &mut projection,
-                        &checked,
-                        &output,
-                        mode,
-                        source.span(),
-                        frontier,
-                        tcx,
-                    )?;
-                    if matches!(&advance, fills::FillAdoptionAdvance::Complete) {
-                        let residual_binders = ready.residual_lexical_binders().cloned().collect();
-                        let materialized = projection.materialize(
-                            checked,
-                            output,
-                            residual_binders,
+                                    )?;
+                                    let continuation = PlannedUserMacroCall {
+                                        action: None,
+                                        state: PlannedUserMacroCallState::Fills(Box::new(
+                                            fills::MarkedCallState::completed(
+                                                action,
+                                                output,
+                                                inferred_type_arg_suffix,
+                                                transcript,
+                                                expected_application,
+                                                projection,
+                                            ),
+                                        )),
+                                    };
+                                    Ok(Box::new(move |frontier, tcx| {
+                                        Self::advance_user_macro_step(
+                                            source,
+                                            expected,
+                                            continuation,
+                                            mode,
+                                            demand,
+                                            frontier,
+                                            tcx,
+                                        )
+                                    }))
+                                }),
+                            });
+                        }
+                        expected_application = Self::retry_deferred_user_macro_expected(
+                            expected.as_ref(),
+                            &output,
+                            expected_application,
                             source.span(),
                             frontier,
                             tcx,
                         )?;
-                        let obligation = crate::pass::typecheck_full::materialize_ready_projected_user_elaborator_action(
+                        let (declared_inputs, frozen_residual) =
+                            projection.declared_inputs(&action, &transcript, frontier, tcx)?;
+                        projection.retain_transcript(transcript);
+                        let (proof, fills) = projection.capabilities();
+                        let ready = action.into_projected_ready(
+                            declared_inputs,
+                            frozen_residual,
+                            proof,
+                            fills,
+                            tcx,
+                        )?;
+                        let evaluation = crate::pass::typecheck_full::evaluate_ready_projected_user_macro_action(ready, tcx)?;
+                        let (ready, checked, returned_context) = crate::pass::typecheck_full::prevalidate_ready_projected_user_macro_action(evaluation)?;
+                        projection.resolve_deferred_rec_tails(
+                            &checked,
+                            ready.has_residual_abstraction(),
+                            source.span(),
+                        )?;
+                        let adoption = projection.prepare_adoption(
+                            &returned_context,
+                            source.span(),
+                            frontier,
+                            tcx,
+                        )?;
+                        let continuation = PlannedUserMacroCall {
+                            action: None,
+                            state: PlannedUserMacroCallState::Fills(Box::new(
+                                fills::MarkedCallState::adopting_fills(
+                                    ready,
+                                    checked,
+                                    adoption,
+                                    projection,
+                                    output,
+                                    inferred_type_arg_suffix,
+                                    expected_application,
+                                ),
+                            )),
+                        };
+                        return Ok(OrdinaryDriverStep::Continue(Box::new(
+                            move |frontier, tcx| {
+                                Self::advance_user_macro_step(
+                                    source,
+                                    expected,
+                                    continuation,
+                                    mode,
+                                    demand,
+                                    frontier,
+                                    tcx,
+                                )
+                            },
+                        )));
+                    }
+                    fills::MarkedCallPhase::AdoptingFills {
+                        ready,
+                        checked,
+                        mut adoption,
+                        mut projection,
+                        output,
+                        inferred_type_arg_suffix,
+                        mut expected_application,
+                    } => {
+                        expected_application = Self::retry_deferred_user_macro_expected(
+                            expected.as_ref(),
+                            &output,
+                            expected_application,
+                            source.span(),
+                            frontier,
+                            tcx,
+                        )?;
+                        let advance = adoption.advance(
+                            &mut projection,
+                            &checked,
+                            &output,
+                            mode,
+                            source.span(),
+                            frontier,
+                            tcx,
+                        )?;
+                        if matches!(&advance, fills::FillAdoptionAdvance::Complete) {
+                            let residual_binders =
+                                ready.residual_lexical_binders().cloned().collect();
+                            let materialized = projection.materialize(
+                                checked,
+                                output,
+                                residual_binders,
+                                source.span(),
+                                frontier,
+                                tcx,
+                            )?;
+                            let obligation = crate::pass::typecheck_full::materialize_ready_projected_user_macro_action(
                             ready,
                             materialized.typed,
                             materialized.checked,
@@ -12453,83 +12438,86 @@ impl<'m> OrdinaryValueCursor<'m> {
                             materialized.quoted_public_recipe,
                             tcx,
                         )?;
-                        match expected_application {
-                            UserElaboratorExpectedApplication::Absent => {
-                                assert!(expected.is_none())
+                            match expected_application {
+                                UserMacroExpectedApplication::Absent => {
+                                    assert!(expected.is_none())
+                                }
+                                UserMacroExpectedApplication::Applied => {
+                                    assert!(expected.is_some())
+                                }
+                                UserMacroExpectedApplication::Deferred => {
+                                    let expected = expected
+                                        .as_ref()
+                                        .expect("a deferred fills macro expectation lost its type");
+                                    assert!(try_apply_expected_equation(
+                                        frontier,
+                                        materialized.public_residual_result.clone(),
+                                        expected,
+                                        source.span(),
+                                        tcx,
+                                    )?);
+                                }
                             }
-                            UserElaboratorExpectedApplication::Applied => {
-                                assert!(expected.is_some())
-                            }
-                            UserElaboratorExpectedApplication::Deferred => {
-                                let expected = expected.as_ref().expect(
-                                    "a deferred fills elaborator expectation lost its type",
-                                );
-                                assert!(try_apply_expected_equation(
-                                    frontier,
-                                    materialized.public_residual_result.clone(),
-                                    expected,
-                                    source.span(),
-                                    tcx,
-                                )?);
-                            }
-                        }
-                        let closed_result = materialized.public_residual_result;
-                        let (_store, _owner, _delta, publication) = frontier.parts_mut();
-                        publication.record_position_type(
-                            source.span(),
-                            closed_result.clone(),
-                            tcx.in_scope_type_param_presentation(),
-                        );
-                        publication.record_user_elaborator(obligation);
-                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Complete(
-                            CompletedInFrame::Value(closed_result, inferred_type_arg_suffix),
-                        )));
-                    }
-                    let request = match advance {
-                        fills::FillAdoptionAdvance::Producer(request) => Some(request),
-                        fills::FillAdoptionAdvance::Pending => None,
-                        fills::FillAdoptionAdvance::BarrierApplied => {
-                            return Self::continue_projected_adoption_after_producer(
-                                source,
-                                expected,
-                                ready,
-                                checked,
-                                adoption,
-                                projection,
-                                output,
-                                inferred_type_arg_suffix,
-                                expected_application,
-                                mode,
-                                demand,
-                                frontier,
-                                tcx,
+                            let closed_result = materialized.public_residual_result;
+                            let (_store, _owner, _delta, publication) = frontier.parts_mut();
+                            publication.record_position_type(
+                                source.span(),
+                                closed_result.clone(),
+                                tcx.in_scope_type_param_presentation(),
                             );
+                            publication.record_user_macro(obligation);
+                            return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Complete(
+                                CompletedInFrame::Value(closed_result, inferred_type_arg_suffix),
+                            )));
                         }
-                        fills::FillAdoptionAdvance::Complete => {
-                            unreachable!("a completed fills adoption skipped materialization")
-                        }
-                    };
-                    if let Some(request) = request {
-                        let owner = request.parent;
-                        return Ok(OrdinaryDriverStep::AtAncestor {
-                            owner,
-                            resume: Box::new(move |producer_frontier, tcx| {
-                                let resumed =
-                                    projection.resume_producer(request, producer_frontier, tcx)?;
-                                Ok(Box::new(move |frontier, tcx| {
-                                    let accept_immediately =
-                                        adoption.accepts_resumed_producer_immediately();
-                                    if accept_immediately {
-                                        projection.accept_resumed_producer(
-                                            &resumed,
-                                            source.span(),
-                                            frontier,
-                                            tcx,
-                                        )?;
-                                    }
-                                    adoption.record_producer(&resumed);
-                                    if accept_immediately {
-                                        return Self::continue_projected_adoption_after_producer(
+                        let request = match advance {
+                            fills::FillAdoptionAdvance::Producer(request) => Some(request),
+                            fills::FillAdoptionAdvance::Pending => None,
+                            fills::FillAdoptionAdvance::BarrierApplied => {
+                                return Self::continue_projected_adoption_after_producer(
+                                    source,
+                                    expected,
+                                    ready,
+                                    checked,
+                                    adoption,
+                                    projection,
+                                    output,
+                                    inferred_type_arg_suffix,
+                                    expected_application,
+                                    mode,
+                                    demand,
+                                    frontier,
+                                    tcx,
+                                );
+                            }
+                            fills::FillAdoptionAdvance::Complete => {
+                                unreachable!("a completed fills adoption skipped materialization")
+                            }
+                        };
+                        if let Some(request) = request {
+                            let owner = request.parent;
+                            return Ok(OrdinaryDriverStep::AtAncestor {
+                                owner,
+                                resume: Box::new(move |producer_frontier, tcx| {
+                                    let resumed = projection.resume_producer(
+                                        request,
+                                        producer_frontier,
+                                        tcx,
+                                    )?;
+                                    Ok(Box::new(move |frontier, tcx| {
+                                        let accept_immediately =
+                                            adoption.accepts_resumed_producer_immediately();
+                                        if accept_immediately {
+                                            projection.accept_resumed_producer(
+                                                &resumed,
+                                                source.span(),
+                                                frontier,
+                                                tcx,
+                                            )?;
+                                        }
+                                        adoption.record_producer(&resumed);
+                                        if accept_immediately {
+                                            return Self::continue_projected_adoption_after_producer(
                                             source,
                                             expected,
                                             ready,
@@ -12544,42 +12532,41 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             frontier,
                                             tcx,
                                         );
-                                    }
-                                    let continuation = PlannedUserElaboratorCall {
-                                        action: None,
-                                        state: PlannedUserElaboratorCallState::Fills(Box::new(
-                                            fills::MarkedCallState::adopting_fills(
-                                                ready,
-                                                checked,
-                                                adoption,
-                                                projection,
-                                                output,
-                                                inferred_type_arg_suffix,
-                                                expected_application,
-                                            ),
-                                        )),
-                                    };
-                                    Self::advance_user_elaborator_step(
-                                        source,
-                                        expected,
-                                        continuation,
-                                        mode,
-                                        demand,
-                                        frontier,
-                                        tcx,
-                                    )
-                                }))
-                            }),
-                        });
-                    }
-                    return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
-                        Self {
-                            source,
-                            expected,
-                            planned: PlannedOrdinaryValue::UserElaborator(
-                                PlannedUserElaboratorCall {
+                                        }
+                                        let continuation = PlannedUserMacroCall {
+                                            action: None,
+                                            state: PlannedUserMacroCallState::Fills(Box::new(
+                                                fills::MarkedCallState::adopting_fills(
+                                                    ready,
+                                                    checked,
+                                                    adoption,
+                                                    projection,
+                                                    output,
+                                                    inferred_type_arg_suffix,
+                                                    expected_application,
+                                                ),
+                                            )),
+                                        };
+                                        Self::advance_user_macro_step(
+                                            source,
+                                            expected,
+                                            continuation,
+                                            mode,
+                                            demand,
+                                            frontier,
+                                            tcx,
+                                        )
+                                    }))
+                                }),
+                            });
+                        }
+                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+                            Self {
+                                source,
+                                expected,
+                                planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                                     action: None,
-                                    state: PlannedUserElaboratorCallState::Fills(Box::new(
+                                    state: PlannedUserMacroCallState::Fills(Box::new(
                                         fills::MarkedCallState::adopting_fills(
                                             ready,
                                             checked,
@@ -12590,38 +12577,38 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             expected_application,
                                         ),
                                     )),
-                                },
+                                }),
+                            },
+                        )));
+                    }
+                    fills::MarkedCallPhase::Ready {
+                        ready,
+                        output,
+                        inferred_type_arg_suffix,
+                        expected_application,
+                    } => {
+                        return Self::finish_ready_fills_user_macro(
+                            source,
+                            expected.as_ref(),
+                            fills::MarkedCallState::ready(
+                                ready,
+                                output,
+                                inferred_type_arg_suffix,
+                                expected_application,
                             ),
-                        },
-                    )));
+                            frontier,
+                            tcx,
+                        )
+                        .map(OrdinaryDriverStep::Ready);
+                    }
                 }
-                fills::MarkedCallPhase::Ready {
-                    ready,
-                    output,
-                    inferred_type_arg_suffix,
-                    expected_application,
-                } => {
-                    return Self::finish_ready_fills_user_elaborator(
-                        source,
-                        expected.as_ref(),
-                        fills::MarkedCallState::ready(
-                            ready,
-                            output,
-                            inferred_type_arg_suffix,
-                            expected_application,
-                        ),
-                        frontier,
-                        tcx,
-                    )
-                    .map(OrdinaryDriverStep::Ready);
-                }
-            },
-            PlannedUserElaboratorCallState::Advancing(call) => (action, call, None),
+            }
+            PlannedUserMacroCallState::Advancing(call) => (action, call, None),
             state => {
-                return Self::finish_user_elaborator_state(
+                return Self::finish_user_macro_state(
                     source,
                     expected,
-                    PlannedUserElaboratorCall { action, state },
+                    PlannedUserMacroCall { action, state },
                     mode,
                     frontier,
                     tcx,
@@ -12631,7 +12618,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         };
         assert!(
             action.is_some(),
-            "an advancing elaborator call lost its prepared action"
+            "an advancing macro call lost its prepared action"
         );
         let call_expected = match &call {
             OrdinaryCallContinuation::Successor(successor)
@@ -12696,7 +12683,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                             unreachable!("a marked selecting descent escaped projection staging")
                         }
                     };
-                    match Self::resume_advancing_user_elaborator(
+                    match Self::resume_advancing_user_macro(
                         expected.clone(),
                         action.take(),
                         Some(projection),
@@ -12704,13 +12691,13 @@ impl<'m> OrdinaryValueCursor<'m> {
                         mode,
                         advanced,
                     ) {
-                        ResumedUserElaboratorCall::Ready(advanced) => {
+                        ResumedUserMacroCall::Ready(advanced) => {
                             return Ok(OrdinaryDriverStep::Ready(advanced));
                         }
-                        ResumedUserElaboratorCall::DescendMigrated(_) => unreachable!(
+                        ResumedUserMacroCall::DescendMigrated(_) => unreachable!(
                             "a marked selecting step produced a migrated call successor"
                         ),
-                        ResumedUserElaboratorCall::Continue(_) => unreachable!(
+                        ResumedUserMacroCall::Continue(_) => unreachable!(
                             "a marked selecting step completed outside its selected layer"
                         ),
                     }
@@ -12740,47 +12727,47 @@ impl<'m> OrdinaryValueCursor<'m> {
                         planned: successor_planned,
                     } = *successor.cursor;
                     let PlannedOrdinaryValue::Call(successor_call) = successor_planned else {
-                        unreachable!("an elaborator call successor changed expression family")
+                        unreachable!("a macro call successor changed expression family")
                     };
                     let prepared = action
                         .as_ref()
-                        .expect("a projecting elaborator successor lost its action");
+                        .expect("a projecting macro successor lost its action");
                     let transcript = successor_call
-                        .user_elaborator_transcript()
-                        .expect("an elaborator action migrated into an unrelated successor");
+                        .user_macro_transcript()
+                        .expect("a macro action migrated into an unrelated successor");
                     assert_eq!(
                         transcript.action,
                         prepared.node_id(),
-                        "an elaborator successor crossed action identities"
+                        "a macro successor crossed action identities"
                     );
                     assert_eq!(
                         transcript.source_span,
                         source.span(),
-                        "an elaborator successor crossed source actions"
+                        "a macro successor crossed source actions"
                     );
                     assert!(
                         !transcript.layers.is_empty(),
-                        "an elaborator successor skipped its preceding declaration layer"
+                        "a macro successor skipped its preceding declaration layer"
                     );
                     successor.cursor = Box::new(Self {
                         source: successor_source,
                         expected: successor_expected,
-                        planned: PlannedOrdinaryValue::UserElaborator(PlannedUserElaboratorCall {
+                        planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                             action: None,
-                            state: PlannedUserElaboratorCallState::Fills(Box::new(
+                            state: PlannedUserMacroCallState::Fills(Box::new(
                                 fills::MarkedCallState::project_with(
-                                    action.take().expect(
-                                        "a projecting elaborator successor lost its action",
-                                    ),
+                                    action
+                                        .take()
+                                        .expect("a projecting macro successor lost its action"),
                                     successor_call,
-                                    marked_projection.take().expect(
-                                        "a projecting elaborator successor lost its projection",
-                                    ),
+                                    marked_projection
+                                        .take()
+                                        .expect("a projecting macro successor lost its projection"),
                                 ),
                             )),
                         }),
                     });
-                    return Ok(Self::descend_user_elaborator_successor(
+                    return Ok(Self::descend_user_macro_successor(
                         source, expected, successor, mode, demand,
                     ));
                 }
@@ -12808,8 +12795,8 @@ impl<'m> OrdinaryValueCursor<'m> {
         step.and_then(
             frontier,
             tcx,
-            Box::new(
-                move |advanced, _frontier, _tcx| match Self::resume_advancing_user_elaborator(
+            Box::new(move |advanced, _frontier, _tcx| {
+                match Self::resume_advancing_user_macro(
                     expected.clone(),
                     action,
                     marked_projection,
@@ -12817,17 +12804,17 @@ impl<'m> OrdinaryValueCursor<'m> {
                     mode,
                     advanced,
                 ) {
-                    ResumedUserElaboratorCall::Ready(advanced) => {
+                    ResumedUserMacroCall::Ready(advanced) => {
                         Ok(OrdinaryDriverStep::Ready(advanced))
                     }
-                    ResumedUserElaboratorCall::DescendMigrated(successor) => {
-                        Ok(Self::descend_user_elaborator_successor(
+                    ResumedUserMacroCall::DescendMigrated(successor) => {
+                        Ok(Self::descend_user_macro_successor(
                             source, expected, successor, mode, demand,
                         ))
                     }
-                    ResumedUserElaboratorCall::Continue(continuation) => Ok(
+                    ResumedUserMacroCall::Continue(continuation) => Ok(
                         OrdinaryDriverStep::Continue(Box::new(move |frontier, tcx| {
-                            Self::advance_user_elaborator_step(
+                            Self::advance_user_macro_step(
                                 source,
                                 expected,
                                 continuation,
@@ -12838,19 +12825,19 @@ impl<'m> OrdinaryValueCursor<'m> {
                             )
                         })),
                     ),
-                },
-            ),
+                }
+            }),
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn finish_ready_user_elaborator(
+    fn finish_ready_user_macro(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<&OwnerBoundType>,
-        ready: crate::pass::typecheck_full::ReadyUserElaboratorAction,
+        ready: crate::pass::typecheck_full::ReadyUserMacroAction,
         output: ScopedType,
         inferred_type_arg_suffix: usize,
-        expected_application: UserElaboratorExpectedApplication,
+        expected_application: UserMacroExpectedApplication,
         must_evaluate: bool,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -12858,7 +12845,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         let (obligation, closed_result) = if must_evaluate {
             let (store, owner, delta, _publication) = frontier.parts_mut();
             let (obligation, exact_ty) =
-                crate::pass::typecheck_full::evaluate_ready_user_elaborator_action(ready, tcx)?;
+                crate::pass::typecheck_full::evaluate_ready_user_macro_action(ready, tcx)?;
             let exact = store.scoped_type(owner, exact_ty, source.span())?;
             store.constrain(delta, output.clone(), exact, source.span(), tcx)?;
             let closed = store.require_goal_free_after_delta(delta, output, tcx)?;
@@ -12867,24 +12854,23 @@ impl<'m> OrdinaryValueCursor<'m> {
             let (store, _owner, delta, _publication) = frontier.parts_mut();
             let closed = store
                 .try_zonk_goal_free(delta, output, tcx)?
-                .expect("a deferred elaborator action has a goal-free result");
+                .expect("a deferred macro action has a goal-free result");
             (
-                crate::pass::typecheck_full::defer_ready_user_elaborator_action(ready),
+                crate::pass::typecheck_full::defer_ready_user_macro_action(ready),
                 closed,
             )
         };
         match expected_application {
-            UserElaboratorExpectedApplication::Absent => assert!(
+            UserMacroExpectedApplication::Absent => assert!(
                 expected.is_none(),
-                "an absent elaborator expectation retained a cursor type"
+                "an absent macro expectation retained a cursor type"
             ),
-            UserElaboratorExpectedApplication::Applied => assert!(
+            UserMacroExpectedApplication::Applied => assert!(
                 expected.is_some(),
-                "an applied elaborator expectation lost its cursor type"
+                "an applied macro expectation lost its cursor type"
             ),
-            UserElaboratorExpectedApplication::Deferred => {
-                let expected =
-                    expected.expect("a deferred elaborator expectation lost its cursor type");
+            UserMacroExpectedApplication::Deferred => {
+                let expected = expected.expect("a deferred macro expectation lost its cursor type");
                 assert!(
                     try_apply_expected_equation(
                         frontier,
@@ -12893,7 +12879,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         source.span(),
                         tcx,
                     )?,
-                    "a goal-free elaborator result left its expected equation deferred"
+                    "a goal-free macro result left its expected equation deferred"
                 );
             }
         }
@@ -12904,7 +12890,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 closed_result.clone(),
                 tcx.in_scope_type_param_presentation(),
             );
-            publication.record_user_elaborator(obligation);
+            publication.record_user_macro(obligation);
         }
         Ok(OrdinaryValueAdvance::Complete(CompletedInFrame::Value(
             closed_result,
@@ -12912,7 +12898,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         )))
     }
 
-    fn finish_ready_fills_user_elaborator(
+    fn finish_ready_fills_user_macro(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<&OwnerBoundType>,
         marked: fills::MarkedCallState,
@@ -12926,14 +12912,14 @@ impl<'m> OrdinaryValueCursor<'m> {
             expected_application,
         } = marked.into_advance()
         else {
-            unreachable!("a projecting fills elaborator reached marked evaluation")
+            unreachable!("a projecting fills macro reached marked evaluation")
         };
         let (proof, context) = crate::normalization::fresh_fills_capability_values();
-        let evaluation = crate::pass::typecheck_full::evaluate_ready_fills_user_elaborator_action(
+        let evaluation = crate::pass::typecheck_full::evaluate_ready_fills_user_macro_action(
             ready, proof, context, tcx,
         )?;
         let (obligation, exact_ty, returned_context) =
-            crate::pass::typecheck_full::complete_ready_fills_user_elaborator_action(evaluation)?;
+            crate::pass::typecheck_full::complete_ready_fills_user_macro_action(evaluation)?;
         let closed_result = {
             let (store, owner, delta, _publication) = frontier.parts_mut();
             let exact = store.scoped_type(owner, exact_ty, source.span())?;
@@ -12941,11 +12927,10 @@ impl<'m> OrdinaryValueCursor<'m> {
             store.require_goal_free_after_delta(delta, output, tcx)?
         };
         match expected_application {
-            UserElaboratorExpectedApplication::Absent => assert!(expected.is_none()),
-            UserElaboratorExpectedApplication::Applied => assert!(expected.is_some()),
-            UserElaboratorExpectedApplication::Deferred => {
-                let expected =
-                    expected.expect("a deferred fills elaborator expectation lost its type");
+            UserMacroExpectedApplication::Absent => assert!(expected.is_none()),
+            UserMacroExpectedApplication::Applied => assert!(expected.is_some()),
+            UserMacroExpectedApplication::Deferred => {
+                let expected = expected.expect("a deferred fills macro expectation lost its type");
                 assert!(try_apply_expected_equation(
                     frontier,
                     closed_result.clone(),
@@ -12962,7 +12947,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             closed_result.clone(),
             tcx.in_scope_type_param_presentation(),
         );
-        publication.record_user_elaborator(obligation);
+        publication.record_user_macro(obligation);
         Ok(OrdinaryValueAdvance::Complete(CompletedInFrame::Value(
             closed_result,
             inferred_type_arg_suffix,
@@ -13475,9 +13460,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                         None => match &body {
                             CompletedInFrame::Value(body, _)
                             | CompletedInFrame::FunctionScheme(body, _) => body.ty().clone(),
-                            CompletedInFrame::UserElaboratorCall { .. } => unreachable!(
-                                "an elaborator transcript escaped its owning value cursor"
-                            ),
+                            CompletedInFrame::UserMacroCall { .. } => {
+                                unreachable!("a macro transcript escaped its owning value cursor")
+                            }
                         },
                     };
                     let value_param_types: Vec<_> =
@@ -14228,7 +14213,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                 PlannedOrdinaryValue::Call(call) => {
                                     call.open_goal_call().is_some_and(|call| {
                                         call.immediate_lambda.is_none()
-                                            && call.user_elaborator_transcript.is_none()
+                                            && call.user_macro_transcript.is_none()
                                     })
                                 }
                                 PlannedOrdinaryValue::ComputedCall(_)
@@ -14250,11 +14235,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                             };
                             if !body_free {
                                 #[cfg(test)]
-                                if matches!(
-                                    &cursor.planned,
-                                    PlannedOrdinaryValue::UserElaborator(_)
-                                ) {
-                                    record_public_header_work(|work| work.blocked_elaborators += 1);
+                                if matches!(&cursor.planned, PlannedOrdinaryValue::UserMacro(_)) {
+                                    record_public_header_work(|work| work.blocked_macros += 1);
                                 }
                                 return Ok(OrdinaryDriverStep::Ready(
                                     OrdinaryValueAdvance::Pending(cursor),
@@ -14603,8 +14585,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     ty.clone(),
                     tcx.in_scope_type_param_presentation(),
                 ),
-            CompletedInFrame::UserElaboratorCall { .. } => {
-                unreachable!("an elaborator transcript escaped its owning value cursor")
+            CompletedInFrame::UserMacroCall { .. } => {
+                unreachable!("a macro transcript escaped its owning value cursor")
             }
         }
     }
@@ -14938,8 +14920,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             CompletedInFrame::FunctionScheme(_, _) => {
                 Err(super::types::scheme_in_mono_position(span))
             }
-            CompletedInFrame::UserElaboratorCall { .. } => {
-                unreachable!("an elaborator transcript escaped its owning value cursor")
+            CompletedInFrame::UserMacroCall { .. } => {
+                unreachable!("a macro transcript escaped its owning value cursor")
             }
         }
     }
@@ -15344,8 +15326,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     CompletedInFrame::FunctionScheme(ty, _) => {
                                         Synth::complete_scheme_interned(ty.ty().clone())
                                     }
-                                    CompletedInFrame::UserElaboratorCall { .. } => unreachable!(
-                                        "an elaborator transcript escaped its owning value cursor"
+                                    CompletedInFrame::UserMacroCall { .. } => unreachable!(
+                                        "a macro transcript escaped its owning value cursor"
                                     ),
                                 }
                                 .with_inferred_type_arg_suffix(inferred_type_arg_suffix);
@@ -15543,7 +15525,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::Elaborator { .. }
             | crate::ast::Expr::RecOrder { .. }
             | crate::ast::Expr::RecQuote { .. }
-            | crate::ast::Expr::UserElaborator { .. }
+            | crate::ast::Expr::UserMacro { .. }
             | crate::ast::Expr::Ufcs { .. } => {
                 unreachable!("the Path/Unit selector admitted another Lowered expression family")
             }
@@ -16816,7 +16798,7 @@ fn advance_path_unit_goal_call<'m>(
     };
     let result_type = prepare_owner_bound_type(frontier, result_type, call.call_site.span, tcx)?;
 
-    if call.user_elaborator_transcript.is_some() {
+    if call.user_macro_transcript.is_some() {
         let mut type_slots = Vec::with_capacity(call.shape.binders.len());
         for binder in &call.shape.binders {
             let Some(ty) = call.replacements.get(goal_owner, &binder.name) else {
@@ -16831,8 +16813,8 @@ fn advance_path_unit_goal_call<'m>(
             )?));
         }
         let value_layer_consumed = call.shape.has_implicit_unit_value();
-        if let Some(transcript) = call.user_elaborator_transcript.as_mut() {
-            transcript.layers.push(UserElaboratorCallTranscriptLayer {
+        if let Some(transcript) = call.user_macro_transcript.as_mut() {
+            transcript.layers.push(UserMacroCallTranscriptLayer {
                 type_slots,
                 sources: Vec::new(),
                 value_layer_consumed,
@@ -16995,7 +16977,7 @@ fn begin_general_goal_call<'m>(
     }
 
     if let Some(next_source_index) = call
-        .user_elaborator_transcript
+        .user_macro_transcript
         .as_ref()
         .map(|transcript| transcript.next_source_index)
     {
@@ -17022,7 +17004,7 @@ fn begin_general_goal_call<'m>(
                 OrdinaryCallValue::Completed { source, .. } => *source,
                 OrdinaryCallValue::Retained(retained) => retained.cursor.source,
             };
-            sources.push(UserElaboratorCallTranscriptSource {
+            sources.push(UserMacroCallTranscriptSource {
                 source_index: next_source_index + source_offset,
                 source: source.clone(),
                 expanded_start: *expanded_start,
@@ -17035,9 +17017,9 @@ fn begin_general_goal_call<'m>(
         let value_layer_consumed = call.shape.has_value_layer
             && (!prepared_values.is_empty()
                 || accepts_zero_value_args(&call.remaining_param.solver, &tcx.env.alias_ctx()));
-        if let Some(transcript) = call.user_elaborator_transcript.as_mut() {
+        if let Some(transcript) = call.user_macro_transcript.as_mut() {
             transcript.next_source_index += sources.len();
-            transcript.layers.push(UserElaboratorCallTranscriptLayer {
+            transcript.layers.push(UserMacroCallTranscriptLayer {
                 type_slots,
                 value_layer_consumed,
                 sources,
@@ -17630,8 +17612,7 @@ fn finish_immediate_lambda_body_advance<'m>(
             }
             let actual = match actual {
                 CompletedInFrame::Value(actual, _) => actual,
-                CompletedInFrame::FunctionScheme(_, _)
-                | CompletedInFrame::UserElaboratorCall { .. } => {
+                CompletedInFrame::FunctionScheme(_, _) | CompletedInFrame::UserMacroCall { .. } => {
                     unreachable!("an anonymous lambda completed as another semantic family")
                 }
             };
@@ -18216,7 +18197,7 @@ fn close_completed_ordinary_child<'m>(
 ) -> Result<CompletedInFrame, Error> {
     if let Some(source) = child.take_quote_source() {
         assert!(
-            !matches!(completed, CompletedInFrame::UserElaboratorCall { .. }),
+            !matches!(completed, CompletedInFrame::UserMacroCall { .. }),
             "a public quotation source closed as an internal call transcript"
         );
         child.publication_mut().record_rec_quote_source_type(
@@ -18226,7 +18207,7 @@ fn close_completed_ordinary_child<'m>(
         );
     }
     let completed = match completed {
-        CompletedInFrame::UserElaboratorCall {
+        CompletedInFrame::UserMacroCall {
             output,
             inferred_type_arg_suffix,
             mut transcript,
@@ -18251,13 +18232,13 @@ fn close_completed_ordinary_child<'m>(
             let mut outputs = outputs.into_iter();
             let output = match outputs
                 .next()
-                .expect("a retained user-elaborator call returned no value output")
+                .expect("a retained user-macro call returned no value output")
             {
                 ClosedGoalOutput::Retained(output) => output.into_scoped_type(),
                 ClosedGoalOutput::RetainedFunctionScheme(_)
                 | ClosedGoalOutput::GoalFree(_)
                 | ClosedGoalOutput::FunctionScheme(_) => {
-                    unreachable!("a retained user-elaborator call changed semantic class")
+                    unreachable!("a retained user-macro call changed semantic class")
                 }
             };
             for layer in &mut transcript.layers {
@@ -18266,10 +18247,10 @@ fn close_completed_ordinary_child<'m>(
                         *ty = Some(
                             match outputs
                                 .next()
-                                .expect("a retained elaborator transcript lost a type slot")
+                                .expect("a retained macro transcript lost a type slot")
                             {
                                 ClosedGoalOutput::Retained(output) => output.into_scoped_type(),
-                                _ => unreachable!("an elaborator type slot changed semantic class"),
+                                _ => unreachable!("a macro type slot changed semantic class"),
                             },
                         );
                     }
@@ -18277,18 +18258,18 @@ fn close_completed_ordinary_child<'m>(
                 for source in &mut layer.sources {
                     source.expected = match outputs
                         .next()
-                        .expect("a retained elaborator transcript lost a source expectation")
+                        .expect("a retained macro transcript lost a source expectation")
                     {
                         ClosedGoalOutput::Retained(output) => output.into_scoped_type(),
-                        _ => unreachable!("an elaborator source type changed semantic class"),
+                        _ => unreachable!("a macro source type changed semantic class"),
                     };
                 }
             }
             assert!(
                 outputs.next().is_none(),
-                "a retained elaborator transcript returned extra semantic outputs"
+                "a retained macro transcript returned extra semantic outputs"
             );
-            return Ok(CompletedInFrame::UserElaboratorCall {
+            return Ok(CompletedInFrame::UserMacroCall {
                 output,
                 inferred_type_arg_suffix,
                 transcript,
@@ -18306,8 +18287,8 @@ fn close_completed_ordinary_child<'m>(
             suffix,
             true,
         ),
-        CompletedInFrame::UserElaboratorCall { .. } => {
-            unreachable!("the user-elaborator completion was handled above")
+        CompletedInFrame::UserMacroCall { .. } => {
+            unreachable!("the user-macro completion was handled above")
         }
     };
     let (output, escape, suffix, function_scheme) = escape;
@@ -18488,8 +18469,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     )
                 },
             ),
-            CompletedInFrame::UserElaboratorCall { .. } => {
-                unreachable!("an elaborator transcript escaped its owning value cursor")
+            CompletedInFrame::UserMacroCall { .. } => {
+                unreachable!("a macro transcript escaped its owning value cursor")
             }
         }
     }
@@ -19875,7 +19856,7 @@ type PlannedValueArgumentSeed<'m, P> = (&'m crate::ast::Expr<P>, PlannedValueArg
 /// domain.  This decoder then consumes only written argument kinds: the
 /// explicit universal prefix and the consecutive value sources belonging to
 /// this layer.  It deliberately knows nothing about declarations, signature
-/// groups, ABI arity, elaborator identity, or value-source types.
+/// groups, ABI arity, macro identity, or value-source types.
 struct DecodedApplicationPacket {
     explicit_prefix: usize,
     selected_source_count: usize,
@@ -21629,7 +21610,7 @@ where
         callee_span,
         args,
         flavor,
-        bang: None,
+        macro_call: None,
         ..
     } = e
     {
@@ -21941,12 +21922,9 @@ mod tests {
             std::mem::size_of::<crate::ast::PathSegment>(),
             std::mem::size_of::<Option<Box<Expr>>>(),
         );
-        assert_eq!(std::mem::size_of::<UserElaboratorCallTranscript>(), 96);
+        assert_eq!(std::mem::size_of::<UserMacroCallTranscript>(), 96);
         assert_eq!(std::mem::size_of::<OpenGoalCall<'_>>(), 616);
-        assert_eq!(
-            std::mem::size_of::<PlannedUserElaboratorCallState<'_>>(),
-            432
-        );
+        assert_eq!(std::mem::size_of::<PlannedUserMacroCallState<'_>>(), 432);
         assert_eq!(std::mem::size_of::<CompletedInFrame>(), 200);
         assert_eq!(std::mem::size_of::<OrdinaryDriverStep<'_>>(), 240);
         assert_eq!(std::mem::size_of::<OpenOrdinaryChildAdvance<'_>>(), 288);
@@ -21956,7 +21934,7 @@ mod tests {
             208
         );
         assert_eq!(
-            std::mem::size_of::<UserElaboratorTerminalTypeLayerCapability>(),
+            std::mem::size_of::<UserMacroTerminalTypeLayerCapability>(),
             48
         );
         assert_eq!(
@@ -24146,19 +24124,19 @@ mod tests {
     fn general_ordinary_root_composes_recursive_value_families() {
         let module = parse(
             "module main;
-             import control(if);
+             import control(macro if);
              default host type Bool role(bool);
              host type I32;
              fn id[T](value: T) -> T { value }
              fn choose(flag: Bool, value: I32) -> I32 {
                let kept = value;
                ();
-               if! flag { id(kept) } else { kept }
+               if (flag) { id(kept) } else { kept }
              }",
         )
         .expect("parse general ordinary-root witness");
         let control = parse(include_str!(
-            "../../../../test-data/poc/elab/workdir/control.kio"
+            "../../../../test-data/poc/macros/workdir/control.kio"
         ))
         .expect("parse ordinary conditional provider");
         let (modules, _) = FullPipeline::lower_package(
@@ -24206,7 +24184,7 @@ mod tests {
         }
         let expected = InternedType::fresh(def.ret.clone());
         let actual = run_general_ordinary_value(&def.body, Some(&expected), &mut tcx)
-            .expect("general ordinary root should compose Let, Seq, UserElaborator, and Call");
+            .expect("general ordinary root should compose Let, Seq, UserMacro, and Call");
         crate::pass::typecheck_core::require_type_equiv_state(
             actual.ty.as_type(),
             expected.as_type(),
@@ -24819,18 +24797,18 @@ mod tests {
                     .() -> __Checked_term__ { true_result },
                     .() -> __Checked_term__ { false_result }), with_false)
             }
-            pub elab choose_lazy : [Condition][Result]
+            pub macro choose_lazy : [Condition][Result]
                 Condition -> (. -> Result) -> (. -> Result) -> Result {
                 impl(fills) choose_checked
             }
             pure fn enter_checked(ct: __Comptime__, fills: __Fill_ctx__,
                 _result: __Type__, body: __Checked_term__)
                 -> __Checked_term__ & __Fill_ctx__ { (invoke(ct, body), fills) }
-            pub elab enter_now : [Result](. -> Result) -> Result { impl(fills) enter_checked }
+            pub macro enter_now : [Result](. -> Result) -> Result { impl(fills) enter_checked }
             pure fn unit_checked(ct: __Comptime__, _result: __Type__ | .) -> __Checked_term__ {
                 __term_unit__(ct)
             }"#;
-        format!("{provider} pub elab infer_unit : [A]. -> A {{ impl unit_checked }}")
+        format!("{provider} pub macro infer_unit : [A]. -> A {{ impl unit_checked }}")
     }
 
     #[cfg(feature = "surface")]
@@ -24849,10 +24827,10 @@ mod tests {
         for depth in [1, 4, 16] {
             let mut nested = "supply()".to_owned();
             for _ in 0..depth {
-                nested = format!("enter_now!(.() {{ {nested} }})");
+                nested = format!("enter_now(.() {{ {nested} }})");
             }
             cases.push((format!("marked-depth-{depth}"), format!(
-                "fn result() -> . {{ let chosen = choose_lazy!(.t, .() {{ {nested} }}, .() {{ infer_unit!() }}); chosen }}"
+                "fn result() -> . {{ let chosen = choose_lazy(.t, .() {{ {nested} }}, .() {{ infer_unit() }}); chosen }}"
             ), depth + 2, depth + 2, true));
         }
         for width in [4, 16, 64] {
@@ -24867,7 +24845,7 @@ mod tests {
                     ".() { () }"
                 };
                 let callbacks = vec![callback; width].join(", ");
-                let last = if waiting { "infer_unit!()" } else { "()" };
+                let last = if waiting { "infer_unit()" } else { "()" };
                 cases.push((format!("width-{width}-wait-{waiting}"), format!(
                     "fn consume[A]({parameters}, _last: A) -> . {{ () }} fn result() -> . {{ consume({callbacks}, {last}) }}"
                 ), width, usize::from(waiting), waiting));
@@ -24875,7 +24853,7 @@ mod tests {
         }
         for (label, declarations, bodies, actions, waiting) in cases {
             let main = format!(
-                "module main; import mechanisms(choose_lazy, enter_now, infer_unit); default host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
+                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); default host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
             );
             let (modules, _) = FullPipeline::lower_package(
                 vec![
@@ -24917,7 +24895,7 @@ mod tests {
                 );
             }
             assert_eq!(
-                scope.memo().user_elaborator_template_executions(),
+                scope.memo().user_macro_template_executions(),
                 actions,
                 "{label} actions"
             );
@@ -24947,16 +24925,16 @@ mod tests {
         for (left, right, bodies, actions) in [
             ("supply()", "()", 2, 1),
             ("()", "supply()", 2, 1),
-            ("supply()", "infer_unit!()", 2, 2),
-            ("infer_unit!()", "supply()", 2, 2),
-            ("enter_now!(.() { supply() })", "infer_unit!()", 3, 3),
-            ("infer_unit!()", "enter_now!(.() { supply() })", 3, 3),
+            ("supply()", "infer_unit()", 2, 2),
+            ("infer_unit()", "supply()", 2, 2),
+            ("enter_now(.() { supply() })", "infer_unit()", 3, 3),
+            ("infer_unit()", "enter_now(.() { supply() })", 3, 3),
         ] {
             let main = format!(
-                "module main; import mechanisms(choose_lazy, enter_now, infer_unit); \
+                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); \
                  default host type Caller_flag role(bool); host fn supply[A]() -> A; \
                  fn result() -> . {{ \
-                   let chosen = choose_lazy!(.t, .() {{ {left} }}, .() {{ {right} }}); \
+                   let chosen = choose_lazy(.t, .() {{ {left} }}, .() {{ {right} }}); \
                    chosen \
                  }}"
             );
@@ -24998,7 +24976,7 @@ mod tests {
                         .all(|prior| prior.span != entry.span)
                 );
             }
-            assert_eq!(scope.memo().user_elaborator_template_executions(), actions);
+            assert_eq!(scope.memo().user_macro_template_executions(), actions);
             owner_work.push(lambda_owner_work());
             eprintln!(
                 "shared-result {left}/{right}: entries={entries:?}, owners={:?}",
@@ -26412,7 +26390,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn deep_successor_chain_finds_user_elaborator_transcript_on_bounded_stack() {
+    fn deep_successor_chain_finds_user_macro_transcript_on_bounded_stack() {
         with_bounded_stack(|| {
             const DEPTH: usize = 4096;
             let module = parse("module main;").expect("parse transcript-chain module");
@@ -26427,7 +26405,7 @@ mod tests {
             let mut elaborations = Elaborations::new();
             let tcx = TypeCtx::new(&env, &mut elaborations);
             let action = crate::ast::NodeId(9191);
-            let transcript = UserElaboratorCallTranscript {
+            let transcript = UserMacroCallTranscript {
                 action,
                 source_span: sp(),
                 layers: Vec::new(),
@@ -26507,7 +26485,7 @@ mod tests {
 
             assert_eq!(
                 continuation
-                    .user_elaborator_transcript()
+                    .user_macro_transcript()
                     .expect("deep successor chain must retain its transcript")
                     .action,
                 action
@@ -26528,7 +26506,7 @@ mod tests {
                         assert_eq!(
                             completed
                                 .call
-                                .user_elaborator_transcript
+                                .user_macro_transcript
                                 .as_ref()
                                 .expect("terminal call must retain its transcript")
                                 .action,
@@ -26744,11 +26722,11 @@ mod tests {
         fn scaling_package(source: &str) -> Package {
             let module = parse(source).expect("parse natural-boundary scaling witness");
             let mut sources = vec![(PathBuf::from("main.kio"), module)];
-            if source.contains("import control(if)") {
+            if source.contains("import control(macro if)") {
                 sources.push((
                     PathBuf::from("control.kio"),
                     parse(include_str!(
-                        "../../../../test-data/poc/elab/workdir/control.kio"
+                        "../../../../test-data/poc/macros/workdir/control.kio"
                     ))
                     .expect("ordinary control provider"),
                 ));
@@ -26822,7 +26800,7 @@ mod tests {
         }
 
         fn control_prelude(extra: &str) -> String {
-            prelude(extra).replacen("module main;", "module main; import control(if);", 1)
+            prelude(extra).replacen("module main;", "module main; import control(macro if);", 1)
         }
 
         fn let_prefixes(width: usize) -> String {
@@ -26868,7 +26846,7 @@ mod tests {
         fn sequential_conditionals(width: usize) -> String {
             let prefixes = (0..width)
                 .map(|index| {
-                    format!("let value{index} = if! condition {{ make() }} else {{ () }};")
+                    format!("let value{index} = if (condition) {{ make() }} else {{ () }};")
                 })
                 .collect::<Vec<_>>()
                 .join(" ");
@@ -26877,7 +26855,7 @@ mod tests {
 
         fn deep_conditionals(depth: usize) -> String {
             let body = (0..depth).fold("()".to_owned(), |body, _| {
-                format!("if! condition {{ make() }} else {{ {body} }}")
+                format!("if (condition) {{ make() }} else {{ {body} }}")
             });
             control_prelude(&format!(
                 "fn run(condition: Bool) -> . {{ let value = {body}; () }}"
@@ -27395,7 +27373,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn retained_abstraction_survives_staged_user_elaborator_package_check() {
+    fn retained_abstraction_survives_staged_user_macro_package_check() {
         let provider = parse(
             "module provider;
              import __comptime__;
@@ -27406,15 +27384,15 @@ mod tests {
                let _ignored = retained(ct)(__Comptime__, ct);
                __term_unit__(ct)
              }
-             pub elab stage : . -> . { impl stage_impl; };",
+             pub macro stage : . -> . { impl stage_impl; };",
         )
-        .expect("parse retained-abstraction elaborator provider");
+        .expect("parse retained-abstraction macro provider");
         let consumer = parse(
             "module main;
-             import provider(stage);
-             fn witness() -> . { stage!() }",
+             import provider(macro stage);
+             fn witness() -> . { stage() }",
         )
-        .expect("parse retained-abstraction elaborator consumer");
+        .expect("parse retained-abstraction macro consumer");
         let (modules, _) = FullPipeline::lower_package(
             vec![
                 (PathBuf::from("provider.kio"), provider),
@@ -27422,7 +27400,7 @@ mod tests {
             ],
             None,
         )
-        .expect("lower retained-abstraction elaborator package");
+        .expect("lower retained-abstraction macro package");
         let package =
             Package::build(Path::new(""), modules, None).expect("build resolved package shell");
         package.resolve_imports().expect("resolve imports");
@@ -27430,7 +27408,7 @@ mod tests {
             .into_parts()
             .0;
         FullPipeline::typecheck(&package)
-            .expect("the retained-abstraction call must survive elaborator artifact staging");
+            .expect("the retained-abstraction call must survive macro artifact staging");
     }
 
     #[cfg(feature = "surface")]
@@ -29802,21 +29780,21 @@ mod tests {
     fn failed_later_sibling_does_not_publish_a_conditional_recipe() {
         let module = parse(
             "module main;
-             import control(if);
+             import control(macro if);
              default host type Bool role(bool);
              host type I32;
              host type String;
              fn consume(_value: I32, _later: I32) -> . { () }
              fn bad(condition: Bool, left: I32, wrong: String) -> . {
-               consume(if! condition { left } else { left }, wrong)
+               consume(if (condition) { left } else { left }, wrong)
              }
              fn good(condition: Bool, left: I32, right: I32) -> . {
-               consume(if! condition { left } else { left }, right)
+               consume(if (condition) { left } else { left }, right)
              }",
         )
         .expect("parse if/else rollback witness");
         let control = parse(include_str!(
-            "../../../../test-data/poc/elab/workdir/control.kio"
+            "../../../../test-data/poc/macros/workdir/control.kio"
         ))
         .expect("parse ordinary conditional provider");
         let (modules, _) = FullPipeline::lower_package(
@@ -29852,8 +29830,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
-            let Some(CallArg::Value(conditional @ Expr::UserElaborator { .. })) = args.first()
-            else {
+            let Some(CallArg::Value(conditional @ Expr::UserMacro { .. })) = args.first() else {
                 panic!("first argument should be the conditional")
             };
             conditional
@@ -30305,10 +30282,10 @@ mod tests {
             pure fn unit_checked(ct: __Comptime__, _result: __Type__ | .) -> __Checked_term__ {
                 __term_unit__(ct)
             }
-            elab infer_unit : [A]. -> A { impl unit_checked }
+            macro infer_unit : [A]. -> A { impl unit_checked }
             fn consume[A](_first: . -> A, _second: . -> A, _later: A) -> . { () }
             fn retained_source() -> . { .() { supply() } }
-            fn witness() -> . { consume(pending, pending, infer_unit!()) }
+            fn witness() -> . { consume(pending, pending, infer_unit()) }
         "#,
         )
         .expect("parse pending completion control");
@@ -30368,7 +30345,7 @@ mod tests {
             ),
             (
                 "UFCS shared source",
-                "pending.>consume(pending, infer_unit!())",
+                "pending.>consume(pending, infer_unit())",
                 true,
             ),
             (
@@ -30378,27 +30355,27 @@ mod tests {
             ),
             (
                 "ancestor let",
-                "consume(pending, .() { let discarded = hold(pending); supply() }, infer_unit!())",
+                "consume(pending, .() { let discarded = hold(pending); supply() }, infer_unit())",
                 true,
             ),
             (
                 "ancestor sequence",
-                "consume(pending, .() { hold(pending); supply() }, infer_unit!())",
+                "consume(pending, .() { hold(pending); supply() }, infer_unit())",
                 true,
             ),
             (
                 "ancestor condition",
-                "consume(pending, .() { let condition = hold_bool(pending); condition_slot(condition, .() { supply() }, .() { supply() }) }, infer_unit!())",
+                "consume(pending, .() { let condition = hold_bool(pending); condition_slot(condition, .() { supply() }, .() { supply() }) }, infer_unit())",
                 true,
             ),
             (
                 "local let",
-                "consume(.() { let discarded = hold(pending); supply() }, pending, infer_unit!())",
+                "consume(.() { let discarded = hold(pending); supply() }, pending, infer_unit())",
                 false,
             ),
             (
                 "local condition",
-                "consume(.() { let condition = hold_bool(pending); condition_slot(condition, .() { supply() }, .() { supply() }) }, pending, infer_unit!())",
+                "consume(.() { let condition = hold_bool(pending); condition_slot(condition, .() { supply() }, .() { supply() }) }, pending, infer_unit())",
                 false,
             ),
         ] {
@@ -30421,11 +30398,11 @@ mod tests {
         let source_text = format!(
             r#"module main;
             import __comptime__;
-            import mechanisms(choose_lazy);
+            import mechanisms(macro choose_lazy);
             {extra}
             host fn supply[A]() -> A;
             pure fn unit_checked(ct: __Comptime__, _result: __Type__ | .) -> __Checked_term__ {{ __term_unit__(ct) }}
-            elab infer_unit : [A]. -> A {{ impl unit_checked }}
+            macro infer_unit : [A]. -> A {{ impl unit_checked }}
             fn consume[A](_first: . -> A, _second: . -> A, _later: A) -> . {{ () }}
             fn consume_distinct[A](_first: . -> A, _second: . -> ., _later: .) -> . {{ () }}
             fn consume_unit(_first: ., _second: . -> ., _later: .) -> . {{ () }}
@@ -30578,8 +30555,7 @@ mod tests {
             ("[T] T -> .", ".[T](value: T)", "one rigid owner"),
             ("[T][U] T -> .", ".[T][U](value: T)", "two rigid owners"),
         ] {
-            let body =
-                format!("consume_poly({lambda} {{ hold(pending) }}, pending, infer_unit!())");
+            let body = format!("consume_poly({lambda} {{ hold(pending) }}, pending, infer_unit())");
             let extra = format!(
                 "fn consume_poly[A](_first: {binders}, _second: . -> A, _later: A) -> . {{ () }}"
             );
@@ -33948,10 +33924,10 @@ mod tests {
              ) -> __Checked_term__ {
                  __term_unit__(ct)
              }
-             elab infer_unit : [A] . -> A {
+             macro infer_unit : [A] . -> A {
                  impl infer_unit_impl;
              };
-             fn witness() -> . { .(token) { infer_unit!() }() }",
+             fn witness() -> . { .(token) { infer_unit() }() }",
         )
         .expect("parse Final-only immediate body witness");
         let (modules, _) =

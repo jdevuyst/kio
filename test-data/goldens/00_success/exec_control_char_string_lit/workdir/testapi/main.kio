@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -18,7 +18,7 @@ fn line(label: String, n: I32) {
 }
 
 fn yes_no(label: String, b: Bool) {
-  print(string_concat(label, if! b { "yes\n" } else { "no\n" }))
+  print(string_concat(label, if(b) { "yes\n" } else { "no\n" }))
 }
 
 pub fn main() {

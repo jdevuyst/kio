@@ -3,7 +3,7 @@ module earley/report;
 import earley/fixtures as fixtures;
 import earley/model as model;
 import earley/recognize as recognize;
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as arrays;
@@ -13,10 +13,10 @@ import testapi/iter(loop);
 import testapi/text as text;
 
 rec(loop) fn sizes(table: model.Chart, index: I32, result: String) -> String {
-  if! arith.leq_i32(arrays.array_len(table), index) {
+  if(arith.leq_i32(arrays.array_len(table), index)) {
     text.string_concat(result, "]")
   } else {
-    let separator = if! arith.leq_i32(index, 0) { "" } else { "," };
+    let separator = if(arith.leq_i32(index, 0)) { "" } else { "," };
     let size = fmt.int_to_string(arrays.array_len(arrays.array_get(table, index)));
     recur sizes(
     , table
@@ -32,12 +32,12 @@ rec(loop) fn examples(
 , inputs: Array(fixtures.Example)
 , index: I32
 ) {
-  if! arith.leq_i32(arrays.array_len(inputs), index) {
+  if(arith.leq_i32(arrays.array_len(inputs), index)) {
     ()
   } else {
     let fixture = arrays.array_get(inputs, index);
     let .(table: model.Chart, accepted: Bool) = recognize.run(grammar, 0, fixtures.input(fixture));
-    let verdict = if! accepted { "accepted" } else { "rejected" };
+    let verdict = if(accepted) { "accepted" } else { "rejected" };
     io.print(text.string_concat(
     , name
     , text.string_concat(

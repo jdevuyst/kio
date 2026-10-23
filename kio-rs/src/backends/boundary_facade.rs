@@ -7783,7 +7783,7 @@ mod tests {
                             | Item::Labels(_, ext)
                             | Item::LabelForward(_, ext)
                             | Item::Equiv(_, ext)
-                            | Item::Elaborator(_, ext)
+                            | Item::Macro(_, ext)
                             | Item::Op(_, ext)
                             | Item::VariadicOperator(_, ext) => match *ext {},
                             Item::TypeRecGroup(_) => unreachable!("handled above"),

@@ -19,7 +19,7 @@ equiv name[A](x: A) {
 
 The runner, conceptually:
 
-1. Parses, type-checks, and substitutes the module to `Lowered` and finally to `Prime`-shaped terms. Every block and blockless elab call, including the library's `if!`, `scope!`, `do!`, `match!`, and `derive!`, has its ordinary Kio' expansion substituted at the Lowered → Prime boundary.
+1. Parses, type-checks, and substitutes the module to `Lowered` and finally to `Prime`-shaped terms. Every block and blockless macro call, including the library's `if`, `scope`, `do`, `match`, and `derive`, has its ordinary Kio' expansion substituted at the Lowered → Prime boundary.
 2. For each `equiv` item: binds each value parameter `pᵢ : Tᵢ` to a **fresh opaque atom** `aᵢ` shared across every arm, ignores the type parameters (they're erased), and partial-evaluates each arm body to a residual normal form `vᵢ`.
 3. Compares the `N` residual NFs pairwise. If every pair is equivalent under the relation in § 4, the `equiv` passes; otherwise it fails with the partition into NF-equivalence groups (see [`../cli.md`](../cli.md) § kio test for the diagnostic shape).
 
@@ -76,7 +76,7 @@ Concretely:
 - `print("hi")` reduces no further; it remains as a structural residual `Stuck(host:print, ["hi"])`.
 - Two different `equiv` arms that mention `print("hi")` produce structurally identical residuals and compare equal.
 - Two `equiv` arms that mention `print("hi")` and `print("bye")` produce different residuals and compare unequal.
-- An expression statement whose left side is a stuck host call remains as a residual sequence until comparison. With the reference `scope` imported, `scope! { print("hi"); print("hi") }` and `scope! { print("hi") }` are not equivalent: the first normal form still contains the extra `print("hi")` action.
+- An expression statement whose left side is a stuck host call remains as a residual sequence until comparison. With the reference `scope` imported, `scope { print("hi"); print("hi") }` and `scope { print("hi") }` are not equivalent: the first normal form still contains the extra `print("hi")` action.
 
 This is by design: the host boundary is opaque ([`../language.md`](../language.md#the-host-boundary)), so the test runner commits to nothing about what host calls compute. The opacity is what makes the reduction relation total under SN — a host that internally diverges is outside the scope.
 
@@ -126,7 +126,7 @@ the fault occurs in an evaluated value that an enclosing term discards and
 when α- or η-equivalence probes a closure by applying it. A fault outcome is
 never stored as an ordinary passing or failing `equiv` cache entry. The
 structural descent law and diagnostics are specified in
-[`elaboration.md` § 7.4](elaboration.md#74-elaborator-bangs).
+[`elaboration.md` § 7.4](elaboration.md#74-macro-calls).
 
 ## 3. Residual normal forms
 
@@ -312,11 +312,11 @@ equiv distinct[A](v: A, w: A) {
 ### 5.6. Stuck `__if_then_else__` on an opaque condition
 
 ```kio
-import elab/control(if);
+import macros/control(macro if);
 
 equiv stuck_if_eq(c: Bool) {
-  if! c { foo() } else { bar() };
-  if! c { foo() } else { bar() }
+  if(c) { foo() } else { bar() };
+  if(c) { foo() } else { bar() }
 }
 ```
 
@@ -326,8 +326,8 @@ By contrast:
 
 ```kio
 equiv stuck_if_ne(c: Bool) {
-  if! c { foo() } else { bar() };
-  if! c { foo() } else { baz() }
+  if(c) { foo() } else { bar() };
+  if(c) { foo() } else { baz() }
 }
 ```
 
@@ -336,5 +336,5 @@ The else-arm closures differ (`Stuck(bar, [])` vs `Stuck(baz, [])`). Inequivalen
 ## 6. References
 
 - [`prime.md`](prime.md) — Kio' typing rules, reduction, type safety, SN, decidability. The reduction rules in § 3 of this page reuse the rules from `prime.md` § 3.
-- The `equiv` discharge sees the **elaborated** calls — the typer substitutes every elab bang-call (the reference coercion palettes, `match!`, `derive!`) at the `Lowered → Prime` boundary, so only the ordinary intrinsic glue they expand to reaches the partial evaluator. The per-library soundness arguments for those expansions live with the executable POC ([`../../docs/poc/elab.md`](../../docs/poc/elab.md), [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not in this formal directory.
+- The `equiv` discharge sees the **elaborated** calls — the typer substitutes every macro call (the reference coercion palettes, `match`, `derive`) at the `Lowered → Prime` boundary, so only the ordinary intrinsic glue they expand to reaches the partial evaluator. The per-library soundness arguments for those expansions live with the executable POC ([`../../docs/poc/macros.md`](../../docs/poc/macros.md), [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not in this formal directory.
 - Pierce 2002, *Types and Programming Languages*, chapters 11, 20, and 23 — background on products and sums, iso-recursive types, and System F, respectively. The Kio-specific reduction and residual-equivalence rules are stated on this page and in `prime.md`; the textbook is not a proof of their combined implementation.

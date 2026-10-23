@@ -7,7 +7,7 @@
 /// that offers no string comparison at all.
 module query/fixtures;
 
-import elab/match(match);
+import macros/match(macro match);
 import query/list as list;
 import query/row as rel;
 import query/schema as schema;
@@ -93,7 +93,7 @@ pub fn manifests() -> rel.Table {
 }
 
 pub fn table_rows(t: schema.Table_id) -> rel.Table {
-  match! t {
+  match(t) {
     (
     , .(_t: schema.T_ships) { ships() }
     , .(_t: schema.T_berths) { berths() }

@@ -1,13 +1,13 @@
 /// Ready-to-use right-biased Result library with constructors, folds, mapping, binding, recovery, and operators.
 module library/result;
 
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 
 // `Result(T, E)` is exactly the structural sum `T | E` — success on the
 // left, error on the right (Rust's convention). There is no nominal
-// wrapper: a `Result(T, E)` *is* a `T | E`, so `match!`, the spine palette,
-// and `widen_sum!` / `narrow_sum!` compose with these functions without any
+// wrapper: a `Result(T, E)` *is* a `T | E`, so `match`, the spine palette,
+// and `widen_sum` / `narrow_sum` compose with these functions without any
 // unwrapping ceremony. The module just provides the *named* surface —
 // `ok`, `err`, `fold`, `map`, `bind`, … — a reader of Rust- or OCaml-style
 // code expects.
@@ -20,23 +20,23 @@ pub type Result[T][E] = T | E;
 
 /// A pure two-state truth value, so the predicates below return a
 /// proper boolean without reaching for a host `Bool`. The two arms are
-/// labeled so `match!` can tell them apart (a bare `. | .` could not).
+/// labeled so `match` can tell them apart (a bare `. | .` could not).
 pub labels { btrue: ., bfalse: . };
 
 /// Boolean-like result type used by pure predicates in this module.
 pub type Bool = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum!({btrue=}, Btrue | Bfalse) }
+pub fn yes() -> Bool { widen_sum({btrue=}, Btrue | Bfalse) }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum!({bfalse=}, Btrue | Bfalse) }
+pub fn no() -> Bool { widen_sum({bfalse=}, Btrue | Bfalse) }
 
 /// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
 /// labels inside this module — a consumer never has to name `Btrue` /
 /// `Bfalse` to branch on a predicate's result.
 pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
-  match! b {
+  match(b) {
     (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
   }
 }
@@ -45,20 +45,20 @@ pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
 // Constructors
 // =====================================================================
 /// Injects a success payload into the left arm of a `Result`.
-pub fn ok[T][E](v: T) -> Result(T, E) { widen_sum!(v, T | E) }
+pub fn ok[T][E](v: T) -> Result(T, E) { widen_sum(v, T | E) }
 
 /// Injects an error payload into the right arm of a `Result`.
-pub fn err[T][E](x: E) -> Result(T, E) { widen_sum!(x, T | E) }
+pub fn err[T][E](x: E) -> Result(T, E) { widen_sum(x, T | E) }
 
 // =====================================================================
 // The eliminator
 // =====================================================================
 //
-// Every consumer below routes through `fold`, so this two-arm `match!` is
+// Every consumer below routes through `fold`, so this two-arm `match` is
 // the only place the sum is taken apart.
 /// Eliminates a `Result` by dispatching to the success or error handler.
 pub fn fold[T][E][R](on_ok: T -> R, on_err: E -> R, result: Result(T, E)) -> R {
-  match! result {
+  match(result) {
     (.(v: T) { on_ok(v) }, .(x: E) { on_err(x) })
   }
 }
@@ -163,7 +163,7 @@ pub op _ <*> _ { impl apply }
 // =====================================================================
 //
 // A bare `Result(T, E)` parameter is an opaque sum atom the reducer cannot
-// dispatch on — `match!` on it is stuck — so the laws that walk the sum are
+// dispatch on — `match` on it is stuck — so the laws that walk the sum are
 // stated on the two concrete spines `ok(x)` and `err(y)`. That pair *is* the
 // universal statement: a `Result` is one of those two shapes, so the arm-wise
 // laws cover every inhabitant. Laws whose left side already injects a known

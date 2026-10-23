@@ -1,5 +1,5 @@
 use super::*;
-use crate::ast::{BlockExposure, UserElaboratorDef};
+use crate::ast::{BlockExposure, UserMacroDef};
 use crate::pass::parser::{BlockCursorRegion, ToolingProbe};
 use crate::scope_walk::BlockHeader as Header;
 use lsp_types::{
@@ -14,7 +14,7 @@ fn exposure(exposure: BlockExposure) -> &'static str {
     }
 }
 
-pub(super) fn enrich(item: &mut CompletionItem, declaration: &UserElaboratorDef) {
+pub(super) fn enrich(item: &mut CompletionItem, declaration: &UserMacroDef) {
     if declaration.trailing_blocks.is_empty() {
         return;
     }
@@ -22,8 +22,9 @@ pub(super) fn enrich(item: &mut CompletionItem, declaration: &UserElaboratorDef)
     if !header.valid_labels() {
         return;
     }
-    // A single editable prefix region does not assert a public argument count.
-    let mut snippet = format!("{}! ${{1}}", header.name);
+    // The empty stop accepts a whole parenthesized list. Its default preserves
+    // calls without prefix arguments and never asserts a public argument count.
+    let mut snippet = format!("{}${{1}}", item.label);
     for (index, (_, label)) in header.blocks.iter().enumerate() {
         if let Some(label) = label {
             snippet.push_str(&format!(" {label}"));
@@ -31,7 +32,6 @@ pub(super) fn enrich(item: &mut CompletionItem, declaration: &UserElaboratorDef)
         snippet.push_str(&format!(" {{ ${{{}}} }}", index + 2));
     }
     snippet.push_str("$0");
-    item.label = format!("{}!", header.name);
     item.detail = Some(format!(
         "{}; {}",
         header.public_type,
@@ -174,8 +174,8 @@ pub(crate) fn handle_signature_request(
     }
     Some(SignatureHelp {
         signatures: vec![SignatureInformation {
-            label: format!("{}! [{}]: {}", header.name, labels.join(", "), header.public_type),
-            documentation: Some(Documentation::String("Prefix values follow the public call type; this region does not specify a fixed argument count.".to_owned())),
+            label: format!("{} [{}]: {}", header.name, labels.join(", "), header.public_type),
+            documentation: Some(Documentation::String("Parenthesized prefix values follow the public call type; this region does not specify a fixed argument count.".to_owned())),
             parameters: Some(labels.into_iter().map(|label| ParameterInformation { label: ParameterLabel::Simple(label), documentation: None }).collect()),
             active_parameter: Some(active as u32),
         }],

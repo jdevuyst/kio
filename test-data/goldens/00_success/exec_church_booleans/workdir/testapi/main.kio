@@ -8,7 +8,7 @@ import testapi/text(string_concat);
 // and `f` are the two polymorphic projections; `if_c` is their
 // elimination form. `and_c` / `or_c` / `not_c` build the boolean
 // algebra by re-applying `p` and `q` at type `Boolc` itself. Pure
-// System F: no host loop, no newtype, no `match!`, no `if`/`else` —
+// System F: no host loop, no newtype, no `match`, no `if`/`else` —
 // the booleans *are* the conditional. Reification to `String` goes
 // through `if_c` instantiated at `String`.
 type Boolc = [A] (A & A) -> A;

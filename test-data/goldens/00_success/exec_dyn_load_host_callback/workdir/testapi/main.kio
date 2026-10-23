@@ -4,9 +4,6 @@
 module testapi/main;
 
 import defaults(default_host_adapter);
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import host_descriptor(Host_fn);
 import host_descriptor(host_fn_eq, mk_host_fn, mk_host_id);
 import hostrec(make_lit_default, serve_default, test_bool_default);
@@ -17,6 +14,9 @@ import loader(host_adapter_functions, host_adapter_types);
 import loader(host_fn_bindings_cons, mk_host_adapter, mk_host_fn_binding);
 import loader(instantiate, un_load_outcome);
 import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
 import testapi(I32, Scalar, String, default Bool);
@@ -31,10 +31,10 @@ import value(Side, Value, value_to_scalar, vhost);
 // The host's own callback: double an i32 guest value, or report the shape
 // it wanted.
 fn host_double(dom: Value) -> Call_result {
-  match! value_to_scalar(dom) {
+  match(value_to_scalar(dom)) {
     (
     , .(s: Scalar) {
-        match! scalar_as_i32(s) {
+        match(scalar_as_i32(s)) {
           (
           , .(n: I32) { call_done(vhost(scalar_of_i32(add_i32(n, n)))) }
           , .(_no: .) { call_stuck("host_double expected an i32"(String)) }
@@ -72,9 +72,9 @@ fn adapter_with_callbacks() -> Host_adapter {
 
 // The `call` capability: the standard vocabulary plus this host's callback.
 fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
-  match! call {
+  match(call) {
     .(descriptor: Host_fn, dom: Value) {
-      if! host_fn_eq(descriptor, callback_descriptor("host_double"(String))) {
+      if(host_fn_eq(descriptor, callback_descriptor("host_double"(String)))) {
         host_double(dom)
       } else {
         serve_default(descriptor, dom)
@@ -87,16 +87,16 @@ fn serve_with_callbacks(call: Host_fn & Value) -> Call_result {
 // component and an i32 as its second, rendering the i32 result or the
 // diagnostic.
 fn call_hof[P](surf: Surface(P), name: String, cap: Host_fn, x: I32) -> String {
-  match! surf.?{hostfn_in}(cap) {
+  match(surf.?{hostfn_in}(cap)) {
     (
     , .(cb: P) {
-        match! surf.?{lookup}(name) {
+        match(surf.?{lookup}(name)) {
           (
           , .(f: P) {
-              match! surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x))))) {
+              match(surf.?{apply}((f, surf.?{pair_in}((cb, surf.?{i32_in}(x)))))) {
                 (
                 , .(r: P) {
-                    match! surf.?{i32_out}(r) {
+                    match(surf.?{i32_out}(r)) {
                       (.(n: I32) { int_to_string(n) }, .(d: Diag) { diag_message(d) })
                     }
                   }
@@ -148,16 +148,16 @@ fn un_inst(r: Loaded | Diag) -> Loaded | Diag { r }
 /// adapter and matching `call` capability, and drives the higher-order
 /// exports; a load or instantiation failure prints the diagnostic instead.
 pub fn main() {
-  match! un_load_outcome(load_package(read_image_stdin())) {
+  match(un_load_outcome(load_package(read_image_stdin()))) {
     (
     , .(im0: Lr_image) {
-        match! un_inst(instantiate(
+        match(un_inst(instantiate(
         , adapter_with_callbacks()
         , serve_with_callbacks
         , make_lit_default
         , test_bool_default
         , Lr_image.get(im0)
-        )) {
+        ))) {
           (
           , .(handle: Loaded) {
               Loaded.get(handle)(.[P](surf: Surface(P)) { print(report(surf)) })

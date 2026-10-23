@@ -49,7 +49,7 @@ varop [* *] {
 }
 
 // varop outer
-elab make : . {
+macro make : . {
   // capture tail
 
   // elab close

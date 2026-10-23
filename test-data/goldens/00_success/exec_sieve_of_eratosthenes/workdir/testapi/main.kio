@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith(add_i32, leq_i32, mul_i32);
 import testapi/array(array_get, array_make_filled, array_set);
@@ -20,11 +20,11 @@ fn n() -> I32 { 30 }
 // flagging each `is_composite[j] = true`. State is `j`; `is_composite`
 // and `i` are captured from the outer closure. Exit value is `()`.
 fn mark_step(is_composite: Array(Bool), i: I32, j: I32) -> I32 | . {
-  if! leq_i32(j, n()) {
+  if(leq_i32(j, n())) {
     array_set(is_composite, j, .t);
-    widen_sum!(add_i32(j, i))
+    widen_sum(add_i32(j, i))
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -33,8 +33,8 @@ fn mark_step(is_composite: Array(Bool), i: I32, j: I32) -> I32 | . {
 // (i.e., `is_composite[i]` is still false). State is `i`. Exit when
 // `i*i > N` — every composite ≤ N is marked at that point.
 fn sieve_step(is_composite: Array(Bool), i: I32) -> I32 | . {
-  if! leq_i32(mul_i32(i, i), n()) {
-    widen_sum!(if! array_get(is_composite, i) {
+  if(leq_i32(mul_i32(i, i), n())) {
+    widen_sum(if(array_get(is_composite, i)) {
       add_i32(i, 1)
     } else {
       // Prime — sieve out its multiples, starting at i*i.
@@ -42,7 +42,7 @@ fn sieve_step(is_composite: Array(Bool), i: I32) -> I32 | . {
       add_i32(i, 1)
     })
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 
@@ -50,8 +50,8 @@ fn sieve_step(is_composite: Array(Bool), i: I32) -> I32 | . {
 // decimal per line for each `i` where `is_composite[i]` is false.
 // State is `i`. Exit value is `()`.
 fn print_step(is_composite: Array(Bool), i: I32) -> I32 | . {
-  if! leq_i32(i, n()) {
-    widen_sum!(if! array_get(is_composite, i) {
+  if(leq_i32(i, n())) {
+    widen_sum(if(array_get(is_composite, i)) {
       add_i32(i, 1)
     } else {
       // Prime — emit "<i>\n".
@@ -59,7 +59,7 @@ fn print_step(is_composite: Array(Bool), i: I32) -> I32 | . {
       add_i32(i, 1)
     })
   } else {
-    widen_sum!(())
+    widen_sum(())
   }
 }
 

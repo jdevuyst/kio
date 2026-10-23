@@ -3,7 +3,7 @@ package docs;
 build {
   docs {
     md ".";
-    support "../test-data/poc/elab/workdir";
+    support "../test-data/poc/macros/workdir";
     support "../test-data/poc/dict/workdir";
     support "../test-data/poc/list/workdir";
     support "../test-data/poc/optics/workdir";

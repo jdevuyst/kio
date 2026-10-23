@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 import testapi/io(print);
 
@@ -27,7 +27,7 @@ newtype F : I32 { pub constructor mk_f; pub projector f }
 // nested per-factor `__either__` sum dispatches over the scrutinee
 // spine — not a flat 8-way DNF decision.
 fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
-  match! p {
+  match(p) {
     (
     , .(x: A, y: C, z: E) { "ace\n" }
     , .(x: A, y: C, z: F) { "acf\n" }
@@ -43,7 +43,6 @@ fn handle(p: (A | B) & (C | D) & (E | F)) -> String {
 
 pub fn main() {
   // Build (B, C, F) — exercises the "bcf" clause.
-  let p =
-    (widen_sum!(B.mk_b(0), A | B), widen_sum!(C.mk_c(0), C | D), widen_sum!(F.mk_f(0), E | F));
+  let p = (widen_sum(B.mk_b(0), A | B), widen_sum(C.mk_c(0), C | D), widen_sum(F.mk_f(0), E | F));
   print(handle(p))
 }

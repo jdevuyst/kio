@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -20,10 +20,10 @@ fn make_celsius(temp: I32) -> Celsius { {celsius = temp} }
 fn make_record(temp: I32, name: String) -> Celsius & Label { {celsius = temp, label = name} }
 
 // Project the `label` half out of a multi-label record. `r` is
-// `Celsius & Label`; `match!` destructures the product into
+// `Celsius & Label`; `match` destructures the product into
 // the two conjuncts and we return the `label` arm.
 fn project_label(r: Celsius & Label) -> Label {
-  match! r {
+  match(r) {
     .(_c: Celsius, l: Label) { l }
   }
 }

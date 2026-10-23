@@ -21,7 +21,8 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
     (module_path
       (entity_name_module))
     (bracket_lparen)
-    (identifier)
+    (import_named_item
+      source: (identifier))
     (bracket_rparen)
     (separator_semicolon))
   (function_definition
@@ -161,7 +162,7 @@ fn run[*F]() { id([*F*]) }
 structural comma_keyword_calls
 ================================================================================
 module source;
-fn run() { id([ let(x), if!((ok)) { () } else { () } ]) }
+fn run() { id([ let(x), if((ok)) { () } else { () } ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -201,7 +202,8 @@ fn run() { id([ let(x), if!((ok)) { () } else { () } ]) }
               (separator_comma)
               (variadic_element
                 (block_call
-                  head: (block_head)
+                  head: (call_callee
+                    (entity_name_function))
                   prefix: (block_value_arguments
                     (bracket_lparen)
                     (grouped_expression
@@ -1456,7 +1458,7 @@ fn run() { varop(()) }
 structural nested_control_values
 ================================================================================
 module source;
-fn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }, .(x) { scope! { x } } ]) }
+fn run() { id([ scope { let x = f(); if (x) { let(y) } else { scope { z } } }, .(x) { scope { x } } ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1486,7 +1488,8 @@ fn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }
             (variadic_elements
               (variadic_element
                 (block_call
-                  head: (block_head)
+                  head: (call_callee
+                    (entity_name_function))
                   first: (neutral_block
                     (bracket_lbrace)
                     (let_statement
@@ -1501,7 +1504,8 @@ fn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }
                           (bracket_rparen))))
                     (separator_semicolon)
                     (block_call
-                      head: (block_head)
+                      head: (call_callee
+                        (entity_name_function))
                       prefix: (block_value_arguments
                         (bracket_lparen)
                         (expression_path
@@ -1523,7 +1527,8 @@ fn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }
                         body: (neutral_block
                           (bracket_lbrace)
                           (block_call
-                            head: (block_head)
+                            head: (call_callee
+                              (entity_name_function))
                             first: (neutral_block
                               (bracket_lbrace)
                               (expression_path
@@ -1545,7 +1550,8 @@ fn run() { id([ scope! { let x = f(); if! (x) { let(y) } else { scope! { z } } }
                   (expression_block
                     (bracket_lbrace)
                     (block_call
-                      head: (block_head)
+                      head: (call_callee
+                        (entity_name_function))
                       first: (neutral_block
                         (bracket_lbrace)
                         (expression_path
@@ -1879,7 +1885,7 @@ package source; build { cache (); docs { md "docs/index.md"; }; target kio-prime
 structural comma_runs
 ================================================================================
 module source;
-fn run() { id([* ,,,let(x),,,if!((y)) { y } else { y },,, *]) }
+fn run() { id([* ,,,let(x),,,if((y)) { y } else { y },,, *]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1925,7 +1931,8 @@ fn run() { id([* ,,,let(x),,,if!((y)) { y } else { y },,, *]) }
               (separator_comma)
               (variadic_element
                 (block_call
-                  head: (block_head)
+                  head: (call_callee
+                    (entity_name_function))
                   prefix: (block_value_arguments
                     (bracket_lparen)
                     (grouped_expression
@@ -2012,7 +2019,7 @@ fn run() { id([*F] F(.) -> F(.)) }
 structural all_expression_forms
 ================================================================================
 module source;
-fn run() { id([ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply!(x), .x. { x1 }, (x, y) ]) }
+fn run() { id([ do (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{label = let(x)}, apply(x), .x. { x1 }, (x, y) ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -2042,7 +2049,8 @@ fn run() { id([ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{la
             (variadic_elements
               (variadic_element
                 (block_call
-                  head: (block_head)
+                  head: (call_callee
+                    (entity_name_function))
                   prefix: (block_value_arguments
                     (bracket_lparen)
                     (expression_path
@@ -2110,7 +2118,8 @@ fn run() { id([ do! (f) { let x <- get(); x }, recur next(x), x.?{label}, x.!{la
               (separator_comma)
               (variadic_element
                 (call_expr
-                  (elaborator_name)
+                  (call_callee
+                    (entity_name_function))
                   (expression_arguments
                     (bracket_lparen)
                     (expression_path
@@ -3564,9 +3573,9 @@ module source; op _ + _ { impl if; }; varop [ ] { foldl let do; finalize else; }
   (separator_semicolon))
 
 ================================================================================
-structural owned_elaborator_clause_words
+structural owned_macro_clause_words
 ================================================================================
-module source; elab simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }
+module source; macro simplify: . -> . { captures (x, y); impl (fills) build; }; fn run() { (impl(x), captures(x), fills(x)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -3575,7 +3584,7 @@ module source; elab simplify: . -> . { captures (x, y); impl (fills) build; }; f
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
@@ -3583,9 +3592,9 @@ module source; elab simplify: . -> . { captures (x, y); impl (fills) build; }; f
       (separator_dot)
       (operator_arrow_type)
       (separator_dot))
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
@@ -3595,7 +3604,7 @@ module source; elab simplify: . -> . { captures (x, y); impl (fills) build; }; f
           (identifier))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -4558,51 +4567,51 @@ module app; fn run() { ((value) .> if, .t .> if, if .< (value), if .< .f, 2 .> i
       (grouped_expression
         (bracket_lparen)
         (ufcs_expr
-          (grouped_expression
+          receiver: (grouped_expression
             (bracket_lparen)
             (expression_path
               (identifier))
             (bracket_rparen))
           (operator_arrow_ufcs)
-          (call_callee
+          callee: (call_callee
             (entity_name_function)))
         (separator_comma)
         (ufcs_expr
-          (bool_literal
+          receiver: (bool_literal
             (bool_prefix)
             (bool_value))
           (operator_arrow_ufcs)
-          (call_callee
+          callee: (call_callee
             (entity_name_function)))
         (separator_comma)
         (ufcs_expr
-          (call_callee
+          callee: (call_callee
             (entity_name_function))
           (operator_arrow_ufcs)
-          (grouped_expression
+          receiver: (grouped_expression
             (bracket_lparen)
             (expression_path
               (identifier))
             (bracket_rparen)))
         (separator_comma)
         (ufcs_expr
-          (call_callee
+          callee: (call_callee
             (entity_name_function))
           (operator_arrow_ufcs)
-          (bool_literal
+          receiver: (bool_literal
             (bool_prefix)
             (bool_value)))
         (separator_comma)
         (ufcs_expr
-          (number_literal)
+          receiver: (number_literal)
           (operator_arrow_ufcs)
-          (call_callee
+          callee: (call_callee
             (entity_name_function)))
         (separator_comma)
         (ufcs_expr
-          (string_literal)
+          receiver: (string_literal)
           (operator_arrow_ufcs)
-          (call_callee
+          callee: (call_callee
             (entity_name_function)))
         (bracket_rparen))
       (bracket_rbrace))))
@@ -4647,21 +4656,21 @@ module app; import ops(varop [ ]); fn run() { [ (value) .> if, if .< .t ] }
         (variadic_elements
           (variadic_element
             (ufcs_expr
-              (grouped_expression
+              receiver: (grouped_expression
                 (bracket_lparen)
                 (expression_path
                   (identifier))
                 (bracket_rparen))
               (operator_arrow_ufcs)
-              (call_callee
+              callee: (call_callee
                 (entity_name_function))))
           (separator_comma)
           (variadic_element
             (ufcs_expr
-              (call_callee
+              callee: (call_callee
                 (entity_name_function))
               (operator_arrow_ufcs)
-              (bool_literal
+              receiver: (bool_literal
                 (bool_prefix)
                 (bool_value)))))
         (variadic_close
@@ -4771,7 +4780,7 @@ module app; labels { tag<A>: A, if<B>: B };
 ================================================================================
 structural review_bool_raw_query
 ================================================================================
-module app; fn run() { if! (.t) { .f } else { .t } }
+module app; fn run() { if (.t) { .f } else { .t } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4791,7 +4800,8 @@ module app; fn run() { if! (.t) { .f } else { .t } }
     (expression_block
       (bracket_lbrace)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (bool_literal
@@ -4913,7 +4923,7 @@ module app; fn run() { Box.un_box(A, Box.mk_box(A, value)) }
 ================================================================================
 structural review_scalar_local_binding_role
 ================================================================================
-module app; fn run(value: .) { let local = value; do! (bind) { let item <- local; item } }
+module app; fn run(value: .) { let local = value; do (bind) { let item <- local; item } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4945,7 +4955,8 @@ module app; fn run(value: .) { let local = value; do! (bind) { let item <- local
           (identifier)))
       (separator_semicolon)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path
@@ -5246,7 +5257,8 @@ fn after() { let(x) }
         (operator_run)
         (bracket_rbracket)))
     (separator_comma)
-    (identifier)
+    (import_named_item
+      source: (identifier))
     (bracket_rparen)
     (separator_semicolon))
   (function_definition
@@ -5294,7 +5306,8 @@ fn after() { let(x) }
     (ERROR
       (bracket_rbracket))
     (separator_comma)
-    (identifier)
+    (import_named_item
+      source: (identifier))
     (bracket_rparen)
     (separator_semicolon))
   (function_definition
@@ -6895,7 +6908,7 @@ module m; fn f() { let .(rec, value) = pair; () }
 ================================================================================
 structural nested_local_binders
 ================================================================================
-module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }
+module m; fn f() { let .(left, (rec, right)) = pair; do (bind) { let .(rec, value) <- pair; recur(poly) again(value) } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -6937,7 +6950,8 @@ module m; fn f() { let .(left, (rec, right)) = pair; do! (bind) { let .(rec, val
           (identifier)))
       (separator_semicolon)
       (block_call
-        head: (block_head)
+        head: (call_callee
+          (entity_name_function))
         prefix: (block_value_arguments
           (bracket_lparen)
           (expression_path
@@ -7701,9 +7715,9 @@ module m; varop [+ +] { finalize finish; foldr1 join empty; };
   (separator_semicolon))
 
 ================================================================================
-structural order_elab_captures_first
+structural order_macro_captures_first
 ================================================================================
-module m; elab make: . { captures (helper); impl (fills) run; };
+module m; macro make: . { captures (helper); impl (fills) run; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7712,21 +7726,21 @@ module m; elab make: . { captures (helper); impl (fills) run; };
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
           (identifier))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -7768,9 +7782,9 @@ package app; build { cache (); } bridge { app; }
       (bracket_rbrace))))
 
 ================================================================================
-structural order_elab_impl_first
+structural order_macro_impl_first
 ================================================================================
-module m; elab make: . { impl (fills) run; captures (helper); };
+module m; macro make: . { impl (fills) run; captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -7779,14 +7793,14 @@ module m; elab make: . { impl (fills) run; captures (helper); };
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (bracket_lparen)
         (keyword_declaration)
@@ -7794,7 +7808,7 @@ module m; elab make: . { impl (fills) run; captures (helper); };
         (callable_path
           (entity_name_function)))
       (separator_semicolon)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
@@ -9364,9 +9378,9 @@ module m; varop [+ +] { finalize finish; foldl join empty; finalize finish; };
   (separator_semicolon))
 
 ================================================================================
-structural order_elab_missing_impl
+structural order_macro_missing_impl
 ================================================================================
-module m; elab make: . { captures (helper); };
+module m; macro make: . { captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9381,7 +9395,7 @@ module m; elab make: . { captures (helper); };
     (operator_builtin)
     (separator_dot)
     (bracket_lbrace)
-    (elaborator_captures_clause
+    (macro_captures_clause
       (keyword_declaration)
       (bracket_lparen)
       (plain_value_path
@@ -9392,9 +9406,9 @@ module m; elab make: . { captures (helper); };
   (separator_semicolon))
 
 ================================================================================
-structural order_elab_duplicate_impl
+structural order_macro_duplicate_impl
 ================================================================================
-module m; elab make: . { impl run; impl run; };
+module m; macro make: . { impl run; impl run; };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9403,14 +9417,14 @@ module m; elab make: . { impl run; impl run; };
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (entity_name_function)))
@@ -9423,9 +9437,9 @@ module m; elab make: . { impl run; impl run; };
   (separator_semicolon))
 
 ================================================================================
-structural order_elab_duplicate_captures
+structural order_macro_duplicate_captures
 ================================================================================
-module m; elab make: . { captures (helper); impl run; captures (helper); };
+module m; macro make: . { captures (helper); impl run; captures (helper); };
 --------------------------------------------------------------------------------
 
 (source_file
@@ -9434,21 +9448,21 @@ module m; elab make: . { captures (helper); impl run; captures (helper); };
     path: (module_path
       (entity_name_module))
     (separator_semicolon))
-  (elaborator_decl
+  (macro_decl
     (keyword_declaration)
     (entity_name_function)
     (operator_builtin)
     (separator_dot)
-    (elaborator_body
+    (macro_body
       (bracket_lbrace)
-      (elaborator_captures_clause
+      (macro_captures_clause
         (keyword_declaration)
         (bracket_lparen)
         (plain_value_path
           (identifier))
         (bracket_rparen))
       (separator_semicolon)
-      (elaborator_impl_clause
+      (macro_impl_clause
         (keyword_declaration)
         (callable_path
           (entity_name_function)))
@@ -9707,16 +9721,18 @@ signature app v(1); v(1) { breaking { remove { api.old; } } nonbreaking { add { 
   (body_block
     (expression_block
       (bracket_lbrace)
-      (ERROR
-        (keyword_remove)
-        (bracket_lbrace)
-        (label_path
-          (identifier)
-          (separator_dot)
-          (entity_name_label)))
-      (separator_semicolon)
+      (block_call
+        head: (call_callee
+          (entity_name_function))
+        first: (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier)
+            (separator_dot)
+            (identifier))
+          (separator_semicolon)
+          (bracket_rbrace)))
       (bracket_rbrace)))
-  (bracket_rbrace)
   (bracket_rbrace))
 
 ================================================================================
@@ -10134,10 +10150,10 @@ module source; fn use() { value.>rec }
     (expression_block
       (bracket_lbrace)
       (ufcs_expr
-        (expression_path
+        receiver: (expression_path
           (identifier))
         (operator_arrow_ufcs)
-        (call_callee
+        callee: (call_callee
           (entity_name_function)))
       (bracket_rbrace))))
 
@@ -10164,10 +10180,10 @@ module source; fn use() { rec.<value }
     (expression_block
       (bracket_lbrace)
       (ufcs_expr
-        (call_callee
+        callee: (call_callee
           (entity_name_function))
         (operator_arrow_ufcs)
-        (expression_path
+        receiver: (expression_path
           (identifier)))
       (bracket_rbrace))))
 
@@ -11965,10 +11981,10 @@ module source; fn use() { value.>recur }
     (expression_block
       (bracket_lbrace)
       (ufcs_expr
-        (expression_path
+        receiver: (expression_path
           (identifier))
         (operator_arrow_ufcs)
-        (call_callee
+        callee: (call_callee
           (entity_name_function)))
       (bracket_rbrace))))
 
@@ -11995,10 +12011,10 @@ module source; fn use() { recur.<value }
     (expression_block
       (bracket_lbrace)
       (ufcs_expr
-        (call_callee
+        callee: (call_callee
           (entity_name_function))
         (operator_arrow_ufcs)
-        (expression_path
+        receiver: (expression_path
           (identifier)))
       (bracket_rbrace))))
 

@@ -13,8 +13,8 @@ import library/core(
 , some
 , then
 );
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import library/option(
 , cat_options
 , filter
@@ -53,7 +53,7 @@ fn show_opt[A](label: String, m: Option(A), render: A -> String) {
 fn show_opt_i32(label: String, m: Option(I32)) { show_opt(label, m, int_to_string) }
 
 fn render_sum(value: I32 | .) -> String {
-  match! value {
+  match(value) {
     (.(n: I32) { int_to_string(n) }, .(_unit: .) { "unit" })
   }
 }
@@ -115,8 +115,8 @@ pub fn main() {
   let render_unit = .(_unit: .) -> String { "unit" };
   show_opt("some(Unit)", some(()), render_unit);
   show_opt("none(Unit)", none(.), render_unit);
-  show_opt("some(nested number)", some(widen_sum!(7, I32 | .)), render_sum);
-  show_opt("some(nested unit)", some(widen_sum!((), I32 | .)), render_sum);
+  show_opt("some(nested number)", some(widen_sum(7, I32 | .)), render_sum);
+  show_opt("some(nested unit)", some(widen_sum((), I32 | .)), render_sum);
   show_opt("none(nested)", none(I32 | .), render_sum);
   let .(unit_options: List(Option(.))) = [* some(()), none(.) *];
   show(

@@ -5,8 +5,6 @@
 /// check the collector by hand.
 module gc/report;
 
-import elab/control(if);
-import elab/match(match);
 import gc/compact(Plan);
 import gc/compact({forward_table});
 import gc/heap(field_count, field_slot, fold_fields, fold_objects, tag_at, tag_name, top);
@@ -29,7 +27,9 @@ import gc/verify(
 , {verified}
 );
 import gc/verify(Audit, Broken, Verdict, Verified);
-import testapi(Array, I32, String, default Bool);
+import macros/control(macro if);
+import macros/match(macro match);
+import testapi(Array, I32, default Bool, default String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/fmt(int_to_string);
@@ -56,7 +56,7 @@ fn counted(label: String, value: I32) { labeled(label, num(value)) }
 /// index, so the list carries whether anything has been appended yet.
 fn append(list: Bool & String, separator: String, item: String) -> Bool & String {
   let .(empty: Bool, text: String) = list;
-  let lead = if! empty { "" } else { separator };
+  let lead = if(empty) { "" } else { separator };
   (.f, text.>cat(lead).>cat(item))
 }
 
@@ -68,7 +68,7 @@ fn fields_text(cells: Array(I32), addr: I32) -> String {
   , addr
   , .(list, index) {
       let field =
-        match! field_slot(cells, addr, index) {
+        match(field_slot(cells, addr, index)) {
           (.(p: Ptr) { cat("*", num(p.?{ptr})) }, .(v: Imm) { num(v.?{imm}) })
         };
       append(list, ", ", field)
@@ -99,8 +99,8 @@ pub fn print_heap(title: String, cells: Array(I32)) {
 }
 
 rec(loop) fn addrs_text(addrs: Array(I32), index: I32, text: String) -> String {
-  if! int_lt(index, array_len(addrs)) {
-    let separator = if! int_eq(index, 0) { "" } else { " " };
+  if(int_lt(index, array_len(addrs))) {
+    let separator = if(int_eq(index, 0)) { "" } else { " " };
     recur addrs_text(
     , addrs
     , add_i32(index, 1)
@@ -119,7 +119,7 @@ fn marked_list(cells: Array(I32), marks: Array(Bool), wanted: Bool) -> String {
   list_text(fold_objects(
   , cells
   , .(list, addr) {
-      if! bool_eq(array_get(marks, addr), wanted) { append(list, " ", at(addr)) } else { list }
+      if(bool_eq(array_get(marks, addr), wanted)) { append(list, " ", at(addr)) } else { list }
     }
   , (.t, "")
   ))
@@ -155,7 +155,7 @@ pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) {
   fold_objects(
   , cells
   , .(_unit, addr) {
-      if! array_get(marks, addr) {
+      if(array_get(marks, addr)) {
         line("  ".>cat(at(addr)).>cat(" -> ").>cat(at(array_get(forward, addr))))
       } else {
         ()
@@ -173,7 +173,7 @@ pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) {
 
 fn reached_text(report: Audit) -> String {
   let reachable = report.?{reachable};
-  match! reachable {
+  match(reachable) {
     (
     , .(count: I32) { num(count).>cat(" of ").>cat(num(report.?{expected_live})) }
     , .(_untraversed: .) { "not traversed (unsound pointers)" }
@@ -191,7 +191,7 @@ fn print_audit(report: Audit) {
 
 pub fn print_verify(verdict: Verdict) {
   line("-- verify --");
-  match! verdict {
+  match(verdict) {
     (
     , .(sound: Verified) { print_audit(sound.?{verified}); labeled("verdict", "heap verified") }
     , .(damaged: Broken) { print_audit(damaged.?{broken}); labeled("verdict", "heap broken") }

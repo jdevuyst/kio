@@ -1,8 +1,8 @@
 module petri/model;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import queue/list/core as lists;
 import queue/list/list as traversal;
 import testapi(I32, String, default Bool);
@@ -21,11 +21,11 @@ pub labels Net = {
 };
 
 pub rec(loop) fn equal(left: Marking, right: Marking) -> Bool {
-  match! lists.uncons(left) {
+  match(lists.uncons(left)) {
     .(x: I32, xs: Marking) {
-      match! lists.uncons(right) {
+      match(lists.uncons(right)) {
         .(y: I32, ys: Marking) {
-          if! arithmetic.eq_i32(x, y) { recur equal(xs, ys) } else { .f }
+          if(arithmetic.eq_i32(x, y)) { recur equal(xs, ys) } else { .f }
         };
         .() { .f }
       }
@@ -41,33 +41,29 @@ rec(loop) fn fire_places(
 , bound: I32
 , reversed: Marking
 ) -> Marking | . {
-  match! lists.uncons(tokens) {
+  match(lists.uncons(tokens)) {
     .(token: I32, rest: Marking) {
-      match!((lists.uncons(needs), lists.uncons(gives))) {
+      match((lists.uncons(needs), lists.uncons(gives))) {
         .((need: I32, needs_rest: Marking), (give: I32, gives_rest: Marking)) {
           let after = arithmetic.add_i32(arithmetic.sub_i32(token, need), give);
-          if! arithmetic.leq_i32(need, token) {
-            if! arithmetic.leq_i32(after, bound) {
+          if(arithmetic.leq_i32(need, token)) {
+            if(arithmetic.leq_i32(after, bound)) {
               recur fire_places(rest, needs_rest, gives_rest, bound, lists.cons(after, reversed))
             } else {
-              ().>widen_sum!
+              ().>widen_sum
             }
           } else {
-            ().>widen_sum!
+            ().>widen_sum
           }
         };
-        .() { ().>widen_sum! }
+        .() { ().>widen_sum }
       }
     };
     .() {
-      if! traversal.null(needs) {
-        if! traversal.null(gives) {
-          traversal.reverse(reversed).>widen_sum!
-        } else {
-          ().>widen_sum!
-        }
+      if(traversal.null(needs)) {
+        if(traversal.null(gives)) { traversal.reverse(reversed).>widen_sum } else { ().>widen_sum }
       } else {
-        ().>widen_sum!
+        ().>widen_sum
       }
     }
   }
@@ -84,7 +80,7 @@ pub fn fire(net: Net, transition: Transition, marking: Marking) -> Marking | . {
 }
 
 pub fn enabled(net: Net, transition: Transition, marking: Marking) -> Bool {
-  match! fire(net, transition, marking) {
+  match(fire(net, transition, marking)) {
     .(_next: Marking) { .t };
     .() { .f }
   }
@@ -95,7 +91,7 @@ pub fn completed(net: Net, marking: Marking) -> Bool { equal(marking, net.?{term
 pub fn enabled_count(net: Net, marking: Marking) -> I32 {
   traversal.foldl(
   , .(count: I32, transition: Transition) {
-      if! enabled(net, transition, marking) { arithmetic.add_i32(count, 1) } else { count }
+      if(enabled(net, transition, marking)) { arithmetic.add_i32(count, 1) } else { count }
     }
   , 0
   , net.?{transitions}

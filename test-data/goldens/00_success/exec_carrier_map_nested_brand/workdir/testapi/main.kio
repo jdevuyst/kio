@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/match(match);
+import macros/match(macro match);
 // Exercises a host `loop` whose STATE is a nested higher-kinded
 // carrier: `Box(I32, I32)` is a label-newtype wrapping an ALIAS
 // `Trail(k, v)` over a 2-type-parameter RECURSIVE newtype `Crumbs(k, v)`
@@ -10,7 +10,7 @@ import elab/match(match);
 // sum-of-products mentioning both binders — the combination (recursion +
 // alias indirection + structured sum payload) that an erased carrier
 // must round-trip transparently across the loop.
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(default I32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -31,12 +31,12 @@ type Trail[K][V] = Crumbs(K, V);
 labels { box[K][V]: Trail(K, V) };
 
 fn nil_c[K][V]() -> Crumbs(K, V) {
-  {crumbs = widen_sum!((), . | ((Left(K, V) | Right(K, V)) & Crumbs(K, V)))}
+  {crumbs = widen_sum((), . | ((Left(K, V) | Right(K, V)) & Crumbs(K, V)))}
 }
 
 fn cons_l[K][V](key: K, val: V, t: Crumbs(K, V)) -> Crumbs(K, V) {
-  {crumbs = widen_sum!(
-  , (widen_sum!({left = (key, val)}, Left(K, V) | Right(K, V)), t)
+  {crumbs = widen_sum(
+  , (widen_sum({left = (key, val)}, Left(K, V) | Right(K, V)), t)
   , . | ((Left(K, V) | Right(K, V)) & Crumbs(K, V))
   )}
 }
@@ -48,21 +48,21 @@ fn boxed[K][V](t: Trail(K, V)) -> Box(K, V) { {box = t} }
 fn head_key(b: Box(I32, I32)) -> I32 {
   loop(
   , .(cur: Box(I32, I32)) -> Box(I32, I32) | I32 {
-      match! Crumbs.get(I32, I32, Box.get(I32, I32, cur)) {
+      match(Crumbs.get(I32, I32, Box.get(I32, I32, cur))) {
         (
         , .(cell: (Left(I32, I32) | Right(I32, I32)) & Crumbs(I32, I32)) {
-            match! cell {
+            match(cell) {
               .(arm: Left(I32, I32) | Right(I32, I32), _rest: Crumbs(I32, I32)) {
-                match! arm {
+                match(arm) {
                   (
                   , .(l: Left(I32, I32)) {
-                      match! Left.get(I32, I32, l) {
-                        .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
+                      match(Left.get(I32, I32, l)) {
+                        .(k: I32, _v: I32) { widen_sum(k, Box(I32, I32) | I32) }
                       }
                     }
                   , .(r: Right(I32, I32)) {
-                      match! Right.get(I32, I32, r) {
-                        .(k: I32, _v: I32) { widen_sum!(k, Box(I32, I32) | I32) }
+                      match(Right.get(I32, I32, r)) {
+                        .(k: I32, _v: I32) { widen_sum(k, Box(I32, I32) | I32) }
                       }
                     }
                   )
@@ -70,7 +70,7 @@ fn head_key(b: Box(I32, I32)) -> I32 {
               }
             }
           }
-        , .(_empty: .) { widen_sum!(0, Box(I32, I32) | I32) }
+        , .(_empty: .) { widen_sum(0, Box(I32, I32) | I32) }
         )
       }
     }

@@ -85,9 +85,9 @@ fn named_entry_permutations_preserve_canonical_output() {
             suffix: "",
         },
         Permutations {
-            name: "elaborator fields",
+            name: "macro fields",
             kind: Kind::Module,
-            prefix: "module app; elab make: . { ".into(),
+            prefix: "module app; macro make: . { ".into(),
             entries: vec!["captures (first, second);", "impl(fills) run;"],
             suffix: " };",
         },
@@ -359,15 +359,15 @@ fn unordered_entries_still_require_unique_compatible_fields() {
         ),
         (
             Kind::Module,
-            "module app; elab make: . { captures (first); };",
+            "module app; macro make: . { captures (first); };",
         ),
         (
             Kind::Module,
-            "module app; elab make: . { captures (first); captures (second); impl run; };",
+            "module app; macro make: . { captures (first); captures (second); impl run; };",
         ),
         (
             Kind::Module,
-            "module app; elab make: . { impl run; impl(fills) other; };",
+            "module app; macro make: . { impl run; impl(fills) other; };",
         ),
         (
             Kind::Module,

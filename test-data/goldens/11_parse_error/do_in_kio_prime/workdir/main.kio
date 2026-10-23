@@ -5,7 +5,7 @@ module do_in_kio_prime/main;
 fn bind[A][B](m: A, k: A -> B) -> B { k(m) }
 
 fn run() {
-  do! bind {
+  do (bind) {
     let _x <- ();
     ()
   }

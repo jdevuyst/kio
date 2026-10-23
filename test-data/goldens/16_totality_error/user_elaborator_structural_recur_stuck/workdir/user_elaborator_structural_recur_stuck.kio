@@ -1,3 +1,0 @@
-module user_elaborator_structural_recur_stuck;
-
-host type String role(str);

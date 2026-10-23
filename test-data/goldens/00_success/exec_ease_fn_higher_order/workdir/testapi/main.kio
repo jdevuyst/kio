@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/algebraic_elaborators(ease);
-import elab/match(match);
+import macros/algebraic_macros(macro ease);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 
@@ -19,13 +19,13 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 // and `R-Widen-Sum` widens `A` into `A | B`.
 fn make_consumer() -> (A | B) -> . {
   .(x: A | B) -> . {
-    print(match! x {
+    print(match(x) {
       (.(a: A) { A.un_a(a) }, .(b: B) { B.un_b(b) })
     })
   }
 }
 
 pub fn main() {
-  let narrow_inner = ease!(make_consumer, . -> A -> .);
+  let narrow_inner = ease(make_consumer, . -> A -> .);
   narrow_inner()(A.mk_a("ease! higher order ok\n"))
 }

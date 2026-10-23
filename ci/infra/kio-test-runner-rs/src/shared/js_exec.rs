@@ -2043,7 +2043,7 @@ fn export_base_js_expr(protocol: RunnerProtocol, leaf: &str) -> String {
 }
 
 /// The export root for a testapi-conformed protocol (the fixed
-/// `testapi` namespace) or the elab POC (its own `elab` namespace),
+/// `testapi` namespace) or the macros POC (its own `macros` namespace),
 /// else `None` for the bulk goldens.
 fn testapi_export_root(protocol: RunnerProtocol) -> Option<String> {
     protocol.export_root()

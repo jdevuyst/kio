@@ -1,6 +1,6 @@
 module robot_vacuum_replay/render;
 
-import elab/match(match);
+import macros/match(macro match);
 import robot_vacuum_replay/command(
 , Charge_cmd
 , Clean_cmd
@@ -41,13 +41,13 @@ import testapi(String);
 import testapi/fmt(i32_to_string);
 
 fn direction_name(d: Direction) -> String {
-  match! d {
+  match(d) {
     (.(_n: North) { "N" }, .(_e: East) { "E" }, .(_s: South) { "S" }, .(_w: West) { "W" })
   }
 }
 
 fn mode_name(m: Run_mode) -> String {
-  match! m {
+  match(m) {
     (
     , .(_docked: Docked) { "docked" }
     , .(_idle: Idle) { "idle" }
@@ -58,7 +58,7 @@ fn mode_name(m: Run_mode) -> String {
 }
 
 fn command_name(cmd: Command) -> String {
-  match! cmd {
+  match(cmd) {
     (
     , .(_cmd: Start_cmd) { "START" }
     , .(_cmd: Pause_cmd) { "PAUSE" }

@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/spine_elaborators(widen_sum);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -12,7 +12,7 @@ pub fn main() {
     , .
     , [A] A -> A
     , .(_state: .) -> . | ([A] A -> A) {
-        .[A](value: A) -> A { value }.>widen_sum!
+        .[A](value: A) -> A { value }.>widen_sum
       }
     , ()
     );

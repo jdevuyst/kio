@@ -1,0 +1,18 @@
+module testapi/main;
+
+import __comptime__;
+import helpers as a;
+import helpers(macro choose);
+import testapi/io(print);
+
+default type Bool = Comptime_bool;
+
+fn combine(_first: ., last: .) { last }
+
+op _ + _ { impl combine }
+
+pub fn main() {
+  a.f(()) + choose(.t) { () };
+  a.t(()) + choose(.f) { () };
+  print("macro qualified calls: ok\n")
+}

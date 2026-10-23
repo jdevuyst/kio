@@ -1,10 +1,10 @@
 module join/engine;
 
-import elab/control(if);
-import elab/match(match);
 import join/model as m;
 import list/core as core;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith as a;
 import testapi/iter(loop);
@@ -27,8 +27,8 @@ pub fn empty() -> m.State {
 }
 
 fn matches(left: m.Event, right: m.Event) -> Bool {
-  if! text.string_eq(left.?{m.key}, right.?{m.key}) {
-    if! a.leq_i32(a.sub_i32(left.?{m.time}, 2), right.?{m.time}) {
+  if(text.string_eq(left.?{m.key}, right.?{m.key})) {
+    if(a.leq_i32(a.sub_i32(left.?{m.time}, 2), right.?{m.time})) {
       a.leq_i32(right.?{m.time}, a.add_i32(left.?{m.time}, 3))
     } else {
       .f
@@ -44,11 +44,11 @@ rec(loop) fn probe(
 , from_left: Bool
 , pairs: core.List(m.Pair)
 ) -> core.List(m.Pair) {
-  match! core.uncons(others) {
+  match(core.uncons(others)) {
     .(other: m.Event, tail: core.List(m.Event)) {
-      let .(left, right) = if! from_left { (event, other) } else { (other, event) };
+      let .(left, right) = if(from_left) { (event, other) } else { (other, event) };
       let next =
-        if! matches(left, right) {
+        if(matches(left, right)) {
           core.cons({m.left_id = left.?{m.id}, m.right_id = right.?{m.id}}, pairs)
         } else {
           pairs
@@ -85,13 +85,13 @@ fn evict(state: m.State) -> m.State {
 }
 
 pub fn event(state: m.State, value: m.Event, from_left: Bool) -> m.State {
-  let watermark = if! from_left { state.?{m.left_watermark} } else { state.?{m.right_watermark} };
-  if! a.lt_i32(value.?{m.time}, watermark) {
+  let watermark = if(from_left) { state.?{m.left_watermark} } else { state.?{m.right_watermark} };
+  if(a.lt_i32(value.?{m.time}, watermark)) {
     state.!{m.late = a.add_i32(state.?{m.late}, 1)}
   } else {
-    let others = if! from_left { state.?{m.right} } else { state.?{m.left} };
+    let others = if(from_left) { state.?{m.right} } else { state.?{m.left} };
     let pairs = probe(value, others, from_left, state.?{m.pairs});
-    if! from_left {
+    if(from_left) {
       evict(state.!{
       , m.left = core.cons(value, state.?{m.left})
       , m.pairs
@@ -108,10 +108,10 @@ pub fn event(state: m.State, value: m.Event, from_left: Bool) -> m.State {
 }
 
 pub fn watermark(state: m.State, value: I32, from_left: Bool) -> m.State {
-  let current = if! from_left { state.?{m.left_watermark} } else { state.?{m.right_watermark} };
-  if! a.lt_i32(value, current) {
+  let current = if(from_left) { state.?{m.left_watermark} } else { state.?{m.right_watermark} };
+  if(a.lt_i32(value, current)) {
     state.!{m.regressed = a.add_i32(state.?{m.regressed}, 1)}
-  } else if! from_left {
+  } else if(from_left) {
     evict(state.!{m.left_watermark = value})
   } else {
     evict(state.!{m.right_watermark = value})

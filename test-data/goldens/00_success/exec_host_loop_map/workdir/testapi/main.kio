@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Int, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
@@ -12,9 +12,9 @@ import testapi/text(string_concat);
 // Cons-list of `a`.
 rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
 
 // Map step: state is `(processed_list_reversed, remaining_list)`.
 // Walks the input head-to-tail, prepending `f(head)` to the
@@ -31,12 +31,12 @@ fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum!((x, xs), . | (A 
 fn map_step[A][B](f: A -> B, processed: List(B), remaining: List(A)) ->
   (List(B) & List(A)) | List(B)
    {
-  match! remaining.>List.un_list {
+  match(remaining.>List.un_list) {
     (
     , .(x: A, rest: List(A)) {
-        widen_sum!((push(f(x), processed), rest), (List(B) & List(A)) | List(B))
+        widen_sum((push(f(x), processed), rest), (List(B) & List(A)) | List(B))
       }
-    , .(_empty: .) { widen_sum!(processed, (List(B) & List(A)) | List(B)) }
+    , .(_empty: .) { widen_sum(processed, (List(B) & List(A)) | List(B)) }
     )
   }
 }
@@ -46,7 +46,7 @@ fn map_reverse[A][B](f: A -> B, xs: List(A)) -> List(B) {
   , List(B) & List(A)
   , List(B)
   , .(state: List(B) & List(A)) -> (List(B) & List(A)) | List(B) {
-      match! state {
+      match(state) {
         .(processed: List(B), remaining: List(A)) { map_step(f, processed, remaining) }
       }
     }
@@ -64,18 +64,18 @@ fn map_reverse[A][B](f: A -> B, xs: List(A)) -> List(B) {
 // rendered head; on subsequent cons cells we append ","-then-
 // rendered. A `Bool` flag would normally drive the "first"
 // case, but we encode it as `accumulator == ""` indirectly via
-// the `match!` clause structure — instead, accept that the
+// the `match` clause structure — instead, accept that the
 // first element gets prepended with "," and trim it on exit.
 fn join_step(processed: String, remaining: List(Int)) -> (String & List(Int)) | String {
-  match! remaining.>List.un_list {
+  match(remaining.>List.un_list) {
     (
     , .(x: Int, rest: List(Int)) {
-        widen_sum!(
+        widen_sum(
         , (string_concat(processed, string_concat(",", int_to_string(x))), rest)
         , (String & List(Int)) | String
         )
       }
-    , .(_empty: .) { widen_sum!(processed, (String & List(Int)) | String) }
+    , .(_empty: .) { widen_sum(processed, (String & List(Int)) | String) }
     )
   }
 }
@@ -85,7 +85,7 @@ fn join_csv(xs: List(Int)) -> String {
   , String & List(Int)
   , String
   , .(state: String & List(Int)) -> (String & List(Int)) | String {
-      match! state {
+      match(state) {
         .(processed: String, remaining: List(Int)) { join_step(processed, remaining) }
       }
     }

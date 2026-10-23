@@ -151,7 +151,7 @@ fn partial_as_pattern_local_rejects_local_forall_hole() {
 
 #[test]
 fn partial_monadic_do_unary_rejects_local_forall_hole() {
-    let source = r#"module main; import sequence(do);
+    let source = r#"module main; import sequence(macro do);
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
         fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
@@ -159,7 +159,7 @@ fn partial_monadic_do_unary_rejects_local_forall_hole() {
         }
         host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
         fn partial() -> Box(.) {
-          do! box_bind {
+          do (box_bind) {
             let .(function: [Do_bound] _) <- boxed_polymorphic(());
             box_pure(())
           }
@@ -174,7 +174,7 @@ fn partial_monadic_do_unary_rejects_local_forall_hole() {
 
 #[test]
 fn partial_monadic_do_pattern_rejects_local_forall_hole() {
-    let source = r#"module main; import sequence(do);
+    let source = r#"module main; import sequence(macro do);
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
         fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
@@ -182,7 +182,7 @@ fn partial_monadic_do_pattern_rejects_local_forall_hole() {
         }
         host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
         fn partial() -> Box(.) {
-          do! box_bind {
+          do (box_bind) {
             let .((function: [Do_pattern] _)) <- boxed_polymorphic(());
             box_pure(())
           }
@@ -325,7 +325,7 @@ fn alias_root_as_pattern_local_rejects_materialized_forall_hole() {
 
 #[test]
 fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
-    let source = r#"module main; import sequence(do);
+    let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_alias_bound] Slot -> Do_alias_bound;
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
@@ -334,7 +334,7 @@ fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
         }
         host fn boxed_wrapped(_token: .) -> Box(Wrap(.));
         fn partial() -> Box(.) {
-          do! box_bind {
+          do (box_bind) {
             let .(function: Wrap(_)) <- boxed_wrapped(());
             box_pure(())
           }
@@ -349,7 +349,7 @@ fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
 
 #[test]
 fn alias_root_monadic_do_pattern_rejects_materialized_forall_hole() {
-    let source = r#"module main; import sequence(do);
+    let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_pattern_alias_bound] Slot -> Do_pattern_alias_bound;
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
         fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
@@ -358,7 +358,7 @@ fn alias_root_monadic_do_pattern_rejects_materialized_forall_hole() {
         }
         host fn boxed_wrapped(_token: .) -> Box(Wrap(.));
         fn partial() -> Box(.) {
-          do! box_bind {
+          do (box_bind) {
             let .((function: Wrap(_))) <- boxed_wrapped(());
             box_pure(())
           }

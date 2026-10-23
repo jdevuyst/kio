@@ -1,16 +1,16 @@
 /// Exercises direct arrow-result chains at the loader's public-type boundary.
 module testapi/main;
 
-import elab/match(match);
 import loader as l;
 import loader/scan as scan;
+import macros/match(macro match);
 import testapi as t;
 import testapi/io as io;
 import testapi/text as text;
 
 fn show(label: t.String, source: t.String) {
   let result =
-    match! l.un_load_outcome(scan.load_package(source)) {
+    match(l.un_load_outcome(scan.load_package(source))) {
       (
       , .(_image: l.Lr_image) { "loaded"(t.String) }
       , .(diag: l.Lr_diag) { l.diag_message(l.Lr_diag.get(diag)) }

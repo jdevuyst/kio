@@ -1,0 +1,14 @@
+module testapi/main;
+
+import helpers(macro block, macro let, macro recur);
+import testapi/io(print);
+
+fn check(value: .) {
+  let(value) { () };
+  recur(value) { () };
+  (block {
+    .(item: .) { item }
+  })(())
+}
+
+pub fn main() { check(()); print("grouped macro result: ok\n") }

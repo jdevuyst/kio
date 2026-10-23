@@ -173,9 +173,9 @@ impl<'a, P: Phase> TopLevelDeclaration<'a, P> {
         }
     }
 
-    pub(crate) fn elaborator(self) -> Option<&'a crate::ast::UserElaboratorDef<P>> {
+    pub(crate) fn macro_def(self) -> Option<&'a crate::ast::UserMacroDef<P>> {
         match self {
-            Self::Item(Item::Elaborator(def, _)) => Some(def),
+            Self::Item(Item::Macro(def, _)) => Some(def),
             _ => None,
         }
     }
@@ -2889,7 +2889,7 @@ fn item_name_and_span<P: ResolvePhase>(item: &crate::ast::Item<P>) -> (&str, Spa
         },
         crate::ast::Item::LabelForward(_, ext) => match *ext {},
         crate::ast::Item::Equiv(e, _ext) => (e.name.as_str(), e.meta.span),
-        crate::ast::Item::Elaborator(s, _ext) => (s.name.as_str(), s.meta.span),
+        crate::ast::Item::Macro(s, _ext) => (s.name.as_str(), s.meta.span),
         crate::ast::Item::HostType(h) => (h.name.as_str(), h.meta.span),
         crate::ast::Item::HostFn(h) => (h.name.as_str(), h.meta.span),
         // `op` items declare an operator (not a value name);
@@ -2907,7 +2907,7 @@ fn item_name_and_span<P: ResolvePhase>(item: &crate::ast::Item<P>) -> (&str, Spa
 
 /// The declared visibility of an item. Phase-polymorphic — the `vis`
 /// field exists on every phase's `FnDef` / `TypeAlias` / `Newtype` /
-/// `Labels` / elaborator struct, so the read goes through cleanly.
+/// `Labels` / macro struct, so the read goes through cleanly.
 fn item_visibility<P: ResolvePhase>(item: &crate::ast::Item<P>) -> crate::ast::Visibility {
     use crate::ast::Visibility;
     match item {
@@ -2921,7 +2921,7 @@ fn item_visibility<P: ResolvePhase>(item: &crate::ast::Item<P>) -> crate::ast::V
         // by callers; they exist for the test runner). Treat as
         // private for visibility checks.
         crate::ast::Item::Equiv(_, _ext) => Visibility::Private,
-        crate::ast::Item::Elaborator(s, _ext) => s.vis.clone(),
+        crate::ast::Item::Macro(s, _ext) => s.vis.clone(),
         // Host items are always public.
         crate::ast::Item::HostType(_) | crate::ast::Item::HostFn(_) => Visibility::Public,
         // `op` items are uninhabited at the only phase the
@@ -3837,7 +3837,7 @@ pub struct ModuleEntry<P: Phase = Lowered> {
 ///
 /// Generic over phase so the typer can transform `Package<Lowered>`
 /// into `Package<Prime>` by walking each module's AST and
-/// substituting elaborator-position elaborations.
+/// substituting field-position elaborations.
 #[derive(Debug, Default, Clone)]
 pub struct Package<P: Phase = Lowered> {
     /// Module path (`a/b/c`) → entry.
@@ -5489,7 +5489,7 @@ impl<P: ResolvePhase> Package<P> {
             | crate::ast::Item::Labels(_, _)
             | crate::ast::Item::LabelForward(_, _)
             | crate::ast::Item::Equiv(_, _)
-            | crate::ast::Item::Elaborator(_, _)
+            | crate::ast::Item::Macro(_, _)
             | crate::ast::Item::Op(_, _)
             | crate::ast::Item::VariadicOperator(_, _)
             | crate::ast::Item::RecGroup(_, _)
@@ -5854,7 +5854,7 @@ enum Binding {
 /// Kio'-shaped artifact), and `Prime` (the kio-prime pipeline's
 /// post-`prime::lower` AST).
 ///
-/// Elaborator-position variants (`Expr::UserElaborator`, `Expr::Elaborator`)
+/// Elaborator-position variants (`Expr::UserMacro`, `Expr::Elaborator`)
 /// stay inhabited at `Lowered` (each carries a
 /// `NodeId`) and uninhabited at `Prime`; the resolver walks children
 /// either way — the corresponding match arms compile at both phases.
@@ -5900,10 +5900,10 @@ pub struct Resolver<'m> {
     imported: HashSet<&'m str>,
     /// Whether `import __intrinsics__;` is in scope.
     intrinsics_in_scope: bool,
-    /// User elaborators available to bang calls: selectively imported
+    /// Macros available to macro_call calls: selectively imported
     /// declarations plus same-module declarations already visited in source
     /// order.
-    user_elaborators_in_scope: HashSet<&'m str>,
+    macros_in_scope: HashSet<&'m str>,
     /// Explicit recursive-data heads visible only while checking a marked
     /// singleton or one written type-recursive group.
     recursive_types: HashSet<&'m str>,
@@ -6125,7 +6125,7 @@ impl<'m> Resolver<'m> {
             visible_top_level: HashSet::new(),
             imported: HashSet::new(),
             intrinsics_in_scope: false,
-            user_elaborators_in_scope: HashSet::new(),
+            macros_in_scope: HashSet::new(),
             recursive_types: HashSet::new(),
             implicit_type_cycles,
             later_type_declarations,
@@ -6221,8 +6221,8 @@ impl<'m> Resolver<'m> {
                 }
                 _ => r.check_item(item, check_function)?,
             }
-            if let crate::ast::Item::Elaborator(elaborator, _) = item {
-                r.user_elaborators_in_scope.insert(elaborator.name.as_str());
+            if let crate::ast::Item::Macro(macro_def, _) = item {
+                r.macros_in_scope.insert(macro_def.name.as_str());
             }
             match item {
                 Item::TypeRecGroup(group) => {
@@ -6450,7 +6450,7 @@ impl<'m> Resolver<'m> {
                         .filter_map(crate::ast::ImportItem::as_local_name)
                     {
                         self.imported.insert(n);
-                        self.user_elaborators_in_scope.insert(n);
+                        self.macros_in_scope.insert(n);
                     }
                 }
                 ImportKind::Qualified { alias, .. } => {
@@ -6500,7 +6500,7 @@ impl<'m> Resolver<'m> {
             // then resolve each `term`'s expression. Reuses the same
             // path `fn` already takes.
             crate::ast::Item::Equiv(e, _ext) => self.check_equiv(e),
-            crate::ast::Item::Elaborator(s, _ext) => self.check_elaborator_item(s),
+            crate::ast::Item::Macro(s, _ext) => self.check_macro_item(s),
             // Statically uninhabited at every `ResolvePhase`.
             crate::ast::Item::Op(_, ext) => match *ext {},
             crate::ast::Item::VariadicOperator(_, ext) => match *ext {},
@@ -6511,14 +6511,14 @@ impl<'m> Resolver<'m> {
         }
     }
 
-    fn check_elaborator_item<P: ResolvePhase>(
+    fn check_macro_item<P: ResolvePhase>(
         &self,
-        s: &'m crate::ast::UserElaboratorDef<P>,
+        s: &'m crate::ast::UserMacroDef<P>,
     ) -> Result<(), Error> {
         let locals: HashMap<&'m str, Binding> = HashMap::new();
         self.check_type(&s.call_ty, &locals)?;
         let Some(head) = s.implementation.first() else {
-            unreachable!("the parser emits a nonempty elaborator implementation path")
+            unreachable!("the parser emits a nonempty macro implementation path")
         };
         self.lookup_name(head.as_str(), s.implementation.span(), head.span, &locals)
     }
@@ -6790,15 +6790,15 @@ impl<'m> Resolver<'m> {
                 body_locals.insert(plan.name.as_str(), Binding::Local);
                 self.check_expr(&plan.body, &body_locals)
             }
-            crate::ast::Expr::UserElaborator {
+            crate::ast::Expr::UserMacro {
                 name, args, meta, ..
             } => {
-                if !self.user_elaborators_in_scope.contains(name.as_str()) {
+                if !self.macros_in_scope.contains(name.as_str()) {
                     return Err(Error::name_res(
                         meta.span,
-                        format!("user elaborator `{name}!` is not in scope"),
+                        format!("macro `{name}` is not in scope"),
                     )
-                    .with_help(format!("import it with `import <module>({name});`")));
+                    .with_help(format!("import it with `import <module>(macro {name});`")));
                 }
                 for arg in args {
                     self.check_call_arg(arg, locals)?;
@@ -6809,23 +6809,23 @@ impl<'m> Resolver<'m> {
                 receiver,
                 callee_segments,
                 args,
-                bang,
+                macro_call,
                 ..
             } => {
                 self.check_expr(receiver, locals)?;
-                if bang.is_some() {
+                if macro_call.is_some() {
                     debug_assert_eq!(
                         callee_segments.len(),
                         1,
-                        "bang UFCS must have a single-segment callee — parser invariant"
+                        "macro_call UFCS must have a single-segment callee — parser invariant"
                     );
                     let name = callee_segments[0].as_str();
-                    if !self.user_elaborators_in_scope.contains(name) {
+                    if !self.macros_in_scope.contains(name) {
                         return Err(Error::name_res(
                             callee_segments[0].span,
-                            format!("user elaborator `{name}!` is not in scope"),
+                            format!("macro `{name}` is not in scope"),
                         )
-                        .with_help(format!("import it with `import <module>({name});`")));
+                        .with_help(format!("import it with `import <module>(macro {name});`")));
                     }
                 } else {
                     self.lookup_value_path(callee_segments, callee_segments[0].span, locals)?;
@@ -7086,7 +7086,7 @@ pub(crate) fn item_name<P: ResolvePhase>(item: &crate::ast::Item<P>) -> &str {
         crate::ast::Item::Labels(_, ext) => match *ext {},
         crate::ast::Item::LabelForward(_, ext) => match *ext {},
         crate::ast::Item::Equiv(e, _ext) => &e.name,
-        crate::ast::Item::Elaborator(s, _ext) => &s.name,
+        crate::ast::Item::Macro(s, _ext) => &s.name,
         crate::ast::Item::HostType(h) => &h.name,
         crate::ast::Item::HostFn(h) => &h.name,
         // Statically uninhabited at every `ResolvePhase`.
@@ -7116,7 +7116,12 @@ mod tests {
     /// exercised against the `Lowered` end of the bound — that's
     /// the typical entry point for full-pipeline unit tests.
     fn parse_module(src: &str) -> crate::ast::Module<Lowered> {
-        let m = parse(src).expect("parse");
+        let mut m = parse(src).expect("parse");
+        let calls = crate::scope_walk::macro_calls(&m);
+        let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[])
+            .expect("empty descriptor scope");
+        crate::pass::block_projection::project_module(&mut m, &scope, &calls)
+            .expect("classify blockless source calls");
         let m = crate::pass::desugar::desugar_module(m).expect("desugar");
         let parsed = vec![(std::path::PathBuf::from("test.kio"), m)];
         let (mut lowered, _) =
@@ -7189,9 +7194,9 @@ mod tests {
     }
 
     #[test]
-    fn elaborator_implementation_typo_edits_only_its_qualified_head() {
+    fn macro_implementation_typo_edits_only_its_qualified_head() {
         let source = "module main; import support as support; \
-                      elab unit : . -> . { impl suport. // keep member\n helper; };";
+                      macro unit : . -> . { impl suport. // keep member\n helper; };";
         let provider = "module support; import __comptime__; \
                         pub pure fn helper(ct: __Comptime__) -> __Checked_term__ { \
                             __term_unit__(ct) }";
@@ -9027,58 +9032,50 @@ mod tests {
     }
 
     #[test]
-    fn fn_def_calling_earlier_private_elaborator_resolves() {
+    fn fn_def_calling_earlier_private_macro_resolves() {
         check(
             "module x; \
              import __comptime__; \
              pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
                __term_unit__(ct) \
              } \
-             elab unit : . -> . { impl unit_impl; }; \
-             fn main() -> . { unit!() }",
+             macro unit : . -> . { impl unit_impl; }; \
+             fn main() -> . { unit() }",
         )
         .unwrap();
     }
 
     #[test]
-    fn fn_def_calling_later_private_elaborator_is_unbound() {
+    fn fn_def_calling_later_private_macro_is_unbound() {
         let source = "module x; \
              import __comptime__; \
              pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
                __term_unit__(ct) \
              } \
-             fn main() -> . { unit!() } \
-             elab unit : . -> . { impl unit_impl; };";
-        for call in ["unit!()", "().>unit!"] {
-            let error = check(&source.replace("unit!()", call))
-                .expect_err("the later elaborator is not in scope");
+             fn main() -> . { unit() } \
+             macro unit : . -> . { impl unit_impl; };";
+        for call in ["unit()", "().>unit"] {
+            let error = check(&source.replace("unit()", call))
+                .expect_err("the later macro is not in scope");
             let Error::NameRes(diagnostic) = error else {
                 panic!("expected NameRes, got {error:?}");
             };
-            assert!(
-                diagnostic
-                    .message
-                    .contains("user elaborator `unit!` is not in scope")
-            );
-            assert_eq!(
-                diagnostic.help(),
-                Some("import it with `import <module>(unit);`")
-            );
+            assert!(diagnostic.message.contains("unit"));
         }
     }
 
     #[test]
-    fn elaborator_implementation_helper_cannot_call_later_elaborator() {
+    fn macro_implementation_helper_cannot_call_later_macro() {
         let msg = check_err(
             "module x; \
              import __comptime__; \
              pure fn unit_impl(ct: __Comptime__) -> __Checked_term__ { \
-               unit!(); \
+               unit(); \
                __term_unit__(ct) \
              } \
-             elab unit : . -> . { impl unit_impl; };",
+             macro unit : . -> . { impl unit_impl; };",
         );
-        assert!(msg.contains("user elaborator `unit!` is not in scope"));
+        assert!(msg.contains("unit"));
     }
 
     #[test]

@@ -52,5 +52,5 @@ build {
 
 bridge {
   dict;
-  elab/testapi
+  macros/testapi
 }

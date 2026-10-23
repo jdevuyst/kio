@@ -9,9 +9,9 @@
 //! polymorphism, the six type-form intrinsics plus
 //! `__if_then_else__`, explicitly recursive singleton newtypes and mutual type
 //! groups, multi-module
-//! packages) and the surface forms `if!` blocks, tuple literals,
-//! `{label = e}` label-value sugar, `match!`, the algebraic / spine
-//! elaborators, user-defined `elab` declarations/calls, and operators.
+//! packages) and the surface forms `if` blocks, tuple literals,
+//! `{label = e}` label-value sugar, `match`, the algebraic / spine
+//! macros, user-defined `macro` declarations/calls, and operators.
 //! `Program::uses_surface` records surface forms in the generated function body;
 //! `Program::surface_mode` controls their package-level supporting declarations.
 //! `--prime-only` restricts emission to the Kio' core.

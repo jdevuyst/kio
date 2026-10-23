@@ -2,8 +2,8 @@
 /// search statistics.
 module sudoku/report;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import sudoku/geometry as geo;
 import sudoku/model(
 , Exhausted
@@ -40,15 +40,15 @@ fn field_i32(label: String, value: I32) { field(label, int_to_string(value)) }
 fn field_bool(label: String, value: Bool) { field(label, bool_to_string(value)) }
 
 fn digit_text(digit: I32) -> String {
-  if! num.is_zero(digit) { "." } else { int_to_string(digit) }
+  if(num.is_zero(digit)) { "." } else { int_to_string(digit) }
 }
 
 /// What follows a cell: a box rule after the third and sixth column, a
 /// plain gap inside a box, nothing at the end of the row.
 fn cell_gap(col: I32) -> String {
-  if! num.or_bool(num.eq_i32(col, 2), num.eq_i32(col, 5)) {
+  if(num.or_bool(num.eq_i32(col, 2), num.eq_i32(col, 5))) {
     " | "
-  } else if! num.eq_i32(col, sub_i32(geo.size(), 1)) {
+  } else if(num.eq_i32(col, sub_i32(geo.size(), 1))) {
     ""
   } else {
     " "
@@ -56,7 +56,7 @@ fn cell_gap(col: I32) -> String {
 }
 
 rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> String {
-  if! leq_i32(col, sub_i32(geo.size(), 1)) {
+  if(leq_i32(col, sub_i32(geo.size(), 1))) {
     let cell = digit_text(array_get(cells, geo.cell_at(row, col)));
     recur row_text(cells, row, add_i32(col, 1), cat3(text, cell, cell_gap(col)))
   } else {
@@ -65,7 +65,7 @@ rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> St
 }
 
 rec(loop) fn print_rows(cells: Array(I32), row: I32) {
-  if! leq_i32(row, sub_i32(geo.size(), 1)) {
+  if(leq_i32(row, sub_i32(geo.size(), 1))) {
     print(cat(row_text(cells, row, 0, "    "), "\n"));
     recur print_rows(cells, add_i32(row, 1))
   } else {
@@ -76,7 +76,7 @@ rec(loop) fn print_rows(cells: Array(I32), row: I32) {
 fn print_grid(cells: Array(I32)) { print_rows(cells, 0) }
 
 fn verdict_text(outcome: Outcome) -> String {
-  match! outcome {
+  match(outcome) {
     (
     , .(_ok: Solved) { "solved" }
     , .(_no: Unsolvable) { "unsolvable" }
@@ -100,7 +100,7 @@ fn print_refuted(givens: Array(I32), work: Work) {
 fn print_result(givens: Array(I32), work: Work, summary: Report) {
   field("  outcome: ", verdict_text(summary.?{verdict}));
   let verdict = summary.?{verdict};
-  match! verdict {
+  match(verdict) {
     (
     , .(_ok: Solved) { print_solved(givens, work) }
     , .(_no: Unsolvable) { print_refuted(givens, work) }

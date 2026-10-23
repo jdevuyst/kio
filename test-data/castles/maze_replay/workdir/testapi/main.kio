@@ -11,8 +11,8 @@
 /// the ledger, and whether the player escaped.
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import maze/replay(Ledger, bumps, escaped, moves, px, py, score, start_player, step);
 import maze/world(checksum, goal_x, goal_y);
 import testapi(I32, String, default Bool);
@@ -36,10 +36,10 @@ fn dims(w: I32, h: I32) -> String { cat(num(w), cat("x", num(h))) }
 /// EOF or unparseable input. The fixture's settings are well-formed, so
 /// the fallback only guards against a short or malformed fixture.
 fn read_int(fallback: I32) -> I32 {
-  match! read_ascii_line() {
+  match(read_ascii_line()) {
     (
     , .(s: String) {
-        match! string_to_int(s) {
+        match(string_to_int(s)) {
           (.(n: I32) { n }, .(_bad: .) { fallback })
         }
       }
@@ -51,9 +51,9 @@ fn read_int(fallback: I32) -> I32 {
 /// Replay up to `remaining` commands, reading one per line and threading
 /// the player through `maze/replay`'s pure `step`. Stops early at EOF.
 rec(loop) fn replay(seed: I32, w: I32, h: I32, remaining: I32, p: Ledger) -> Ledger {
-  if! leq_i32(remaining, 0) {
+  if(leq_i32(remaining, 0)) {
     p
-  } else match! read_ascii_line() {
+  } else match(read_ascii_line()) {
     (
     , .(cmd: String) { recur replay(seed, w, h, sub_i32(remaining, 1), step(seed, w, h, p, cmd)) }
     , .(_eof: .) { p }
@@ -62,7 +62,7 @@ rec(loop) fn replay(seed: I32, w: I32, h: I32, remaining: I32, p: Ledger) -> Led
 }
 
 fn yes_no(b: Bool) -> String {
-  if! b { "escaped" } else { "stranded" }
+  if(b) { "escaped" } else { "stranded" }
 }
 
 pub fn main() {

@@ -16,8 +16,8 @@
 /// ```
 module desk/op;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32, String);
 
 pub labels Binop =
@@ -32,23 +32,23 @@ pub labels Unop = { negate: . };
 
 pub labels Op = { binary: Binop } | { unary: Unop };
 
-pub fn plus_op() -> Binop { {plus=}.>widen_sum!(Binop) }
+pub fn plus_op() -> Binop { {plus=}.>widen_sum(Binop) }
 
-pub fn minus_op() -> Binop { {minus=}.>widen_sum!(Binop) }
+pub fn minus_op() -> Binop { {minus=}.>widen_sum(Binop) }
 
-pub fn times_op() -> Binop { {times=}.>widen_sum!(Binop) }
+pub fn times_op() -> Binop { {times=}.>widen_sum(Binop) }
 
-pub fn divide_op() -> Binop { {divide=}.>widen_sum!(Binop) }
+pub fn divide_op() -> Binop { {divide=}.>widen_sum(Binop) }
 
-pub fn modulo_op() -> Binop { {modulo=}.>widen_sum!(Binop) }
+pub fn modulo_op() -> Binop { {modulo=}.>widen_sum(Binop) }
 
-pub fn power_op() -> Binop { {power=}.>widen_sum!(Binop) }
+pub fn power_op() -> Binop { {power=}.>widen_sum(Binop) }
 
-pub fn negate_op() -> Unop { {negate=}.>widen_sum!(Unop) }
+pub fn negate_op() -> Unop { {negate=}.>widen_sum(Unop) }
 
-pub fn as_binary(b: Binop) -> Op { {binary = b}.>widen_sum!(Op) }
+pub fn as_binary(b: Binop) -> Op { {binary = b}.>widen_sum(Op) }
 
-pub fn as_unary(u: Unop) -> Op { {unary = u}.>widen_sum!(Op) }
+pub fn as_unary(u: Unop) -> Op { {unary = u}.>widen_sum(Op) }
 
 /// One row of the operator table: how tightly the operator binds, and how it
 /// is written. Both are read off the same row, so an operator's precedence and
@@ -56,7 +56,7 @@ pub fn as_unary(u: Unop) -> Op { {unary = u}.>widen_sum!(Op) }
 labels Facts = { rank: I32, sym: String };
 
 fn binop_facts(b: Binop) -> Facts {
-  match! b {
+  match(b) {
     (
     , .(_p: Plus) { {rank = 1, sym = "+"} }
     , .(_m: Minus) { {rank = 1, sym = "-"} }
@@ -69,13 +69,13 @@ fn binop_facts(b: Binop) -> Facts {
 }
 
 fn unop_facts(u: Unop) -> Facts {
-  match! u {
+  match(u) {
     .(_n: Negate) { {rank = 3, sym = "~"} }
   }
 }
 
 fn facts(op: Op) -> Facts {
-  match! op {
+  match(op) {
     (.(b: Binary) { binop_facts(b.?{binary}) }, .(u: Unary) { unop_facts(u.?{unary}) })
   }
 }
@@ -92,7 +92,7 @@ pub fn symbol(op: Op) -> String { facts(op).?{sym} }
 /// loop — so there is no unary case to answer for, and it does not belong in
 /// the shared row above.
 pub fn binop_right_assoc(b: Binop) -> Bool {
-  match! b {
+  match(b) {
     (
     , .(_p: Plus) { .f }
     , .(_m: Minus) { .f }

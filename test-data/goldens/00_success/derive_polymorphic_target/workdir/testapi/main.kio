@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -31,7 +31,7 @@ fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
 // derivation `render_pair(a, a, get_elem(), get_elem())` is polymorphic
 // in `a` — the function compiles to a single generic body.
 fn paired_render[A](get_elem: . -> Render(A)) -> Render(Pair(A, A)) {
-  derive!((render_pair, get_elem), Render(Pair(A, A)))
+  derive((render_pair, get_elem), Render(Pair(A, A)))
 }
 
 fn render_cell_string() -> Render(Cell(String)) {

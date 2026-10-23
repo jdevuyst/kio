@@ -37,7 +37,7 @@ pub op _ - __ { impl subtract }
 
 pure fn choose_impl(value: .) { value }
 
-pub elab choose : . -> . { impl choose_impl }
+pub macro choose : . -> . { impl choose_impl }
 
 host type Text role(str);
 

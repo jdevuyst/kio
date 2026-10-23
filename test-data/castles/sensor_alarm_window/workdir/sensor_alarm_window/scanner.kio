@@ -1,6 +1,6 @@
 module sensor_alarm_window/scanner;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/text as text;
@@ -8,7 +8,7 @@ import testapi/text as text;
 pub type Reading = String & String & String & I32 & String & String;
 
 fn both(left: Bool, right: Bool) -> Bool {
-  if! left { right } else { .f }
+  if(left) { right } else { .f }
 }
 
 fn same_i32_text(value: I32, expected: String) -> Bool {

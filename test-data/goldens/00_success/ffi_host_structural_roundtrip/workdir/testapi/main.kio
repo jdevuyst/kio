@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default I32);
 import testapi/arith(make_pair);
 import testapi/fmt(i32_to_string, sum_to_string);
@@ -9,7 +9,7 @@ import testapi/io(print);
 
 pub fn main() {
   let pair = make_pair(42, "host-pair"(String));
-  match! pair {
+  match(pair) {
     .(n: I32, s: String) {
       print(i32_to_string(n));
       print(" "(String));
@@ -17,8 +17,8 @@ pub fn main() {
       print("\n"(String))
     }
   };
-  print(sum_to_string(widen_sum!(7, I32 | String)));
+  print(sum_to_string(widen_sum(7, I32 | String)));
   print("\n"(String));
-  print(sum_to_string(widen_sum!("sum-host"(String), I32 | String)));
+  print(sum_to_string(widen_sum("sum-host"(String), I32 | String)));
   print("\n"(String))
 }

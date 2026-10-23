@@ -5,8 +5,8 @@
 /// never taken apart again.
 module sheet/addr;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import sheet/list(List, cons, nil, one);
 import sheet/list(append);
 import testapi(I32, String, default Bool);
@@ -24,7 +24,7 @@ pub fn row_of(a: Addr) -> I32 { let .(row: I32, _col: I32) = a.>Addr.parts; row 
 pub fn col_of(a: Addr) -> I32 { let .(_row: I32, col: I32) = a.>Addr.parts; col }
 
 pub fn addr_eq(a: Addr, b: Addr) -> Bool {
-  if! eq_i32(row_of(a), row_of(b)) { eq_i32(col_of(a), col_of(b)) } else { .f }
+  if(eq_i32(row_of(a), row_of(b))) { eq_i32(col_of(a), col_of(b)) } else { .f }
 }
 
 pub fn rows() -> I32 { 4 }
@@ -34,11 +34,11 @@ pub fn cols() -> I32 { 4 }
 pub fn cell_count() -> I32 { 16 }
 
 pub fn in_grid(a: Addr) -> Bool {
-  if! lt_i32(row_of(a), 0) {
+  if(lt_i32(row_of(a), 0)) {
     .f
-  } else if! leq_i32(rows(), row_of(a)) {
+  } else if(leq_i32(rows(), row_of(a))) {
     .f
-  } else if! lt_i32(col_of(a), 0) {
+  } else if(lt_i32(col_of(a), 0)) {
     .f
   } else {
     lt_i32(col_of(a), cols())
@@ -46,13 +46,13 @@ pub fn in_grid(a: Addr) -> Bool {
 }
 
 pub fn col_letter(col: I32) -> String {
-  if! eq_i32(col, 0) {
+  if(eq_i32(col, 0)) {
     "A"
-  } else if! eq_i32(col, 1) {
+  } else if(eq_i32(col, 1)) {
     "B"
-  } else if! eq_i32(col, 2) {
+  } else if(eq_i32(col, 2)) {
     "C"
-  } else if! eq_i32(col, 3) {
+  } else if(eq_i32(col, 3)) {
     "D"
   } else {
     "?"
@@ -68,9 +68,9 @@ pub fn addr_name(a: Addr) -> String {
 /// ready queue is seeded in it, a dirty set is reported in it — nothing
 /// downstream has to sort.
 rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
-  if! lt_i32(row, 0) {
+  if(lt_i32(row, 0)) {
     acc
-  } else if! lt_i32(col, 0) {
+  } else if(lt_i32(col, 0)) {
     recur addrs_onto(sub_i32(row, 1), sub_i32(cols(), 1), acc)
   } else {
     recur addrs_onto(row, sub_i32(col, 1), cons(make_addr(row, col), acc))
@@ -80,10 +80,10 @@ rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
 pub fn all_addrs() -> List(Addr) { addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil(Addr)) }
 
 pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(head: Addr, rest: List(Addr)) {
-        if! addr_eq(head, a) { .t } else { recur mem(rest, a) }
+        if(addr_eq(head, a)) { .t } else { recur mem(rest, a) }
       }
     , .(_empty: .) { .f }
     )
@@ -93,12 +93,12 @@ pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
 /// Precedent sets are built with this, so a formula naming the same cell
 /// twice still counts as one graph edge.
 pub fn add_unique(xs: List(Addr), a: Addr) -> List(Addr) {
-  if! mem(xs, a) { xs } else { append(xs, one(a)) }
+  if(mem(xs, a)) { xs } else { append(xs, one(a)) }
 }
 
 /// Union `ys` into `xs`, keeping the order the two lists already have.
 pub rec(loop) fn add_all(xs: List(Addr), ys: List(Addr)) -> List(Addr) {
-  match! ys.>List.unpack {
+  match(ys.>List.unpack) {
     (
     , .(head: Addr, rest: List(Addr)) { recur add_all(add_unique(xs, head), rest) }
     , .(_empty: .) { xs }

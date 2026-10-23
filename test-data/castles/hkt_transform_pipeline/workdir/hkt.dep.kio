@@ -4,10 +4,10 @@ source {
   path "../../../poc/hkt/workdir/hkt.pkg.kio"
 }
 
-rehost hkt/elab/testapi to testapi;
-rehost hkt/elab/testapi/fmt to testapi/fmt;
-rehost hkt/elab/testapi/io to testapi/io;
-rehost hkt/elab/testapi/text to testapi/text;
+rehost hkt/macros/testapi to testapi;
+rehost hkt/macros/testapi/fmt to testapi/fmt;
+rehost hkt/macros/testapi/io to testapi/io;
+rehost hkt/macros/testapi/text to testapi/text;
 rehost hkt/testapi to testapi;
 rehost hkt/testapi/fmt to testapi/fmt;
 rehost hkt/testapi/io to testapi/io;

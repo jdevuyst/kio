@@ -1,0 +1,7 @@
+dependency library;
+
+source {
+  path "../macros.pkg.kio"
+}
+
+rehost library/testapi to testapi;

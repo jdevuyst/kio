@@ -1346,7 +1346,7 @@ where
     Ok(())
 }
 
-/// Kind-check the callable spine of a named `fn` or `elab` declaration.
+/// Kind-check the callable spine of a named `fn` or `macro` declaration.
 ///
 /// A declaration may introduce type binders again after a value-parameter
 /// layer. Those binders are still declaration binders, so they may carry a
@@ -2030,7 +2030,7 @@ pub(crate) fn fresh_type_var_with(base: &str, is_taken: impl Fn(&str) -> bool) -
 
 /// Right-fold a list of types into a sum chain. An empty list
 /// returns the bottom type `!` (the sum identity); a single-element
-/// list returns the element directly. Used by the elaborator to
+/// list returns the element directly. Used by the macro to
 /// build up an `A | B | C | …` shape from a vector of branches.
 ///
 /// ```text

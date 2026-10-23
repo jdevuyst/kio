@@ -31,7 +31,7 @@ Emitters run at the **tail** of the pipeline (see [`kio-rs/src/pass/mod.rs`](../
 
 The Kio' emitter consumes validated, canonical `Prime` directly. A host emitter consumes `Routed`, whose computations came from that strict Kio' and have been structurally recovered, optimized, routed, and annotated. Consequences:
 
-- The surface-form boundary holds before the IR ever reaches an emitter — imported block calls such as `if!`/`else`, `scope!`, `do!`, and `match!`, tuple literals, other elab forms, and UFCS are all gone before Prime. Saturated, directly recoverable structural roots become `Enriched*` nodes. Residual applications — including partially applied and type-only application stages — and indirect uses remain generic through structural recovery and follow ordinary `Low*` routing. `__absurd__` has no structural form and receives its dedicated `LowAbsurdCall` route. An emitter never sees, and must never reintroduce, a surface-only form. (The headline rule is AGENTS.md § Universal rules — "Surface forms must not survive into Kio'"; the front-end side is [`ai/topics/surface-forms.md`](surface-forms.md), guarded by [`audit-surface-forms-survival`](../skills/audit-surface-forms-survival/SKILL.md).)
+- The surface-form boundary holds before the IR ever reaches an emitter — imported block calls such as `if`/`else`, `scope`, `do`, and `match`, tuple literals, other macro forms, and UFCS are all gone before Prime. Saturated, directly recoverable structural roots become `Enriched*` nodes. Residual applications — including partially applied and type-only application stages — and indirect uses remain generic through structural recovery and follow ordinary `Low*` routing. `__absurd__` has no structural form and receives its dedicated `LowAbsurdCall` route. An emitter never sees, and must never reintroduce, a surface-only form. (The headline rule is AGENTS.md § Universal rules — "Surface forms must not survive into Kio'"; the front-end side is [`ai/topics/surface-forms.md`](surface-forms.md), guarded by [`audit-surface-forms-survival`](../skills/audit-surface-forms-survival/SKILL.md).)
 - An emitter dispatches over the pre-classified `Expr::Low*` / `Expr::Enriched*` families rather than re-deriving call-site kinds or structural shape. Don't re-walk for shape the recovery passes already established.
 - `FnDef` / `FnExpr` canonical `Signature` groups are the sole authority for
   abstraction order. Type groups introduce one abstraction stage per binder;
@@ -237,7 +237,7 @@ and check peers by their actual evaluation mechanism, not their family label.
 
 Review host-stack growth beyond explicit recursion: ordinary binding and
 expression sequences, immediately invoked closures, adapters and
-elab-generated continuations can also accumulate frames. Distinguish
+macro-generated continuations can also accumulate frames. Distinguish
 calls required by the program from calls introduced only to express a binding,
 sequence or representation change. Prefer native statements or iterative
 interpreter traversal for a straight-line body spine, preserving initializer
@@ -253,7 +253,7 @@ their semantic requirements agree.
 
 Higher-order sequencing needs a separate argument: an ordinary bind function
 may invoke its continuation zero, one or multiple times, retain it, or perform
-effects after it returns. A surface elab name supplies no optimization
+effects after it returns. A surface macro name supplies no optimization
 authority. Establish the relevant call/use facts before reducing its call
 depth; uncertain cases remain unchanged. This is not a blanket tail-call or
 constant-stack guarantee for arbitrary function composition.

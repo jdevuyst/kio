@@ -1,7 +1,7 @@
 module build_rec_loop_recursive_state/main;
 
 import build_rec_loop_recursive_state(I32, default Bool, leq_i32, loop, sub_i32);
-import elab/control(if);
+import macros/control(macro if);
 
 rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
 
@@ -12,7 +12,7 @@ type State = Items & Tick;
 fn state(items: List(I32), tick: I32) -> State { {items, tick} }
 
 rec(loop) fn run_from(current: State) -> State {
-  if! leq_i32(current.?{tick}, 0) {
+  if(leq_i32(current.?{tick}, 0)) {
     current
   } else {
     recur run_from(state(current.?{items}, sub_i32(current.?{tick}, 1)))

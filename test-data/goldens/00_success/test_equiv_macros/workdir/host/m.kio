@@ -1,0 +1,19 @@
+module host/m;
+
+import host(default Bool);
+import macros/control(macro if);
+import macros/match(macro match);
+
+equiv if_else_same_shape() {
+  if(.t) { () } else { () };
+  if(.t) { () } else { () }
+}
+
+equiv match_same_shape() {
+  match(.t) {
+    .(x: Bool) { () }
+  };
+  match(.t) {
+    .(y: Bool) { () }
+  }
+}

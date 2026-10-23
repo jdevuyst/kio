@@ -734,4 +734,4 @@ pub pure fn type_of_checked(
 }
 
 /// Builds a first-order reflected representation of the type argument.
-pub elab type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, Rep_unit, Rep_unit.mk_rep_unit, Rep_bottom, Rep_bottom.mk_rep_bottom, Rep_product, Rep_product.mk_rep_product, Rep_sum, Rep_sum.mk_rep_sum, Rep_function, Rep_function.mk_rep_function, Rep_opaque, Rep_opaque.mk_rep_opaque); impl type_of_checked }
+pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, Rep_unit, Rep_unit.mk_rep_unit, Rep_bottom, Rep_bottom.mk_rep_bottom, Rep_product, Rep_product.mk_rep_product, Rep_sum, Rep_sum.mk_rep_sum, Rep_function, Rep_function.mk_rep_function, Rep_opaque, Rep_opaque.mk_rep_opaque); impl type_of_checked }

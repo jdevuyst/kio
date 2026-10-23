@@ -1,14 +1,9 @@
-//! Recursive-descent parser for Kio'.
+//! Recursive-descent parser for Kio.
 //!
-//! Consumes the token stream from [`crate::pass::lexer`] and produces an [`ast::Module`]
-//! covering the regular-module shape: `module <path>;` declaration, `import`
-//! statements, and top-level `fn` / `type` / `newtype` items, plus
-//! the value- and type-expression forms in Kio'.
-//!
-//! Surface-only constructs (`match!`, `if` / `else`, `labels`, the
-//! `.@` elaborator prefix) are recognized at the lexer level and rejected here
-//! with a parse error, so a Kio' program containing any of them fails to
-//! compile rather than being silently accepted.
+//! Consumes the token stream from [`crate::pass::lexer`] and produces a
+//! [`ast::Module`]. Surface forms retain their source structure for the
+//! lowering and typing passes; standalone Prime validation rejects forms
+//! outside its shared subset.
 //!
 //! Naming conventions are also enforced at this layer (per spec, the
 //! compiler enforces them, not just convention): type names must match
@@ -558,6 +553,8 @@ mod diagnostic_repair_tests;
 #[cfg(test)]
 mod default_tests;
 #[cfg(test)]
+mod macro_tests;
+#[cfg(test)]
 mod numeric_tests;
 
 #[cfg(test)]
@@ -861,18 +858,18 @@ mod tests {
         use crate::span::Span;
         use crate::tokens::TokenKind;
 
-        let prefix = "module app; op _ + _ { impl add; }; elab choose: . { impl select; };";
+        let prefix = "module app; op _ + _ { impl add; }; macro choose: . { impl select; };";
         assert!(probe_tooling_source(prefix, None).parse_error.is_none());
         let source = format!("{prefix} fn broken() {{ ? }} fn later() {{ () }}");
         let probe = probe_tooling_source(&source, None);
         assert!(probe.parse_error.is_some());
         assert!(probe.syntax.is_none());
         assert!(matches!(probe.facts.prefix_items.as_slice(),
-            [Item::Op(..), Item::Elaborator(..), Item::FnDef(function)] if function.name == "later"));
+            [Item::Op(..), Item::Macro(..), Item::FnDef(function)] if function.name == "later"));
         let tokens = crate::tokens::dump(&source).unwrap();
         for (name, kind) in [
             ("add", TokenKind::EntityNameFunctionReference),
-            ("choose", TokenKind::EntityNameFunction),
+            ("choose", TokenKind::EntityNameMacro),
             ("select", TokenKind::EntityNameFunctionReference),
             ("later", TokenKind::EntityNameFunction),
         ] {
@@ -886,11 +883,11 @@ mod tests {
             );
         }
 
-        let cursor = source.find("elab").unwrap() as u32 - 1;
-        let before_elab = probe_tooling_source(&source, Some(cursor));
-        assert!(before_elab.parse_error.is_some());
+        let cursor = source.find("macro").unwrap() as u32 - 1;
+        let before_macro = probe_tooling_source(&source, Some(cursor));
+        assert!(before_macro.parse_error.is_some());
         assert!(matches!(
-            before_elab.facts.prefix_items.as_slice(),
+            before_macro.facts.prefix_items.as_slice(),
             [Item::Op(..)]
         ));
     }
@@ -899,8 +896,8 @@ mod tests {
     fn named_entry_missing_required_fields_report_their_owning_close() {
         let mut failures = Vec::new();
         for declaration in [
-            "elab make: . -> . {}",
-            "elab make: . -> . { captures saved; }",
+            "macro make: . -> . {}",
+            "macro make: . -> . { captures saved; }",
             "varop [* *] {}",
             "varop [* *] { finalize finish; }",
         ] {
@@ -964,7 +961,6 @@ mod tests {
         let mut failures = Vec::new();
         for marked in [
             "value.>identity(I|",
-            "choose!(I|",
             "recur(poly) again(I|",
             "identity(I|).< value",
             "outer(.(x: I|) { x })",
@@ -1004,12 +1000,12 @@ mod tests {
             ),
             (
                 Module,
-                "module app; elab make: . { impl run; ",
+                "module app; macro make: . { impl run; ",
                 vec!["captures", "trailing"],
             ),
             (
                 Module,
-                "module app; elab make: . { impl run; captures name; ",
+                "module app; macro make: . { impl run; captures name; ",
                 vec!["trailing"],
             ),
             (
@@ -1072,11 +1068,11 @@ mod tests {
             ("module app; host type Text { ", vec!["owned"]),
             ("module app; op _ + _ { ", vec!["impl"]),
             (
-                "module app; elab make: . { ",
+                "module app; macro make: . { ",
                 vec!["captures", "impl", "trailing"],
             ),
             (
-                "module app; elab make: . { captures name; ",
+                "module app; macro make: . { captures name; ",
                 vec!["impl", "trailing"],
             ),
             (
@@ -1178,7 +1174,7 @@ mod tests {
             (Module, "module app; host type A role(str) { owned ".to_owned(), vec![]),
             (
                 Module,
-                "module app; elab make: . { impl run; ".to_owned(),
+                "module app; macro make: . { impl run; ".to_owned(),
                 vec!["captures", "trailing"],
             ),
             (Module, "module app; labels { field: . }; fn run(value: Field) { let .({field ".to_owned(), vec!["as"]),
@@ -1217,7 +1213,7 @@ mod tests {
 
     #[test]
     fn tooling_block_label_cursor_uses_the_marked_head_without_fixed_labels() {
-        let source = "module app; fn run() { choose! { () } ";
+        let source = "module app; fn run() { choose { () } ";
         let probe = probe_tooling(
             source,
             Some(crate::ast::KioFileKind::Module),
@@ -1435,12 +1431,12 @@ mod tests {
             (KioFileKind::Module, "module app; pub(app) host f", vec![]),
             (
                 KioFileKind::Module,
-                "module app; elab make: . { impl(",
+                "module app; macro make: . { impl(",
                 vec!["fills"],
             ),
             (
                 KioFileKind::Module,
-                "module app; elab make: . { impl(fi",
+                "module app; macro make: . { impl(fi",
                 vec!["fills"],
             ),
             (
@@ -1489,7 +1485,7 @@ mod tests {
             "module app; host type Text;",
             "module app; host pub type Text;",
             "module app; pub host fn run() -> .;",
-            "module app; elab make: . { impl(fills) make; };",
+            "module app; macro make: . { impl(fills) make; };",
             "dependency app; source { path \"app.pkg.kio\"; } rehost dep/api to app/api;",
             "dependency app; source { path \"app.pkg.kio\"; } retype dep/api.Type to app/api.Type;",
         ] {
@@ -1628,7 +1624,7 @@ mod tests {
                 "value",
             ),
             (
-                "module app; elab name: . { impl identity; };",
+                "module app; macro name: . { impl identity; };",
                 KioFileKind::Module,
                 "name",
             ),
@@ -2222,7 +2218,7 @@ mod tests {
     fn tooling_scope_revision_regions_are_cursor_local_and_binder_ordered() {
         use super::core::ScopeSyntax;
         use crate::ast::KioFileKind;
-        let source = "module app; fn before(other: .) { other } fn run(parameter: .) { let outer = parameter; scope! { let inner = outer; inner } } fn after(other: .) { other }";
+        let source = "module app; fn before(other: .) { other } fn run(parameter: .) { let outer = parameter; scope { let inner = outer; inner } } fn after(other: .) { other }";
         for marker in ["= parameter", "= outer", "inner }", "other }"] {
             let cursor = source.find(marker).unwrap() as u32 + 2;
             let probe = probe_tooling(source, Some(KioFileKind::Module), Some(cursor), None);
@@ -2645,7 +2641,7 @@ mod tests {
     #[test]
     fn tooling_module_body_uses_consumer_operator_grammar() {
         use crate::ast::KioFileKind;
-        let source = "module app; import syntax(op _ + _, varop [% %]); fn run(a: .) -> . { if! a + a { do! a { let x = a; x } } else { [% a, a %] } }";
+        let source = "module app; import syntax(op _ + _, varop [% %]); fn run(a: .) -> . { if (a + a) { do (a) { let x = a; x } } else { [% a, a %] } }";
         parse(source).expect("ordinary imported grammar");
         let probe = probe_tooling(source, Some(KioFileKind::Module), None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
@@ -2754,7 +2750,7 @@ mod tests {
                 "{source}"
             );
         }
-        let source = "consume(if! .t { () } else { () })";
+        let source = "consume(if (.t) { () } else { () })";
         let probe = probe_tooling(source, None, None, None);
         assert!(probe.parse_error.is_none(), "{:?}", probe.parse_error);
         assert_eq!(
@@ -2764,7 +2760,7 @@ mod tests {
                 .count(),
             0
         );
-        let start = source.find("if!").unwrap() as u32;
+        let start = source.find("if").unwrap() as u32;
         assert_eq!(
             probe
                 .facts
@@ -2784,7 +2780,7 @@ mod tests {
                 .find(|token| token.span.start == start)
                 .unwrap()
                 .kind,
-            crate::tokens::TokenKind::KeywordElaborator
+            crate::tokens::TokenKind::EntityNameFunctionReference
         );
     }
 
@@ -3275,11 +3271,11 @@ mod tests {
             (".() { recur(|", vec!["poly", "escape"]),
             (".arg. { recur(|", vec!["poly", "escape"]),
             (
-                "sequence! bind { let value <- x; recur(|",
+                "sequence(bind) { let value <- x; recur(|",
                 vec!["poly", "escape"],
             ),
             (
-                "sequence! bind { let value = x; recur(|",
+                "sequence(bind) { let value = x; recur(|",
                 vec!["poly", "cont"],
             ),
             (".() { recur(cont, |", vec!["poly", "escape"]),
@@ -3415,13 +3411,10 @@ mod tests {
     }
 
     #[test]
-    fn recursive_call_old_marker_is_rejected_with_source_owned_replacement() {
+    fn recursive_declaration_marker_does_not_form_a_blockless_call() {
         for call in ["rec again(x)", "rec(cont) again(x)"] {
             let source = format!("module app; rec(loop) fn again(x: .) {{ {call} }}");
-            let error = parse(&source).unwrap_err();
-            assert!(error.diag().1.contains("recursive calls use `recur`"));
-            let span = error.diag().0;
-            assert_eq!(&source[span.start as usize..span.end as usize], "rec");
+            assert!(parse(&source).is_err(), "{source}");
         }
     }
 
@@ -3967,7 +3960,7 @@ mod tests {
              fn run() -> . { sink(provider/path.item()) }",
             "module main; fn run() -> . { let value = provider/path.item(); value }",
             "module main; fn run() -> . { \
-             if! provider/path.item() { () } else { () } }",
+             if(provider/path.item()) { () } else { () } }",
             "module main; fn run(value: .) -> . { \
              value.>provider/path.item() }",
         ] {
@@ -4053,8 +4046,8 @@ mod tests {
             "module main; varop [* *] { foldr cons provider/path.empty; };",
             "module main; varop [* *] { foldr provider/path.cons empty; };",
             "module main; varop [* *] { foldr cons empty; finalize provider/path.finish; };",
-            "module main; elab inspect : . -> . { impl provider/path.inspect; };",
-            "module main; elab inspect : . -> . { impl(fills) provider/path.inspect; };",
+            "module main; macro inspect : . -> . { impl provider/path.inspect; };",
+            "module main; macro inspect : . -> . { impl(fills) provider/path.inspect; };",
         ] {
             for error in [
                 parse(source).expect_err("eager parser must reject a direct callable FQN"),
@@ -4080,13 +4073,13 @@ mod tests {
     #[test]
     fn capture_and_rec_loop_paths_use_imported_or_dotted_value_paths() {
         p("module main; \
-           elab inspect : . -> . { captures runtime.helper; impl helper; }; \
+           macro inspect : . -> . { captures runtime.helper; impl helper; }; \
            rec(runtime.loop) fn run() -> . { () }");
 
         assert!(
             parse(
                 "module main; \
-                 elab inspect : . -> . { captures provider/path.helper; impl helper; };"
+                 macro inspect : . -> . { captures provider/path.helper; impl helper; };"
             )
             .is_err(),
             "capture paths are dotted value paths, not direct item FQNs"
@@ -4401,7 +4394,7 @@ pub fn main() -> . { () }
                 Item::Labels(_, _) => "labels",
                 Item::LabelForward(_, _) => "label_forward",
                 Item::Equiv(_, _) => "equiv",
-                Item::Elaborator(_, _) => "elaborator",
+                Item::Macro(_, _) => "macro",
                 Item::HostType(_) => "host_type",
                 Item::HostFn(_) => "host_fn",
             })
@@ -4668,7 +4661,7 @@ fn ok() -> . { () }
 
     #[test]
     fn import_fn_modifier_rejected() {
-        let msg = p_err("module x; import elaborators(fn checked);");
+        let msg = p_err("module x; import macros(fn checked);");
         assert!(msg.contains("expected"), "got: {msg}");
     }
 
@@ -5561,7 +5554,7 @@ fn ok() -> . { () }
             "module x; pure type T = .;",
             "module x; pure newtype T : . { constructor mk; projector un; };",
             "module x; pure labels { field : . };",
-            "module x; pure elab e : [S] S -> [T] T { impl f; };",
+            "module x; pure macro e : [S] S -> [T] T { impl f; };",
             "module x; pure op + _ { impl f; };",
             "module x; pure varop [* *] { foldr g f; };",
             "module x; pure literal n = 1;",
@@ -5619,16 +5612,16 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_item_accepts_colon_type_declaration() {
+    fn macro_item_accepts_colon_type_declaration() {
         let m =
-            p("module x; pub elab demo : [Source] Source -> [Target] Target { impl demo_impl; };");
-        let Item::Elaborator(elaborator, _) = &m.items[0] else {
-            panic!("expected elaborator item, got {:?}", m.items[0]);
+            p("module x; pub macro demo : [Source] Source -> [Target] Target { impl demo_impl; };");
+        let Item::Macro(macro_def, _) = &m.items[0] else {
+            panic!("expected macro item, got {:?}", m.items[0]);
         };
-        assert_eq!(elaborator.name, "demo");
-        assert!(elaborator.captures.is_empty());
+        assert_eq!(macro_def.name, "demo");
+        assert!(macro_def.captures.is_empty());
         assert_eq!(
-            elaborator
+            macro_def
                 .implementation
                 .segments()
                 .iter()
@@ -5639,39 +5632,39 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_fills_schedule_uses_exact_marker_and_lexical_path() {
+    fn macro_fills_schedule_uses_exact_marker_and_lexical_path() {
         for (source, expected_schedule) in [
             (
-                "module x; elab demo : . -> . { impl(fills)(x); };",
-                crate::ast::ElaboratorSchedule::Fills,
+                "module x; macro demo : . -> . { impl(fills)(x); };",
+                crate::ast::MacroSchedule::Fills,
             ),
             (
-                "module x; elab demo : . -> . { impl fills; };",
-                crate::ast::ElaboratorSchedule::Late,
+                "module x; macro demo : . -> . { impl fills; };",
+                crate::ast::MacroSchedule::Late,
             ),
             (
-                "module x; elab demo : . -> . { impl(fills) helper.run; };",
-                crate::ast::ElaboratorSchedule::Fills,
+                "module x; macro demo : . -> . { impl(fills) helper.run; };",
+                crate::ast::MacroSchedule::Fills,
             ),
             (
-                "module x; elab demo : . -> . { impl ( fills ) helper.Type.run; };",
-                crate::ast::ElaboratorSchedule::Fills,
+                "module x; macro demo : . -> . { impl ( fills ) helper.Type.run; };",
+                crate::ast::MacroSchedule::Fills,
             ),
         ] {
             let eager = p(source);
-            let Item::Elaborator(elaborator, _) = &eager.items[0] else {
-                panic!("expected elaborator item")
+            let Item::Macro(macro_def, _) = &eager.items[0] else {
+                panic!("expected macro item")
             };
-            assert_eq!(elaborator.schedule, expected_schedule);
-            assert!(!elaborator.implementation.is_empty());
-            let lazy = parse_lazy(source).expect("lazy elaborator header");
+            assert_eq!(macro_def.schedule, expected_schedule);
+            assert!(!macro_def.implementation.is_empty());
+            let lazy = parse_lazy(source).expect("lazy macro header");
             assert_eq!(lazy.module(), &eager);
             assert_eq!(lazy.force_all().expect("force module"), eager);
         }
 
         for source in [
-            "module x; elab demo : . -> . { impl .(value: .) -> . { value }; };",
-            "module x; elab demo : . -> . { impl(fills) (); };",
+            "module x; macro demo : . -> . { impl .(value: .) -> . { value }; };",
+            "module x; macro demo : . -> . { impl(fills) (); };",
         ] {
             for error in [
                 parse(source).expect_err("eager parsing must reject implementation expressions"),
@@ -5682,7 +5675,7 @@ fn ok() -> . { () }
                     error
                         .diag()
                         .1
-                        .contains("elaborator implementations must name a lexical callable"),
+                        .contains("macro implementations must name a lexical callable"),
                     "unexpected diagnostic for {source:?}: {error:?}",
                 );
                 assert_eq!(
@@ -5692,7 +5685,7 @@ fn ok() -> . { () }
             }
         }
 
-        let direct_fqn = "module x; elab demo : . -> . { impl helpers/core.run; };";
+        let direct_fqn = "module x; macro demo : . -> . { impl helpers/core.run; };";
         for error in [
             parse(direct_fqn).expect_err("eager parsing must reject a direct callable FQN"),
             parse_lazy(direct_fqn).expect_err("lazy parsing must reject a direct callable FQN"),
@@ -5708,14 +5701,14 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_item_parses_captures() {
+    fn macro_item_parses_captures() {
         let m = p(
-            "module x; pub elab type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, helper); impl type_of_impl; };",
+            "module x; pub macro type_of : [T] . -> Type_rep { captures (Type_rep, Type_rep.mk_type_rep, helper); impl type_of_impl; };",
         );
-        let Item::Elaborator(elaborator, _) = &m.items[0] else {
-            panic!("expected elaborator item, got {:?}", m.items[0]);
+        let Item::Macro(macro_def, _) = &m.items[0] else {
+            panic!("expected macro item, got {:?}", m.items[0]);
         };
-        let captures: Vec<Vec<&str>> = elaborator
+        let captures: Vec<Vec<&str>> = macro_def
             .captures
             .iter()
             .map(|capture| {
@@ -6340,7 +6333,7 @@ fn ok() -> . { () }
 
     #[test]
     fn let_unpack_works_inside_equiv_arm() {
-        let m = p("module x; equiv check { scope! { let .(<U> x) = thunk; () }; () }");
+        let m = p("module x; equiv check { scope { let .(<U> x) = thunk; () }; () }");
         let Item::Equiv(e, _) = &m.items[0] else {
             panic!("expected Equiv");
         };
@@ -6891,10 +6884,10 @@ fn ok() -> . { () }
             ("r.>>T.member()", "()"),
             ("T.member().<r", "()"),
             ("T.member().<<r", "()"),
-            ("r.>transform!()", "()"),
-            ("r.>>transform!()", "()"),
-            ("transform!().<r", "()"),
-            ("transform!().<<r", "()"),
+            ("r.>transform()", "()"),
+            ("r.>>transform()", "()"),
+            ("transform().<r", "()"),
+            ("transform().<<r", "()"),
             ("r.>f(,)", "(,)"),
             ("f(,,).<r", "(,,)"),
             ("r.>f(\n// empty\n)", "(\n// empty\n)"),
@@ -6976,7 +6969,7 @@ fn ok() -> . { () }
             assert_eq!(forced, eager, "eager/lazy diagnostic drift for {tail}");
         }
 
-        for direct in ["f()", "T.member()", "transform!()"] {
+        for direct in ["f()", "T.member()", "transform()"] {
             let source = format!("module x; fn run() -> . {{ {direct} }}");
             let eager = parse(&source)
                 .unwrap_or_else(|error| panic!("direct call {direct} was rejected: {error:?}"));
@@ -7035,7 +7028,7 @@ fn ok() -> . { () }
 
     #[test]
     fn bare_ufcs_tails_cover_every_direction_and_callee_shape() {
-        for (tail, expected_flavor, bang) in [
+        for (tail, expected_flavor, macro_call) in [
             ("r.>f", UfcsFlavor::ReceiverFirst, false),
             ("r.>>f", UfcsFlavor::ReceiverLast, false),
             ("f.<r", UfcsFlavor::ArgumentLast, false),
@@ -7044,10 +7037,10 @@ fn ok() -> . { () }
             ("r.>>T.member", UfcsFlavor::ReceiverLast, false),
             ("T.member.<r", UfcsFlavor::ArgumentLast, false),
             ("T.member.<<r", UfcsFlavor::ArgumentFirst, false),
-            ("r.>transform!", UfcsFlavor::ReceiverFirst, true),
-            ("r.>>transform!", UfcsFlavor::ReceiverLast, true),
-            ("transform!.<r", UfcsFlavor::ArgumentLast, true),
-            ("transform!.<<r", UfcsFlavor::ArgumentFirst, true),
+            ("r.>transform", UfcsFlavor::ReceiverFirst, false),
+            ("r.>>transform", UfcsFlavor::ReceiverLast, false),
+            ("transform.<r", UfcsFlavor::ArgumentLast, false),
+            ("transform.<<r", UfcsFlavor::ArgumentFirst, false),
         ] {
             let source = format!("module x; fn run() -> . {{ {tail} }}");
             let eager = parse(&source).unwrap_or_else(|error| {
@@ -7066,7 +7059,7 @@ fn ok() -> . { () }
             let Expr::Ufcs {
                 flavor,
                 args,
-                bang: parsed_bang,
+                macro_call: parsed_macro_call,
                 ..
             } = &function.body
             else {
@@ -7074,13 +7067,17 @@ fn ok() -> . { () }
             };
             assert_eq!(*flavor, expected_flavor, "source: {tail}");
             assert!(args.is_empty(), "bare form gained arguments: {tail}");
-            assert_eq!(parsed_bang.is_some(), bang, "bang drift for {tail}");
+            assert_eq!(
+                parsed_macro_call.is_some(),
+                macro_call,
+                "macro_call drift for {tail}"
+            );
         }
     }
 
     #[test]
     fn explicit_unit_ufcs_tails_cover_every_direction_and_callee_shape() {
-        for (tail, expected_flavor, bang) in [
+        for (tail, expected_flavor, macro_call) in [
             ("r.>f(())", UfcsFlavor::ReceiverFirst, false),
             ("r.>>f(())", UfcsFlavor::ReceiverLast, false),
             ("f(()).<r", UfcsFlavor::ArgumentLast, false),
@@ -7089,10 +7086,10 @@ fn ok() -> . { () }
             ("r.>>T.member(())", UfcsFlavor::ReceiverLast, false),
             ("T.member(()).<r", UfcsFlavor::ArgumentLast, false),
             ("T.member(()).<<r", UfcsFlavor::ArgumentFirst, false),
-            ("r.>transform!(())", UfcsFlavor::ReceiverFirst, true),
-            ("r.>>transform!(())", UfcsFlavor::ReceiverLast, true),
-            ("transform!(()).<r", UfcsFlavor::ArgumentLast, true),
-            ("transform!(()).<<r", UfcsFlavor::ArgumentFirst, true),
+            ("r.>transform(())", UfcsFlavor::ReceiverFirst, false),
+            ("r.>>transform(())", UfcsFlavor::ReceiverLast, false),
+            ("transform(()).<r", UfcsFlavor::ArgumentLast, false),
+            ("transform(()).<<r", UfcsFlavor::ArgumentFirst, false),
         ] {
             let source = format!("module x; fn run() -> . {{ {tail} }}");
             let eager = parse(&source)
@@ -7108,7 +7105,7 @@ fn ok() -> . { () }
             let Expr::Ufcs {
                 flavor,
                 args,
-                bang: parsed_bang,
+                macro_call: parsed_macro_call,
                 ..
             } = &function.body
             else {
@@ -7119,7 +7116,11 @@ fn ok() -> . { () }
                 matches!(args.as_slice(), [CallArg::Value(Expr::Unit { .. })]),
                 "explicit Unit was not retained for {tail}: {args:?}"
             );
-            assert_eq!(parsed_bang.is_some(), bang, "bang drift for {tail}");
+            assert_eq!(
+                parsed_macro_call.is_some(),
+                macro_call,
+                "macro_call drift for {tail}"
+            );
         }
     }
 
@@ -7190,12 +7191,15 @@ fn ok() -> . { () }
                         callee_segments,
                         flavor,
                         args,
-                        bang,
+                        macro_call,
                         ..
                     } => {
                         assert_eq!(callee_segments, &vec!["f".to_owned()]);
                         assert_eq!(*flavor, expected_flavor, "source: {src}");
-                        assert!(bang.is_none(), "regular UFCS should not carry bang");
+                        assert!(
+                            macro_call.is_none(),
+                            "regular UFCS should not carry macro_call"
+                        );
                         assert_eq!(args.len(), 2, "source: {src}");
                         assert!(
                             matches!(
@@ -7305,7 +7309,7 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_qualified_callee() {
-        let m = p("module x; fn f() -> . { r.>m.f(x) }");
+        let m = p("module x; import provider as m; fn f() -> . { r.>m.f(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
@@ -7374,43 +7378,46 @@ fn ok() -> . { () }
         );
     }
 
-    /// `r.>iso!` parses to an `Expr::Ufcs` with `bang = Some(_)`
+    /// `r.>iso` parses to an `Expr::Ufcs` with `macro_call = None`
     /// (the surface-form-preserving spelling). The receiver flows
-    /// through `receiver`, the elaborator name is the single segment,
+    /// through `receiver`, the macro name is the single segment,
     /// and the absent target leaves `args` empty.
     #[test]
-    fn elaborator_ufcs_no_args_iso() {
-        let m = p("module x; fn f() -> . { r.>iso! }");
+    fn macro_ufcs_no_args_iso() {
+        let m = p("module x; fn f() -> . { r.>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     receiver,
                     callee_segments,
                     args,
-                    bang,
+                    macro_call,
                     ..
                 } => {
                     assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
                     assert_eq!(callee_segments, &vec!["iso".to_owned()]);
                     assert!(args.is_empty(), "no target supplied");
-                    assert!(bang.is_some(), "bang must be recorded for elaborator-UFCS");
+                    assert!(
+                        macro_call.is_none(),
+                        "macro selection follows source binding classification"
+                    );
                 }
                 other => panic!("expected Ufcs, got {other:?}"),
             }
         }
     }
 
-    /// `r.>into!(T)` parses to `Expr::Ufcs` with the target type
+    /// `r.>into(T)` parses to `Expr::Ufcs` with the target type
     /// recorded as the single trailing ordinary call arg.
     #[test]
-    fn elaborator_ufcs_with_target_into() {
-        let m = p("module x; fn f() -> . { r.>into!(T) }");
+    fn macro_ufcs_with_target_into() {
+        let m = p("module x; fn f() -> . { r.>into(T) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     callee_segments,
                     args,
-                    bang,
+                    macro_call,
                     ..
                 } => {
                     assert_eq!(callee_segments, &vec!["into".to_owned()]);
@@ -7422,7 +7429,7 @@ fn ok() -> . { () }
                         ),
                         "generic UFCS stores the raw call arg until typing"
                     );
-                    assert!(bang.is_some());
+                    assert!(macro_call.is_none());
                 }
                 other => panic!("expected Ufcs, got {other:?}"),
             }
@@ -7430,106 +7437,109 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_ufcs_receiver_last_parses() {
-        let m = p("module x; fn f() -> . { r.>>iso! }");
+    fn macro_ufcs_receiver_last_parses() {
+        let m = p("module x; fn f() -> . { r.>>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     callee_segments,
                     flavor,
-                    bang,
+                    macro_call,
                     args,
                     ..
                 } => {
                     assert_eq!(callee_segments, &vec!["iso".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ReceiverLast);
-                    assert!(bang.is_some());
+                    assert!(macro_call.is_none());
                     assert!(args.is_empty());
                 }
-                other => panic!("expected elaborator Ufcs, got {other:?}"),
+                other => panic!("expected macro Ufcs, got {other:?}"),
             }
         }
     }
 
     #[test]
-    fn elaborator_call_splice_argument_first_preserves_ufcs_until_typing() {
-        let m = p("module x; fn f() -> . { iso!(T).<<r }");
+    fn macro_call_splice_argument_first_preserves_ufcs_until_typing() {
+        let m = p("module x; fn f() -> . { iso(T).<<r }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     receiver,
                     callee_segments,
                     flavor,
-                    bang,
+                    macro_call,
                     args,
                     ..
                 } => {
                     assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
                     assert_eq!(callee_segments, &vec!["iso".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ArgumentFirst);
-                    assert!(bang.is_some());
+                    assert!(macro_call.is_none());
                     assert_eq!(args.len(), 1, "target slot should remain unspliced");
                 }
-                other => panic!("expected elaborator call-splice UFCS, got {other:?}"),
+                other => panic!("expected macro call-splice UFCS, got {other:?}"),
             }
         }
     }
 
     #[test]
-    fn elaborator_ufcs_onto_align_atom() {
+    fn macro_ufcs_onto_align_atom() {
         for (src, expected_name) in [
-            ("module x; fn f() -> . { r.>onto! }", "onto"),
-            ("module x; fn f() -> . { r.>align! }", "align"),
-            ("module x; fn f() -> . { r.>atom! }", "atom"),
+            ("module x; fn f() -> . { r.>onto }", "onto"),
+            ("module x; fn f() -> . { r.>align }", "align"),
+            ("module x; fn f() -> . { r.>atom }", "atom"),
         ] {
             let m = p(src);
             if let Item::FnDef(d) = &m.items[0] {
                 match &d.body {
                     Expr::Ufcs {
                         callee_segments,
-                        bang,
+                        macro_call,
                         ..
                     } => {
-                        assert!(bang.is_some(), "expected bang on {src}");
+                        assert!(
+                            macro_call.is_none(),
+                            "parser leaves macro selection unresolved on {src}"
+                        );
                         assert_eq!(
                             callee_segments,
                             &vec![expected_name.to_owned()],
                             "for {src}"
                         );
                     }
-                    other => panic!("expected elaborator Ufcs node, got {other:?} for {src}"),
+                    other => panic!("expected macro Ufcs node, got {other:?} for {src}"),
                 }
             }
         }
     }
 
-    /// An elaborator-UFCS result is itself a valid receiver: `r.>iso!.>frob`
-    /// chains a regular UFCS over the elaborator-UFCS result. The outer
-    /// is a regular UFCS (`bang = None`); the inner receiver is the
-    /// elaborator-UFCS (`bang = Some`).
+    /// An macro UFCS result is itself a valid receiver: `r.>iso.>frob`
+    /// chains a regular UFCS over the macro UFCS result. The outer
+    /// is a regular UFCS (`macro_call = None`); the inner receiver is the
+    /// macro UFCS (`macro_call = None`).
     #[test]
-    fn elaborator_ufcs_followed_by_ufcs() {
-        let m = p("module x; fn f() -> . { r.>iso!.>frob }");
+    fn macro_ufcs_followed_by_ufcs() {
+        let m = p("module x; fn f() -> . { r.>iso.>frob }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     receiver,
                     callee_segments,
-                    bang,
+                    macro_call,
                     ..
                 } => {
-                    assert!(bang.is_none(), "outer UFCS is regular, no bang");
+                    assert!(macro_call.is_none(), "outer UFCS is regular, no macro_call");
                     assert_eq!(callee_segments, &vec!["frob".to_owned()]);
                     match receiver.as_ref() {
                         Expr::Ufcs {
                             callee_segments: inner_segs,
-                            bang: inner_bang,
+                            macro_call: inner_macro_call,
                             ..
                         } => {
                             assert_eq!(inner_segs, &vec!["iso".to_owned()]);
-                            assert!(inner_bang.is_some());
+                            assert!(inner_macro_call.is_none());
                         }
-                        other => panic!("expected inner elaborator-UFCS, got {other:?}"),
+                        other => panic!("expected inner macro UFCS, got {other:?}"),
                     }
                 }
                 other => panic!("expected outer Ufcs, got {other:?}"),
@@ -7537,88 +7547,100 @@ fn ok() -> . { () }
         }
     }
 
-    /// A regular UFCS followed by elaborator-UFCS: `r.>frob.>iso!`.
-    /// The outer is elaborator-UFCS (`bang = Some`) whose receiver is
+    /// A regular UFCS followed by macro UFCS: `r.>frob.>iso`.
+    /// The parser leaves macro selection unresolved (`macro_call = None`) whose receiver is
     /// the regular UFCS.
     #[test]
-    fn ufcs_followed_by_elaborator_ufcs() {
-        let m = p("module x; fn f() -> . { r.>frob.>iso! }");
+    fn ufcs_followed_by_macro_ufcs() {
+        let m = p("module x; fn f() -> . { r.>frob.>iso }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     receiver,
                     callee_segments,
-                    bang,
+                    macro_call,
                     ..
                 } => {
-                    assert!(bang.is_some(), "outer is elaborator-UFCS");
+                    assert!(
+                        macro_call.is_none(),
+                        "parser leaves macro selection unresolved"
+                    );
                     assert_eq!(callee_segments, &vec!["iso".to_owned()]);
                     match receiver.as_ref() {
                         Expr::Ufcs {
                             callee_segments: inner_segs,
-                            bang: inner_bang,
+                            macro_call: inner_macro_call,
                             ..
                         } => {
                             assert_eq!(inner_segs, &vec!["frob".to_owned()]);
-                            assert!(inner_bang.is_none(), "inner is regular UFCS");
+                            assert!(inner_macro_call.is_none(), "inner is regular UFCS");
                         }
                         other => panic!("expected inner regular UFCS, got {other:?}"),
                     }
                 }
-                other => panic!("expected outer elaborator-UFCS, got {other:?}"),
+                other => panic!("expected outer macro UFCS, got {other:?}"),
             }
         }
     }
 
-    /// `r.>frob!(x)` parses as a user-defined elaborator UFCS call. The
+    /// `r.>frob(x)` parses as a user-defined macro UFCS call. The
     /// name resolves later in ordinary scope.
     #[test]
-    fn elaborator_ufcs_user_defined_name_parses() {
-        let m = p("module x; fn f() -> . { r.>frob!(x) }");
+    fn macro_ufcs_user_defined_name_parses() {
+        let m = p("module x; fn f() -> . { r.>frob(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     callee_segments,
-                    bang,
+                    macro_call,
                     args,
                     ..
                 } => {
                     assert_eq!(callee_segments, &vec!["frob".to_owned()]);
-                    assert!(bang.is_some(), "user-defined elaborator keeps bang marker");
+                    assert!(
+                        macro_call.is_none(),
+                        "parser leaves macro selection unresolved"
+                    );
                     assert_eq!(args.len(), 1);
                 }
-                other => panic!("expected user-defined elaborator-UFCS, got {other:?}"),
+                other => panic!("expected user-defined macro UFCS, got {other:?}"),
             }
         }
     }
 
-    /// `r.>m.iso!(...)` is rejected — multi-segment paths can't
-    /// carry the `!` suffix; the elaborator form is a single segment.
     #[test]
-    fn elaborator_ufcs_multi_segment_rejected() {
-        let msg = p_err("module x; fn f() -> . { r.>m.iso! }");
+    fn qualified_ufcs_is_neutral_until_resolution() {
+        let module = p("module x; import m as m; fn f() { r.>m.iso }");
+        let Item::FnDef(def) = &module.items[0] else {
+            panic!("function")
+        };
         assert!(
-            msg.contains("elaborator") && msg.contains("m.iso"),
-            "unexpected: {msg}"
+            matches!(&def.body, Expr::Ufcs { callee_segments, macro_call: None, .. } if callee_segments.len() == 2)
+        );
+        assert!(
+            crate::scope_walk::macro_calls(&module)
+                .iter()
+                .next()
+                .is_none()
         );
     }
 
-    /// `r.>atom!(T)` parses — the trailing target is admitted
-    /// (same shape as `iso!`/`onto!`/etc.); the single-arm
+    /// `r.>atom(T)` parses — the trailing target is admitted
+    /// (same shape as `iso`/`onto`/etc.); the single-arm
     /// constraint on the target is enforced by the `atom` user
-    /// elaborator's own logic, not a built-in typer pass.
+    /// macro's own logic, not a built-in typer pass.
     #[test]
-    fn elaborator_ufcs_atom_with_target_parses() {
-        let m = p("module x; fn f() -> . { r.>atom!(T) }");
+    fn macro_ufcs_atom_with_target_parses() {
+        let m = p("module x; fn f() -> . { r.>atom(T) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     callee_segments,
                     args,
-                    bang,
+                    macro_call,
                     ..
                 } => {
-                    assert!(bang.is_some());
+                    assert!(macro_call.is_none());
                     assert_eq!(callee_segments, &vec!["atom".to_owned()]);
                     assert_eq!(args.len(), 1, "expected target type-arg");
                     assert!(
@@ -7626,10 +7648,10 @@ fn ok() -> . { () }
                             args[0],
                             CallArg::Type(_) | CallArg::Value(Expr::Path { .. })
                         ),
-                        "bang UFCS keeps the parser-classified target argument for type-directed slot selection"
+                        "macro_call UFCS keeps the parser-classified target argument for type-directed slot selection"
                     );
                 }
-                other => panic!("expected elaborator-UFCS Ufcs, got {other:?}"),
+                other => panic!("expected macro UFCS Ufcs, got {other:?}"),
             }
         }
     }
@@ -8125,7 +8147,7 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn operator_usage_bang_prefixed_op_after_elaborator_named_value_is_not_elaborator_call() {
+    fn operator_usage_bang_prefixed_op_after_macro_named_value_is_not_macro_call() {
         let m = p("module x; \
              fn pick(a: A, b: A) -> A { a } \
              op _ !? _ { impl pick; }; \
@@ -8818,18 +8840,15 @@ fn ok() -> . { () }
 
     #[test]
     fn call_arg_leading_sum_type_form_routes_to_type() {
-        // `| A | B` is valid type syntax in an elaborator target slot even
+        // `| A | B` is valid type syntax in a macro target slot even
         // though it starts with a symbol run. The call-arg dispatcher
         // must try expression first, then fall back to `type_expr`.
-        let m = p("module x; fn f() -> . { flatten_sum!(x, | A | B) }");
+        let m = p("module x; fn f() -> . { flatten_sum(x, | A | B) }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn item");
         };
-        let Expr::UserElaborator { args, .. } = &d.body else {
-            panic!(
-                "expected user elaborator with leading-sum target, got {:?}",
-                d.body
-            );
+        let Expr::Call { args, .. } = &d.body else {
+            panic!("expected macro with leading-sum target, got {:?}", d.body);
         };
         assert!(matches!(args.get(1), Some(CallArg::Type(Type::Sum { .. }))));
     }
@@ -8860,7 +8879,7 @@ fn ok() -> . { () }
     fn sequence_block_call_parses() {
         let m = p("module x; fn pure[A](x: A) -> A { x } \
              fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do! bind { let x <- (); pure(x) } }");
+             fn f() -> . { do (bind) { let x <- (); pure(x) } }");
         let Item::FnDef(d) = &m.items[2] else {
             panic!("expected fn");
         };
@@ -8883,7 +8902,7 @@ fn ok() -> . { () }
 
     #[test]
     fn scope_block_call_parses() {
-        let m = p("module x; fn f() -> . { scope! { let x = (); x } }");
+        let m = p("module x; fn f() -> . { scope { let x = (); x } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -8902,7 +8921,7 @@ fn ok() -> . { () }
 
     #[test]
     fn neutral_pure_binding_only_block_keeps_its_items() {
-        let m = p("module x; fn f() -> . { scope! { let x = (); } }");
+        let m = p("module x; fn f() -> . { scope { let x = (); } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -8917,7 +8936,7 @@ fn ok() -> . { () }
 
     #[test]
     fn block_label_value_prefix_can_be_parenthesized() {
-        let m = p("module x; fn f() -> . { do!({bind = f}) { () } }");
+        let m = p("module x; fn f() -> . { do({bind = f}) { () } }");
         let Item::FnDef(d) = &m.items[0] else {
             panic!("expected fn");
         };
@@ -8928,18 +8947,20 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn match_elaborator_direct_bang_call_parses() {
-        // `match!(v, (<arms>), B)` is parsed as an ordinary user
-        // elaborator call; resolution supplies the call contract later.
+    fn match_macro_direct_call_parses() {
+        // `match(v, (<arms>), B)` is parsed as an ordinary user
+        // macro call; resolution supplies the call contract later.
         let m = p("module x; fn f(v: I32 | String) -> . { \
-             match!(v, (.(n: I32) { () }, .(s: String) { () }), . | .) }");
+             match(v, (.(n: I32) { () }, .(s: String) { () }), . | .) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
-        let Expr::UserElaborator { name, args, .. } = &f.body else {
-            panic!("expected match! user elaborator, got {:?}", f.body);
+        let Expr::Call { callee, args, .. } = &f.body else {
+            panic!("expected match macro, got {:?}", f.body);
         };
-        assert_eq!(name, "match");
+        assert!(
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["match"])
+        );
         assert_eq!(args.len(), 3);
         assert!(matches!(
             args.first(),
@@ -8953,25 +8974,27 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn match_elaborator_arm_parses_nested_elaborator_with_leading_sum_target() {
+    fn match_macro_arm_parses_nested_macro_with_leading_sum_target() {
         let m = p("module x; fn f(v: A) -> A | B { \
-             match!(v, .(x: A) { flatten_sum!(x, | A | B) }) }");
+             match(v, .(x: A) { flatten_sum(x, | A | B) }) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
-        let Expr::UserElaborator { name, args, .. } = &f.body else {
-            panic!("expected match! user elaborator, got {:?}", f.body);
+        let Expr::Call { callee, args, .. } = &f.body else {
+            panic!("expected match macro, got {:?}", f.body);
         };
-        assert_eq!(name, "match");
+        assert!(
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["match"])
+        );
         assert_eq!(args.len(), 2);
     }
 
     #[test]
-    fn match_elaborator_ufcs_parses() {
-        // `v.>match!((<arms>), B)` is parsed as ordinary elaborator-UFCS.
+    fn match_macro_ufcs_parses() {
+        // `v.>match((<arms>), B)` is parsed as ordinary macro UFCS.
         // Desugar turns the receiver into the match scrutinee.
         let m = p("module x; fn f(v: I32 | String) -> . { \
-             v.>match!((.(n: I32) { () }, .(s: String) { () }), ()) }");
+             v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
@@ -8979,18 +9002,21 @@ fn ok() -> . { () }
             receiver,
             callee_segments,
             args,
-            bang,
+            macro_call,
             ..
         } = &f.body
         else {
-            panic!("expected match! UFCS, got {:?}", f.body);
+            panic!("expected match UFCS, got {:?}", f.body);
         };
         assert!(
             matches!(receiver.as_ref(), Expr::Path { .. }),
             "receiver is retained"
         );
         assert_eq!(callee_segments, &vec!["match".to_owned()]);
-        assert!(bang.is_some(), "bang is retained on elaborator-UFCS");
+        assert!(
+            macro_call.is_none(),
+            "parser leaves macro selection unresolved"
+        );
         assert_eq!(args.len(), 2, "arms plus explicit codomain");
         match &args[0] {
             CallArg::Value(Expr::Tuple { items, .. }) => {
@@ -9001,41 +9027,45 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn derive_elaborator_bang_call_parses() {
-        // `derive!(T, (c0, c1))` parses as an ordinary user
-        // elaborator call.
+    fn derive_macro_call_parses() {
+        // `derive(T, (c0, c1))` parses as an ordinary user
+        // macro call.
         let m = p("module x; fn f() -> Monad(Maybe) { \
-             derive!(Monad(Maybe), (maybe_monad, maybe_t_monad)) }");
+             derive(Monad(Maybe), (maybe_monad, maybe_t_monad)) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
-        let Expr::UserElaborator { name, args, .. } = &f.body else {
-            panic!("expected derive! user elaborator, got {:?}", f.body);
+        let Expr::Call { callee, args, .. } = &f.body else {
+            panic!("expected derive macro, got {:?}", f.body);
         };
-        assert_eq!(name, "derive");
+        assert!(
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["derive"])
+        );
         assert_eq!(args.len(), 2);
     }
 
     #[test]
-    fn derive_elaborator_elided_target_parses() {
-        // `derive!(_, c0)` parses as an ordinary user elaborator call;
+    fn derive_macro_elided_target_parses() {
+        // `derive(_, c0)` parses as an ordinary macro call;
         // the `_` argument is preserved for typechecking.
         let m = p("module x; fn f() -> Monad(Maybe) { \
-             derive!(_, maybe_monad) }");
+             derive(_, maybe_monad) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
-        let Expr::UserElaborator { name, args, .. } = &f.body else {
-            panic!("expected derive! user elaborator");
+        let Expr::Call { callee, args, .. } = &f.body else {
+            panic!("expected derive macro");
         };
-        assert_eq!(name, "derive");
+        assert!(
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["derive"])
+        );
         assert_eq!(args.len(), 2);
     }
 
     #[test]
-    fn derive_elaborator_ufcs_parses() {
+    fn derive_macro_ufcs_parses() {
         let m = p("module x; fn f() -> Monad(Maybe) { \
-             maybe_monad.>derive!(Monad(Maybe)) }");
+             maybe_monad.>derive(Monad(Maybe)) }");
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn item");
         };
@@ -9043,15 +9073,15 @@ fn ok() -> . { () }
             receiver,
             callee_segments,
             args,
-            bang,
+            macro_call,
             ..
         } = &f.body
         else {
-            panic!("expected derive! UFCS, got {:?}", f.body);
+            panic!("expected derive UFCS, got {:?}", f.body);
         };
         assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
         assert_eq!(callee_segments, &vec!["derive".to_owned()]);
-        assert!(bang.is_some());
+        assert!(macro_call.is_none());
         assert_eq!(args.len(), 1, "target type supplied as ordinary arg");
     }
 
@@ -9061,7 +9091,7 @@ fn ok() -> . { () }
              fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
              fn unit_step() -> . { () } \
              fn f() -> . { \
-               do! bind { \
+               do (bind) { \
                  let x <- (); \
                  let y = (); \
                  unit_step(); \
@@ -9104,7 +9134,7 @@ fn ok() -> . { () }
     fn neutral_block_repeated_and_trailing_separators_parse() {
         let m = p("module x; \
              fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do! bind { ;;; ();;; ();;; } }");
+             fn f() -> . { do (bind) { ;;; ();;; ();;; } }");
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9126,7 +9156,7 @@ fn ok() -> . { () }
     fn neutral_bind_only_block_keeps_its_items() {
         let m = p("module x; \
              fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do! bind { let x <- (); } }");
+             fn f() -> . { do (bind) { let x <- (); } }");
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9143,7 +9173,7 @@ fn ok() -> . { () }
     fn neutral_empty_body_is_preserved() {
         let m = p("module x; \
              fn bind[A][B](xs: A, k: A -> B) -> B { k(xs) } \
-             fn f() -> . { do! bind { } }");
+             fn f() -> . { do (bind) { } }");
         let Item::FnDef(d) = &m.items[1] else {
             panic!("expected fn");
         };
@@ -9245,7 +9275,7 @@ fn ok() -> . { () }
 
     #[test]
     fn if_else_parses() {
-        let m = p("module x; fn f() -> . { if! .t { () } else { () } }");
+        let m = p("module x; fn f() -> . { if (.t) { () } else { () } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(
                 matches!(&d.body, Expr::BlockCall { head, blocks, .. } if head.name == "if" && blocks.len() == 2)
@@ -9255,7 +9285,7 @@ fn ok() -> . { () }
 
     #[test]
     fn if_condition_before_block_parses() {
-        let m = p("module x; fn pick[A](c: Bool, t: A, e: A) -> A { if! c { t } else { e } }");
+        let m = p("module x; fn pick[A](c: Bool, t: A, e: A) -> A { if (c) { t } else { e } }");
         if let Item::FnDef(d) = &m.items[0] {
             assert!(
                 matches!(&d.body, Expr::BlockCall { prefix, blocks, .. } if prefix.len() == 1 && blocks.len() == 2)
@@ -9358,10 +9388,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn unmarked_if_block_is_not_an_elaborator_call() {
-        let msg = p_err("module x; fn f() -> . { if .t { () } }");
-        assert!(msg.contains("expected `}`"), "got: {msg}");
-        let m = p("module x; fn f() -> . { if! .t { () } }");
+    fn if_block_has_neutral_parser_shape() {
+        let m = p("module x; fn f() -> . { if (.t) { () } }");
         assert!(matches!(
             &m.items[0],
             Item::FnDef(d) if matches!(&d.body, Expr::BlockCall { head, blocks, .. }
@@ -9789,12 +9817,14 @@ fn ok() -> . { () }
         }
     }
 
-    fn assert_user_elaborator_name(src: &str, expected: &str) {
+    fn assert_user_macro_name(src: &str, expected: &str) {
         let m = p(src);
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
-                Expr::UserElaborator { name, .. } => assert_eq!(name, expected),
-                other => panic!("expected Expr::UserElaborator for {src:?}, got {other:?}"),
+                Expr::Call { callee, .. } => assert!(
+                    matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.len() == 1 && segments[0].name == expected)
+                ),
+                other => panic!("expected Expr::Call for {src:?}, got {other:?}"),
             }
         } else {
             panic!("expected fn for {src:?}");
@@ -9802,62 +9832,64 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn iso_bang_call_parses() {
-        assert_user_elaborator_name("module x; fn f() -> . { iso!(x) }", "iso");
+    fn iso_call_parses() {
+        assert_user_macro_name("module x; fn f() -> . { iso(x) }", "iso");
     }
 
     #[test]
-    fn into_bang_call_parses() {
-        assert_user_elaborator_name("module x; fn f() -> . { into!(x) }", "into");
+    fn into_call_parses() {
+        assert_user_macro_name("module x; fn f() -> . { into(x) }", "into");
     }
 
     #[test]
-    fn onto_bang_call_parses() {
-        assert_user_elaborator_name("module x; fn f() -> . { onto!(x) }", "onto");
+    fn onto_call_parses() {
+        assert_user_macro_name("module x; fn f() -> . { onto(x) }", "onto");
     }
 
     #[test]
-    fn ease_bang_call_parses() {
-        assert_user_elaborator_name("module x; fn f() -> . { ease!(x) }", "ease");
+    fn ease_call_parses() {
+        assert_user_macro_name("module x; fn f() -> . { ease(x) }", "ease");
     }
 
     #[test]
     fn ease_ufcs_parses() {
-        // Receiver-first UFCS form `r.>ease!(T)` is still a `Ufcs`
+        // Receiver-first UFCS form `r.>ease(T)` is still a `Ufcs`
         // node at parse time; verify it parses without error.
-        let _m = p("module x; fn f() -> . { x.>ease!(()) }");
+        let _m = p("module x; fn f() -> . { x.>ease(()) }");
     }
 
-    // ---- Spine-palette bang calls -------------------------------------
+    // ---- Spine-palette calls -------------------------------------
     //
-    // The spine forms parse as user-elaborator bang calls plus
-    // right-callee bang UFCS splices.
+    // The spine forms parse as macro calls plus
+    // right-callee macro_call UFCS splices.
 
-    fn assert_elaborator_kind(src: &str, expected: &str) {
+    fn assert_macro_kind(src: &str, expected: &str) {
         let m = p(src);
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
-                Expr::UserElaborator { name, .. } => assert_eq!(
-                    name, expected,
-                    "wrong user elaborator for {src:?}: expected {expected:?}, got {name:?}"
+                Expr::Call { callee, .. } => assert!(
+                    matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.len() == 1 && segments[0].name == expected)
                 ),
-                other => panic!("expected Expr::UserElaborator for {src:?}, got {other:?}"),
+                other => panic!("expected Expr::Call for {src:?}, got {other:?}"),
             }
         } else {
             panic!("expected fn for {src:?}");
         }
     }
 
-    fn assert_elaborator_ufcs(src: &str, expected_segment: &str) {
+    fn assert_macro_ufcs(src: &str, expected_segment: &str) {
         let m = p(src);
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
                     callee_segments,
-                    bang,
+                    macro_call,
                     ..
                 } => {
-                    assert!(bang.is_some(), "expected bang-call UFCS for {src:?}");
+                    assert!(
+                        macro_call.is_none(),
+                        "parser leaves macro selection unresolved for {src:?}"
+                    );
                     assert_eq!(
                         callee_segments,
                         &vec![expected_segment.to_owned()],
@@ -9872,145 +9904,145 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn reorder_sum_bang_call_parses() {
-        assert_elaborator_kind(
-            "module x; fn f() -> . { reorder_sum!(x, ()) }",
+    fn reorder_sum_call_parses() {
+        assert_macro_kind(
+            "module x; fn f() -> . { reorder_sum(x, ()) }",
             "reorder_sum",
         );
     }
 
     #[test]
     fn reorder_sum_ufcs_parses() {
-        assert_elaborator_ufcs(
-            "module x; fn f() -> . { x.>reorder_sum!(()) }",
+        assert_macro_ufcs(
+            "module x; fn f() -> . { x.>reorder_sum(()) }",
             "reorder_sum",
         );
     }
 
     #[test]
-    fn reorder_prod_bang_call_parses() {
-        assert_elaborator_kind(
-            "module x; fn f() -> . { reorder_prod!(x, ()) }",
+    fn reorder_prod_call_parses() {
+        assert_macro_kind(
+            "module x; fn f() -> . { reorder_prod(x, ()) }",
             "reorder_prod",
         );
     }
 
     #[test]
     fn reorder_prod_ufcs_parses() {
-        assert_elaborator_ufcs(
-            "module x; fn f() -> . { x.>reorder_prod!(()) }",
+        assert_macro_ufcs(
+            "module x; fn f() -> . { x.>reorder_prod(()) }",
             "reorder_prod",
         );
     }
 
     #[test]
-    fn narrow_sum_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { narrow_sum!(x, ()) }", "narrow_sum");
+    fn narrow_sum_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { narrow_sum(x, ()) }", "narrow_sum");
     }
 
     #[test]
     fn narrow_sum_ufcs_parses() {
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>narrow_sum!(()) }", "narrow_sum");
+        assert_macro_ufcs("module x; fn f() -> . { x.>narrow_sum(()) }", "narrow_sum");
     }
 
     #[test]
-    fn narrow_prod_bang_call_parses() {
-        assert_elaborator_kind(
-            "module x; fn f() -> . { narrow_prod!(x, ()) }",
+    fn narrow_prod_call_parses() {
+        assert_macro_kind(
+            "module x; fn f() -> . { narrow_prod(x, ()) }",
             "narrow_prod",
         );
     }
 
     #[test]
     fn narrow_prod_ufcs_parses() {
-        assert_elaborator_ufcs(
-            "module x; fn f() -> . { x.>narrow_prod!(()) }",
+        assert_macro_ufcs(
+            "module x; fn f() -> . { x.>narrow_prod(()) }",
             "narrow_prod",
         );
     }
 
     #[test]
-    fn widen_sum_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { widen_sum!(x, ()) }", "widen_sum");
+    fn widen_sum_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { widen_sum(x, ()) }", "widen_sum");
     }
 
     #[test]
     fn widen_sum_ufcs_parses() {
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>widen_sum!(()) }", "widen_sum");
+        assert_macro_ufcs("module x; fn f() -> . { x.>widen_sum(()) }", "widen_sum");
     }
 
     #[test]
-    fn widen_prod_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { widen_prod!(x, ()) }", "widen_prod");
+    fn widen_prod_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { widen_prod(x, ()) }", "widen_prod");
     }
 
     #[test]
     fn widen_prod_ufcs_parses() {
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>widen_prod!(()) }", "widen_prod");
+        assert_macro_ufcs("module x; fn f() -> . { x.>widen_prod(()) }", "widen_prod");
     }
 
     #[test]
-    fn flatten_sum_bang_call_parses() {
-        assert_elaborator_kind(
-            "module x; fn f() -> . { flatten_sum!(x, ()) }",
+    fn flatten_sum_call_parses() {
+        assert_macro_kind(
+            "module x; fn f() -> . { flatten_sum(x, ()) }",
             "flatten_sum",
         );
     }
 
     #[test]
     fn flatten_sum_ufcs_parses() {
-        assert_elaborator_ufcs(
-            "module x; fn f() -> . { x.>flatten_sum!(()) }",
+        assert_macro_ufcs(
+            "module x; fn f() -> . { x.>flatten_sum(()) }",
             "flatten_sum",
         );
     }
 
     #[test]
-    fn flatten_prod_bang_call_parses() {
-        assert_elaborator_kind(
-            "module x; fn f() -> . { flatten_prod!(x, ()) }",
+    fn flatten_prod_call_parses() {
+        assert_macro_kind(
+            "module x; fn f() -> . { flatten_prod(x, ()) }",
             "flatten_prod",
         );
     }
 
     #[test]
     fn flatten_prod_ufcs_parses() {
-        assert_elaborator_ufcs(
-            "module x; fn f() -> . { x.>flatten_prod!(()) }",
+        assert_macro_ufcs(
+            "module x; fn f() -> . { x.>flatten_prod(()) }",
             "flatten_prod",
         );
     }
 
     #[test]
-    fn one_sum_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { one_sum!(x, ()) }", "one_sum");
+    fn one_sum_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { one_sum(x, ()) }", "one_sum");
     }
 
     #[test]
     fn one_sum_ufcs_parses() {
-        // `one_sum!` accepts target-elided UFCS; parens-iff-args drops
+        // `one_sum` accepts target-elided UFCS; parens-iff-args drops
         // the parens entirely when no target is supplied.
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>one_sum! }", "one_sum");
+        assert_macro_ufcs("module x; fn f() -> . { x.>one_sum }", "one_sum");
     }
 
     #[test]
-    fn one_prod_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { one_prod!(x, ()) }", "one_prod");
+    fn one_prod_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { one_prod(x, ()) }", "one_prod");
     }
 
     #[test]
     fn one_prod_ufcs_parses() {
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>one_prod! }", "one_prod");
+        assert_macro_ufcs("module x; fn f() -> . { x.>one_prod }", "one_prod");
     }
 
     #[test]
-    fn fit_bang_call_parses() {
-        assert_elaborator_kind("module x; fn f() -> . { fit!(x, ()) }", "fit");
+    fn fit_call_parses() {
+        assert_macro_kind("module x; fn f() -> . { fit(x, ()) }", "fit");
     }
 
     #[test]
     fn fit_ufcs_parses() {
-        assert_elaborator_ufcs("module x; fn f() -> . { x.>fit!(()) }", "fit");
+        assert_macro_ufcs("module x; fn f() -> . { x.>fit(()) }", "fit");
     }
 
     // ---- placeholder lambdas -----------------------------------------
@@ -10031,7 +10063,7 @@ fn ok() -> . { () }
             ("pair(x1, .x. { x3 })", 1),
             ("pair(x1, m.x9)", 1),
             ("value.>x1", 1),
-            ("pair(x1, x9!(x2))", 2),
+            ("pair(x1, x9(x2))", 9),
             ("let x01 = x1; x01", 1),
             ("{x1}", 1),
             ("let .(<U> x2) = x1; x2", 1),
@@ -10072,10 +10104,10 @@ fn ok() -> . { () }
             "let.x.y",
             "let.x.fn()",
             "let.x.fn",
-            "action! { let.x.y() }",
-            "action! { let.x.y }",
-            "action! { let.x.fn() }",
-            "action! { let.x.fn }",
+            "action { let.x.y() }",
+            "action { let.x.y }",
+            "action { let.x.fn() }",
+            "action { let.x.fn }",
         ] {
             let source = format!("module m; op _ <- _ {{ impl choose }}; fn run() {{ {body} }}");
             let parsed = p(&source);
@@ -10087,7 +10119,7 @@ fn ok() -> . { () }
             );
             p(&rendered);
         }
-        for body in ["let.x. // path\n y()", "action! { let.x. // path\n y } "] {
+        for body in ["let.x. // path\n y()", "action { let.x. // path\n y } "] {
             let source = format!("module m; fn run() {{ {body} }}");
             let formatted = crate::pretty::pretty_module(&p(&source));
             assert_eq!(crate::pretty::pretty_module(&p(&formatted)), formatted);
@@ -10098,8 +10130,8 @@ fn ok() -> . { () }
     fn numbered_bindings_preserve_connective_comments() {
         for body in [
             "let // intro\n .x. // before\n = // after\n () // end\n; x1",
-            "action! { let // intro\n .x. // before\n = // after\n () // end\n; x1 }",
-            "action! { let // intro\n .x. // before\n <- // after\n () // end\n; x1 }",
+            "action { let // intro\n .x. // before\n = // after\n () // end\n; x1 }",
+            "action { let // intro\n .x. // before\n <- // after\n () // end\n; x1 }",
         ] {
             let source = format!("module m; fn run() {{ {body} }}");
             let formatted = crate::pretty::pretty_module(&p(&source));
@@ -10144,7 +10176,7 @@ fn ok() -> . { () }
     fn numbered_neutral_bindings_keep_each_source_order_owner() {
         for connective in ["=", "<-"] {
             let source = format!(
-                "module m; fn run() {{ action! {{ \
+                "module m; fn run() {{ action {{ \
                 let .x. {connective} (); print(x2); \
                 let .x. {connective} x1; print(x3); \
                 let .y. {connective} (); pair(x2, y1) }} }}"
@@ -10222,11 +10254,11 @@ fn ok() -> . { () }
             ("let .(x2, x3) = x1; pair(x2, x3)", 1),
             ("let .(whole: (x2: Int, x3: Int)) = x1; pair(x2, x3)", 1),
             ("let .({foo as x2}) = x1; x2", 1),
-            ("do! m { let x2 <- x1; let x3 = x2; x3 }", 1),
+            ("do (m) { let x2 <- x1; let x3 = x2; x3 }", 1),
             ("pair(x1, .y. { pair(x2, y1) })", 1),
             ("pair(x1, m.x9)", 1),
             ("value.>x1", 1),
-            ("pair(x1, x9!(x2))", 2),
+            ("pair(x1, x9(x2))", 9),
             ("let x01 = x1; x01", 1),
             ("{field = x1}", 1),
             ("{x1}", 1),
@@ -10948,14 +10980,13 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_bang_call_names_are_value_names() {
-        p("module ok; fn f(x: .) -> . { _foo!.<<x }");
-        for call in ["_Foo!()", "_FooBar!()", "_Foo!.<<x"] {
-            let message = p_err(&format!("module bad; fn f(x: .) -> . {{ {call} }}"));
-            assert!(
-                message.contains(call.split('!').next().unwrap()),
-                "{call}: {message}"
-            );
+    fn macro_aliases_are_value_names() {
+        p("module ok; import provider(macro selected as _foo); fn f(x: .) { _foo.<<x }");
+        for name in ["_Foo", "_FooBar"] {
+            let message = p_err(&format!(
+                "module bad; import provider(macro selected as {name});"
+            ));
+            assert!(message.contains(name), "{name}: {message}");
         }
     }
 
@@ -11094,28 +11125,28 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_captures_accept_exact_type_or_value_roles() {
+    fn macro_captures_accept_exact_type_or_value_roles() {
         for source in [
-            "module m; elab demo : . -> . { captures Foo; impl _foo; };",
-            "module m; elab demo : . -> . { captures _Foo; impl _foo; };",
-            "module m; elab demo : . -> . { captures _foo; impl _foo; };",
-            "module m; elab demo : . -> . { captures m._Foo.member; impl _foo; };",
+            "module m; macro demo : . -> . { captures Foo; impl _foo; };",
+            "module m; macro demo : . -> . { captures _Foo; impl _foo; };",
+            "module m; macro demo : . -> . { captures _foo; impl _foo; };",
+            "module m; macro demo : . -> . { captures m._Foo.member; impl _foo; };",
         ] {
             p(source);
         }
         for name in ["_FooBar", "_1Foo", "__pair__"] {
             let bare = p_err(&format!(
-                "module m; elab demo : . -> . {{ captures {name}; impl _foo; }};"
+                "module m; macro demo : . -> . {{ captures {name}; impl _foo; }};"
             ));
             assert!(bare.contains(name), "bare {name}: {bare}");
             let dotted = p_err(&format!(
-                "module m; elab demo : . -> . {{ captures m.{name}; impl _foo; }};"
+                "module m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
             ));
             assert!(dotted.contains(name), "dotted {name}: {dotted}");
         }
         for name in ["Foo", "_Foo"] {
             let message = p_err(&format!(
-                "module m; elab demo : . -> . {{ captures m.{name}; impl _foo; }};"
+                "module m; macro demo : . -> . {{ captures m.{name}; impl _foo; }};"
             ));
             assert!(message.contains(name), "dotted {name}: {message}");
         }
@@ -11134,18 +11165,11 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn elaborator_ufcs_requires_a_user_value_name() {
-        p("module m; fn f(x: .) -> . { x.>_foo! }");
-        for call in ["x.>__pair__!", "x.>>__if_then_else__!"] {
-            let message = p_err(&format!("module m; fn f(x: .) -> . {{ {call} }}"));
-            let invalid_name = call
-                .split('>')
-                .next_back()
-                .unwrap()
-                .split('!')
-                .next()
-                .unwrap();
-            assert!(message.contains(invalid_name), "{call}: {message}");
+    fn macro_import_requires_a_user_value_name() {
+        p("module m; import provider(macro _foo); fn f(x: .) { x.>_foo }");
+        for name in ["__pair__", "__if_then_else__", "_Foo"] {
+            let message = p_err(&format!("module m; import provider(macro {name});"));
+            assert!(message.contains(name), "{name}: {message}");
         }
     }
 
@@ -11157,7 +11181,7 @@ fn ok() -> . { () }
             "module m; fn f(x: .) -> . { _Box.mk.<x }",
             "module m; fn f(x: .) -> . { _Box.mk(()).<x }",
             "module m; fn f(x: .) -> . { __pair__(., ., x, x).<x }",
-            "module m; fn f(x: .) -> . { _foo!(()).<<x }",
+            "module m; fn f(x: .) -> . { _foo(()).<<x }",
         ] {
             p(source);
         }

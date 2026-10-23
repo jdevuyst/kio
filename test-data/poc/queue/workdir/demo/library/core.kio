@@ -2,9 +2,9 @@
 /// A ready-to-use library module for your own Kio package.
 module library/core;
 
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
 import library/list/core(cons, head, nil, uncons);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import list/core(List);
 
 // The representation is Okasaki's two-list queue (Purely Functional Data
@@ -30,7 +30,7 @@ import list/core(List);
 // A pure two-state truth value
 // =====================================================================
 //
-// The two arms are labeled so `match!` can tell them apart — a bare `. | .`
+// The two arms are labeled so `match` can tell them apart — a bare `. | .`
 // has no labels to branch on.
 /// Defines the two labels that make the module-local boolean shape matchable.
 pub labels { btrue: ., bfalse: . };
@@ -39,16 +39,16 @@ pub labels { btrue: ., bfalse: . };
 pub type Bool = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum!({btrue=}, Btrue | Bfalse) }
+pub fn yes() -> Bool { widen_sum({btrue=}, Btrue | Bfalse) }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum!({bfalse=}, Btrue | Bfalse) }
+pub fn no() -> Bool { widen_sum({bfalse=}, Btrue | Bfalse) }
 
 /// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
 /// labels inside this module — a consumer never names `Btrue` /
 /// `Bfalse` to branch on a predicate's result.
 pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
-  match! b {
+  match(b) {
     (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
   }
 }
@@ -56,12 +56,12 @@ pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
 /// Returns logical conjunction for the module-local boolean shape.
 pub fn band(x: Bool, y: Bool) -> Bool { bool_to(y, no(), x) }
 
-fn present[A](value: A) -> A | . { widen_sum!(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
 
-fn absent[A] -> A | . { widen_sum!((), A | .) }
+fn absent[A] -> A | . { widen_sum((), A | .) }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
-  match! result {
+  match(result) {
     (.(value: A) { present_value(value) }, .(_empty: .) { default })
   }
 }
@@ -71,7 +71,7 @@ fn has_value[A](result: A | .) -> Bool {
 }
 
 fn list_is_empty[A](xs: List(A)) -> Bool {
-  match! uncons(xs) {
+  match(uncons(xs)) {
     (.(_pair: A & List(A)) { no() }, .(_empty: .) { yes() })
   }
 }
@@ -90,14 +90,14 @@ pub newtype Queue[A] : List(A) & List(A) { pub constructor mk_unchecked; pub pro
 /// the pure reads the loop-driven layer in `queue.kio` threads through
 /// `mkq` / `enqueue` / `dequeue`.
 pub fn front[A](q: Queue(A)) -> List(A) {
-  match! q.>Queue.un_queue {
+  match(q.>Queue.un_queue) {
     .(f: List(A), _b: List(A)) { f }
   }
 }
 
 /// Projects the reversed back spine from a queue.
 pub fn back[A](q: Queue(A)) -> List(A) {
-  match! q.>Queue.un_queue {
+  match(q.>Queue.un_queue) {
     .(_f: List(A), b: List(A)) { b }
   }
 }
@@ -131,7 +131,7 @@ pub fn peek[A](q: Queue(A)) -> A | . { head(front(q)) }
 /// is paired with a `mkq` re-canonicalization in the loop-driven layer;
 /// the raw swap itself is the pure O(1) core.)
 pub fn swap_spines[A](q: Queue(A)) -> Queue(A) {
-  match! q.>Queue.un_queue {
+  match(q.>Queue.un_queue) {
     .(f: List(A), b: List(A)) { Queue.mk_unchecked((b, f)) }
   }
 }
@@ -162,7 +162,7 @@ pub fn count_step[A][N](succ: N -> N, carry: N, _x: A) -> N { succ(carry) }
 /// the invariant. Pure; the only non-pure part of enqueue is the `mkq`
 /// reversal when the front is empty.
 pub fn snoc_into_back[A](x: A, q: Queue(A)) -> Queue(A) {
-  match! q.>Queue.un_queue {
+  match(q.>Queue.un_queue) {
     .(f: List(A), b: List(A)) { Queue.mk_unchecked((f, cons(x, b))) }
   }
 }
@@ -173,12 +173,12 @@ pub fn snoc_into_back[A](x: A, q: Queue(A)) -> Queue(A) {
 /// front tail emptied); that re-canonicalization is the loop-driven part
 /// in `queue.kio`. This pure step does the O(1) head split.
 pub fn pop_front[A](q: Queue(A)) -> (A & Queue(A)) | . {
-  match! q.>Queue.un_queue {
+  match(q.>Queue.un_queue) {
     .(f: List(A), b: List(A)) {
-      match! uncons(f) {
+      match(uncons(f)) {
         (
         , .(pair: A & List(A)) {
-            match! pair {
+            match(pair) {
               .(h: A, t: List(A)) { present((h, Queue.mk_unchecked((t, b)))) }
             }
           }

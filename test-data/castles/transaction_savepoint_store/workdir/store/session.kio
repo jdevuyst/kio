@@ -1,9 +1,9 @@
 module store/session;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as cells;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
 import store/audit as audit;
 import store/commands as commands;
 import store/history as history;
@@ -25,7 +25,7 @@ labels Session = {
 
 fn print_reply(number: I32, reply: tx.Reply, ok: Bool) {
   let state = reply.?{tx.updated};
-  let prefix = if! reply.?{tx.successful} { " OK " } else { " ERROR " };
+  let prefix = if(reply.?{tx.successful}) { " OK " } else { " ERROR " };
   io.print(text.string_concat(
   , fmt.int_to_string(number)
   , text.string_concat(
@@ -50,26 +50,26 @@ fn execute(session: Session, command: commands.Command) -> Session {
   let after = reply.?{tx.updated};
   let number = arith.add_i32(session.?{operations}, 1);
   let frozen =
-    if! text.string_eq(command.?{commands.opcode}, "SNAPSHOT") {
+    if(text.string_eq(command.?{commands.opcode}, "SNAPSHOT")) {
       cells.cons(audit.freeze(command.?{commands.key}, after.?{tx.working}), session.?{frozen})
     } else {
       session.?{frozen}
     };
   let ok =
-    if! audit.transition_ok(before, command, reply) { audit.all_frozen_ok(frozen) } else { .f };
+    if(audit.transition_ok(before, command, reply)) { audit.all_frozen_ok(frozen) } else { .f };
   let rejected =
-    if! reply.?{tx.successful} {
+    if(reply.?{tx.successful}) {
       session.?{rejected}
     } else {
       arith.add_i32(session.?{rejected}, 1)
     };
-  let failures = if! ok { session.?{failures} } else { arith.add_i32(session.?{failures}, 1) };
+  let failures = if(ok) { session.?{failures} } else { arith.add_i32(session.?{failures}, 1) };
   print_reply(number, reply, ok);
   {database = after, frozen, operations = number, rejected, failures}
 }
 
 rec(loop) fn print_snapshots(frozen: cells.List(audit.Frozen)) {
-  match! cells.uncons(frozen) {
+  match(cells.uncons(frozen)) {
     .(item: audit.Frozen, rest: cells.List(audit.Frozen)) {
       audit.print_frozen(item);
       recur print_snapshots(rest)
@@ -103,7 +103,7 @@ fn finish(session: Session) {
 }
 
 rec(loop) fn consume(session: Session) {
-  match! commands.read() {
+  match(commands.read()) {
     .(read: commands.Parsed) { recur consume(execute(session, read.?{commands.parsed})) };
     .(bad: commands.Malformed) {
       io.print(bad.?{commands.malformed}

@@ -485,7 +485,7 @@ impl<'a> SkeletonCursor<'a> {
     ///
     /// Used at narrow parser-contextual structural-recovery sites
     /// (including function arrows, existential closers,
-    /// and bang-call dispatch)
+    /// and macro call dispatch)
     /// when greedy fusion absorbed the structural delimiter into
     /// a longer run — `A ->!` fuses `->!`, and the parser
     /// peels `->` back off via this primitive.

@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
@@ -14,19 +14,19 @@ type State = I32 & I32;
 type Ticket = I32 -> I32;
 
 fn step(reenter: State -> Ticket, state: State) -> State | Ticket {
-  match! state {
+  match(state) {
     .(remaining: I32, answer: I32) {
-      if! arith.eq_i32(remaining, 0) {
-        widen_sum!(.(n: I32) { reenter((n, n))(0) })
-      } else if! arith.leq_i32(remaining, 1) {
-        if! arith.eq_i32(remaining, 1) {
-          widen_sum!(.(_unit: I32) { answer })
+      if(arith.eq_i32(remaining, 0)) {
+        widen_sum(.(n: I32) { reenter((n, n))(0) })
+      } else if(arith.leq_i32(remaining, 1)) {
+        if(arith.eq_i32(remaining, 1)) {
+          widen_sum(.(_unit: I32) { answer })
         } else {
           let nested = reenter((4, 73))(0);
-          widen_sum!(.(_unit: I32) { nested })
+          widen_sum(.(_unit: I32) { nested })
         }
       } else {
-        widen_sum!((arith.sub_i32(remaining, 1), answer))
+        widen_sum((arith.sub_i32(remaining, 1), answer))
       }
     }
   }

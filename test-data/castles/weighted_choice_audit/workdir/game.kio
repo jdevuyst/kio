@@ -1,8 +1,8 @@
 module game;
 
 import choice as choice;
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, I32);
 import testapi/arith as arith;
 
@@ -10,11 +10,11 @@ pub labels Loot = { blade: I32 } | { bow: I32 } | { coins: I32 };
 
 pub labels Loadout = { attack: I32, treasure: I32 };
 
-fn blade_drop() -> Loot { {blade = 2}.>widen_sum! }
+fn blade_drop() -> Loot { {blade = 2}.>widen_sum }
 
-fn bow_drop() -> Loot { {bow = 3}.>widen_sum! }
+fn bow_drop() -> Loot { {bow = 3}.>widen_sum }
 
-fn coin_drop() -> Loot { {coins = 5}.>widen_sum! }
+fn coin_drop() -> Loot { {coins = 5}.>widen_sum }
 
 pub fn loot() -> choice.Choice(Loot) {
   choice.weighted(blade_drop(), 2)
@@ -27,7 +27,7 @@ pub fn charms() -> choice.Choice(I32) {
 }
 
 pub fn equip(item: Loot, bonus: I32) -> Loadout {
-  match! item {
+  match(item) {
     .(blade: Blade) { {attack = arith.add_i32(blade.?{blade}, bonus), treasure = 0} };
     .(bow: Bow) { {attack = arith.add_i32(bow.?{bow}, bonus), treasure = 0} };
     .(coins: Coins) { {attack = bonus, treasure = coins.?{coins}} }

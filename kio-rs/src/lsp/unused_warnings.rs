@@ -264,7 +264,7 @@ pub(crate) fn doc_dependency_uncertainty(
             Item::LiteralAlias(def, _) => attach(def.doc.as_ref()),
             Item::Labels(def, _) => attach(def.doc.as_ref()),
             Item::LabelForward(def, _) => attach(def.doc.as_ref()),
-            Item::Elaborator(def, _) => attach(def.doc.as_ref()),
+            Item::Macro(def, _) => attach(def.doc.as_ref()),
             Item::Op(def, _) => attach(def.doc.as_ref()),
             Item::VariadicOperator(def, _) => attach(def.doc.as_ref()),
             Item::HostFn(def) => attach(def.doc.as_ref()),
@@ -355,7 +355,7 @@ impl DeclarationGraph {
                 }
                 Item::Labels(def, _) => def.vis.is_pub(),
                 Item::LabelForward(def, _) => def.vis.is_pub(),
-                Item::Elaborator(def, _) => def.vis.is_pub(),
+                Item::Macro(def, _) => def.vis.is_pub(),
                 Item::Op(def, _) => def.vis.is_pub(),
                 Item::VariadicOperator(def, _) => def.vis.is_pub(),
                 Item::RecGroup(group, _) => group.members.iter().any(|member| member.vis.is_pub()),
@@ -553,8 +553,13 @@ pub(crate) fn import_removal(
 
 fn import_item_syntax(tokens: &[Token], item: &ImportItem) -> Option<Span> {
     match item {
-        ImportItem::Name { span, alias, .. } => Some(Span::new(
-            span.start,
+        ImportItem::Name {
+            span,
+            alias,
+            macro_span,
+            ..
+        } => Some(Span::new(
+            macro_span.map_or(span.start, |tag| tag.start),
             alias.as_ref().map_or(span.end, |alias| alias.span.end),
         )),
         ImportItem::Label { span, .. } => {
@@ -1013,7 +1018,7 @@ mod tests {
     }
 
     #[test]
-    fn source_warning_graph_tracks_elaborator_implementation_and_captures() {
+    fn source_warning_graph_tracks_macro_implementation_and_captures() {
         let analysis = analyze_sources(&[(
             "main",
             "module main; import __comptime__; \
@@ -1022,8 +1027,8 @@ mod tests {
                 _hidden: __Type__) -> __Checked_term__ { \
                 __term_unit__(ct) \
             } \
-            elab expand : . -> . { captures (helper, Hidden); impl build; }; \
-            pub fn run() -> . { expand!(()) }",
+            macro expand : . -> . { captures (helper, Hidden); impl build; }; \
+            pub fn run() -> . { expand(()) }",
         )]);
         assert!(
             new_warnings(&analysis).is_empty(),

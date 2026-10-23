@@ -1,6 +1,6 @@
 module edit_distance_audit/render;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -27,7 +27,7 @@ pub fn print_bool_metric(name: String, value: Bool) {
 }
 
 pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I32) -> I32 {
-  if! arith.leq_i32(index, last) {
+  if(arith.leq_i32(index, last)) {
     let value = array.array_get(row, index);
     let weight = arith.add_i32(index, 1);
     let term = arith.mul_i32(value, weight);
@@ -40,7 +40,7 @@ pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I3
 pub fn row_checksum(row: Array(I32), last: I32) -> I32 { row_checksum_at(0, last, row, 0) }
 
 pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) {
-  if! arith.leq_i32(index, last) {
+  if(arith.leq_i32(index, last)) {
     print_i32(array.array_get(row, index));
     io.print(" ");
     recur print_row_cells(arith.add_i32(index, 1), last, row)

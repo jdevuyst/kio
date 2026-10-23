@@ -2,7 +2,7 @@ module derive_memo_wide_candidate_set/main;
 
 import __intrinsics__;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 
 pub newtype Cell[A] : A { pub constructor mk_cell; pub projector un_cell }
@@ -56,7 +56,7 @@ fn render_pair[A][B](ra: Render(A), rb: Render(B)) -> Render(Pair(A, B)) {
 }
 
 fn derived0() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
-  derive!(
+  derive(
   , (
     , render_atom0
     , render_atom1
@@ -72,7 +72,7 @@ fn derived0() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String),
 }
 
 fn derived1() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
-  derive!(
+  derive(
   , (
     , render_atom0
     , render_atom1
@@ -88,7 +88,7 @@ fn derived1() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String),
 }
 
 fn derived2() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
-  derive!(
+  derive(
   , (
     , render_atom0
     , render_atom1
@@ -104,7 +104,7 @@ fn derived2() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String),
 }
 
 fn derived3() -> Render(Pair(Cell(String), Pair(Cell(String), Pair(Cell(String), Cell(String))))) {
-  derive!(
+  derive(
   , (
     , render_atom0
     , render_atom1

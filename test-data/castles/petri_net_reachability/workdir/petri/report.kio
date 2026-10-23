@@ -1,7 +1,7 @@
 module petri/report;
 
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import petri/fixture as fixture;
 import petri/model as model;
 import petri/search as search;
@@ -22,14 +22,14 @@ fn number(label: String, value: I32) { line(label, fmt.int_to_string(value)) }
 fn flag(label: String, value: Bool) { line(label, fmt.bool_to_string(value)) }
 
 fn rejected(net: model.Net, transition: model.Transition) -> Bool {
-  if! model.enabled(net, transition, net.?{model.initial}) { .f } else { .t }
+  if(model.enabled(net, transition, net.?{model.initial})) { .f } else { .t }
 }
 
 fn print_witness(net: model.Net, result: search.Search) {
-  match! result.?{search.first_deadlock} {
+  match(result.?{search.first_deadlock}) {
     .(node: search.Node) {
       number("shortest deadlock depth: ", node.?{search.depth});
-      match! witness.reconstruct(result.?{search.visited}, node, lists.nil(_)) {
+      match(witness.reconstruct(result.?{search.visited}, node, lists.nil(_))) {
         .(path: witness.Path) {
           number("witness transitions: ", traversal.length(path));
           line("  0: initial -> ", witness.show_marking(net.?{model.initial}));
@@ -59,7 +59,7 @@ pub fn run() {
   number("completed terminals: ", result.?{search.terminals});
   number("unfinished deadlocks: ", result.?{search.deadlocks});
   print_witness(net, result);
-  match! traversal.at(2, net.?{model.transitions}) {
+  match(traversal.at(2, net.?{model.transitions})) {
     .(finish: model.Transition) {
       flag("finish before acquisition rejected: ", rejected(net, finish))
     };

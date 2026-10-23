@@ -1,7 +1,7 @@
 module polygon/clip;
 
-import elab/control(if);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/spine_macros(macro widen_sum);
 import polygon/geometry as geo;
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as num;
@@ -11,7 +11,7 @@ import testapi/iter(loop);
 labels Ring = { before: Array(I32), after: Array(I32), active: Array(Bool) };
 
 rec(loop) fn link_ring(ring: Ring, i: I32, n: I32) {
-  if! geo.equal(i, n) {
+  if(geo.equal(i, n)) {
     ()
   } else {
     arr.array_set(ring.?{before}, i, geo.previous(i, n));
@@ -28,11 +28,11 @@ fn inside_triangle(p: geo.Point, a: geo.Point, b: geo.Point, c: geo.Point) -> Bo
 }
 
 rec(loop) fn contains_vertex(points: Array(geo.Point), ring: Ring, a: I32, b: I32, c: I32, i: I32) -> Bool {
-  if! geo.equal(i, arr.array_len(points)) {
+  if(geo.equal(i, arr.array_len(points))) {
     .f
-  } else if! geo.either(geo.either(geo.equal(i, a), geo.equal(i, b)), geo.equal(i, c)) {
+  } else if(geo.either(geo.either(geo.equal(i, a), geo.equal(i, b)), geo.equal(i, c))) {
     recur contains_vertex(points, ring, a, b, c, num.add_i32(i, 1))
-  } else if! geo.both(
+  } else if(geo.both(
   , arr.array_get(ring.?{active}, i)
   , inside_triangle(
     , arr.array_get(points, i)
@@ -40,7 +40,7 @@ rec(loop) fn contains_vertex(points: Array(geo.Point), ring: Ring, a: I32, b: I3
     , arr.array_get(points, b)
     , arr.array_get(points, c)
     )
-  ) {
+  )) {
     .t
   } else {
     recur contains_vertex(points, ring, a, b, c, num.add_i32(i, 1))
@@ -48,11 +48,11 @@ rec(loop) fn contains_vertex(points: Array(geo.Point), ring: Ring, a: I32, b: I3
 }
 
 fn is_ear(points: Array(geo.Point), ring: Ring, a: I32, b: I32, c: I32) -> Bool {
-  if! geo.less(
+  if(geo.less(
   , 0
   , geo.cross(arr.array_get(points, a), arr.array_get(points, b), arr.array_get(points, c))
-  ) {
-    if! contains_vertex(points, ring, a, b, c, 0) { .f } else { .t }
+  )) {
+    if(contains_vertex(points, ring, a, b, c, 0)) { .f } else { .t }
   } else {
     .f
   }
@@ -68,12 +68,12 @@ rec(loop) fn clip_ring(
 ) -> Array(geo.Triangle) | String {
   let a = arr.array_get(ring.?{before}, cursor);
   let c = arr.array_get(ring.?{after}, cursor);
-  if! geo.equal(remaining, 3) {
+  if(geo.equal(remaining, 3)) {
     arr.array_push(triangles, (a, cursor, c));
-    triangles.>widen_sum!
-  } else if! geo.equal(misses, remaining) {
-    "no removable ear".>widen_sum!
-  } else if! is_ear(points, ring, a, cursor, c) {
+    triangles.>widen_sum
+  } else if(geo.equal(misses, remaining)) {
+    "no removable ear".>widen_sum
+  } else if(is_ear(points, ring, a, cursor, c)) {
     arr.array_push(triangles, (a, cursor, c));
     arr.array_set(ring.?{after}, a, c);
     arr.array_set(ring.?{before}, c, a);

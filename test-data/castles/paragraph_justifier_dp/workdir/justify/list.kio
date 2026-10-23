@@ -5,25 +5,25 @@
 /// is indexed by walking.
 module justify/list;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, eq_i32);
 import testapi/iter(loop);
 
 pub rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
 
-pub fn nil[A] -> List(A) { List.pack(A, widen_sum!((), . | (A & List(A)))) }
+pub fn nil[A] -> List(A) { List.pack(A, widen_sum((), . | (A & List(A)))) }
 
 pub fn cons[A](head: A, rest: List(A)) -> List(A) {
-  List.pack(A, widen_sum!((head, rest), . | (A & List(A))))
+  List.pack(A, widen_sum((head, rest), . | (A & List(A))))
 }
 
 pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
 
 pub fn is_empty[A](xs: List(A)) -> Bool {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
   }
 }
@@ -32,13 +32,13 @@ pub fn is_empty[A](xs: List(A)) -> Bool {
 /// holds a non-empty list by construction; passing a fallback that would be
 /// obviously wrong downstream is what keeps a broken invariant loud.
 pub fn head_or[A](xs: List(A), fallback: A) -> A {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
   }
 }
 
 pub fn tail_of[A](xs: List(A)) -> List(A) {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(_head: A, rest: List(A)) { rest }, .(_empty: .) { nil(A) })
   }
 }
@@ -47,14 +47,14 @@ pub fn tail_of[A](xs: List(A)) -> List(A) {
 /// word per break point and grows the reversed prefix it scans; on the step
 /// that reaches the final break there is no word left to move.
 pub fn push_head[A](src: List(A), acc: List(A)) -> List(A) {
-  match! src.>List.unpack {
+  match(src.>List.unpack) {
     (.(head: A, _rest: List(A)) { cons(head, acc) }, .(_empty: .) { acc })
   }
 }
 
 /// `reverse` and `append` are both this one accumulator loop.
 rec(loop) fn rev_onto[A](xs: List(A), acc: List(A)) -> List(A) {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(head: A, rest: List(A)) { recur rev_onto(rest, cons(head, acc)) }, .(_empty: .) { acc })
   }
 }
@@ -64,7 +64,7 @@ pub fn reverse[A](xs: List(A)) -> List(A) { rev_onto(xs, nil(A)) }
 pub fn append[A](xs: List(A), ys: List(A)) -> List(A) { rev_onto(reverse(xs), ys) }
 
 rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (.(_head: A, rest: List(A)) { recur len_onto(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
   }
 }
@@ -72,10 +72,10 @@ rec(loop) fn len_onto[A](xs: List(A), acc: I32) -> I32 {
 pub fn len[A](xs: List(A)) -> I32 { len_onto(xs, 0) }
 
 rec(loop) fn at_from[A](xs: List(A), cursor: I32, index: I32, fallback: A) -> A {
-  match! xs.>List.unpack {
+  match(xs.>List.unpack) {
     (
     , .(head: A, rest: List(A)) {
-        if! eq_i32(cursor, index) {
+        if(eq_i32(cursor, index)) {
           head
         } else {
           recur at_from(rest, add_i32(cursor, 1), index, fallback)

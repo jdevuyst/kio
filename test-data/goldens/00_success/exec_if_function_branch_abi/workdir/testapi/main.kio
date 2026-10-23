@@ -1,11 +1,11 @@
 module testapi/main;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(String, default Bool);
 import testapi/io(print);
 
 fn choose(flag: Bool) -> (String & . & .) -> String {
-  if! flag {
+  if(flag) {
     .(result: String, _effect: ., _third: .) { print("if-selected\n"); result }
   } else {
     .(result: String, _effect: ., _third: .) { print("if-unselected\n"); result }

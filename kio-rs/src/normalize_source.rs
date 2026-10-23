@@ -257,9 +257,9 @@ pure fn effect_call_impl(ct: __Comptime__, effect_term: __Checked_term__) -> __C
   __term_call__(ct, effect_type, effect_term, __term_unit__(ct))
 }
 
-elab effect_call : . -> . { captures effect; impl effect_call_impl; };
+macro effect_call : . -> . { captures effect; impl effect_call_impl; };
 
-pure fn main() -> . { effect_call!() }
+pure fn main() -> . { effect_call() }
 ";
 
         let error = normalize_source(package, module).expect_err("expected purity error");
@@ -275,7 +275,7 @@ pure fn main() -> . { effect_call!() }
         }
     }
 
-    fn same_module_elaborator_sources() -> (&'static str, &'static str) {
+    fn same_module_macro_sources() -> (&'static str, &'static str) {
         let package = "\
 package evalsrc;
 
@@ -294,10 +294,10 @@ pure fn make_rep_impl(ct: __Comptime__, _rep_type: __Type__, ctor: __Checked_ter
 
 newtype Rep : . { constructor mk_rep; projector un_rep; };
 
-elab make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; };
+macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; };
 
 pure fn main() -> . {
-  let rep = make_rep!(., ());
+  let rep = make_rep(., ());
   rep.>Rep.un_rep
 }
 ";
@@ -306,7 +306,7 @@ pure fn main() -> . {
 
     #[test]
     fn same_module_capture_replays_without_a_self_import() {
-        let (package, module) = same_module_elaborator_sources();
+        let (package, module) = same_module_macro_sources();
 
         let rendered =
             normalize_source(package, module).expect("same-module captured members should replay");
@@ -315,8 +315,8 @@ pure fn main() -> . {
 
     #[cfg(feature = "repl-core")]
     #[test]
-    fn same_module_elaborator_ground_result_matches_in_memory_repl() {
-        let (package, module) = same_module_elaborator_sources();
+    fn same_module_macro_ground_result_matches_in_memory_repl() {
+        let (package, module) = same_module_macro_sources();
         let embedded =
             normalize_source(package, module).expect("same-module captured members should replay");
 

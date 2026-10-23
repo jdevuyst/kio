@@ -1,0 +1,8 @@
+module errsolv/main;
+
+import errsolv(A, B, C);
+import macros/spine_macros(macro widen_sum);
+
+fn ok(x: B) -> B | C { widen_sum(x) }
+
+fn bad(x: A) -> B | C { widen_sum(x) }

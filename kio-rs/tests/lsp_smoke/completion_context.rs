@@ -73,10 +73,10 @@ fn exact_labels(result: &Value) -> Vec<&str> {
 fn lsp_grouped_reference_prefixes_keep_callable_completion() {
     for tail in [
         "op _ + _ { impl ((hel|",
-        "elab inspect : . { impl(hel|",
-        "elab inspect : . { impl(fills) ((hel|",
-        "elab inspect : . { impl ((|",
-        "elab inspect : . { captures ((hel|",
+        "macro inspect : . { impl(hel|",
+        "macro inspect : . { impl(fills) ((hel|",
+        "macro inspect : . { impl ((|",
+        "macro inspect : . { captures ((hel|",
         "varop [] { foldl ((hel|",
         "varop [] { foldl ((helper)) ((hel|",
         "varop [] { foldl helper helper; finalize ((hel|",
@@ -92,7 +92,7 @@ fn lsp_grouped_reference_prefixes_keep_callable_completion() {
     }
     let completion = open_change_and_complete(
         "",
-        "module app; pure fn fills() { () }\nelab inspect : . { impl(fi|",
+        "module app; pure fn fills() { () }\nmacro inspect : . { impl(fi|",
     );
     assert!(
         completion_labels(&completion).contains(&"fills"),
@@ -125,39 +125,39 @@ fn lsp_protocol_neutral_block_completion_tracks_lexical_scope() {
     let mut failures = Vec::new();
     for (body, expected, forbidden) in [
         (
-            "sequence! bind { let local <- parent; |",
+            "sequence(bind) { let local <- parent; |",
             vec!["local", "parent", "recur"],
             vec!["run"],
         ),
         (
-            "sequence! bind { parent; |",
+            "sequence(bind) { parent; |",
             vec!["parent", "recur"],
             vec!["run"],
         ),
         (
-            "sequence! bind { let local <- parent; recur(|",
+            "sequence(bind) { let local <- parent; recur(|",
             vec!["escape", "poly"],
             vec![],
         ),
-        ("sequence! bind { parent; recur |", vec!["run"], vec![]),
+        ("sequence(bind) { parent; recur |", vec!["run"], vec![]),
         (
-            "sequence! bind { let local = parent; |",
+            "sequence(bind) { let local = parent; |",
             vec!["local", "parent", "recur"],
             vec!["run"],
         ),
         (
-            "sequence! bind { let local <- |parent; local }",
+            "sequence(bind) { let local <- |parent; local }",
             vec!["parent", "recur"],
             vec!["local", "run"],
         ),
         (
-            "let prior = sequence! bind { let local <- parent; local }; |",
+            "let prior = sequence(bind) { let local <- parent; local }; |",
             vec!["prior", "parent", "recur"],
             vec!["local", "run"],
         ),
-        ("scope! { parent; |", vec!["parent", "recur"], vec!["run"]),
+        ("scope { parent; |", vec!["parent", "recur"], vec!["run"]),
         (
-            "sequence! bind { .() { |",
+            "sequence(bind) { .() { |",
             vec!["parent", "recur"],
             vec!["run"],
         ),

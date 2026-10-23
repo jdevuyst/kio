@@ -969,7 +969,7 @@ fn lower_module_item(item: &Item, top: &TopLevel) -> Result<Vec<ModuleItemJs>, E
         // Statically uninhabited in `Prime`; substitution filters
         // `Equiv` items before codegen.
         Item::Equiv(_, ext) => match *ext {},
-        Item::Elaborator(_, ext) => match *ext {},
+        Item::Macro(_, ext) => match *ext {},
         // Statically uninhabited past `Surface`; desugar consumes
         // `op` items.
         Item::Op(_, ext) => match *ext {},
@@ -2162,9 +2162,9 @@ fn lower_expr(
         // type-system proof.
         Expr::Elaborator { ext, .. } => match *ext {},
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserElaborator { ext, .. } => match *ext {},
+        Expr::UserMacro { ext, .. } => match *ext {},
         // `Expr::Ufcs` is uninhabited: typechecking records the
-        // public-type-directed replacement for every ordinary or bang-suffix
+        // public-type-directed replacement for every ordinary or macro_call-suffix
         // dot-splice, and `Lowered → Prime` substitution installs it.
         Expr::Ufcs { ext, .. } => match *ext {},
         Expr::OpChain { ext, .. } => match *ext {},
@@ -3383,8 +3383,8 @@ mod tests {
     /// `backends::js::emit` tests exercise pure Kio'-shape lowering and don't
     /// need (or have host types in scope for) literal-type checking.
     /// Tests that rely on substitution of `Expr::Elaborator` or
-    /// `Expr::UserElaborator` carriers — surface bang calls such as `iso!`,
-    /// `into!`, `onto!`, or `match!` — use the full pipeline via end-to-end
+    /// `Expr::UserMacro` carriers — surface macro calls such as `iso`,
+    /// `into`, `onto`, or `match` — use the full pipeline via end-to-end
     /// golden cases instead.
     fn prime_package_routed(
         module_src: &str,

@@ -1,10 +1,10 @@
 module store/history;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
 import list/core as cells;
 import list/list as lists;
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/fmt as fmt;
 import testapi/iter(loop);
@@ -21,18 +21,18 @@ pub fn write(s: Snapshot, key: String, value: I32 | ., revision: I32) -> Snapsho
 }
 
 rec(loop) fn search(entries: cells.List(Entry), key: String) -> I32 | . {
-  match! cells.uncons(entries) {
+  match(cells.uncons(entries)) {
     .(entry: Entry, rest: cells.List(Entry)) {
-      if! text.string_eq(entry.?{key}, key) { entry.?{value} } else { recur search(rest, key) }
+      if(text.string_eq(entry.?{key}, key)) { entry.?{value} } else { recur search(rest, key) }
     };
-    .() { widen_sum!((), I32 | .) }
+    .() { widen_sum((), I32 | .) }
   }
 }
 
 pub fn get(s: Snapshot, key: String) -> I32 | . { search(s.?{journal}, key) }
 
 pub fn show_value(value: I32 | .) -> String {
-  match! value {
+  match(value) {
     .(n: I32) { fmt.int_to_string(n) };
     .() { "<missing>" }
   }
@@ -47,13 +47,13 @@ rec(loop) fn visible_walk(
 , seen: cells.List(String)
 , visible: cells.List(Entry)
 ) -> cells.List(Entry) {
-  match! cells.uncons(entries) {
+  match(cells.uncons(entries)) {
     .(entry: Entry, rest: cells.List(Entry)) {
-      if! lists.elem(text.string_eq, entry.?{key}, seen) {
+      if(lists.elem(text.string_eq, entry.?{key}, seen)) {
         recur visible_walk(rest, seen, visible)
       } else {
         let next_seen = cells.cons(entry.?{key}, seen);
-        match! entry.?{value} {
+        match(entry.?{value}) {
           .(_n: I32) { recur visible_walk(rest, next_seen, cells.cons(entry, visible)) };
           .() { recur visible_walk(rest, next_seen, visible) }
         }

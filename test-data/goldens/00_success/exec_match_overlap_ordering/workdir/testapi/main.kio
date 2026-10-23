@@ -1,7 +1,7 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(String, default I32);
 import testapi/io(print);
 
@@ -15,15 +15,15 @@ newtype Foo : I32 { pub constructor mk_foo; pub projector foo }
 // honors first-match without flagging the polymorphic catch-all
 // clause as unreachable.
 fn handle(p: Foo | I32) -> String {
-  match! p {
+  match(p) {
     (.(v: Foo) { "foo-specific\n" }, .[A](v: A) { "polymorphic-fallback\n" })
   }
 }
 
 pub fn main() {
   // Foo branch: should hit the first clause.
-  print(handle(widen_sum!(Foo.mk_foo(42))));
+  print(handle(widen_sum(Foo.mk_foo(42))));
   // I32 branch: first clause doesn't fit, so the polymorphic clause
   // wins. Confirms the second clause is reachable.
-  print(handle(widen_sum!(7)))
+  print(handle(widen_sum(7)))
 }

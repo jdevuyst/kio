@@ -1,8 +1,9 @@
 // A representative slice of Kio surface forms — keywords,
-// literals, operators, elaborator bang-calls, slots and
+// literals, operators, macro calls, slots and
 // placeholders. Used by the E2E test as a non-trivial document
 // to exercise the semantic-tokens provider on.
 module fixture;
+import highlight/macros(macro outer, macro transform, macro _transform, macro if);
 
 env {
   type I32 role(i32);
@@ -26,17 +27,17 @@ fn raw_type_args[A][_A](x: A, y: _A) -> _A {
 }
 
 fn ufcs(receiver: I32) -> I32 {
-  receiver.>outer! extra { first } next { second };
-  receiver.>>outer! extra { first } next { second };
-  outer! extra { first } next { second }.<<receiver;
-  outer! extra { first } next { second }.<receiver;
+  receiver.>outer (extra) { first } next { second };
+  receiver.>>outer (extra) { first } next { second };
+  outer (extra) { first } next { second }.<<receiver;
+  outer (extra) { first } next { second }.<receiver;
   receiver.>pick(receiver);
   receiver.>>Thing.member;
   pick(receiver).<receiver;
   Thing.member.<<receiver;
-  receiver.>transform!;
-  transform!.<receiver;
-  _transform!.<receiver;
+  receiver.>transform;
+  transform.<receiver;
+  _transform.<receiver;
   receiver.>_Box.un_marked;
   _Box.un_marked.<receiver
 }
@@ -49,7 +50,7 @@ pub fn main() -> . {
   let unboxed = Box.un_box(I32, boxed);
   let marked = _Box.mk_marked(I32, unboxed);
   let _unmarked = _Box.un_marked(I32, marked);
-  if! .t {
+  if (.t) {
     print("y")
   } else {
     print("n")

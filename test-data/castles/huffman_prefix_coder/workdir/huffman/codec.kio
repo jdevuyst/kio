@@ -7,19 +7,19 @@
 /// tree rather than on a single shared lookup.
 module huffman/codec;
 
-import elab/control(if);
-import elab/match(match);
 import huffman/code(Bits, Entry, bits_for);
 import huffman/list(List, cons, is_empty, nil, rev_onto, reverse);
 import huffman/tree(Fork_key, Fork_left, Fork_right, Fork_weight);
 import huffman/tree(Leaf_symbol, Leaf_weight);
 import huffman/tree(Node, {fork_left}, {fork_right}, {leaf_symbol});
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
 rec(loop) fn encode_onto(rows: List(Entry), symbols: List(I32), acc: Bits) -> Bits {
-  match! symbols.>List.un_list {
+  match(symbols.>List.un_list) {
     (
     , .(symbol: I32, rest: List(I32)) {
         recur encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil(I32)), acc))
@@ -46,14 +46,14 @@ fn walked(symbol: I32, rest: Bits) -> Walked { {walked_symbol = symbol, walked_r
 /// codeword would have to be empty — has no prefix code at all and is outside
 /// what this coder models.
 rec(loop) fn walk(node: Node, bits: Bits) -> Walked {
-  match! node.>Node.un_node {
+  match(node.>Node.un_node) {
     (
     , .(symbol: Leaf_symbol, _weight: Leaf_weight) { walked(symbol.?{leaf_symbol}, bits) }
     , .(_weight: Fork_weight, _key: Fork_key, left: Fork_left, right: Fork_right) {
-        match! bits.>List.un_list {
+        match(bits.>List.un_list) {
           (
           , .(bit: I32, rest: Bits) {
-              if! eq_i32(bit, 0) {
+              if(eq_i32(bit, 0)) {
                 recur walk(left.?{fork_left}, rest)
               } else {
                 recur walk(right.?{fork_right}, rest)
@@ -68,7 +68,7 @@ rec(loop) fn walk(node: Node, bits: Bits) -> Walked {
 }
 
 rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
-  match! bits.>List.un_list {
+  match(bits.>List.un_list) {
     (
     , .(_bit: I32, _rest: Bits) {
         let reached = walk(root, bits);
@@ -82,13 +82,13 @@ rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
 pub fn decode(root: Node, bits: Bits) -> List(I32) { reverse(decode_onto(root, bits, nil(I32))) }
 
 pub rec(loop) fn same_symbols(left: List(I32), right: List(I32)) -> Bool {
-  match! left.>List.un_list {
+  match(left.>List.un_list) {
     (
     , .(head: I32, rest: List(I32)) {
-        match! right.>List.un_list {
+        match(right.>List.un_list) {
           (
           , .(other: I32, other_rest: List(I32)) {
-              if! eq_i32(head, other) { recur same_symbols(rest, other_rest) } else { .f }
+              if(eq_i32(head, other)) { recur same_symbols(rest, other_rest) } else { .f }
             }
           , .(_empty: .) { .f }
           )

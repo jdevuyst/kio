@@ -4,7 +4,7 @@ Companion to the prose page [`../language.md`](../language.md) § Type system. T
 
 The elaborator is the **surface-to-core boundary**. Its contract:
 
-- **Input** — a resolved `Lowered` Kio module. Earlier passes have folded operators, removed tuple, placeholder-lambda, and recursive-call sugar, and elaborated labels. Generic block calls project neutral blocks according to the resolved elab descriptors and public type. Forms that need typing information remain; UFCS receiver insertion likewise depends on the resolved callee's type slots.
+- **Input** — a resolved `Lowered` Kio module. Earlier passes have folded operators, removed tuple, placeholder-lambda, and recursive-call sugar, and elaborated labels. Generic block calls project neutral blocks according to the resolved macro descriptors and public type. Forms that need typing information remain; UFCS receiver insertion likewise depends on the resolved callee's type slots.
 - **Output** — a checked `Lowered` tree plus boundary-local completion records. The Lowered → Prime substitute pass consumes those records to materialize inferred annotations and arguments, normalize UFCS calls, and replace every type-directed surface form. The assembled Kio'-shaped package is then checked by the standalone Prime checker; no side channel crosses that boundary.
 - **Discipline** — bidirectional type inference for arbitrary-rank types, following Peyton Jones, Vytiniotis, Weirich, and Shields (2007), *Practical type inference for arbitrary-rank types* (henceforth **PJ-V-W-S**). Source-bounded exact type-argument inference; shallow skolemization; no let-generalization; no backward type flow across a `let` or expression-statement prefix; no expression-level `e : T` annotations.
 - **Decidability** — every quantifier the program needs is written somewhere in the source (signature, type-argument slot, declaration header), so rank-N inference is decidable. See § 10.
@@ -123,7 +123,7 @@ is not general impredicative inference; § 10 gives the decidability argument.
 
 Variables in the local context synthesize their bound type. Three categories of identifier share this rule shape but read their type from a per-category source.
 
-**Local binders.** `x` bound by a `fn` value-parameter, a `let`, or a `match!` clause's parameter list. E-Var as above, with the type read from Γ.
+**Local binders.** `x` bound by a `fn` value-parameter, a `let`, or a `match` clause's parameter list. E-Var as above, with the type read from Γ.
 
 **Module-scoped identifiers** — top-level `fn`s and intrinsics (`__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__absurd__`) — share a single **scope-aware scheme registry** keyed by name:
 
@@ -159,9 +159,9 @@ scheme : Name × RoleEnv → σ
 side_condition : Name × Γ × bound_args → Elaboration | Error
 ```
 
-with `bound_args` the type and value arguments after the standard call rule has substituted them in. User-defined elab bang calls have their own rule in § 7.4: they resolve through ordinary scope to an elab declaration, then use that declaration's call type and compile-time implementation ABI.
+with `bound_args` the type and value arguments after the standard call rule has substituted them in. User-defined macro calls have their own rule in § 7.4: they resolve through ordinary scope to a macro declaration, then use that declaration's call type and compile-time implementation ABI.
 
-> **Implementation note.** The kio-rs implementation routes intrinsics through `intrinsic_scheme(name, span)` and standard application typing. User-defined elabs route through `Expr::UserElaborator`; their implementation returns reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
+> **Implementation note.** The kio-rs implementation routes intrinsics through `intrinsic_scheme(name, span)` and standard application typing. User-defined macros route through `Expr::UserMacro`; their implementation returns reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
 
 ### Kind-checking discipline
 
@@ -169,7 +169,7 @@ Higher-kinded type application (`F(A)`, `Either(String)`) is a **type form**,
 not a callable: it has no scheme entry in the registry and does not participate
 in E-App. Binder kinds are always explicit. Kind validation is a
 phase-polymorphic structural operation applied whenever a declared or completed
-type crosses its boundary: named `fn`, `host`, `newtype`, alias, and `elab`
+type crosses its boundary: named `fn`, `host`, `newtype`, alias, and `macro`
 signatures are checked as module declarations are processed, and completed
 expression types are checked before they enter Kio'. While an
 application-local type goal is open, first-order unification also records its
@@ -386,7 +386,7 @@ Unit value.
 
 The distinction is determined only by the written packet, resolved callee
 type, and local equality constraints. Declaration groups, runtime ABI arity,
-parameter spelling, callee identity or provenance, and an elab's private
+parameter spelling, callee identity or provenance, and a macro's private
 ABI are unavailable to E-App. The elaborated tree places every selected type
 application before the written Unit application, preserving observable stage
 order. Neither packet pads a product domain or advances through an unwritten
@@ -398,7 +398,7 @@ instantiate that returned binder run through one ordinary type-only successor
 of the same application derivation. With no expected result, or a polymorphic
 expected result, the binder run remains residual. An explicit type applies
 directly and a written `_` allocates a goal that must close. These rules are
-shared by ordinary, intrinsic, UFCS, and user-elab calls; elab
+shared by ordinary, intrinsic, UFCS, and user-macro calls; macro
 evaluation changes the produced term, not application selection or inference.
 
 The successor is materialized as ordinary Kio' type application at the point
@@ -455,7 +455,7 @@ schedule is fixed:
    owner-scoped goal to have one consistent closed solution.
 
 A pass may descend through several newly ready connected actions, but it does
-not re-enter a source premise or replay an elab action. Each deferred
+not re-enter a source premise or replay a macro action. Each deferred
 equation is a bounded equality check: after its initial attempt, every further
 attempt requires a distinct child closure or a structural change to a zonked
 equation side since the preceding attempt. A further deferral records the new
@@ -511,7 +511,7 @@ value layer may expose a later binder run.
 **Unification sources.** Each unsolved binder αⱼ may be constrained by written
 type arguments, the enclosing expected result, an independently synthesized
 value, a retained value checked against its refined slot, and the type of a
-checked term returned by a user elab under § 7.4. All sources belong to
+checked term returned by a user macro under § 7.4. All sources belong to
 the same finite application derivation. The rule solves αⱼ if and only if its
 equalities reduce to one concrete, well-kinded type.
 
@@ -538,7 +538,7 @@ more precise first. For example, a sibling value may pin the outer `S` in
 close `fst_lens`'s nested binders. The nested call is not re-run: its unfinished
 source action is consumed once under that expected result.
 
-**UFCS provenance.** A UFCS call resolves the written callee, reads its type/value slot sequence, and inserts the receiver into a value slot before applying E-App. `.>` and `.<<` insert first; `.>>` and `.<` insert last. For a block call, insertion is among prefix values before block projection (§ 7.6), not after the final projected block arguments. Type arguments remain in their declared type slots, so `r.>f(T, x)` has the same E-App plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same plan as `f(T, x, r)`. At the receiver boundary, type-looking candidates are reserved for the consecutive binder run immediately after the receiver; the adjacent binder run before the receiver consumes only the surplus. An unfilled value layer is a hard boundary: reservation never crosses it. This split uses only the resolved slot sequence and written argument kinds, with no inferred-type feedback or retry. Blockless bang-call UFCS uses the same slot rule before invoking the user-elab call rule; block calls infer their type arguments from the arranged prefix and projected blocks.
+**UFCS provenance.** A UFCS call resolves the written callee, reads its type/value slot sequence, and inserts the receiver into a value slot before applying E-App. `.>` and `.<<` insert first; `.>>` and `.<` insert last. For a block call, insertion is among prefix values before block projection (§ 7.6), not after the final projected block arguments. Type arguments remain in their declared type slots, so `r.>f(T, x)` has the same E-App plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same plan as `f(T, x, r)`. At the receiver boundary, type-looking candidates are reserved for the consecutive binder run immediately after the receiver; the adjacent binder run before the receiver consumes only the surplus. An unfilled value layer is a hard boundary: reservation never crosses it. This split uses only the resolved slot sequence and written argument kinds, with no inferred-type feedback or retry. Blockless macro call UFCS uses the same slot rule before invoking the user-macro call rule; block calls infer their type arguments from the arranged prefix and projected blocks.
 
 ### 5.3. Value-argument checking against polytype slots
 
@@ -656,11 +656,15 @@ A block `{ stmt₁; …; stmtₖ; e }` desugars to nested `let` and expression-s
 Tuple literals `(a, b, …)` parse-desugar to nested `__pair__` calls. The elaborator sees standard E-App calls on `__pair__`. Similarly, the value-level sum / product accessors (`__fst__`, `__snd__`, `__left__`, `__right__`, `__either__`) are ordinary named callables; their registry entries give the schemes (per [`prime.md`](prime.md) § 2.4) and E-App handles the typing.
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="74-elaborator-bangs"></a>
+<a id="74-macro-calls"></a>
 
-### 7.4. Elab bangs
+### 7.4. Macro calls
 
-A bang call `name!(args...)` resolves `name` through ordinary scope to a user-defined elab declaration imported explicitly from a regular or root module. The declaration supplies a call type and names the code that implements it.
+A macro call `name(args...)` resolves its direct local head through ordinary
+lexical ownership to an earlier same-module macro or an explicit `macro name`
+import selector. Transparent grouping preserves that ownership; a nearer value
+binder shadows it. Neither a bare macro value nor qualified invocation is
+admitted. The declaration supplies a call type and names the code that implements it.
 
 The schedule below distinguishes three kinds of intermediate information:
 
@@ -690,7 +694,7 @@ Evaluation proceeds as follows:
    application and residualization, and UFCS placement use only this resolved
    public type, the written syntax, and those local constraints. The private
    implementation ABI does not participate in that choice.
-2. Resolve every declared capture. A captured type contributes a quoted `__Type__` descriptor and a captured value contributes a quoted `__Checked_term__`; neither executes the captured declaration at compile time. A capture may therefore name a host item. Because the quoted dependency can survive in the generated runtime term, each capture must be at least as visible as the elab.
+2. Resolve every declared capture. A captured type contributes a quoted `__Type__` descriptor and a captured value contributes a quoted `__Checked_term__`; neither executes the captured declaration at compile time. A capture may therefore name a host item. Because the quoted dependency can survive in the generated runtime term, each capture must be at least as visible as the macro.
 3. Resolve the implementation's lexical value path in the declaration module.
    A bare head denotes a local declaration or selective import; dotted
    segments select through an explicitly imported module alias or a
@@ -701,13 +705,13 @@ Evaluation proceeds as follows:
    [`prime.md`](prime.md#26-function-purity), extended only with the explicit
    compile-time primitive environment. The implementation and every ordinary
    function it reaches transitively must be declared `pure fn`. An
-   implementation declared in the elab's defining module may remain
+   implementation declared in the macro's defining module may remain
    private, and any implementation may call private helpers in its own module.
    A target declared in another module must satisfy ordinary visibility for its
-   written import into the defining module, but need not meet the elab's
-   outward visibility. Callers import the elab, not its compile-time
+   written import into the defining module, but need not meet the macro's
+   outward visibility. Callers import the macro, not its compile-time
    implementation details. Local annotations and implementation ABI types use
-   ordinary type well-formedness; named types in the elab's call
+   ordinary type well-formedness; named types in the macro's call
    signature obey the declaration-visibility floor.
 4. Close every dependency according to the declaration's implementation mode.
    For ordinary `impl f`, the types reflected for captures and checked value
@@ -734,7 +738,7 @@ Evaluation proceeds as follows:
    already-selected public argument expectation without entering the body.
    Missing or partial callback annotations supply no such complete type. This
    uses the ordinary public call plan and local equations; it neither changes
-   grouping nor evaluates a nested elab or immediate-lambda callee.
+   grouping nor evaluates a nested macro or immediate-lambda callee.
    A goal-free result may cross each authenticated direct-parent scope into an
    enclosing ordinary call without closing or publishing the pending child.
    Every retained callback body is checked once before publication, even for
@@ -813,20 +817,20 @@ Evaluation proceeds as follows:
    input. This final validation checks the generated term under its actual
    caller: a host-function or unmarked-function reference is rejected when
    substituted into a `pure fn`, while the same term is admissible in an
-   ordinary function. No trust in the elab declaration, evaluator, or
+   ordinary function. No trust in the macro declaration, evaluator, or
    side channel replaces that check.
 
-For a blockless elab declaration without trailing descriptors,
+For a blockless macro declaration without trailing descriptors,
 applying only a type prefix of its declared call type produces the
 same residual value function as applying that prefix to an ordinary function.
-Because bang syntax cannot survive into Kio', the front-end represents that
+Because macro calls cannot survive into Kio', the front-end represents that
 residual as an ordinary typed Kio' function whose symbolic value parameters
-are supplied to the same closed elab request. This is phase lowering,
-not a separate inference rule: prefix, UFCS, and bang spellings select the
+are supplied to the same closed macro request. This is phase lowering,
+not a separate inference rule: ordinary prefix, UFCS, and macro spellings select the
 same slots, and the residual cannot be rejected merely because its source
-callable is an elab.
+callable is a macro.
 
-An `elab` declaration has no `pure` modifier or purity bit. Compile-time execution of its implementation is unconditionally pure; purity of the generated runtime term is a separate property checked after substitution.
+A `macro` declaration has no `pure` modifier or purity bit. Compile-time execution of its implementation is unconditionally pure; purity of the generated runtime term is a separate property checked after substitution.
 
 The marked header projection treats syntax-owned product shells structurally.
 A direct callable shell is exposed only when ordinary resolution identifies a
@@ -985,14 +989,17 @@ N.un_N : ∀ᾱ. (N(ᾱ)) → ∀ρ. (∀β₁ … βₙ. (Payload[ᾱ, β̄]) �
 The `let .(<U_1> … <U_n> x) = e;` block-statement sugar (per [`language.md`](../language.md) § Existential-opening `let` sugar) desugars at parse time to a CPS-call wrapping the continuation, so the elaborator sees a standard E-App on the projector with a `fn`-literal value-arg in continuation position.
 
 <!-- markdownlint-disable-next-line MD033 -->
-<a id="76-block-elaborator-projection"></a>
+<a id="76-block-macro-projection"></a>
 
-### 7.6. Block elab projection
+### 7.6. Block macro projection
 
-A marked block call parses independently of declarations. After ordinary name
+A marked block call uses source-local binding classification independently
+of provider declarations. After ordinary name
 resolution, each `trailing` descriptor selects the projection for one final
 value slot of the resolved public call type. Every declared block is required
-once, in declaration order. Prefixes are value-only, type arguments are
+once, in declaration order. Every nonempty written prefix has ordinary value-argument
+list parentheses. Zero-prefix calls omit that list, while a direct empty list
+supplies one Unit value. Prefixes are value-only, type arguments are
 inferred, and the call is complete; there is no blockless alternate for a
 declaration with descriptors. A UFCS spelling inserts its receiver first or
 last among the prefix values before any block projection. Reverse splices
@@ -1017,7 +1024,7 @@ ordinary chains inside an explicit block keep their ordinary elision rules.
   steps become ordinary calls with nested continuations; the final expression
   is explicit. Empty and statement-only sequences are type errors.
 
-These projections enter the ordinary elab application rules of § 7.4.
+These projections enter the ordinary macro application rules of § 7.4.
 The private implementation ABI does not choose public slots or type flow.
 Local lets use E-LetSynth / E-LetCheck, completing the prefix before the tail.
 A written bind annotation retains its one original source occurrence and the
@@ -1027,15 +1034,15 @@ may determine `B`. Later continuation uses do not infer the earlier payload
 across its binding boundary. A sequenced expression requires `F(.)`, whereas
 `let _ <- e` may discard a non-unit payload. No implicit lift is inserted.
 
-The reference `if!`, `scope!`, `do!`, and `match!` are ordinary library
-declarations using these projections. `if!` relates its two thunk results
+The reference `if`, `scope`, `do`, and `match` are ordinary library
+declarations using these projections. `if` relates its two thunk results
 through the repeated result in its public type. Its condition synthesizes
 first and must have the explicitly selected Boolean-default type required by the
 branching intrinsic; result information never flows backwards into it. A surrounding result checks
 both arms. Otherwise either independently determined arm may determine or
 refine the common result, with no source-order priority.
 
-The reference `match!` independently determines each clause's dispatch-pattern
+The reference `match` independently determines each clause's dispatch-pattern
 parameter type, then relates returned occurrences through the authenticated
 fill transcript. Every written clause participates in validation, including
 a later shadowed clause. Compatible polymorphic specializations are recorded
@@ -1046,26 +1053,26 @@ depending on a newly introduced clause binder requires a concrete annotation
 or a complete expected function type. A surrounding common result checks
 clause bodies without supplying dispatch-pattern parameter types. First-fit
 dispatch remains a separate library operation; its algorithm is documented in
-[`../../docs/poc/elab.md`](../../docs/poc/elab.md).
+[`../../docs/poc/macros.md`](../../docs/poc/macros.md).
 
 An incompatible alternative group reports a non-directional common-result
 mismatch; an underdetermined group needs an ordinary source of result
 information. The same symmetric relation preserves late expected-result flow
-without replaying a source body or elab action. Every equation is fixed
+without replaying a source body or macro action. Every equation is fixed
 by the resolved public type and finite authenticated transcript. No rule
 searches ambient declarations, so adding unrelated declarations cannot change
 the existing call's interpretation, result, or dispatch.
 
-Runtime behavior follows ordinary expanded code: reference `if!` evaluates
-its condition once and only its selected branch; `scope!` invokes its thunk
-once; `do!` applies the sequence to its supplied bind value. Recursive tail
+Runtime behavior follows ordinary expanded code: reference `if` evaluates
+its condition once and only its selected branch; `scope` invokes its thunk
+once; `do` applies the sequence to its supplied bind value. Recursive tail
 behavior follows structural use of the expanded bodies, never their names or
 descriptors. Sequence continuations remain ordinary nested functions.
 
 All block syntax, descriptors, projection metadata, and implementation state
 are consumed before Kio'. The persistent result contains ordinary functions,
 applications, lets, and intrinsic calls validated under the existing Kio'
-contract. See [`language.md`](../language.md#elaborators-are-imported-not-ambient)
+contract. See [`language.md`](../language.md#macros-are-imported-not-ambient)
 for syntax and diagnostic categories.
 
 ### 7.7. Bottom and `__absurd__`
@@ -1078,19 +1085,19 @@ The bottom type `!` has no introduction form in Kio surface (see [`language.md`]
 
 - Variables, `let`, function literals (`λ`/`Λ`), applications.
 - Unit, role-annotated literals.
-- References to ordinary functions and the reserved intrinsic values. A user-defined elab contributes its completed Kio' expansion, not a residual bang-call node or compile-time implementation request.
+- References to ordinary functions and the reserved intrinsic values. A user-defined macro contributes its completed Kio' expansion, not a residual macro call node or compile-time implementation request.
 - Newtype constructor / projector members `N.c` / `N.p`.
 - Host items.
 
 **No block call, trailing descriptor, neutral block, projection metadata,
-UFCS node, surface tuple, or user-elab node** survives into Kio'.
+UFCS node, surface tuple, or user-macro node** survives into Kio'.
 Type-directed forms and UFCS record a Kio'-shaped elaboration or normalized
 call for substitution at the Lowered → Prime boundary. Purely syntactic
 forms such as tuple sugar are rewritten earlier. Elaboration-bearing variants
 become statically uninhabited after substitution — see [`prime.md`](prime.md)
 for the phase-typed AST discipline.
 
-The `pure` marker on an ordinary top-level `fn` is Kio' syntax rather than a surface-only elab form, so it remains on the assembled package for standalone validation. Elab declarations, their ordinary-or-fills implementation mode, implementation-path selection, `__Comptime__`, `__Fill_ctx__`, provisional recipes, fill transcripts, and the compile-time primitive environment do not remain in that package. An implementation or helper remains an ordinary function declaration; before the persistent Kio' boundary, a body gated by a direct `__Comptime__` proof parameter in any value-parameter position is replaced with an ordinary `__absurd__` body and compile-time-only types are erased. `__Fill_ctx__` is never an alternate erasure receiver.
+The `pure` marker on an ordinary top-level `fn` is Kio' syntax rather than a surface-only macro form, so it remains on the assembled package for standalone validation. Macro declarations, their ordinary-or-fills implementation mode, implementation-path selection, `__Comptime__`, `__Fill_ctx__`, provisional recipes, fill transcripts, and the compile-time primitive environment do not remain in that package. An implementation or helper remains an ordinary function declaration; before the persistent Kio' boundary, a body gated by a direct `__Comptime__` proof parameter in any value-parameter position is replaced with an ordinary `__absurd__` body and compile-time-only types are erased. `__Fill_ctx__` is never an alternate erasure receiver.
 
 **Proof sketch.** By induction over the syntactic forms admissible in Kio
 surface but not in Kio'. Each type-directed form records a Kio'-shaped
@@ -1113,7 +1120,7 @@ surface-only forms is finite and enumerated; the rules cover every one.
   declaration signature.
 - **Expected-type-from-context pinning** at a `fn`-literal site is recorded on the elaborated Λ/λ. A later pass that needs the inferred parameter types reads them; it never re-derives them.
 - **Polymorphic-payload erasure choices** at newtype constructor / projector calls are recorded on the call node.
-- **Per-branch dispatch choices** produced by the `match!` library, the exact Boolean type at `__if_then_else__`, the carrier at projected sequence calls, and the sequence step's generated Unit parameter distinct from an explicit `let _ <- e` bind — all recorded in ordinary elaborated terms.
+- **Per-branch dispatch choices** produced by the `match` library, the exact Boolean type at `__if_then_else__`, the carrier at projected sequence calls, and the sequence step's generated Unit parameter distinct from an explicit `let _ <- e` bind — all recorded in ordinary elaborated terms.
 
 **Preservation requirement.** Every intermediate node whose source carried a
 typing decision retains that decision for its later consumers. The completed
@@ -1142,7 +1149,7 @@ the typing derivation and application order represented by the elaborated term.
 5. **Finite owner-scoped application domains** — every equality goal is
    introduced by written syntax and a resolved callee type in one connected call
    tree; unification only solves or joins those finite goals. Source premises
-   and elab actions are entered once, retained actions are consumed once,
+   and macro actions are entered once, retained actions are consumed once,
    and each application owner has at most one pending expected-result equation,
    whose attempts are bounded by its retained-child closures and structural
    changes to its zonked sides. A connected tree may therefore contain
@@ -1171,8 +1178,8 @@ The following concerns are deliberately not formalized on this page; the prose s
 - **Early surface forms.** Tuple-literal expansion, `.stem. { ... }` placeholder lambda expansion, and the existential-opening `let` sugar happen before the elaborator sees the AST. Dot-splice normalization is type-directed and happens during typing, because the receiver can only be inserted after the callee's type/value slots are known. The grammar in [`grammar.md`](../grammar.md) pins each surface shape.
 - **Order-sensitive visibility and the module-level import graph.** Top-level declaration ordering rules, `import` imports, and the cycle-prevention property of the module graph belong to the module system. The elaborator assumes a well-formed module context; the rules for constructing that context live in [`language.md`](../language.md) § Module system and [`prime.md`](prime.md) § 2.7.
 - **Surface naming and resolution.** The name-resolution rules (single-segment paths vs. qualified `m.f` paths vs. type-member `T.f` paths, the value/type namespace split, and label construction/access resolution) belong to the front-end. Once resolved, the elaborator sees a registry entry by name — the namespace and path-resolution details live in [`language.md`](../language.md) § Lexical structure and [`grammar.md`](../grammar.md).
-- **Elab bang-call semantics.** A bang call is not an E-App registry side condition: § 7.4 resolves a user-defined elab declaration, uses its call type for ordinary per-call inference, evaluates the compile-time implementation, and records the returned Kio' tree. The rule sets, search disciplines, and soundness arguments of the reference coercion-elab libraries are library content of the POC they ship in (see [`../../docs/poc/elab.md`](../../docs/poc/elab.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not language meta-theory. This page commits only to the call-typing path and substitution contract; the open-world property of that resolution is in [`prime.md`](prime.md#7-open-world) § 7 Open-world.
-- **Invalid block contents.** A resolved `sequence` descriptor rejects an empty or statement-only block; a `product` or `thunk` descriptor has its own content rules. Library implementations may additionally reject projected operands, such as a `match!` clause set that does not cover its scrutinee. These failures occur before Kio' emission; [`language.md`](../language.md) specifies their categories.
+- **Macro call semantics.** A macro call is not an E-App registry side condition: § 7.4 resolves a user-defined macro declaration, uses its call type for ordinary per-call inference, evaluates the compile-time implementation, and records the returned Kio' tree. The rule sets, search disciplines, and soundness arguments of the reference coercion-macro libraries are library content of the POC they ship in (see [`../../docs/poc/macros.md`](../../docs/poc/macros.md) and [`../../docs/poc/optics.md`](../../docs/poc/optics.md)), not language meta-theory. This page commits only to the call-typing path and substitution contract; the open-world property of that resolution is in [`prime.md`](prime.md#7-open-world) § 7 Open-world.
+- **Invalid block contents.** A resolved `sequence` descriptor rejects an empty or statement-only block; a `product` or `thunk` descriptor has its own content rules. Library implementations may additionally reject projected operands, such as a `match` clause set that does not cover its scrutinee. These failures occur before Kio' emission; [`language.md`](../language.md) specifies their categories.
 - **Codegen contracts.** The per-backend emission rules in `../backends/*.md` are outside the elaborator's contract: the elaborator's output is the Kio'-shaped tree; what each backend does with it is the backend's responsibility.
 
 ## 12. References
@@ -1182,4 +1189,4 @@ The following concerns are deliberately not formalized on this page; the prose s
 - **Reynolds 1974** — *Towards a theory of type structure*. The original predicative-vs-impredicative distinction.
 - **Cardelli 1993** — *An implementation of FSub*. Bidirectional typechecking for System F-subtype, the algorithmic core PJ-V-W-S extends.
 
-These pin the discipline; the page itself reads them through Kio's lens — no typeclasses, no let-generalization, positional type-args, the named-callable registry for intrinsics and top-level functions, and the separate user-defined elab bang-call rule.
+These pin the discipline; the page itself reads them through Kio's lens — no typeclasses, no let-generalization, positional type-args, the named-callable registry for intrinsics and top-level functions, and the separate user-defined macro call rule.

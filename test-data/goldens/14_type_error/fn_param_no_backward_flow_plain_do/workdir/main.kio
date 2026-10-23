@@ -1,9 +1,9 @@
 module main;
 
-import elab/control(scope);
+import macros/control(macro scope);
 
 fn caller() {
-  scope! {
+  scope {
     let identity = .(value) { value };
     identity(())
   }

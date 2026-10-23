@@ -111,19 +111,19 @@ impl EvalArtifact {
 
 /// Executable staged code sealed by its existing implementation validator.
 #[derive(Debug)]
-pub(crate) struct UserElaboratorEvalArtifactPair {
+pub(crate) struct UserMacroEvalArtifactPair {
     artifact: Arc<EvalArtifact>,
     implementation: EvalAstExpr,
     implementation_module_path: String,
 }
 
-impl UserElaboratorEvalArtifactPair {
+impl UserMacroEvalArtifactPair {
     pub(crate) fn validate(
         input: EvalArtifactInput,
         implementation: EvalAstExpr,
         implementation_module_path: String,
     ) -> Result<Self, crate::error::Error> {
-        crate::pass::typecheck_full::validate_user_elaborator_eval_artifact(
+        crate::pass::typecheck_full::validate_user_macro_eval_artifact(
             &input,
             &implementation,
             &implementation_module_path,

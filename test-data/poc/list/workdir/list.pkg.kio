@@ -53,5 +53,5 @@ build {
 bridge {
   core;
   list;
-  elab/testapi
+  macros/testapi
 }

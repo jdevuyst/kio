@@ -27,6 +27,7 @@ type ReplInstance = {
   pocs(): PocInfo[]
   switch_poc(id: string): ReplResult
   complete(input: string, pos: number): CompletionResult
+  highlight(input: string, pos: number): string
 }
 
 type WasmModule = {
@@ -36,7 +37,7 @@ type WasmModule = {
 
 type WorkerRequest = {
   id: number
-  type: 'init' | 'eval' | 'switchPoc' | 'complete'
+  type: 'init' | 'eval' | 'switchPoc' | 'complete' | 'highlight'
   payload: Record<string, unknown>
 }
 
@@ -145,13 +146,15 @@ self.addEventListener('message', (event: MessageEvent<WorkerRequest>) => {
 
   void (async () => {
     try {
-      let response: ReplInitResponse | ReplResult | ReplSwitchResponse | CompletionResult
+      let response: ReplInitResponse | ReplResult | ReplSwitchResponse | CompletionResult | string
       if (type === 'init') {
         response = await initRepl(payload)
       } else if (type === 'eval') {
         response = evalLine(payload)
       } else if (type === 'switchPoc') {
         response = switchPoc(payload)
+      } else if (type === 'highlight') {
+        response = requireRepl().highlight(stringPayload(payload, 'input'), numberPayload(payload, 'pos'))
       } else if (type === 'complete') {
         response = completeLine(payload)
       } else {

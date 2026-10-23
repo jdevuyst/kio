@@ -1,6 +1,6 @@
 //! `Lowered → Prime` substitution: walks a typechecked package,
 //! replaces each elaboration-bearing node (`if`/`else`, internal
-//! elaboration forms, and user-defined elaborator calls) with the
+//! elaboration forms, and user-defined macro calls) with the
 //! typer's recorded elaboration, then materializes compiler-only binders
 //! before constructing the [`Prime`] artifact. After this pass,
 //! every elaboration-bearing
@@ -22,7 +22,7 @@
 //! - `rewrite_expr_elaborator`: consult `Elaborations`. If present,
 //!   substitute the elaboration; if absent, fall through to the inner
 //!   expression for structural passthrough cases.
-//! - `rewrite_expr_user_elaborator`: consult `Elaborations`; absent ⇒
+//! - `rewrite_expr_user_macro`: consult `Elaborations`; absent ⇒
 //!   typer-pipeline invariant violation.
 //! - `rewrite_expr_if_else`: consult `Elaborations`; absent ⇒ typer
 //!   pipeline invariant violation.
@@ -50,7 +50,7 @@ use crate::error::Error;
 use crate::pass::alpha_normalize::AlphaNormalizedPackage;
 use crate::pass::resolve::{LocatedError, ModuleEntry, Package, PackageFileEntry, TopLevelScope};
 use crate::pass::substitute::walk::LoweredToPrePrime;
-use crate::pass::typecheck_core::UserElaboratorTemplateGeneratedImport;
+use crate::pass::typecheck_core::UserMacroTemplateGeneratedImport;
 use crate::pass::typecheck_full::{Elaborations, RecordedElaboration};
 use crate::span::Span;
 #[cfg(feature = "parallel")]
@@ -89,7 +89,7 @@ impl Phase for PrePrime {
     type TypeGoal = Never;
     type ItemLabels = Never;
     type ItemEquiv = Never;
-    type ItemElaborator = Never;
+    type ItemMacro = Never;
     type ItemOp = Never;
     type ItemRecGroup = Never;
     type ItemLiteralAlias = Never;
@@ -618,7 +618,7 @@ pub fn substitute_expr_for_eval(
     pre_prime::finish_expr_unchecked(pre_prime)
 }
 
-/// Stage a replayed user-elaborator result before the complete checked term is
+/// Stage a replayed user-macro result before the complete checked term is
 /// consumed into the [`RecordedElaboration::UncheckedPrime`] artifact. Inferred
 /// canonical type slots are re-spelled here, while explicit source-spelled type
 /// arguments continue through `walk_expr` unchanged.
@@ -878,7 +878,7 @@ fn generated_import_path(module_path: &str) -> ModulePath {
     }
 }
 
-fn generated_import_clause(import: &UserElaboratorTemplateGeneratedImport) -> Import {
+fn generated_import_clause(import: &UserMacroTemplateGeneratedImport) -> Import {
     let span = Span::new(0, 0);
     Import {
         trailing_trivia: Vec::new(),
@@ -893,7 +893,7 @@ fn generated_import_clause(import: &UserElaboratorTemplateGeneratedImport) -> Im
 
 fn qualified_import_matches_generated(
     u: &Import,
-    import: &UserElaboratorTemplateGeneratedImport,
+    import: &UserMacroTemplateGeneratedImport,
 ) -> bool {
     let ImportKind::Qualified { path, alias, .. } = &u.kind else {
         return false;
@@ -913,7 +913,7 @@ fn record_replayed_prime_bindings(
             let ImportKind::Qualified { path, alias, .. } = import_.kind else {
                 return None;
             };
-            Some(UserElaboratorTemplateGeneratedImport {
+            Some(UserMacroTemplateGeneratedImport {
                 module_path: module_path_key(&path),
                 alias,
             })
@@ -1186,29 +1186,6 @@ impl<'a> SubstituteVisitor<'a> {
         unreachable!("{message}")
     }
 
-    fn import_is_elaborator(&self, u: &Import, name: &str) -> bool {
-        let Some(package) = self.package else {
-            return false;
-        };
-        let ImportKind::Selective { from, .. } = &u.kind else {
-            return false;
-        };
-        let from_path = from
-            .segments
-            .iter()
-            .map(|s| s.as_str())
-            .collect::<Vec<_>>()
-            .join("/");
-        let Some(target) = package.module(&from_path) else {
-            return false;
-        };
-        target
-            .module
-            .items
-            .iter()
-            .any(|item| matches!(item, Item::Elaborator(s, _) if s.name == name))
-    }
-
     fn rewrite_prime_import(&self, u: &Import) -> Option<Import> {
         match &u.kind {
             ImportKind::Comptime => matches!(
@@ -1220,7 +1197,7 @@ impl<'a> SubstituteVisitor<'a> {
                 let kept: Vec<ImportItem> = items
                     .iter()
                     .filter(|item| match item {
-                        ImportItem::Name { name, .. } => !self.import_is_elaborator(u, name),
+                        ImportItem::Name { macro_span, .. } => macro_span.is_none(),
                         ImportItem::Label { .. } | ImportItem::OperatorPattern { .. } => true,
                     })
                     .cloned()
@@ -1773,13 +1750,13 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         )
     }
 
-    fn rewrite_expr_user_elaborator(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
+    fn rewrite_expr_user_macro(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         if let Some(elab) = self.elabs.elaboration_for(&self.module_path, e) {
             return self.walk_recorded_elaboration(elab);
         }
         self.missing_elaboration_expr(
             e,
-            "user elaborator reached substitution without a recorded elaboration — typer bug",
+            "user macro reached substitution without a recorded elaboration — typer bug",
         )
     }
 
@@ -1823,7 +1800,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         // A typed Lowered module records every literal's three-tier
         // resolution, but a bare literal can still reach here from an
         // *untyped* Lowered module — a compile-time-eval term, an
-        // elaborator body, an emitter test fixture. Resolve the
+        // macro body, an emitter test fixture. Resolve the
         // explicitly selected defaults the same way the typer does.
         if let Some(resolved) = self.resolved_literal_by_role(shape, span)? {
             return Ok(resolved);
@@ -2079,9 +2056,9 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         Ok(vec![])
     }
 
-    fn rewrite_item_elaborator(
+    fn rewrite_item_macro(
         &mut self,
-        _e: &crate::ast::UserElaboratorDef<Lowered>,
+        _e: &crate::ast::UserMacroDef<Lowered>,
     ) -> Result<Vec<Item<PrePrime>>, Error> {
         Ok(vec![])
     }
@@ -2291,7 +2268,7 @@ mod tests {
     fn sequence_supported_package(module_path: &str, src: &str) -> Package<Lowered> {
         let parsed = parse(src).expect("parse fixture");
         let sequence = parse(include_str!(
-            "../../../../test-data/poc/elab/workdir/sequence.kio"
+            "../../../../test-data/poc/macros/workdir/sequence.kio"
         ))
         .expect("parse canonical sequence provider");
         let (lowered_modules, _) = FullPipeline::lower_package(
@@ -2376,6 +2353,24 @@ mod tests {
             FullPipeline::lower_package(vec![(module_file_path(module_path), parsed)], None)
                 .expect("lower package");
         lowered_modules.pop().expect("one lowered module").1
+    }
+
+    #[test]
+    fn substitution_erases_explicit_macro_imports_without_provider_discovery() {
+        let mut module = lowered_one("consumer", "module consumer;");
+        module.imports = parse(
+            "module consumer; import provider(macro choose as pick, value); import other(macro build);",
+        )
+        .expect("surface imports")
+        .imports;
+        let prime = substitute_module(&module, &Elaborations::new());
+        assert_eq!(prime.imports.len(), 1);
+        let ImportKind::Selective { items, .. } = &prime.imports[0].kind else {
+            panic!("ordinary selected import remains")
+        };
+        assert!(
+            matches!(items.as_slice(), [ImportItem::Name { name, macro_span: None, .. }] if name == "value")
+        );
     }
 
     fn set_fn_return(module: &mut Module<Lowered>, name: &str, ret: Type<Lowered>) {
@@ -2578,10 +2573,10 @@ mod tests {
     fn substitution_renormalizes_inserted_elaboration_binders() {
         let parsed = parse(
             "module main;
-             import control(if);
+             import control(macro if);
              host type Bool role(bool);
              fn target[A](condition: Bool) -> [X] X -> X {
-                 if! condition { .[X](value: X) { value } }
+                 if (condition) { .[X](value: X) { value } }
                  else { .[X](value: X) { value } }
              }
              fn raw() -> [A] A -> A { .[A](value: A) { value } }",
@@ -2593,7 +2588,7 @@ mod tests {
                 (
                     PathBuf::from("control.kio"),
                     parse(include_str!(
-                        "../../../../test-data/poc/elab/workdir/control.kio"
+                        "../../../../test-data/poc/macros/workdir/control.kio"
                     ))
                     .expect("parse canonical control provider"),
                 ),
@@ -2720,7 +2715,7 @@ mod tests {
 
             | Expr::Elaborator { ext, .. }
             | Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. }
-            | Expr::UserElaborator { ext, .. }
+            | Expr::UserMacro { ext, .. }
 
 
             | Expr::Ufcs { ext, .. }
@@ -3276,7 +3271,7 @@ mod tests {
         let mut elabs = Elaborations::new();
         elabs.record_prime_requalification_imports(
             "x/main",
-            &[UserElaboratorTemplateGeneratedImport {
+            &[UserMacroTemplateGeneratedImport {
                 module_path: "target/mod".to_owned(),
                 alias: "_qsite_0".to_owned(),
             }],
@@ -3425,17 +3420,17 @@ mod tests {
     #[test]
     fn do_contract_erasure_retains_one_receiver_and_fold_calls() {
         for (body, factories, touches) in [
-            ("do! factory() { () }", 1, 0),
-            ("do! factory() { let unused = touch(()); () }", 1, 1),
+            ("do (factory()) { () }", 1, 0),
+            ("do (factory()) { let unused = touch(()); () }", 1, 1),
             (
-                "do! factory() { let first <- touch(()); let second <- touch(first); touch(second) }",
+                "do (factory()) { let first <- touch(()); let second <- touch(first); touch(second) }",
                 1,
                 3,
             ),
         ] {
             let source = format!(
                 "module main;
-                import sequence(do);
+                import sequence(macro do);
                 host fn factory() -> [A][B](A & (A -> B)) -> B;
                 host fn touch(value: .) -> .;
                 fn run() -> . {{ {body} }}"
@@ -3460,9 +3455,9 @@ mod tests {
     #[test]
     fn do_contract_zero_bind_retains_receiver_in_both_modes() {
         let source = "module main;
-            import sequence(do);
+            import sequence(macro do);
             host fn factory() -> [A][B](A & (A -> B)) -> B;
-            fn run() -> . { do! factory() { () } }";
+            fn run() -> . { do (factory()) { () } }";
         let module = substitute_sequence_one("main", source);
         let def = module
             .items
@@ -3926,15 +3921,13 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(
-        expected = "user elaborator reached substitution without a recorded elaboration"
-    )]
-    fn eval_substitution_rejects_missing_user_elaborator() {
+    #[should_panic(expected = "user macro reached substitution without a recorded elaboration")]
+    fn eval_substitution_rejects_missing_user_macro() {
         let span = Span::new(0, 0);
-        let expr: Expr<Lowered> = Expr::UserElaborator {
+        let expr: Expr<Lowered> = Expr::UserMacro {
             source_trivia: Default::default(),
             occurrence: Default::default(),
-            form: crate::ast::UserElaboratorCallForm::Ordinary,
+            form: crate::ast::UserMacroCallForm::Ordinary,
             name: "demo".to_owned(),
             args: Vec::new(),
             meta: Meta::new(span),
@@ -4099,7 +4092,7 @@ mod tests {
             ("other", "module other; pub host type Float role(f64);"),
             (
                 "quoted",
-                "module quoted; import __comptime__; pure fn preserve_impl(ct: __Comptime__, fills: __Fill_ctx__, typ: __Type__, value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } pub elab preserve : [A] A -> A { impl(fills) preserve_impl; };",
+                "module quoted; import __comptime__; pure fn preserve_impl(ct: __Comptime__, fills: __Fill_ctx__, typ: __Type__, value: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } pub macro preserve : [A] A -> A { impl(fills) preserve_impl; };",
             ),
             (
                 "numbers",
@@ -4107,7 +4100,7 @@ mod tests {
             ),
             (
                 "main",
-                "module main; import numbers as n; import other as numbers; import quoted(preserve); default type Float = n.Identity(n.Float); pure fn local() -> Float { let value = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0(n.Float); id(42.0(n.Float)); preserve!(n.Float, 42.0(n.Float)) }",
+                "module main; import numbers as n; import other as numbers; import quoted(macro preserve); default type Float = n.Identity(n.Float); pure fn local() -> Float { let value = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0(n.Float); id(42.0(n.Float)); preserve(n.Float, 42.0(n.Float)) }",
             ),
         ];
         let parsed = sources
@@ -4758,7 +4751,7 @@ mod tests {
     }
 
     #[test]
-    fn user_elaborator_capture_replay_injects_generated_qualified_import() {
+    fn user_macro_capture_replay_injects_generated_qualified_import() {
         let prime = substitute_many(vec![
             (
                 "pkg/refl",
@@ -4769,15 +4762,15 @@ mod tests {
                  } \
                  pub type Rep_payload = .; \
                  pub newtype Rep : Rep_payload { pub constructor mk_rep; pub projector un_rep; }; \
-                 pub elab make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
+                 pub macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; }; \
                  fn keep() -> . { () }",
             ),
             (
                 "pkg/main",
                 "module pkg/main; \
                  import pkg/refl(Rep); \
-                 import pkg/refl(make_rep); \
-                 fn main() -> Rep { make_rep!(., ()) }",
+                 import pkg/refl(macro make_rep); \
+                 fn main() -> Rep { make_rep(., ()) }",
             ),
         ]);
         let main_entry = prime.module("pkg/main").expect("main module");
@@ -4819,12 +4812,12 @@ mod tests {
             "the replayed constructor call must survive beneath any ABI-neutral source wrapper"
         );
         assert!(
-            !format!("{main:?}").contains("UserElaborator"),
-            "Prime output should not retain a user elaborator surface node"
+            !format!("{main:?}").contains("UserMacro"),
+            "Prime output should not retain a user macro surface node"
         );
     }
 
-    /// A module with no elaborator / `if`/`else` positions has no recorded
+    /// A module with no macro / `if`/`else` positions has no recorded
     /// elaborations, so substitution is a pure phase-rebrand. Item
     /// count, item kinds, and module path / import list survive verbatim.
     #[test]
@@ -5264,13 +5257,13 @@ mod tests {
     #[test]
     fn imported_conditional_recipe_substitutes_to_an_ordinary_intrinsic() {
         let src = "module x; \
-                   import control(if); \
+                   import control(macro if); \
                    default host type Bool role(bool); \
-                   fn pick(c: Bool) -> Bool { if! c { .t } else { .f } } \
+                   fn pick(c: Bool) -> Bool { if (c) { .t } else { .f } } \
                    ";
         let parsed_module = parse(src).expect("parse module");
         let control = parse(include_str!(
-            "../../../../test-data/poc/elab/workdir/control.kio"
+            "../../../../test-data/poc/macros/workdir/control.kio"
         ))
         .expect("parse ordinary control provider");
         let (lowered_modules, _lowered_package_file) = FullPipeline::lower_package(

@@ -22,7 +22,7 @@ pub fn doc_hover_at_with_module(
     line_index: &LineIndex,
 ) -> Option<Hover> {
     let (span, markdown) = declaration_doc_at(module, source, byte_offset)
-        .or_else(|| same_module_elaborator_call_doc_at(module, source, byte_offset))
+        .or_else(|| same_module_macro_call_doc_at(module, source, byte_offset))
         .or_else(|| module_doc_at(module, source, byte_offset))?;
     Some(markdown_hover(markdown, span, line_index))
 }
@@ -141,11 +141,11 @@ fn declaration_doc_at(
                     ));
                 }
             }
-            Item::Elaborator(e, _) => {
+            Item::Macro(e, _) => {
                 if span_contains(e.name_span, byte_offset) {
                     return Some((
                         e.name_span,
-                        entry_markdown(module, source, DocEntry::Elaborator(e)),
+                        entry_markdown(module, source, DocEntry::Macro(e)),
                     ));
                 }
             }
@@ -204,20 +204,23 @@ fn module_doc_at(
     Some((first_segment.span, markdown))
 }
 
-fn same_module_elaborator_call_doc_at(
+fn same_module_macro_call_doc_at(
     module: &Module<Surface>,
     source: &str,
     byte_offset: u32,
 ) -> Option<(Span, String)> {
     let (token, span) = token_at(source, byte_offset)?;
-    let name = token.strip_suffix('!')?;
-    let elaborator = module.items.iter().find_map(|item| match item {
-        Item::Elaborator(e, _) if e.name == name => Some(e),
+    if !crate::scope_walk::macro_calls(module).contains(span) {
+        return None;
+    }
+    let name = token;
+    let macro_def = module.items.iter().find_map(|item| match item {
+        Item::Macro(e, _) if e.name == name => Some(e),
         _ => None,
     })?;
     Some((
         span,
-        entry_markdown(module, source, DocEntry::Elaborator(elaborator)),
+        entry_markdown(module, source, DocEntry::Macro(macro_def)),
     ))
 }
 
@@ -302,12 +305,11 @@ fn token_at(source: &str, byte_offset: u32) -> Option<(String, Span)> {
         offset -= 1;
     }
 
-    let at_bang = source.get(offset..).is_some_and(|s| s.starts_with('!'));
     let at_non_identifier = !source
         .get(offset..)
         .and_then(|s| s.chars().next())
         .is_some_and(is_identifier_char);
-    if offset > 0 && (at_bang || at_non_identifier) {
+    if offset > 0 && at_non_identifier {
         offset -= 1;
     }
 
@@ -335,9 +337,6 @@ fn token_at(source: &str, byte_offset: u32) -> Option<(String, Span)> {
             break;
         }
         end += ch.len_utf8();
-    }
-    if source.get(end..).is_some_and(|s| s.starts_with('!')) {
-        end += 1;
     }
 
     Some((
@@ -438,15 +437,15 @@ mod tests {
     }
 
     #[test]
-    fn doc_hover_renders_elaborator_doc_comment() {
-        let source = "module pkg/elabs;\n/// See [`@signature id`].\npub elab id : [A] A -> A { impl id_impl }\nfn id_impl() -> . { () }\n";
+    fn doc_hover_renders_macro_doc_comment() {
+        let source = "module pkg/macros;\n/// See [`@signature id`].\npub macro id : [A] A -> A { impl id_impl }\nfn id_impl() -> . { () }\n";
         let offset = source.find("id :").unwrap() as u32;
         let line_index = LineIndex::new(source);
         let hover = doc_hover_at(source, offset, &line_index).unwrap();
         let HoverContents::Markup(markup) = hover.contents else {
             panic!("expected markup hover");
         };
-        assert!(markup.value.contains("elab id :"));
+        assert!(markup.value.contains("macro id :"));
         assert!(!markup.value.contains("@signature"));
     }
 

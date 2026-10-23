@@ -642,9 +642,19 @@ fn import_list_candidates(
             }
             requested => requested == selection,
         };
-        if selected.contains(&label) || !admitted {
+        if selected.contains(&label)
+            || (selection == ImportSelectionKind::Macro && selected.contains(entry.name()))
+            || !admitted
+        {
             return;
         }
+        let label = if selection == ImportSelectionKind::Macro
+            && context.kind == ImportSelectionKind::Any
+        {
+            format!("macro {label}")
+        } else {
+            label
+        };
         result.items.push(CompletionItem {
             label: label.clone(),
             kind: Some(kind),
@@ -666,10 +676,10 @@ fn import_list_candidates(
             continue;
         }
         let (kind, selection) = match &entry {
-            DocEntry::Fn(_)
-            | DocEntry::RecFn(_)
-            | DocEntry::HostFn(_)
-            | DocEntry::Elaborator(_) => (CompletionItemKind::FUNCTION, ImportSelectionKind::Name),
+            DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) => {
+                (CompletionItemKind::FUNCTION, ImportSelectionKind::Name)
+            }
+            DocEntry::Macro(_) => (CompletionItemKind::FUNCTION, ImportSelectionKind::Macro),
             DocEntry::TypeAlias(..)
             | DocEntry::Newtype(..)
             | DocEntry::HostType(_)
@@ -795,11 +805,10 @@ fn entry_to_lsp(
             .items
             .iter()
             .find_map(|source_item| match source_item {
-                Item::Elaborator(declaration, _)
+                Item::Macro(declaration, _)
                     if declaration.meta.span.start <= span.start
                         && span.end <= declaration.meta.span.end
-                        && (declaration.name == item.label
-                            || format!("{}!", declaration.name) == item.label) =>
+                        && declaration.name == item.label =>
                 {
                     Some(declaration)
                 }
@@ -850,7 +859,7 @@ fn item_documentation(
                     return doc_comment_documentation(source, entry.doc());
                 }
             }
-            Item::Elaborator(e, _) if e.name == label || format!("{}!", e.name) == label => {
+            Item::Macro(e, _) if e.name == label => {
                 return doc_comment_documentation(source, e.doc.as_ref());
             }
             _ => {}
@@ -966,9 +975,7 @@ impl<'a> CompletionMetadata<'a> {
                     DocEntry::Fn(_) | DocEntry::RecFn(_) | DocEntry::HostFn(_) => {
                         (entry.name().to_owned(), CompletionItemKind::FUNCTION)
                     }
-                    DocEntry::Elaborator(_) => {
-                        (format!("{}!", entry.name()), CompletionItemKind::FUNCTION)
-                    }
+                    DocEntry::Macro(_) => (entry.name().to_owned(), CompletionItemKind::FUNCTION),
                     DocEntry::LiteralAlias(_) => {
                         (entry.name().to_owned(), CompletionItemKind::CONSTANT)
                     }
@@ -987,15 +994,15 @@ impl<'a> CompletionMetadata<'a> {
                     label,
                     kind: Some(kind),
                     detail: match &entry {
-                        DocEntry::Elaborator(elaborator) => {
-                            Some(crate::pretty::pretty_type(&elaborator.call_ty))
+                        DocEntry::Macro(macro_def) => {
+                            Some(crate::pretty::pretty_type(&macro_def.call_ty))
                         }
                         _ => entry.ty(),
                     },
                     documentation: doc_comment_documentation(&provider_source, entry.doc()),
                     ..Default::default()
                 };
-                if let DocEntry::Elaborator(declaration) = &entry {
+                if let DocEntry::Macro(declaration) = &entry {
                     block_calls::enrich(&mut item, declaration);
                 }
                 items
@@ -1074,16 +1081,16 @@ fn parse_module(source: &str) -> Option<Module<Surface>> {
 mod tests {
     #[test]
     fn block_snippet_uses_an_editable_prefix_region_and_ordered_descriptors() {
-        let source = "module app; elab choose : (. & .) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
+        let source = "module app; macro choose : (. & .) -> . { trailing product; trailing thunk fallback; impl implementation } fn run() { cho }";
         let items = complete_at_marker(source, "{ cho");
-        let item = items.iter().find(|item| item.label == "choose!").unwrap();
+        let item = items.iter().find(|item| item.label == "choose").unwrap();
         assert_eq!(
             item.insert_text_format,
             Some(lsp_types::InsertTextFormat::SNIPPET)
         );
         assert_eq!(
             item.insert_text.as_deref(),
-            Some("choose! ${1} { ${2} } fallback { ${3} }$0")
+            Some("choose${1} { ${2} } fallback { ${3} }$0")
         );
         let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
             panic!("edit");
@@ -1105,8 +1112,36 @@ mod tests {
                 .as_deref()
                 .is_some_and(|detail| detail.contains("trailing"))
         );
-        assert!(items.iter().any(|item| item.label == "choose!"
+        assert!(!items.iter().any(|item| item.label == "choose"
             && item.insert_text_format == Some(lsp_types::InsertTextFormat::SNIPPET)));
+    }
+
+    #[test]
+    fn block_snippet_defaults_to_no_prefix_and_edits_a_whole_argument_list() {
+        let source = "module app; macro record : . -> . { trailing product; impl implementation } fn run() { rec }";
+        let items = complete_at_marker(source, "{ rec");
+        let snippet = items
+            .iter()
+            .find(|item| item.label == "record")
+            .unwrap()
+            .insert_text
+            .as_ref()
+            .unwrap();
+        for (prefix_list, count) in [("", 0), ("()", 1), ("(left, right)", 2)] {
+            let insertion = snippet
+                .replace("${1}", prefix_list)
+                .replace("${2}", "()")
+                .replace("$0", "");
+            let applied = source.replace("{ rec }", &format!("{{ {insertion} }}"));
+            let parsed = crate::pass::parser::parse(&applied).unwrap();
+            let Item::FnDef(function) = parsed.items.last().unwrap() else {
+                panic!("function");
+            };
+            let crate::ast::Expr::BlockCall { prefix, .. } = &function.body else {
+                panic!("block call: {insertion}");
+            };
+            assert_eq!(prefix.len(), count, "{insertion}");
+        }
     }
 
     fn import_list_completions(
@@ -1196,8 +1231,8 @@ mod tests {
 
     #[test]
     fn completion_metadata_preserves_selected_provider_kinds() {
-        let source = "module pkg/main; import provider(expand, answer); fn f() -> . { () }";
-        let provider = "module provider; /// Expansion docs.\npub elab expand : . -> . { impl expand_body } pub literal answer = 1;";
+        let source = "module pkg/main; import provider(macro expand, answer); fn f() -> . { () }";
+        let provider = "module provider; /// Expansion docs.\npub macro expand : . -> . { impl expand_body } pub literal answer = 1;";
         let uri = test_file_uri("/pkg/main.kio");
         let path = crate::lsp::util::uri_to_canonical(&uri).unwrap();
         let provider_path = test_file_path("/provider.kio");
@@ -1221,13 +1256,13 @@ mod tests {
             Some(&analysis),
         )
         .unwrap();
-        let elaborator = result
+        let macro_def = result
             .items
             .iter()
-            .find(|item| item.label == "expand!")
-            .expect("selected provider elaborator insertion");
-        assert_eq!(elaborator.kind, Some(CompletionItemKind::FUNCTION));
-        assert!(format!("{:?}", elaborator.documentation).contains("Expansion docs."));
+            .find(|item| item.label == "expand")
+            .expect("selected provider macro insertion");
+        assert_eq!(macro_def.kind, Some(CompletionItemKind::FUNCTION));
+        assert!(format!("{:?}", macro_def.documentation).contains("Expansion docs."));
         assert_eq!(
             result
                 .items
@@ -1504,6 +1539,47 @@ mod tests {
     }
 
     #[test]
+    fn macro_import_completion_selects_only_macro_declarations_and_keeps_one_tag() {
+        let analysis = operator_catalog(
+            "module syntax; pub macro build : . -> . { impl implementation; }; pub fn ordinary() { () } pub fn macro() { () }",
+        );
+        for tail in ["macro ", "macro bu", "macro // keep\n bu"] {
+            let source = format!("module app; import syntax({tail}");
+            let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
+                .unwrap();
+            assert_eq!(labels(&list.items), ["build"], "{source}");
+            let Some(CompletionTextEdit::Edit(edit)) = &list.items[0].text_edit else {
+                panic!("macro source edit");
+            };
+            let index = LineIndex::new(&source);
+            let start = index.position_to_offset(LspPosition {
+                line: edit.range.start.line,
+                character: edit.range.start.character,
+            }) as usize;
+            let applied = format!("{}{});", &source[..start], edit.new_text);
+            let module = crate::pass::parser::parse(&applied).unwrap();
+            let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+                panic!("selective import");
+            };
+            assert!(matches!(
+                &items[0],
+                crate::ast::ImportItem::Name {
+                    macro_span: Some(_),
+                    ..
+                }
+            ));
+            assert_eq!(applied.matches("macro ").count(), 1, "{applied}");
+            assert_eq!(applied.contains("// keep"), source.contains("// keep"));
+        }
+        let source = "module app; import syntax(";
+        let list =
+            import_list_completions(source, source.len() as u32, None, Some(&analysis)).unwrap();
+        assert!(labels(&list.items).contains(&"macro build"));
+        assert!(labels(&list.items).contains(&"macro"));
+        assert!(!labels(&list.items).contains(&"build"));
+    }
+
+    #[test]
     fn default_import_completion_keeps_the_modifier_and_ordinary_value_names() {
         let provider = concat!(
             "module syntax; host type Int role(i64); pub type Alias = Int;\n",
@@ -1576,7 +1652,7 @@ mod tests {
             pub(app) type {local_forward} = {local};
             type {hidden_forward} = {gamma};
             pure fn expand_value(value: .) -> . { value }
-            pub elab expand : . -> . { impl expand_value }
+            pub macro expand : . -> . { impl expand_value }
             pub op _ + _ { impl visible }
             pub varop [* *] { foldr visible visible }";
         let analysis = operator_catalog(source);
@@ -1589,7 +1665,7 @@ mod tests {
             "Value",
             "Wrapped",
             "answer",
-            "expand",
+            "macro expand",
             "host_value",
             "op",
             "visible",
@@ -1952,7 +2028,7 @@ fn use_site(value: Node) -> . { () }
     }
 
     #[test]
-    fn type_position_after_elaborator_colon_filters_to_type_names() {
+    fn type_position_after_macro_colon_filters_to_type_names() {
         let source = "\
 module pkg/main;
 import pkg/types(Imported, _Imported);
@@ -1962,7 +2038,7 @@ type _Pair = .;
 newtype Box : . { pub constructor mk_box; pub projector un_box }
 newtype _Box : . { pub constructor mk_marked; pub projector un_marked }
 fn helper(x: .) -> . { x }
-pub elab foo : [Source] Source -> [Target] Target { impl helper }
+pub macro foo : [Source] Source -> [Target] Target { impl helper }
 ";
         let items = complete_at_marker(source, "foo : ");
         let lbls = labels(&items);
@@ -2014,11 +2090,11 @@ fn f[A](x: A) -> A { x }
     }
 
     #[test]
-    fn imported_elaborator_completion_uses_bang_name_and_docs() {
+    fn imported_macro_completion_uses_local_name_and_docs() {
         let source = "\
-module pkg/elabs;
+module pkg/macros;
 /// Builds the identity term.
-pub elab identity : [A] A -> A { impl identity_impl }
+pub macro identity : [A] A -> A { impl identity_impl }
 fn identity_impl() -> . { () }
 fn use_site() -> . { () }
 ";
@@ -2026,11 +2102,11 @@ fn use_site() -> . { () }
         let lbls = labels(&items);
         let item = items
             .iter()
-            .find(|item| item.label == "identity!")
-            .unwrap_or_else(|| panic!("imported elaborator completion; got {lbls:?}"));
+            .find(|item| item.label == "identity")
+            .unwrap_or_else(|| panic!("imported macro completion; got {lbls:?}"));
         assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
         let Some(Documentation::MarkupContent(markup)) = &item.documentation else {
-            panic!("expected Markdown documentation for elaborator completion");
+            panic!("expected Markdown documentation for macro completion");
         };
         assert!(markup.value.contains("Builds the identity term."));
     }

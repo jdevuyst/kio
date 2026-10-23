@@ -1,11 +1,11 @@
 module lab/report;
 
 import dict/dict as dict;
-import elab/match(match);
 import lab/clock as clock;
 import lab/replica as replica;
 import list/core as core;
 import list/list as lists;
+import macros/match(macro match);
 import result/result as result;
 import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
@@ -37,7 +37,7 @@ pub fn snapshot(name: String, state: replica.Replica) {
 }
 
 pub fn fault(error: replica.Fault) -> String {
-  match! error {
+  match(error) {
     .(f: replica.Missing) { "missing key ".>string_concat(fmt.int_to_string(f.?{replica.missing})) };
     .(f: replica.Conflict) {
       "conflict versions=".>string_concat(fmt.int_to_string(f.?{replica.conflict}))

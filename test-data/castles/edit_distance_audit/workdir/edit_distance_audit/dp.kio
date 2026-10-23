@@ -2,7 +2,7 @@ module edit_distance_audit/dp;
 
 import edit_distance_audit/math as math;
 import edit_distance_audit/render as render;
-import elab/control(if);
+import macros/control(macro if);
 import testapi(Array, I32, String, default Bool);
 import testapi/arith as arith;
 import testapi/array as array;
@@ -10,7 +10,7 @@ import testapi/io as io;
 import testapi/iter(loop);
 
 pub rec(loop) fn seed_row_at(index: I32, last: I32, row: Array(I32)) -> Array(I32) {
-  if! arith.leq_i32(index, last) {
+  if(arith.leq_i32(index, last)) {
     array.array_set(row, index, index);
     recur seed_row_at(arith.add_i32(index, 1), last, row)
   } else {
@@ -24,7 +24,7 @@ pub fn seed_row(last: I32) -> Array(I32) {
 }
 
 fn substitution_cost(left_token: I32, right_token: I32) -> I32 {
-  if! math.i32_eq(left_token, right_token) { 0 } else { 1 }
+  if(math.i32_eq(left_token, right_token)) { 0 } else { 1 }
 }
 
 fn cell_cost(prev: Array(I32), curr: Array(I32), left_token: I32, right_token: I32, index: I32) -> I32 {
@@ -43,7 +43,7 @@ pub rec(loop) fn fill_row_at(
 , left_token: I32
 , right: Array(I32)
 ) -> Array(I32) {
-  if! arith.leq_i32(index, last) {
+  if(arith.leq_i32(index, last)) {
     let right_token = array.array_get(right, arith.sub_i32(index, 1));
     let cost = cell_cost(prev, curr, left_token, right_token, index);
     array.array_set(curr, index, cost);
@@ -69,7 +69,7 @@ pub rec(loop) fn walk_rows(
 , prev: Array(I32)
 , matrix_checksum: I32
 ) -> I32 {
-  if! arith.leq_i32(index, left_len) {
+  if(arith.leq_i32(index, left_len)) {
     let row = build_row(index, prev, left, right, right_len);
     let checksum = render.print_row(index, row, right_len);
     let next_checksum = arith.add_i32(arith.mul_i32(matrix_checksum, 31), checksum);

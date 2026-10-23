@@ -2,11 +2,11 @@ module build_closure_compound_param/main;
 
 import build_closure_compound_param(Bool, I32, Str);
 import build_closure_compound_param(build, step);
-import elab/match(match);
+import macros/match(macro match);
 
 fn use_step() -> I32 {
   step(.(t: I32 & Str & Bool) -> I32 {
-    match! t {
+    match(t) {
       .(a: I32, _s: Str, _b: Bool) { a }
     }
   })

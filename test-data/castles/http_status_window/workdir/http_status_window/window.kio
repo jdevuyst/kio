@@ -1,6 +1,6 @@
 module http_status_window/window;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/text as text;
 
@@ -25,13 +25,13 @@ fn status_family_digit(status: String, digit: String) -> Bool {
 }
 
 pub fn family_label(status: String) -> String {
-  if! status_family_digit(status, "2") {
+  if(status_family_digit(status, "2")) {
     "success"
-  } else if! status_family_digit(status, "3") {
+  } else if(status_family_digit(status, "3")) {
     "redirect"
-  } else if! status_family_digit(status, "4") {
+  } else if(status_family_digit(status, "4")) {
     "client_error"
-  } else if! status_family_digit(status, "5") {
+  } else if(status_family_digit(status, "5")) {
     "server_error"
   } else {
     "other"

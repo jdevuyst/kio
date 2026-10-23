@@ -1,6 +1,6 @@
 module main;
 
-import elab/sequence(do);
+import macros/sequence(macro do);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
@@ -12,5 +12,5 @@ fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
 fn not_bind[A](m: Box(A)) -> Box(A) { m }
 
 fn bad() -> Box(.) {
-  do! not_bind { let _x <- box_pure(()); box_pure(()) }
+  do(not_bind) { let _x <- box_pure(()); box_pure(()) }
 }

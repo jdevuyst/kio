@@ -24,9 +24,9 @@ import library/dict(
 , varop [% %]
 , yes
 );
-import library/elab/control(if);
-import library/elab/match(match);
-import library/elab/spine_elaborators(widen_sum);
+import library/macros/control(macro if);
+import library/macros/match(macro match);
+import library/macros/spine_macros(macro widen_sum);
 import testapi(default Bool, default I32, default String);
 import testapi/arith(add, eq_i32, lt_i32);
 import testapi/fmt(bool_to_string, int_to_string);
@@ -34,11 +34,11 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 fn host_bool(b: Bool) -> Flag {
-  if! b { yes() } else { no() }
+  if(b) { yes() } else { no() }
 }
 
 fn cmp_i32(pair: I32 & I32) -> Ordering {
-  match! pair {
+  match(pair) {
     .(a: I32, b: I32) {
       bool_select(lt(), bool_select(eq(), gt(), host_bool(eq_i32(a, b))), host_bool(lt_i32(a, b)))
     }
@@ -49,7 +49,7 @@ fn cmp_i32(pair: I32 & I32) -> Ordering {
 fn cmp_i32_equivalent(pair: I32 & I32) -> Ordering { cmp_i32(pair) }
 
 fn cmp_i32_desc(pair: I32 & I32) -> Ordering {
-  match! pair {
+  match(pair) {
     .(a: I32, b: I32) { cmp_i32((b, a)) }
   }
 }
@@ -59,7 +59,7 @@ fn gt_flag(a: I32, b: I32) -> Flag { host_bool(lt_i32(b, a)) }
 fn op_get(d: Dict(I32, I32), k: I32) -> I32 | . { get(cmp_i32, d, k) }
 
 fn op_insert(d: Dict(I32, I32), kv: I32 & I32) -> Dict(I32, I32) {
-  match! kv {
+  match(kv) {
     .(key: I32, value: I32) { insert(cmp_i32, d, key, value) }
   }
 }
@@ -83,7 +83,7 @@ fn show(label: String, value: String) {
 fn show_lookup(label: String, result: I32 | .) {
   show(
   , label
-  , match! result {
+  , match(result) {
       (
       , .(n: I32) -> String { string_concat("present(", string_concat(int_to_string(n), ")")) }
       , .(_absent: .) -> String { "absent" }
@@ -98,7 +98,7 @@ fn show_entries(label: String, d: Dict(I32, I32)) {
     , d
     , (yes(), "")
     , .(acc: Flag & String, key: I32, value: I32) -> Flag & String {
-        match! acc {
+        match(acc) {
           .(first: Flag, body: String) {
             let entry = string_concat(int_to_string(key), string_concat("=", int_to_string(value)));
             bool_select(
@@ -110,7 +110,7 @@ fn show_entries(label: String, d: Dict(I32, I32)) {
         }
       }
     );
-  match! folded {
+  match(folded) {
     .(_first: Flag, body: String) { show(label, string_concat("[", string_concat(body, "]"))) }
   }
 }
@@ -124,7 +124,7 @@ fn unit_dictionary() -> Dict(I32, .) { [% 1 => () %](cmp_i32) }
 fn show_lookup_value[A](label: String, result: A | ., format_present: A -> String) {
   show(
   , label
-  , match! result {
+  , match(result) {
       (.(value: A) { format_present(value) }, .(_absent: .) { "absent" })
     }
   )
@@ -135,7 +135,7 @@ fn show_unit_lookup(label: String, result: . | .) {
 }
 
 fn sum_dictionary() -> Dict(I32, I32 | .) {
-  [% 1 => widen_sum!(7, I32 | .), 2 => widen_sum!((), I32 | .) %](cmp_i32)
+  [% 1 => widen_sum(7, I32 | .), 2 => widen_sum((), I32 | .) %](cmp_i32)
 }
 
 fn show_sum_lookup(label: String, result: (I32 | .) | .) {
@@ -143,7 +143,7 @@ fn show_sum_lookup(label: String, result: (I32 | .) | .) {
   , label
   , result
   , .(present: I32 | .) {
-      match! present {
+      match(present) {
         (
         , .(n: I32) { string_concat("present-number(", string_concat(int_to_string(n), ")")) }
         , .(_unit: .) { "present-unit" }

@@ -42,7 +42,12 @@ for newer Kio versions, for the owner's dated, italic `Edit:` notice at the end
 of the post body, before any standard footer or disclosure. Small
 code/API updates preserving an example's purpose do not waive it; formatting
 changes can also be substantive when formatting is the post's subject.
-Report missing or inadequate notices. A notice must
+Report missing or inadequate notices.
+Check consolidated notices against actual publication boundaries: related
+unpublished changes may share a succinct notice, while published revisions
+must retain accurate timing and material corrections. Signing and Kio release
+dates do not establish when a website revision became public.
+A notice must
 describe the actual change; it is not automatically a valid claim correction.
 
 Retain checkable claims from evidenced prior communication when building the

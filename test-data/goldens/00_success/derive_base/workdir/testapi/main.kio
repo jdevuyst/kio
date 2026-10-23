@@ -1,6 +1,6 @@
 module testapi/main;
 
-import elab/derive(derive);
+import macros/derive(macro derive);
 import testapi(String);
 import testapi/io(print);
 
@@ -19,10 +19,10 @@ fn box_monad() -> Monad(Box) {
   Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
 }
 
-// The simplest `derive!`: a single base instance, trivial derivation.
+// The simplest `derive`: a single base instance, trivial derivation.
 // The synthesized call tree is just `box_monad()`.
 fn use_derived() -> String {
-  let monad = derive!(box_monad, Monad(Box));
+  let monad = derive(box_monad, Monad(Box));
   let lifted = Box.mk_box("derive! base: ok\n"(String));
   let stepped = Monad.bind(monad)(String, String, lifted, .(s) { Box.mk_box(s) });
   Box.un_box(stepped)

@@ -1,3 +1,0 @@
-module user_elaborator_owner_context;
-
-host type String role(str);

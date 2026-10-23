@@ -1,0 +1,13 @@
+module helper;
+
+import macros/control(macro if);
+
+default host type Bool role(bool);
+
+host fn a();
+
+host fn b();
+
+pub fn pick() {
+  if(.t) { a() } else { b() }
+}

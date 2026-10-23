@@ -48,5 +48,5 @@ bridge {
   testapi;
   testapi/**;
   derive_memo_deep_stack/**;
-  elab/testapi
+  macros/testapi
 }

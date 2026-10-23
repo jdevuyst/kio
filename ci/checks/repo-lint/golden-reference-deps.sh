@@ -1,41 +1,9 @@
 #!/bin/sh
 #
-# Check that test cases consume the shared POC elaborator library
-# through a `dependency elab;` path dependency — never by symlinking or
-# byte-copying its modules into their own package.
-#
-# The canonical library lives under:
-#
-#   test-data/poc/elab/workdir/   (package elab)
-#
-# A consumer that needs the elaborators declares a dependency:
-#
-#   // elab.dep.kio
-#   dependency elab;
-#   source { path "<rel>/elab.pkg.kio"; }
-#
-# and imports `use elab/derive …;`, `use elab/match …;`, etc. Depending
-# on elab materializes its modules under an `elab/` tree at the consumer
-# package root; that re-rooted tree is committed (the consumer ships its
-# dependency's materialized closure). The materialized modules are
-# re-rooted derivatives (`module derive;` becomes `module elab/derive;`),
-# not byte copies of the canonical source — so this gate, which forbids
-# byte-identical canonical copies, never trips on a committed materialized
-# tree. (ci/checks/repo-lint/dep-materialization.sh checks the committed
-# tree itself.)
-#
-# This gate fails on the two pre-dependency workarounds:
-#
-#   (a) a git-tracked symlink pointing into test-data/poc/elab/workdir/
-#       (the old reuse mechanism — now replaced by dependencies), and
-#   (b) a git-tracked byte-identical real copy of a canonical reference
-#       module (a maintenance hazard: copies silently drift).
-#
-# Both must be zero: a test case reaches elab's elaborators only through
-# a dependency. (This is the inverted successor of the former
-# `golden-reference-symlinks` gate, which *mandated* symlinks; the
-# cross-package dependency migration flipped it. It is the gate-enforced
-# counterpart of the audit-corpus skill's § 5.)
+# Reject symlinks and byte-identical copies of the canonical macro library.
+# Consumers declare a path dependency and commit its re-rooted materialization;
+# test-data/README.md documents that ownership contract. This check complements
+# dep-materialization.sh, which verifies the generated dependency trees.
 #
 # POSIX sh only.
 
@@ -46,22 +14,14 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/../../.." && pwd)
 
 cd "$REPO_ROOT"
 
-CANON_DIR="test-data/poc/elab/workdir"
-NAMES="elaborator_util.kio algebraic_elaborators.kio spine_elaborators.kio match.kio derive.kio"
+CANON_DIR="test-data/poc/macros/workdir"
+NAMES="macro_util.kio algebraic_macros.kio spine_macros.kio match.kio derive.kio"
 
-# One documented exemption: `dyn_load_prime` is not a normal package that a
-# host depends on — it is test infrastructure (the dyn-load-prime interpreter, and
-# the dyn-load reference) assembled into a host by custom scripts
-# (`ci/infra/kio-test-runner-rs/dyn-load-prime-driver/build-driver.sh` and
-# `test-data/goldens/00_success/exec_dyn_load_integration/run.sh`), which `cp`
-# the package's modules into an assembly dir. It reuses elab's elaborator
-# modules via LIVE symlinks (tracking the canonical source with zero drift),
-# not as a `dependency elab;` — making it a real dependency would force those
-# assembly scripts to materialize a dependency, and a byte-copy would go stale.
-# So its symlinks are intentional and exempt here.
+# The dynamic-loader infrastructure has a separate source-assembly contract,
+# checked by its builder and publication self-test.
 EXEMPT_PREFIX="test-data/poc/dyn_load_prime/"
 
-# (a) git-tracked symlinks into the canonical elab workdir. Mode 120000
+# (a) git-tracked symlinks into the canonical macros workdir. Mode 120000
 # in `git ls-files -s` marks a symlink; check each target.
 symlinks=$(
   git ls-files -s test-data | while read -r mode _hash _stage path; do
@@ -69,14 +29,14 @@ symlinks=$(
     case "$path" in "$CANON_DIR"/*) continue ;; esac
     case "$path" in "$EXEMPT_PREFIX"*) continue ;; esac
     case "$(readlink "$path")" in
-      *elab/workdir*) printf '%s\n' "$path" ;;
+      *macros/workdir*) printf '%s\n' "$path" ;;
     esac
   done
 )
 
 # (b) git-tracked byte-identical copies of a canonical reference module.
 # Committed materialized dependency trees match the `$name` globs (their
-# re-rooted `<consumer>/elab/<name>` lives under test-data too) but are
+# re-rooted `<consumer>/macros/<name>` lives under test-data too) but are
 # re-rooted derivatives, so the `cmp` below finds them different — the
 # normal, no-finding path.
 #
@@ -109,16 +69,16 @@ copies=$(
 status=0
 
 if [ -n "$symlinks" ]; then
-  echo "golden-reference-deps: git-tracked symlinks into the canonical elab" >&2
-  echo "library found (consume elab through a \`dependency elab;\` instead):" >&2
+  echo "golden-reference-deps: git-tracked symlinks into the canonical macros" >&2
+  echo "library found (consume macros through a \`dependency macros;\` instead):" >&2
   echo "$symlinks" | sed 's/^/  /' >&2
   echo >&2
   status=1
 fi
 
 if [ -n "$copies" ]; then
-  echo "golden-reference-deps: byte-identical copies of canonical elab" >&2
-  echo "reference modules found (consume elab through a \`dependency elab;\`" >&2
+  echo "golden-reference-deps: byte-identical copies of canonical macros" >&2
+  echo "reference modules found (consume macros through a \`dependency macros;\`" >&2
   echo "instead of copying its modules):" >&2
   echo "$copies" | sed 's/^/  /' >&2
   echo >&2
@@ -126,12 +86,12 @@ if [ -n "$copies" ]; then
 fi
 
 if [ "$status" -ne 0 ]; then
-  echo "Fix each by depending on elab and importing the re-rooted module:" >&2
+  echo "Fix each by depending on macros and importing the re-rooted module:" >&2
   echo "  // <local>.dep.kio at the consumer package root" >&2
-  echo "  dependency elab;" >&2
-  echo "  source { path \"<rel>/elab.pkg.kio\"; }" >&2
-  echo "  // then, in a module: use elab/derive …;  use elab/match …;" >&2
+  echo "  dependency macros;" >&2
+  echo "  source { path \"<rel>/macros.pkg.kio\"; }" >&2
+  echo "  // then, in a module: import macros/derive(macro derive);  import macros/match(macro match);" >&2
   exit 1
 fi
 
-echo "golden-reference-deps: OK (elab consumed only via dependencies)"
+echo "golden-reference-deps: OK (macros consumed only via dependencies)"

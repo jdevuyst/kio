@@ -2,15 +2,15 @@ module circuit_netlist_eval/evaluator;
 
 import circuit_netlist_eval/domain(State, {stage});
 import circuit_netlist_eval/gates as gates;
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, default Bool);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
 fn eval_next(s: State) -> State {
-  if! arith.eq_i32(s.?{stage}, 0) {
+  if(arith.eq_i32(s.?{stage}, 0)) {
     gates.eval_gate_layer(s)
-  } else if! arith.eq_i32(s.?{stage}, 1) {
+  } else if(arith.eq_i32(s.?{stage}, 1)) {
     gates.eval_fanout_layer(s)
   } else {
     gates.eval_probe_layer(s)
@@ -18,5 +18,5 @@ fn eval_next(s: State) -> State {
 }
 
 pub rec(loop) fn settle(s: State) -> State {
-  if! arith.lt_i32(s.?{stage}, 3) { recur settle(eval_next(s)) } else { s }
+  if(arith.lt_i32(s.?{stage}, 3)) { recur settle(eval_next(s)) } else { s }
 }

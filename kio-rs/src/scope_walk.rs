@@ -31,11 +31,15 @@ pub(crate) use blocks::{BlockHeader, selected_block_header};
 pub(crate) use qualified::{qualified_candidates, qualified_providers};
 #[cfg(feature = "lsp")]
 mod call_types;
+mod macro_scope;
+mod macros;
 mod source_references;
 #[cfg(feature = "repl-core")]
 pub(crate) use call_types::expression_callee_shadowed;
 #[cfg(feature = "lsp")]
 pub(crate) use call_types::{CallHead, public_call_head};
+pub(crate) use macro_scope::{MacroScope, MacroScopeMark};
+pub use macros::{MacroCalls, macro_calls, macro_calls_for_expression, macro_calls_for_items};
 #[cfg(feature = "lsp")]
 pub(crate) use source_references::SourceBindingIndex;
 pub use source_references::{SourceBinding, source_binding};
@@ -410,8 +414,8 @@ fn item_scope(item: &Item<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 }
             }
         }
-        Item::Elaborator(elab, _) if ns == Namespace::Type => {
-            type_scope(&elab.call_ty, offset, out)
+        Item::Macro(macro_def, _) if ns == Namespace::Type => {
+            type_scope(&macro_def.call_ty, offset, out)
         }
         _ => {}
     }
@@ -433,10 +437,10 @@ fn item_names(item: &Item<Surface>, ns: Namespace, out: &mut impl CandidateSink)
         Item::LiteralAlias(alias, _) if ns == Namespace::Value => {
             declaration(out, &alias.name, alias.meta.span, CandidateKind::Constant)
         }
-        Item::Elaborator(elab, _) if ns == Namespace::Value => declaration(
+        Item::Macro(macro_def, _) if ns == Namespace::Value => declaration(
             out,
-            &format!("{}!", elab.name),
-            elab.meta.span,
+            &macro_def.name,
+            macro_def.meta.span,
             CandidateKind::Function,
         ),
         Item::TypeAlias(alias) if ns == Namespace::Type => {
@@ -829,7 +833,7 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 args_scope(args, offset, ns, out);
             }
         }
-        Expr::RecCall { args, .. } | Expr::UserElaborator { args, .. } => {
+        Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
             args_scope(args, offset, ns, out)
         }
         Expr::Tuple { items, .. } => {
@@ -963,9 +967,9 @@ mod tests {
     fn expression_containers_preserve_nested_binding_scope() {
         for container in [
             "((), INNER)",
-            "build!(INNER)",
+            "build(INNER)",
             "recur loop(INNER)",
-            "scope! { INNER }",
+            "scope { INNER }",
             ".x. { let _ = x1; INNER }",
             "{ field = INNER }",
             "(INNER).?{field}",
@@ -973,7 +977,7 @@ mod tests {
             "().>apply(INNER)",
             "INNER + ()",
             "[* INNER, *]",
-            "if! () { INNER } else { () }",
+            "if () { INNER } else { () }",
         ] {
             let source = format!(
                 "module pkg/main; fn pair(a: ., b: .) -> . {{ a }} fn zero() -> . {{ () }} op _ + _ {{ impl pair; }}; varop [* *] {{ foldl pair zero; }}; fn outer(parent: .) -> . {{ {} }}",
@@ -997,7 +1001,7 @@ mod tests {
 
     #[test]
     fn neutral_bindings_are_sequential_and_do_not_escape() {
-        let source = "module pkg/main; fn f(parent: .) -> . { (do! bind { let .(first: ., second: .) <- parent; let third = first; third }, parent) }";
+        let source = "module pkg/main; fn f(parent: .) -> . { (do (bind) { let .(first: ., second: .) <- parent; let third = first; third }, parent) }";
         let module = parse(source);
         let rhs = in_scope_candidates(&module, offset_after(source, "<- parent"));
         assert!(!labels(&rhs).contains(&"first"));

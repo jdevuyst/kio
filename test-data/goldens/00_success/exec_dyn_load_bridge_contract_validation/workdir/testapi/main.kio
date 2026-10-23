@@ -1,18 +1,18 @@
 /// Revalidates package bridge globs and transitive host-module completeness.
 module testapi/main;
 
-import elab/match(match);
 import loader(Export_info, Export_infos);
 import loader(Lr_diag, Lr_image);
 import loader(diag_message, un_load_outcome);
 import loader(export_info_name, image_exports, un_export_infos);
 import loader/scan(load_package);
+import macros/match(macro match);
 import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
 fn describe(source: String) -> String {
-  match! un_load_outcome(load_package(source)) {
+  match(un_load_outcome(load_package(source))) {
     (
     , .(_loaded: Lr_image) { "accepted"(String) }
     , .(rejected: Lr_diag) { diag_message(Lr_diag.get(rejected)) }
@@ -25,10 +25,10 @@ fn result_line(label: String, source: String) -> String {
 }
 
 fn first_export(source: String) -> String {
-  match! un_load_outcome(load_package(source)) {
+  match(un_load_outcome(load_package(source))) {
     (
     , .(loaded: Lr_image) {
-        match! un_export_infos(image_exports(Lr_image.get(loaded))) {
+        match(un_export_infos(image_exports(Lr_image.get(loaded)))) {
           (
           , .(export: Export_info, _rest: Export_infos) { export_info_name(export) }
           , .(_empty: .) { "<empty>"(String) }

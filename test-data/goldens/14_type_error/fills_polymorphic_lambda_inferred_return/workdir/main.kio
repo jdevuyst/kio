@@ -1,7 +1,7 @@
 module main;
 
-import elab(observe);
+import macros(macro observe);
 
 fn witness() {
-  observe!(.[A](value: A) { value })
+  observe(.[A](value: A) { value })
 }

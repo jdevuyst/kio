@@ -1,6 +1,6 @@
 module river_bytecode_vm/report;
 
-import elab/control(if);
+import macros/control(macro if);
 import river_bytecode_vm/constants as c;
 import river_bytecode_vm/model(
 , Alerts
@@ -35,11 +35,11 @@ import testapi/fmt(bool_to_string, int_to_string);
 import testapi/text(string_concat);
 
 fn status(code: I32) -> String {
-  if! eq_i32(code, c.halt_success()) {
+  if(eq_i32(code, c.halt_success())) {
     "success"
-  } else if! eq_i32(code, c.halt_trap()) {
+  } else if(eq_i32(code, c.halt_trap())) {
     "trap"
-  } else if! eq_i32(code, c.halt_bad_pc()) {
+  } else if(eq_i32(code, c.halt_bad_pc())) {
     "bad-pc"
   } else {
     "running"

@@ -1,6 +1,6 @@
 ---
 name: audit-dead-elaborator-machinery
-description: Verify elaborator machinery is reachable from spec-current syntax and that Kio-authored elaborators receive no compiler privilege from a user-controlled name or library identity
+description: Verify elaborator machinery is reachable from spec-current syntax and that Kio-authored macros receive no compiler privilege from a user-controlled name or library identity
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
@@ -15,9 +15,9 @@ read-only walks (resolve, desugar clone-walks, pretty, tokens, LSP,
 equiv-cache) — while still **compiling clean**: the read-only walks and
 test constructors keep `dead_code` quiet, so no mechanical lint fires.
 
-This is the gap that let a built-in `match!` apparatus (`ElaboratorKind`
+This is the gap that let a built-in `match` apparatus (`ElaboratorKind`
 / `ElaboratorCall` `Match` variants plus `synth_match_elaborator`)
-survive after the surface `match!` migrated to a Kio-authored user
+survive after the surface `match` migrated to a Kio-authored user
 elaborator (`match.kio`, imported via `use match from match;`). A
 spelling/keyword/grammar sweep is structurally blind to it: the residue
 is internal Rust enum identifiers, not user-facing syntax, and a
@@ -30,11 +30,11 @@ Read AGENTS.md § Universal rules — No partial implementations, Bugs surface;
 never hide them, and User declarations never become compiler primitives by
 name before starting. Dead scaffolding reachable only through test constructors
 and read-only walks is a no-partial-implementations breach; semantic dispatch on
-a Kio-authored elaborator's name is a user-declaration-privilege breach.
+a Kio-authored macro's name is a user-declaration-privilege breach.
 
 ## What this catches vs. does not
 
-The built-in `match!` apparatus was Apparatus A. Do **not** confuse it
+The built-in `match` apparatus was Apparatus A. Do **not** confuse it
 with [`Expr::EnrichedMatch`] (Apparatus B) — the live post-typecheck
 sum-dispatch IR produced by `structural_recovery`, carried by
 `route`, optimized by `optimize.rs`, and emitted by the Rust /
@@ -64,26 +64,26 @@ Any variant with no spec mapping is a finding.
 | `ElaboratorKind::Access` / `ElaboratorCall::FieldAccess` | `x.?{foo}` postfix field access | Compiler-private; parser-produced |
 | `ElaboratorKind::Filtered` / `ElaboratorCall::FieldUpdate` | `x.!{foo = y}` postfix field update | Compiler-private; parser-produced |
 
-There is deliberately **no** `Match` row: the surface `match!` is the
-imported Kio-authored user elaborator, carried by `Expr::UserElaborator`
-(name `"match"`), typed through `synth_user_elaborator`. It does not back
+There is deliberately **no** `Match` row: the surface `match` is the
+imported Kio-authored user macro, carried by `Expr::UserMacro`
+(name `"match"`), typed through `synth_user_macro`. It does not back
 any `ElaboratorKind` / `ElaboratorCall` variant. If a `Match` variant
 reappears in either enum, that is the regression this skill exists to
 catch.
 
 There is likewise deliberately **no** `Iso` / `Into` / `Onto` / `Align` /
-`Ease` / `Atom` / `Fit` / `Derive` row: the spine/algebraic elaborator
-palette (`iso!` / `into!` / `onto!` / `align!` / `ease!` / `atom!` /
-`reorder_*!` / `narrow_*!` / `widen_*!` / `flatten_*!` / `one_*!` /
-`fit!`) and `derive!` are, same as `match!`, imported Kio-authored user
-elaborators carried by `Expr::UserElaborator` and typed through
-`synth_user_elaborator`. They do not back any `ElaboratorKind` /
+`Ease` / `Atom` / `Fit` / `Derive` row: the spine/algebraic macro
+palette (`iso` / `into` / `onto` / `align` / `ease` / `atom` /
+`reorder_*` / `narrow_*` / `widen_*` / `flatten_*` / `one_*` /
+`fit`) and `derive` are, same as `match`, imported Kio-authored user
+macros carried by `Expr::UserMacro` and typed through
+`synth_user_macro`. They do not back any `ElaboratorKind` /
 `ElaboratorCall` variant. If any of those variants reappear in either
 enum, that is the same class of regression.
 
-Cross-check the table against `specs/grammar.md` (bang-calls are
-`IDENT '!'` token conjunctions — there is no reserved elaborator-name
-terminal — and the relevant productions are `FieldAccess` /
+Cross-check the table against `specs/grammar.md` (macro calls are
+direct local calls selected through ordinary lexical ownership — there is
+no reserved macro-name terminal — and the relevant productions are `FieldAccess` /
 `FieldUpdate`). A variant in the enum with no row, or a row whose
 surface form is no longer in `specs/grammar.md`, is a finding.
 
@@ -137,9 +137,9 @@ The synth entry points are the per-variant arms in
 `kio-rs/src/pass/typecheck_full.rs` `synth_expr` / `check_value_against`
 under `Expr::Elaborator { call, .. }` (the `ElaboratorCall::FieldAccess`
 → `synth_field_access`, `ElaboratorCall::FieldUpdate` →
-`synth_field_update` dispatch), plus `Expr::UserElaborator` →
-`synth_user_elaborator` for the path that backs `match!` and other
-imported elaborators.
+`synth_field_update` dispatch), plus `Expr::UserMacro` →
+`synth_user_macro` for the path that backs `match` and other
+imported macros.
 
 Procedure (manual one-off; promote to a standing probe when convenient):
 
@@ -174,8 +174,8 @@ Procedure (manual one-off; promote to a standing probe when convenient):
    zero firings in a bounded run do not prove that the whole corpus lacks
    coverage or that the variant is dead. Reconcile the source-to-entry map
    from §§ 1–3 and existing tests before classifying dead machinery versus
-   a live shape needing a regression. For example, an imported `match!`
-   witness should reach `synth_user_elaborator`; its library spelling does
+   a live shape needing a regression. For example, an imported `match`
+   witness should reach `synth_user_macro`; its library spelling does
    not prove a dedicated built-in match branch remains reachable.
 
 4. Revert the probe (it is a throwaway instrumentation build, not a
@@ -191,13 +191,13 @@ Procedure (manual one-off; promote to a standing probe when convenient):
   procedure. It requires an instrumented build, so it is opt-in rather
   than part of the default static sweep. Run it when § 3 flags a
   suspect variant, or when an elaborator surface form is removed /
-  migrated (e.g. a built-in becoming a user elaborator) — that
+  migrated (e.g. a built-in becoming a user macro) — that
   migration is exactly when a variant goes dead while still compiling.
 
 ## 6. Related dead-built-in paths
 
 When a surface elaborator migrates from a built-in to a Kio-authored
-user elaborator, the *whole* built-in apparatus for it goes dead at
+user macro, the *whole* built-in apparatus for it goes dead at
 once: the `ElaboratorKind` / `ElaboratorCall` variants, the synth fn,
 the per-clause / decision-tree helpers it alone called, and any
 factor-list engine entry kept "for symmetry" with it. After deleting a
@@ -207,17 +207,17 @@ Delete to fixpoint; an `#[allow(dead_code)]` left behind to silence the
 cascade is itself a finding (it re-hides what this audit exists to
 surface).
 
-## 7. User-elaborator name and identity privilege
+## 7. User-macro name and identity privilege
 
-Kio-authored elaborators are ordinary imported declarations. Audit every
-semantic pass that handles `Expr::UserElaborator` or bang-UFCS calls, and every
+Kio-authored macros are ordinary imported declarations. Audit every
+semantic pass that handles `Expr::UserMacro` or macro UFCS calls, and every
 hard-coded constant, string, or distinguished identity matching a shipped
 elaborator. Include the parser/desugarer, typer, substitution, recursive
 lowering, structural recovery (including `route`), capability
 annotation, evaluator, optimizer, and every backend; do not limit the sweep to
 `ElaboratorKind` or to files changed by the triggering commit.
 
-Classify each use of an elaborator name or resolved declaration identity:
+Classify each use of a macro name or resolved declaration identity:
 
 - **Ordinary identity use** — following the exact identity selected by the
   resolved program: resolving an import; validating the selected capture or
@@ -242,8 +242,8 @@ privileged library declarations. The repair must use general elaborated
 structure or an explicitly authorized language construct/capability.
 
 For each semantic path, require discriminating evidence: an unrelated
-elaborator with the tempting spelling remains ordinary, while the intended
-general behavior also applies to a differently named or rehomed elaborator with
+macro with the tempting spelling remains ordinary, while the intended
+general behavior also applies to a differently named or rehomed macro with
 the same relevant ordinary structure. If an authorized explicit capability is
 selected instead, vary the name while preserving the capability. The intended
 library behavior must also survive the reference and call spellings the

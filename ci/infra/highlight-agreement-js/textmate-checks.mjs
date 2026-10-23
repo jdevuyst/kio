@@ -17,10 +17,10 @@ for (const ending of ["]", "\n]", " // closing\n]"]) {
   fixture(`ambiguous square bang marker ${JSON.stringify(ending)}`, `module m; fn run() { [!x!${ending} }`, [["x!", "x!", null]]);
   fixture(`ambiguous bare square bang ${JSON.stringify(ending)}`, `module m; fn run() { [x!${ending} }`, [["x!", "x!", null]]);
 }
-fixture("square bang fallback preserves genuine interior and outside macros", "module m; fn run() { [!helper!(arg)!]; helper!(arg); outside!\n{ arg } }", [
-  ["[!helper!(arg)", "helper!", "entity.name.function.macro.elaborator.kio"],
-  ["; helper!(arg)", "helper!", "entity.name.function.macro.elaborator.kio"],
-  ["outside!\n", "outside!", "entity.name.function.macro.elaborator.kio"],
+fixture("square bang fallback preserves ordinary interior and outside calls", "module m; fn run() { [!helper(arg)!]; helper(arg); outside\n{ arg } }", [
+  ["[!helper(arg)", "helper", functionName],
+  ["; helper(arg)", "helper", functionName],
+  ["outside\n", "outside", identifier],
 ]);
 
 function fixture(name, source, targets) {
@@ -40,28 +40,28 @@ function fixture(name, source, targets) {
   }) });
 }
 
-fixture("marked blocks use generic heads and labels", "module controls; fn f() { outer! value { a() } fallback inner! next { b() } otherwise { c() } }", [
-  ["outer! value", "outer!", "entity.name.function.macro.elaborator.kio"],
-  ["fallback inner!", "fallback", "keyword.control.kio"],
-  ["inner! next", "inner!", "entity.name.function.macro.elaborator.kio"],
+fixture("marked blocks use generic heads and labels", "module controls; fn f() { outer (value) { a() } fallback inner (next) { b() } otherwise { c() } }", [
+  ["outer (value)", "outer", functionName],
+  ["fallback inner", "fallback", "keyword.control.kio"],
+  ["inner (next)", "inner", functionName],
   ["otherwise {", "otherwise", "keyword.control.kio"],
 ]);
-fixture("marked blocks preserve prefix and ordinary names", "module controls; fn f(if: ., do: ., fallback: .) { outer! convert!(if) { do; fallback } else { if } }", [
+fixture("marked blocks preserve prefix and ordinary names", "module controls; fn f(if: ., do: ., fallback: .) { outer (convert(if)) { do; fallback } else { if } }", [
   ["if: .", "if", identifier], ["do: .", "do", identifier],
-  ["convert!(if)", "convert!", "entity.name.function.macro.elaborator.kio"],
+  ["(convert(if))", "convert", functionName],
   ["{ do;", "do", identifier], ["; fallback }", "fallback", identifier],
   ["else {", "else", "keyword.control.kio"], ["{ if }", "if", identifier],
 ]);
-fixture("marked blocks preserve grouped child ownership", "module controls; fn f() { outer!(inner! value { a() } fallback { b() }) { c() } cleanup { d() } }", [
-  ["inner! value", "inner!", "entity.name.function.macro.elaborator.kio"],
+fixture("marked blocks preserve grouped child ownership", "module controls; fn f() { outer(inner (value) { a() } fallback { b() }) { c() } cleanup { d() } }", [
+  ["inner (value)", "inner", functionName],
   ["fallback {", "fallback", "keyword.control.kio"],
   ["cleanup {", "cleanup", "keyword.control.kio"],
 ]);
-fixture("marked blocks multiline and comments", "module controls; fn f() { outer!\n value\n { a() } // edge\n fallback // label\n { b() } }", [
-  ["outer!\n", "outer!", "entity.name.function.macro.elaborator.kio"],
-  ["fallback //", "fallback", "keyword.control.kio"],
+fixture("marked blocks multiline and comments", "module controls; fn f() { outer\n (value)\n { a() } // edge\n fallback // label\n { b() } }", [
+  ["outer\n", "outer", identifier],
+  ["fallback //", "fallback", identifier],
 ]);
-fixture("trailing descriptors are declaration local", "module controls; elab form: . -> . { trailing thunk; impl helper; trailing product fallback; trailing sequence cleanup } fn f(trailing: ., sequence: .) { trailing; sequence }", [
+fixture("trailing descriptors are declaration local", "module controls; macro form: . -> . { trailing thunk; impl helper; trailing product fallback; trailing sequence cleanup } fn f(trailing: ., sequence: .) { trailing; sequence }", [
   ["trailing thunk", "trailing", keyword], ["thunk;", "thunk", keyword],
   ["trailing product", "product", keyword], ["fallback;", "fallback", "keyword.control.kio"],
   ["trailing sequence", "sequence", keyword], ["cleanup }", "cleanup", "keyword.control.kio"],
@@ -156,7 +156,7 @@ fixture("grouped lock configuration scalars", 'lock helper;\nresolved { git (("h
   ["commit ((", "commit", keyword], ["sig (((", "sig", keyword], ["path ((", "path", keyword],
   ['"digest"', "digest", "string.quoted.double.kio"], ["path ((", "(", "punctuation.bracket.kio"],
 ]);
-fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nelab form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }', [
+fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.add)) }\nvarop [* *] { foldl ((ops.join)) (ops.empty); finalize ((())) }\nmacro form: . -> . { captures ((helper), ((Type))); impl ((helpers.run)) }\nrec ((host.drive)) fn again(value: .) -> . { value.>((helpers.keep)) }', [
   ["impl ((ops", "impl", keyword], ["ops.add", "add", identifier],
   ["foldl ((", "foldl", keyword], ["foldl ((", "(", "punctuation.bracket.kio"],
   ["ops.join", "join", identifier], ["ops.empty", "empty", identifier],
@@ -166,13 +166,13 @@ fixture("grouped callable reference fields", 'module m;\nop _ + _ { impl ((ops.a
   ["(host.drive))", "(", "punctuation.bracket.kio"], [") fn", ")", "punctuation.bracket.kio"],
   ["helpers.keep", "keep", identifier],
 ]);
-fixture("standalone grouped fills is a callable", 'module m;\nelab form: . -> . { impl (fills) }', [["(fills)", "fills", identifier]]);
-fixture("nested grouped fills is a callable", 'module m;\nelab form: . -> . { impl ((fills)) }', [["((fills))", "fills", identifier]]);
-fixture("fills marker precedes grouped callable", 'module m;\nelab form: . -> . { impl (fills) ((helpers.run)) }', [
+fixture("standalone grouped fills is a callable", 'module m;\nmacro form: . -> . { impl (fills) }', [["(fills)", "fills", identifier]]);
+fixture("nested grouped fills is a callable", 'module m;\nmacro form: . -> . { impl ((fills)) }', [["((fills))", "fills", identifier]]);
+fixture("fills marker precedes grouped callable", 'module m;\nmacro form: . -> . { impl (fills) ((helpers.run)) }', [
   ["(fills)", "fills", keyword], ["helpers.run", "run", identifier],
 ]);
 for (const comment of ["", " // shared"]) {
-  const prefix = `module m;\nelab form: . -> . { impl (fills)${comment}`;
+  const prefix = `module m;\nmacro form: . -> . { impl (fills)${comment}`;
   fixture(`fills later-line marker${comment}`, `${prefix}\n helpers.run }`, [[`(fills)${comment}`, "fills", null]]);
   fixture(`fills later-line callable${comment}`, `${prefix}\n }`, [[`(fills)${comment}`, "fills", null]]);
 }
@@ -499,7 +499,7 @@ for (const [sibling, targets] of [
   ["type Next = .;", [["type Next", "type", keyword]]],
   ["literal unit = .t;", [["literal unit", "literal", keyword]]],
   ["labels { tag: . };", [["labels {", "labels", keyword]]],
-  ["elab macro : . -> . { impl handler; };", [["elab macro", "elab", keyword], ["impl handler", "impl", keyword]]],
+  ["macro macro : . -> . { impl handler; };", [["macro macro", "macro", keyword], ["impl handler", "impl", keyword]]],
   ["varop [* *] { foldl join empty; };", [["varop [*", "varop", keyword], ["foldl join", "foldl", keyword]]],
   ["op _ + _ { impl add; };", [["op _", "op", keyword], ["impl add", "impl", keyword]]],
   ["import app as local;", [["import app", "import", keyword]]],
@@ -531,47 +531,47 @@ for (const word of ["if", "do"]) {
     [`${word}:`, word, identifier], [`{ ${word} }`, word, identifier],
   ]);
   fixture(`${word} ordinary call`, `module m;\nfn f() -> . { ${word}(()) }`, [[`${word}(()`, word, functionName]]);
-  fixture(`${word} parenthesized control`, `module m;\nfn f() -> . { ${word}!(pred(())) { () }${word === "if" ? " else { () }" : ""} }`, [[`${word}!(pred`, `${word}!`, "entity.name.function.macro.elaborator.kio"]]);
-  fixture(`${word} multiline receiver`, `module m;\nfn f() -> . { ${word}! pred(())\n { () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}! pred`, `${word}!`, "entity.name.function.macro.elaborator.kio"]]);
+  fixture(`${word} parenthesized control`, `module m;\nfn f() -> . { ${word}(pred(())) { () }${word === "if" ? " else { () }" : ""} }`, [[`${word}(pred`, `${word}`, functionName]]);
+  fixture(`${word} multiline receiver`, `module m;\nfn f() -> . { ${word}(pred(()))\n { () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}(pred`, `${word}`, functionName]]);
   for (const suffix of ["", " // shared trivia", "(pred())"]) {
-    const prefix = `module m;\nfn f() -> . {\n ${word}!${suffix}`;
-    fixture(`${word} later-line construct ${suffix}`, `${prefix}\n ${suffix.startsWith("(") ? "" : "pred(()) "}{ () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}!${suffix}\n`, `${word}!`, "entity.name.function.macro.elaborator.kio"]]);
-    fixture(`${word} later-line ordinary ${suffix}`, `${prefix}\n}`, [[`${word}!${suffix}\n`, `${word}!`, "entity.name.function.macro.elaborator.kio"]]);
+    const prefix = `module m;\nfn f() -> . {\n ${word}${suffix}`;
+    fixture(`${word} later-line construct ${suffix}`, `${prefix}\n ${suffix.startsWith("(") ? "" : "(pred(())) "}{ () }${word === "if" ? " else { () }" : ""}\n}`, [[`${word}${suffix}\n`, `${word}`, suffix.startsWith("(") ? functionName : identifier]]);
+    fixture(`${word} later-line ordinary ${suffix}`, `${prefix}\n}`, [[`${word}${suffix}\n`, `${word}`, suffix.startsWith("(") ? functionName : identifier]]);
   }
 }
-fixture("conditional else owner", "module m;\nfn f(else: .) -> . { if! .t { else } else { else } }", [
+fixture("conditional else owner", "module m;\nfn f(else: .) -> . { if (.t) { else } else { else } }", [
   ["else:", "else", identifier], ["{ else } else", "else", identifier],
   ["else { else", "else", "keyword.control.kio"], ["{ else } }", "else", identifier],
 ]);
-fixture("else multiline owner", "module m;\nfn f() -> . {\n if! .t { () }\n // branch\n else\n { () }\n}", [["else\n", "else", "keyword.control.kio"]]);
-fixture("else identifier condition", "module m;\nfn f(else: .) -> . { if! else { () } else { () } }", [
-  ["if! else", "else", identifier], ["} else", "else", "keyword.control.kio"],
+fixture("else multiline owner", "module m;\nfn f() -> . {\n if (.t) { () }\n // branch\n else\n { () }\n}", [["else\n", "else", "keyword.control.kio"]]);
+fixture("else identifier condition", "module m;\nfn f(else: .) -> . { if (else) { () } else { () } }", [
+  ["if (else)", "else", identifier], ["} else", "else", "keyword.control.kio"],
 ]);
-fixture("else outside conditional", "module m;\nfn f(else: .) -> . { scope! { () }; else(else); else }", [
+fixture("else outside conditional", "module m;\nfn f(else: .) -> . { scope { () }; else(else); else }", [
   ["else(else", "else", functionName], ["(else)", "else", identifier], ["; else }", "else", identifier],
 ]);
-fixture("nested if condition", "module m;\nfn f() -> . { if!(if! .t { .t } else { .f }) { () } else { () } }", [
-  ["if!(if!", "if!", "entity.name.function.macro.elaborator.kio"], ["if! .t", "if!", "entity.name.function.macro.elaborator.kio"],
+fixture("nested if condition", "module m;\nfn f() -> . { if(if (.t) { .t } else { .f }) { () } else { () } }", [
+  ["if(if", "if", functionName], ["if (.t)", "if", functionName],
   ["else { .f", "else", "keyword.control.kio"], ["else { ()", "else", "keyword.control.kio"],
 ]);
-fixture("conditional label condition", "module m;\nfn f() -> . { if!({flag}) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
-fixture("conditional do condition", "module m;\nfn f() -> . { if!(scope! { .t }) { () } else { () } }", [
-  ["scope! {", "scope!", "entity.name.function.macro.elaborator.kio"], ["else {", "else", "keyword.control.kio"],
+fixture("conditional label condition", "module m;\nfn f() -> . { if({flag}) { () } else { () } }", [["else {", "else", "keyword.control.kio"]]);
+fixture("conditional do condition", "module m;\nfn f() -> . { if(scope { .t }) { () } else { () } }", [
+  ["scope {", "scope", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("else if chain", "module m;\nfn f() -> . { if! .t { () } else if! .f { () } else { () } }", [
-  ["else if!", "else", "keyword.control.kio"], ["if! .f", "if!", "entity.name.function.macro.elaborator.kio"], ["else {", "else", "keyword.control.kio"],
+fixture("else if chain", "module m;\nfn f() -> . { if (.t) { () } else if (.f) { () } else { () } }", [
+  ["else if", "else", "keyword.control.kio"], ["if (.f)", "if", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("conditional lambda condition", "module m;\nfn f() -> . { if!(.(if: .) { if }) { () } else { () } }", [
+fixture("conditional lambda condition", "module m;\nfn f() -> . { if(.(if: .) { if }) { () } else { () } }", [
   ["if:", "if", identifier], ["{ if }", "if", identifier], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("recursive conditional condition", "module m;\nfn f() -> . { if! recur again() { () } else { () } }", [
-  ["recur again", "recur", keyword], ["else {", "else", "keyword.control.kio"],
+fixture("recursive conditional condition", "module m;\nfn f() -> . { if (recur again()) { () } else { () } }", [
+  ["(recur again", "recur", keyword], ["else {", "else", "keyword.control.kio"],
 ]);
-fixture("elaborator conditional condition", "module m;\nfn f() -> . { if! pred!() { () } else { () } }", [
-  ["pred!", "pred!", "entity.name.function.macro.elaborator.kio"], ["else {", "else", "keyword.control.kio"],
+fixture("macro conditional condition", "module m;\nfn f() -> . { if (pred()) { () } else { () } }", [
+  ["(pred", "pred", functionName], ["else {", "else", "keyword.control.kio"],
 ]);
 for (const [open, close] of [["[*", "*]"], ["*[", "]*"]]) {
-  fixture(`varop conditional condition ${open}`, `module m;\nfn f() -> . { if!(${open} {flag}, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
+  fixture(`varop conditional condition ${open}`, `module m;\nfn f() -> . { if(${open} {flag}, .t ${close}) { () } else { () } }`, [["else {", "else", "keyword.control.kio"]]);
   fixture(`varop contextual element ${open}`, `module m;\nfn f() -> . { ${open} if, do ${close} }`, [["if,", "if", identifier], [`do ${close}`, "do", identifier]]);
 }
 fixture("local binding keyword", "module m;\nfn f(let: .) -> . { let x = let; x }", [
@@ -592,27 +592,27 @@ for (const suffix of ["", " // shared trivia", " ."]) {
   fixture(`binding later-line keyword ${suffix}`, `${prefix}\n ${suffix === " ." ? "(x)" : "x"} = (); x\n}`, [[`let${suffix}\n`, "let", null]]);
   fixture(`binding later-line identifier ${suffix}`, `${prefix}\n}`, [[`let${suffix}\n`, "let", null]]);
 }
-fixture("do statement siblings", "module m;\nfn f() -> . { do! receiver { let if <- action(); let do = if; do }; let else = (); else }", [
-  ["do! receiver", "do!", "entity.name.function.macro.elaborator.kio"], ["let if", "let", keyword], ["if <-", "if", identifier],
+fixture("do statement siblings", "module m;\nfn f() -> . { do (receiver) { let if <- action(); let do = if; do }; let else = (); else }", [
+  ["do (receiver)", "do", functionName], ["let if", "let", keyword], ["if <-", "if", identifier],
   ["let do", "let", keyword], ["do =", "do", identifier], ["if;", "if", identifier], ["do };", "do", identifier],
   ["let else", "let", keyword], ["else =", "else", identifier], ["else }", "else", identifier],
 ]);
-fixture("conditional statement siblings", "module m;\nfn f() -> . { if! .t { let else = (); else } else { let if = (); if }; let do = (); do }", [
+fixture("conditional statement siblings", "module m;\nfn f() -> . { if (.t) { let else = (); else } else { let if = (); if }; let do = (); do }", [
   ["let else", "let", keyword], ["else =", "else", identifier], ["else } else", "else", identifier],
   ["} else", "else", "keyword.control.kio"], ["let if", "let", keyword], ["if =", "if", identifier],
   ["if };", "if", identifier], ["let do", "let", keyword], ["do }", "do", identifier],
 ]);
-fixture("incomplete control sibling", "module m;\nfn broken() -> . { if! value(\nfn after(if: ., do: ., else: .) -> . { if; do; else }", [
-  ["if! value", "if!", "entity.name.function.macro.elaborator.kio"], ["if:", "if", identifier], ["do:", "do", identifier], ["else:", "else", identifier],
+fixture("incomplete control sibling", "module m;\nfn broken() -> . { if value(\nfn after(if: ., do: ., else: .) -> . { if; do; else }", [
+  ["if value", "if", identifier], ["if:", "if", identifier], ["do:", "do", identifier], ["else:", "else", identifier],
   ["{ if;", "if", identifier], ["; do;", "do", identifier], ["; else }", "else", identifier],
 ]);
 fixture("labels shield control names", "module m;\nfn f() -> . { { if = (), do = (), else = (), let = () } }", [
   ["if =", "if", "entity.name.label.kio"], ["do =", "do", "entity.name.label.kio"],
   ["else =", "else", "entity.name.label.kio"], ["let =", "let", "entity.name.label.kio"],
 ]);
-fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if.T;\nlabels { do: else.T, let: rec.T };\nelab let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
+fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if.T;\nlabels { do: else.T, let: rec.T };\nmacro let: if.T { captures do.else; impl(fills) if.let; };\nequiv do() -> . { if(()) }", [
   ["literal if", "if", identifier], ["= if.T", "if", identifier], ["{ do:", "do", identifier], ["do: else", "else", identifier],
-  ["elab let", "let", identifier], ["let: if", "if", identifier], ["captures do", "captures", keyword], ["do.else", "do", identifier],
+  ["macro let", "let", "entity.name.macro.kio"], ["let: if", "if", identifier], ["captures do", "captures", keyword], ["do.else", "do", identifier],
   ["impl(fills)", "impl", keyword], ["fills)", "fills", keyword], ["if.let", "if", identifier],
   ["equiv do", "do", functionName], ["{ if(())", "if", functionName],
 ]);
@@ -654,7 +654,7 @@ fixture("slots in type and scalar binding positions", "module m;\nlabels Shared 
   ["field: _", "_", "variable.parameter.slot.kio"], ["let _", "_", "variable.parameter.slot.kio"],
   ["let scalar", "scalar", identifier], ["; scalar }", "scalar", identifier],
 ]);
-fixture("monadic binding arrow taxonomy", "module m;\nfn run() -> . { do! bind { let scalar <- value; scalar } }", [
+fixture("monadic binding arrow taxonomy", "module m;\nfn run() -> . { do (bind) { let scalar <- value; scalar } }", [
   ["scalar <-", "<-", "keyword.operator.user.kio"], ["let scalar", "scalar", identifier],
 ]);
 fixture("placeholder lambda owns executable body", "module m;\nfn run() -> . { .x. { print(x1) } }", [["print(x1)", "print", functionName]]);
@@ -664,8 +664,8 @@ fixture("placeholder lambda missing reference buffer", "module m;\nfn run() -> .
 fixture("multiline placeholder lambda body", "module m;\nfn run() -> . { .x. // stem\n { let item = x1; print(item) } }", [
   ["let item", "let", keyword], ["print(item)", "print", functionName],
 ]);
-fixture("placeholder lambda in do receiver", "module m;\nfn run() -> . { do!(.x. { bind(x1) }) { let item <- value; item } }", [
-  ["do!(.x.", "do!", "entity.name.function.macro.elaborator.kio"], ["bind(x1)", "bind", functionName], ["let item", "let", keyword],
+fixture("placeholder lambda in do receiver", "module m;\nfn run() -> . { do(.x. { bind(x1) }) { let item <- value; item } }", [
+  ["do(.x.", "do", functionName], ["bind(x1)", "bind", functionName], ["let item", "let", keyword],
 ]);
 for (const stem of ["x", "t", "f", "_arg", "x1_y"]) {
   fixture(`placeholder stem and ordinary references ${stem}`, `module m;\nfn run() { .${stem}. { (${stem}1, ${stem}2()) } }`, [
@@ -689,9 +689,9 @@ fixture("reserved names keep ordinary roles", "module m;\nfn run(value: __Type__
 fixture("qualified members are not placeholder stems", "module m;\nfn run() { provider.item.call(value) }", [
   ["provider.item", "provider", identifier], [".item.", "item", identifier], [".call(", "call", identifier],
 ]);
-fixture("bang references follow identifier word grammar", "module m;\nfn run() { (__helper2_name__!(), helper2_name!(), bad1word!()) }", [
-  ["__helper2_name__!", "__helper2_name__!", "entity.name.function.macro.elaborator.kio"],
-  [" helper2_name!", "helper2_name!", "entity.name.function.macro.elaborator.kio"],
+fixture("callable references follow identifier word grammar", "module m;\nfn run() { (__helper2_name__(), helper2_name(), bad1word!()) }", [
+  ["__helper2_name__", "__helper2_name__", functionName],
+  [" helper2_name", "helper2_name", functionName],
   ["bad1word!", "bad1word", identifier],
 ]);
 fixture("forall argument compact unit body", "module m;\nfn run() -> . { consume([A]., value) }", [
@@ -866,7 +866,7 @@ for (const trivia of ["", " // shared"]) {
   fixture(`dependency later-line call${trivia}`, `${prefix}\n (value)`, [[prefix, "dependency", null]]);
 }
 for (const [owner, count] of [
-  ["varop", 8], ["elab", 2], ["package", 2], ["build", 7], ["dependency", 6],
+  ["varop", 8], ["macro", 2], ["package", 2], ["build", 7], ["dependency", 6],
   ["signature_sections", 6], ["signature_buckets", 6],
 ]) {
   const cases = unorderedFixtures.filter((item) => item.name.startsWith(`order_${owner}_`) && !item.error);

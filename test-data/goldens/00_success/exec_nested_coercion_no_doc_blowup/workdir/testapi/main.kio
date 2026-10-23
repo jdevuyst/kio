@@ -1,8 +1,8 @@
 module testapi/main;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, lt_i32, sub_i32);
 import testapi/fmt(int_to_string);
@@ -30,10 +30,10 @@ import testapi/iter(loop);
 // the spec admits it.
 rec newtype List[A] : . | (A & List(A)) { pub constructor mk_cell; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.mk_cell(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.mk_cell(widen_sum((), . | (A & List(A)))) }
 
 fn cons[A](head: A, tail: List(A)) -> List(A) {
-  List.mk_cell(widen_sum!((head, tail), . | (A & List(A))))
+  List.mk_cell(widen_sum((head, tail), . | (A & List(A))))
 }
 
 fn uncons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(xs) }
@@ -46,36 +46,36 @@ fn drop3[A](n: I32, xs: List(A)) -> List(A) {
   , I32 & List(A)
   , List(A)
   , .(state: I32 & List(A)) -> (I32 & List(A)) | List(A) {
-      match! state {
+      match(state) {
         .(k: I32, rest: List(A)) {
-          if! lt_i32(0, k) {
-            if! lt_i32(1, k) {
-              match! uncons(rest) {
+          if(lt_i32(0, k)) {
+            if(lt_i32(1, k)) {
+              match(uncons(rest)) {
                 (
                 , .(pair: A & List(A)) {
-                    match! pair {
+                    match(pair) {
                       .(_h: A, tl: List(A)) {
-                        widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
+                        widen_sum((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
                       }
                     }
                   }
-                , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+                , .(_e: .) { widen_sum(nil(A, ()), (I32 & List(A)) | List(A)) }
                 )
               }
-            } else match! uncons(rest) {
+            } else match(uncons(rest)) {
               (
               , .(pair: A & List(A)) {
-                  match! pair {
+                  match(pair) {
                     .(_h: A, tl: List(A)) {
-                      widen_sum!((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
+                      widen_sum((sub_i32(k, 1), tl), (I32 & List(A)) | List(A))
                     }
                   }
                 }
-              , .(_e: .) { widen_sum!(nil(A, ()), (I32 & List(A)) | List(A)) }
+              , .(_e: .) { widen_sum(nil(A, ()), (I32 & List(A)) | List(A)) }
               )
             }
           } else {
-            widen_sum!(rest, (I32 & List(A)) | List(A))
+            widen_sum(rest, (I32 & List(A)) | List(A))
           }
         }
       }
@@ -91,16 +91,16 @@ fn length[A](xs: List(A)) -> I32 {
   , I32 & List(A)
   , I32
   , .(state: I32 & List(A)) -> (I32 & List(A)) | I32 {
-      match! state {
+      match(state) {
         .(acc: I32, rest: List(A)) {
-          match! uncons(rest) {
+          match(uncons(rest)) {
             (
             , .(pair: A & List(A)) {
-                match! pair {
-                  .(_h: A, tl: List(A)) { widen_sum!((add_i32(acc, 1), tl), (I32 & List(A)) | I32) }
+                match(pair) {
+                  .(_h: A, tl: List(A)) { widen_sum((add_i32(acc, 1), tl), (I32 & List(A)) | I32) }
                 }
               }
-            , .(_e: .) { widen_sum!(acc, (I32 & List(A)) | I32) }
+            , .(_e: .) { widen_sum(acc, (I32 & List(A)) | I32) }
             )
           }
         }

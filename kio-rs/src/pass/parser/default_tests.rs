@@ -49,3 +49,63 @@ fn signatures_reject_module_local_default_selections() {
         .expect_err("recursive members retain the contract restriction");
     assert!(error.diag().1.contains("default"), "{error:?}");
 }
+
+#[test]
+fn contextual_macro_selectors_commit_only_after_complete_shape() {
+    for (selection, source, local, tagged) in [
+        ("macro", "macro", "macro", false),
+        ("macro as local", "macro", "local", false),
+        ("macro as", "as", "as", true),
+        ("macro as as local", "as", "local", true),
+        ("macro macro as local", "macro", "local", true),
+        ("macro op", "op", "op", true),
+        ("macro default", "default", "default", true),
+    ] {
+        let module = super::parse(&format!("module main; import provider({selection});")).unwrap();
+        let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+            panic!("selective import")
+        };
+        assert_eq!(items[0].as_name(), Some(source));
+        assert_eq!(items[0].as_local_name_with_span().unwrap().0, local);
+        let crate::ast::ImportItem::Name {
+            macro_span,
+            default_span,
+            ..
+        } = &items[0]
+        else {
+            panic!("named selection")
+        };
+        assert_eq!(macro_span.is_some(), tagged, "{selection}");
+        assert!(default_span.is_none());
+    }
+    for selection in [
+        "macro Foo",
+        "macro op _ + _",
+        "macro default T",
+        "macro {field}",
+        "macro weave as Type",
+    ] {
+        assert!(
+            super::parse(&format!("module main; import provider({selection});")).is_err(),
+            "{selection}"
+        );
+    }
+}
+
+#[test]
+fn incomplete_macro_as_does_not_commit_a_provider_selection() {
+    let source = "module main; import provider(macro as ";
+    let probe = super::probe_tooling(
+        source,
+        Some(crate::ast::KioFileKind::Module),
+        Some(source.len() as u32),
+        None,
+    );
+    assert!(
+        probe
+            .facts
+            .cursor
+            .as_ref()
+            .is_none_or(|cursor| cursor.import.is_none())
+    );
+}

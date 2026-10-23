@@ -47,5 +47,5 @@ build {
 bridge {
   testapi;
   testapi/**;
-  elab/testapi
+  macros/testapi
 }

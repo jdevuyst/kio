@@ -1,0 +1,5 @@
+module pure_calls_macro/main;
+
+import pure_calls_macro/macros(macro checked);
+
+pure fn keep(value: .) { checked(value, .) }

@@ -1,8 +1,8 @@
 module document/tree;
 
-import elab/match(match);
 import list/core as lists;
 import list/list as traversal;
+import macros/match(macro match);
 import testapi(I32, String);
 import testapi/arith as arith;
 import testapi/io as io;
@@ -31,7 +31,7 @@ pub fn append(node: Node, child: Node) -> Node {
 type Visit = Node & String;
 
 rec(loop) fn render_pending(pending: lists.List(Visit)) {
-  match! lists.uncons(pending) {
+  match(lists.uncons(pending)) {
     .(visit: Visit, rest: lists.List(Visit)) {
       let .(node, indent) = visit;
       io.print(name(node).>text.string_concat("\n").>>text.string_concat(indent));
@@ -46,7 +46,7 @@ rec(loop) fn render_pending(pending: lists.List(Visit)) {
 pub fn render(node: Node) { render_pending(lists.singleton((node, "  "))) }
 
 rec(loop) fn count_pending(pending: lists.List(Node), count: I32) -> I32 {
-  match! lists.uncons(pending) {
+  match(lists.uncons(pending)) {
     .(node: Node, rest: lists.List(Node)) {
       recur count_pending(traversal.append(children(node), rest), arith.add_i32(count, 1))
     };

@@ -59,9 +59,7 @@ fn rec_call(
                 pending.push(body);
                 pending.push(value);
             }
-            Expr::UserElaborator { args, .. } => {
-                pending.extend(args.iter().filter_map(value_argument))
-            }
+            Expr::UserMacro { args, .. } => pending.extend(args.iter().filter_map(value_argument)),
             Expr::Ufcs { receiver, args, .. } => {
                 pending.extend(args.iter().filter_map(value_argument));
                 pending.push(receiver);

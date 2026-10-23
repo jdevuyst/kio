@@ -8,9 +8,9 @@
 /// node of the same weight.
 module huffman/message;
 
-import elab/control(if);
 import huffman/list(List, append, fold, of1, of3, of4, of5, of6);
 import huffman/text(cat);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(eq_i32);
 
@@ -32,17 +32,17 @@ fn code_p() -> I32 { 5 }
 pub fn alphabet_size() -> I32 { 6 }
 
 pub fn glyph(code: I32) -> String {
-  if! eq_i32(code, code_a()) {
+  if(eq_i32(code, code_a())) {
     "a"
-  } else if! eq_i32(code, code_c()) {
+  } else if(eq_i32(code, code_c())) {
     "c"
-  } else if! eq_i32(code, code_l()) {
+  } else if(eq_i32(code, code_l())) {
     "l"
-  } else if! eq_i32(code, code_m()) {
+  } else if(eq_i32(code, code_m())) {
     "m"
-  } else if! eq_i32(code, code_n()) {
+  } else if(eq_i32(code, code_n())) {
     "n"
-  } else if! eq_i32(code, code_p()) {
+  } else if(eq_i32(code, code_p())) {
     "p"
   } else {
     "?"

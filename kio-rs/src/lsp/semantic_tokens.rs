@@ -25,6 +25,7 @@
 //!   9  `string`           — string literals
 //!  10  `number`           — numeric literals
 //!  11  `operator`         — operators (builtin and user-defined)
+//!  12  `macro`            — macro declarations, imports and call heads
 //!
 //! Token modifiers (bit indices 0..):
 //!   0  `declaration`      — the definition site of a binding; omitted from
@@ -83,6 +84,7 @@ pub const TOKEN_TYPES: &[SemanticTokenType] = &[
     SemanticTokenType::STRING,         // 9
     SemanticTokenType::NUMBER,         // 10
     SemanticTokenType::OPERATOR,       // 11
+    SemanticTokenType::MACRO,          // 12
 ];
 
 /// The ordered list of token modifiers the server uses.
@@ -109,6 +111,7 @@ const TT_COMMENT: u32 = 8;
 const TT_STRING: u32 = 9;
 const TT_NUMBER: u32 = 10;
 const TT_OPERATOR: u32 = 11;
+const TT_MACRO: u32 = 12;
 
 // ── Modifier-bit constants ───────────────────────────────────────────────────
 
@@ -150,7 +153,8 @@ fn classify_token_kind(kind: TokenKind) -> Option<(u32, u32)> {
     match kind {
         // Keywords — control flow and declarations both map to `keyword`.
         TokenKind::KeywordControl | TokenKind::KeywordDeclaration => Some((TT_KEYWORD, 0)),
-        TokenKind::KeywordElaborator => Some((TT_KEYWORD, 0)),
+        TokenKind::EntityNameMacro => Some((TT_MACRO, MOD_DECLARATION | MOD_READONLY)),
+        TokenKind::EntityNameMacroReference => Some((TT_MACRO, MOD_READONLY)),
 
         // Comments
         TokenKind::CommentLine => Some((TT_COMMENT, 0)),
@@ -329,12 +333,6 @@ fn semantic_tokens_from_classified(
     let triples: Vec<(u32, u32, u32, u32)> = classified
         .iter()
         .filter_map(|t| {
-            if let Some(mut triple) = elaborator_head_token(source, t) {
-                if t.in_documentation {
-                    triple.3 |= MOD_DOCUMENTATION;
-                }
-                return Some(triple);
-            }
             let (type_idx, mut modifiers) = classify_token_kind(t.kind)?;
             if t.in_documentation {
                 modifiers |= MOD_DOCUMENTATION;
@@ -348,50 +346,6 @@ fn semantic_tokens_from_classified(
         result_id: None,
         data,
     })
-}
-
-fn elaborator_head_token(
-    source: &str,
-    token: &crate::tokens::ClassifiedToken,
-) -> Option<(u32, u32, u32, u32)> {
-    match token.kind {
-        TokenKind::KeywordElaborator => {
-            let text = source.get(token.span.start as usize..token.span.end as usize)?;
-            let end = text
-                .strip_suffix('!')
-                .map(|head| token.span.start + head.len() as u32)
-                .unwrap_or(token.span.end);
-            if end > token.span.start {
-                Some((token.span.start, end, TT_FUNCTION, MOD_READONLY))
-            } else {
-                None
-            }
-        }
-        TokenKind::Identifier
-        | TokenKind::EntityNameFunction
-        | TokenKind::EntityNameFunctionReference
-            if is_user_elaborator_head(source, token.span.end as usize) =>
-        {
-            Some((token.span.start, token.span.end, TT_FUNCTION, MOD_READONLY))
-        }
-        _ => None,
-    }
-}
-
-fn is_user_elaborator_head(source: &str, head_end: usize) -> bool {
-    if !source
-        .get(head_end..)
-        .is_some_and(|suffix| suffix.starts_with('!'))
-    {
-        return false;
-    }
-
-    let after_bang = head_end + 1;
-    let Some(next) = source.get(after_bang..) else {
-        return false;
-    };
-    let mut chars = next.chars().skip_while(|c| c.is_whitespace());
-    matches!(chars.next(), Some('('))
 }
 
 // ── Type-parameter refinement note ───────────────────────────────────────────
@@ -426,6 +380,7 @@ mod tests {
         assert_eq!(TOKEN_TYPES[9], SemanticTokenType::STRING);
         assert_eq!(TOKEN_TYPES[10], SemanticTokenType::NUMBER);
         assert_eq!(TOKEN_TYPES[11], SemanticTokenType::OPERATOR);
+        assert_eq!(TOKEN_TYPES[12], SemanticTokenType::MACRO);
     }
 
     #[test]
@@ -448,8 +403,8 @@ mod tests {
             Some((TT_KEYWORD, 0))
         );
         assert_eq!(
-            classify_token_kind(TokenKind::KeywordElaborator),
-            Some((TT_KEYWORD, 0))
+            classify_token_kind(TokenKind::EntityNameMacro),
+            Some((TT_MACRO, MOD_DECLARATION | MOD_READONLY))
         );
     }
 
@@ -765,19 +720,16 @@ mod tests {
     }
 
     #[test]
-    fn semantic_tokens_elaborator_call_heads_are_uniform_functions() {
-        let src = "module m;\nfn f(x: .) -> . { fit!(x, .); custom_elaborator!(x, .) }\n";
+    fn semantic_tokens_refine_selected_macro_calls_and_retract_after_edit() {
+        let src = "module m; import provider(macro build as selected); fn f(x: .) { selected(x) }";
         let result = semantic_tokens(src).unwrap();
-        let fit = semantic_token_at(src, &result.data, "fit").expect("fit token");
-        let custom = semantic_token_at(src, &result.data, "custom_elaborator")
-            .expect("custom_elaborator token");
-
-        assert_eq!(fit.token_type, TT_FUNCTION);
-        assert_eq!(custom.token_type, TT_FUNCTION);
-        assert_eq!(fit.token_modifiers_bitset, MOD_READONLY);
-        assert_eq!(custom.token_modifiers_bitset, MOD_READONLY);
-        assert_eq!(fit.length, 3);
-        assert_eq!(custom.length, "custom_elaborator".len() as u32);
+        let call = semantic_token_at(src, &result.data, "selected(x)").expect("macro call");
+        assert_eq!(call.token_type, TT_MACRO);
+        assert_eq!(call.length, "selected".len() as u32);
+        let edited = src.replace("macro build", "build");
+        let result = semantic_tokens(&edited).unwrap();
+        let call = semantic_token_at(&edited, &result.data, "selected(x)").unwrap();
+        assert_eq!(call.token_type, TT_FUNCTION);
     }
 
     #[test]
@@ -800,7 +752,7 @@ mod tests {
             varop [* *] {\n\
               foldr step_target base_target; finalize finish_target;\n\
             };\n\
-            elab demo : . -> . { impl elab_target; };\n";
+            macro demo : . -> . { impl macro_target; };\n";
         let tokens = semantic_tokens(src).expect("semantic tokens");
 
         let declaration =
@@ -816,7 +768,7 @@ mod tests {
             "base_target",
             "step_target",
             "finish_target",
-            "elab_target",
+            "macro_target",
         ] {
             let token = semantic_token_at(src, &tokens.data, target)
                 .unwrap_or_else(|| panic!("missing callable target `{target}`"));

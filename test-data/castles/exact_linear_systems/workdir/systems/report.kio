@@ -1,10 +1,10 @@
 module systems/report;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as c;
 import list/list as l;
 import list_host as integers;
+import macros/control(macro if);
+import macros/match(macro match);
 import systems/input as input;
 import systems/matrix as m;
 import systems/rational as q;
@@ -23,18 +23,18 @@ fn line(prefix: String, value: String) {
 }
 
 fn yes_no(value: Bool) -> String {
-  if! value { "yes" } else { "no" }
+  if(value) { "yes" } else { "no" }
 }
 
 rec(loop) fn matrix_rows(prefix: String, rows: m.Matrix) {
-  match! c.uncons(rows) {
+  match(c.uncons(rows)) {
     .(row: m.Row, rest: m.Matrix) { line(prefix, m.show(row)); recur matrix_rows(prefix, rest) };
     .() { () }
   }
 }
 
 rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, index: I32) {
-  match! c.uncons(vectors) {
+  match(c.uncons(vectors)) {
     .(vector: m.Row, rest: m.Matrix) {
       line(
       , text.string_concat("  direction ", text.string_concat(fmt.int_to_string(index), " = "))
@@ -48,12 +48,12 @@ rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, i
 }
 
 fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List(I32)) {
-  match! c.head(pivots) {
+  match(c.head(pivots)) {
     .(column: I32) {
       let changed = m.replace(particular, column, q.add(m.at(particular, column), q.integer(1)));
       let residual = verify.residuals(original, variables, changed, .f);
       line("  perturbed witness residual = ", m.show(residual));
-      line("  perturbed witness rejected = ", yes_no(if! m.all_zero(residual) { .f } else { .t }))
+      line("  perturbed witness rejected = ", yes_no(if(m.all_zero(residual)) { .f } else { .t }))
     };
     .() { line("  every vector solves the zero system", "") }
   }
@@ -65,7 +65,7 @@ fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solut
   let free = values.?{solution.free_columns};
   line(
   , "  classification = "
-  , if! integers.eq_i32(l.length(pivots), variables) { "unique" } else { "underdetermined" }
+  , if(integers.eq_i32(l.length(pivots), variables)) { "unique" } else { "underdetermined" }
   );
   line(
   , "  free columns = "
@@ -94,7 +94,7 @@ pub fn run(system: input.System) {
   matrix_rows("  reduced augmented row = ", reduced.?{reduction.reduced});
   line("  row swaps = ", fmt.int_to_string(reduced.?{reduction.swaps}));
   line("  rank(A) = ", fmt.int_to_string(rank));
-  match! solution.solve(reduced, variables) {
+  match(solution.solve(reduced, variables)) {
     .(success: solution.Solved) {
       line("  rank([A|b]) = ", fmt.int_to_string(rank));
       family(original, variables, pivots, success.?{solution.solved})

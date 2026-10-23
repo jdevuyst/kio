@@ -19,9 +19,9 @@ import catalog/fixtures as fixtures;
 import catalog/ledger as ledger;
 import catalog/report as report;
 import catalog/shelf as shelf;
-import elab/match(match);
 import list/core as lcore;
 import list/list as list;
+import macros/match(macro match);
 import result/result as result;
 import testapi(I32, String);
 import testapi/arith(add_i32);
@@ -83,13 +83,13 @@ fn step_op(state: State, op: Op) -> State {
 }
 
 rec(loop) fn drive(state: State, pending: Op_list) -> State {
-  match! lcore.uncons(pending) {
+  match(lcore.uncons(pending)) {
     (.(op: Op, rest: Op_list) { recur drive(step_op(state, op), rest) }, .(_done: .) { state })
   }
 }
 
 rec(loop) fn print_lines(lines: Line_list) {
-  match! lcore.uncons(lines) {
+  match(lcore.uncons(lines)) {
     (
     , .(line: String, rest: Line_list) { print(line.>cat("\n")); recur print_lines(rest) }
     , .(_done: .) { () }

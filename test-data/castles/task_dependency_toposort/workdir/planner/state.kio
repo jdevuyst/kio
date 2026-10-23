@@ -1,6 +1,6 @@
 module planner/state;
 
-import elab/control(if);
+import macros/control(macro if);
 import planner/tasks(task_effort, task_name);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32);
@@ -64,19 +64,19 @@ fn next_effort(plan: Plan_state, task: I32) -> I32 {
 }
 
 pub fn is_done(plan: Plan_state, task: I32) -> Bool {
-  if! eq_i32(task, 0) {
+  if(eq_i32(task, 0)) {
     plan.?{fetched}
-  } else if! eq_i32(task, 1) {
+  } else if(eq_i32(task, 1)) {
     plan.?{schema_done}
-  } else if! eq_i32(task, 2) {
+  } else if(eq_i32(task, 2)) {
     plan.?{core_done}
-  } else if! eq_i32(task, 3) {
+  } else if(eq_i32(task, 3)) {
     plan.?{js_done}
-  } else if! eq_i32(task, 4) {
+  } else if(eq_i32(task, 4)) {
     plan.?{rust_done}
-  } else if! eq_i32(task, 5) {
+  } else if(eq_i32(task, 5)) {
     plan.?{bundle_done}
-  } else if! eq_i32(task, 6) {
+  } else if(eq_i32(task, 6)) {
     plan.?{notes_done}
   } else {
     .f
@@ -109,7 +109,7 @@ fn marked(
 }
 
 pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
-  if! eq_i32(task, 0) {
+  if(eq_i32(task, 0)) {
     marked(
     , plan
     , task
@@ -121,7 +121,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan.?{bundle_done}
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 1) {
+  } else if(eq_i32(task, 1)) {
     marked(
     , plan
     , task
@@ -133,7 +133,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan.?{bundle_done}
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 2) {
+  } else if(eq_i32(task, 2)) {
     marked(
     , plan
     , task
@@ -145,7 +145,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan.?{bundle_done}
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 3) {
+  } else if(eq_i32(task, 3)) {
     marked(
     , plan
     , task
@@ -157,7 +157,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan.?{bundle_done}
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 4) {
+  } else if(eq_i32(task, 4)) {
     marked(
     , plan
     , task
@@ -169,7 +169,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , plan.?{bundle_done}
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 5) {
+  } else if(eq_i32(task, 5)) {
     marked(
     , plan
     , task
@@ -181,7 +181,7 @@ pub fn mark_done(plan: Plan_state, task: I32) -> Plan_state {
     , .t
     , plan.?{notes_done}
     )
-  } else if! eq_i32(task, 6) {
+  } else if(eq_i32(task, 6)) {
     marked(
     , plan
     , task

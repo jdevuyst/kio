@@ -1,8 +1,8 @@
 module testapi/reconcile;
 
 import dict/dict(Dict);
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, String, default Bool);
 import testapi/arith(add_i32, eq_i32, sub_i32);
 import testapi/dict_ops(get_or_i32, lookup_count, lookup_name);
@@ -14,16 +14,16 @@ import testapi/text(string_concat);
 fn sku_label(sku: I32) -> String { string_concat("sku ", int_to_string(sku)) }
 
 fn actual_or_zero(actual: I32 | .) -> I32 {
-  match! actual {
+  match(actual) {
     (.(value: I32) { value }, .(_missing: .) { 0 })
   }
 }
 
 fn status_for(actual: I32 | ., delta: I32) -> String {
-  match! actual {
+  match(actual) {
     (
     , .(_value: I32) {
-        if! eq_i32(delta, 0) { "OK" } else { "SKEW" }
+        if(eq_i32(delta, 0)) { "OK" } else { "SKEW" }
       }
     , .(_missing: .) { "MISSING" }
     )
@@ -31,10 +31,10 @@ fn status_for(actual: I32 | ., delta: I32) -> String {
 }
 
 fn ok_inc(actual: I32 | ., delta: I32) -> I32 {
-  match! actual {
+  match(actual) {
     (
     , .(_value: I32) {
-        if! eq_i32(delta, 0) { 1 } else { 0 }
+        if(eq_i32(delta, 0)) { 1 } else { 0 }
       }
     , .(_missing: .) { 0 }
     )
@@ -42,16 +42,16 @@ fn ok_inc(actual: I32 | ., delta: I32) -> I32 {
 }
 
 fn missing_inc(actual: I32 | .) -> I32 {
-  match! actual {
+  match(actual) {
     (.(_value: I32) { 0 }, .(_missing: .) { 1 })
   }
 }
 
 fn skew_inc(actual: I32 | ., delta: I32) -> I32 {
-  match! actual {
+  match(actual) {
     (
     , .(_value: I32) {
-        if! eq_i32(delta, 0) { 0 } else { 1 }
+        if(eq_i32(delta, 0)) { 0 } else { 1 }
       }
     , .(_missing: .) { 0 }
     )
@@ -73,7 +73,7 @@ fn reconcile_item(
 }
 
 fn unknown_count(catalogue: Dict(I32, String), key: I32) -> I32 {
-  match! lookup_name(catalogue, key) {
+  match(lookup_name(catalogue, key)) {
     (.(_name: String) { 0 }, .(_missing: .) { 1 })
   }
 }

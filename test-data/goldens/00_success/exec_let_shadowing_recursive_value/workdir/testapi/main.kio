@@ -1,27 +1,27 @@
 module testapi/main;
 
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(Bool, Int, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
 rec newtype List[A] : . | (A & List(A)) { constructor list; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.list(widen_sum!((), . | (A & List(A)))) }
+fn nil[A]() -> List(A) { List.list(widen_sum((), . | (A & List(A)))) }
 
 fn push[A](head: A, tail: List(A)) -> List(A) {
-  List.list(widen_sum!((head, tail), . | (A & List(A))))
+  List.list(widen_sum((head, tail), . | (A & List(A))))
 }
 
 labels Kind = { first: . } | { second: . };
 
-fn first_kind() -> Kind { {first=}.>widen_sum!(Kind) }
+fn first_kind() -> Kind { {first=}.>widen_sum(Kind) }
 
-fn second_kind() -> Kind { {second=}.>widen_sum!(Kind) }
+fn second_kind() -> Kind { {second=}.>widen_sum(Kind) }
 
 fn kind_code(kind: Kind) -> Int {
-  match! kind {
+  match(kind) {
     (.(_first: First) { 19 }, .(_second: Second) { 99 })
   }
 }
@@ -31,10 +31,10 @@ fn identity[A](value: A) -> A { value }
 fn keep_polymorphic(value: [A] A -> A) -> [A] A -> A { value }
 
 fn second_or(fallback: Kind, xs: List(Kind)) -> Kind {
-  match! xs.>List.un_list {
+  match(xs.>List.un_list) {
     (
     , .(_head: Kind, rest: List(Kind)) {
-        match! rest.>List.un_list {
+        match(rest.>List.un_list) {
           (.(second: Kind, _tail: List(Kind)) { second }, .(_empty: .) { fallback })
         }
       }

@@ -12,9 +12,9 @@
 # the *same* exit code, stdout, and stderr as the first (cold) run. The
 # motivating regression is a cache-poisoning bug in the error path: a
 # typecheck failure leaves the failing module un-cached while its
-# dependencies (including user-elaborator-defining modules) are cached;
+# dependencies (including macro-defining modules) are cached;
 # on the warm rerun the failing module is retyped against the cached
-# dependencies' un-forced placeholder bodies, so a user elaborator
+# dependencies' un-forced placeholder bodies, so a macro
 # evaluated to `()` instead of its real body and the warm run reported a
 # different (wrong) diagnostic. The cache must be correctness-
 # transparent for error cases: cold and warm must agree.

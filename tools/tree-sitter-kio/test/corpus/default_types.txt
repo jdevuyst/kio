@@ -23,7 +23,8 @@ default type Integer = Int;
     (keyword_type)
     (entity_name_type)
     (operator_builtin)
-    (type_path (entity_name_type))
+    (type_path
+      (entity_name_type))
     (separator_semicolon)))
 
 ================================================================================
@@ -35,19 +36,23 @@ import types(default Int as Integer, default Bool, default as ordinary);
 (source_file
   (import_decl
     (keyword_import)
-    (module_path (entity_name_module))
+    (module_path
+      (entity_name_module))
     (bracket_lparen)
-    (keyword_declaration)
-    (identifier)
-    (keyword_declaration)
-    (identifier)
+    (import_named_item
+      (keyword_declaration)
+      (identifier)
+      (keyword_declaration)
+      (identifier))
     (separator_comma)
-    (keyword_declaration)
-    (identifier)
+    (import_named_item
+      (keyword_declaration)
+      (identifier))
     (separator_comma)
-    (identifier)
-    (keyword_declaration)
-    (identifier)
+    (import_named_item
+      (identifier)
+      (keyword_declaration)
+      (identifier))
     (bracket_rparen)
     (separator_semicolon)))
 

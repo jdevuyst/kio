@@ -3,8 +3,8 @@ module earley/closure;
 import earley/arrays as numbers;
 import earley/chart as chart;
 import earley/model as model;
-import elab/control(if);
-import elab/match(match);
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(Array, I32, default Bool);
 import testapi/arith as arith;
 import testapi/array as arrays;
@@ -17,11 +17,11 @@ rec(loop) fn predict(
 , position: I32
 , index: I32
 ) {
-  if! arith.leq_i32(arrays.array_len(grammar), index) {
+  if(arith.leq_i32(arrays.array_len(grammar), index)) {
     ()
   } else {
     let production = arrays.array_get(grammar, index);
-    if! numbers.equal(model.left(production), category) {
+    if(numbers.equal(model.left(production), category)) {
       chart.insert(column, model.item(index, 0, position))
     } else {
       ()
@@ -31,9 +31,9 @@ rec(loop) fn predict(
 }
 
 fn scan(tokens: Array(I32), columns: model.Chart, position: I32, token: I32, state: model.Item) {
-  if! arith.leq_i32(arrays.array_len(tokens), position) {
+  if(arith.leq_i32(arrays.array_len(tokens), position)) {
     ()
-  } else if! numbers.equal(arrays.array_get(tokens, position), token) {
+  } else if(numbers.equal(arrays.array_get(tokens, position), token)) {
     chart.insert(arrays.array_get(columns, arith.add_i32(position, 1)), model.advance(state))
   } else {
     ()
@@ -48,15 +48,15 @@ rec(loop) fn complete_waiters(
 , index: I32
 , limit: I32
 ) {
-  if! arith.leq_i32(limit, index) {
+  if(arith.leq_i32(limit, index)) {
     ()
   } else {
     let waiting = arrays.array_get(origin, index);
-    if! model.finished(grammar, waiting) {
+    if(model.finished(grammar, waiting)) {
       ()
-    } else match! model.next(grammar, waiting) {
+    } else match(model.next(grammar, waiting)) {
       .(n: model.Nonterminal) {
-        if! numbers.equal(model.Nonterminal.get(n), category) {
+        if(numbers.equal(model.Nonterminal.get(n), category)) {
           chart.insert(target, model.advance(waiting))
         } else {
           ()
@@ -88,9 +88,9 @@ fn process(
 , position: I32
 , state: model.Item
 ) {
-  if! model.finished(grammar, state) {
+  if(model.finished(grammar, state)) {
     complete(grammar, columns, position, state)
-  } else match! model.next(grammar, state) {
+  } else match(model.next(grammar, state)) {
     .(n: model.Nonterminal) {
       predict(grammar, arrays.array_get(columns, position), model.Nonterminal.get(n), position, 0)
     };
@@ -106,7 +106,7 @@ rec(loop) fn sweep(
 , index: I32
 , limit: I32
 ) {
-  if! arith.leq_i32(limit, index) {
+  if(arith.leq_i32(limit, index)) {
     ()
   } else {
     process(
@@ -129,7 +129,7 @@ pub rec(loop) fn close(
   let column = arrays.array_get(columns, position);
   let before = arrays.array_len(column);
   sweep(grammar, tokens, columns, position, 0, before);
-  if! numbers.equal(before, arrays.array_len(column)) {
+  if(numbers.equal(before, arrays.array_len(column))) {
     ()
   } else {
     // A nullable completion may precede a waiter added during this sweep.

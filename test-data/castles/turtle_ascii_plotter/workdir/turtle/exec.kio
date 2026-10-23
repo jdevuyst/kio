@@ -11,9 +11,9 @@
 /// with no special case for any of them.
 module turtle/exec;
 
-import elab/control(if);
-import elab/match(match);
 import list/core as list;
+import macros/control(macro if);
+import macros/match(macro match);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
@@ -24,7 +24,7 @@ import turtle/state as st;
 
 /// Lay one dab of ink at `(x, y)`, or clip it.
 fn put(s: st.State, x: I32, y: I32, code: I32) -> st.State {
-  if! canvas.on_canvas(st.width_of(s), st.height_of(s), x, y) {
+  if(canvas.on_canvas(st.width_of(s), st.height_of(s), x, y)) {
     st.with_paper(s, canvas.ink(st.paper_of(s), x, y, code))
   } else {
     st.clip(s)
@@ -35,7 +35,7 @@ fn put(s: st.State, x: I32, y: I32, code: I32) -> st.State {
 /// a `touch`, which is what makes "the turtle's cell carries ink while the pen
 /// is down" true after every command instead of only after a `move`.
 fn touch(s: st.State) -> st.State {
-  if! st.down_of(s) { put(s, st.tx_of(s), st.ty_of(s), glyph.stroke_code()) } else { s }
+  if(st.down_of(s)) { put(s, st.tx_of(s), st.ty_of(s), glyph.stroke_code()) } else { s }
 }
 
 /// Lowering the pen puts it on the paper where the turtle already stands.
@@ -50,7 +50,7 @@ fn do_goto(s: st.State, x: I32, y: I32) -> st.State { touch(st.with_pos(s, x, y)
 fn do_mark(s: st.State, code: I32) -> st.State { put(s, st.tx_of(s), st.ty_of(s), code) }
 
 fn do_turn(s: st.State, right: Bool) -> st.State {
-  if! right {
+  if(right) {
     st.with_heading(s, st.turn_right(st.heading_of(s)))
   } else {
     st.with_heading(s, st.turn_left(st.heading_of(s)))
@@ -61,7 +61,7 @@ fn do_turn(s: st.State, right: Bool) -> st.State {
 /// turtle is never stopped by an edge — it keeps walking, its ink is clipped
 /// while it is away, and the drawing picks up again where it walks back on.
 rec(loop) fn do_move(s: st.State, n: I32) -> st.State {
-  if! leq_i32(n, 0) {
+  if(leq_i32(n, 0)) {
     s
   } else {
     let f = st.heading_of(s);
@@ -74,7 +74,7 @@ rec(loop) fn do_move(s: st.State, n: I32) -> st.State {
 rec(loop) {
   /// Run every command of `b`, in order.
   pub fn run_block(b: list.List(cmd.Command), s: st.State) -> st.State {
-    match! list.uncons(b) {
+    match(list.uncons(b)) {
       (
       , .(c: cmd.Command, rest: list.List(cmd.Command)) {
           let next = recur(cont) run_command(c, s);
@@ -88,7 +88,7 @@ rec(loop) {
   /// `repeat`, which is control structure rather than a stroke of the pen: the
   /// commands inside its body count themselves, once per pass.
   fn run_command(c: cmd.Command, s: st.State) -> st.State {
-    match! cmd.un_command(c) {
+    match(cmd.un_command(c)) {
       (
       , .(p: cmd.Pen_cmd) { do_pen(st.tick(s), p.?{cmd.pen_cmd}) }
       , .(m: cmd.Move_cmd) { do_move(st.tick(s), m.?{cmd.move_cmd}) }
@@ -106,7 +106,7 @@ rec(loop) {
   /// Run `body` `n` times, threading the state through each pass. A count of
   /// zero or less runs it no times at all.
   fn run_repeat(n: I32, body: list.List(cmd.Command), s: st.State) -> st.State {
-    if! leq_i32(n, 0) {
+    if(leq_i32(n, 0)) {
       s
     } else {
       let next = recur(cont) run_block(body, s);

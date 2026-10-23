@@ -5,7 +5,7 @@
 /// the *number*, never from the rendered string.
 module forge/text;
 
-import elab/control(if);
+import macros/control(macro if);
 import testapi(I32, String, default Bool);
 import testapi/arith(lt_i32);
 import testapi/fmt(int_to_string);
@@ -23,11 +23,11 @@ pub fn num(n: I32) -> String { int_to_string(n) }
 /// A program address, zero-padded to four digits so the listing's address
 /// column lines up.
 pub fn addr(n: I32) -> String {
-  if! lt_i32(n, 10) {
+  if(lt_i32(n, 10)) {
     cat("000", num(n))
-  } else if! lt_i32(n, 100) {
+  } else if(lt_i32(n, 100)) {
     cat("00", num(n))
-  } else if! lt_i32(n, 1000) {
+  } else if(lt_i32(n, 1000)) {
     cat("0", num(n))
   } else {
     num(n)

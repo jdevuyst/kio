@@ -1,8 +1,8 @@
 module robot_vacuum_replay/model;
 
-import elab/control(if);
-import elab/match(match);
-import elab/spine_elaborators(widen_sum);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
 import testapi(I32, default Bool);
 import testapi/arith(add_i32, lt_i32, sub_i32);
 
@@ -21,21 +21,21 @@ pub labels Vacuum = {
 , faults: I32
 };
 
-pub fn north_direction() -> Direction { {north=}.>widen_sum!(Direction) }
+pub fn north_direction() -> Direction { {north=}.>widen_sum(Direction) }
 
-pub fn east_direction() -> Direction { {east=}.>widen_sum!(Direction) }
+pub fn east_direction() -> Direction { {east=}.>widen_sum(Direction) }
 
-pub fn south_direction() -> Direction { {south=}.>widen_sum!(Direction) }
+pub fn south_direction() -> Direction { {south=}.>widen_sum(Direction) }
 
-pub fn west_direction() -> Direction { {west=}.>widen_sum!(Direction) }
+pub fn west_direction() -> Direction { {west=}.>widen_sum(Direction) }
 
-pub fn docked_mode() -> Run_mode { {docked=}.>widen_sum!(Run_mode) }
+pub fn docked_mode() -> Run_mode { {docked=}.>widen_sum(Run_mode) }
 
-pub fn idle_mode() -> Run_mode { {idle=}.>widen_sum!(Run_mode) }
+pub fn idle_mode() -> Run_mode { {idle=}.>widen_sum(Run_mode) }
 
-pub fn cleaning_mode() -> Run_mode { {cleaning=}.>widen_sum!(Run_mode) }
+pub fn cleaning_mode() -> Run_mode { {cleaning=}.>widen_sum(Run_mode) }
 
-pub fn paused_mode() -> Run_mode { {paused=}.>widen_sum!(Run_mode) }
+pub fn paused_mode() -> Run_mode { {paused=}.>widen_sum(Run_mode) }
 
 pub fn initial_vacuum() -> Vacuum {
   {
@@ -59,7 +59,7 @@ fn burn(s: Vacuum) -> Vacuum { s.!{battery = sub_i32(s.?{battery}, 1)} }
 fn burn_cleaning_pass(s: Vacuum) -> Vacuum { s.!{battery = sub_i32(s.?{battery}, 2)} }
 
 fn turn_left_from(d: Direction) -> Direction {
-  match! d {
+  match(d) {
     (
     , .(_n: North) { west_direction() }
     , .(_w: West) { south_direction() }
@@ -70,7 +70,7 @@ fn turn_left_from(d: Direction) -> Direction {
 }
 
 fn turn_right_from(d: Direction) -> Direction {
-  match! d {
+  match(d) {
     (
     , .(_n: North) { east_direction() }
     , .(_e: East) { south_direction() }
@@ -90,7 +90,7 @@ fn move_west(s: Vacuum) -> Vacuum { s.!{x = sub_i32(s.?{x}, 1), dirt = add_i32(s
 
 fn move_forward(s: Vacuum) -> Vacuum {
   let facing = s.?{facing};
-  match! facing {
+  match(facing) {
     (
     , .(_n: North) { move_north(s) }
     , .(_e: East) { move_east(s) }
@@ -118,7 +118,7 @@ pub fn apply_right(s: Vacuum) -> Vacuum {
 
 pub fn apply_step(s: Vacuum) -> Vacuum {
   let mode = s.?{mode};
-  match! mode {
+  match(mode) {
     (
     , .(_cleaning: Cleaning) { burn(tick(move_forward(s))) }
     , .(_docked: Docked) { faulted_command(s) }
@@ -129,12 +129,12 @@ pub fn apply_step(s: Vacuum) -> Vacuum {
 }
 
 fn clean_if_needed(s: Vacuum) -> Vacuum {
-  if! lt_i32(0, s.?{dirt}) { s.!{dirt = sub_i32(s.?{dirt}, 1)} } else { s }
+  if(lt_i32(0, s.?{dirt})) { s.!{dirt = sub_i32(s.?{dirt}, 1)} } else { s }
 }
 
 pub fn apply_clean(s: Vacuum) -> Vacuum {
   let mode = s.?{mode};
-  match! mode {
+  match(mode) {
     (
     , .(_cleaning: Cleaning) { clean_if_needed(burn_cleaning_pass(tick(s))) }
     , .(_docked: Docked) { faulted_command(s) }

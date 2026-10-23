@@ -25,11 +25,11 @@ pure fn enter_checked(ct: __Comptime__, fills: __Fill_ctx__, _result: __Type__, 
 pure fn sequence_checked(ct: __Comptime__, _constructor: __Type__, _result: __Type__, receiver: __Checked_term__, body: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, __term_type__(ct, body), body, receiver)
 }
-pub elab packet : [A] A -> A { trailing product; impl identity_checked }
-pub elab packet_three : Triple -> Triple { trailing product; impl fixed_checked }
-pub elab curried : . -> (. & .) -> (. & .) { trailing product; impl fixed_checked }
-pub elab enter : [R] Scope(R) { trailing thunk; impl(fills) enter_checked }
-pub elab sequence : [*F][R] Bind(F) -> Sequence(F, R) -> F(R) { trailing sequence; impl sequence_checked }
+pub macro packet : [A] A -> A { trailing product; impl identity_checked }
+pub macro packet_three : Triple -> Triple { trailing product; impl fixed_checked }
+pub macro curried : . -> (. & .) -> (. & .) { trailing product; impl fixed_checked }
+pub macro enter : [R] Scope(R) { trailing thunk; impl(fills) enter_checked }
+pub macro sequence : [*F][R] Bind(F) -> Sequence(F, R) -> F(R) { trailing sequence; impl sequence_checked }
 "#;
 
 fn modules(consumer: &str) -> Vec<(PathBuf, Module<Surface>)> {
@@ -63,31 +63,32 @@ fn block_splices_project_prefix_values_before_every_block_argument() {
     use crate::ast::{CallArg, Expr};
     for (body, expected) in [
         (
-            "receiver.>packet! argument { body }",
+            "receiver.>packet (argument) { body }",
             ["receiver", "argument", "body"],
         ),
         (
-            "receiver.>>packet! argument { body }",
+            "receiver.>>packet (argument) { body }",
             ["argument", "receiver", "body"],
         ),
         (
-            "packet! argument { body }.<<receiver",
+            "packet (argument) { body }.<<receiver",
             ["receiver", "argument", "body"],
         ),
         (
-            "packet! argument { body }.<receiver",
+            "packet (argument) { body }.<receiver",
             ["argument", "receiver", "body"],
         ),
     ] {
         let mut input = modules(&format!(
-            "module consumer; import provider(packet); fn result() {{ {body} }}"
+            "module consumer; import provider(macro packet); fn result() {{ {body} }}"
         ));
         let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&input).unwrap();
-        super::project_module(&mut input[1].1, &scope).unwrap();
+        let macro_calls = crate::scope_walk::macro_calls(&input[1].1);
+        super::project_module(&mut input[1].1, &scope, &macro_calls).unwrap();
         let Item::FnDef(def) = &input[1].1.items[0] else {
             panic!("function")
         };
-        let Expr::UserElaborator { args, .. } = &def.body else {
+        let Expr::UserMacro { args, .. } = &def.body else {
             panic!("projected call")
         };
         let actual: Vec<_> = args
@@ -104,28 +105,28 @@ fn block_splices_project_prefix_values_before_every_block_argument() {
 #[test]
 fn block_splices_use_the_same_public_product_type_and_sequence_projection() {
     let provider = format!(
-        "{PROVIDER}\npub type Packet = Box(.) & . & (. -> .);\npub elab packed : Packet -> Packet {{ trailing thunk; impl fixed_checked }}"
+        "{PROVIDER}\npub type Packet = Box(.) & . & (. -> .);\npub macro packed : Packet -> Packet {{ trailing thunk; impl fixed_checked }}"
     );
     for body in [
-        "box_pure(()).>packed!(()) { () }",
-        "().>>packed!(box_pure(())) { () }",
-        "packed!(()) { () }.<<box_pure(())",
-        "packed!(box_pure(())) { () }.<()",
+        "box_pure(()).>packed(()) { () }",
+        "().>>packed(box_pure(())) { () }",
+        "packed(()) { () }.<<box_pure(())",
+        "packed(box_pure(())) { () }.<()",
     ] {
         let mut input = modules(&format!(
-            "module consumer; import provider(packed, Packet, box_pure); fn result() -> Packet {{ {body} }}"
+            "module consumer; import provider(macro packed, Packet, box_pure); fn result() -> Packet {{ {body} }}"
         ));
         input[0].1 = parse(&provider).unwrap();
         prime_roundtrip(&check_modules(input).unwrap_or_else(|error| panic!("{body}: {error:?}")));
     }
     for body in [
-        "box_bind.>sequence! { box_pure(()) }",
-        "box_bind.>>sequence! { box_pure(()) }",
-        "sequence! { box_pure(()) }.<box_bind",
-        "sequence! { box_pure(()) }.<<box_bind",
+        "box_bind.>sequence { box_pure(()) }",
+        "box_bind.>>sequence { box_pure(()) }",
+        "sequence { box_pure(()) }.<box_bind",
+        "sequence { box_pure(()) }.<<box_bind",
     ] {
         let source = format!(
-            "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) {{ {body} }}"
+            "module consumer; import provider(macro sequence, box_bind, box_pure, Box); fn result() -> Box(.) {{ {body} }}"
         );
         prime_roundtrip(&check(&source).unwrap_or_else(|error| panic!("{body}: {error:?}")));
     }
@@ -134,10 +135,10 @@ fn block_splices_use_the_same_public_product_type_and_sequence_projection() {
 #[test]
 fn reverse_block_splice_scaffold_is_inserted_before_the_receiver() {
     let provider = format!(
-        "{PROVIDER}\npub elab two : Triple -> Triple {{ trailing product; trailing product next; impl fixed_checked }}"
+        "{PROVIDER}\npub macro two : Triple -> Triple {{ trailing product; trailing product next; impl fixed_checked }}"
     );
     let source =
-        "module consumer; import provider(two); fn result() -> . & . & . { two! { () }.<() }";
+        "module consumer; import provider(macro two); fn result() -> . & . & . { two { () }.<() }";
     let mut input = modules(source);
     input[0].1 = parse(&provider).unwrap();
     let error = check_modules(input).unwrap_err();
@@ -155,40 +156,36 @@ fn reverse_block_splice_scaffold_is_inserted_before_the_receiver() {
 }
 
 #[test]
-fn unresolved_block_heads_keep_the_ordinary_elaborator_import_hint() {
+fn unresolved_block_heads_keep_the_ordinary_macro_import_hint() {
     for name in ["choose", "relay"] {
-        for arguments in [" { () }", "(())"] {
-            let source = format!("module consumer; fn result() -> . {{ {name}!{arguments} }}");
-            let error = check(&source).expect_err("unimported elaborator");
-            assert_eq!(error.error.exit_code(), crate::exit_code::ExitCode::NameRes);
-            assert_eq!(error.file_path, Path::new("consumer.kio"));
-            let start = u32::try_from(source.find(name).unwrap()).unwrap();
-            assert_eq!(error.error.diag().0.start, start);
-            if arguments.starts_with(' ') {
-                assert_eq!(
-                    error.error.diag().0.end,
-                    start + u32::try_from(name.len()).unwrap()
-                );
-            }
-            assert_eq!(
-                error.error.diagnostic().help(),
-                Some(format!("import it with `import <module>({name});`").as_str())
-            );
-        }
+        let source = format!("module consumer; fn result() -> . {{ {name} {{ () }} }}");
+        let error = check(&source).expect_err("unimported macro");
+        assert_eq!(error.error.exit_code(), crate::exit_code::ExitCode::NameRes);
+        assert_eq!(error.file_path, Path::new("consumer.kio"));
+        let start = u32::try_from(source.find(name).unwrap()).unwrap();
+        assert_eq!(error.error.diag().0.start, start);
+        assert_eq!(
+            error.error.diag().0.end,
+            start + u32::try_from(name.len()).unwrap()
+        );
+        assert_eq!(
+            error.error.diagnostic().help(),
+            Some(format!("import it with `import <module>(macro {name});`").as_str())
+        );
     }
 }
 
 #[test]
 fn three_kinds_project_through_the_full_pipeline() {
     for source in [
-        "module consumer; import provider(packet); fn result() -> . & . { packet! { (); () } }",
-        "module consumer; import provider(packet); fn result() -> . { packet! {} }",
-        "module consumer; import provider(enter); fn result() -> . { enter! {} }",
-        "module consumer; import provider(enter); fn result() -> . { enter! { let value = (); value } }",
-        "module consumer; import provider(enter); fn result() -> . { enter! { let .(a: ., b: .) = ((), ()); a; b } }",
-        "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence! box_bind { let value <- box_pure(()); box_pure(value) } }",
-        "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) } }",
-        "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence! box_bind { box_pure(()); box_pure(()) } }",
+        "module consumer; import provider(macro packet); fn result() -> . & . { packet { (); () } }",
+        "module consumer; import provider(macro packet); fn result() -> . { packet {} }",
+        "module consumer; import provider(macro enter); fn result() -> . { enter {} }",
+        "module consumer; import provider(macro enter); fn result() -> . { enter { let value = (); value } }",
+        "module consumer; import provider(macro enter); fn result() -> . { enter { let .(a: ., b: .) = ((), ()); a; b } }",
+        "module consumer; import provider(macro sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence (box_bind) { let value <- box_pure(()); box_pure(value) } }",
+        "module consumer; import provider(macro sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence (box_bind) { let .(value: .) <- box_pure(()); box_pure(value) } }",
+        "module consumer; import provider(macro sequence, box_bind, box_pure, Box); fn result() -> Box(.) { sequence (box_bind) { box_pure(()); box_pure(()) } }",
     ] {
         check(source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
     }
@@ -224,7 +221,7 @@ fn projected_nullary_lambda_has_the_ordinary_empty_value_group() {
 #[test]
 fn sequence_projection_preserves_written_rhs_and_binding_spans() {
     use crate::ast::{CallArg, Expr, NeutralItem};
-    let source = "module consumer; import provider(sequence, box_bind, box_pure); fn result() { sequence! box_bind { let .(first: .) <- box_pure(()); box_pure(()); let .(second: .) <- box_pure(()); box_pure(second) } }";
+    let source = "module consumer; import provider(macro sequence, box_bind, box_pure); fn result() { sequence (box_bind) { let .(first: .) <- box_pure(()); box_pure(()); let .(second: .) <- box_pure(()); box_pure(second) } }";
     let mut input = modules(source);
     let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&input).unwrap();
     let consumer = &mut input[1].1;
@@ -248,11 +245,12 @@ fn sequence_projection_preserves_written_rhs_and_binding_spans() {
             )
         })
         .collect::<Vec<_>>();
-    super::project_module(consumer, &scope).unwrap();
+    let macro_calls = crate::scope_walk::macro_calls(consumer);
+    super::project_module(consumer, &scope, &macro_calls).unwrap();
     let Item::FnDef(function) = &consumer.items[0] else {
         panic!("function")
     };
-    let Expr::UserElaborator { args, .. } = &function.body else {
+    let Expr::UserMacro { args, .. } = &function.body else {
         panic!("ordinary call")
     };
     let CallArg::Value(Expr::FnExpr { body, .. }) = &args[1] else {
@@ -292,11 +290,11 @@ fn sequence_projection_preserves_written_rhs_and_binding_spans() {
 #[test]
 fn public_aliases_packets_curried_layers_and_function_results() {
     for source in [
-        "module consumer; import provider(packet_three); fn result() -> . & . & . { packet_three! { (); (); () } }",
-        "module consumer; import provider(packet_three); fn result() -> . & . & . { packet_three! () { (); () } }",
-        "module consumer; import provider(curried); fn result() -> . & . { curried! () { (); () } }",
-        "module consumer; import provider(enter); fn result() -> . -> . { enter! { .(value: .) { value } } }",
-        "module consumer; import provider(packet); fn result() -> . -> . { packet! { .(value: .) { value } } }",
+        "module consumer; import provider(macro packet_three); fn result() -> . & . & . { packet_three { (); (); () } }",
+        "module consumer; import provider(macro packet_three); fn result() -> . & . & . { packet_three () { (); () } }",
+        "module consumer; import provider(macro curried); fn result() -> . & . { curried () { (); () } }",
+        "module consumer; import provider(macro enter); fn result() -> . -> . { enter { .(value: .) { value } } }",
+        "module consumer; import provider(macro packet); fn result() -> . -> . { packet { .(value: .) { value } } }",
     ] {
         check(source).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
     }
@@ -306,27 +304,24 @@ fn public_aliases_packets_curried_layers_and_function_results() {
 fn block_content_and_public_completion_fail_locally() {
     for (body, message) in [
         (
-            "packet! { let value = (); value }",
+            "packet { let value = (); value }",
             "independent expressions",
         ),
-        ("enter! { let value <- (); value }", "only in a sequence"),
-        ("sequence! box_bind {}", "requires a final expression"),
+        ("enter { let value <- (); value }", "only in a sequence"),
+        ("sequence (box_bind) {}", "requires a final expression"),
         (
-            "sequence! box_bind { let value <- box_pure(()); }",
+            "sequence (box_bind) { let value <- box_pure(()); }",
             "requires a final expression",
         ),
+        ("enter(.() { () })", "requires its declared trailing blocks"),
         (
-            "enter!(.() { () })",
+            "(.() { () }).>enter",
             "requires its declared trailing blocks",
         ),
-        (
-            "(.() { () }).>enter!",
-            "requires its declared trailing blocks",
-        ),
-        ("enter! { () } else { () }", "expected 1 trailing"),
+        ("enter { () } else { () }", "expected 1 trailing"),
     ] {
         let source = format!(
-            "module consumer; import provider(packet, enter, sequence, box_bind, box_pure, curried); fn result() {{ {body} }}"
+            "module consumer; import provider(macro packet, macro enter, macro sequence, box_bind, box_pure, macro curried); fn result() {{ {body} }}"
         );
         let error = check(&source).expect_err(body);
         assert_eq!(
@@ -346,14 +341,14 @@ fn block_content_and_public_completion_fail_locally() {
             "{body}: {error:?}"
         );
     }
-    let error = check("module consumer; import provider(curried); fn result() -> (. & .) -> (. & .) { curried! { () } }").unwrap_err();
+    let error = check("module consumer; import provider(macro curried); fn result() -> (. & .) -> (. & .) { curried { () } }").unwrap_err();
     assert_eq!(error.error.exit_code(), crate::exit_code::ExitCode::Type);
     assert!(error.error.diag().1.contains("public"), "{error:?}");
 }
 
 #[test]
 fn eager_and_lazy_descriptor_contexts_emit_identical_prime() {
-    let source = "module consumer; import provider(enter, packet); fn result() -> . & . { enter! { packet! { (); () } } }";
+    let source = "module consumer; import provider(macro enter, macro packet); fn result() -> . & . { enter { packet { (); () } } }";
     let input = modules(source);
     let lazy = input
         .iter()
@@ -395,19 +390,19 @@ fn eager_and_lazy_descriptor_contexts_emit_identical_prime() {
 
 #[test]
 fn projection_consumes_neutral_forms_before_desugaring() {
-    let source =
-        "module consumer; import provider(enter); fn result() { enter! { let value = (); value } }";
+    let source = "module consumer; import provider(macro enter); fn result() { enter { let value = (); value } }";
     let mut input = modules(source);
     let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&input).unwrap();
     let module = &mut input.last_mut().unwrap().1;
-    super::project_module(module, &scope).unwrap();
+    let macro_calls = crate::scope_walk::macro_calls(module);
+    super::project_module(module, &scope, &macro_calls).unwrap();
     let Item::FnDef(def) = module.items.last().unwrap() else {
         panic!()
     };
-    let crate::ast::Expr::UserElaborator { args, form, .. } = &def.body else {
+    let crate::ast::Expr::UserMacro { args, form, .. } = &def.body else {
         panic!()
     };
-    assert_eq!(*form, crate::ast::UserElaboratorCallForm::TrailingBlocks);
+    assert_eq!(*form, crate::ast::UserMacroCallForm::TrailingBlocks);
     let [crate::ast::CallArg::Value(crate::ast::Expr::FnExpr { sig, body, .. })] = args.as_slice()
     else {
         panic!()
@@ -418,7 +413,7 @@ fn projection_consumes_neutral_forms_before_desugaring() {
 
 #[test]
 fn sequence_generated_bindings_remain_lexical_after_prime_roundtrip() {
-    let source = "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) { let step = (); sequence! box_bind { let value <- box_pure(step); let step = value; sequence! box_bind { let value <- box_pure(step); box_pure(value) } } }";
+    let source = "module consumer; import provider(macro sequence, box_bind, box_pure, Box); fn result() -> Box(.) { let step = (); sequence (box_bind) { let value <- box_pure(step); let step = value; sequence (box_bind) { let value <- box_pure(step); box_pure(value) } } }";
     let checked = check(source).unwrap();
     prime_roundtrip(&checked);
 }
@@ -448,7 +443,8 @@ fn prime_roundtrip(checked: &crate::prime::typer::ValidatedPrimePackage) {
 
 #[test]
 fn descriptor_labels_are_ordered_and_selected_by_exact_import() {
-    let source = "module consumer; import provider(packet); fn result() -> . { packet! { () } }";
+    let source =
+        "module consumer; import provider(macro packet); fn result() -> . { packet { () } }";
     for descriptor in [
         "trailing product first;",
         "trailing product; trailing product;",
@@ -491,7 +487,7 @@ fn descriptor_labels_are_ordered_and_selected_by_exact_import() {
     };
     assert_eq!(consumer(&baseline), consumer(&with_unrelated));
     let error = FullPipeline::lower_package(
-        modules("module consumer; fn result() { packet! { () } }"),
+        modules("module consumer; fn result() { packet { () } }"),
         None,
     )
     .unwrap_err();
@@ -507,7 +503,7 @@ fn check_edge_separator_variants(head: &str, body: &str, result: &str) {
         (";; // leading\n", "; // trailing\n;;"),
     ] {
         let source = format!(
-            "module consumer; import provider(packet, enter, sequence, box_bind, box_pure, Box); fn result() -> {result} {{ {head} {{ {leading}{body}{trailing} }} }}"
+            "module consumer; import provider(macro packet, macro enter, macro sequence, box_bind, box_pure, Box); fn result() -> {result} {{ {head} {{ {leading}{body}{trailing} }} }}"
         );
         let formatted = crate::pretty::pretty_module(&parse(&source).unwrap());
         for input in [source.as_str(), formatted.as_str()] {
@@ -522,13 +518,13 @@ fn check_edge_separator_variants(head: &str, body: &str, result: &str) {
 
 #[test]
 fn final_thunk_values_ignore_edge_separators() {
-    check_edge_separator_variants("enter!", "let value = .(arg: .) { arg }; value", ". -> .");
+    check_edge_separator_variants("enter", "let value = .(arg: .) { arg }; value", ". -> .");
 }
 
 #[test]
 fn final_sequence_values_ignore_edge_separators() {
     check_edge_separator_variants(
-        "sequence! box_bind",
+        "sequence(box_bind)",
         "let value <- box_pure(.(arg: .) { arg }); box_pure(value)",
         "Box(. -> .)",
     );
@@ -536,26 +532,26 @@ fn final_sequence_values_ignore_edge_separators() {
 
 #[test]
 fn product_entries_ignore_edge_separators() {
-    check_edge_separator_variants("packet!", "(); .(value: .) { value }", ". & (. -> .)");
+    check_edge_separator_variants("packet", "(); .(value: .) { value }", ". & (. -> .)");
 }
 
 #[test]
 fn nonfinal_values_and_binding_only_sequence_keep_their_obligations() {
     for (body, result) in [
-        ("enter! { .(value: .) { value }; () }", "."),
+        ("enter { .(value: .) { value }; () }", "."),
         (
-            "sequence! box_bind { box_pure(.(value: .) { value }); box_pure(()) }",
+            "sequence (box_bind) { box_pure(.(value: .) { value }); box_pure(()) }",
             "Box(.)",
         ),
-        ("sequence! box_bind { ;;; }", "Box(.)"),
-        ("sequence! box_bind { let value = ();;; }", "Box(.)"),
+        ("sequence (box_bind) { ;;; }", "Box(.)"),
+        ("sequence (box_bind) { let value = ();;; }", "Box(.)"),
         (
-            "sequence! box_bind { let value <- box_pure(());;; }",
+            "sequence (box_bind) { let value <- box_pure(());;; }",
             "Box(.)",
         ),
     ] {
         let source = format!(
-            "module consumer; import provider(enter, sequence, box_bind, box_pure, Box); fn result() -> {result} {{ {body} }}"
+            "module consumer; import provider(macro enter, macro sequence, box_bind, box_pure, Box); fn result() -> {result} {{ {body} }}"
         );
         let formatted = crate::pretty::pretty_module(&parse(&source).unwrap());
         for input in [source.as_str(), formatted.as_str()] {
@@ -572,17 +568,19 @@ fn nonfinal_values_and_binding_only_sequence_keep_their_obligations() {
 
 #[test]
 fn nonempty_thunk_requires_a_final_expression() {
-    for body in ["enter! {}", "enter! { ;;; }"] {
-        let source = format!("module consumer; import provider(enter); fn result() {{ {body} }}");
+    for body in ["enter {}", "enter { ;;; }"] {
+        let source =
+            format!("module consumer; import provider(macro enter); fn result() {{ {body} }}");
         check(&source).unwrap();
     }
     let mut accepted = Vec::new();
     for body in [
-        "enter! { let value = (); }",
-        "enter! { (); let _ = ();;; }",
-        "enter! { let .(value: .) = (); }",
+        "enter { let value = (); }",
+        "enter { (); let _ = ();;; }",
+        "enter { let .(value: .) = (); }",
     ] {
-        let source = format!("module consumer; import provider(enter); fn result() {{ {body} }}");
+        let source =
+            format!("module consumer; import provider(macro enter); fn result() {{ {body} }}");
         let formatted = crate::pretty::pretty_module(&parse(&source).unwrap());
         for input in [source.as_str(), formatted.as_str()] {
             match check(input) {
@@ -598,12 +596,12 @@ fn nonempty_thunk_requires_a_final_expression() {
 fn unused_block_declarations_reject_incompatible_public_slots() {
     let mut accepted = Vec::new();
     for declaration in [
-        "pub elab bad : . -> . { trailing thunk; impl unit_checked }",
-        "pub elab bad : . -> . { trailing sequence; impl unit_checked }",
-        "pub elab bad : (. | .) -> . { trailing thunk; impl fixed_checked }",
-        "pub elab bad : (. -> .) -> . { trailing sequence; impl fixed_checked }",
-        "pub type Bad = . -> .; pub elab bad : Bad { trailing thunk; impl unit_checked }",
-        "pub elab bad : [R] Scope(R) { trailing thunk; trailing thunk else; impl(fills) enter_checked }",
+        "pub macro bad : . -> . { trailing thunk; impl unit_checked }",
+        "pub macro bad : . -> . { trailing sequence; impl unit_checked }",
+        "pub macro bad : (. | .) -> . { trailing thunk; impl fixed_checked }",
+        "pub macro bad : (. -> .) -> . { trailing sequence; impl fixed_checked }",
+        "pub type Bad = . -> .; pub macro bad : Bad { trailing thunk; impl unit_checked }",
+        "pub macro bad : [R] Scope(R) { trailing thunk; trailing thunk else; impl(fills) enter_checked }",
     ] {
         let provider = format!(
             "{PROVIDER}\npure fn unit_checked(ct: __Comptime__) -> __Checked_term__ {{ __term_unit__(ct) }}\n{declaration}"
@@ -628,10 +626,10 @@ fn unused_block_declarations_reject_incompatible_public_slots() {
 #[test]
 fn declaration_slots_preserve_final_product_packet_packing() {
     let provider = format!(
-        "{PROVIDER}\npub type Packet[R] = . & (. -> R) & . & .;\npub elab packed : [R] Packet(R) -> Packet(R) {{ trailing thunk; trailing product after; impl identity_checked }}"
+        "{PROVIDER}\npub type Packet[R] = . & (. -> R) & . & .;\npub macro packed : [R] Packet(R) -> Packet(R) {{ trailing thunk; trailing product after; impl identity_checked }}"
     );
     let mut input = modules(
-        "module consumer; import provider(Packet, packed); fn result() -> Packet(.) { packed! () { () } after { (); () } }",
+        "module consumer; import provider(Packet, macro packed); fn result() -> Packet(.) { packed () { () } after { (); () } }",
     );
     input[0].1 = parse(&provider).unwrap();
     check_modules(input).unwrap();
@@ -640,11 +638,11 @@ fn declaration_slots_preserve_final_product_packet_packing() {
 #[test]
 fn declaration_open_slots_keep_ordinary_call_constraints() {
     let provider = format!(
-        "{PROVIDER}\npub elab open_thunk : [A] A -> A {{ trailing thunk; impl identity_checked }}\npub elab open_sequence : [A] A -> A {{ trailing sequence; impl identity_checked }}"
+        "{PROVIDER}\npub macro open_thunk : [A] A -> A {{ trailing thunk; impl identity_checked }}\npub macro open_sequence : [A] A -> A {{ trailing sequence; impl identity_checked }}"
     );
     for consumer in [
-        "module consumer; import provider(open_thunk); fn result() -> . -> . { open_thunk! { () } }",
-        "module consumer; import provider(open_sequence, Sequence, Box, box_pure); fn result() -> Sequence(Box, .) { open_sequence! { box_pure(()) } }",
+        "module consumer; import provider(macro open_thunk); fn result() -> . -> . { open_thunk { () } }",
+        "module consumer; import provider(macro open_sequence, Sequence, Box, box_pure); fn result() -> Sequence(Box, .) { open_sequence { box_pure(()) } }",
     ] {
         let mut input = modules(consumer);
         input[0].1 = parse(&provider).unwrap();
@@ -661,7 +659,7 @@ fn declaration_sequence_relations_are_consistent_and_scoped() {
         "[X] (([A] X) -> .) -> .",
     ] {
         let provider = format!(
-            "{PROVIDER}\npub elab bad : {call_ty} {{ trailing sequence; impl identity_checked }}"
+            "{PROVIDER}\npub macro bad : {call_ty} {{ trailing sequence; impl identity_checked }}"
         );
         let mut input = modules("module consumer; fn unrelated() { () }");
         input[0].1 = parse(&provider).unwrap();
@@ -680,16 +678,16 @@ fn declaration_sequence_relations_are_consistent_and_scoped() {
 #[test]
 fn declaration_compatibility_shares_public_goals_without_publishing_them() {
     let provider = format!(
-        "{PROVIDER}\npub type Twice[X] = X & X;\npub elab twice : [X] Twice(X) -> Twice(X) {{ trailing thunk; trailing thunk else; impl identity_checked }}\npub elab constant : [X] (([A][B] (X & (A -> .)) -> .) -> .) -> . {{ trailing sequence; impl identity_checked }}"
+        "{PROVIDER}\npub type Twice[X] = X & X;\npub macro twice : [X] Twice(X) -> Twice(X) {{ trailing thunk; trailing thunk else; impl identity_checked }}\npub macro constant : [X] (([A][B] (X & (A -> .)) -> .) -> .) -> . {{ trailing sequence; impl identity_checked }}"
     );
     let mut input = modules(
-        "module consumer; import provider(twice); fn result() -> (. -> .) & (. -> .) { twice! { () } else { () } }",
+        "module consumer; import provider(macro twice); fn result() -> (. -> .) & (. -> .) { twice { () } else { () } }",
     );
     input[0].1 = parse(&provider).unwrap();
     check_modules(input).unwrap();
 
     let provider = format!(
-        "{PROVIDER}\npub type Twice[X] = X & X;\npub elab bad : [X] Twice(X) -> Twice(X) {{ trailing thunk; trailing sequence next; impl identity_checked }}"
+        "{PROVIDER}\npub type Twice[X] = X & X;\npub macro bad : [X] Twice(X) -> Twice(X) {{ trailing thunk; trailing sequence next; impl identity_checked }}"
     );
     let mut input = modules("module consumer; fn unrelated() { () }");
     input[0].1 = parse(&provider).unwrap();
@@ -702,10 +700,10 @@ fn declaration_compatibility_shares_public_goals_without_publishing_them() {
 #[test]
 fn declaration_source_capacity_follows_ordinary_prefix_instantiation() {
     let provider = format!(
-        "{PROVIDER}\npure fn unit_two_checked(ct: __Comptime__, _ty: __Type__, _first: __Checked_term__, _second: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}\npub elab expanded : [A] (A -> .) -> A -> . {{ trailing product; trailing product next; trailing product last; impl unit_two_checked }}"
+        "{PROVIDER}\npure fn unit_two_checked(ct: __Comptime__, _ty: __Type__, _first: __Checked_term__, _second: __Checked_term__) -> __Checked_term__ {{ __term_unit__(ct) }}\npub macro expanded : [A] (A -> .) -> A -> . {{ trailing product; trailing product next; trailing product last; impl unit_two_checked }}"
     );
     let mut input = modules(
-        "module consumer; import provider(expanded); fn result() { expanded!(.(x: (. -> .) & (. -> .) & (. -> .)) -> . { () }) { .(x: .) { x } } next { .(x: .) { x } } last { .(x: .) { x } } }",
+        "module consumer; import provider(macro expanded); fn result() { expanded(.(x: (. -> .) & (. -> .) & (. -> .)) -> . { () }) { .(x: .) { x } } next { .(x: .) { x } } last { .(x: .) { x } } }",
     );
     input[0].1 = parse(&provider).unwrap();
     prime_roundtrip(&check_modules(input).unwrap());
@@ -722,24 +720,24 @@ pub fn constant_sequence(bind: [A][B] (. & (A -> .)) -> .) { () }
 "#;
     for (declaration, accepted) in [
         (
-            "pub elab bad : [A] A -> . { trailing product; trailing product next; impl unit_one_checked }",
+            "pub macro bad : [A] A -> . { trailing product; trailing product next; impl unit_one_checked }",
             false,
         ),
         (
-            "pub elab bad : [A] (A -> .) -> A -> (A -> .) -> . { trailing product; trailing product next; trailing product last; trailing thunk end; impl unit_three_checked }",
+            "pub macro bad : [A] (A -> .) -> A -> (A -> .) -> . { trailing product; trailing product next; trailing product last; trailing thunk end; impl unit_three_checked }",
             false,
         ),
         (
-            "pub elab good : [X] (X -> .) -> X -> (([A][B] (X & (A -> Expanded)) -> Expanded) -> Expanded) -> . { trailing sequence; trailing product next; trailing product last; trailing sequence end; impl unit_three_checked }",
+            "pub macro good : [X] (X -> .) -> X -> (([A][B] (X & (A -> Expanded)) -> Expanded) -> Expanded) -> . { trailing sequence; trailing product next; trailing product last; trailing sequence end; impl unit_three_checked }",
             true,
         ),
         (
-            "pub elab bad : [X] (X -> .) -> X -> (([A][B] (X & (A -> Expanded)) -> Expanded) -> Expanded) -> . { trailing thunk; trailing product next; trailing product last; trailing sequence end; impl unit_three_checked }",
+            "pub macro bad : [X] (X -> .) -> X -> (([A][B] (X & (A -> Expanded)) -> Expanded) -> Expanded) -> . { trailing thunk; trailing product next; trailing product last; trailing sequence end; impl unit_three_checked }",
             false,
         ),
     ] {
         let mut input = modules(if accepted {
-            "module consumer; import provider(good, Expanded, constant_sequence); fn result() { good!(.(x: Expanded) -> . { () }) { () } next { () } last { () } end { (constant_sequence, (), ()) } }"
+            "module consumer; import provider(macro good, Expanded, constant_sequence); fn result() { good(.(x: Expanded) -> . { () }) { () } next { () } last { () } end { (constant_sequence, (), ()) } }"
         } else {
             "module consumer; fn unrelated() { () }"
         });

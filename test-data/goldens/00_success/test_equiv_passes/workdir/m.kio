@@ -1,6 +1,6 @@
 module m;
 
-import elab/control(scope);
+import macros/control(macro scope);
 
 equiv simple() {
   ();
@@ -8,6 +8,6 @@ equiv simple() {
 }
 
 equiv let_binding() {
-  scope! { let x = (); x };
+  scope { let x = (); x };
   ()
 }
