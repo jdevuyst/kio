@@ -60,6 +60,10 @@ export function exerciseTrailingBlocks(repl) {
       [':normalize .() { let .x. = ((), ()); x2 }()', '()'],
       [':normalize sequence! box_bind { let .x. <- box_pure(()); box_pure(x1) }', 'Box.box(())'],
       [':normalize sequence! box_bind { let .(value: .) <- box_pure(()); box_pure(value) }', 'Box.box(())'],
+      [':normalize box_bind.>sequence! { box_pure(()) }', 'Box.box(())'],
+      [':normalize box_bind.>>sequence! { box_pure(()) }', 'Box.box(())'],
+      [':normalize sequence! { box_pure(()) }.<<box_bind', 'Box.box(())'],
+      [':normalize sequence! { box_pure(()) }.<box_bind', 'Box.box(())'],
     ]) {
       const actual = turn(input);
       check(actual === expected, `${input}: ${actual}`);

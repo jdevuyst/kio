@@ -713,10 +713,12 @@ they apply to every `sequence` descriptor, regardless of the elab's name.
 
 **Block calls.** Every declared block is supplied exactly once, in declaration
 order. The first is unlabelled and later blocks carry their declared labels.
-A block call is a complete direct call through a single value-shaped name.
+A block call is a complete call through a single value-shaped name.
 Its prefixes contain values only; all public type arguments are inferred.
-It admits neither UFCS nor partial application, nor a blockless alternate
-spelling supplying the projected arguments directly. The public type fixes
+It admits the four [UFCS](#ufcs) directions but no partial application or
+blockless alternate spelling supplying the projected arguments directly. A
+splice inserts its receiver among the prefix values, before projected blocks.
+The public type fixes
 the prefix and block slots before any implementation action runs.
 
 `name! value { … }` has one prefix, `name!(a, b) { … }` has two,
@@ -729,10 +731,21 @@ part of that prefix. A blockless nested call remains blockless:
 for the complete expression boundary.
 
 Only the final labelled block may elide its braces, and only when its whole
-body is another block call. Thus `if! a { x } else if! b { y } else { z }`
+body is another unspliced block call and its parent is not reverse-spliced.
+Thus `if! a { x } else if! b { y } else { z }`
 is the generic abbreviated spelling of
 `if! a { x } else { if! b { y } else { z } }`; neither `if` nor `else`
 has a privileged parsing role.
+
+A reverse-spliced call requires explicit braces around its own final labelled
+block. Thus `outer! a { A } label inner! b { B }.<r` and the corresponding
+`.<<r` form are parse errors. Grouping the whole call does not remove this
+restriction. Write `outer! a { A } label { inner! b { B } }.<r` to insert into
+`outer`, or `outer! a { A } label { inner! b { B }.<r }` to insert into `inner`.
+The diagnostic's brace-insertion fix retains the outer attachment; it does not
+move the receiver into the child. These label braces cannot elide.
+Direct and forward-spliced chains retain the shorthand, and a deeper ordinary
+chain inside an explicit outer block may still use it.
 
 Malformed syntax is a parse error (`11`). Import and name failures retain
 their ordinary categories (`12`/`13`). Once the elab is resolved,
@@ -2223,8 +2236,8 @@ inline lambda, a name, a member projection, or a call. Semicolons separate
 block entries. One entry preserves its value unchanged, so a preassembled
 product of clauses remains expressible as `match! value { clauses }`.
 Ordinary tuple grouping inside an entry retains its ordinary meaning. The
-block-call rules require direct spelling; there is no blockless or UFCS
-`match!` alternate.
+block-call rules require the clause block, including in a UFCS spelling such
+as `value.>match! { clauses }`; there is no blockless alternate.
 
 Whatever expression a clause is, it must independently determine the
 **parameter type** of its function. That parameter type is the **dispatch
@@ -2587,7 +2600,7 @@ Desugars to a nested `box_bind`-and-`fn` chain with `let b = …` interposed in 
 
 *Surface only; substituted before Kio'.*
 
-**UFCS** — *Uniform Function Call Syntax* — is the dot-led family of call splices. The four spellings share one rule for ordinary functions, type-member functions, and blockless bang-call elabs:
+**UFCS** — *Uniform Function Call Syntax* — is the dot-led family of call splices. The four spellings share one rule for ordinary functions, type-member functions, and elab calls:
 
 ```kio
 r.>f           // = f(r)
@@ -2610,7 +2623,7 @@ For `.>` and `.>>`, the left-hand side is the value being inserted and the right
 The complete non-bang callee path may be grouped repeatedly, as in
 `r.>((m.f))(args)`, with the same meaning as `r.>m.f(args)`.
 
-For `.<` and `.<<`, the left-hand side is the path-shaped callee, optionally with one direct argument list already written; the right-hand side is the value being inserted. The zero-existing-arg forms omit `()`: `f.<r` and `f.<<r` both mean `f(r)`. With existing args, `.<` appends the inserted value and `.<<` prepends it. The accepted left side is syntactic — a path or direct path call — so `f(args).<r` is admitted, while an arbitrary expression on the left is not retroactively treated as a function by type.
+For `.<` and `.<<`, the left-hand side is the path-shaped callee, optionally with one direct argument list already written, or a complete block elab call; the right-hand side is the value being inserted. The zero-existing-arg forms omit `()`: `f.<r` and `f.<<r` both mean `f(r)`. With existing args, `.<` appends the inserted value and `.<<` prepends it. The accepted left side is syntactic, so `f(args).<r` is admitted, while an arbitrary expression on the left is not retroactively treated as a function by type. A block call inserts into its prefix as specified below.
 
 A present UFCS argument list must contain at least one argument. The explicit-empty spellings `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are parse errors, uniformly for ordinary, member, and bang-call callees. Use the corresponding bare spelling (`r.>f`, `r.>>f`, `f.<r`, `f.<<r`) when the receiver is the only value, or put an explicit Unit in the list (`r.>f(())`, `r.>>f(())`, `f(()).<r`, `f(()).<<r`) when Unit is an additional argument. The parse diagnostic points at the empty list and names both repairs. Bang callees retain bare receiver-only forms in every direction, including `r.>transform!`, `r.>>transform!`, `transform!.<r`, and `transform!.<<r`.
 
@@ -2634,14 +2647,17 @@ UFCS chains compose by ordinary nesting. `r.>f.>>g(x)` parses as the outer splic
    boundary, so reservation never crosses it. The split depends only on this
    type and the written argument kinds, never on declaration parameter groups,
    callee provenance, inferred argument types, or ambient declaration candidates.
-3. Insert the receiver into a value slot only. `.>` and `.<<` fill the first value slot; `.>>` and `.<` fill the last value slot. Dot-splice never inserts a value into a type slot.
+3. Insert the receiver into a value slot only. `.>` and `.<<` insert first;
+   `.>>` and `.<` insert last. For a block call this placement is within the
+   prefix values, before the projected block arguments; otherwise it spans
+   the written value arguments. Dot-splice never inserts a value into a type slot.
 4. Typecheck the resulting call plan with the same argument-slot planner used for prefix calls. A mismatch at the receiver's planned slot is an ordinary call-argument type error.
 
 Thus `r.>f(T, x)` has the same call plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same call plan as `f(T, x, r)`. The same rule applies to bang-call callees: `r.>iso!(T)` and `iso!(T).<<r` both plan as `iso!(r, T)`.
 
 Each UFCS spelling has the same evaluation order as its equivalent prefix call above. For an ordinary call, the callee is evaluated once and value arguments are evaluated once from left to right: insertion-first forms evaluate the receiver before the written value arguments, while insertion-last forms evaluate the written value arguments before the receiver. For a bang call, the equivalence applies to elab argument planning and quotation; UFCS does not turn quoted operands into runtime evaluations.
 
-**Type-argument solving.** UFCS accepts the same explicit type-argument syntax as prefix calls. A type argument still has to land in a type slot; a type argument supplied where the planned slot is a value slot produces the same diagnostic a prefix call would. When a callee binder is not explicitly supplied, the ordinary call machinery solves it from value-argument types and, in checking mode, the expected result type. Any callee type parameter that remains unsolved is a type error.
+**Type-argument solving.** UFCS accepts the same explicit type-argument syntax as the corresponding prefix call; block calls continue to infer all type arguments. A type argument still has to land in a type slot; a type argument supplied where the planned slot is a value slot produces the same diagnostic a prefix call would. When a callee binder is not explicitly supplied, the ordinary call machinery solves it from value-argument types and, in checking mode, the expected result type. Any callee type parameter that remains unsolved is a type error.
 
 **Bidirectional flow through UFCS chains.** A splice step's expected return type — set by the surrounding context (e.g., the next chain step's inserted-argument position, or a `let` binding's expected type when one is present) — propagates down to the step being checked. This is the same expected-type-at-the-position mechanism the typer uses for elab targets and `fn` parameter slots; UFCS chains pick it up through the rewritten call shape, so elided elab targets in chained positions (e.g. `r.>onto!.>callee` with `onto!`'s target unspoken) get filled from the next callee's required argument type.
 
@@ -2702,11 +2718,18 @@ m.f(x).<r               // = m.f(x, r)
 m.f(x).<<r              // = m.f(r, x)
 ```
 
-**Lowering.** UFCS survives through the resolved and lowered typing phase. The typer resolves the named callee, plans the value-slot insertion from the callee's actual call type, and records the normalized replacement. Regular UFCS records an ordinary prefix `Expr::Call`; bang UFCS records the same user-elab expansion the equivalent prefix spelling would have produced. The substitute pass swaps the recorded replacement in at the Lowered → Prime boundary.
+**Lowering.** A block-call splice arranges the receiver among its prefix
+values before block projection. Projection appends the descriptor-selected
+block arguments and produces the ordinary elab call checked against its
+resolved public type. Other UFCS forms survive through the resolved and
+lowered typing phase: the typer plans value-slot insertion from the actual
+call type and records a normalized prefix call or user-elab expansion. The
+substitute pass swaps these recorded replacements in at the Lowered → Prime
+boundary. No splice or block-call metadata survives into Kio'.
 
 The Kio' grammar has no UFCS syntax in expression position; the kio-prime backend's parser rejects it the same way it rejects every other Kio-surface-only form. **Surface preservation:** `kio fmt` round-trips the user-authored spelling (UFCS vs prefix, and `.>` / `.>>` / `.<` / `.<<`) for both regular calls and elab bang-call splices — see [`style.md` § UFCS preservation](style.md).
 
-**Elab bang-call splices.** Blockless elab calls participate in the same dot-splice rule as ordinary calls. Elabs with trailing-block descriptors require their complete direct block spelling. The imported elab's public type determines the blockless call slots, including which surface arguments are type arguments and which are values. The parens after a right-callee elab name carry the ordinary post-`!` argument list and follow the same parens-iff-args rule as the rest of UFCS — dropped when there is no trailing argument to write:
+**Elab bang-call splices.** Blockless elab calls participate in the same dot-splice rule as ordinary calls. The imported elab's public type determines the blockless call slots, including which surface arguments are type arguments and which are values. The parens after a right-callee elab name carry the ordinary post-`!` argument list and follow the same parens-iff-args rule as the rest of UFCS — dropped when there is no trailing argument to write:
 
 ```kio
 r.>iso!           // = iso!(r)
@@ -2724,6 +2747,51 @@ derive!(T).<cs     // = derive!(cs, T)
 ```
 
 The rule is intentionally uniform: `r.>>iso!(T)` is equivalent to `r.>iso!(T)` because `iso!` has only one value slot and `T` stays in its type slot. Direction matters for a blockless elab with several value slots, following the same ordinary first/last-slot rule. A bang-suffix callee that resolves to no scoped user-defined elab is reported as an unresolved elab call.
+
+**Trailing-block splices.** An elab with trailing descriptors still supplies
+every block, in declaration order. All four directions insert the receiver
+first or last among the ordinary prefix values, before projecting the blocks:
+
+| Spelling | Equivalent prefix call |
+| --- | --- |
+| `r.>f!(a) { B }` | `f!(r, a) { B }` |
+| `r.>>f!(a) { B }` | `f!(a, r) { B }` |
+| `f!(a) { B }.<<r` | `f!(r, a) { B }` |
+| `f!(a) { B }.<r` | `f!(a, r) { B }` |
+
+Here `f` denotes an explicitly selected elab with the appropriate public
+prefix and block slots; `B` denotes its block contents. These equivalences
+describe argument planning and quotation, not eager evaluation of quoted code.
+Insertion-last does not put the receiver after the projected block arguments.
+The resulting prefix and projected arguments use the ordinary public-type
+call planner; descriptors do not introduce a second argument-packing rule.
+
+Bare prefixes work as in direct calls: `r.>f! a { B }` and
+`f! a { B }.<r` are admitted. Reverse splices follow the complete chain,
+including every labelled block. `f!(a).<r { B }` is not an alternate placement,
+and no further labels attach after the receiver. A reverse splice inside a
+prefix, such as `f! g.<r { B }`, remains an ordinary prefix expression.
+
+A call admits one splice; grouping does not reset that boundary.
+`((f! a { B })).<r` is equivalent to the ungrouped form, but cannot splice a
+second receiver into a call already spliced. A subsequent forward suffix
+uses the completed result: `f!(a) { B }.<r.>g` passes the result to `g`.
+The reverse receiver remains tight: `f!(a) { B }.<r(x).>g` inserts `r(x)`,
+while `f!(a) { B }.<(r.>g)` inserts the grouped expression's result.
+A result application such as `f! { B }(x)` cannot be reopened as the original
+block call by a reverse splice. Nor does a block result become a callee merely
+because its inferred type is callable.
+
+When the selected call has a final labelled child, reverse UFCS requires that
+label's braces to be explicit, even through parentheses around the whole call.
+This is a source-structure rule independent of names, declarations and types;
+see [Block calls](#elaborators-are-imported-not-ambient). The diagnostic offers
+braces around the final child, preserving the outer receiver insertion.
+
+The nonempty-list rule applies to block-call splices too. `f!() { B }.<r`
+and `r.>f!() { B }` reject; omit the list for no extra prefix value, or write
+`(())` for an extra Unit. This does not change the direct call
+`f!() { B }`, which has one Unit prefix.
 
 ### Operators
 

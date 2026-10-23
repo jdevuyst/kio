@@ -26,6 +26,10 @@ fn raw_type_args[A][_A](x: A, y: _A) -> _A {
 }
 
 fn ufcs(receiver: I32) -> I32 {
+  receiver.>outer! extra { first } next { second };
+  receiver.>>outer! extra { first } next { second };
+  outer! extra { first } next { second }.<<receiver;
+  outer! extra { first } next { second }.<receiver;
   receiver.>pick(receiver);
   receiver.>>Thing.member;
   pick(receiver).<receiver;

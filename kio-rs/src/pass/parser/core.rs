@@ -345,6 +345,29 @@ fn empty_ufcs_arg_list_error(span: Span) -> Error {
     ))
 }
 
+fn elided_block_reverse_splice_error(block: &crate::ast::NeutralBlock, span: Span) -> Error {
+    let (Some(label), [crate::ast::NeutralItem::Expression { value: child, .. }]) =
+        (&block.label, block.items.as_slice())
+    else {
+        unreachable!("an elided block contains one labelled block-call child")
+    };
+    Error::parse(
+        span,
+        "reverse UFCS requires braces around the final labelled block",
+    )
+    .with_secondary(label.span, "this final labelled block omits its braces")
+    .with_help(
+        "wrap the final labelled block in braces before applying reverse UFCS to the outer call",
+    )
+    .with_fix(Fix::machine_applicable(
+        "Add braces around the final labelled block",
+        vec![
+            FixEdit::new(Span::new(label.span.end, label.span.end), " {"),
+            FixEdit::new(Span::new(child.span().end, child.span().end), " }"),
+        ],
+    ))
+}
+
 fn tuple_type_error(span: Span) -> Error {
     Error::parse(
         span,
@@ -1072,6 +1095,9 @@ pub(super) struct Parser<'a> {
     /// its own AST node, so left-splice validation consults this parse-local
     /// provenance to distinguish `(f()).<x` from the bare `f.<x` form.
     empty_path_call_arg_lists: std::collections::HashMap<Span, Span>,
+    /// Direct block calls materialize an empty prefix list as Unit. Preserve
+    /// the written list for a later reverse splice, even through grouping.
+    empty_block_prefix_lists: std::collections::HashMap<crate::ast::NodeId, Span>,
     /// Trivia after the last meaningful token, before end-of-file —
     /// taken from the skeleton (see
     /// [`crate::pass::tree_skeleton::build_with_trailing`]). The
@@ -1545,6 +1571,7 @@ impl<'a> Parser<'a> {
             block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
+            empty_block_prefix_lists: std::collections::HashMap::new(),
             file_trailing_trivia: skeleton.trailing_trivia.clone(),
         }
     }
@@ -1607,6 +1634,7 @@ impl<'a> Parser<'a> {
             block_stop_depth: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
+            empty_block_prefix_lists: std::collections::HashMap::new(),
             file_trailing_trivia: Vec::new(),
         }
     }
@@ -11017,6 +11045,7 @@ impl<'a> Parser<'a> {
                     append_relocated_trivia(&mut e.meta_mut().trailing_trivia, splice_comments);
                     self.advance(); // consume `.>` / `.>>`
                     let mut callee_tokens = self.cursor.clone();
+                    let block_call = self.block_call_starts_here();
                     let grouped_callee = matches!(self.peek(), Some(TokenKind::LParen));
                     let (segments, callee_span_end) = self.ufcs_callee_path()?;
                     Self::collect_line_comments(
@@ -11027,10 +11056,9 @@ impl<'a> Parser<'a> {
                     let callee_span = Span::new(arrow_end, callee_span_end);
                     // Elaborator bang-call splice: `r.>iso!(T)`,
                     // `r.>>match!(arms)`, etc. The trailing `!`
-                    // after a single-segment UFCS callee records a generic
-                    // elaborator-UFCS node. Typechecking later resolves the
-                    // elaborator, applies `flavor` to its public call type's
-                    // value slots, and records the expansion for substitution.
+                    // after a single-segment UFCS callee selects block syntax
+                    // or an ordinary elaborator splice. Both use the resolved
+                    // elaborator's public type, not its implementation ABI.
                     // The peek accepts
                     // a fused `!`-prefix SymbolRun
                     // (`!=`, `!~`, …) too — greedy lexer fusion can
@@ -11041,7 +11069,14 @@ impl<'a> Parser<'a> {
                             return Err(self
                                 .err_here("the `!` suffix requires an ungrouped elaborator name"));
                         }
-                        e = self.elaborator_ufcs_call(e, segments, callee_span, start, flavor)?;
+                        e = self.elaborator_ufcs_call(
+                            e,
+                            segments,
+                            callee_span,
+                            start,
+                            flavor,
+                            block_call,
+                        )?;
                         continue;
                     }
                     // Optional argument list. A bare `r.>f` (no
@@ -11079,45 +11114,71 @@ impl<'a> Parser<'a> {
                     } else {
                         UfcsFlavor::ArgumentFirst
                     };
-                    let splice_span = self.peek_span();
-                    let start = e.span().start;
-                    let (segments, callee_span, args, source_trivia) =
-                        self.split_left_call_splice(e, splice_span)?;
-                    if let Some(context) = self
-                        .tooling
-                        .as_mut()
-                        .and_then(|tooling| tooling.facts.cursor.as_mut())
-                        && context
-                            .call
-                            .as_ref()
-                            .is_some_and(|call| call.callee.span() == callee_span)
-                    {
-                        context.call = None;
-                    }
-                    Self::validate_reference_value_path_leaf(&segments)?;
-                    let leading = self.peek_leading_trivia();
-                    self.advance(); // consume `.<` / `.<<`
-                    let mut inserted = self.expr_tight_call_arg()?;
-                    inject_leading_trivia(&mut inserted, leading);
-                    let end = inserted.span().end;
-                    let id = self.fresh_node_id();
-                    e = Expr::Ufcs {
-                        source_trivia,
-                        occurrence: Default::default(),
-                        receiver: Box::new(inserted),
-                        callee_segments: segments,
-                        callee_span,
-                        args,
-                        flavor,
-                        bang: None,
-                        meta: Meta::new(Span::new(start, end)),
-                        ext: id,
-                    };
+                    e = self.left_call_splice(e, flavor)?;
                 }
                 _ => break,
             }
         }
         Ok(e)
+    }
+
+    // Keep reverse-only operands and validation out of the common suffix frame,
+    // which remains on the stack while parsing nested native call arguments.
+    fn left_call_splice(&mut self, mut lhs: Expr, flavor: UfcsFlavor) -> Result<Expr, Error> {
+        let splice_span = self.peek_span();
+        let start = lhs.span().start;
+        if let Expr::BlockCall {
+            id, splice, blocks, ..
+        } = &lhs
+        {
+            if splice.is_some() {
+                return Err(self.err(splice_span, "a block call permits only one UFCS splice"));
+            }
+            if let Some(block) = blocks.last().filter(|block| block.elided) {
+                return Err(elided_block_reverse_splice_error(block, splice_span));
+            }
+            if let Some(span) = self.empty_block_prefix_lists.get(id) {
+                return Err(empty_ufcs_arg_list_error(*span));
+            }
+            let leading = self.peek_leading_trivia();
+            self.advance();
+            let mut receiver = self.expr_tight_call_arg()?;
+            inject_leading_trivia(&mut receiver, leading);
+            let end = receiver.span().end;
+            self.splice_block_call(&mut lhs, receiver, flavor, Span::new(start, end))?;
+            return Ok(lhs);
+        }
+        let (segments, callee_span, args, source_trivia) =
+            self.split_left_call_splice(lhs, splice_span)?;
+        if let Some(context) = self
+            .tooling
+            .as_mut()
+            .and_then(|tooling| tooling.facts.cursor.as_mut())
+            && context
+                .call
+                .as_ref()
+                .is_some_and(|call| call.callee.span() == callee_span)
+        {
+            context.call = None;
+        }
+        Self::validate_reference_value_path_leaf(&segments)?;
+        let leading = self.peek_leading_trivia();
+        self.advance();
+        let mut inserted = self.expr_tight_call_arg()?;
+        inject_leading_trivia(&mut inserted, leading);
+        let end = inserted.span().end;
+        Ok(Expr::Ufcs {
+            source_trivia,
+            occurrence: Default::default(),
+            receiver: Box::new(inserted),
+            callee_segments: segments,
+            callee_span,
+            args,
+            flavor,
+            bang: None,
+            meta: Meta::new(Span::new(start, end)),
+            ext: self.fresh_node_id(),
+        })
     }
 
     fn field_access_label_list(&mut self) -> Result<ParsedLabelList<FieldAccessLabel>, Error> {
@@ -11421,12 +11482,10 @@ impl<'a> Parser<'a> {
     /// typechecking later requires that name to resolve to an in-scope user
     /// elaborator.
     ///
-    /// The result is an [`Expr::Ufcs`] with `bang = Some(bang_span)`
-    /// so the pretty-printer can round-trip `r.>iso!(T)` / `r.>>iso!(T)`
-    /// faithfully. The post-`!` parentheses use ordinary call-argument parsing.
-    /// During typechecking, the elaborator's public call type and `flavor`
-    /// determine receiver placement; substitution installs the recorded
-    /// expansion before Prime.
+    /// Block forms use the direct block-prefix parser and arrange the receiver
+    /// before descriptor projection. Blockless forms retain [`Expr::Ufcs`] with
+    /// `bang = Some(bang_span)`; ordinary public call typing determines their
+    /// receiver placement. Both retain the written direction for formatting.
     fn elaborator_ufcs_call(
         &mut self,
         receiver: Expr,
@@ -11434,6 +11493,7 @@ impl<'a> Parser<'a> {
         callee_span: Span,
         start: u32,
         flavor: UfcsFlavor,
+        block_call: bool,
     ) -> Result<Expr, Error> {
         // Consume the `!` — peel from the front of any fused
         // SymbolRun (e.g. `!=`) so the trailing op-chars stay
@@ -11457,6 +11517,18 @@ impl<'a> Parser<'a> {
         }
         let name = &segments[0];
         Self::validate_value_name(&name.name, name.span)?;
+        if block_call {
+            let mut call = self.block_call_tail(name.name.clone(), name.span)?;
+            let Expr::BlockCall { id, .. } = &call else {
+                unreachable!()
+            };
+            if let Some(span) = self.empty_block_prefix_lists.get(id) {
+                return Err(empty_ufcs_arg_list_error(*span));
+            }
+            let end = call.span().end;
+            self.splice_block_call(&mut call, receiver, flavor, Span::new(start, end))?;
+            return Ok(call);
+        }
         let (args, end_pos, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
             let list_start = self.peek_span().start;
             let (args, end, source_trivia) =
@@ -11799,11 +11871,52 @@ impl<'a> Parser<'a> {
     }
 
     fn block_call(&mut self) -> Result<Expr, Error> {
-        let start = self.peek_span().start;
         let (name, head_span) = self.expect_ident()?;
         self.expect_bang()?;
         self.record_source_name(head_span, SourceNameRole::FunctionReference);
+        self.block_call_tail(name, head_span)
+    }
+
+    fn splice_block_call(
+        &mut self,
+        call: &mut Expr,
+        receiver: Expr,
+        flavor: UfcsFlavor,
+        span: Span,
+    ) -> Result<(), Error> {
+        let receiver = self.block_prefix_value(receiver)?;
+        let Expr::BlockCall {
+            prefix,
+            splice,
+            meta,
+            head,
+            blocks,
+            ..
+        } = call
+        else {
+            unreachable!("block splice is applied only to a parsed block call")
+        };
+        self.record_block_cursor(
+            &head.name,
+            head.span,
+            BlockCursorRegion::Prefix,
+            blocks,
+            receiver.span(),
+        );
+        if flavor.inserts_first() {
+            prefix.insert(0, receiver);
+        } else {
+            prefix.push(receiver);
+        }
+        *splice = Some(flavor);
+        meta.span = span;
+        Ok(())
+    }
+
+    fn block_call_tail(&mut self, name: String, head_span: Span) -> Result<Expr, Error> {
+        let start = head_span.start;
         let mut prefix = Vec::new();
+        let mut empty_prefix_list = None;
         let prefix_explicit = matches!(self.peek(), Some(TokenKind::LParen));
         if prefix_explicit {
             let list_start = self.peek_span().start;
@@ -11818,6 +11931,7 @@ impl<'a> Parser<'a> {
             );
             let (args, end, mut source_trivia) = result?;
             if args.is_empty() {
+                empty_prefix_list = Some(Span::new(list_start, end));
                 prefix.push(Expr::Unit {
                     source_trivia: source_trivia.take(),
                     occurrence: (),
@@ -11899,12 +12013,17 @@ impl<'a> Parser<'a> {
             }
         }
         let end = blocks.last().unwrap().close.end;
+        let id = self.fresh_node_id();
+        if let Some(span) = empty_prefix_list {
+            self.empty_block_prefix_lists.insert(id, span);
+        }
         Ok(Expr::BlockCall {
             occurrence: (),
-            id: self.fresh_node_id(),
+            id,
             head: PathSegment::new(name, head_span),
             prefix,
             prefix_explicit,
+            splice: None,
             blocks,
             meta: Meta::new(Span::new(start, end)),
             ext: (),

@@ -202,6 +202,7 @@ pub enum Term {
         else_: Box<Term>,
         then_ty: Type,
         else_ty: Type,
+        ufcs: Option<UfcsSpelling>,
     },
     /// `{<label> = <payload>}` — surface sugar for the generated
     /// constructor-member call `<constructor>(<payload>)`. Renders two ways:

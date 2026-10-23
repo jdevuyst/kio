@@ -1,0 +1,5 @@
+module main;
+
+import forms(arrange);
+
+fn subject() -> . & (. & .) { arrange!(()).<() { () } }

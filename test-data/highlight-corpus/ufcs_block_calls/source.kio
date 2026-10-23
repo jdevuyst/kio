@@ -1,0 +1,11 @@
+module splices;
+
+fn run(receiver: .) {
+  receiver.>outer! extra { first } next { second };
+  receiver.>>outer! extra { first } next { second };
+  outer! extra { first } next { second }.<<receiver;
+  outer! extra { first } next { second }.<receiver;
+  outer! extra { first } next { inner! other { second } }.<receiver;
+  outer! extra { first } next { inner! other { second }.<receiver };
+  ((outer! extra { first })).<receiver(arg).>after
+}

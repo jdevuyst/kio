@@ -1,0 +1,15 @@
+module forms;
+
+import __comptime__;
+
+pure fn arrange_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _c: __Type__
+, left: __Checked_term__
+, right: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
+
+pub elab arrange : [A][B][C] A -> B -> C -> (A & (B & C)) { trailing product; impl arrange_impl }

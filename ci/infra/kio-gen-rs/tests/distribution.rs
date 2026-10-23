@@ -26,6 +26,28 @@ const N: u64 = 2000;
 const RUN_SEED: u64 = 0xD15D_D15D_D15D_D15D;
 
 #[test]
+fn block_calls_generate_every_dot_splice_spelling() {
+    let mut seen = [None; 4];
+    for i in 0..N {
+        let seed = program_seed(RUN_SEED, i);
+        let prog = generate::program_from_seed(seed);
+        if !prog.uses_surface {
+            continue;
+        }
+        let source = render::render_fn_def(&prog);
+        for (j, token) in [".>if! {", ".>>if! {", "}.<(", "}.<<("].iter().enumerate() {
+            if source.contains(token) {
+                seen[j].get_or_insert(seed);
+            }
+        }
+    }
+    for (token, seed) in [".>", ".>>", ".<", ".<<"].into_iter().zip(seen) {
+        assert!(seed.is_some(), "missing generated block-call {token}");
+        println!("block dot-splice {token}: first seed {seed:?}");
+    }
+}
+
+#[test]
 fn ordinary_calls_generate_every_dot_splice_spelling() {
     let mut seen = [None; 4];
     let mut explicit = None;

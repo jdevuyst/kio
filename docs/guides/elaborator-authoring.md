@@ -723,6 +723,18 @@ generator and check repetition, nested mirroring, target inference, fill
 agreement, and block execution. See [Testing with `equiv`](equiv.md) for what
 these host-independent claims prove.
 
+When your elab has ordinary values before its blocks, compare its direct call
+with the [four UFCS spellings](ufcs.md#calls-with-trailing-blocks). Each receiver
+inserts among those prefix values, before block projection; reverse splices
+follow every labelled block. Include a nested labelled child in your checks:
+its braces must remain when it has its own splice, so the receiver cannot
+silently move to the outer call. A reverse-spliced parent also requires braces
+around its own final labelled child, even when that child is unspliced.
+Check both arrows and grouping around the whole parent, while retaining
+ordinary elision in direct/forward calls and deeper explicit blocks.
+These are call-site arrangements of the same
+public type, not extra implementation parameters.
+
 For a separate negative behavior test, this claim checks successfully but
 gets the mirror's result wrong:
 

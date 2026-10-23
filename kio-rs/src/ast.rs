@@ -4845,8 +4845,13 @@ pub enum Expr<P: Phase = Surface> {
         occurrence: P::ExpressionOccurrence,
         id: NodeId,
         head: PathSegment,
+        /// The ordinary prefix, including a UFCS receiver at the edge selected
+        /// by `splice`. Projection appends the block arguments after this list.
         prefix: Vec<Expr<P>>,
         prefix_explicit: bool,
+        /// Written UFCS direction; the inserted value remains in `prefix` so
+        /// ordinary Surface traversals visit it along with the other arguments.
+        splice: Option<UfcsFlavor>,
         blocks: Vec<NeutralBlock<P>>,
         meta: Meta<P>,
         ext: P::ExprBlockSyntax,

@@ -1,6 +1,341 @@
 use super::*;
 
 #[test]
+fn lsp_reverse_block_ufcs_brace_fix_applies_without_a_parsed_module() {
+    for arrow in [".<", ".<<"] {
+        for (open, close, child) in [
+            ("", "", "two! { () } fallback { () }"),
+            (
+                "((",
+                "))",
+                "two! { () } fallback two! { () } fallback { () }",
+            ),
+        ] {
+            let dir = TempDir::new("block-ufcs-brace-fix");
+            dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+            let provider = format!(
+                "{}\npub elab prefixed : (. & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+                include_str!("../fixtures/trailing-blocks/provider.kio")
+            );
+            let provider_file = dir.write("provider.kio", &provider);
+            let head = "module app; import provider(prefixed, two); pub fn run(value: .) -> . { ";
+            let source = format!(
+                "{head}{open}prefixed! {{ () }} fallback // child\n  {child}{close} // suffix\n  {arrow}value }}"
+            );
+            let file = dir.write("app.kio", &source);
+            let uri = path_to_file_uri(&file);
+            let mut lsp = LspProcess::spawn();
+            lsp.initialize(&path_to_file_uri(dir.path()));
+            open_and_wait_for_analysis(&mut lsp, &path_to_file_uri(&provider_file), &provider);
+            lsp.send_notification(
+                "textDocument/didOpen",
+                json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+            );
+            let published = wait_for_publish_version(&mut lsp, &uri, 1);
+            let diagnostics = published["diagnostics"].as_array().unwrap();
+            assert_eq!(diagnostics.len(), 1, "{published}");
+            let diagnostic = &diagnostics[0];
+            assert_eq!(diagnostic["code"], 11, "{published}");
+            assert_eq!(
+                diagnostic["message"],
+                "reverse UFCS requires braces around the final labelled block"
+            );
+            assert_eq!(
+                json_range(&diagnostic["range"]),
+                source_range(&source, source.rfind(arrow).unwrap(), arrow.len())
+            );
+            let response = send_code_action(&mut lsp, &uri, diagnostic);
+            let actions = response["result"].as_array().unwrap();
+            assert_eq!(actions.len(), 1, "{response}");
+            let action = &actions[0];
+            assert_eq!(
+                action["title"],
+                "Add braces around the final labelled block"
+            );
+            assert_eq!(action["kind"], "quickfix");
+            assert_eq!(action["isPreferred"], true);
+            let (edits, version) = action_edits_for_uri(action, &uri);
+            assert_eq!(version, Some(1));
+            assert_eq!(edits.len(), 2, "{action}");
+            let repaired = format!(
+                "{head}{open}prefixed! {{ () }} fallback {{ // child\n  {child} }}{close} // suffix\n  {arrow}value }}"
+            );
+            assert_eq!(apply_lsp_text_edits(&source, edits), repaired);
+
+            let current = format!("// edited document\n{source}");
+            send_full_text_change(&mut lsp, &uri, 2, &current);
+            let published = wait_for_publish_version(&mut lsp, &uri, 2);
+            assert_eq!(published["diagnostics"][0]["code"], 11, "{published}");
+            assert_eq!(
+                send_code_action(&mut lsp, &uri, diagnostic)["result"],
+                json!([]),
+                "stale brace edits must not target shifted source"
+            );
+            let response = send_code_action(&mut lsp, &uri, &published["diagnostics"][0]);
+            let (edits, version) = action_edits_for_uri(&response["result"][0], &uri);
+            assert_eq!(version, Some(2));
+            let applied = apply_lsp_text_edits(&current, edits);
+            assert_eq!(applied, format!("// edited document\n{repaired}"));
+            send_full_text_change(&mut lsp, &uri, 3, &applied);
+            assert_eq!(
+                wait_for_publish_version(&mut lsp, &uri, 3)["diagnostics"],
+                json!([])
+            );
+
+            let formatting = send_formatting(&mut lsp, &uri);
+            let formatted = apply_lsp_text_edits(&applied, formatting.as_array().unwrap());
+            let outer = &formatted[formatted.find("prefixed!").unwrap()..];
+            assert!(
+                outer[..outer.find("two!").unwrap()].contains("fallback {"),
+                "{formatted}"
+            );
+            for comment in ["// edited document", "// child", "// suffix"] {
+                assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
+            }
+            send_full_text_change(&mut lsp, &uri, 4, &formatted);
+            wait_for_analysis_event(&lsp.analysis_events, &uri, 4);
+            let pos = source_position(&formatted, formatted.rfind("value").unwrap());
+            assert_eq!(hover_type(&send_hover(&mut lsp, &uri, pos.0, pos.1)), ".");
+            assert_eq!(send_formatting(&mut lsp, &uri), json!([]));
+            assert_eq!(lsp.shutdown(), 0);
+        }
+    }
+}
+
+#[test]
+fn lsp_block_ufcs_receivers_keep_navigation_tokens_and_signature_help() {
+    let dir = TempDir::new("block-ufcs-receivers");
+    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    let provider = format!(
+        "{}\npub elab prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        include_str!("../fixtures/trailing-blocks/provider.kio")
+    );
+    let provider_file = dir.write("provider.kio", &provider);
+    let source = concat!(
+        "module app;\nimport provider(prefixed);\n",
+        "pub fn run(value: .) -> . {\n",
+        "  value.>prefixed!(()) { () } fallback { () };\n",
+        "  value.>>prefixed!(()) { () } fallback { () };\n",
+        "  prefixed!(()) { () } fallback { () }.<<value;\n",
+        "  prefixed!(()) { () } fallback { () }.<value\n}\n",
+    );
+    let file = dir.write("app.kio", source);
+    let uri = path_to_file_uri(&file);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &path_to_file_uri(&provider_file), &provider);
+    open_and_wait_for_analysis(&mut lsp, &uri, source);
+    let declaration = source.find("value:").unwrap();
+    let receivers = source
+        .match_indices("value")
+        .skip(1)
+        .map(|(offset, _)| offset)
+        .collect::<Vec<_>>();
+    assert_eq!(receivers.len(), 4);
+    let tokens = send_semantic_tokens_full(&mut lsp, &uri);
+    let mut line = 0;
+    let mut column = 0;
+    let mut decoded = Vec::new();
+    for token in tokens["data"].as_array().unwrap().as_chunks::<5>().0 {
+        let delta_line = token[0].as_u64().unwrap();
+        if delta_line == 0 {
+            column += token[1].as_u64().unwrap();
+        } else {
+            line += delta_line;
+            column = token[1].as_u64().unwrap();
+        }
+        decoded.push((
+            line,
+            column,
+            token[2].as_u64().unwrap(),
+            token[3].as_u64().unwrap(),
+        ));
+    }
+    for &offset in &receivers {
+        let pos = source_position(source, offset);
+        assert_eq!(
+            hover_type(&wait_for_hover(&mut lsp, &uri, pos.0, pos.1)),
+            "."
+        );
+        let definition = send_definition(&mut lsp, &uri, pos.0, pos.1);
+        assert_eq!(definition["uri"], uri);
+        assert_eq!(
+            json_range(&definition["range"]),
+            source_range(source, declaration, 5)
+        );
+        assert!(decoded.contains(&(pos.0, pos.1, 5, 4)), "{tokens}");
+        let help = wait_for_signature_help(&mut lsp, &uri, pos.0, pos.1);
+        assert_eq!(help["activeParameter"], 0, "{help}");
+        assert!(
+            help["signatures"][0]["label"]
+                .as_str()
+                .unwrap()
+                .starts_with("prefixed!"),
+            "{help}"
+        );
+    }
+    for (offset, active) in source.match_indices("prefixed!(()) {").flat_map(|(at, _)| {
+        [
+            (at + "prefixed!(()) { ".len(), 1),
+            (at + "prefixed!(()) { () } fallback { ".len(), 2),
+        ]
+    }) {
+        let pos = source_position(source, offset);
+        let help = wait_for_signature_help(&mut lsp, &uri, pos.0, pos.1);
+        assert_eq!(help["activeParameter"], active, "{help}");
+    }
+    let pos = source_position(source, receivers[3]);
+    let id = lsp.send_request(
+        "textDocument/references",
+        json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": pos.0, "character": pos.1 },
+            "context": { "includeDeclaration": true },
+        }),
+    );
+    let references = lsp.recv_matching(|value| value["id"].as_i64() == Some(id));
+    let mut actual = references["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|location| {
+            assert_eq!(location["uri"], uri);
+            json_range(&location["range"])
+        })
+        .collect::<Vec<_>>();
+    actual.sort();
+    let mut expected = std::iter::once(declaration)
+        .chain(receivers)
+        .map(|at| source_range(source, at, 5))
+        .collect::<Vec<_>>();
+    expected.sort();
+    assert_eq!(actual, expected, "{references}");
+    let rename = send_rename(&mut lsp, &uri, pos.0, pos.1, "receiver");
+    assert!(rename.get("error").is_none(), "{rename}");
+    let changes = rename["result"]["documentChanges"].as_array().unwrap();
+    assert_eq!(changes.len(), 1, "{rename}");
+    let edits = changes[0]["edits"].as_array().unwrap();
+    assert_eq!(edits.len(), 5, "{rename}");
+    let renamed = apply_lsp_text_edits(source, edits);
+    assert!(!renamed.contains("value"));
+    send_full_text_change(&mut lsp, &uri, 2, &renamed);
+    wait_for_analysis_event(&lsp.analysis_events, &uri, 2);
+    let pos = source_position(&renamed, renamed.rfind("receiver").unwrap());
+    assert_eq!(hover_type(&send_hover(&mut lsp, &uri, pos.0, pos.1)), ".");
+    let formatting = send_formatting(&mut lsp, &uri);
+    let formatted = apply_lsp_text_edits(&renamed, formatting.as_array().unwrap());
+    send_full_text_change(&mut lsp, &uri, 3, &formatted);
+    wait_for_analysis_event(&lsp.analysis_events, &uri, 3);
+    let pos = source_position(&formatted, formatted.rfind("receiver").unwrap());
+    assert_eq!(hover_type(&send_hover(&mut lsp, &uri, pos.0, pos.1)), ".");
+    assert_eq!(send_formatting(&mut lsp, &uri), json!([]));
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_block_ufcs_label_completion_applies_in_every_direction() {
+    let dir = TempDir::new("block-ufcs-label-completion");
+    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    let provider = format!(
+        "{}\npub elab prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        include_str!("../fixtures/trailing-blocks/provider.kio")
+    );
+    let provider_file = dir.write("provider.kio", &provider);
+    let source = "module app; import provider(prefixed); pub fn run(value: .) { value.>prefixed!(()) { () } fallback { () } }";
+    let file = dir.write("app.kio", source);
+    let uri = path_to_file_uri(&file);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &path_to_file_uri(&provider_file), &provider);
+    open_and_wait_for_analysis(&mut lsp, &uri, source);
+    for (ordinal, call) in [
+        "value.>prefixed!(()) { () } fal { () }",
+        "value.>>prefixed!(()) { () } fal { () }",
+        "prefixed!(()) { () } fal { () }.<<value",
+        "prefixed!(()) { () } fal { () }.<value",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let source =
+            format!("module app; import provider(prefixed); pub fn run(value: .) {{ {call} }}");
+        let version = 2 + 2 * ordinal as i32;
+        send_full_text_change(&mut lsp, &uri, version, &source);
+        assert!(
+            !wait_for_publish_version(&mut lsp, &uri, i64::from(version))["diagnostics"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+        let pos = source_position(&source, source.find(" fal ").unwrap() + 4);
+        let completion = send_completion(&mut lsp, &uri, pos.0, pos.1);
+        assert_eq!(
+            completion_labels(&completion),
+            vec!["fallback"],
+            "{call}: {completion}"
+        );
+        let item = &completion["items"][0];
+        let applied = apply_lsp_text_edits(&source, &[item["textEdit"].clone()]);
+        assert!(applied.contains("fallback { () }"), "{applied}");
+        send_full_text_change(&mut lsp, &uri, version + 1, &applied);
+        assert!(
+            wait_for_publish_version(&mut lsp, &uri, i64::from(version + 1))["diagnostics"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
+    }
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
+fn lsp_block_ufcs_missing_blocks_insert_before_reverse_receiver() {
+    let dir = TempDir::new("block-ufcs-scaffold");
+    dir.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    let provider = format!(
+        "{}\npub elab prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+        include_str!("../fixtures/trailing-blocks/provider.kio")
+    );
+    let provider_file = dir.write("provider.kio", &provider);
+    let source = "module app; import provider(prefixed); pub fn run(value: .) { prefixed!(()) { () }.<value }";
+    let file = dir.write("app.kio", source);
+    let uri = path_to_file_uri(&file);
+    let mut lsp = LspProcess::spawn();
+    lsp.initialize(&path_to_file_uri(dir.path()));
+    open_and_wait_for_analysis(&mut lsp, &path_to_file_uri(&provider_file), &provider);
+    lsp.send_notification(
+        "textDocument/didOpen",
+        json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": source}}),
+    );
+    let published = wait_for_publish_version(&mut lsp, &uri, 1);
+    let diagnostic = published["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|diagnostic| diagnostic["code"] == 14)
+        .unwrap_or_else(|| panic!("{published}"));
+    let response = send_code_action(&mut lsp, &uri, diagnostic);
+    let action = response["result"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["title"] == "Add missing trailing block scaffolds")
+        .unwrap_or_else(|| panic!("{response}"));
+    let (edits, _) = action_edits_for_uri(action, &uri);
+    let scaffold = apply_lsp_text_edits(source, edits);
+    assert!(scaffold.contains("fallback { }.<value"), "{scaffold}");
+    let filled = scaffold.replace("fallback { }", "fallback { () }");
+    send_full_text_change(&mut lsp, &uri, 2, &filled);
+    assert!(
+        wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(lsp.shutdown(), 0);
+}
+
+#[test]
 fn lsp_block_snippets_require_client_capability() {
     let dir = TempDir::new("block-editor-plain-completion");
     dir.write("app.pkg.kio", "package app; bridge { app; provider; }");

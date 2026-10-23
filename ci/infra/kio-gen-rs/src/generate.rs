@@ -1616,6 +1616,11 @@ fn intro<R: Rng>(
                     )),
                     then_ty: target.clone(),
                     else_ty: target.clone(),
+                    ufcs: if surface_mode && rng.gen_bool(0.5) {
+                        Some(UfcsSpelling::ALL[rng.gen_range(0..4)])
+                    } else {
+                        None
+                    },
                 },
             }
         }

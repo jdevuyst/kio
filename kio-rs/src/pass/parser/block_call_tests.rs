@@ -6,6 +6,16 @@ fn block_cursor_regions_survive_incomplete_bodies_without_descriptors() {
     use super::BlockCursorRegion;
     for (body, expected_head, expected_region) in [
         ("outer! val|ue { () }", "outer", BlockCursorRegion::Prefix),
+        (
+            "val|ue.>outer!(()) { () }",
+            "outer",
+            BlockCursorRegion::Prefix,
+        ),
+        (
+            "outer!(()) { () }.<val|ue",
+            "outer",
+            BlockCursorRegion::Prefix,
+        ),
         ("outer! { val|ue }", "outer", BlockCursorRegion::Body(0)),
         (
             "outer! { () } fa|llback { () }",
@@ -56,10 +66,336 @@ fn function(module: &crate::ast::Module) -> &Expr {
     &def.body
 }
 
+#[test]
+fn block_ufcs_places_the_receiver_in_the_ordinary_prefix() {
+    use crate::ast::UfcsFlavor::*;
+    for (body, flavor, names) in [
+        (
+            "r.>f!(a, b) { c } next { d }",
+            ReceiverFirst,
+            ["r", "a", "b"],
+        ),
+        (
+            "r.>>f!(a, b) { c } next { d }",
+            ReceiverLast,
+            ["a", "b", "r"],
+        ),
+        (
+            "f!(a, b) { c } next { d }.<<r",
+            ArgumentFirst,
+            ["r", "a", "b"],
+        ),
+        (
+            "((f!(a, b) { c } next { d })).<r",
+            ArgumentLast,
+            ["a", "b", "r"],
+        ),
+    ] {
+        let Expr::BlockCall {
+            prefix,
+            splice,
+            blocks,
+            ..
+        } = roundtrip(body, "")
+        else {
+            panic!("{body}: block call")
+        };
+        assert_eq!(splice, Some(flavor));
+        assert_eq!(blocks.len(), 2);
+        let actual: Vec<_> = prefix
+            .iter()
+            .map(|value| match value {
+                Expr::Path { segments, .. } => segments[0].name.as_str(),
+                _ => panic!("{body}: path prefix"),
+            })
+            .collect();
+        assert_eq!(actual, names, "{body}");
+    }
+    for body in [
+        "r.>f! a { b }",
+        "r.>>f! a { b }",
+        "f! a { b }.<<r",
+        "f! a { b }.<r",
+        "r.>f! { b }",
+        "r.>>f! { b }",
+        "f! { b }.<<r",
+        "f! { b }.<r",
+        "outer! r.>convert!(a) { b }",
+        "outer! r.>convert! { b }",
+        "outer! g.<r { b }",
+        "outer!(r.>inner! a { c }) { b }",
+        "(f! a { b }.<r)(x)",
+        "r.>f! a { b }(x)",
+    ] {
+        roundtrip(body, "");
+    }
+}
+
+#[test]
+fn block_reverse_splice_follows_labels_and_uses_a_tight_receiver() {
+    let Expr::BlockCall {
+        splice,
+        prefix,
+        blocks,
+        ..
+    } = roundtrip("outer! a { b } label { inner! c { d } }.<r", "")
+    else {
+        panic!("outer block")
+    };
+    assert_eq!(splice, Some(crate::ast::UfcsFlavor::ArgumentLast));
+    assert_eq!(prefix.len(), 2);
+    assert!(matches!(
+        &blocks[1].items[0],
+        NeutralItem::Expression {
+            value: Expr::BlockCall { splice: None, .. },
+            ..
+        }
+    ));
+    let Expr::BlockCall { splice, blocks, .. } =
+        roundtrip("outer! a { b } label { inner! c { d }.<r }", "")
+    else {
+        panic!("outer block")
+    };
+    assert_eq!(splice, None);
+    assert!(matches!(
+        &blocks[1].items[0],
+        NeutralItem::Expression {
+            value: Expr::BlockCall {
+                splice: Some(_),
+                ..
+            },
+            ..
+        }
+    ));
+    for body in [
+        "outer! a { b } label { r.>inner! c { d } }",
+        "f! a { b }.<r(x).>g",
+        "f! a { b }.<(r.>g)",
+    ] {
+        roundtrip(body, "");
+    }
+    assert!(
+        matches!(roundtrip("f! a { b }.<r(x).>g", ""), Expr::Ufcs { receiver, .. }
+        if matches!(*receiver, Expr::BlockCall { .. }))
+    );
+}
+
+#[test]
+fn block_reverse_splice_requires_its_own_final_label_braces() {
+    use crate::error::Applicability;
+
+    for (arrow, flavor) in [
+        (".<", crate::ast::UfcsFlavor::ArgumentLast),
+        (".<<", crate::ast::UfcsFlavor::ArgumentFirst),
+    ] {
+        for (open, close) in [("", ""), ("((", "))")] {
+            for (before_child, before_arrow) in [(" ", ""), (" // child\n ", " // suffix\n ")] {
+                let source = format!(
+                    "module consumer; fn subject() {{ {open}outer! a {{ b }} label{before_child}inner! c {{ d }}{close}{before_arrow}{arrow}r }}"
+                );
+                let error = parse(&source).expect_err("reverse splice requires label braces");
+                assert!(
+                    error.diag().1.contains("reverse UFCS requires braces"),
+                    "{source}: {error:?}"
+                );
+                let span = error.diag().0;
+                assert_eq!(&source[span.start as usize..span.end as usize], arrow);
+                let fixes = error.diagnostic().fixes();
+                assert_eq!(fixes.len(), 1);
+                let fix = &fixes[0];
+                assert_eq!(fix.applicability, Applicability::MachineApplicable);
+                let insertion_points = [
+                    (source.find("label").unwrap() + "label".len(), " {"),
+                    (source.find("{ d }").unwrap() + "{ d }".len(), " }"),
+                ];
+                assert_eq!(fix.edits.len(), insertion_points.len());
+                for (edit, (offset, text)) in fix.edits.iter().zip(insertion_points) {
+                    assert_eq!(
+                        edit.span,
+                        crate::span::Span::new(offset as u32, offset as u32)
+                    );
+                    assert_eq!(edit.replacement, text);
+                }
+                let mut repaired = source.clone();
+                for edit in fix.edits.iter().rev() {
+                    repaired.insert_str(edit.span.start as usize, &edit.replacement);
+                }
+                assert_eq!(comments(&source), comments(&repaired));
+                let parsed = parse(&repaired).expect("brace fix parses");
+                let Expr::BlockCall {
+                    splice,
+                    prefix,
+                    blocks,
+                    ..
+                } = function(&parsed)
+                else {
+                    panic!("fix keeps the outer call")
+                };
+                assert_eq!(*splice, Some(flavor));
+                let receiver = if flavor.inserts_first() {
+                    &prefix[0]
+                } else {
+                    prefix.last().unwrap()
+                };
+                assert!(matches!(receiver, Expr::Path { segments, .. } if segments[0].name == "r"));
+                assert!(!blocks[1].elided);
+                assert!(matches!(
+                    &blocks[1].items[0],
+                    NeutralItem::Expression {
+                        value: Expr::BlockCall { splice: None, .. },
+                        ..
+                    }
+                ));
+                let rendered = crate::pretty::pretty_module(&parsed);
+                let reparsed = parse(&rendered).expect("formatter retains required braces");
+                assert_eq!(topology(function(&parsed)), topology(function(&reparsed)));
+                assert_eq!(comments(&source), comments(&rendered));
+                assert_eq!(rendered, crate::pretty::pretty_module(&reparsed));
+            }
+        }
+        roundtrip(
+            &format!(
+                "outer! a {{ b }} label {{ middle! c {{ d }} tail inner! e {{ f }} }}{arrow}r"
+            ),
+            "",
+        );
+        roundtrip(
+            &format!("outer! a {{ b }} label {{ inner! c {{ d }}{arrow}r }}"),
+            "",
+        );
+        roundtrip(&format!("outer! g{arrow}r {{ b }}"), "");
+    }
+    for body in [
+        "outer! a { b } label inner! c { d }",
+        "r.>outer! a { b } label inner! c { d }",
+        "r.>>outer! a { b } label inner! c { d }",
+        "outer! a { b } label inner! c { d }.>g",
+    ] {
+        roundtrip(body, "");
+    }
+}
+
+#[test]
+fn block_splice_rejects_empty_lists_without_confusing_explicit_unit() {
+    for body in [
+        "r.>f!() { b }",
+        "r.>>f!() { b }",
+        "f!() { b }.<r",
+        "((f!() { b })).<<r",
+    ] {
+        let source = format!("module consumer; fn subject() {{ {body} }}");
+        let error = parse(&source).expect_err(body);
+        assert!(
+            error.diag().1.contains("explicitly empty UFCS"),
+            "{body}: {error:?}"
+        );
+        let span = error.diag().0;
+        assert_eq!(&source[span.start as usize..span.end as usize], "()");
+        let replacements: Vec<_> = error
+            .diagnostic()
+            .fixes()
+            .iter()
+            .flat_map(|fix| fix.edits.iter().map(|edit| edit.replacement.as_str()))
+            .collect();
+        assert!(replacements.contains(&"(())"));
+        assert!(replacements.contains(&""));
+    }
+    for body in [
+        "r.>f!(()) { b }",
+        "r.>>f!(()) { b }",
+        "f!(()) { b }.<r",
+        "f!(()) { b }.<<r",
+        "f!() { b }",
+    ] {
+        roundtrip(body, "");
+    }
+}
+
+#[test]
+fn block_splice_does_not_reopen_completed_or_already_spliced_calls() {
+    for body in [
+        "f!(a).<r { b }",
+        "f!(a).<<r { b }",
+        "f! a { b }.<r label { c }",
+        "f! a { b }(x).<r",
+        "(f! a { b }.<r).<<s",
+        "(r.>f! a { b }).<s",
+        "r.>m.f! a { b }",
+        "m.f! a { b }.<r",
+    ] {
+        assert!(
+            parse(&format!("module consumer; fn subject() {{ {body} }}")).is_err(),
+            "{body}"
+        );
+    }
+}
+
+#[test]
+fn block_splice_receivers_cannot_supply_type_arguments() {
+    for body in [
+        "A.>f! { b }",
+        "A.>>f! { b }",
+        "f! { b }.<A",
+        "f! { b }.<<A",
+        "(A(B)).>f! { b }",
+        "f! { b }.<(A(B))",
+    ] {
+        let source = format!("module consumer; fn subject() {{ {body} }}");
+        let error = parse(&source).expect_err("a block receiver is an ordinary value prefix");
+        assert!(
+            error
+                .diag()
+                .1
+                .contains("block prefix requires a value argument"),
+            "{body}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn block_splice_nested_receivers_fit_the_default_test_stack() {
+    for flavor in [".>", ".>>", ".<", ".<<"] {
+        let mut body = "value".to_owned();
+        for _ in 0..24 {
+            body = if matches!(flavor, ".>" | ".>>") {
+                format!("({body}){flavor}f! a {{ b }}")
+            } else {
+                format!("f! a {{ b }}{flavor}({body})")
+            };
+        }
+        roundtrip(&body, "");
+    }
+}
+
+#[test]
+fn block_splice_formatting_preserves_comments_and_operator_boundaries() {
+    for body in [
+        "r // receiver\n .>f! // prefix\n (a) { b }",
+        "f! a { b } // splice\n .<r // receiver\n .>g",
+        "f!(// unit\n ()) { b }.<r",
+        "outer! a { b } label { inner! c { d } // splice\n .<r }",
+    ] {
+        roundtrip(body, "");
+    }
+    for body in [
+        "a + ((b < k >).>f! { c })",
+        "[! (< x >.>f! { c }) !]",
+        "[! f! { c }.<(< x >) !]",
+    ] {
+        roundtrip(
+            body,
+            "import absent(op _ + _, op ___ < _ >, op < _ >, varop [! !]);",
+        );
+    }
+}
+
 fn topology(expr: &Expr) -> serde_json::Value {
     fn normalize(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Object(map) => {
+                if let Some(bang) = map.get_mut("bang") {
+                    *bang = serde_json::Value::Bool(!bang.is_null());
+                }
                 map.retain(|key, _| {
                     !key.ends_with("_span")
                         && !matches!(

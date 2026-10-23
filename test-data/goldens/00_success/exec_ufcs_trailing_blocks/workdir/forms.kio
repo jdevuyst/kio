@@ -1,0 +1,98 @@
+module forms;
+
+import __comptime__;
+
+pure fn arrange_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _c: __Type__
+, left: __Checked_term__
+, right: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
+
+pub elab arrange : [A][B][C] A -> B -> C -> (A & (B & C)) {
+  trailing product;
+  impl arrange_impl
+}
+
+pure fn packet_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _c: __Type__
+, prefix: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+
+pub elab packet : [A][B][C] (A & B) -> C -> ((A & B) & C) {
+  trailing product;
+  impl packet_impl
+}
+
+pure fn pair_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, prefix: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
+
+pub elab block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
+
+pub elab pair_prefix : [A][B] A -> B -> (A & B) { impl pair_impl }
+
+pure fn discard_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _prefix: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ { body }
+
+pub elab discard : [A][B] A -> B -> B { trailing product; impl discard_impl }
+
+pub elab last_blocks : [A][B] A -> B -> B {
+  trailing product;
+  trailing product after;
+  impl discard_impl
+}
+
+pure fn outer_impl(
+, ct: __Comptime__
+, _a: __Type__
+, _b: __Type__
+, _c: __Type__
+, _d: __Type__
+, left: __Checked_term__
+, right: __Checked_term__
+, body: __Checked_term__
+, tail: __Checked_term__
+) -> __Checked_term__ {
+  let result = __term_call__(ct, __term_type__(ct, tail), tail, __term_unit__(ct));
+  __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, __intrinsic_pair__(ct, body, result)))
+}
+
+pub elab outer : [A][B][C][D] A -> B -> C -> (. -> D) -> (A & (B & (C & D))) {
+  trailing product;
+  trailing thunk after;
+  impl outer_impl
+}
+
+pure fn sequence_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _receiver_type: __Type__
+, result_type: __Type__
+, receiver: __Checked_term__
+, body: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let result = __term_call__(ct, __term_type__(ct, body), body, receiver);
+  (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
+}
+
+pub elab run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result {
+  trailing sequence;
+  impl(fills) sequence_impl
+}

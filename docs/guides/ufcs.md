@@ -95,7 +95,7 @@ The right side still requires a path; calls such as these are not accepted:
 "a".>>(make_formatter())
 ```
 
-`.<` and `.<<` take the callee on the left and the value on the right. The callee must be a path or a direct path call:
+`.<` and `.<<` take the callee on the left and the value on the right. The callee must be a path, a direct path call, or a complete block elab call:
 
 ```text
 f.<value
@@ -104,11 +104,13 @@ module_alias.f(a).<<value
 Type.member(a).<<value
 ```
 
-The left side is not an arbitrary expression that happens to have a function type:
+The left side is not an arbitrary expression that happens to have a function type.
+A block-call splice inserts an argument into that call; it does not call the
+function returned by its blocks. To call a computed function, bind it first:
 
 ```text
-scope! { make_formatter(seed) }.<value
-(if! flag { first } else { second }).<<value
+let formatter = make_formatter(seed);
+formatter.<value
 ```
 
 ## Type arguments
@@ -198,12 +200,112 @@ fn drop_unit_left(p: String & .) -> String { narrow_prod!(String).<<p }
 
 Both functions build the same elab call: `narrow_prod!(p, String)`.
 
-An elab with declared trailing blocks uses a complete direct block call.
-For `match!`, write the scrutinee before the clause block:
+### Calls with trailing blocks
+
+Trailing blocks stay attached to the elab in every direction. The receiver
+becomes the first or last value **before the blocks**, even when you write it
+after them:
+
+| Spelling | Means |
+| --- | --- |
+| `r.>f!(a) { body }` | `f!(r, a) { body }` |
+| `r.>>f!(a) { body }` | `f!(a, r) { body }` |
+| `f!(a) { body }.<<r` | `f!(r, a) { body }` |
+| `f!(a) { body }.<r` | `f!(a, r) { body }` |
+
+Here `f` stands for an imported elab with the corresponding ordinary values
+and trailing block. These are the same quoted elab arguments as in the direct
+call; the notation does not make their contents run eagerly.
+
+For example, the library `match` elab accepts a scrutinee and a clause block.
+Here its module is available as `match`; use your configured dependency path
+when [adopting the library](using-libraries.md#the-elaborator-library).
+This complete module defines two functions that supply exactly the same arguments:
+
+```kio {}
+module block_splices;
+
+import match(match);
+
+host type String role(str);
+
+fn receiver_first(value: String) -> String {
+  value.>match! {
+    .(s: String) { s }
+  }
+}
+
+fn receiver_after_blocks(value: String) -> String {
+  match! {
+    .(s: String) { s }
+  }.<value
+}
+```
+
+Bare prefixes work too: `r.>f! a { body }` and `f! a { body }.<r`.
+Put a reverse splice after **all** the labelled blocks, not between the prefix
+and the first block. Grouping the call, as in `((f! a { body })).<r`, does not
+change the insertion. Each call takes only one splice; parentheses do not
+allow a second receiver. A following forward splice instead uses the result:
+`f! a { body }.<r.>g` passes the completed result to `g`.
+
+The right-hand receiver is still tight. In `f! a { body }.<r(x).>g`, it is
+`r(x)`, and `g` receives the completed call's result. Write
+`f! a { body }.<(r.>g)` to insert `g`'s result instead.
+
+A reverse splice needs explicit braces around that call's final labelled
+child. This unbraced spelling is rejected for both `.<` and `.<<`:
 
 ```text
-match! value { <clauses> }
+outer! a { A } label inner! b { B }.<r
 ```
+
+Write `outer! a { A } label { inner! b { B } }.<r` to insert `r` into `outer`.
+The diagnostic offers those braces as a fix; it does not move the receiver.
+To insert into `inner` instead, write
+`outer! a { A } label { inner! b { B }.<r }`. The formatter keeps the label
+braces in both forms. Parentheses around the complete outer call do not make
+the unbraced form valid.
+
+The restriction is local to the reverse-spliced call's own final label.
+Direct calls and forward splices can still use the unbraced shorthand, and
+deeper ordinary chains inside an explicit outer block can use it too.
+
+For example, these two explicit arrangements use the imported `if` elab.
+Both return `value`, but the first inserts the outer condition and the second
+inserts the inner condition. As with `match` above, adjust the module path to
+your configured library dependency:
+
+```kio {}
+module nested_block_splices;
+
+import control(if);
+
+host type Bool role(bool);
+
+fn outer_splice[A](value: A) -> A {
+  if! {
+    value
+  } else {
+    if! .f(Bool) { value } else { value }
+  }.<(.t(Bool))
+}
+
+fn inner_splice[A](value: A) -> A {
+  if! .t(Bool) {
+    value
+  } else {
+    if! { value } else { value }.<(.f(Bool))
+  }
+}
+```
+
+Labels cannot continue after a reverse receiver, and a reverse splice does
+not reopen an already applied result such as `f! { body }(x)`.
+
+Empty UFCS lists remain errors: `f!() { body }.<r` rejects. Use
+`f! { body }.<r` for no extra prefix argument, or `f!(()) { body }.<r`
+for an extra Unit. Direct `f!() { body }` still passes one Unit prefix.
 
 ## Choosing a spelling
 

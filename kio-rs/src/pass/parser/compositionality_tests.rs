@@ -264,6 +264,34 @@ const EXPR_FORMS: &[ExprForm] = &[
         root_tag: "bang-call",
     },
     ExprForm {
+        id: "block-ufcs-receiver-first",
+        grammar: "DotSpliceSuffix",
+        declarations: "",
+        source: "form_receiver.>form_elab! form_arg { form_body }",
+        root_tag: "block-call",
+    },
+    ExprForm {
+        id: "block-ufcs-receiver-last",
+        grammar: "DotSpliceSuffix",
+        declarations: "",
+        source: "form_receiver.>>form_elab! form_arg { form_body }",
+        root_tag: "block-call",
+    },
+    ExprForm {
+        id: "block-ufcs-argument-first",
+        grammar: "LeftSpliceBlockCallee",
+        declarations: "",
+        source: "form_elab! form_arg { form_body }.<<form_receiver",
+        root_tag: "block-call",
+    },
+    ExprForm {
+        id: "block-ufcs-argument-last",
+        grammar: "LeftSpliceBlockCallee",
+        declarations: "",
+        source: "form_elab! form_arg { form_body }.<form_receiver",
+        root_tag: "block-call",
+    },
+    ExprForm {
         id: "placeholder-lambda",
         grammar: "PlaceholderLambda",
         declarations: "",
@@ -602,6 +630,34 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
         grammar: "DotSpliceSuffix",
         declarations: "",
         item: "fn subject() -> . { (__EXPR_HOLE__).>context_callee }",
+        subject: Subject::Function,
+    },
+    ExprContext {
+        id: "block-ufcs-receiver-first",
+        grammar: "DotSpliceSuffix",
+        declarations: "",
+        item: "fn subject() -> . { (__EXPR_HOLE__).>context_elab! context_arg { context_body } }",
+        subject: Subject::Function,
+    },
+    ExprContext {
+        id: "block-ufcs-receiver-last",
+        grammar: "DotSpliceSuffix",
+        declarations: "",
+        item: "fn subject() -> . { (__EXPR_HOLE__).>>context_elab! context_arg { context_body } }",
+        subject: Subject::Function,
+    },
+    ExprContext {
+        id: "block-ufcs-argument-first",
+        grammar: "LeftSpliceBlockCallee",
+        declarations: "",
+        item: "fn subject() -> . { context_elab! context_arg { context_body }.<<(__EXPR_HOLE__) }",
+        subject: Subject::Function,
+    },
+    ExprContext {
+        id: "block-ufcs-argument-last",
+        grammar: "LeftSpliceBlockCallee",
+        declarations: "",
+        item: "fn subject() -> . { context_elab! context_arg { context_body }.<(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
@@ -1659,6 +1715,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "DotSpliceCallee",
     "LeftCallSplice",
     "LeftSpliceCallee",
+    "LeftSpliceBlockCallee",
     "LeftSplicePathCallee",
     "TightCallArg",
     "OperatorTail",
@@ -1819,10 +1876,11 @@ NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
 DotPlaceholderIntro ::= '.' IDENT '.'
 PlaceholderLambda ::= DotPlaceholderIntro Block
 PrefixOpExpr ::= FixedOperatorUse
-DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
+DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList? | ('.>' | '.>>') BlockElabCall
 DotSpliceCallee ::= GroupedValuePath | IDENT '!'
 LeftCallSplice ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
-LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList?
+LeftSpliceCallee ::= LeftSplicePathCallee | IDENT '!' NonemptyCallArgList? | LeftSpliceBlockCallee
+LeftSpliceBlockCallee ::= BlockElabCall | '(' LeftSpliceBlockCallee ')'
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'
 TightCallArg ::= ExprAtom CallArgList*
 OperatorTail ::= FixedOperatorUse

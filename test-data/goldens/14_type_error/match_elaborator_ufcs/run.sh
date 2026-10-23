@@ -1,6 +1,6 @@
 #!/bin/sh
-# An elaborator with declared trailing blocks requires its direct block call;
-# supplying the projected clause product through UFCS is a type error.
+# Declared trailing blocks must be written as blocks; a blockless UFCS call
+# supplying the projected clause product is a type error.
 set -u
 cd workdir || exit
 "$KIO_BIN" check

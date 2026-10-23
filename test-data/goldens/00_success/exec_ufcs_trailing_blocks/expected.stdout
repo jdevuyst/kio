@@ -1,0 +1,23 @@
+receiver/argument/block
+argument/receiver/block
+receiver/argument/block
+argument/receiver/block
+bare/argument/body
+argument/grouped/body
+left/right!/body
+left/right!/body
+left/right/body!
+left/outer/body/inner/tail
+left/outer/body/inner/tail
+left/outer/body/inner/tail
+kept-forward
+kept-forward
+kept-reverse
+kept-reverse
+sequence receiver
+sequence first
+sequence first second
+sequence first second
+sequence receiver
+reverse sequence body
+reverse sequence body

@@ -255,6 +255,45 @@ fn repl_declaration_selectors_and_operator_listing() {
 }
 
 #[test]
+fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
+    let package = TempPackage::new("block-ufcs");
+    package.write("app.pkg.kio", "package app; bridge { app; provider; }");
+    package.write(
+        "provider.kio",
+        &format!(
+            "{}\npub elab prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+            include_str!("fixtures/trailing-blocks/provider.kio")
+        ),
+    );
+    package.write("app.kio", "module app; import provider(prefixed);\n");
+    let calls = [
+        "().>prefixed!(()) { () } fallback { () }",
+        "().>>prefixed!(()) { () } fallback { () }",
+        "prefixed!(()) { () } fallback { () }.<<()",
+        "prefixed!(()) { () } fallback { () }.<()",
+    ];
+    let mut transcript = vec![":load app".to_owned()];
+    for call in calls {
+        transcript.push(format!(":type {call}"));
+        transcript.push(format!(":normalize {call}"));
+    }
+    transcript.push(":quit".to_owned());
+    let output = run_repl(
+        package.path(),
+        &transcript.iter().map(String::as_str).collect::<Vec<_>>(),
+    );
+    for call in calls {
+        assert!(output.contains(&format!("{call} : .")), "{output}");
+    }
+    assert_eq!(
+        output.lines().filter(|line| *line == "()").count(),
+        4,
+        "{output}"
+    );
+    assert!(!output.contains("error"), "{output}");
+}
+
+#[test]
 fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
     let package = TempPackage::new("trailing-blocks");
     package.write("app.pkg.kio", "package app; bridge { app; provider; }");

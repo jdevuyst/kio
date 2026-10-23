@@ -46,13 +46,22 @@ if! ready {
 }
 ```
 
-**Final labelled-block elision.** When the final labelled block contains exactly one complete block elab call, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
+**Final labelled-block elision.** When the final labelled block contains exactly one complete unspliced block elab call and its parent is not reverse-spliced, its wrapper braces are omitted if doing so preserves all comments. This is structural, not a special rule for the names `if` or `else`:
 
 ```kio
 if! a { x } else if! b { y } else { z }
 ```
 
 The nested call owns all following labelled blocks and shares the enclosing chain's arm-layout decision. A non-final outer block keeps its braces, as does a block containing several expressions, a local binding, a non-block-call expression, or wrapper-attached comments. For example, the braces in `outer! x { a() } fallback { inner! y { b() } } cleanup { c() }` remain necessary: `cleanup` belongs to `outer`.
+
+A spliced child retains its label braces:
+`outer! a { A } label { inner! b { B }.<r }`. Grouping a spliced child does
+not make it eligible for elision. A reverse-spliced parent also retains its
+own final-label braces, even when the child is unspliced:
+`outer! a { A } label { inner! b { B } }.<r`. The same applies to `.<<` and
+grouping around the parent. These braces are required input syntax, not just
+a formatter preference. Direct and forward-spliced chains still elide eligible
+braces; a deeper ordinary chain inside an explicit outer block may also elide.
 
 **Block prefixes.** The formatter prefers a bare unary prefix when the printed expression is unambiguous, such as `if! condition { … }` or `outer! convert!(value) { … }`. Multiple prefix values use `form!(a, b) { … }`; one product uses `form!((a, b)) { … }`. One unit value is `form!() { … }`, distinct from zero prefix values in `form! { … }`. Brace-leading, operator-leading and complete nested block-call prefix expressions retain the parenthesized head. A signed numeric literal may be bare, as in `form! -1 { … }`.
 
@@ -303,7 +312,15 @@ An ordinary call of a UFCS result keeps its grouping: `(vault.>Vault.open)()`, `
 
 **Left-call splices** preserve their spelling. With no existing arguments, `f.<x` and `f.<<x` emit without an empty `()`; with existing arguments, `f(a).<x` and `f(a).<<x` keep the call on the left. If the inserted right-hand value is compound enough that dropping grouping would change the parse, `kio fmt` emits parentheses, for example `f.<(x.>g)`.
 
-**Elab-form preservation.** Blockless elab calls can use the standalone prefix form (`iso!(r, T)`, `fit!(r, T)`, `checked!(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso!(T)`, `r.>>fit!`, `iso!(T).<<r`, `r.>checked!(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso!`), and nonempty argument lists keep their parentheses (`r.>iso!(T)`). Block calls instead use the direct `name! … { … }` form and the canonical block-prefix rules above; they have no UFCS form.
+**Elab-form preservation.** Blockless elab calls can use the standalone prefix form (`iso!(r, T)`, `fit!(r, T)`, `checked!(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso!(T)`, `r.>>fit!`, `iso!(T).<<r`, `r.>checked!(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso!`), and nonempty argument lists keep their parentheses (`r.>iso!(T)`).
+
+Block calls preserve their direct or spliced spelling in all four directions,
+using the block-prefix and arm-layout rules above. A reverse splice stays
+after the complete labelled-block chain: `f! a { B } label { C }.<r`.
+The formatter does not move it into the prefix or after only an earlier block.
+An omitted prefix list remains omitted; a spliced additional Unit stays
+explicit as `(())`, not the rejected empty list. Tight receiver grouping and
+the braces protecting a spliced final-label child remain load-bearing.
 
 **User-defined elab declarations.** An elab item writes the declared call type after a colon and the implementation in a body `impl` field:
 

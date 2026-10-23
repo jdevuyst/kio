@@ -1,0 +1,5 @@
+module main;
+
+import forms(block_pair);
+
+fn subject() -> . & . { ().>>block_pair!() { () } }

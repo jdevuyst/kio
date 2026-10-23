@@ -523,7 +523,7 @@ more precise first. For example, a sibling value may pin the outer `S` in
 close `fst_lens`'s nested binders. The nested call is not re-run: its unfinished
 source action is consumed once under that expected result.
 
-**UFCS provenance.** A UFCS call resolves the written callee, reads its type/value slot sequence, and inserts the receiver into a value slot before applying E-App. `.>` and `.<<` insert into the first value slot; `.>>` and `.<` insert into the last value slot. Type arguments remain in their declared type slots, so `r.>f(T, x)` has the same E-App plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same plan as `f(T, x, r)`. At the receiver boundary, type-looking candidates are reserved for the consecutive binder run immediately after the receiver; the adjacent binder run before the receiver consumes only the surplus. An unfilled value layer is a hard boundary: reservation never crosses it. This split uses only the resolved slot sequence and written argument kinds, with no inferred-type feedback or retry. Bang-call UFCS uses the same slot rule before invoking the user-elab call rule.
+**UFCS provenance.** A UFCS call resolves the written callee, reads its type/value slot sequence, and inserts the receiver into a value slot before applying E-App. `.>` and `.<<` insert first; `.>>` and `.<` insert last. For a block call, insertion is among prefix values before block projection (§ 7.6), not after the final projected block arguments. Type arguments remain in their declared type slots, so `r.>f(T, x)` has the same E-App plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same plan as `f(T, x, r)`. At the receiver boundary, type-looking candidates are reserved for the consecutive binder run immediately after the receiver; the adjacent binder run before the receiver consumes only the surplus. An unfilled value layer is a hard boundary: reservation never crosses it. This split uses only the resolved slot sequence and written argument kinds, with no inferred-type feedback or retry. Blockless bang-call UFCS uses the same slot rule before invoking the user-elab call rule; block calls infer their type arguments from the arranged prefix and projected blocks.
 
 ### 5.3. Value-argument checking against polytype slots
 
@@ -975,8 +975,19 @@ A marked block call parses independently of declarations. After ordinary name
 resolution, each `trailing` descriptor selects the projection for one final
 value slot of the resolved public call type. Every declared block is required
 once, in declaration order. Prefixes are value-only, type arguments are
-inferred, and the call is complete and direct; there is no blockless or UFCS
-alternate for a declaration with descriptors.
+inferred, and the call is complete; there is no blockless alternate for a
+declaration with descriptors. A UFCS spelling inserts its receiver first or
+last among the prefix values before any block projection. Reverse splices
+follow the complete block chain. The resulting call uses the same public-type
+application rules as its direct prefix equivalent; neither the descriptors
+nor the private implementation ABI select another insertion position.
+
+A reverse-spliced block call must have explicit braces around its own final
+labelled child. The restriction is checked from written structure before
+projection, transparently through grouping of the whole call. Inserting those
+braces preserves the outer call's prefix and projected arguments; it does not
+reattach the receiver to the child. Direct and forward calls and deeper
+ordinary chains inside an explicit block keep their ordinary elision rules.
 
 - `product` projects independent expressions to unit, a single value, or a
   right-associated product. Top-level bindings are rejected; a local scope

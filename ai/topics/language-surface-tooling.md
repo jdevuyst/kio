@@ -66,6 +66,18 @@ ownership. Keep syntactic grouping separate from type-directed argument
 planning after that grouping is fixed. Gate 0 still governs contract changes;
 an audit must report an unsettled rule rather than silently choose one.
 
+For trailing-block UFCS, distinguish receiver insertion among prefix values
+from projection of the final block arguments. Exercise all four directions,
+post-block reverse placement, grouping without a second splice, tight receiver
+stops and result chaining. Both reverse directions require explicit braces
+around the selected call's own final labelled child, even through grouping of
+the whole call. The brace-insertion fix preserves deterministic outer
+attachment, never relocates the receiver, and conserves comments. Formatter
+elision must retain these braces and those protecting a spliced child, while
+direct/forward chains and deeper ordinary chains inside explicit blocks keep
+their shorthand. Compare omitted, empty and explicit-Unit prefix lists without changing
+the direct block call's Unit meaning.
+
 Use focused grouping and meaning-preserving formatter witnesses at affected
 boundaries, including nested and grouped controls. Where custom operators are
 involved, also check independent import-order permutations and unrelated

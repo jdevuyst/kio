@@ -566,9 +566,20 @@ Inside the enclosing bare-prefix boundary,
 `outer! convert!(value) { body }` contains a blockless `convert!` call.
 Grouping the inner call together with its block makes it a nested block call:
 `outer!(convert!(value) { child }) { body }`. Only the final labelled block
-may elide its braces, and then its whole body is another block call. This gives
+may elide its braces, and then its whole body is another unspliced block call
+and its parent is not reverse-spliced. This gives
 `if! condition { yes } else if! other { maybe } else { no }` its right-nested
 ownership without reserving `if`, `do`, `else`, or any library name.
+
+Suffix ownership after an elided child remains with the outer call, but a
+reverse splice requires that call's final labelled block to have explicit
+braces. Both `outer! a { A } label inner! b { B }.<r` and its `.<<r`
+counterpart are parse errors, including when parentheses group the whole call.
+Write `outer! a { A } label { inner! b { B } }.<r` to insert into `outer`,
+or `outer! a { A } label { inner! b { B }.<r }` to insert into `inner`.
+The restriction concerns only the reverse-spliced call's own final labelled
+block: a deeper ordinary chain inside an explicit block may still elide braces.
+Direct and forward-spliced calls retain ordinary final-label elision.
 
 ```ebnf
 ExprAtom += VariadicLiteral | ClosedFixedOpExpr
@@ -587,10 +598,13 @@ ExprSuffix += DotSpliceSuffix | OperatorTail
 ExprPostfix += LeftCallSplice ExprSuffix*
 
 DotSpliceSuffix   ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
+                   | ('.>' | '.>>') BlockElabCall
 DotSpliceCallee   ::= GroupedValuePath | IDENT '!'                          (* path; plain function or T.member; or bang-call elab *)
 LeftCallSplice    ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
 LeftSpliceCallee  ::= LeftSplicePathCallee
                    | IDENT '!' NonemptyCallArgList?
+                   | LeftSpliceBlockCallee
+LeftSpliceBlockCallee ::= BlockElabCall | '(' LeftSpliceBlockCallee ')'
 LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList?
                       | '(' LeftSplicePathCallee ')'                         (* grouping is transparent *)
 TightCallArg      ::= ExprAtom CallArgList*                                   (* stops before another ExprSuffix *)
@@ -626,8 +640,24 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 
 - The surface `LiteralCall` extension makes the trailing `'(' Type ')'` annotation optional — the unannotated literal is admissible in any expression position. The three-tier resolution rule in [`language.md` § Literals](language.md#literals) decides the literal's type from context while checking the Lowered tree. Kio' requires the annotation; the Lowered → Prime substitute pass materializes the typer's recorded resolution, so the Prime artifact is fully annotated.
 - A `LiteralAliasValue` accepts exactly one bare literal token. Adjacent string-literal folding applies to expression literals, not to `literal` declaration bodies; write the complete literal in one string token.
-- The dot-splice forms are one syntax family. `.>` and `.>>` take a path-shaped callee or single-name bang callee on the right; `.<` and `.<<` take a path, single-name bang callee, or direct path call on the left and a tight value expression on the right. An omitted UFCS argument list is the receiver-only form. A present UFCS argument list must be `NonemptyCallArgList`: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are rejected, as are their member- and bang-callee analogues. The argument list immediately adjacent to a UFCS callee belongs to that splice and cannot be reinterpreted as a direct call on the splice result. `TightCallArg` deliberately stops before another suffix: `f.<x.>g` parses as `(f.<x).>g`; use `f.<(x.>g)` when the inserted value is itself a UFCS expression.
-- Dot-splice argument lists use ordinary `CallArg` parsing for every callable.
+- The dot-splice forms are one syntax family. `.>` and `.>>` take a path-shaped callee, single-name bang callee, or complete block call on the right; `.<` and `.<<` take a path, single-name bang callee, direct path call, or complete block call on the left and a tight value expression on the right. An omitted UFCS argument list is the receiver-only form. A present UFCS argument list must be nonempty: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are rejected, as are their member- and bang-callee analogues. The argument list immediately adjacent to a UFCS callee belongs to that splice and cannot be reinterpreted as a direct call on the splice result. `TightCallArg` deliberately stops before another suffix: `f.<x.>g` parses as `(f.<x).>g`; use `f.<(x.>g)` when the inserted value is itself a UFCS expression.
+- A block-call splice inserts its receiver first (`.>` / `.<<`) or last
+  (`.>>` / `.<`) among the prefix values, before all projected block arguments.
+  Reverse splices follow the complete block chain, not its prefix:
+  `f!(a) { B }.<r` means `f!(a, r) { B }`; `f!(a).<r { B }` is rejected as
+  a same-call arrangement. Bare prefixes and grouping are transparent,
+  including `f! a { B }.<r` and `((f! a { B })).<r`.
+  One call admits only one splice; grouping does not reset this limit.
+  A following forward splice consumes the completed result.
+  No further continuation labels attach after a reverse receiver, and a
+  reverse splice cannot reopen a block call followed by a result application
+  such as `f! { B }(x)`. A reverse splice inside a bare prefix remains ordinary
+  prefix syntax, as in `f! g.<r { B }`.
+  Empty prefix lists are rejected for every block-call splice:
+  `f!() { B }.<r` rejects; use `f! { B }.<r` for no additional prefix value,
+  or `f!(()) { B }.<r` for an additional Unit. Direct `f!() { B }` keeps its
+  ordinary Unit meaning.
+- Non-block dot-splice argument lists use ordinary `CallArg` parsing.
   The typer resolves which surface arguments are type arguments and which are
   values against the resolved callee type, then inserts the receiver into the
   first value slot for `.>` / `.<<` or the last value slot for `.>>` /

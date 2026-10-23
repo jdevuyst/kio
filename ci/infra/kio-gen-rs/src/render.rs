@@ -856,16 +856,24 @@ fn render_term_opts_with_context(
             else_,
             then_ty,
             else_ty,
+            ufcs,
         } => {
             if opts.surface {
                 // Leading `Term::Let`s in the trailing branch blocks
                 // render as statements via `render_block_body_opts`.
-                format!(
-                    "if!({}) {{ {} }} else {{ {} }}",
-                    render_term_opts_with_context(cond, opts, context),
+                let receiver = render_term_opts_with_context(cond, opts, context);
+                let blocks = format!(
+                    "{{ {} }} else {{ {} }}",
                     render_block_body_opts_with_context(then, opts, context),
                     render_block_body_opts_with_context(else_, opts, context),
-                )
+                );
+                match ufcs {
+                    None => format!("if!({receiver}) {blocks}"),
+                    Some(UfcsSpelling::ReceiverFirst) => format!("({receiver}).>if! {blocks}"),
+                    Some(UfcsSpelling::ReceiverLast) => format!("({receiver}).>>if! {blocks}"),
+                    Some(UfcsSpelling::CalleeLast) => format!("if! {blocks}.<({receiver})"),
+                    Some(UfcsSpelling::CalleeFirst) => format!("if! {blocks}.<<({receiver})"),
+                }
             } else {
                 debug_assert_eq!(then_ty, else_ty);
                 let result_ty = render_type_opts(then_ty, opts);
@@ -1251,6 +1259,7 @@ mod tests {
             else_: Box::new(Term::BoolLit(true)),
             then_ty: Type::bool(),
             else_ty: Type::bool(),
+            ufcs: None,
         };
         let term = Term::IfElse {
             cond: Box::new(inner),
@@ -1258,6 +1267,7 @@ mod tests {
             else_: Box::new(Term::BoolLit(false)),
             then_ty: Type::bool(),
             else_ty: Type::bool(),
+            ufcs: None,
         };
         assert_eq!(
             render_term_opts(&term, &RenderOpts { surface: true }),

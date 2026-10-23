@@ -855,6 +855,13 @@ The latter is rejected because direct `f()` means a Unit call; write
 
 Bang calls use the same surface rule. Because Chapter 6 already used `widen_sum!`, you can read `s.>widen_sum!(String | Int)` as the receiver-first spelling of `widen_sum!(s, String | Int)`. The full guide covers the other UFCS splice forms: `.>>`, `.<`, and `.<<`.
 
+Blocks stay attached to the elab: `v.>match! { clauses }` means
+`match! v { clauses }`. In a reverse spelling, the receiver follows all the
+blocks: `match! { clauses }.<v`. In either case it fills the scrutinee position,
+not a position after the clauses. See the
+[UFCS guide](../guides/ufcs.md#calls-with-trailing-blocks) for nested blocks
+and grouping.
+
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="chapter-9-imported-elaborators"></a>
 

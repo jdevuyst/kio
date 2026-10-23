@@ -152,7 +152,9 @@ distinct labels, such as `trailing thunk else`. Other declaration entries can
 appear between descriptors without changing that order. A block call must
 supply every required block and cannot leave an ordinary argument group
 unapplied. An elab with trailing descriptors is called with blocks, not
-with blockless parentheses or UFCS.
+with blockless parentheses. [UFCS](ufcs.md#calls-with-trailing-blocks) can
+insert a receiver among the ordinary values before the blocks; it does not
+replace the blocks with ordinary arguments.
 
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="calling-a-block-elaborator"></a>
@@ -179,10 +181,17 @@ Greedy operator slots still obey this boundary; an operator's written closing
 token can delimit the nested expression instead.
 
 Only a final labelled block can omit its wrapper braces around one complete
-nested block call. Thus `if! a { first() } else if! b { second() } else { last() }`
+nested unspliced block call. Thus `if! a { first() } else if! b { second() } else { last() }`
 has the same ownership as a braced nested call. If another block belongs to
 the outer call, keep the wrapper braces. The formatter performs this elision
-only when it preserves the comments.
+only when it preserves the comments. A spliced child keeps its label braces:
+`outer! a { A } label { inner! b { B }.<r }`. A reverse-spliced outer call
+also requires its final label braces:
+`outer! a { A } label { inner! b { B } }.<r`. Grouping the whole call does
+not waive this requirement, and the formatter retains the braces. Direct and
+forward calls keep the shorthand; ordinary deeper chains inside an explicit
+block may still use it. See [trailing-block UFCS](ufcs.md#calls-with-trailing-blocks)
+for all four directions and the brace-insertion diagnostic.
 
 For a sequence binding, a complete pattern annotation such as
 `let .(value: T) <- action;` can check the source payload against `T`. Without

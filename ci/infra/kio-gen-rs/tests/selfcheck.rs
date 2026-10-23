@@ -63,6 +63,40 @@ fn type_param_payload_equality_is_deep() {
 const SAMPLE_SEEDS: u64 = 200;
 
 #[test]
+fn block_ufcs_directions_keep_the_receiver_before_projected_blocks() {
+    let env = HashMap::from([
+        ("condition".into(), Type::bool()),
+        ("yes".into(), Type::i32()),
+        ("no".into(), Type::i32()),
+    ]);
+    for spelling in UfcsSpelling::ALL {
+        let term = Term::IfElse {
+            cond: Box::new(Term::Var("condition".into())),
+            then: Box::new(Term::Var("yes".into())),
+            else_: Box::new(Term::Var("no".into())),
+            then_ty: Type::i32(),
+            else_ty: Type::i32(),
+            ufcs: Some(spelling),
+        };
+        assert_eq!(type_of(&term, &env).unwrap(), Type::i32());
+        assert_eq!(
+            render::render_term_opts(&term, &render::RenderOpts { surface: false }),
+            "__if_then_else__(I32, condition, .() { yes }, .() { no })"
+        );
+        let expected = match spelling {
+            UfcsSpelling::ReceiverFirst => "(condition).>if! { yes } else { no }",
+            UfcsSpelling::ReceiverLast => "(condition).>>if! { yes } else { no }",
+            UfcsSpelling::CalleeLast => "if! { yes } else { no }.<(condition)",
+            UfcsSpelling::CalleeFirst => "if! { yes } else { no }.<<(condition)",
+        };
+        assert_eq!(
+            render::render_term_opts(&term, &render::RenderOpts { surface: true }),
+            expected
+        );
+    }
+}
+
+#[test]
 fn ufcs_directions_preserve_distinct_argument_types_and_core_order() {
     let env = HashMap::from([("number".into(), Type::i32()), ("text".into(), Type::str())]);
     for spelling in UfcsSpelling::ALL {
@@ -860,6 +894,7 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
             else_,
             then_ty,
             else_ty,
+            ..
         } => {
             let ct = type_of(cond, env)?;
             if ct != Type::bool() {

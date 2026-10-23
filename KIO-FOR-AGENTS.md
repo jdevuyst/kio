@@ -42,6 +42,11 @@ or export the tree for browsing and searching with local tools. Run
   and names intentionally forming the module's local vocabulary. See
   [the language tutorial](docs/tutorials/language.md) and
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).
+- Choose direct or receiver-style elab calls for readability. With
+  [trailing blocks](docs/guides/ufcs.md#calls-with-trailing-blocks), a receiver
+  belongs before the block arguments; a reverse splice is written after the
+  complete block chain. Keep label braces around a spliced nested child and
+  around a reverse-spliced call's own final labelled child.
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.
 - Read a library's complete [operator pattern](docs/guides/operators.md)

@@ -305,8 +305,10 @@ fn direct(v: String | Int) -> String {
 }
 ```
 
-The block supplies the clauses in source order. `match!` with a trailing block
-uses this direct call shape rather than UFCS rearrangement.
+The block supplies the clauses in source order. You can also put the scrutinee
+first as `v.>match! { clauses }`, or after the complete block as
+`match! { clauses }.<v`. Both insert `v` before the projected clause argument;
+see [trailing-block UFCS](ufcs.md#calls-with-trailing-blocks).
 
 ## Where this leads
 

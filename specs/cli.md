@@ -491,6 +491,13 @@ Block-call completion uses the current selected declaration header. A snippet-ca
 
 A wrong continuation label can offer a token-local replacement which is fully rechecked before publication. A missing trailing block can instead offer “Add missing trailing block scaffolds.” This explicitly maybe-incorrect action inserts labelled empty bodies for the user to fill; it does not claim to repair type errors or invent a sequence result. Its exact compiler-produced edit is regenerated against the current source and providers, and its resulting syntax is checked. Ordinary eager fixes retain their full semantic recheck.
 
+A reverse block-call splice with an elided final labelled child is a parse
+error. Its diagnostic offers a brace-insertion fix around that child,
+preserving comments and the reverse receiver's outer-call attachment. The
+LSP quick fix uses those source-authenticated edits without guessing another
+callee or relocating the receiver. Parentheses around the call do not bypass
+the required braces, and formatting retains them after repair.
+
 Named selective aliases carry independent local refactoring identities.
 References and highlights on an explicit alias follow its destination token and
 uses, not the provider declaration or other aliases. The source selector belongs

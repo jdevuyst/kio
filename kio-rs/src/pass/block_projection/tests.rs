@@ -59,6 +59,102 @@ fn check_modules(
 }
 
 #[test]
+fn block_splices_project_prefix_values_before_every_block_argument() {
+    use crate::ast::{CallArg, Expr};
+    for (body, expected) in [
+        (
+            "receiver.>packet! argument { body }",
+            ["receiver", "argument", "body"],
+        ),
+        (
+            "receiver.>>packet! argument { body }",
+            ["argument", "receiver", "body"],
+        ),
+        (
+            "packet! argument { body }.<<receiver",
+            ["receiver", "argument", "body"],
+        ),
+        (
+            "packet! argument { body }.<receiver",
+            ["argument", "receiver", "body"],
+        ),
+    ] {
+        let mut input = modules(&format!(
+            "module consumer; import provider(packet); fn result() {{ {body} }}"
+        ));
+        let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&input).unwrap();
+        super::project_module(&mut input[1].1, &scope).unwrap();
+        let Item::FnDef(def) = &input[1].1.items[0] else {
+            panic!("function")
+        };
+        let Expr::UserElaborator { args, .. } = &def.body else {
+            panic!("projected call")
+        };
+        let actual: Vec<_> = args
+            .iter()
+            .map(|arg| match arg {
+                CallArg::Value(Expr::Path { segments, .. }) => segments[0].name.as_str(),
+                _ => panic!("{body}: ordinary value argument"),
+            })
+            .collect();
+        assert_eq!(actual, expected, "{body}");
+    }
+}
+
+#[test]
+fn block_splices_use_the_same_public_product_type_and_sequence_projection() {
+    let provider = format!(
+        "{PROVIDER}\npub type Packet = Box(.) & . & (. -> .);\npub elab packed : Packet -> Packet {{ trailing thunk; impl fixed_checked }}"
+    );
+    for body in [
+        "box_pure(()).>packed!(()) { () }",
+        "().>>packed!(box_pure(())) { () }",
+        "packed!(()) { () }.<<box_pure(())",
+        "packed!(box_pure(())) { () }.<()",
+    ] {
+        let mut input = modules(&format!(
+            "module consumer; import provider(packed, Packet, box_pure); fn result() -> Packet {{ {body} }}"
+        ));
+        input[0].1 = parse(&provider).unwrap();
+        prime_roundtrip(&check_modules(input).unwrap_or_else(|error| panic!("{body}: {error:?}")));
+    }
+    for body in [
+        "box_bind.>sequence! { box_pure(()) }",
+        "box_bind.>>sequence! { box_pure(()) }",
+        "sequence! { box_pure(()) }.<box_bind",
+        "sequence! { box_pure(()) }.<<box_bind",
+    ] {
+        let source = format!(
+            "module consumer; import provider(sequence, box_bind, box_pure, Box); fn result() -> Box(.) {{ {body} }}"
+        );
+        prime_roundtrip(&check(&source).unwrap_or_else(|error| panic!("{body}: {error:?}")));
+    }
+}
+
+#[test]
+fn reverse_block_splice_scaffold_is_inserted_before_the_receiver() {
+    let provider = format!(
+        "{PROVIDER}\npub elab two : Triple -> Triple {{ trailing product; trailing product next; impl fixed_checked }}"
+    );
+    let source =
+        "module consumer; import provider(two); fn result() -> . & . & . { two! { () }.<() }";
+    let mut input = modules(source);
+    input[0].1 = parse(&provider).unwrap();
+    let error = check_modules(input).unwrap_err();
+    let diagnostic = error.error.diagnostic();
+    let fix = diagnostic.fixes().first().expect("missing block scaffold");
+    let edit = &fix.edits[0];
+    assert_eq!(edit.span.start as usize, source.find(".<").unwrap());
+    assert_eq!(edit.span.start, edit.span.end);
+    assert_eq!(edit.replacement, " next { }");
+    let mut repaired = source.to_owned();
+    repaired.insert_str(edit.span.start as usize, &edit.replacement);
+    let mut input = modules(&repaired);
+    input[0].1 = parse(&provider).unwrap();
+    check_modules(input).unwrap();
+}
+
+#[test]
 fn unresolved_block_heads_keep_the_ordinary_elaborator_import_hint() {
     for name in ["choose", "relay"] {
         for arguments in [" { () }", "(())"] {

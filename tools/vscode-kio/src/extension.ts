@@ -142,6 +142,7 @@ const NODE_KIND: Record<string, SemanticKind> = {
   operator_builtin: "operator",
   operator_arrow_type: "operator",
   operator_arrow_ufcs: "operator",
+  operator_row_suffix: "operator",
   operator_run: "operator",
   unowned_symbol_run: "operator",
   star_open_prefix: "punctuation",

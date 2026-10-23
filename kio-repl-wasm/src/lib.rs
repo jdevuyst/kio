@@ -570,6 +570,25 @@ mod tests {
     }
 
     #[test]
+    fn block_ufcs_normalizes_through_the_browser_session() {
+        let mut repl = trailing_blocks_repl();
+        repl.run_command(Command::Load("app".to_owned()));
+        for source in [
+            "box_bind.>sequence! { box_pure(()) }",
+            "box_bind.>>sequence! { box_pure(()) }",
+            "sequence! { box_pure(()) }.<<box_bind",
+            "sequence! { box_pure(()) }.<box_bind",
+        ] {
+            let output = strip_ansi(
+                &repl
+                    .run_command(Command::Normalize(source.to_owned()))
+                    .output,
+            );
+            assert_eq!(output.trim(), "Box.box(())", "{source}: {output}");
+        }
+    }
+
+    #[test]
     fn trailing_blocks_preserve_browser_command_and_completion_scope() {
         let mut repl = trailing_blocks_repl();
         assert!(

@@ -61,7 +61,7 @@ function ordinaryAtoms($, prefix = false) {
   return choice(
     $.variadic_expression, $.incomplete_variadic_expression,
     $.recursive_call_expression, $.incomplete_recursive_call_expression,
-    ...(prefix ? [$.block_prefix_call, $.block_prefix_ufcs] : [$.call_expr, $.ufcs_expr]),
+    ...(prefix ? [$.block_prefix_call, $.block_prefix_ufcs] : [$.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr)]),
     $.expression_path, $.grouped_expression, $.unit_expression,
     $.bool_literal, $.number_literal, $.string_literal,
     $.fn_lambda_expr, ...(prefix ? [$.block_prefix_field] : [$.label_value_expr, $.field_expression]),
@@ -87,7 +87,7 @@ module.exports = grammar({
     $.doc_heading, $.doc_emphasis, $.doc_strong, $.doc_marker, $.doc_link, $.doc_attribute, $.doc_kio_code, $.doc_kio_self_code,
     $.doc_reference, $.doc_directive, $.doc_literal_fallback, $._doc_line_end, $.comment_line],
 
-  inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_atom, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body],
+  inline: ($) => [$._identifier_like, $._value_identifier_like, $._expression_name, $._callable_path_segment, $._type_atom, $._type_chain_operator, $._local_binding_name, $._host_type_body, $._host_fn_body, $._block_splice_receiver],
   conflicts: ($) => [
     [$.variadic_open, $.type_param_group],
     [$.variadic_elements, $.operator_builtin],
@@ -100,6 +100,9 @@ module.exports = grammar({
     [$.callable_path],
     [$.callable_path, $.elaborator_impl_clause],
     [$._expression_atom, $.block_call],
+    [$._expression_atom, $._grouped_block_call],
+    [$.block_ufcs_expr, $.block_ufcs_result_call],
+    [$._expression_atom, $.block_ufcs_result_call],
     [$.expression_arguments, $.unit_expression],
     [$.expression_arguments, $.grouped_expression],
     [$.expression_arguments, $.grouped_expression, $.block_value_arguments],
@@ -720,6 +723,41 @@ module.exports = grammar({
     )),
     labelled_block: ($) => seq(field('label', alias($.identifier, $.block_label)), field('body', $.neutral_block)),
     elided_block: ($) => prec.right(seq(field('label', alias($.identifier, $.block_label)), field('body', $.block_call))),
+    // Retain suffix ownership while editing missing final-label braces. The
+    // compiler rejects that combination and supplies the brace-insertion fix.
+    block_ufcs_expr: ($) => choice(
+      $._forward_block_ufcs_expr,
+      prec.left(20, seq(
+        field('call', $._grouped_block_call),
+        alias($._left_ufcs_arrow, $.operator_arrow_ufcs),
+        field('receiver', $._block_splice_receiver),
+      )),
+    ),
+    _forward_block_ufcs_expr: ($) => prec.right(20, seq(
+      field('receiver', choice($._expression_atom, alias($._closed_operator_expression, $.operator_expression))),
+      alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
+      field('call', $.block_call),
+    )),
+    _grouped_block_call: ($) => choice($.block_call, $.grouped_block_call),
+    grouped_block_call: ($) => seq($.bracket_lparen, $._grouped_block_call, $.bracket_rparen),
+    _block_splice_receiver: ($) => choice(
+      $.call_expr, $.expression_path, $.grouped_expression, $.unit_expression,
+      $.variadic_expression, $.incomplete_variadic_expression,
+      $.recursive_call_expression, $.incomplete_recursive_call_expression,
+      $.bool_literal, $.number_literal, $.string_literal,
+      $.fn_lambda_expr, $.placeholder_expression, $.elaborator_name, $.block_call,
+      $.label_value_expr, alias($._closed_operator_expression, $.operator_expression),
+      alias($.block_receiver_call, $.call_expr),
+    ),
+    block_receiver_call: ($) => prec.left(seq(
+      choice($.block_call, $.label_value_expr, $.unit_expression, $.placeholder_expression,
+        $.recursive_call_expression, alias($.block_receiver_call, $.call_expr)),
+      $.expression_arguments,
+    )),
+    block_ufcs_result_call: ($) => prec.left(seq(
+      choice(alias($._forward_block_ufcs_expr, $.block_ufcs_expr), alias($.block_ufcs_result_call, $.call_expr)),
+      $.expression_arguments,
+    )),
     neutral_block: ($) => choice($._complete_neutral_block, $.incomplete_neutral_block),
     _complete_neutral_block: ($) => prec(2, seq(
       $.bracket_lbrace, repeat($.separator_semicolon),

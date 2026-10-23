@@ -1,6 +1,53 @@
 use super::*;
 
 #[test]
+fn block_ufcs_labels_complete_before_the_receiver_suffix() {
+    let source = "module provider; pub elab choose : (. & . & .) -> . { trailing product; trailing product otherwise; impl implementation }";
+    let mut names = NameSet {
+        current_module_src: Some("module app; import provider(choose);".to_owned()),
+        expression_provider_sources: std::collections::BTreeMap::from([(
+            "provider".to_owned(),
+            Arc::from(source),
+        )]),
+        ..Default::default()
+    };
+    for input in [
+        "().>choose! { () } oth { () }",
+        "().>>choose! { () } oth { () }",
+        "choose! { () } oth { () }.<<()",
+        "choose! { () } oth { () }.<()",
+    ] {
+        let cursor = input.find(" oth ").unwrap() + 4;
+        let result = complete(&names, &AstScopeProvider::new(&names), input, cursor);
+        assert_eq!(
+            result
+                .candidates
+                .iter()
+                .map(|candidate| candidate.label.as_str())
+                .collect::<Vec<_>>(),
+            vec!["otherwise"],
+            "{input}: {result:?}"
+        );
+    }
+    names.expression_provider_sources.insert(
+        "provider".to_owned(),
+        Arc::from(source.replace("otherwise;", "alternate;")),
+    );
+    let input = "choose! { () } alt { () }.<()";
+    let cursor = input.find(" alt ").unwrap() + 4;
+    let result = complete(&names, &AstScopeProvider::new(&names), input, cursor);
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|candidate| candidate.label.as_str())
+            .collect::<Vec<_>>(),
+        vec!["alternate"],
+        "{result:?}"
+    );
+}
+
+#[test]
 fn neutral_block_labels_use_only_the_current_selected_header() {
     let source = "module provider; pub elab choose : (. & .) -> . { trailing product; trailing product otherwise; impl implementation }";
     let mut names = NameSet {

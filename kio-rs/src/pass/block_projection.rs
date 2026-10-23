@@ -122,7 +122,10 @@ impl Projection<'_> {
                     error = error.with_fix(crate::error::Fix::scaffold(
                         "Add missing trailing block scaffolds",
                         vec![crate::error::FixEdit::new(
-                            Span::new(span.end, span.end),
+                            Span::new(
+                                blocks.last().unwrap().close.end,
+                                blocks.last().unwrap().close.end,
+                            ),
                             text,
                         )],
                     ));

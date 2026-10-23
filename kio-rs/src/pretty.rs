@@ -2121,10 +2121,21 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             head,
             prefix,
             blocks,
+            splice,
             ..
         } => {
-            let mut parts = vec![text(format!("{}!", head.name))];
-            if let [value] = prefix.as_slice()
+            let (prefix, splice) = block_splice_parts(prefix, *splice);
+            let mut parts = Vec::new();
+            if let Some((receiver, flavor)) = splice
+                && flavor.callee_on_right()
+            {
+                parts.extend([
+                    doc_expr_for_postfix_receiver(receiver),
+                    text(flavor.token()),
+                ]);
+            }
+            parts.push(text(format!("{}!", head.name)));
+            if let [value] = prefix
                 && !has_comments(&value.meta().leading_trivia)
                 && !has_comments(&value.meta().trailing_trivia)
                 && block_prefix_starts_bare(value)
@@ -2137,7 +2148,8 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     source_trivia,
                     ..
                 },
-            ] = prefix.as_slice()
+            ] = prefix
+                && splice.is_none()
             {
                 let mut trivia = meta.leading_trivia.clone();
                 append_relocated_trivia(&mut trivia, delimited_closing(source_trivia).to_vec());
@@ -2174,6 +2186,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     parts.push(text(format!(" {}", label.name)));
                 }
                 let elide = block_index + 1 == blocks.len()
+                    && splice.is_none_or(|(_, flavor)| flavor.callee_on_right())
                     && block.label.is_some()
                     && !has_comments(&block.leading)
                     && !has_comments(&block.trailing)
@@ -2184,7 +2197,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     && matches!(
                         block.items.as_slice(),
                         [crate::ast::NeutralItem::Expression {
-                            value: Expr::BlockCall { meta, .. },
+                            value: Expr::BlockCall { meta, splice: None, .. },
                             ..
                         }] if !has_comments(&meta.leading_trivia)
                             && !has_comments(&meta.trailing_trivia)
@@ -2296,6 +2309,11 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     ));
                 }
             }
+            if let Some((receiver, flavor)) = splice
+                && !flavor.callee_on_right()
+            {
+                parts.extend([text(flavor.token()), doc_expr_for_call_splice_arg(receiver)]);
+            }
             concat_all(parts)
         }
         Expr::Ufcs { flavor, .. } if flavor.callee_on_right() => doc_ufcs_chain(e),
@@ -2325,6 +2343,22 @@ fn doc_expr_layout(e: &Expr) -> Doc {
         | Expr::LowHostFnValueRef { ext, .. }
         | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
     }
+}
+
+fn block_splice_parts(
+    prefix: &[Expr],
+    splice: Option<crate::ast::UfcsFlavor>,
+) -> (&[Expr], Option<(&Expr, crate::ast::UfcsFlavor)>) {
+    let Some(flavor) = splice else {
+        return (prefix, None);
+    };
+    let (receiver, written) = if flavor.inserts_first() {
+        prefix.split_first()
+    } else {
+        prefix.split_last()
+    }
+    .expect("a spliced block prefix contains its receiver");
+    (written, Some((receiver, flavor)))
 }
 
 fn block_prefix_starts_bare(expr: &Expr) -> bool {
@@ -2532,7 +2566,8 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
             ..
         }
     );
-    let splice = matches!(callee, Expr::Ufcs { .. });
+    let splice = matches!(callee, Expr::Ufcs { .. })
+        || matches!(callee, Expr::BlockCall { splice: Some(flavor), .. } if !flavor.callee_on_right());
     let normal_operator = operator_expr_needs_grouping(callee);
     bare_literal || splice || normal_operator
 }
@@ -2749,6 +2784,19 @@ fn doc_variadic_op_chain(
 
 fn expr_symbol_edges(expr: &Expr) -> (bool, bool) {
     match expr {
+        Expr::BlockCall {
+            prefix,
+            splice: Some(flavor),
+            ..
+        } if flavor.callee_on_right() => {
+            let (_, Some((receiver, _))) = block_splice_parts(prefix, Some(*flavor)) else {
+                unreachable!()
+            };
+            (
+                !operator_expr_needs_grouping(receiver) && expr_symbol_edges(receiver).0,
+                false,
+            )
+        }
         Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, slots },
             ..
@@ -2963,6 +3011,18 @@ fn exposes_operator_boundary_inner<'a>(
     cache: &mut OperatorBoundaryCache<'a>,
 ) -> bool {
     match expr {
+        Expr::BlockCall {
+            prefix,
+            splice: Some(flavor),
+            ..
+        } if !matches!(boundary, OperatorBoundary::RightClaim(_)) && flavor.callee_on_right() => {
+            let (_, Some((receiver, _))) = block_splice_parts(prefix, Some(*flavor)) else {
+                unreachable!()
+            };
+            !operator_expr_needs_grouping(receiver)
+                && !expr_boundary_has_comments(receiver, true, true)
+                && exposes_operator_boundary(receiver, boundary, cache)
+        }
         Expr::Call { callee, .. }
             if !matches!(boundary, OperatorBoundary::RightClaim(_))
                 && !call_callee_needs_parens(callee)
