@@ -897,7 +897,6 @@ pub(crate) struct TargetCursor {
 pub(crate) enum ImportSelectionKind {
     Any,
     Name,
-    DefaultType,
     Macro,
     Label,
     FixedOperator,
@@ -1204,7 +1203,6 @@ const PURE_REC_DIAGNOSTIC: &str = "`pure` cannot combine with `rec`; every recur
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ItemModifiers {
     start: Option<Span>,
-    default_span: Option<Span>,
     vis: Visibility,
     vis_span: Option<Span>,
     purity: Purity,
@@ -1259,7 +1257,6 @@ impl ItemModifiers {
     fn impure_private() -> Self {
         Self {
             start: None,
-            default_span: None,
             vis: Visibility::Private,
             vis_span: None,
             purity: Purity::Impure,
@@ -5035,17 +5032,13 @@ impl<'a> Parser<'a> {
                 let mut import = self.import_stmt_in(DeclarationEnd::BlockEntry)?;
                 if let ImportKind::Selective { items, .. } = &import.kind
                     && let Some(span) = items.iter().find_map(|item| match item {
-                        ImportItem::Name {
-                            default_span,
-                            macro_span,
-                            ..
-                        } => default_span.or(*macro_span),
+                        ImportItem::Name { macro_span, .. } => *macro_span,
                         _ => None,
                     })
                 {
                     return Err(self.err(
                         span,
-                        "macro and default type selections belong to modules, not signature snapshots",
+                        "macro selections belong to modules, not signature snapshots",
                     ));
                 }
                 prepend_import_leading(&mut import, std::mem::take(&mut pending));
@@ -5492,7 +5485,6 @@ impl<'a> Parser<'a> {
         // name, after any attached declaration documentation.
         meta.trailing_trivia = header_trivia;
         Ok(HostType {
-            default_span: None,
             name,
             type_params,
             role,
@@ -5918,10 +5910,7 @@ impl<'a> Parser<'a> {
                     let selection_start = self.peek_span().start;
                     let selection_depth = self.cursor.depth();
                     let selection_kind = self.import_selection_kind();
-                    let selection_start = if matches!(
-                        selection_kind,
-                        ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
-                    ) {
+                    let selection_start = if matches!(selection_kind, ImportSelectionKind::Macro) {
                         self.peek_token_at(1)
                             .filter(|token| token.span.start != token.span.end)
                             .map_or_else(
@@ -5940,17 +5929,11 @@ impl<'a> Parser<'a> {
                     // a following `as` fixes its selection to the ordinary namespace.
                     let tag_end = ((self.peek_ident_named("op")
                         || self.peek_ident_named("varop")
-                        || matches!(
-                            selection_kind,
-                            ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
-                        ))
+                        || matches!(selection_kind, ImportSelectionKind::Macro))
                         && !matches!(self.peek_at(1), Some(TokenKind::Ident(name)) if name == "as"))
                     .then(|| self.peek_span().end);
                     let mut source_end = None;
                     let parsed = self.parse_import_item(true, &mut source_end);
-                    if selection_kind == ImportSelectionKind::DefaultType && source_end == tag_end {
-                        source_end = None;
-                    }
                     self.import_cursor(
                         &from,
                         &items,
@@ -6058,24 +6041,6 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        let default_span = if macro_span.is_none()
-            && allow_alias
-            && self.peek_ident_named("default")
-            && !matches!(
-                self.peek_at(1),
-                None | Some(TokenKind::Comma | TokenKind::RParen)
-            )
-            && !self.peek_ident_named_at(1, "as")
-        {
-            Some(self.expect_ident_named("default")?)
-        } else {
-            None
-        };
-        if default_span.is_some()
-            && !matches!(self.peek(), Some(TokenKind::Ident(name)) if crate::naming::is_type_name(name))
-        {
-            return Err(self.err_here("`default` must select a host type or a type alias"));
-        }
         let selection = if macro_span.is_some() {
             ImportSelectionKind::Name
         } else {
@@ -6177,7 +6142,6 @@ impl<'a> Parser<'a> {
             None
         };
         Ok(ImportItem::Name {
-            default_span,
             macro_span,
             name,
             span,
@@ -6205,7 +6169,7 @@ impl<'a> Parser<'a> {
 
     fn import_selection_kind(&self) -> ImportSelectionKind {
         // An unfinished import has a synthesized closer at the last atom,
-        // before the whitespace belonging to the missing type target.
+        // before the whitespace belonging to the missing macro target.
         let missing_selection_target = self.peek_token_at(1).is_some_and(|token| {
             token.kind == TokenKind::RParen
                 && token.span.start == token.span.end
@@ -6219,12 +6183,6 @@ impl<'a> Parser<'a> {
             || (self.peek_ident_named("macro") && missing_selection_target)
         {
             ImportSelectionKind::Macro
-        } else if self.peek_ident_named("default")
-            && !self.peek_ident_named_at(1, "as")
-            && (!matches!(self.peek_at(1), Some(TokenKind::Comma | TokenKind::RParen))
-                || missing_selection_target)
-        {
-            ImportSelectionKind::DefaultType
         } else if matches!(self.peek(), Some(TokenKind::LBrace)) {
             ImportSelectionKind::Label
         } else if !matches!(
@@ -6296,11 +6254,7 @@ impl<'a> Parser<'a> {
             } else {
                 Span::new(start, end)
             };
-            if matches!(
-                kind,
-                ImportSelectionKind::DefaultType | ImportSelectionKind::Macro
-            ) && start == cursor
-                && source_end.is_none()
+            if matches!(kind, ImportSelectionKind::Macro) && start == cursor && source_end.is_none()
             {
                 self.tooling
                     .as_mut()
@@ -6344,28 +6298,6 @@ impl<'a> Parser<'a> {
         modifiers.start = Some(self.peek_span());
         loop {
             self.declaration_keywords(context, &modifiers, false);
-            if self.peek_ident_named("default") {
-                let span = self.expect_ident_named("default")?;
-                if matches!(
-                    context,
-                    DeclarationContext::Signature { .. }
-                        | DeclarationContext::TypeGroup { surface: false }
-                ) {
-                    return Err(self.err(
-                        span,
-                        "default type selections belong to modules, not signature snapshots",
-                    ));
-                }
-                if modifiers.default_span.is_some() {
-                    return Err(self.err(span, "duplicate `default` modifier"));
-                }
-                if modifiers.vis.is_pub() || modifiers.host || modifiers.purity.is_pure() {
-                    return Err(self.err(span, "`default` must precede visibility and `host`"));
-                }
-                modifiers.default_span = Some(span);
-                self.record_keyword(span, KeywordRole::Declaration);
-                continue;
-            }
             if self.peek_ident_named("pub") {
                 let span = self.peek_span();
                 self.advance();
@@ -6454,16 +6386,6 @@ impl<'a> Parser<'a> {
             self.peek_span().end,
             &mut modifiers.header_trivia,
         );
-        if let Some(span) = modifiers.default_span
-            && (!self.peek_ident_named("type")
-                || self.peek_kind_at(1, &TokenKind::LBrace)
-                || modifiers.purity.is_pure())
-        {
-            return Err(self.err(
-                span,
-                "`default` is valid only on host types and type aliases",
-            ));
-        }
         Ok(modifiers)
     }
 
@@ -6494,10 +6416,6 @@ impl<'a> Parser<'a> {
         let recursive =
             surface || matches!(context, DeclarationContext::Signature { recursive: true });
         let choices = [
-            (
-                "default",
-                surface && ordinary && modifiers.default_span.is_none() && !modifiers.vis.is_pub(),
-            ),
             ("import", imports),
             ("pub", !modifiers.vis.is_pub()),
             ("pure", ordinary && !type_group),
@@ -6521,12 +6439,9 @@ impl<'a> Parser<'a> {
         ];
         self.cursor_choices_from(
             CursorSlot::Grammar,
-            choices.into_iter().filter_map(|(keyword, remaining)| {
-                (remaining
-                    && (modifiers.default_span.is_none()
-                        || matches!(keyword, "pub" | "host" | "type")))
-                .then_some(keyword)
-            }),
+            choices
+                .into_iter()
+                .filter_map(|(keyword, remaining)| remaining.then_some(keyword)),
         );
     }
 
@@ -6542,16 +6457,6 @@ impl<'a> Parser<'a> {
     }
 
     fn item_after_modifiers(&mut self, modifiers: ItemModifiers) -> Result<Item, Error> {
-        if let Some(span) = modifiers.default_span
-            && (!self.peek_ident_named("type")
-                || self.peek_kind_at(1, &TokenKind::LBrace)
-                || modifiers.purity.is_pure())
-        {
-            return Err(self.err(
-                span,
-                "`default` is valid only on host types and type aliases",
-            ));
-        }
         if modifiers.purity.is_pure() && modifiers.host && self.peek_ident_named("fn") {
             return Err(self.err_here(PURE_HOST_FN_DIAGNOSTIC));
         }
@@ -6575,10 +6480,7 @@ impl<'a> Parser<'a> {
                 let start = modifiers.start.map_or(start, |span| span.start);
                 self.expect_ident_named("type")?;
                 self.host_type_rest(start, modifiers.header_trivia)
-                    .map(|mut host| {
-                        host.default_span = modifiers.default_span;
-                        Item::HostType(host)
-                    })
+                    .map(Item::HostType)
             } else if self.peek_ident_named("fn") {
                 self.expect_ident_named("fn")?;
                 let mut host = self.host_fn_rest(start)?;
@@ -6911,7 +6813,6 @@ impl<'a> Parser<'a> {
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.newtype(ItemModifiers {
                     start: None,
-                    default_span: None,
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
@@ -6927,7 +6828,6 @@ impl<'a> Parser<'a> {
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.labels(ItemModifiers {
                     start: None,
-                    default_span: None,
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
@@ -7142,7 +7042,6 @@ impl<'a> Parser<'a> {
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.newtype(ItemModifiers {
                     start: None,
-                    default_span: None,
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
@@ -7158,7 +7057,6 @@ impl<'a> Parser<'a> {
             let mut declaration = self.with_recursive_type_scope(rec_span, |parser| {
                 parser.labels(ItemModifiers {
                     start: None,
-                    default_span: None,
                     vis: leading_vis,
                     vis_span: leading_vis_span,
                     purity: Purity::Impure,
@@ -7431,11 +7329,8 @@ impl<'a> Parser<'a> {
             if matches!(self.peek(), Some(TokenKind::Semicolon)) {
                 separator_spans.push(self.peek_span());
             }
-            pending = self.block_separator(
-                false,
-                false,
-                &["default", "pub", "type", "newtype", "labels", "rec"],
-            )?;
+            pending =
+                self.block_separator(false, false, &["pub", "type", "newtype", "labels", "rec"])?;
             self.declaration_keywords(
                 DeclarationContext::TypeGroup { surface },
                 &ItemModifiers::impure_private(),
@@ -7626,7 +7521,6 @@ impl<'a> Parser<'a> {
         Self::collect_line_comments(&mut header_cursor, self.peek_span().end, &mut header_trivia);
         Ok(ItemModifiers {
             start: None,
-            default_span: None,
             vis,
             vis_span: None,
             purity: Purity::Impure,
@@ -8362,12 +8256,8 @@ impl<'a> Parser<'a> {
             );
         }
         let semi_end = self.declaration_end(end, "`;` after the type alias")?;
-        let editable_start = modifiers
-            .default_span
-            .or(modifiers.vis_span)
-            .map_or(start, |span| span.start);
+        let editable_start = modifiers.vis_span.map_or(start, |span| span.start);
         Ok(TypeAlias {
-            default_span: modifiers.default_span,
             vis: modifiers.vis.clone(),
             name,
             name_span,
@@ -11191,7 +11081,7 @@ impl<'a> Parser<'a> {
                         occurrence: Default::default(),
                         kind: ElaboratorKind::Filtered,
                         call: ElaboratorCall::FieldUpdate {
-                            receiver: Box::new(e),
+                            base: crate::ast::FieldUpdateBase::Update(Box::new(e)),
                             updates,
                         },
                         source_trivia,
@@ -13914,8 +13804,8 @@ impl<'a> Parser<'a> {
                 Expr::Call { callee, .. } => pending.push(callee),
                 Expr::Ufcs { receiver, .. } => pending.push(receiver),
                 Expr::Elaborator { call, .. } => match call {
-                    ElaboratorCall::FieldAccess { receiver, .. }
-                    | ElaboratorCall::FieldUpdate { receiver, .. } => pending.push(receiver),
+                    ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
+                    ElaboratorCall::FieldUpdate { base, .. } => pending.extend(base.receiver()),
                 },
                 _ => {}
             }
@@ -14298,7 +14188,7 @@ fn is_item_modifier_leaf(
                 if matches!(&t.kind, TokenKind::Ident(name) if name == expected)
         )
     };
-    if leaf_named(0, "default") || leaf_named(0, "pub") || leaf_named(0, "pure") {
+    if leaf_named(0, "pub") || leaf_named(0, "pure") {
         return true;
     }
     // `host` is a contextual keyword: it is the host-declaration

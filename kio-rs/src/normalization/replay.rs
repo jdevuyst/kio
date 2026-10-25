@@ -164,6 +164,7 @@ where
                         true_body,
                         false_body,
                     } => {
+                        pending.push(Work::Type(condition.ty()));
                         pending.push(Work::Type(result_ty));
                         pending.push(Work::Node(&condition.node));
                         pending.push(Work::Node(&true_body.node));
@@ -435,6 +436,7 @@ where
             )
         }
         CheckedTermNode::IntrinsicIfThenElse { .. } => {
+            let bool_ty = read.ty();
             let result_ty = read.ty();
             let condition = read.expr();
             let true_body = read.expr();
@@ -442,6 +444,7 @@ where
             checked_template_intrinsic_expr_at(
                 "__if_then_else__",
                 vec![
+                    CallArg::Type(bool_ty),
                     CallArg::Type(result_ty),
                     CallArg::Value(condition),
                     CallArg::Value(Expr::FnExpr { occurrence: Default::default(),

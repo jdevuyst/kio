@@ -10,7 +10,7 @@ import quotation(
 , macro swap
 );
 import stack/testapi/main(deep);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/io as io;
 import testapi/iter(loop);

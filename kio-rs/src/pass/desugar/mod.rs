@@ -1166,8 +1166,9 @@ fn call_arg_uses_rec_mode(arg: &CallArg<Surface>, mode: RecCallMode) -> bool {
 fn elaborator_call_uses_rec_mode(call: &ElaboratorCall<Surface>, mode: RecCallMode) -> bool {
     match call {
         ElaboratorCall::FieldAccess { receiver, .. } => expr_uses_rec_mode(receiver, mode),
-        ElaboratorCall::FieldUpdate { receiver, updates } => {
-            expr_uses_rec_mode(receiver, mode)
+        ElaboratorCall::FieldUpdate { base, updates } => {
+            base.receiver()
+                .is_some_and(|receiver| expr_uses_rec_mode(receiver, mode))
                 || updates
                     .iter()
                     .any(|update| expr_uses_rec_mode(&update.value, mode))
@@ -1318,8 +1319,10 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
             ElaboratorCall::FieldAccess { receiver, .. } => {
                 collect_surface_expr_names(receiver, names);
             }
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                collect_surface_expr_names(receiver, names);
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver() {
+                    collect_surface_expr_names(receiver, names);
+                }
                 for update in updates {
                     collect_surface_expr_names(&update.value, names);
                 }
@@ -3349,37 +3352,37 @@ impl DesugarVisitor {
                                 .collect(),
                         }
                     }
-                    ElaboratorCall::FieldUpdate { receiver, updates } => {
-                        ElaboratorCall::FieldUpdate {
-                            receiver: Box::new(self.transform_deferred_tail_tree(
-                                *receiver,
+                    ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+                        base: base.map_receiver(|receiver| {
+                            self.transform_deferred_tail_tree(
+                                receiver,
                                 current_member,
                                 continuation,
                                 RecCallPosition::NonTail,
                                 defer_callbacks,
                                 ctx,
-                            )?),
-                            updates: updates
-                                .into_iter()
-                                .map(|update| {
-                                    Ok(FieldUpdateLabel {
-                                        label: update.label,
-                                        label_span: update.label_span,
-                                        label_type: update.label_type,
-                                        value: self.transform_deferred_tail_tree(
-                                            update.value,
-                                            current_member,
-                                            continuation,
-                                            RecCallPosition::NonTail,
-                                            defer_callbacks,
-                                            ctx,
-                                        )?,
-                                        meta: Meta::new(update.meta.span),
-                                    })
+                            )
+                        })?,
+                        updates: updates
+                            .into_iter()
+                            .map(|update| {
+                                Ok(FieldUpdateLabel {
+                                    label: update.label,
+                                    label_span: update.label_span,
+                                    label_type: update.label_type,
+                                    value: self.transform_deferred_tail_tree(
+                                        update.value,
+                                        current_member,
+                                        continuation,
+                                        RecCallPosition::NonTail,
+                                        defer_callbacks,
+                                        ctx,
+                                    )?,
+                                    meta: Meta::new(update.meta.span),
                                 })
-                                .collect::<Result<_, Error>>()?,
-                        }
-                    }
+                            })
+                            .collect::<Result<_, Error>>()?,
+                    },
                 };
                 Ok(Expr::Elaborator {
                     source_trivia: Default::default(),
@@ -5330,8 +5333,10 @@ impl DesugarVisitor {
                 ElaboratorCall::FieldAccess { receiver, .. } => {
                     self.validate_no_bad_rec_names(receiver, ctx)
                 }
-                ElaboratorCall::FieldUpdate { receiver, updates } => {
-                    self.validate_no_bad_rec_names(receiver, ctx)?;
+                ElaboratorCall::FieldUpdate { base, updates } => {
+                    if let Some(receiver) = base.receiver() {
+                        self.validate_no_bad_rec_names(receiver, ctx)?;
+                    }
                     for update in updates {
                         self.validate_no_bad_rec_names(&update.value, ctx)?;
                     }
@@ -5958,8 +5963,8 @@ impl SurfaceToDesugared for DesugarVisitor {
                     })
                     .collect::<Result<_, Error>>()?,
             },
-            ElaboratorCall::FieldUpdate { receiver, updates } => ElaboratorCall::FieldUpdate {
-                receiver: Box::new(self.walk_expr(*receiver)?),
+            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
                 updates: updates
                     .into_iter()
                     .map(|update| {
@@ -7026,8 +7031,8 @@ fn intrinsic_arity(name: &str) -> usize {
         "__pair__" | "__fst__" | "__snd__" | "__left__" | "__right__" => 2,
         // `__either__(A, B, C, s: A | B, fl: A -> C, fr: B -> C) -> C`
         "__either__" => 3,
-        // `__if_then_else__(A, cond: Bool, t: . -> A, e: . -> A) -> A`
-        "__if_then_else__" => 1,
+        // `__if_then_else__(B, A, cond: B, t: . -> A, e: . -> A) -> A`
+        "__if_then_else__" => 2,
         // `__absurd__(A, x: !) -> A`
         "__absurd__" => 1,
         _ => 0,
@@ -7153,8 +7158,8 @@ fn rec_cps_operand_is_inert(expr: &Expr<Surface>) -> bool {
 fn elaborator_call_contains_rec(call: &ElaboratorCall<Surface>) -> bool {
     match call {
         ElaboratorCall::FieldAccess { receiver, .. } => expr_contains_rec_call(receiver),
-        ElaboratorCall::FieldUpdate { receiver, updates } => {
-            expr_contains_rec_call(receiver)
+        ElaboratorCall::FieldUpdate { base, updates } => {
+            base.receiver().is_some_and(expr_contains_rec_call)
                 || updates
                     .iter()
                     .any(|update| expr_contains_rec_call(&update.value))
@@ -7253,8 +7258,8 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
             }
             Expr::Elaborator { call, .. } => match call {
                 ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { receiver, updates } => {
-                    pending.push(receiver);
+                ElaboratorCall::FieldUpdate { base, updates } => {
+                    pending.extend(base.receiver());
                     pending.extend(updates.iter().map(|update| &update.value));
                 }
             },
@@ -7335,8 +7340,10 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => collect_identifiers(receiver, out),
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                collect_identifiers(receiver, out);
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver() {
+                    collect_identifiers(receiver, out);
+                }
                 for update in updates {
                     collect_identifiers(&update.value, out);
                 }
@@ -7733,8 +7740,15 @@ fn rename_elaborator_call(
             receiver: Box::new(rename_paths(*receiver, renames)),
             labels,
         },
-        ElaboratorCall::FieldUpdate { receiver, updates } => ElaboratorCall::FieldUpdate {
-            receiver: Box::new(rename_paths(*receiver, renames)),
+        ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+            base: match base {
+                crate::ast::FieldUpdateBase::Construction => {
+                    crate::ast::FieldUpdateBase::Construction
+                }
+                crate::ast::FieldUpdateBase::Update(receiver) => {
+                    crate::ast::FieldUpdateBase::Update(Box::new(rename_paths(*receiver, renames)))
+                }
+            },
             updates: updates
                 .into_iter()
                 .map(|mut update| {
@@ -7786,8 +7800,10 @@ mod tests {
                 ElaboratorCall::FieldAccess { receiver, .. } => {
                     visit_desugared_expr(receiver, visit);
                 }
-                ElaboratorCall::FieldUpdate { receiver, updates } => {
-                    visit_desugared_expr(receiver, visit);
+                ElaboratorCall::FieldUpdate { base, updates } => {
+                    if let Some(receiver) = base.receiver() {
+                        visit_desugared_expr(receiver, visit);
+                    }
                     for update in updates {
                         visit_desugared_expr(&update.value, visit);
                     }

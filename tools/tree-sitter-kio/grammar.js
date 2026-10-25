@@ -360,8 +360,7 @@ module.exports = grammar({
     ))),
     _bridge_segment: ($) => choice(alias($._identifier_like, $.identifier), alias(token(/\*\*?/), $.operator_run)),
     host_decl: ($) => choice(
-      seq(optional(alias($.keyword_default, $.keyword_declaration)),
-        optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier),
+      seq(optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier),
         choice($.host_type_head, alias($._incomplete_host_type_head, $.host_type_head))),
       seq(optional($._visibility_modifier), $.keyword_host, optional($._visibility_modifier), $.host_fn_head),
     ),
@@ -415,7 +414,6 @@ module.exports = grammar({
     _identifier_like: ($) => choice($.uppercase_identifier, $._value_identifier_like),
     _value_identifier_like: ($) =>
       choice(
-        $.keyword_default,
         $.keyword_varop,
         $.keyword_let, $.keyword_rec, $.keyword_recur,
         "poly", "cont", "escape",
@@ -484,7 +482,6 @@ module.exports = grammar({
     _keyword_variadic: ($) => token(prec(3, "variadic")),
     keyword_as: ($) => "as",
     keyword_type: ($) => kw("type"),
-    keyword_default: ($) => kw("default"),
     keyword_pure: ($) => kw("pure"),
 
     _import_intrinsics_tail: ($) =>
@@ -518,12 +515,9 @@ module.exports = grammar({
         ),
       ),
 
-    import_named_item: ($) => prec.right(1, choice(
-      seq(alias($.keyword_default, $.keyword_declaration),
-        alias($.uppercase_identifier, $.identifier),
-        optional(seq(alias($.keyword_as, $.keyword_declaration), alias($.uppercase_identifier, $.identifier)))),
-      seq(field("source", alias($._identifier_like, $.identifier)),
-        optional(seq(alias($.keyword_as, $.keyword_declaration), field("alias", alias($._identifier_like, $.identifier))))),
+    import_named_item: ($) => prec.right(1, seq(
+      field("source", alias($._identifier_like, $.identifier)),
+      optional(seq(alias($.keyword_as, $.keyword_declaration), field("alias", alias($._identifier_like, $.identifier)))),
     )),
 
     import_macro_item: ($) => prec.dynamic(25, seq(
@@ -928,7 +922,6 @@ module.exports = grammar({
     _type_alias_decl_body: ($) =>
       prec.dynamic(20, prec.right(
         seq(
-          optional(alias($.keyword_default, $.keyword_declaration)),
           optional($._visibility_modifier),
           $.keyword_type,
           alias($.uppercase_identifier, $.entity_name_type),

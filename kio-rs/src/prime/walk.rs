@@ -318,7 +318,6 @@ pub trait SurfaceToPrime {
     /// Walk a `type` Surface → Prime.
     fn walk_type_alias(&mut self, a: TypeAlias<Surface>) -> Result<TypeAlias<Prime>, Error> {
         let TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -329,7 +328,6 @@ pub trait SurfaceToPrime {
             doc,
         } = a;
         Ok(TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -374,7 +372,6 @@ pub trait SurfaceToPrime {
 
     fn walk_host_type(&mut self, h: HostType<Surface>) -> Result<HostType<Prime>, Error> {
         let HostType {
-            default_span,
             name,
             type_params,
             role,
@@ -383,7 +380,6 @@ pub trait SurfaceToPrime {
             doc,
         } = h;
         Ok(HostType {
-            default_span,
             name,
             type_params,
             role,

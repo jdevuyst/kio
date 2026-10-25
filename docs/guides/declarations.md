@@ -96,12 +96,11 @@ alias, cycle, or missing target has no member namespace. The alias must already
 be in scope, and both the alias and terminal member must be visible from the
 use site.
 
-Transparent aliases can also select an existing literal type with
-`default type Integer = numbers.Int;`, including through a fully applied
-alias body. This adds no nominal identity or role. A newtype wrapper is
-different: it does not inherit the payload's literal capability. See
-[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
-for imported selections, same-identity aliases and source scope.
+Transparent aliases retain their normalized host type's literal admission,
+including through fully applied alias bodies. This adds no nominal identity
+or role and does not select an unresolved literal. A newtype wrapper instead
+does not inherit its payload's literal capability. See
+[literal inference](typechecking.md#literal-types-and-local-inference).
 
 ## Literal aliases
 
@@ -126,8 +125,10 @@ is part of the abstraction.
 
 A literal alias keeps its lexical category: `literal count = 2000;` stores an
 integer token, while `literal scale = 2.0e3;` stores a float token. Its expected
-type, annotation or local default at the use does not convert one category
-into the other.
+type or annotation at the use does not convert one category
+into the other. After expansion, an explicit literal annotation or the
+concrete local context at the use site determines its carrier; the provider
+contributes the token without a preselected type.
 
 Prefix a literal alias with `pub` to import it from another module with
 `import module(name);`. Write that import once: repeating it is a

@@ -60,7 +60,7 @@ pure fn checked_impl(
     , __Checked_term__
     , target
     , .(_target: __Type__) -> __Checked_term__ { value }
-    , .() -> __Checked_term__ { __macro_error__(ct, "identity needs a target type") }
+    , .() -> __Checked_term__ { __macro_error__(ct, "identity needs a target type"(__Diagnostic_text__)) }
     )
 }
 

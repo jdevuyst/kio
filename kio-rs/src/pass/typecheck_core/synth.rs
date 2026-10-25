@@ -17,9 +17,8 @@
 //!
 //! One intrinsic scheme builder closes out the file:
 //! [`intrinsic_scheme`], which produces the canonical scheme
-//! [`Synth`] for the `__intrinsic__` family. Module typing retains the explicit
-//! default selection required by `__if_then_else__`; callers with a selected
-//! role table use the public map-based wrapper.
+//! [`Synth`] for the `__intrinsic__` family. The conditional intrinsic retains
+//! a specialization obligation until its Boolean type is concrete and checked.
 //!
 //! Extracted from [`super::typecheck_core`] for navigability;
 //! depends on the rest of the umbrella for the apply / alias /
@@ -35,8 +34,8 @@ use crate::span::Span;
 use super::HeaderRecording;
 use super::types::{collect_free_type_vars, fresh_type_var};
 use super::{
-    AliasCtx, ModuleEnv, Synth, TypeCtx, Typer, TyperPhase, clone_with_span, display_type,
-    subst_type, tp, ty_func, ty_nominal_segments, ty_path, ty_product, ty_sum, vp,
+    AliasCtx, Synth, TypeCtx, Typer, TyperPhase, clone_with_span, display_type, subst_type, tp,
+    ty_func, ty_nominal_segments, ty_path, ty_product, ty_sum, vp,
 };
 
 // =========================================================================
@@ -1503,6 +1502,7 @@ where
 {
     #[cfg(test)]
     super::kind_scheme::record_synthesized_result_consumer();
+    synth.require_value_specialization()?;
     if !synth.is_scheme || synth.complete_scheme.is_complete() {
         return Ok(synth.ty);
     }
@@ -1815,8 +1815,6 @@ where
                 tcx,
             );
         },
-        #[cfg(feature = "lsp")]
-        |span, binding, tcx| <P::Typer as Typer<P>>::record_selected_role(span, binding, tcx),
     )
 }
 
@@ -1833,7 +1831,6 @@ pub(crate) fn synth_path_with_binder_recorder<'m, 'e, P>(
         Option<usize>,
         &mut TypeCtx<'m, 'e, P>,
     ),
-    #[cfg(feature = "lsp")] mut record_selected_role: impl FnMut(Span, &str, &mut TypeCtx<'m, 'e, P>),
 ) -> Result<Synth<P>, Error>
 where
     P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
@@ -1941,56 +1938,23 @@ where
         if tcx.env.comptime_in_scope
             && let Some(builtin) = ComptimeBuiltin::from_public_name(head)
             && builtin.is_value_name()
-            && let Some(scheme) = comptime_scheme(builtin, span, &tcx.env.roles_in_scope)?
+            && let Some(scheme) = comptime_scheme(builtin, span)?
         {
             return Ok(scheme);
         }
-        if tcx.env.intrinsics_in_scope {
-            let bool_role = tcx.resolve_exact_role(crate::ast::Role::Bool);
-            if head == "__if_then_else__" && matches!(bool_role, super::RoleResolution::Missing) {
-                return Err(literal_resolution_error(
-                    crate::ast::RoleShape::Bool,
-                    tcx.env,
-                    tcx.local_item_cutoff(),
-                    span,
-                ));
-            }
-            #[cfg(feature = "lsp")]
-            let mut selected_role = None;
-            if let Some(scheme) = intrinsic_scheme_resolved_observed(
+        if tcx.env.intrinsics_in_scope
+            && let Some(scheme) = intrinsic_scheme(head, span)
+        {
+            record_binder_at(
+                head_span,
+                ResolvedBinderKind::Intrinsic,
                 head,
-                span,
-                bool_role,
-                tcx.env
-                    .selected_default(crate::ast::RoleShape::Bool, tcx.local_item_cutoff())
-                    .map(|candidate| candidate.ty(span)),
-                |binding| {
-                    #[cfg(feature = "lsp")]
-                    {
-                        selected_role = Some(binding);
-                    }
-                    #[cfg(not(feature = "lsp"))]
-                    let _ = binding;
-                },
-            ) {
-                #[cfg(feature = "lsp")]
-                if scheme.is_ok()
-                    && tcx.env.typecheck_scope.collects_source_dependencies()
-                    && let Some(binding) = selected_role
-                {
-                    record_selected_role(head_span, binding, tcx);
-                }
-                record_binder_at(
-                    head_span,
-                    ResolvedBinderKind::Intrinsic,
-                    head,
-                    None,
-                    None,
-                    None,
-                    tcx,
-                );
-                return scheme;
-            }
+                None,
+                None,
+                None,
+                tcx,
+            );
+            return scheme;
         }
         if let Some(builtin) = ComptimeBuiltin::from_public_name(head)
             && builtin.is_value_name()
@@ -2575,118 +2539,9 @@ fn integer_requires_point(
     error
 }
 
-/// Resolve the explicit default for this literal category. The result names
-/// the selected terminal identity, independently of the visible alias spelling.
-pub fn unique_role_admitted_type<P: crate::ast::Phase>(
-    shape: crate::ast::RoleShape,
-    env: &ModuleEnv<'_, P>,
-    span: Span,
-) -> Option<crate::ast::Type<P>> {
-    unique_role_admitted_type_at(shape, env, None, span)
-}
-
-pub(crate) fn unique_role_admitted_type_at<P: crate::ast::Phase>(
-    shape: crate::ast::RoleShape,
-    env: &ModuleEnv<'_, P>,
-    local_item_cutoff: Option<usize>,
-    span: Span,
-) -> Option<crate::ast::Type<P>> {
-    env.selected_default(shape, local_item_cutoff)
-        .map(|candidate| candidate.ty(span))
-}
-
-pub(crate) fn unique_role_admitted_resolution_at<P>(
-    shape: crate::ast::RoleShape,
-    span: Span,
-    tcx: &TypeCtx<'_, '_, P>,
-) -> Option<super::LiteralResolution<P>>
-where
-    P: TyperPhase + Clone,
-{
-    let resolved = unique_role_admitted_type_at(shape, tcx.env, tcx.local_item_cutoff(), span)?;
-    #[cfg(feature = "lsp")]
-    let lexical_role = if tcx.env.typecheck_scope.collects_source_dependencies() {
-        Some(
-            tcx.env
-                .selected_default(shape, tcx.local_item_cutoff())?
-                .visible_name
-                .to_owned(),
-        )
-    } else {
-        None
-    };
-    Some(super::LiteralResolution {
-        ty: super::InternedType::fresh_with_identity(resolved, true),
-        runtime_erases: tcx
-            .env
-            .selected_default(shape, tcx.local_item_cutoff())?
-            .host_identity
-            .0
-            == "__comptime__",
-        numeric_value: None,
-        #[cfg(feature = "lsp")]
-        lexical_role,
-    })
-}
-
-/// Explain a missing default and offer source-local selections of eligible
-/// types without changing the provider or an existing conflicting selection.
-pub(crate) fn literal_resolution_error<P: crate::ast::Phase>(
-    shape: crate::ast::RoleShape,
-    env: &ModuleEnv<'_, P>,
-    local_item_cutoff: Option<usize>,
-    span: Span,
-) -> Error {
-    let category = literal_shape_noun(shape);
-    let mut error = Error::type_(
-        span,
-        format!("no type is selected as the default {category} type in this module"),
-    )
-    .with_help("select a host type or equivalent alias with `default`");
-    for candidate in &env.default_candidates {
-        if candidate.role.shape() != shape || !candidate.visible_at(local_item_cutoff) {
-            continue;
-        }
-        error = error.with_secondary(
-            candidate.insertion,
-            format!(
-                "`{}` is available but is not selected as the default {category} type",
-                candidate.visible_name
-            ),
-        );
-        if env
-            .selected_default(shape, None)
-            .is_none_or(|other| other.host_identity == candidate.host_identity)
-        {
-            error = error.with_fix(crate::error::Fix::maybe_incorrect(
-                format!(
-                    "Use {} as the default {category} type in this module",
-                    candidate.visible_name
-                ),
-                vec![crate::error::FixEdit::new(
-                    Span::new(candidate.insertion.start, candidate.insertion.start),
-                    "default ",
-                )],
-            ));
-        }
-    }
-    error
-}
-
-/// Type a literal expression against the current role-bearing
-/// host types, per the three-tier resolution of `specs/language.md`
-/// § Literals. This is the **synthesis-mode** entry — it covers
-/// tier 1 (an explicit `(Type)` annotation on the literal) and
-/// tier 3 (the explicitly selected default type); tier 2
-/// (an expected type from the surrounding position) is reached only
-/// in check mode and handled by [`resolve_literal_against`].
-///
-/// `shape` is the literal's lexical shape; `annotation` is its
-/// optional trailing `(Type)` call form (a `_` placeholder
-/// annotation is equivalent to a bare literal and falls through to
-/// tier 3). On success the phase publication hook receives the resolved host
-/// type. Lowered records it for substitution; Prime synthesis uses its
-/// mandatory annotation directly and bypasses this helper.
+/// Synthesize an explicitly annotated literal. An unannotated literal needs
+/// a usable expected type through `resolve_literal_against`; Prime literals
+/// carry explicit annotations and use the annotation checker directly.
 pub fn synth_literal<'m, P>(
     shape: crate::ast::RoleShape,
     annotation: Option<&crate::ast::Type<P>>,
@@ -2695,7 +2550,7 @@ pub fn synth_literal<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
-    P: TyperPhase + Clone,
+    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
     let span = site.span;
     let resolved = synth_literal_unrecorded(shape, annotation, span, numeric, tcx)?;
@@ -2715,129 +2570,107 @@ pub(crate) fn synth_literal_unrecorded<'m, P>(
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: TyperPhase + Clone,
+    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
-    // Tier 1 — explicit `(Type)` annotation on the literal.
+    // A written carrier is independent of the enclosing expected type.
     if let Some(annot) = annotation
         && !matches!(annot, crate::ast::Type::Infer { .. })
     {
         return check_literal_annotation(shape, annot, span, numeric, tcx);
     }
-    // Synthesis has no expected type, so an unannotated literal uses its
-    // category's explicit default selection.
-    let Some(resolved) = unique_role_admitted_resolution_at(shape, span, tcx) else {
-        let mut error = literal_resolution_error(
-            shape,
-            tcx.env,
-            tcx.local_item_cutoff(),
-            span,
-        ).with_help("select a default type with `default`, or annotate only this literal with `<literal>(T)`");
-        let bound = tcx.in_scope_type_param_binders();
-        #[cfg(feature = "surface")]
-        let bound = {
-            let mut bound = bound;
-            for local in &tcx.locals {
-                if let super::Local::TypeParam {
-                    name, decl_span, ..
-                } = local
-                    && let Some(source) = tcx.env.typecheck_scope.source_type_binder_name(
-                        &tcx.env.module_path,
-                        *decl_span,
-                        name,
-                    )
-                {
-                    bound.insert(source.to_owned());
-                }
+    let mut error = Error::type_(
+        span,
+        format!("cannot determine the type of this {} literal", literal_shape_noun(shape)),
+    ).with_help("annotate this literal with `<literal>(T)`, or supply an expected type in its enclosing expression");
+    let bound = tcx.in_scope_type_param_binders();
+    #[cfg(feature = "surface")]
+    let bound = {
+        let mut bound = bound;
+        for local in &tcx.locals {
+            if let super::Local::TypeParam {
+                name, decl_span, ..
+            } = local
+                && let Some(source) = tcx.env.typecheck_scope.source_type_binder_name(
+                    &tcx.env.module_path,
+                    *decl_span,
+                    name,
+                )
+            {
+                bound.insert(source.to_owned());
             }
-            bound
+        }
+        bound
+    };
+    for candidate in &tcx.env.annotation_candidates {
+        if candidate.role.shape() != shape || !candidate.visible_at(tcx.local_item_cutoff()) {
+            continue;
+        }
+        let name = crate::ast::PathSegment::new(candidate.visible_name, candidate.insertion);
+        let identity = tcx.env.qualify_nominal_segments(&[name]);
+        let source = super::source_type_spelling_with_bound(
+            &crate::ast::Type::synth_path_segments(identity.clone(), Vec::new(), span),
+            tcx.env.module,
+            true,
+            &bound,
+        );
+        let crate::ast::Type::Path { segments, .. } = source else {
+            unreachable!("a nominal source spelling remains a path")
         };
-        for candidate in &tcx.env.default_candidates {
-            if candidate.role.shape() != shape || !candidate.visible_at(tcx.local_item_cutoff()) {
-                continue;
+        // The presentation helper leaves an unavailable canonical path
+        // unchanged. A source edit needs an actual lexical binding.
+        let available = match segments.as_slice() {
+            [name] => {
+                !bound.contains(name.as_str())
+                    && tcx
+                        .env
+                        .qualify_nominal_segments(&segments)
+                        .iter()
+                        .map(crate::ast::PathSegment::as_str)
+                        .eq(identity.iter().map(crate::ast::PathSegment::as_str))
             }
-            let name = crate::ast::PathSegment::new(candidate.visible_name, candidate.insertion);
-            let identity = tcx.env.qualify_nominal_segments(&[name]);
-            let source = super::source_type_spelling_with_bound(
-                &crate::ast::Type::synth_path_segments(identity.clone(), Vec::new(), span),
-                tcx.env.module,
-                true,
-                &bound,
-            );
-            let crate::ast::Type::Path { segments, .. } = source else {
-                unreachable!("a nominal source spelling remains a path")
-            };
-            // The presentation helper leaves an unavailable canonical path
-            // unchanged. A source edit needs an actual lexical binding.
-            let available = match segments.as_slice() {
-                [name] => {
-                    !bound.contains(name.as_str())
-                        && tcx
-                            .env
-                            .qualify_nominal_segments(&segments)
+            [alias, leaf] => tcx
+                .env
+                .qualified_imports
+                .get(alias.as_str())
+                .is_some_and(|module| {
+                    let Some((name, owner)) = identity.split_last() else {
+                        return false;
+                    };
+                    leaf.as_str() == name.as_str()
+                        && module
+                            .path
+                            .segments
                             .iter()
                             .map(crate::ast::PathSegment::as_str)
-                            .eq(identity.iter().map(crate::ast::PathSegment::as_str))
-                }
-                [alias, leaf] => {
-                    tcx.env
-                        .qualified_imports
-                        .get(alias.as_str())
-                        .is_some_and(|module| {
-                            let Some((name, owner)) = identity.split_last() else {
-                                return false;
-                            };
-                            leaf.as_str() == name.as_str()
-                                && module
-                                    .path
-                                    .segments
-                                    .iter()
-                                    .map(crate::ast::PathSegment::as_str)
-                                    .eq(owner.iter().map(crate::ast::PathSegment::as_str))
-                        })
-                }
-                _ => false,
-            };
-            if !available {
-                continue;
-            }
-            let source_type = segments
-                .iter()
-                .map(crate::ast::PathSegment::as_str)
-                .collect::<Vec<_>>()
-                .join(".");
-            let edit = annotation.map_or_else(
-                || {
-                    crate::error::FixEdit::new(
-                        Span::new(span.end, span.end),
-                        format!("({source_type})"),
-                    )
-                },
-                |annotation| crate::error::FixEdit::new(annotation.span(), source_type.clone()),
-            );
-            error = error.with_fix(crate::error::Fix::maybe_incorrect(
-                format!("Annotate this literal with {}", candidate.visible_name),
-                vec![edit],
-            ));
+                            .eq(owner.iter().map(crate::ast::PathSegment::as_str))
+                }),
+            _ => false,
+        };
+        if !available {
+            continue;
         }
-        return Err(error);
-    };
-    let role = tcx
-        .env
-        .selected_default(shape, tcx.local_item_cutoff())
-        .expect("a resolved literal default retains its exact selection")
-        .role;
-    Ok(resolved.with_numeric_value(check_numeric_value(role, span, numeric)?))
+        let source_type = segments
+            .iter()
+            .map(crate::ast::PathSegment::as_str)
+            .collect::<Vec<_>>()
+            .join(".");
+        let edit = annotation.map_or_else(
+            || {
+                crate::error::FixEdit::new(
+                    Span::new(span.end, span.end),
+                    format!("({source_type})"),
+                )
+            },
+            |annotation| crate::error::FixEdit::new(annotation.span(), source_type.clone()),
+        );
+        error = error.with_fix(crate::error::Fix::maybe_incorrect(
+            format!("Annotate this literal with {}", candidate.visible_name),
+            vec![edit],
+        ));
+    }
+    Err(error)
 }
 
-/// Resolve a literal in **check mode**: tier 1 (an explicit `(Type)`
-/// annotation), tier 2 (the `expected` type itself, when it is a
-/// host type whose role the literal's shape admits), then a tier 3 /
-/// 4 fallback to [`synth_literal`]. Returns the literal's resolved
-/// type and invokes [`Typer::record_literal_resolution`]. Lowered records the
-/// result for substitution; Prime records the checked numeric value alongside
-/// its mandatory annotation. The caller equiv-checks the result against
-/// `expected`, which rejects a tier-1 annotation that disagrees with the
-/// position.
 pub fn resolve_literal_against<'m, P>(
     shape: crate::ast::RoleShape,
     annotation: Option<&crate::ast::Type<P>>,
@@ -2847,19 +2680,15 @@ pub fn resolve_literal_against<'m, P>(
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> Result<super::InternedType<P>, Error>
 where
-    P: TyperPhase + Clone,
+    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
-    let span = site.span;
     let resolved =
-        resolve_literal_against_unrecorded(shape, annotation, expected, span, numeric, tcx)?;
+        resolve_literal_against_unrecorded(shape, annotation, expected, site.span, numeric, tcx)?;
     let ty = resolved.ty.clone();
     <P::Typer as Typer<P>>::record_literal_resolution(site, resolved, tcx);
     Ok(ty)
 }
 
-/// Resolve a literal in checking mode without publishing the resolution.
-/// This preserves the language's tier ordering while letting the ordinary
-/// Lowered frontier journal the selected type transactionally.
 pub(crate) fn resolve_literal_against_unrecorded<'m, P>(
     shape: crate::ast::RoleShape,
     annotation: Option<&crate::ast::Type<P>>,
@@ -2869,31 +2698,28 @@ pub(crate) fn resolve_literal_against_unrecorded<'m, P>(
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: TyperPhase + Clone,
+    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
+    if let Some(annotation) = annotation
+        && !matches!(annotation, crate::ast::Type::Infer { .. })
+    {
+        return check_literal_annotation(shape, annotation, span, numeric, tcx);
+    }
+    let bound = tcx.in_scope_type_param_binders();
+    let (normalized, _) = super::aliases::unfold_and_qualify_state(
+        expected.as_type(),
+        &tcx.binder_alias_ctx(&bound),
+        expected.identity_is_canonical(),
+    );
+    // The expected type has already passed ordinary type resolution.
     if shape == crate::ast::RoleShape::Str
-        && let crate::ast::Type::Path { segments, args, .. } = expected.as_type()
-        && segments.len() == 1
-        && segments[0].as_str() == "__Diagnostic_text__"
-        && args.is_empty()
+        && matches!(&normalized, crate::ast::Type::Path { segments, args, .. }
+            if segments.len() == 1 && segments[0].as_str() == "__Diagnostic_text__" && args.is_empty())
     {
-        return Ok(super::LiteralResolution::contextual(expected.clone()));
+        return Ok(super::LiteralResolution::annotated(expected.clone()));
     }
-    // Tier 1 — explicit annotation. It must itself be a shape-admitted
-    // host type; the equality against `expected` is the caller's job
-    // (check mode compares the resolved type to the expected one). A
-    // `_` placeholder annotation is equivalent to a bare literal.
-    if let Some(annot) = annotation
-        && !matches!(annot, crate::ast::Type::Infer { .. })
-    {
-        return check_literal_annotation(shape, annot, span, numeric, tcx);
-    }
-    // Tier 2 — the expected type, when it is a role-bearing host type
-    // (or a `type` alias that inherits a role from one) whose role the
-    // literal's shape admits. The `tcx.env` borrow is confined to this
-    // block so the recording call can reborrow `tcx`.
     let expected_role =
-        expected_host_role(expected.as_type(), expected.identity_is_canonical(), tcx);
+        annotated_host_role(expected.as_type(), expected.identity_is_canonical(), tcx);
     if shape == crate::ast::RoleShape::Int
         && expected_role
             .as_ref()
@@ -2912,24 +2738,22 @@ where
     if let Some((role, identity)) = expected_role
         && shape.admits(role.shape())
     {
-        return Ok(contextual_literal_resolution(expected.clone(), identity)
+        return Ok(annotated_literal_resolution(expected.clone(), identity)
             .with_numeric_value(check_numeric_value(role, span, numeric)?));
     }
-    // Neither tier applies — fall back to unrecorded synthesis (tier 3 / 4).
-    // The enclosing caller publishes the selected type exactly once.
-    synth_literal_unrecorded(shape, annotation, span, numeric, tcx)
+    Err(Error::type_(
+        span,
+        format!(
+            "a {} literal cannot have the expected type `{}`: it requires an admitting role-bearing host type",
+            literal_shape_noun(shape),
+            super::display_type(expected.as_type()),
+        ),
+    ))
 }
 
-/// Whether `expected` is a role-bearing host type (or a `type` alias that
-/// inherits a role from one) the literal `shape` admits — the literal's
-/// tier-2 (expected-type) resolution. Handles both a **bare** host-type
-/// name (or alias) and an identity-exact **qualified** host type
-/// (`testapi.I64`), which a cross-module host fn's now-qualified signature
-/// produces in the expected slot. The qualified form resolves the expected
-/// type's exact `(module, name)` identity through the consumer's imports and
-/// reads only the declaration at that identity. It never searches a growing
-/// candidate set, so unrelated declarations cannot redirect the match.
-fn expected_host_role<P>(
+/// Resolve the exact role-bearing host identity named by a literal annotation.
+/// Transparent aliases use the same binder-aware lookup as ordinary types.
+fn annotated_host_role<P>(
     expected: &crate::ast::Type<P>,
     expected_is_canonical: bool,
     tcx: &TypeCtx<'_, '_, P>,
@@ -2945,11 +2769,11 @@ where
     )
 }
 
-fn contextual_literal_resolution<P: crate::ast::Phase>(
+fn annotated_literal_resolution<P: crate::ast::Phase>(
     written: super::InternedType<P>,
     (module, _): (String, String),
 ) -> super::LiteralResolution<P> {
-    super::LiteralResolution::contextual(written).with_runtime_erasure(module == "__comptime__")
+    super::LiteralResolution::annotated(written).with_runtime_erasure(module == "__comptime__")
 }
 
 pub fn check_literal_annotation<P>(
@@ -2960,8 +2784,26 @@ pub fn check_literal_annotation<P>(
     tcx: &TypeCtx<'_, '_, P>,
 ) -> Result<super::LiteralResolution<P>, Error>
 where
-    P: super::DeclarationPhase + Clone,
+    P: super::DeclarationPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
+    let bound = tcx.in_scope_type_param_binders();
+    if shape == crate::ast::RoleShape::Str
+        && let Some((segments, owner)) =
+            super::aliases::terminal_nominal_in_scope(annot, &tcx.binder_alias_ctx(&bound), false)
+        && segments.len() == 1
+        && segments[0].as_str() == "__Diagnostic_text__"
+        && owner.is_some_and(|owner| {
+            owner
+                .imports
+                .iter()
+                .any(|import| matches!(import.kind, crate::ast::ImportKind::Comptime))
+        })
+    {
+        super::types::compute_checked_kind(annot, annot.span(), tcx)?;
+        return Ok(super::LiteralResolution::annotated(
+            super::InternedType::fresh_canonical(ty_path("__Diagnostic_text__", annot.span())),
+        ));
+    }
     let crate::ast::Type::Path { segments, .. } = annot else {
         return Err(Error::type_(
             annot.span(),
@@ -2971,7 +2813,7 @@ where
     // Annotation admission follows the ordinary binder-aware alias path and
     // reads only its terminal declaration, never a provider candidate set.
     let name = segments.last().map(|s| s.as_str()).unwrap_or_default();
-    let Some((role, identity)) = expected_host_role(annot, false, tcx) else {
+    let Some((role, identity)) = annotated_host_role(annot, false, tcx) else {
         return Err(Error::type_(
             annot.span(),
             format!(
@@ -2998,7 +2840,7 @@ where
         ));
     }
     Ok(
-        contextual_literal_resolution(super::InternedType::fresh(annot.clone()), identity)
+        annotated_literal_resolution(super::InternedType::fresh(annot.clone()), identity)
             .with_numeric_value(check_numeric_value(role, span, numeric)?),
     )
 }
@@ -3080,10 +2922,7 @@ where
     refl_ty("__Diagnostic_text__", span)
 }
 
-fn refl_predicate_ty<P>(
-    span: Span,
-    _roles: &HashMap<crate::ast::Role, &str>,
-) -> Result<crate::ast::Type<P>, Error>
+fn refl_predicate_ty<P>(span: Span) -> Result<crate::ast::Type<P>, Error>
 where
     P: crate::ast::Phase,
 {
@@ -3166,11 +3005,7 @@ where
     ))
 }
 
-pub fn comptime_scheme<P>(
-    builtin: ComptimeBuiltin,
-    span: Span,
-    roles: &HashMap<crate::ast::Role, &str>,
-) -> Result<Option<Synth<P>>, Error>
+pub fn comptime_scheme<P>(builtin: ComptimeBuiltin, span: Span) -> Result<Option<Synth<P>>, Error>
 where
     P: crate::ast::Phase + Clone,
 {
@@ -3196,7 +3031,7 @@ where
         }
         "__type_is_host__" => refl_scheme_from_parts(
             vec![vp("typ", type_ty(), span)],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_host_converters__" => refl_scheme_from_parts(
@@ -3209,7 +3044,7 @@ where
         ),
         "__type_equal__" => refl_scheme_from_parts(
             vec![vp("left", type_ty(), span), vp("right", type_ty(), span)],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_name_equal__" => refl_scheme_from_parts(
@@ -3217,7 +3052,7 @@ where
                 vp("left", type_name_ty(), span),
                 vp("right", type_name_ty(), span),
             ],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_var_equal__" => refl_scheme_from_parts(
@@ -3225,12 +3060,12 @@ where
                 vp("left", type_var_ty(), span),
                 vp("right", type_var_ty(), span),
             ],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_is_product_root__" | "__type_is_sum_root__" => refl_scheme_from_parts(
             vec![vp("typ", type_ty(), span)],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_unit__" => refl_scheme_from_parts(Vec::new(), type_ty(), span),
@@ -3290,7 +3125,7 @@ where
                 vp("left", type_arity_ty(), span),
                 vp("right", type_arity_ty(), span),
             ],
-            refl_predicate_ty(span, roles)?,
+            refl_predicate_ty(span)?,
             span,
         ),
         "__type_product_spine_fold__"
@@ -3560,47 +3395,12 @@ where
     Ok(Some(scheme))
 }
 
-/// Returns the scheme [`Synth`] for an intrinsic value reference,
-/// or `None` if `name` isn't one of the supported intrinsics.
-///
-/// The supported intrinsics are `__left__`, `__right__`,
-/// `__either__`, `__pair__`, `__fst__`, `__snd__`, `__absurd__`,
-/// and `__if_then_else__`.
-///
-/// `bool_role` is the consuming module's explicit Boolean default selection.
-/// Most entries ignore it; `__if_then_else__` returns `Some(Err(...))` when
-/// it is missing.
-///
-/// The outer `Option` distinguishes "name not an intrinsic" (`None`)
-/// from "name is an intrinsic but its scheme can't be built right
-/// now" (`Some(Err)`). Only `__if_then_else__` can return the inner `Err`;
-/// the role-independent intrinsics always succeed.
-///
-/// Phase-polymorphic — the helper builds AST nodes via
-/// [`ty_path`] / [`ty_sum`] / [`ty_product`] / [`ty_func`] /
-/// [`tp`] / [`vp`], all of which work on any `P: Phase`.
-pub(crate) fn intrinsic_scheme_resolved<P>(
-    name: &str,
-    span: Span,
-    bool_role: super::RoleResolution<'_>,
-) -> Option<Result<Synth<P>, Error>>
+/// Public call scheme for a reserved structural intrinsic. Boolean
+/// specialization is checked before the selected callable becomes a value.
+pub fn intrinsic_scheme<P>(name: &str, span: Span) -> Option<Result<Synth<P>, Error>>
 where
     P: crate::ast::Phase + Clone,
 {
-    intrinsic_scheme_resolved_observed(name, span, bool_role, None, |_| {})
-}
-
-fn intrinsic_scheme_resolved_observed<'r, P>(
-    name: &str,
-    span: Span,
-    bool_role: super::RoleResolution<'r>,
-    selected_bool_type: Option<crate::ast::Type<P>>,
-    mut observe_role: impl FnMut(&'r str),
-) -> Option<Result<Synth<P>, Error>>
-where
-    P: crate::ast::Phase + Clone,
-{
-    let identity_canonical = name == "__if_then_else__" && selected_bool_type.is_some();
     let a = || ty_path::<P>("a", span);
     let b = || ty_path::<P>("b", span);
     let c = || ty_path::<P>("c", span);
@@ -3664,33 +3464,13 @@ where
             ],
             a(),
         ),
-        // __if_then_else__ : [A](c: Bool, t: . -> A, e: . -> A) -> A
-        //
-        // This intrinsic's Boolean slot uses the consuming module's explicit
-        // selection, including when the intrinsic itself is a first-class value.
         "__if_then_else__" => {
-            let bool_name = match bool_role {
-                super::RoleResolution::Unique(name) => name,
-                super::RoleResolution::Missing => {
-                    return Some(Err(Error::type_(
-                        span,
-                        "no type is selected as the default boolean type in this module; \
-                         `__if_then_else__` requires one",
-                    )
-                    .with_help(
-                        "select a Boolean host type or equivalent alias with `default`",
-                    )));
-                }
-            };
-            let bool_ty = selected_bool_type.unwrap_or_else(|| {
-                crate::ast::Type::synth_path(vec![bool_name.to_owned()], Vec::new(), span)
-            });
-            observe_role(bool_name);
             let unit_to_a = || ty_func(vec![], a(), span);
             (
                 vec![
+                    tp("b", span),
                     tp("a", span),
-                    vp("c", bool_ty, span),
+                    vp("c", b(), span),
                     vp("t", unit_to_a(), span),
                     vp("e", unit_to_a(), span),
                 ],
@@ -3699,29 +3479,98 @@ where
         }
         _ => return None,
     };
-    Some(Ok(Synth::complete_scheme_interned(
-        super::InternedType::fresh_with_identity(
-            crate::ast::Type::synth_scheme_from_signature_params(&params, ret, span),
-            identity_canonical,
-        ),
-    )))
+    let mut synth = Synth::complete_scheme(crate::ast::Type::synth_scheme_from_signature_params(
+        &params, ret, span,
+    ));
+    if name == "__if_then_else__" {
+        synth.specialization = Some(Box::new(super::IntrinsicSpecialization::BooleanPrefix(
+            std::marker::PhantomData,
+        )));
+    }
+    Some(Ok(synth))
 }
 
-/// Build an intrinsic scheme from a caller-supplied selected role table.
-pub fn intrinsic_scheme<P>(
-    name: &str,
+pub(crate) fn unspecialized_intrinsic_error(span: Span) -> Error {
+    Error::type_(span, "`__if_then_else__` needs a concrete Boolean type before it can be used as a value")
+        .with_help("specialize it as `__if_then_else__(Bool)` or supply a function type with a concrete Boolean condition")
+}
+
+pub(crate) fn check_boolean_specialization<P>(
+    ty: &super::InternedType<P>,
     span: Span,
-    roles: &HashMap<crate::ast::Role, &str>,
-) -> Option<Result<Synth<P>, Error>>
+    tcx: &TypeCtx<'_, '_, P>,
+) -> Result<(), Error>
 where
-    P: crate::ast::Phase + Clone,
+    P: super::DeclarationPhase,
 {
-    let bool_role = roles
-        .get(&crate::ast::Role::Bool)
-        .copied()
-        .map(super::RoleResolution::Unique)
-        .unwrap_or(super::RoleResolution::Missing);
-    intrinsic_scheme_resolved(name, span, bool_role)
+    if annotated_host_role(ty.as_type(), ty.identity_is_canonical(), tcx)
+        .is_some_and(|(role, _)| role == crate::ast::Role::Bool)
+    {
+        Ok(())
+    } else {
+        Err(Error::type_(
+            span,
+            format!(
+                "`__if_then_else__` requires a concrete `role(bool)` host type; found `{}`",
+                display_type(ty.as_type()),
+            ),
+        ))
+    }
+}
+
+/// Select the Boolean prefix from an already checked whole function context.
+/// The remaining result binder retains the ordinary function scheme.
+pub(crate) fn specialize_boolean_intrinsic_from_expected<P>(
+    expected: &super::InternedType<P>,
+    span: Span,
+    tcx: &TypeCtx<'_, '_, P>,
+) -> Result<(Synth<P>, super::InternedType<P>), Error>
+where
+    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
+{
+    let mut bound = tcx.in_scope_type_param_binders();
+    let (mut head, canonical) = super::aliases::unfold_and_qualify_state(
+        expected.as_type(),
+        &tcx.binder_alias_ctx(&bound),
+        expected.identity_is_canonical(),
+    );
+    while let crate::ast::Type::Forall { param, body, .. } = head {
+        bound.insert(param.name);
+        head = *body;
+    }
+    let crate::ast::Type::Function { param, .. } = head else {
+        return Err(unspecialized_intrinsic_error(span));
+    };
+    let condition = crate::ast::Type::right_spine_take(&param, 3)[0];
+    if !tcx
+        .env
+        .role_type_identity_in(condition, canonical, &tcx.binder_alias_ctx(&bound))
+        .is_some_and(|(role, _)| role == crate::ast::Role::Bool)
+    {
+        return Err(unspecialized_intrinsic_error(span));
+    }
+    let condition = super::InternedType::fresh_with_identity(condition.clone(), canonical);
+    let scheme = intrinsic_scheme("__if_then_else__", span)
+        .expect("reserved conditional intrinsic")
+        .expect("structural scheme");
+    let crate::ast::Type::Forall { param, body, .. } = scheme.ty.as_type() else {
+        unreachable!("the conditional intrinsic begins with its Boolean specialization")
+    };
+    let specialized = super::types::subst_type(
+        body,
+        &HashMap::from([(param.name.clone(), condition.clone_type())]),
+    );
+    let specialized = Synth::complete_scheme_interned(super::InternedType::fresh_with_identity(
+        specialized,
+        canonical,
+    ));
+    super::aliases::require_interned_type_equiv(
+        &specialized.ty,
+        expected,
+        span,
+        &tcx.binder_alias_ctx(&tcx.in_scope_type_param_binders()),
+    )?;
+    Ok((specialized, condition))
 }
 
 #[cfg(test)]
@@ -4028,10 +3877,6 @@ mod tests {
     #[test]
     fn comptime_value_helpers_require_proof_first() {
         let span = Span::new(0, 0);
-        let mut roles = HashMap::new();
-        roles.insert(crate::ast::Role::Bool, "Comptime_bool");
-        roles.insert(crate::ast::Role::Str, "Comptime_str");
-
         let mut checked = 0usize;
         for name in crate::comptime::PUBLIC_COMPTIME_NAMES {
             let builtin = crate::comptime::ComptimeBuiltin::from_public_name(name)
@@ -4040,7 +3885,7 @@ mod tests {
                 continue;
             }
             checked += 1;
-            let scheme = comptime_scheme::<Surface>(builtin, span, &roles)
+            let scheme = comptime_scheme::<Surface>(builtin, span)
                 .expect("comptime scheme should build")
                 .expect("value builtin should have scheme");
             let crate::ast::Type::Function {
@@ -4067,11 +3912,7 @@ mod tests {
     #[test]
     fn fill_helpers_have_the_exact_split_capability_schemes() {
         let span = Span::new(0, 0);
-        let mut roles = HashMap::new();
-        roles.insert(crate::ast::Role::Bool, "Comptime_bool");
-        roles.insert(crate::ast::Role::Str, "Comptime_str");
-
-        let fill = comptime_scheme::<Surface>(ComptimeBuiltin::Fill, span, &roles)
+        let fill = comptime_scheme::<Surface>(ComptimeBuiltin::Fill, span)
             .unwrap()
             .unwrap();
         assert_eq!(
@@ -4079,7 +3920,7 @@ mod tests {
             "(__Comptime__ & __Fill_ctx__ & __Type__ & __Type__) -> __Fill_ctx__"
         );
 
-        let specialize = comptime_scheme::<Surface>(ComptimeBuiltin::TermSpecialize, span, &roles)
+        let specialize = comptime_scheme::<Surface>(ComptimeBuiltin::TermSpecialize, span)
             .unwrap()
             .unwrap();
         assert_eq!(

@@ -18,7 +18,7 @@ import ledger_rule_audit/state(
 );
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);

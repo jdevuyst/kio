@@ -260,13 +260,17 @@ function copyInstall(id: string) {
         <p class="home-feature-eyebrow">The interface</p>
         <h2 id="feature-typed" class="home-feature-title">A typed contract with the host.</h2>
         <p>
-          A package names the host types and functions it needs, and the typed entries it
-          exposes back. The host reads that contract, supplies the implementations, and calls
-          the entries it wants.
+          <code>host</code> marks the types and functions supplied by the program running
+          the Kio package. The package file’s <code>bridge { hello }</code> exposes the
+          <code>hello</code> module to the host, making its public <code>main</code> function
+          available to call.
         </p>
         <p>
-          Because the contract is statically typed, Kio checks your package against it at
-          compile time.
+          <code>role(str)</code> allows string literals of type <code>String</code>.
+          Here, <code>print</code>’s parameter determines the literal’s type.
+        </p>
+        <p>
+          Kio checks the package against this typed interface at compile time.
         </p>
         <p>
           The contract is versioned, too: <code>kio sig</code> records it and classifies every
@@ -303,14 +307,14 @@ function copyInstall(id: string) {
           <code>A &amp; B · A | B</code>
           <p>
             Compose types directly with <code>&amp;</code> and <code>|</code>, and
-            pattern-match on them. Row-typed records and variants emerge from the same primitives.
+            pattern-match on them. Row-typed records are expressed using <code>&amp;</code>.
           </p>
         </div>
         <div class="lang-feature">
           <h3>UFCS</h3>
           <code>r.&gt;f(x)</code>
           <p>
-            Call any function receiver-first: <code>r.&gt;f(x)</code> is exactly
+            Call any function or macro receiver-first: <code>r.&gt;f(x)</code> is exactly
             <code>f(r, x)</code>. Four variants: <code>.&gt; .&gt;&gt; .&lt; .&lt;&lt;</code>.
           </p>
         </div>

@@ -29,7 +29,7 @@ import list/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
 import result/result as result;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32, mul_i32);
 
 type Borrower = Member & Book;

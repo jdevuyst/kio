@@ -2,7 +2,7 @@ module river_bytecode_vm/program;
 
 import macros/control(macro if);
 import river_bytecode_vm/constants as c;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
 
 pub fn program_len() -> I32 { 17 }

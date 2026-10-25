@@ -3,7 +3,7 @@ module rs/field;
 import list_host as integers;
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as a;
 import testapi/iter(loop);
 

@@ -1,0 +1,8 @@
+package literal_annotation_rejects_context_override;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

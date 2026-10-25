@@ -26,7 +26,7 @@ tree, with the grouped product in its first slot. Order and grouping matter to
 ordinary type equality. Library [spine macros](docs/poc/macros.md#two-source-to-target-palettes)
 perform explicit structural transformations.
 
-**Row, record, field, label.** Record-shaped values use ordinary products of
+**Row-typed record, row, field, label.** Row-typed records use ordinary products of
 nominal field wrappers. A `labels` declaration introduces lowercase label
 syntax, such as `{name = value}`, and its generated nominal type `Name`.
 The label selects a field; `Name` identifies its wrapper type; field access
@@ -148,19 +148,20 @@ dynamically loaded Kio'; name the intended one when context is insufficient.
 See [hosting](specs/language.md#embeddability-and-portability) and
 [host guides](docs/hosts/).
 
-**Capability, host declaration, role, default.** A capability is an operation or facility
+**Capability, host declaration.** A capability is an operation or facility
 made available to code, including ordinary function values and dictionary
 bundles passed as arguments. Host capabilities, such as strings or I/O, enter
-through typed `host type` and `host fn` declarations. A type's `role(...)`
-admits literals of the corresponding category and determines numeric literal
-bounds or IEEE rounding; it does not select the type
-for unannotated literals or supply operations. A written `default` selects one
-module-local type per integer, float, Boolean or string category. Ordinary
-imports do not inherit a provider's selections. Expected or explicit literal
-types need no default but still obey the literal's written category.
-See [literal typing](docs/guides/typechecking.md#literal-types-and-module-local-defaults),
-[dependency injection](docs/guides/dependency-injection.md) and
-[roles](specs/package.md#roles).
+through typed `host type` and `host fn` declarations. See
+[dependency injection](docs/guides/dependency-injection.md).
+
+**Literal category, role, carrier.** The four scalar literal categories are
+integer, float, Boolean and string. A host type's `role(...)` specifies which
+literals it admits, including numeric bounds or IEEE rounding. Different roles
+can belong to one category: `i32` and `i64` are both integer roles. The carrier
+is the exact type selected by an explicit literal annotation or concrete local
+context. A role supplies neither operations nor an implicit candidate for an
+unresolved literal. See [literal typing](docs/guides/typechecking.md#literal-types-and-local-inference)
+and [roles](specs/package.md#roles).
 
 **Public export, host export, bridge, env, contract surface.** `pub` controls
 importability between modules. A package's `bridge` selects modules whose

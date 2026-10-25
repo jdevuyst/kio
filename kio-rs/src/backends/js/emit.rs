@@ -5305,9 +5305,9 @@ mod tests {
 
     #[test]
     fn string_literal_lowers_to_js_string() {
-        let js = lower(
+        let js = lower_typed(
             "module main; \
-             default host type String role(str); \
+             host type String role(str); \
              fn greeting() -> String { \"hello\" }",
         );
         assert!(js.contains("\"hello\""), "got: {js}");
@@ -5315,9 +5315,9 @@ mod tests {
 
     #[test]
     fn string_literal_escapes_special_chars() {
-        let js = lower(
+        let js = lower_typed(
             "module main; \
-             default host type String role(str); \
+             host type String role(str); \
              fn quoted() -> String { \"a\\\"b\\nc\" }",
         );
         // "a\"b\nc" — outer JS quotes plus escaped inner quote and newline.
@@ -5326,8 +5326,7 @@ mod tests {
 
     #[test]
     fn int_and_float_and_bool_literals_lower() {
-        // These unselected role types need the typer's expected-return
-        // resolution before the literals cross the Kio' boundary.
+        // Return types determine each literal carrier.
         let js = lower_typed(
             "module main; \
              host type I32 role(i32); host type F64 role(f64); host type Bool role(bool); \
@@ -5465,7 +5464,7 @@ mod tests {
              import __intrinsics__; \
              host type Bool role(bool); \
              fn pick(c: Bool) -> . { \
-               __if_then_else__(., c, .() { () }, .() { () }) \
+               __if_then_else__(Bool, ., c, .() { () }, .() { () }) \
              }",
         );
         assert!(js.contains("(c ? null : null)"), "got: {js}");

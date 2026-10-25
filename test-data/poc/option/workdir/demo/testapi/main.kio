@@ -29,7 +29,7 @@ import library/option(
 );
 import list/core(List, cons, nil);
 import list/list(varop [] as [* *]);
-import testapi(Bool, String, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith(add, leq_i32, mul);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
@@ -73,7 +73,7 @@ fn small_times_ten(n: I32) -> Option(I32) {
 }
 
 pub fn main() {
-  let m = some(7);
+  let m = some(7(I32));
   let z = none(I32);
   show_opt_i32("some(7)", m);
   show_opt_i32("none", z);
@@ -115,7 +115,7 @@ pub fn main() {
   let render_unit = .(_unit: .) -> String { "unit" };
   show_opt("some(Unit)", some(()), render_unit);
   show_opt("none(Unit)", none(.), render_unit);
-  show_opt("some(nested number)", some(widen_sum(7, I32 | .)), render_sum);
+  show_opt("some(nested number)", some(widen_sum(7(I32), I32 | .)), render_sum);
   show_opt("some(nested unit)", some(widen_sum((), I32 | .)), render_sum);
   show_opt("none(nested)", none(I32 | .), render_sum);
   let .(unit_options: List(Option(.))) = [* some(()), none(.) *];

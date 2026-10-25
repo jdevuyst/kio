@@ -5,7 +5,7 @@ import list/list as l;
 import macros/control(macro if);
 import macros/match(macro match);
 import rs/field as f;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as a;
 import testapi/iter(loop);
 

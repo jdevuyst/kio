@@ -7,7 +7,7 @@ import ballad/list(List, cons, len, nil);
 import ballad/weave(By_end_word, By_no_successor, By_word_cap, Line, {line_stop}, {line_words});
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, lt_i32);
 import testapi/iter(loop);
 import testapi/text(string_eq);

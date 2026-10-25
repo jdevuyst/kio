@@ -285,9 +285,8 @@ Swift type represents it:
 - `role(bool)` requires `ExpressibleByBooleanLiteral` and `Equatable`;
 - a roleless host type has no extra constraint.
 
-A Kio literal must match the exact declaration's role. An explicit annotation
-or contextual expected type chooses that declaration but does not override its
-role: a string literal cannot inhabit an integer-role type, and a roleless
+A Kio literal must match the exact declaration's role. An explicit literal
+annotation or concrete local context determines that declaration. Selection does not override the role: a string literal cannot inhabit an integer-role type, and a roleless
 host type accepts no lexical literal. Those mismatches are Kio compile errors,
 before the generated Swift module is built.
 

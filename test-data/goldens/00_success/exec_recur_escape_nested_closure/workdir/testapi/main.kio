@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import nested_elaborators(macro invoke_then, macro keep_callback, macro mixed_use);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

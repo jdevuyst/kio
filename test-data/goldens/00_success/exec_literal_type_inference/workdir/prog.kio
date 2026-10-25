@@ -1,0 +1,105 @@
+module prog;
+
+import __intrinsics__;
+
+import testapi as provider;
+import testapi(Bool as Same_truth);
+import testapi(Bool as Truth, Int, String as Text, flag, integer, text);
+
+host type I8 role(i8);
+
+host type I16 role(i16);
+
+host type I32 role(i32);
+
+host type I64 role(i64);
+
+host type I128 role(i128);
+
+host type U8 role(u8);
+
+host type U16 role(u16);
+
+host type U32 role(u32);
+
+host type U64 role(u64);
+
+host type U128 role(u128);
+
+host type F32 role(f32);
+
+host type F64 role(f64);
+
+host type String role(str);
+
+host type Bool role(bool);
+
+type Identity[A] = A;
+
+type Number = Identity(I32);
+
+type Real = Identity(F64);
+
+type Words = Identity(Text);
+
+type Flag = Identity(Truth);
+
+host fn print_i32(value: I32);
+
+pure fn integer_value() -> Number { let value = 42(Number); value }
+
+pure fn float_value() -> Real { let value = 1.5(Real); value }
+
+pure fn string_value() -> Words { let value = "selected"(Words); value }
+
+pure fn boolean_value() -> Flag { let value = .f(Flag); value }
+
+pure fn expected_integer() -> Int { 19 }
+
+pure fn discard[A](value: A) { () }
+
+pure fn choose[Truth](condition: Flag, yes: Truth, no: Truth) -> Truth {
+  let select = __if_then_else__(Flag);
+  select(Truth, condition, .() { yes }, .() { no })
+}
+
+equiv integer_annotation() {
+  integer_value();
+  42(I32)
+}
+
+equiv float_annotation() {
+  float_value();
+  1.5(F64)
+}
+
+equiv string_annotation() {
+  string_value();
+  "selected"(Text)
+}
+
+equiv boolean_annotation() {
+  boolean_value();
+  .f(Truth)
+}
+
+equiv provider_integer() {
+  integer();
+  7(provider.I32)
+}
+
+equiv provider_string() {
+  text();
+  "provider"(Text)
+}
+
+pub fn main() {
+  discard(float_value());
+  discard(string_value());
+  discard(integer());
+  discard(text());
+  discard(expected_integer());
+  print_i32(integer_value());
+  print_i32(choose(flag(), 11, 22));
+  print_i32(choose(boolean_value(), 11, 22))
+}

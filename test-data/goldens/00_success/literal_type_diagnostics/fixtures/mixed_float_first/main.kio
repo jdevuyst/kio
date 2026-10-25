@@ -1,0 +1,9 @@
+module main;
+
+host type Int role(i64);
+
+host type Float role(f64);
+
+pure fn same[A](left: A, right: A) -> A { left }
+
+fn value() { let n = same(42.0(Float), 42); () }

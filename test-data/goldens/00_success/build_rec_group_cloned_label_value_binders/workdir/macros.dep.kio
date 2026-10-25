@@ -3,3 +3,5 @@ dependency macros;
 source {
   path "../../../../poc/macros/workdir/macros.pkg.kio"
 }
+
+rehost macros/control to build_rec_group_cloned_label_value_binders;

@@ -915,16 +915,27 @@ source {
 
 Run `kio dep fetch` from that package root. It writes `macros.lock.kio` and
 materializes the selected modules under `macros/`; the lock records the selected
-path and commit. The dependency's `macros/testapi` module declares four host
-types: `String` with role `str`, `I32` and `Int` with role `i32`, and `Bool`
-with role `bool`. These are separate declared identities, including `I32`
-and `Int` despite their shared role. When your public bridge reaches that
-module, include `macros/testapi` in the bridge and supply all four types through
-your host interface. To reuse a consumer module's matching declarations,
-add `rehost macros/testapi to your_host_module;` to `macros.dep.kio` before
-fetching and bridge that provider instead. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with-rehost)
-explains the required names and compatible types; [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
-explains committing the lock and materialized sources.
+path and commit. A consumer of `if` uses the concrete Boolean type declared
+by `macros/control`:
+
+```kio {ignore}
+import macros/control(Bool, macro if);
+```
+
+Use `Bool` for conditions and the host functions that produce them. To share
+an existing Boolean identity instead, add this mapping to `macros.dep.kio`
+before fetching:
+
+```text
+rehost macros/control to app/types;
+```
+
+Here `app/types` declares the consumer's `host type Bool role(bool);`.
+Materialization replaces the library's `Bool` with an ordinary alias to that
+exact type. Bridge the chosen host-capability provider with the entries your
+host calls. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with-rehost)
+explains compatible provider declarations; [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
+explains locks, materialized sources and contract discovery.
 
 Pick the macro modules your code calls — `control` for `if` and `scope`,
 `sequence` for `do`, `spine_macros` for the spine palette,

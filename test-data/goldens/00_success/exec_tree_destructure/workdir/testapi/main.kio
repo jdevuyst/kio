@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Int);
+import testapi(Int);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -42,9 +42,9 @@ pub fn main() {
   //              /    \
   //          leaf(10) leaf(20)
   // Then read leaf(10) = root.left.left.
-  let l10 = leaf(10);
-  let l20 = leaf(20);
-  let l99 = leaf(99);
+  let l10 = leaf(10(Int));
+  let l20 = leaf(20(Int));
+  let l99 = leaf(99(Int));
   let inner = branch(l10, l20);
   let root = branch(inner, l99);
   let v = leaf_or(0, left_or(l99, left_or(l99, root)));

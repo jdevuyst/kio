@@ -15,5 +15,6 @@ build {
 }
 
 bridge {
-  main
+  main;
+  macros/control
 }

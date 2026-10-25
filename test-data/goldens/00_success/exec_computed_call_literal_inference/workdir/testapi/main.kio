@@ -1,0 +1,5 @@
+module testapi/main;
+
+import prog(main as run);
+
+pub fn main() { run() }

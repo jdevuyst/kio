@@ -295,8 +295,9 @@ Two declarations may select the same Java class and still remain separate
 generic positions.
 
 A Kio literal reaches one of these bindings only when the literal's lexical
-role matches that exact declaration's role. An annotation or expected type
-selects the declaration but cannot change the role, and a roleless declaration
+category is admitted by that exact declaration's role. An explicit literal
+annotation or concrete local context selects the declaration. Selection cannot
+change the literal's category, and a roleless declaration
 has no matching literal. Java then receives the value through the same
 declaration-keyed adapter pair; no separate literal representation is exposed.
 

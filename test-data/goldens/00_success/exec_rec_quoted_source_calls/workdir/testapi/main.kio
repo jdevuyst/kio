@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/control(macro scope);
 import quotation(macro duplicate);
-import testapi(default Bool);
+import testapi(Bool);
 import testapi/io(print);
 import testapi/iter(loop);
 
@@ -79,9 +79,9 @@ pub fn main() {
   print("flat recursive\n");
   let four = flat_source();
   print("generic direct\n");
-  let five = generic_source(.t);
+  let five = generic_source(.t(Bool));
   print("generic ufcs\n");
-  let six = generic_ufcs(.t);
+  let six = generic_ufcs(.t(Bool));
   print("update\n");
   let seven = update_source();
   print("nested quotation\n");

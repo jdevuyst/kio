@@ -1238,9 +1238,8 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
     let initial_source = concat!(
         "module pkg/main;\n",
         "import pkg/common(macro common);\n",
-        "import control(macro if);\n",
+        "import control(Bool, macro if);\n",
         "\n",
-        "default host type Bool role(bool);\n",
         "host type I32 role(i32);\n",
         "host type String role(str);\n",
         "host fn make[A]() -> A;\n",
@@ -1269,7 +1268,11 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         include_str!("../../test-data/poc/macros/workdir/control.kio"),
     );
     let main_path = dir.write("pkg/main.kio", initial_source);
-    dir.write_pkg_root_package();
+    dir.write("pkg.kio", "module pkg;\n");
+    dir.write(
+        "pkg.pkg.kio",
+        "package pkg;\n\nbridge {\n  pkg;\n  pkg/**;\n  control;\n}\n",
+    );
 
     let mut lsp = LspProcess::spawn();
     lsp.initialize(&path_to_file_uri(dir.path()));
@@ -4064,8 +4067,8 @@ mod block_calls;
 #[path = "lsp_smoke/macro_calls.rs"]
 mod macro_calls;
 
-#[path = "lsp_smoke/default_types.rs"]
-mod default_types;
+#[path = "lsp_smoke/literal_types.rs"]
+mod literal_types;
 
 #[path = "lsp_smoke/completion_closed.rs"]
 mod completion_closed;
@@ -8057,7 +8060,7 @@ fn lsp_publishes_no_diagnostics_for_a_clean_rec_loop() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "import pkg(default Bool, I32, add_i32, leq_i32, loop);\n",
+        "import pkg(Bool, I32, add_i32, leq_i32, loop);\n",
         "import control(macro if);\n",
         "\n",
         // Three value params: the lowering unpacks the rec state tuple with a

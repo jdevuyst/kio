@@ -10,7 +10,7 @@ module tree/delete;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 import tree/node(

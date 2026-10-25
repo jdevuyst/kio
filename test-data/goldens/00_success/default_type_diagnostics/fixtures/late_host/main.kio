@@ -1,5 +1,0 @@
-module main;
-
-fn earlier() { let n = 42; () }
-
-default host type Int role(i64);

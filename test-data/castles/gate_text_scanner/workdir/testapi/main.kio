@@ -1,7 +1,7 @@
 module testapi/main;
 
 import scanner(checksum, class_for, command_tag, gate_target, script_len_tag, set_mark, token);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 import testapi/text(string_concat);
 

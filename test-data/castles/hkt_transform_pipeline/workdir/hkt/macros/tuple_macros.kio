@@ -387,7 +387,7 @@ pure fn concat_macro(
   , ct
   , flatten_product_slots(ct, source, value)
   , target
-  , "concat target does not match flattened product"
+  , "concat target does not match flattened product"(__Diagnostic_text__)
   )
 }
 
@@ -412,7 +412,7 @@ pure fn flatten_macro(
   , ct
   , flatten_product_slots(ct, source, value)
   , target
-  , "flatten target does not match flattened product"
+  , "flatten target does not match flattened product"(__Diagnostic_text__)
   )
 }
 
@@ -441,7 +441,9 @@ pure fn group_macro(
   , .(target_type: __Type__) -> Macro_result {
       materialize_slots(ct, target_type, flatten_product_slots(ct, source, value))
     }
-  , .() -> Macro_result { err(ct, "group needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "group needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -467,14 +469,16 @@ pure fn head_macro(
   , Slot & Slot_list
   , Macro_result
   , Slot_list.un_slot_list(flatten_product_slots(ct, source, value))
-  , .(_empty: .) -> Macro_result { err(ct, "head source has no product slots") }
+  , .(_empty: .) -> Macro_result {
+      err(ct, "head source has no product slots"(__Diagnostic_text__))
+    }
   , .(cell: Slot & Slot_list) -> Macro_result {
       let slot = __fst__(Slot, Slot_list, cell);
       finish_with_optional_target(
       , ct
       , (slot_type(ct, slot), slot_term(ct, slot))
       , target
-      , "head target does not match first product slot"
+      , "head target does not match first product slot"(__Diagnostic_text__)
       )
     }
   )
@@ -502,13 +506,15 @@ pure fn tail_macro(
   , Slot & Slot_list
   , Macro_result
   , Slot_list.un_slot_list(flatten_product_slots(ct, source, value))
-  , .(_empty: .) -> Macro_result { err(ct, "tail source has no product slots") }
+  , .(_empty: .) -> Macro_result {
+      err(ct, "tail source has no product slots"(__Diagnostic_text__))
+    }
   , .(cell: Slot & Slot_list) -> Macro_result {
       finish_slots_with_optional_target(
       , ct
       , __snd__(Slot, Slot_list, cell)
       , target
-      , "tail target does not match product tail"
+      , "tail target does not match product tail"(__Diagnostic_text__)
       )
     }
   )
@@ -579,10 +585,12 @@ pure fn last_macro(
       , ct
       , (slot_type(ct, slot), slot_term(ct, slot))
       , target
-      , "last target does not match final product slot"
+      , "last target does not match final product slot"(__Diagnostic_text__)
       )
     }
-  , .(_empty: .) -> Macro_result { err(ct, "last source has no product slots") }
+  , .(_empty: .) -> Macro_result {
+      err(ct, "last source has no product slots"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -762,11 +770,13 @@ pure fn split_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, 
           )
         }
       , .(_mismatch: .) -> Macro_result {
-          err(ct, "split source does not provide the requested left prefix")
+          err(ct, "split source does not provide the requested left prefix"(__Diagnostic_text__))
         }
       )
     }
-  , .(_not_product: .) -> Macro_result { err(ct, "split target must be a product") }
+  , .(_not_product: .) -> Macro_result {
+      err(ct, "split target must be a product"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -782,7 +792,9 @@ pure fn split_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { split_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "split needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "split needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -862,7 +874,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
                   __left__(
                   , Slot_list_result
                   , Zip_next
-                  , slot_list_err(ct, "zip operands have different lengths")
+                  , slot_list_err(ct, "zip operands have different lengths"(__Diagnostic_text__))
                   )
                 }
               )
@@ -877,7 +889,7 @@ pure fn zip_slots(ct: __Comptime__, lefts: Slot_list, rights: Slot_list) -> Slot
                   __left__(
                   , Slot_list_result
                   , Zip_next
-                  , slot_list_err(ct, "zip operands have different lengths")
+                  , slot_list_err(ct, "zip operands have different lengths"(__Diagnostic_text__))
                   )
                 }
               , .(right_cell: Slot & Slot_list) -> Zip_step {
@@ -954,7 +966,7 @@ pure fn zip_macro(
       , ct
       , slots
       , target
-      , "zip target does not match paired product"
+      , "zip target does not match paired product"(__Diagnostic_text__)
       )
     }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
@@ -1031,7 +1043,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                   __left__(
                   , Slot_list_result
                   , Map_next
-                  , slot_list_err(ct, "map operands have different lengths")
+                  , slot_list_err(ct, "map operands have different lengths"(__Diagnostic_text__))
                   )
                 }
               )
@@ -1046,7 +1058,7 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                   __left__(
                   , Slot_list_result
                   , Map_next
-                  , slot_list_err(ct, "map operands have different lengths")
+                  , slot_list_err(ct, "map operands have different lengths"(__Diagnostic_text__))
                   )
                 }
               , .(value_cell: Slot & Slot_list) -> Map_step {
@@ -1093,7 +1105,10 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                           __left__(
                           , Slot_list_result
                           , Map_next
-                          , slot_list_err(ct, "map function parameter does not match value slot")
+                          , slot_list_err(
+                            , ct
+                            , "map function parameter does not match value slot"(__Diagnostic_text__)
+                            )
                           )
                         }
                       )
@@ -1102,7 +1117,10 @@ pure fn map_slots(ct: __Comptime__, fns: Slot_list, values: Slot_list) -> Slot_l
                       __left__(
                       , Slot_list_result
                       , Map_next
-                      , slot_list_err(ct, "map function slot is not a function")
+                      , slot_list_err(
+                        , ct
+                        , "map function slot is not a function"(__Diagnostic_text__)
+                        )
                       )
                     }
                   )
@@ -1150,7 +1168,7 @@ pure fn map_macro(
       , ct
       , slots
       , target
-      , "map target does not match result product"
+      , "map target does not match result product"(__Diagnostic_text__)
       )
     }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
@@ -1297,7 +1315,7 @@ pure fn distinct_macro(
   , ct
   , distinct_slots(ct, flatten_product_slots(ct, source, value))
   , target
-  , "distinct target does not match first-occurrence product"
+  , "distinct target does not match first-occurrence product"(__Diagnostic_text__)
   )
 }
 

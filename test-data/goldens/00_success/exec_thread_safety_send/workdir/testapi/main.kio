@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -54,6 +54,6 @@ pub fn main() {
   let three = succ(succ(succ(zero())));
   print(int_to_string(to_int(plus(two, three))));
   print("\n"(String));
-  let b = box_value("thread-safety-send-ok\n");
+  let b = box_value("thread-safety-send-ok\n"(String));
   print(extract_via_cps(b))
 }

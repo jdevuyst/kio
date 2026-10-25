@@ -3,7 +3,7 @@ module api;
 import decoy as other;
 import macros/control(macro if);
 import selected as chosen;
-import testapi(default Bool);
+import testapi(Bool);
 
 pub fn choose(card: chosen.Card) -> Bool {
   if(card.?{chosen.flag}) { .t } else { .f }

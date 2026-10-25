@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
@@ -25,7 +25,7 @@ pub fn main() {
   let show_unit = .(_unit: .) -> String { "present unit\n" };
   print(describe(present(()), show_unit));
   print(describe(absent(., ()), show_unit));
-  print(describe(present(widen_sum("present inner text\n", String | .)), show_inner));
+  print(describe(present(widen_sum("present inner text\n"(String), String | .)), show_inner));
   print(describe(present(widen_sum((), String | .)), show_inner));
   print(describe(absent(String | ., ()), show_inner))
 }

@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
@@ -60,7 +60,7 @@ fn leaf_functor() -> Functor(Leaf) {
 // would still be the un-suffixed input.
 fn use_instance() -> String {
   let inst = leaf_functor();
-  let m = Leaf.mk_leaf(some("functor on alias carrier"));
+  let m = Leaf.mk_leaf(some("functor on alias carrier"(String)));
   let mapped = Functor.fmap(inst)(String, String, .(s: String) { string_concat(s, " ok\n") }, m);
   match(Leaf.un_leaf(mapped)) {
     (.(p: Present(String)) { Present.get(String, p) }, .(_u: .) { "absent\n" })

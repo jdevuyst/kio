@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro fit);
-import testapi(Bool, I32, default String);
+import testapi(Bool, I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 

@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -14,4 +14,4 @@ fn render(v: I32 | String) -> String {
   }
 }
 
-pub fn main() { print(render(widen_sum("match! derived: ok\n"))) }
+pub fn main() { print(render(widen_sum("match! derived: ok\n"(String)))) }

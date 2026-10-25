@@ -1,11 +1,11 @@
 module testapi/main;
 
 import macros/match(macro match);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 fn classify() -> String {
-  match("ignored") {
+  match("ignored"(String)) {
     .[A](_value: A) { "matched atom\n" }
   }
 }

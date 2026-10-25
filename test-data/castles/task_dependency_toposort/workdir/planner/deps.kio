@@ -12,7 +12,7 @@ import planner/tasks(
 , package_bundle
 , release_notes
 );
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 
 fn unfinished(plan: Plan_state, task: I32) -> Bool { invert(is_done(plan, task)) }

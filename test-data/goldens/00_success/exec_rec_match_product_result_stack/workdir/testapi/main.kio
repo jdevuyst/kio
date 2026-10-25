@@ -2,7 +2,7 @@ module testapi/main;
 
 import fixture/model(Report, {first}, {second});
 import fixture/search(descend, descend_pending);
-import testapi(I32);
+import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 

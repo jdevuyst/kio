@@ -14015,9 +14015,8 @@ mod tests {
     fn recursive_state_over_applied_host_nominal_skips_partial_eq() {
         let pkg = build_multi_module_package(
             &[
-                "module main; import control(macro if); \
+                "module main; import control(Bool, macro if); \
              host type Array[A]; \
-             default host type Bool role(bool); \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              labels Array_state = { cells: Array(I32) }; \
@@ -14027,7 +14026,7 @@ mod tests {
              }",
                 include_str!("../../../../test-data/poc/macros/workdir/control.kio"),
             ],
-            Some("bridge { main; }"),
+            Some("bridge { control; main; }"),
         );
         let host_types = crate::host_descriptor::build_host_descriptor(&pkg)
             .host_types

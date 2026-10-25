@@ -6,7 +6,6 @@ fn visitor(elabs: &Elaborations) -> SubstituteVisitor<'_> {
         source_bindings: None,
         module_path: "m".to_owned(),
         module: None,
-        package: None,
         prime_type_requalifier: PrimeRequalifier::Disabled,
         type_binders: Vec::new(),
         prime_requalifier_seeded: false,

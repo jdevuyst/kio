@@ -53,5 +53,6 @@ build {
 bridge {
   core;
   list;
-  macros/testapi
+  macros/testapi;
+  macros/control
 }

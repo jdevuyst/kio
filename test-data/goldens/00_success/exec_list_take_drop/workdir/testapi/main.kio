@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro one_sum, macro widen_sum);
-import testapi(I32, default Bool, default String);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -104,7 +104,7 @@ fn print_list_step(state: List(I32) & String) -> (List(I32) & String) | . {
         , .(x: I32, rest: List(I32)) {
             let sep =
               match(rest.>List.un_list) {
-                (.(_hd: I32, _tl: List(I32)) { "," }, .(_empty: .) { "" })
+                (.(_hd: I32, _tl: List(I32)) { ","(String) }, .(_empty: .) { "" })
               };
             widen_sum(
             , (rest, string_concat(acc, string_concat(int_to_string(x), sep)))

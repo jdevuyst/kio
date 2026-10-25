@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/control(macro if);
-import testapi(default Bool);
+import testapi(Bool);
 import testapi/io as io;
 
 pub newtype Cell[A] : A { constructor pack; projector unpack }
@@ -15,7 +15,7 @@ pub fn choose[A](condition: Bool, first: A, second: A) -> A {
 }
 
 pub fn main() {
-  let condition = choose(.f, .f, .t);
+  let .(condition: Bool) = choose(.f, .f, .t);
   io.print(choose(condition, "left ", "wrong "));
   io.print(choose(.f, "wrong\n", "right\n"))
 }

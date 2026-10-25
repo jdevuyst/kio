@@ -15,7 +15,7 @@ import book/order(Order, Side, Trade, id_of, is_buy, price_of, ranks_ahead, rema
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(
 , array_get

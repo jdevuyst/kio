@@ -5,4 +5,5 @@ source {
 }
 
 rehost list/list to queue_host;
+rehost list/macros/control to queue_host;
 rehost list/macros/testapi to testapi;

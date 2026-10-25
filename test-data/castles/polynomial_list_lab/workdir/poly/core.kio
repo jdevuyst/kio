@@ -6,7 +6,7 @@ import list/list as ll;
 import list/list(varop [] as [* *]);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32, sub_i32);
 import testapi/iter(loop);
 

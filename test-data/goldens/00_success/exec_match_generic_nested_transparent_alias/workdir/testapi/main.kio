@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 labels { left[A]: A, right[A]: A };
@@ -24,6 +24,6 @@ fn classify[A](source: (Left(A) & .) | (Right(A) & .), result: String) -> String
 }
 
 pub fn main() {
-  print(classify(left("value"), "left\n"));
-  print(classify(right("value"), "right\n"))
+  print(classify(left("value"(String)), "left\n"));
+  print(classify(right("value"(String)), "right\n"))
 }

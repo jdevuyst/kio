@@ -37,6 +37,8 @@ pub fn main() { print("hello from Kio\n") }
 
 The `host` declarations name the capabilities the package needs from its host — here a `String` type and a `print` function — while `main` is the entry the host chooses to call.
 
+`role(str)` allows string literals of type `String`. Here, `print`’s parameter determines the literal’s type.
+
 ## Install
 
 macOS, Linux, and Windows — install the `kio` command with one line:

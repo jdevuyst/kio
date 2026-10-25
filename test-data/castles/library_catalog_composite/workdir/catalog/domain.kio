@@ -5,7 +5,7 @@ import list/core as lcore;
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
 import result/result as result;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(eq_i32, lt_i32);
 import testapi/fmt(int_to_string);
 import testapi/text(string_concat);

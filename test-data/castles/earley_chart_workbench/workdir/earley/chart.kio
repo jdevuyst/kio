@@ -3,7 +3,7 @@ module earley/chart;
 import earley/arrays as numbers;
 import earley/model as model;
 import macros/control(macro if);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/iter(loop);

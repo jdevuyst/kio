@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import shadow_elaborators(macro invoke);
-import testapi(I32, default Bool, default String);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -40,6 +40,6 @@ rec(iter.loop) fn structural[A](value: A, remaining: I32) -> I32 {
 pub fn main() {
   io.print(changed("outer\n", 1));
   io.print(captured("retained\n", 1, io.print));
-  io.print(fmt.i32_to_string(structural("unused", 2)));
+  io.print(fmt.i32_to_string(structural("unused"(String), 2)));
   io.print("\n")
 }

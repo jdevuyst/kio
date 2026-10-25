@@ -3,7 +3,7 @@ module token;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default I32, default String);
+import testapi(I32, String);
 
 // `token.kio` — the token alphabet for the Kio' term-subset grammar.
 //

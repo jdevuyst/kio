@@ -21,11 +21,11 @@ import core(
 , to_sum
 );
 import list/core(List, uncons);
-import macros/control(macro if);
+import macros/control(Bool as Control_bool, macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
 
-default host type Bool role(bool);
+pub type Bool = Control_bool;
 
 host type String role(str);
 

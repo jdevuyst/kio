@@ -1,8 +1,6 @@
 module main;
 
-import macros/control(macro if);
-
-default host type Bool role(bool);
+import macros/control(Bool, macro if);
 
 fn identity_a[A](value: A) -> A { value }
 

@@ -2,7 +2,7 @@ module priority_window_scheduler/planner;
 
 import macros/control(macro if);
 import priority_window_scheduler/model(Window, {handoff}, {impact}, {risk});
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 
 pub fn score(window: Window) -> I32 {

@@ -97,6 +97,11 @@ host fn print(p0: String);
 pub fn main() { print("hello from Kio\n"(String)) }
 ```
 
+`String` here names a host-supplied type. `role(str)` admits string literals
+at that type; `(String)` explicitly selects the greeting's carrier. A concrete
+parameter or return type can also determine an ordinary unannotated literal.
+See [literal types and local inference](../guides/typechecking.md#literal-types-and-local-inference).
+
 A `host type` / `host fn` is a capability the **host** provides: the package declares the shape it needs and the host supplies the implementation when it loads the package. `pub` marks `main` as part of the package's exported surface. That is all the language you need to follow the rest of this tutorial.
 
 ## Chapter 2 — Write a little code

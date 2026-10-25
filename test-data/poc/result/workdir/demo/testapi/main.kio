@@ -26,7 +26,7 @@ import library/result(
 // The reusable library surface is `result.kio`; this demo entry imports
 // it through `library.dep.kio`, renders `Result` / `Bool` values, and
 // exercises both the named API and the operator DSL.
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -79,8 +79,8 @@ fn run() {
   let inc = .(n: I32) -> I32 { add_i32(n, 1) };
   let shout = .(s: String) -> String { cat(s, "!") };
   // ---------- Constructors + eliminator ----------
-  let good = ok(_, String, 41);
-  let bad = err(I32, _, "boom");
+  let good = ok(_, String, 41(I32));
+  let bad = err(I32, _, "boom"(String));
   line("ok(41)", show(good));
   line("err(boom)", show(bad));
   // ---------- Predicates ----------

@@ -2,7 +2,7 @@ module planner/state;
 
 import macros/control(macro if);
 import planner/tasks(task_effort, task_name);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32);
 import testapi/text(string_concat);
 

@@ -234,14 +234,12 @@ you trust. `kio build kio-prime` typechecks a package before emitting this
 image, but `load_package` cannot establish body correctness for source that was
 subsequently modified or obtained from an untrusted producer.
 
-The loader does validate written default selections before entering bodies:
-each selected import, host type or alias must normalize to one saturated
-role-bearing host identity, including through applied aliases. Same-identity
-selections agree; distinct defaults in one category reject even when unused.
-Ordinary imports do not activate provider defaults. Boolean intrinsic selection
-uses those explicit markers with ordinary source-order scope. This header
-validation does not check literal admission or general body typing: those
-remain the trusted producer's responsibility.
+The loader checks the branching intrinsic's explicit Boolean specialization:
+the first type argument must normalize through ordinary aliases to one concrete
+`role(bool)` host identity. It does not search visible Boolean declarations
+or infer role constraints. These structural checks do not establish general
+body typing or literal admission, which remain the trusted producer's
+responsibility.
 
 Three runtime gates
 still protect the host boundary, but none typechecks function bodies:

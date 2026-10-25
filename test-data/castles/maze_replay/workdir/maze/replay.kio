@@ -11,7 +11,7 @@ module maze/replay;
 import macros/control(macro if);
 import macros/match(macro match);
 import maze/world(and, in_bounds, int_eq, is_item, is_wall);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/text(string_eq);
 

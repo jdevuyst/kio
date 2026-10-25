@@ -1,0 +1,24 @@
+module prog;
+
+import macros/control(macro if);
+import testapi(Bool, I32);
+import testapi/fmt(print_i32);
+
+fn both(left: Bool, right: Bool) -> Bool {
+  if(left) { right } else { .f(Bool) }
+}
+
+fn choose(left: Bool, right: Bool) -> I32 {
+  if(both(if(left) { .t(Bool) } else { .f(Bool) }, if(right) { .t(Bool) } else { .f(Bool) })) {
+    1(I32)
+  } else {
+    0(I32)
+  }
+}
+
+pub fn main() {
+  print_i32(choose(.t, .t));
+  print_i32(choose(.t, .f));
+  print_i32(choose(.f, .t));
+  print_i32(choose(.f, .f))
+}

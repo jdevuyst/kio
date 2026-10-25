@@ -4,7 +4,7 @@ import __intrinsics__;
 
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/io(print);
 
 // Exercises the kio-prime round-trip: a tuple literal, a host function

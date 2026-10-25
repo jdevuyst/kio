@@ -3,7 +3,7 @@ module testapi/main;
 import macros/match(macro match);
 import systems/input as input;
 import systems/report as report;
-import testapi(I32);
+import testapi(I32, String);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

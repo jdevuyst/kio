@@ -12,7 +12,7 @@ import grid_firebreak_search/model(
 );
 import grid_firebreak_search/store as store;
 import macros/control(macro if);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter as iter;

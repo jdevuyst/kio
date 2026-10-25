@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro fit, macro widen_sum);
-import testapi(I32, default Bool, default String);
+import testapi(Bool, I32, String);
 import testapi/io(print);
 
 // Spine equivalent of `exec_align_widen_then_collapse`. Source
@@ -14,9 +14,9 @@ import testapi/io(print);
 // outward behavior is identical.
 fn convert(b: Bool) -> String | I32 {
   fit(if(b) {
-    widen_sum("widened-collapsed\n", String | String)
+    widen_sum("widened-collapsed\n"(String), String | String)
   } else {
-    widen_sum("widened-collapsed\n", String | String)
+    widen_sum("widened-collapsed\n"(String), String | String)
   })
 }
 

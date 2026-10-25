@@ -1,7 +1,7 @@
 module testapi/main;
 
 import helpers(macro block, macro keep, macro keep as keep1);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 fn ordinary(_value: String) -> String { "ordinary\n" }

@@ -28,9 +28,9 @@ This guide explains the HKT machinery — kind annotations, type-constructor app
 
 Assumed setup: a module whose host supplies `String` with `role(str)`,
 `print: String -> .`, and `string_concat: (String & String) -> String`.
-The examples select `String` as the module's default for untyped literal
-bindings such as `let suffix = "!";`; see
-[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
+Concrete local context determines ordinary string literals; annotate a
+standalone initializer such as `let suffix = "!"(String);` before its
+binding boundary. See [literal inference](typechecking.md#literal-types-and-local-inference).
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -41,7 +41,7 @@ module kiodoc;
 
 import sequence(macro do);
 
-default host type String role(str);
+host type String role(str);
 host fn print(p0: String);
 host fn string_concat(p0: String, p1: String) -> String;
 
@@ -194,7 +194,7 @@ pub newtype Pure[*F] : [A] A -> F(A) { pub constructor mk_pure; pub projector li
 fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
   do(Monad.bind(monad)) {
     let prefix <- seed;
-    let suffix = "!";
+    let suffix = "!"(String);
     let combined <- Pure.lift(pur)(string_concat(prefix, suffix));
     Pure.lift(pur)(string_concat(combined, "\n"))
   }
@@ -203,7 +203,7 @@ fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
 
 `let prefix <- seed; rest` becomes
 `Monad.bind(monad)(seed, .(prefix) { rest })`. The later bind is folded the
-same way. By contrast, `let suffix = "!";` is a normal lexical `let`; it does
+same way. By contrast, `let suffix = "!"(String);` is a normal lexical `let`; it does
 not invoke bind. A unit-discarding expression statement becomes a bind whose
 continuation ignores the unit payload, and the final expression must already
 produce `F(_)`.

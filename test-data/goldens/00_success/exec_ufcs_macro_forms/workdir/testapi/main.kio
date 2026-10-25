@@ -3,7 +3,7 @@ module testapi/main;
 import macros/algebraic_macros(macro atom);
 import macros/match(macro match);
 import macros/spine_macros(macro narrow_prod, macro narrow_sum, macro widen_sum);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -43,7 +43,7 @@ pub fn main() {
   let atomed = atom_string(("atom\n", 0));
   let dropped = drop_unit(("kept\n", ()));
   let dropped_left = drop_unit_left(("left\n", ()));
-  let deduped = dedup_sum(widen_sum("done\n"));
+  let deduped = dedup_sum(widen_sum("done\n"(String)));
   print(s);
   print(picked);
   print(atomed);

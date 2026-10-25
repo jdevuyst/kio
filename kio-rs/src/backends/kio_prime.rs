@@ -507,7 +507,6 @@ impl Requalifier {
                     kind: ImportKind::Selective {
                         items: vec![ImportItem::Name {
                             macro_span: None,
-                            default_span: None,
                             leading_trivia: Vec::new(),
                             name: leaf.to_owned(),
                             span: self.span,
@@ -949,9 +948,8 @@ mod tests {
     /// the body. The output contains no `if` surface call.
     #[test]
     fn if_else_replaced_by_intrinsic_call_in_emitted_output() {
-        let src = "module main; import control(macro if); \
-                   default host type Bool role(bool); \
-                   fn pick(c: Bool) -> . { if (c) { () } else { () } }";
+        let src = "module main; import control(Bool, macro if); \
+                         fn pick(c: Bool) -> . { if (c) { () } else { () } }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let control = parse(include_str!(

@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/spine_macros(macro narrow_sum, macro widen_sum);
-import testapi(default Bool, default String);
+import testapi(Bool, String);
 import testapi/io(print);
 
 // The branches explicitly construct `String | String`; the spine
@@ -12,9 +12,9 @@ import testapi/io(print);
 // palette.
 fn pick(b: Bool) -> String {
   narrow_sum(if(b) {
-    widen_sum("collapsed\n", String | String)
+    widen_sum("collapsed\n"(String), String | String)
   } else {
-    widen_sum("collapsed\n", String | String)
+    widen_sum("collapsed\n"(String), String | String)
   })
 }
 

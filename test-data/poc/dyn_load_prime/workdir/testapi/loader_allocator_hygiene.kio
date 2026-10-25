@@ -6,7 +6,7 @@ import loader(un_export_infos, un_load_outcome);
 import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(default Bool, default String);
+import testapi(Bool, String);
 import testapi/text(string_concat, string_eq);
 
 fn probe_image() -> String {

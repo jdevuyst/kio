@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/algebraic_macros(macro into);
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 
 // `into` swaps the components of a 2-tuple. Source type
@@ -13,7 +13,7 @@ fn swap_pair(p: I32 & String) -> String & I32 { into(p) }
 fn first_string((s: String, _i: I32)) -> String { s }
 
 pub fn main() {
-  let original = (42, "hello\n");
+  let original = (42(I32), "hello\n"(String));
   let swapped = swap_pair(original);
   // After the swap, the String sits in the first slot.
   print(first_string(swapped))

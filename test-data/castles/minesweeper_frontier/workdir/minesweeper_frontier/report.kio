@@ -21,7 +21,7 @@ import minesweeper_frontier/model(
 , mine_total
 , revealed_total
 );
-import testapi(Array, I32, String, default Bool);
+import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/fmt(bool_to_string, int_to_string);

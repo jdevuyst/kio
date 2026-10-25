@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/spine_macros(macro widen_sum);
 import observer(macro keep);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/io as io;
 import testapi/iter as iter;
 
@@ -19,7 +19,7 @@ equiv callback_header_erases[A](value: A) {
   value
 }
 
-fn advance(_state: I32) -> I32 | String { widen_sum("ok\n") }
+fn advance(_state: I32) -> I32 | String { widen_sum("ok\n"(String)) }
 
 pub fn main() {
   io.print(keep(drive(.(state: I32) -> I32 | String { io.print("step\n"); advance(state) }, 0)));

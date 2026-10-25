@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(String, default I32);
+import testapi(String, I32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -45,7 +45,7 @@ fn root_val(d: Done(I32)) -> I32 {
 }
 
 pub fn main() {
-  let t = node(7, leaf(), leaf());
+  let t = node(7(I32), leaf(), leaf());
   let d = focus(t, top(I32, ()));
   print(string_concat(int_to_string(root_val(d)), "\n"))
 }

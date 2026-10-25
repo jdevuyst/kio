@@ -4,7 +4,7 @@ import list/list as l;
 import macros/control(macro if);
 import systems/matrix as m;
 import systems/rational as q;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 
 pub fn residuals(original: m.Matrix, variables: I32, vector: m.Row, homogeneous: Bool) -> m.Row {
   l.map(

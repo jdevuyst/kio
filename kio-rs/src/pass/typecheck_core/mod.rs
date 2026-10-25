@@ -155,8 +155,8 @@ mod kind_scheme;
 
 mod requalify;
 pub(crate) use requalify::{
-    PrimeLocalTypeAlias, PrimeTypeRequalifier, source_type_spelling_with_bound,
-    source_type_spelling_with_lookup,
+    PrimeLocalTypeAlias, PrimeTypeRequalifier, materialize_type_binder_names,
+    source_type_spelling_with_bound, source_type_spelling_with_lookup,
 };
 #[cfg(feature = "surface")]
 pub(crate) use requalify::{compact_source_type_spelling_with_bound, source_type_spelling};
@@ -200,8 +200,7 @@ pub use variance::{
 
 mod env;
 pub use env::{
-    Local, ModuleEnv, PendingRecOrderState, RoleResolution, TypeCtx, module_path_key,
-    populate_cross_module_imports,
+    Local, ModuleEnv, PendingRecOrderState, TypeCtx, module_path_key, populate_cross_module_imports,
 };
 #[cfg(feature = "surface")]
 pub(crate) use env::{PreparedRecOrderCommit, RetainedTypeBinder};
@@ -221,30 +220,34 @@ pub(crate) mod apply;
 pub use apply::{apply_mono, check_call_against, synth_call};
 
 mod synth;
-#[cfg(feature = "surface")]
-pub(crate) use synth::literal_resolution_error;
 pub(crate) use synth::newtype_member_scheme_in_routed_module;
 #[cfg(feature = "surface")]
 pub(crate) use synth::synth_value_arg_interned;
 #[cfg(feature = "surface")]
 pub(crate) use synth::unify_pattern_with_holes_state;
-#[cfg(feature = "surface")]
-pub(crate) use synth::unique_role_admitted_type_at;
 pub use synth::{
     check_literal_annotation, comptime_scheme, intrinsic_scheme, newtype_member_scheme,
     numeric_literal_diagnostic, synth_env_fn_def, synth_literal, synth_path, synth_seq,
-    synth_top_fn_def, synth_value_arg, unify_pattern, unique_role_admitted_type,
+    synth_top_fn_def, synth_value_arg, unify_pattern,
 };
 pub(crate) use synth::{check_prime_fn_against, synth_closed_fn_with_source_plan};
 #[cfg(all(feature = "surface", feature = "lsp"))]
 pub(crate) use synth::{
-    intrinsic_scheme_resolved, newtype_member_scheme_in_module, synth_env_fn_def_in_module,
-    synth_top_fn_def_in_module,
+    newtype_member_scheme_in_module, synth_env_fn_def_in_module, synth_top_fn_def_in_module,
 };
 
 // =========================================================================
 // Synth — what a path or lambda expression resolves to in callee position
 // =========================================================================
+
+/// A reserved intrinsic prefix that must be checked before an ordinary value
+/// escapes. Connected immediate-callee steps may retain its exact Boolean slot.
+#[derive(Clone, Debug)]
+pub(crate) enum IntrinsicSpecialization<P: crate::ast::Phase> {
+    BooleanPrefix(std::marker::PhantomData<fn() -> P>),
+    #[cfg(feature = "surface")]
+    Boolean(InternedType<P>),
+}
 
 /// Result of synthesizing a path or lambda expression.
 ///
@@ -280,6 +283,8 @@ where
     P: crate::ast::Phase,
 {
     pub ty: InternedType<P>,
+    /// A reserved intrinsic prefix must be checked before it becomes a value.
+    pub(crate) specialization: Option<Box<IntrinsicSpecialization<P>>>,
     pub is_scheme: bool,
     /// Complete-function-scheme classification established by the producer.
     /// Named callable producers construct a `forall* -> function` spine;
@@ -305,6 +310,7 @@ where
     pub fn value(ty: crate::ast::Type<P>) -> Self {
         Self {
             ty: InternedType::fresh(ty),
+            specialization: None,
             is_scheme: false,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -314,6 +320,7 @@ where
     pub fn value_interned(ty: InternedType<P>) -> Self {
         Self {
             ty,
+            specialization: None,
             is_scheme: false,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -323,6 +330,7 @@ where
     pub(crate) fn canonical_value(ty: crate::ast::Type<P>) -> Self {
         Self {
             ty: InternedType::fresh_canonical(ty),
+            specialization: None,
             is_scheme: false,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -336,6 +344,7 @@ where
     pub fn scheme(ty: crate::ast::Type<P>) -> Self {
         Self {
             ty: InternedType::fresh(ty),
+            specialization: None,
             is_scheme: true,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -345,6 +354,7 @@ where
     pub fn scheme_interned(ty: InternedType<P>) -> Self {
         Self {
             ty,
+            specialization: None,
             is_scheme: true,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -354,6 +364,7 @@ where
     pub(crate) fn canonical_scheme(ty: crate::ast::Type<P>) -> Self {
         Self {
             ty: InternedType::fresh_canonical(ty),
+            specialization: None,
             is_scheme: true,
             complete_scheme: kind_scheme::CompleteScheme::Incomplete,
             inferred_type_arg_suffix: 0,
@@ -390,7 +401,15 @@ where
         Ok(self.into_mono_interned()?.clone_type())
     }
 
+    pub(crate) fn require_value_specialization(&self) -> Result<(), Error> {
+        if self.specialization.is_some() {
+            return Err(synth::unspecialized_intrinsic_error(self.ty.span()));
+        }
+        Ok(())
+    }
+
     pub(crate) fn into_mono_interned(self) -> Result<InternedType<P>, Error> {
+        self.require_value_specialization()?;
         if self.is_scheme {
             let span = self.ty.span();
             return Err(scheme_in_mono_position(span));
@@ -435,24 +454,19 @@ pub trait TyperPhase:
     type Typer: Typer<Self>;
 }
 
-/// One literal selection, including optional editor evidence of a lexical
-/// role fallback. An explicit annotation or expected type consumes no fallback.
+/// A validated literal carrier and its phase-specific value information.
 pub struct LiteralResolution<P: crate::ast::Phase> {
     pub(crate) ty: InternedType<P>,
     pub(crate) runtime_erases: bool,
     pub(crate) numeric_value: Option<String>,
-    #[cfg(feature = "lsp")]
-    pub(crate) lexical_role: Option<String>,
 }
 
 impl<P: crate::ast::Phase> LiteralResolution<P> {
-    pub(crate) fn contextual(ty: InternedType<P>) -> Self {
+    pub(crate) fn annotated(ty: InternedType<P>) -> Self {
         Self {
             ty,
             runtime_erases: false,
             numeric_value: None,
-            #[cfg(feature = "lsp")]
-            lexical_role: None,
         }
     }
 
@@ -656,7 +670,7 @@ where
         tcx: &mut TypeCtx<'m, '_, P>,
     );
 
-    /// Publish the typer's three-tier-resolved host type for the literal at
+    /// Publish the typer's selected literal type for the literal at
     /// `literal_site`. Lowered records the resolution in
     /// `typecheck_full::Elaborations` for substitution. Kio' literals already
     /// carry their mandatory annotation; Prime records checked numeric values
@@ -667,14 +681,6 @@ where
         resolved: LiteralResolution<P>,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
-
-    #[cfg(feature = "lsp")]
-    fn record_selected_role<'m>(
-        _span: crate::span::Span,
-        _binding: &str,
-        _tcx: &mut TypeCtx<'m, '_, P>,
-    ) {
-    }
 
     /// Record a checked lambda value-parameter type. The post-typer
     /// rewrite bakes this into `Expr::FnExpr` so Kio' output has enough
@@ -850,12 +856,24 @@ where
         tcx.fill_pending_rec_order_interned(segments[0].as_str(), expected.clone());
         return Ok(());
     }
-    // Literal in check mode — three-tier resolution with `expected`
-    // supplying tier 2 (an expected type from the surrounding
-    // position). `resolve_literal_against` invokes the phase publication hook:
-    // Lowered records the selected type and numeric value for substitution;
-    // Prime records its checked numeric value for baking. The equiv-check
-    // then catches a tier-1 annotation that disagrees with `expected`.
+    if let crate::ast::Expr::Path { segments, .. } = e
+        && segments.len() == 1
+        && segments[0].as_str() == "__if_then_else__"
+    {
+        let synthesized = <P::Typer as Typer<P>>::synth_expr(e, tcx)?;
+        if synthesized.specialization.is_some() {
+            if !<P::Typer as Typer<P>>::ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS {
+                return Err(synth::unspecialized_intrinsic_error(e.span()));
+            }
+            let (specialized, boolean) =
+                synth::specialize_boolean_intrinsic_from_expected(expected, e.span(), tcx)?;
+            <P::Typer as Typer<P>>::record_type_resolution(e.site(), 0, boolean, tcx);
+            <P::Typer as Typer<P>>::record_position_type(e.span(), specialized.ty, tcx);
+            return Ok(());
+        }
+    }
+    // A concrete expected type supplies an omitted literal carrier. Both
+    // phases validate role and numeric value before equivalence.
     if let Some((shape, annotation, span)) = literal_check_parts(e) {
         let resolved = synth::resolve_literal_against(
             shape,
@@ -956,9 +974,10 @@ where
         .0,
         crate::ast::Type::Forall { .. }
     ) {
-        let synth = <P::Typer as Typer<P>>::synth_expr(e, tcx)?;
+        let actual = <P::Typer as Typer<P>>::synth_expr(e, tcx)?;
+        actual.require_value_specialization()?;
         return aliases::require_interned_type_equiv(
-            &synth.ty,
+            &actual.ty,
             expected,
             e.span(),
             &tcx.binder_alias_ctx(&binders),
@@ -974,7 +993,7 @@ where
 }
 
 /// Destructure a literal `Expr` into the `(shape, annotation, span)`
-/// triple `resolve_literal_against` consumes. Returns `None` for any
+/// triple the literal resolver consumes. Returns `None` for any
 /// non-literal expression.
 fn literal_check_parts<P: crate::ast::Phase>(
     e: &crate::ast::Expr<P>,

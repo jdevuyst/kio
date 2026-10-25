@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -19,4 +19,4 @@ fn handle(v: Box(I32) | Box(String)) -> String {
   match(v) { (show_int, show_str) }
 }
 
-pub fn main() { print(handle(widen_sum(Box.mk_box("match! polymorphic: ok\n")))) }
+pub fn main() { print(handle(widen_sum(Box.mk_box("match! polymorphic: ok\n"(String))))) }

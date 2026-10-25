@@ -1,0 +1,18 @@
+local host: 11
+renamed import: 31
+applied aliases: 29
+separate categories: 42000
+ordinary import: 41
+integer coexistence: accepted
+float coexistence: accepted
+roleless specialization: rejected
+structural alias: rejected
+unsaturated alias: rejected
+late alias: 53
+late host: rejected
+late alias dependency: rejected
+integer exponent: rejected
+negative exponent: rejected
+removed host modifier: rejected
+removed import modifier: rejected
+removed alias modifier: rejected

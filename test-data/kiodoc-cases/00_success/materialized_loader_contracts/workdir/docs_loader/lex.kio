@@ -6,7 +6,7 @@ import docs_loader/chars(is_digit, is_space, is_word_cont, is_word_start);
 import docs_loader/macros/control(macro if);
 import docs_loader/macros/match(macro match);
 import docs_loader/macros/spine_macros(macro widen_sum);
-import docs_loader/testapi(default Bool, default I32, default String);
+import docs_loader/testapi(Bool, I32, String);
 import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32);
 import docs_loader/testapi/iter(loop);
 import docs_loader/testapi/text(string_code_at, string_concat, string_len, string_slice);

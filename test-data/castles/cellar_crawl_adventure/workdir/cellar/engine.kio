@@ -13,7 +13,7 @@ import cellar/state as state;
 import cellar/world as world;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(String, default Bool);
+import testapi(Bool, String);
 
 /// One turn's result: the state the cellar is left in, and what to tell the
 /// player about it.

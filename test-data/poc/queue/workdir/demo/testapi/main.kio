@@ -20,7 +20,7 @@ import library/queue(
 import list/core(List);
 import list/list as lists;
 import list/list(varop [] as [* *]);
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/arith(add_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -44,7 +44,7 @@ fn show_queue(q: Queue(I32)) -> String {
     , .(carry: Bool & String, x: I32) -> Bool & String {
         match(carry) {
           .(first: Bool, text: String) {
-            let sep = bool_to("", ", ", first);
+            let sep = bool_to(""(String), ", ", first);
             (no(), int_to_string(x).>>cat(sep).>>cat(text))
           }
         }
@@ -75,8 +75,8 @@ fn line(label: String, value: String) { print(value.>cat("\n").>>cat(" = ").>>ca
 
 pub fn main() {
   let e = empty(I32);
-  let s = singleton(7);
-  let q3 = from_list([* 1, 2, 3 *]);
+  let s = singleton(7(I32));
+  let q3 = from_list([* 1(I32), 2, 3 *]);
   line("empty", show_queue(e));
   line("singleton(7)", show_queue(s));
   line("from_list([1, 2, 3])", show_queue(q3));
@@ -146,7 +146,8 @@ pub fn main() {
     };
   line("dequeue(unit)", show_result(dequeue(unit_queue), show_unit_pair));
   line("dequeue(empty Unit)", show_result(dequeue(no_units), show_unit_pair));
-  let .(sum_queue: Queue(I32 | .)) = from_list([* widen_sum(7, I32 | .), widen_sum((), I32 | .) *]);
+  let .(sum_queue: Queue(I32 | .)) =
+    from_list([* widen_sum(7(I32), I32 | .), widen_sum((), I32 | .) *]);
   line("peek(nested number)", show_result(peek(sum_queue), render_sum));
   let sum_tail =
     fold_result(

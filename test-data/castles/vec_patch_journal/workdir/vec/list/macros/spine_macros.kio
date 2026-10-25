@@ -404,7 +404,7 @@ pure fn build_product_from_mapper_routes_step(
           __left__(
           , Macro_result
           , Product_mapper_next
-          , err(ct, "recursive product route count mismatch")
+          , err(ct, "recursive product route count mismatch"(__Diagnostic_text__))
           )
         }
       )
@@ -419,7 +419,7 @@ pure fn build_product_from_mapper_routes_step(
           __left__(
           , Macro_result
           , Product_mapper_next
-          , err(ct, "recursive product route count mismatch")
+          , err(ct, "recursive product route count mismatch"(__Diagnostic_text__))
           )
         }
       , .(route_cell: Mapper_route & Mapper_route_list) -> Product_mapper_step {
@@ -471,7 +471,7 @@ pure fn build_product_from_mapper_routes_step(
               __left__(
               , Macro_result
               , Product_mapper_next
-              , err(ct, "recursive product route lost its source slot")
+              , err(ct, "recursive product route lost its source slot"(__Diagnostic_text__))
               )
             }
           )
@@ -687,7 +687,7 @@ pure fn finish_sum_dispatch(ct: __Comptime__, state: Sum_dispatch_state) -> Sum_
       sum_dispatch_ok(ct, sum_mapper_mapper(ct, sum_dispatch_state(ct, state)))
     }
   , .(_extra: Term_mapper & Mapper_list) -> Sum_dispatch_result {
-      sum_dispatch_err(ct, "sum mapper route count mismatch")
+      sum_dispatch_err(ct, "sum mapper route count mismatch"(__Diagnostic_text__))
     }
   )
 }
@@ -703,7 +703,9 @@ pure fn build_sum_dispatcher_from_mappers(
   , __Type__ & Type_list
   , Sum_dispatch_result
   , Type_list.un_type_list(type_reverse(ct, source_spine))
-  , .(_no_source: .) -> Sum_dispatch_result { sum_dispatch_err(ct, "sum source spine is empty") }
+  , .(_no_source: .) -> Sum_dispatch_result {
+      sum_dispatch_err(ct, "sum source spine is empty"(__Diagnostic_text__))
+    }
   , .(source_cell: __Type__ & Type_list) -> Sum_dispatch_result {
       __either__(
       , .
@@ -711,7 +713,7 @@ pure fn build_sum_dispatcher_from_mappers(
       , Sum_dispatch_result
       , Mapper_list.un_mapper_list(mapper_reverse_by_types(ct, source_spine, routes))
       , .(_no_route: .) -> Sum_dispatch_result {
-          sum_dispatch_err(ct, "sum mapper route list is empty")
+          sum_dispatch_err(ct, "sum mapper route list is empty"(__Diagnostic_text__))
         }
       , .(route_cell: Term_mapper & Mapper_list) -> Sum_dispatch_result {
           __structural_recur__(
@@ -756,7 +758,10 @@ pure fn build_sum_dispatcher_from_mappers(
                           __left__(
                           , Sum_dispatch_result
                           , Sum_dispatch_next
-                          , sum_dispatch_err(ct, "sum mapper route count mismatch")
+                          , sum_dispatch_err(
+                            , ct
+                            , "sum mapper route count mismatch"(__Diagnostic_text__)
+                            )
                           )
                         }
                       , .(route_head: Term_mapper & Mapper_list) -> Sum_dispatch_step {
@@ -892,7 +897,10 @@ pure fn find_recursive_product_candidate(
               __left__(
               , Product_candidate_result
               , Product_candidate_next
-              , product_candidate_err(ct, "no recursive product source slot fits target slot")
+              , product_candidate_err(
+                , ct
+                , "no recursive product source slot fits target slot"(__Diagnostic_text__)
+                )
               )
             }
           , .(cell: __Type__ & Type_list) -> Product_candidate_step {
@@ -1168,7 +1176,10 @@ pure fn find_recursive_sum_candidate(
               __left__(
               , Sum_candidate_result
               , Sum_candidate_next
-              , sum_candidate_err(ct, "no recursive target sum arm accepts source arm")
+              , sum_candidate_err(
+                , ct
+                , "no recursive target sum arm accepts source arm"(__Diagnostic_text__)
+                )
               )
             }
           , .(cell: Target_slot & Target_slot_list) -> Sum_candidate_step {
@@ -1526,7 +1537,10 @@ pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, _fuel: Type_pair, pai
                   function_mapper(ct, recur, source, target, source_view, target_view)
                 }
               , .(_target_not_function: .) -> Adapter_result {
-                  adapter_err(ct, "fit POC cannot coerce a function to a non-function")
+                  adapter_err(
+                  , ct
+                  , "fit POC cannot coerce a function to a non-function"(__Diagnostic_text__)
+                  )
                 }
               )
             }
@@ -1547,7 +1561,10 @@ pure fn fit_recur_step(ct: __Comptime__, recur: Fit_recur, _fuel: Type_pair, pai
                     )
                   , .() -> Adapter_result { product_mapper(ct, recur, source, target) }
                   , .() -> Adapter_result {
-                      adapter_err(ct, "fit POC found no compatible structural path")
+                      adapter_err(
+                      , ct
+                      , "fit POC found no compatible structural path"(__Diagnostic_text__)
+                      )
                     }
                   )
                 }
@@ -1606,7 +1623,11 @@ pure fn spine_identity_impl(
   , __type_equal__(ct, right_fold_product(ct, product_spine(ct, source)), source)
   , .() -> __Checked_term__ | __Diagnostic_text__ { ok(ct, value) }
   , .() -> __Checked_term__ | __Diagnostic_text__ {
-      __right__(__Checked_term__, __Diagnostic_text__, "product spine utility failed")
+      __right__(
+      , __Checked_term__
+      , __Diagnostic_text__
+      , "product spine utility failed"(__Diagnostic_text__)
+      )
     }
   )
 }
@@ -1665,7 +1686,9 @@ pure fn reorder_prod_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { reorder_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1712,7 +1735,9 @@ pure fn reorder_sum_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { reorder_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1873,7 +1898,7 @@ pure fn narrow_sum_impl(
       , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }
       )
     }
-  , .() -> Macro_result { err(ct, "target sum arm is not provided by source") }
+  , .() -> Macro_result { err(ct, "target sum arm is not provided by source"(__Diagnostic_text__)) }
   )
 }
 
@@ -1937,7 +1962,9 @@ pure fn widen_prod_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { widen_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -2018,7 +2045,9 @@ pure fn flatten_prod_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { flatten_prod_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -2052,7 +2081,9 @@ pure fn flatten_sum_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { flatten_sum_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -2083,7 +2114,9 @@ pure fn fit_result(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { fit_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -2121,7 +2154,7 @@ pure fn one_prod_result(
       , Macro_result
       , first_product_type(ct, source, value)
       , .(target_type: __Type__) -> Macro_result { one_prod_impl(ct, source, value, target_type) }
-      , .() -> Macro_result { err(ct, "macro could not infer a target type") }
+      , .() -> Macro_result { err(ct, "macro could not infer a target type"(__Diagnostic_text__)) }
       )
     }
   )
@@ -2143,7 +2176,9 @@ pure fn one_sum_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__
   let target_spine = sum_spine(ct, target);
   __if_then_else__(
   , __type_is_sum_root__(ct, target)
-  , .() -> Macro_result { err(ct, "one_sum target must not be a top-level sum") }
+  , .() -> Macro_result {
+      err(ct, "one_sum target must not be a top-level sum"(__Diagnostic_text__))
+    }
   , .() -> Macro_result {
       __either__(
       , Route_list
@@ -2178,7 +2213,7 @@ pure fn one_sum_result(
       , Macro_result
       , first_sum_type(ct, source, value)
       , .(target_type: __Type__) -> Macro_result { one_sum_impl(ct, source, value, target_type) }
-      , .() -> Macro_result { err(ct, "macro could not infer a target type") }
+      , .() -> Macro_result { err(ct, "macro could not infer a target type"(__Diagnostic_text__)) }
       )
     }
   )

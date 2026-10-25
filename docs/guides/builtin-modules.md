@@ -9,7 +9,7 @@ not a package or module starter.
 
 Import and signature blocks are reference fragments and are marked `{ignore}`. Worked examples use standalone checked fences. The first paragraph of each entry is the concise summary used by editor hover; the following text is the long-form reference.
 
-See [literal defaults](typechecking.md#literal-types-and-module-local-defaults) for module-local selection, scope and alias rules.
+See [literal types and local inference](typechecking.md#literal-types-and-local-inference) for explicit annotations, concrete context and local inference boundaries.
 
 ## `__intrinsics__`
 
@@ -84,12 +84,12 @@ The value must have exactly the product type `A & B`; the result is its right co
 #### `__if_then_else__`
 
 ```kio {ignore}
-__if_then_else__ : [A](Bool & (. -> A) & (. -> A)) -> A
+__if_then_else__ : [B][A](B & (. -> A) & (. -> A)) -> A
 ```
 
-Branches on the module's explicit Boolean default. The true and false branches are thunks so only the selected branch is evaluated.
+Checks a concrete Boolean specialization before branching. The true and false branches are thunks so only the selected branch is invoked.
 
-The selected type comes from a written `default` on a local host type, type alias or named type import. Other Boolean-role types can remain in scope, but annotating the condition at one of them does not override the selection. With no Boolean default the intrinsic has no type scheme; distinct conflicting defaults are rejected even when unused. Both branches are unit-domain functions returning the same `A`; only the chosen thunk is invoked.
+The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__(Bool)` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked.
 
 #### `__absurd__`
 
@@ -179,7 +179,7 @@ type __Diagnostic_text__
 
 Compile-time text used in macro diagnostics.
 
-Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string.
+Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `"message"(__Diagnostic_text__)`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string.
 
 #### `Comptime_bool`
 
@@ -187,9 +187,9 @@ Diagnostic text is the only message payload accepted by `__macro_error__` and `_
 type Comptime_bool
 ```
 
-Compile-time boolean type with `role(bool)`. The fixed `__comptime__` block import selects it as the importing module's Boolean default.
+Compile-time Boolean type with `role(bool)`, exposed by `import __comptime__;`.
 
-The literals `.t` and `.f` form the compile-time predicate result used by reflection helpers and `if`/`else`. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type.
+The literals `.t` and `.f` form compile-time predicate results used by reflection helpers and concrete compile-time branching. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type.
 
 #### `Comptime_str`
 
@@ -197,9 +197,9 @@ The literals `.t` and `.f` form the compile-time predicate result used by reflec
 type Comptime_str
 ```
 
-Compile-time string type with `role(str)`. The fixed `__comptime__` block import selects it as the importing module's string default. These builtin selections participate in the ordinary eager conflict checks; another distinct default in either category is not an override.
+Compile-time string type with `role(str)`, exposed by `import __comptime__;`.
 
-String literals in a macro implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
+A concrete `Comptime_str` context or an explicit annotation determines this carrier for a string literal. An already typed `Comptime_str` value is not implicitly converted to `__Diagnostic_text__`; diagnostic-text contexts can instead determine the carrier of an unannotated literal. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code.
 
 #### `__Fill_ctx__`
 
@@ -883,7 +883,7 @@ __intrinsic_if_then_else__ : (__Comptime__ & __Type__ & __Checked_term__ & (. ->
 
 Constructs a checked term that calls the reflected role-boolean conditional intrinsic.
 
-Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's explicitly selected Boolean default and both zero-argument callbacks must return `result_type`. A missing selection or branch mismatch makes construction fail; distinct conflicting defaults are rejected before use.
+Constructs a checked runtime `__if_then_else__` call. The condition must have a concrete `role(bool)` host type, which is written as the Boolean specialization of the generated call. Both zero-argument callbacks must return `result_type`. An unresolved or non-Boolean condition type, or a branch mismatch, makes construction fail.
 
 ### Fill Relations
 

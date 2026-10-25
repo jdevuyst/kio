@@ -4,7 +4,7 @@
 module book/num;
 
 import macros/control(macro if);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(leq_i32);
 
 pub fn not(value: Bool) -> Bool {

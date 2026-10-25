@@ -228,7 +228,7 @@ host type Str role(str);
 
 literal greeting = \"hi\";
 
-fn main() -> Str { greeting }
+fn main() -> Str { greeting(Str) }
 ";
         let rendered = normalize_source(package, module).expect("normalize_source should succeed");
         assert_eq!(rendered, "\"hi\"");

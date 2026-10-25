@@ -81,7 +81,7 @@ fn block_ufcs_directions_keep_the_receiver_before_projected_blocks() {
         assert_eq!(type_of(&term, &env).unwrap(), Type::i32());
         assert_eq!(
             render::render_term_opts(&term, &render::RenderOpts { surface: false }),
-            "__if_then_else__(I32, condition, .() { yes }, .() { no })"
+            "__if_then_else__(Bool, I32, condition, .() { yes }, .() { no })"
         );
         let expected = match spelling {
             UfcsSpelling::ReceiverFirst => "(condition).>if { yes } else { no }",
@@ -462,14 +462,20 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
                 Ok(t.clone())
             }
             "__if_then_else__" => {
-                if type_args.len() != 1 || args.len() != 3 {
+                if type_args.len() != 2 || args.len() != 3 {
                     return Err(format!(
-                        "__if_then_else__: expected 1 type arg + 3 value args, got {} + {}",
+                        "__if_then_else__: expected 2 type args + 3 value args, got {} + {}",
                         type_args.len(),
                         args.len()
                     ));
                 }
-                let t = &type_args[0];
+                if type_args[0] != Type::bool() {
+                    return Err(format!(
+                        "__if_then_else__: unsupported Boolean carrier {:?}",
+                        type_args[0]
+                    ));
+                }
+                let t = &type_args[1];
                 let c_ty = type_of(&args[0], env)?;
                 if c_ty != Type::Base(Base::Bool) {
                     return Err(format!("__if_then_else__: c has type {c_ty:?}, want Bool"));

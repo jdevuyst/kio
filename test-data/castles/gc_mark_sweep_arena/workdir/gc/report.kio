@@ -29,7 +29,7 @@ import gc/verify(
 import gc/verify(Audit, Broken, Verdict, Verified);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, I32, default Bool, default String);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/fmt(int_to_string);

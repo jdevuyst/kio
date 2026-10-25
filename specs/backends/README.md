@@ -352,8 +352,9 @@ The contract has three layers:
   which role-governed surface syntax may be used at `X`: the corresponding
   literals, or Boolean values and conditionals for `role(bool)`. A role does
   not choose or infer the host-language representation of `X`.
-  An annotation or expected type may select the exact declaration, but the
-  literal's lexical role must still match that declaration's role. A roleless
+  An explicit literal annotation or concrete local context selects the exact
+  declaration. The literal's category must still be admitted by that
+  declaration's role. A roleless
   host type admits no lexical literal, and a mismatch is a type error before
   backend emission.
   Each backend separately specifies how the exact host-type declaration is

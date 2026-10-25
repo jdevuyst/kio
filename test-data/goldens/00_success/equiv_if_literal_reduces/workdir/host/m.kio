@@ -1,6 +1,6 @@
 module host/m;
 
-import host(bar, default Bool, foo);
+import host(bar, Bool, foo);
 import macros/control(macro if);
 
 equiv if_true_takes_then_arm() {

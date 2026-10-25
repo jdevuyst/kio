@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro one_prod, macro widen_sum);
-import testapi(I32, default Bool, default String);
+import testapi(Bool, I32, String);
 import testapi/io(print);
 
 // Compound *product* slot: `pair` binds the `(I32 & String)`
@@ -30,7 +30,7 @@ fn handle_sum(s: I32 | String | Bool) -> String {
 
 pub fn main() {
   print(handle_product(((100(I32), "product-slot\n"), .t)));
-  print(handle_sum(widen_sum("string-arm\n")));
-  print(handle_sum(widen_sum(.t)));
-  print(handle_sum(widen_sum(.f)))
+  print(handle_sum(widen_sum("string-arm\n"(String))));
+  print(handle_sum(widen_sum(.t(Bool))));
+  print(handle_sum(widen_sum(.f(Bool))))
 }

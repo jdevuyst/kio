@@ -10,7 +10,7 @@ import bdd/report as report;
 import bdd/restrict as restriction;
 import bdd/store as table;
 import macros/control(macro if);
-import testapi(I32, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/io as io;
 

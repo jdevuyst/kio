@@ -3,6 +3,7 @@ module testapi/main;
 import earley/arrays as arrays;
 import earley/fixtures as fixtures;
 import earley/report as report;
+import testapi(String);
 import testapi/io as io;
 
 pub fn main() {

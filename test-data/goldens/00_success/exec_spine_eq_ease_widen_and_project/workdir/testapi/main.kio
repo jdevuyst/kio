@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro fit);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 
 // Spine equivalent of `exec_ease_widen_and_project`. The original

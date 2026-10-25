@@ -6,7 +6,7 @@ import list_host as numbers;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 
 pub labels Run = { sample: I32, count: I32 };

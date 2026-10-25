@@ -12,9 +12,10 @@ Trigger: editing under `kio-rs/`.
 Keep numeric spelling, the selected host type, and the numeric value distinct.
 Shared checking implements the [literal contract](../../specs/language.md#literals)
 before publishing a successful literal resolution. Validate the already-selected
-role; an out-of-range value must not trigger another type or default selection.
-Trace explicit annotations, expected types, defaults, aliases and retained calls,
-and independently checked textual Kio'.
+role; an out-of-range value must not trigger another carrier selection.
+Trace explicit annotations and concrete local contextual inference through
+aliases and retained calls, then independently checked textual Kio'. Never
+search ambient roles or retry a carrier after admission/range failure.
 
 Normalization and emitters consume the selected semantic value. Original spelling
 belongs to source formatting and diagnostics; an exact textual encoding of a
@@ -131,6 +132,14 @@ independently uses its own domain and contributes only its closed result.
 Never copy an unresolved nested goal into another owner, a cache key, a
 reflected value, or a later phase.
 
+An explicit nested application may use an already-selected monomorphic public
+callable header to establish its ordinary call plan while the original callee's
+validation remains retained. Transport the header and result through the
+existing direct-parent owner exports. Retain each derivation until it completes;
+close the callee's owner and publish the combined expression only after both
+have completed. An observed header does not certify source eligibility or admit
+a macro action before its inputs are checked.
+
 The schedule is fixed and one-shot:
 
 1. Establish or join the finite domain, allocate owner-scoped goals only for
@@ -140,14 +149,15 @@ The schedule is fixed and one-shot:
    when a retained child closes or one of its zonked sides changes
    structurally; record a new snapshot if that attempt also defers. A schedule
    mode change alone is not progress.
-2. Enter each immediate value expression fresh once. Complete what is
-   independently typable; retain only the unconsumed source action of a
-   blocked value.
-3. Run the expected-only pass left to right. Consume an action whose parameter
-   slot has become usable; do not use lexical literal fallback in this pass.
-4. Run the lexical-fallback pass for still-untyped literals, using only the
-   explicit in-scope `default` for that lexical category. Never rebuild a
-   candidate pool from visible host declarations or aliases.
+2. Enter each immediate value expression fresh once. Complete independently
+   typable sources, including explicitly annotated literals. Retain an
+   unresolved literal only inside the same finite connected inference domain.
+3. Run the expected-only pass left to right. Consume a retained action whose
+   parameter slot has become usable; a concrete admitting role-bearing type
+   can determine an unannotated scalar carrier.
+4. Propagate completed closed types through the finite domain. An unresolved
+   literal must close at the existing local boundary or report an error; there
+   is no fallback or visible-role candidate search.
 5. After marked source recipes are snapshotted, run the `impl(fills)` source
    eligibility preflight before its action. Traverse every declared source and
    recipe in structural order, including ignored private slots and explicit
@@ -172,7 +182,8 @@ The schedule is fixed and one-shot:
 7. Run the final pass left to right, reuse completed derivations, consume each
    remaining action at most once, and require every owner-scoped goal to close.
 
-There is no retry, source-premise or typing-derivation replay, backtracking,
+Bounded continuation and pending-equation retries do not replay a source
+premise, completed typing derivation, or macro action. There is no backtracking,
 global worklist, or fixed-point iteration. A lambda body may contribute a
 result type that is independently available, but it never discovers a missing
 parameter type from uses of that parameter. A `let` or expression-statement
@@ -283,8 +294,8 @@ phase form. The LSP and `kio sig` consume the same completed typing decisions
 as the ordinary front-end.
 
 The open-world proof is structural: the domain is built only from resolved
-callee types, written arguments, enclosing expected types, and the lexical
-explicit literal-default map. It never scans an ambient declaration set. Adding an
+callee types, written arguments, enclosing expected types, and explicit
+literal annotations. It never scans an ambient declaration set. Adding an
 unrelated module-body declaration therefore cannot alter the domain, its fixed
 schedule, or its result.
 

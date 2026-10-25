@@ -1,0 +1,9 @@
+module main;
+
+host type Int role(i64);
+
+host type Narrow role(i32);
+
+fn wide() -> Int { 42 }
+
+fn narrow() -> Narrow { 42 }

@@ -125,7 +125,6 @@ host type U128   role(u128);
 host type F32    role(f32);
 host type F64    role(f64);
 host type String role(str);
-default host type Bool role(bool);
 host fn print_i32(value: I32);
 ";
 
@@ -157,7 +156,7 @@ const MACRO_IMPORTS: &str = "\
 import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);
 import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);
 import match(macro match);
-import control(macro if, macro scope);
+import control(Bool, macro if, macro scope);
 ";
 
 const MACRO_SUPPORT_FILES: &[(&str, &str)] = &[
@@ -615,27 +614,23 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     // surface mode the bundled `testapi` support module also declares
     // host items and is reachable from `prog` through the macro
     // imports, so the bridge-completeness check requires bridging it
-    // too; the other macro modules carry no host items and need no
-    // glob.
-    let mut package_file = if prog.surface_mode {
-        format!(
-            "{PACKAGE_FILE_KIO_PREFIX}\n{}",
-            bridge_glob_block(["prog", "testapi"])
-        )
-    } else {
-        format!("{PACKAGE_FILE_KIO_PREFIX}\n{}", bridge_glob_block(["prog"]))
-    };
+    // too. The control module supplies the surface program's Boolean type.
+    let mut bridge_roots = vec!["prog"];
+    if prog.surface_mode {
+        bridge_roots.extend(["testapi", "control"]);
+    }
+    if let Some(probe) = &prog.control_probe {
+        bridge_roots.push("testapi/io");
+        if probe.has_recursion() {
+            bridge_roots.push("testapi/iter");
+        }
+    }
+    let mut package_file = format!(
+        "{PACKAGE_FILE_KIO_PREFIX}\n{}",
+        bridge_glob_block(bridge_roots),
+    );
     if prog.control_probe.is_some() {
         package_file = package_file.replace("  target rust {", "  target go {\n    out \"out/go/\";\n    baseline v1_26\n  };\n\n  target swift {\n    out \"out/swift/\";\n    baseline v6_0\n  };\n\n  target haskell {\n    out \"out/haskell/\";\n    baseline ghc9_10\n  };\n\n  target rust {");
-        package_file = package_file.replace("  testapi\n", "  testapi;\n  testapi/io\n");
-        if prog
-            .control_probe
-            .as_ref()
-            .is_some_and(crate::control::ControlProbe::has_recursion)
-        {
-            package_file =
-                package_file.replace("  testapi/io\n", "  testapi/io;\n  testapi/iter\n");
-        }
     }
     let control_import = if prog.control_probe.is_some() {
         "import kio_gen_control as control_probe;\n"
@@ -666,6 +661,11 @@ equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}
     // Import clauses lead the module body (the module grammar requires
     // them before any item), so the `host type` declarations follow the
     // imports rather than preceding them.
+    let boolean_declaration = if prog.surface_mode {
+        ""
+    } else {
+        "host type Bool role(bool);\n"
+    };
     let root_module = format!(
         "\
 module prog;
@@ -674,7 +674,7 @@ import __intrinsics__;
 {control_import}\
 {}
 {HOST_ENV_KIO}
-{}
+{boolean_declaration}{}
 {fills_witness}
 {functions}{equiv_block}",
         macro_imports,
@@ -871,8 +871,8 @@ build {
 "#
         );
         assert_eq!(
-            bridge_glob_block(["prog", "testapi"]),
-            "bridge {\n  prog;\n  testapi\n}\n"
+            bridge_glob_block(["prog", "testapi", "control"]),
+            "bridge {\n  prog;\n  testapi;\n  control\n}\n"
         );
         assert_eq!(bridge_glob_block(["prog"]), "bridge {\n  prog\n}\n");
     }
@@ -889,15 +889,6 @@ build {
             "bridge {\n  testapi\n}\n",
             "prog"
         ));
-    }
-
-    #[test]
-    fn generated_base_defaults_select_only_the_conditional_boolean_identity() {
-        assert_eq!(HOST_ENV_KIO.matches("default ").count(), 1);
-        assert!(HOST_ENV_KIO.contains("default host type Bool role(bool);"));
-        for base in ["I8", "I32", "U64", "F32", "F64", "String"] {
-            assert!(!HOST_ENV_KIO.contains(&format!("default host type {base} ")));
-        }
     }
 
     #[test]
@@ -936,7 +927,7 @@ build {
             "import algebraic_macros(macro iso, macro into, macro onto, macro align, macro ease, macro atom);",
             "import spine_macros(macro reorder_sum, macro reorder_prod, macro narrow_sum, macro narrow_prod, macro widen_sum, macro widen_prod, macro flatten_sum, macro flatten_prod, macro one_sum, macro one_prod, macro fit);",
             "import match(macro match);",
-            "import control(macro if, macro scope);",
+            "import control(Bool, macro if, macro scope);",
             "import kio_gen_macros(macro generated);",
         ] {
             assert_eq!(root.matches(import).count(), 1, "{import}");

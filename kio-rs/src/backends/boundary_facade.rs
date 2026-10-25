@@ -7655,7 +7655,6 @@ mod tests {
 
     fn public_alias(name: &str, type_params: Vec<TypeParam>, body: Type<Routed>) -> Item<Routed> {
         Item::TypeAlias(TypeAlias {
-            default_span: None,
             vis: Visibility::Public,
             name: name.to_owned(),
             name_span: span(),
@@ -7669,7 +7668,6 @@ mod tests {
 
     fn host_type(name: &str, type_params: Vec<TypeParam>, role: Option<Role>) -> Item<Routed> {
         Item::HostType(HostType {
-            default_span: None,
             name: name.to_owned(),
             type_params,
             role: role.map(|role| RoleAnnotation { role, span: span() }),
@@ -7747,7 +7745,6 @@ mod tests {
                                             }
                                         };
                                         crate::ast::TypeRecMember::TypeAlias(TypeAlias {
-                                            default_span: None,
                                             vis,
                                             name,
                                             name_span: span,
@@ -7789,7 +7786,6 @@ mod tests {
                             Item::TypeRecGroup(_) => unreachable!("handled above"),
                         };
                         Item::HostType(HostType {
-                            default_span: None,
                             name,
                             type_params: Vec::new(),
                             role: None,

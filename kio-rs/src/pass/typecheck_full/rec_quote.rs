@@ -301,8 +301,8 @@ fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Exp
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                pending.push(receiver);
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                pending.extend(base.receiver());
                 pending.extend(updates.iter().map(|update| &update.value));
             }
         },

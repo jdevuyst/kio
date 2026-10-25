@@ -480,7 +480,7 @@ fn call_type_argument_hole_remains_application_inference() {
 }
 
 #[test]
-fn exact_root_literal_hole_retains_literal_tier_selection() {
+fn exact_root_literal_hole_uses_expected_type() {
     ok("module main; \
         host type I32 role(i32); \
         fn value() -> I32 { 1(_) }");

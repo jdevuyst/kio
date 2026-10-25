@@ -1097,13 +1097,9 @@ fn walk_import(u: &ast::Import, raw: &[LexToken], overrides: &mut AstOverrides) 
                     ast::ImportItem::Name {
                         span,
                         alias,
-                        default_span,
                         macro_span,
                         ..
                     } => {
-                        if let Some(span) = default_span {
-                            overrides.insert(span.start, TokenKind::KeywordDeclaration);
-                        }
                         let kind = if let Some(tag) = macro_span {
                             overrides.insert(tag.start, TokenKind::KeywordDeclaration);
                             TokenKind::EntityNameMacroReference
@@ -1312,9 +1308,6 @@ fn walk_type_rec_group(group: &ast::TypeRecGroup, raw: &[LexToken], overrides: &
 }
 
 fn walk_host_type(h: &ast::HostType<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    if let Some(span) = h.default_span {
-        overrides.insert(span.start, TokenKind::KeywordDeclaration);
-    }
     mark_declaration_keyword(raw, h.meta.span, "type", overrides);
     if let Some(role) = h.role {
         mark_keyword(
@@ -1381,9 +1374,6 @@ fn walk_fn_def<PurityField>(
 }
 
 fn walk_alias(a: &ast::TypeAlias<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    if let Some(span) = a.default_span {
-        overrides.insert(span.start, TokenKind::KeywordDeclaration);
-    }
     mark_declaration_keyword(raw, a.meta.span, "type", overrides);
     if let Some(s) = find_name_after_kw(raw, a.meta.span, "type", &a.name) {
         overrides.insert(s.start, TokenKind::EntityNameType);
@@ -1907,8 +1897,10 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
                     }
                 }
             }
-            ast::ElaboratorCall::FieldUpdate { receiver, updates } => {
-                walk_expr(receiver, raw, overrides);
+            ast::ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver() {
+                    walk_expr(receiver, raw, overrides);
+                }
                 for update in updates {
                     overrides.source_label(&update.label, update.label_span, raw);
                     if let Some(name) = update.label.rsplit('.').next()
@@ -3756,11 +3748,9 @@ mod tests {
     }
 
     #[test]
-    fn default_modifiers_follow_their_type_owners_without_reserving_names() {
+    fn default_is_an_ordinary_value_name() {
         let source = concat!(
-            "module source; import provider(default Int as Number, default as ordinary);\n",
-            "default pub host type Bool role(bool);\n",
-            "default pub(source) type Alias = Number;\n",
+            "module source; import provider(default as ordinary);\n",
             "pub fn default(default: .) -> . { default }\n",
         );
         let actual = dumped_text(source)
@@ -3770,25 +3760,12 @@ mod tests {
         assert_eq!(
             actual,
             [
-                "keyword.declaration",
                 "identifier",
-                "keyword.declaration",
-                "keyword.declaration",
                 "entity.name.function",
                 "variable.parameter",
-                "identifier",
+                "identifier"
             ]
         );
-        let source = concat!(
-            "module source; import provider(default // import policy\n Int);\n",
-            "default // declaration policy\n pub host type Bool role(bool);\n",
-            "default // alias policy\n type Alias = Int;\n",
-        );
-        let actual = dumped_text(source)
-            .into_iter()
-            .filter_map(|(text, kind)| (text == "default").then_some(kind))
-            .collect::<Vec<_>>();
-        assert_eq!(actual, ["keyword.declaration"; 3]);
     }
 
     #[test]

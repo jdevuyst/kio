@@ -1,0 +1,36 @@
+module prog;
+
+import __intrinsics__;
+
+import macros/testapi(Bool as Other);
+import testapi(Bool, I32);
+import testapi/fmt(print_i32);
+
+fn direct(flag: Bool) -> I32 {
+  __if_then_else__(flag, .() { 11 }, .() { 12 })
+}
+
+fn stored(flag: Bool) -> I32 {
+  let choose = __if_then_else__(Bool);
+  choose(I32, flag, .() { 21 }, .() { 22 })
+}
+
+fn contextual(flag: Other) -> I32 {
+  let .(choose: [A] (Other & (. -> A) & (. -> A)) -> A) = __if_then_else__;
+  choose(I32, flag, .() { 31 }, .() { 32 })
+}
+
+fn composed(flag: Bool) -> I32 {
+  __if_then_else__(_, I32)(flag, .() { 41 }, .() { 42 })
+}
+
+pub fn main() {
+  print_i32(direct(.t));
+  print_i32(direct(.f));
+  print_i32(stored(.t));
+  print_i32(stored(.f));
+  print_i32(contextual(.t));
+  print_i32(contextual(.f));
+  print_i32(composed(.t));
+  print_i32(composed(.f))
+}

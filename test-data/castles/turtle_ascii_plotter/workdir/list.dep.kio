@@ -5,3 +5,4 @@ source {
 }
 
 rehost list/list to turtle/list_host;
+rehost list/macros/control to turtle/list_host;

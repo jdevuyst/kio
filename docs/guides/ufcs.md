@@ -279,9 +279,7 @@ your configured library dependency:
 ```kio {}
 module nested_block_splices;
 
-import control(macro if);
-
-default host type Bool role(bool);
+import control(Bool, macro if);
 
 fn outer_splice[A](value: A) -> A {
   if {

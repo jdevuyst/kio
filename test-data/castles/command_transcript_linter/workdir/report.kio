@@ -3,7 +3,7 @@ module report;
 import macros/control(macro if);
 import rules as rules;
 import scanner as scan;
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/fmt as fmt;
 import testapi/text as text;
 

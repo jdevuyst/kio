@@ -1,0 +1,9 @@
+module provider;
+
+host type Int role(i64);
+
+host type Float role(f64);
+
+host type Bool role(bool);
+
+host type Narrow role(i32);

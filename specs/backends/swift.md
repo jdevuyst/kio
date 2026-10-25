@@ -113,8 +113,8 @@ not declared** — `pkg.swift`'s first line is a machine-readable marker:
 // kio-swift-module: <Ns>
 ```
 
-This marker and this page are how a host learns the module name to build
-the package under and `import`. This is a **contract by documentation**:
+This marker and this page tell the host developer which module name to use
+when building or importing the package. This is a **contract by documentation**:
 a Swift compiler does not read the marker, so the host's build
 configuration must set `-module-name <Ns>` (or name its SwiftPM target
 `<Ns>`) to match it.
@@ -331,10 +331,10 @@ primitive:
 | no role | none |
 
 Kio accepts a lexical literal at that exact host type only when the
-declaration's role matches the literal class. An explicit annotation or an
-expected type selects the exact declaration; it does not bypass the role
-check. A roleless host type therefore accepts no lexical literal, and a
-mismatched literal is rejected before Swift emission.
+declaration's role admits the literal category. An explicit literal annotation
+or concrete contextual inference determines the exact declaration. Selection
+does not bypass the role check. A roleless host type therefore accepts no
+lexical literal, and a mismatched literal is rejected before Swift emission.
 
 Numeric values follow the shared [literal contract](../language.md#literals).
 An associated type's literal initializer must preserve the checked integer

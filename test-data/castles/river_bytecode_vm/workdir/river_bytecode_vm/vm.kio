@@ -30,7 +30,7 @@ import river_bytecode_vm/model(
 );
 import river_bytecode_vm/program as program;
 import river_bytecode_vm/util as util;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, mul_i32);
 import testapi/iter(loop);
 

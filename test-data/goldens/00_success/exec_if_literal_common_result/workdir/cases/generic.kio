@@ -1,0 +1,14 @@
+module cases/generic;
+
+import common(macro common);
+import testapi(String);
+
+pub fn literal_first(witness: String) -> String {
+  let selected = common(.() { "generic" }, .() { witness });
+  selected()
+}
+
+pub fn literal_last(witness: String) -> String {
+  let selected = common(.() { witness }, .() { "generic" });
+  selected()
+}

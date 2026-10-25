@@ -34,7 +34,7 @@ try {
     assert.match(diagnostic, /\| {9}\^/)
     assert.ok(!diagnostic.includes('_expr') && !diagnostic.includes('_repl_parse_check_'), diagnostic)
   }
-  assert.equal(output(repl.eval(':t index([1], 0)')), 'index([1], 0) : list.I32 | .')
+  assert.equal(output(repl.eval(':t index([1(I32)], 0)')), 'index([1(I32)], 0) : list.I32 | .')
 
   const macroHead = '\x1b[38;2;86;182;194mif\x1b[0m'
   assert.ok(repl.highlight('if(())', 0).includes(macroHead), 'retained imported macro highlights in browser input')

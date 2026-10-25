@@ -87,12 +87,11 @@ looking inside bodies to see whether a conflicting item happens to be used.
 For example, importing both providers' `speak` into the same local spelling is
 rejected even if no function calls it; distinct qualified aliases remain useful.
 
-Literal defaults follow this rule too. `role` says that a type accepts a
-literal category; importing that type does not silently select it. A written
-`default` chooses one identity for the module. An ordinary import cannot
-replace it, and selecting a second distinct default in the same category is
-rejected even when unused. Aliases of the same terminal type agree. See
-[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
+Literal inference follows this rule too. `role` admits a literal category;
+it does not make every visible type a candidate. The literal's explicit
+annotation or concrete local context determines its carrier. Importing another
+role-bearing type cannot change those existing constraints or their result.
+See [literal inference](typechecking.md#literal-types-and-local-inference).
 
 This is broader than a numeric rule. Names, operator grammar, lexical binders
 and ordinary application rules must all preserve the existing body's reading.

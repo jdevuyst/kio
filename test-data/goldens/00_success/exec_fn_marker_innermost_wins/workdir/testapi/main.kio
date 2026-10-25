@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(default I32);
+import testapi(I32);
 import testapi/arith(add_i32, mul_i32);
 import testapi/fmt(i32_to_string);
 import testapi/io(print);
@@ -12,7 +12,7 @@ pub fn main() {
   // Capturing the outer slot there would produce 55 instead of 75.
   let .(f: I32 -> I32) =
     .x. {
-      add_i32(x1, apply(.x. { mul_i32(x1, 10) }, 7))
+      add_i32(x1, apply(.x. { mul_i32(x1, 10) }, 7(I32)))
     };
   print(i32_to_string(apply(f, 5)))
 }

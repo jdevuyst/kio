@@ -2,7 +2,7 @@
 //!
 //! Whitespace and `// …` line comments are trivia and dropped during
 //! lexing. Every keyword-shaped word — `module`, `import`, `as`,
-//! `default`, `pub`, `pure`, `type`, `host`, `bridge`, `package`, `fn`, `newtype`, `let`,
+//! `pub`, `pure`, `type`, `host`, `bridge`, `package`, `fn`, `newtype`, `let`,
 //! `constructor`, `projector`, and the magic `__...__` import targets —
 //! is emitted as `Ident(text)` and disambiguated by the parser based on
 //! grammatical position.

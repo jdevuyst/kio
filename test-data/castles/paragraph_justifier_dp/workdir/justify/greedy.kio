@@ -11,7 +11,7 @@ import justify/list(List);
 import justify/word(Word, Words, word_width);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32);
 import testapi/iter(loop);
 

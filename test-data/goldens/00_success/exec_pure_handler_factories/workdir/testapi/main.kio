@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/factories as factories;
 import testapi/factories(second);
 import testapi/io as io;
@@ -15,11 +15,12 @@ fn unknown_factory() -> . -> String {
 }
 
 pub fn main() {
-  io.print(__if_then_else__(String, condition(.t(Bool)), factories.first(), second()));
-  io.print(__if_then_else__(String, condition(.f(Bool)), factories.first(), second()));
+  io.print(__if_then_else__(Bool, String, condition(.t(Bool)), factories.first(), second()));
+  io.print(__if_then_else__(Bool, String, condition(.f(Bool)), factories.first(), second()));
   io.print(__either__(., ., String, __left__(., ., ()), factories.first(), second()));
   io.print(__either__(., ., String, __right__(., ., ()), factories.first(), second()));
   io.print(__if_then_else__(
+  , Bool
   , String
   , condition(.t(Bool))
   , factories.first()

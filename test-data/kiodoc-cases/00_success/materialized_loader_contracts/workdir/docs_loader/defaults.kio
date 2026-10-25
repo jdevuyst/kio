@@ -13,7 +13,7 @@ import docs_loader/loader(instantiate, instantiate_checked);
 import docs_loader/loader(mk_host_adapter, mk_host_fn_binding);
 import docs_loader/prime(Term, group_slots_cons, group_slots_nil);
 import docs_loader/result(Call_result, Eval_result);
-import docs_loader/testapi(default I32, default String);
+import docs_loader/testapi(I32, String);
 import docs_loader/value(Value);
 
 // `defaults.kio` — the convenience entry points that run the loader /

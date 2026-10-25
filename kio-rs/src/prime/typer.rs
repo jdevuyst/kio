@@ -41,8 +41,7 @@
 //! surface-bearing extension variants discharge via `match *ext {}` because
 //! they are uninhabited at Prime. Literal arms route through the
 //! Prime-local helper [`synth_prime_literal`] rather than the
-//! shared `synth_literal`, because Kio' admits no bare-literal form
-//! that would need tier-2/3 resolution.
+//! shared `synth_literal`, because every Kio' literal carries an explicit type.
 //!
 //! ## Where the divergence lives
 //!
@@ -501,8 +500,7 @@ impl Typer<Prime> for PrimeTyper {
 /// § Literals; [`check_literal_annotation`] discharges that check.
 ///
 /// This is the Prime counterpart of `synth_literal` in
-/// `typecheck_core::synth`, which carries the full surface's three-
-/// tier resolution logic. Kio' has only tier 1 (the annotation), so
+/// `typecheck_core::synth`. Kio' requires explicit literal annotations, so
 /// the Prime path checks that annotation and the numeric value directly,
 /// then records the canonical numeric value for baking, matching
 /// `specs/formal/prime.md` § 2.2's literal rules.
@@ -729,6 +727,17 @@ pub(crate) fn record_intrinsic_value(
     }
 }
 
+pub(crate) fn record_intrinsic_application(
+    site: crate::ast::ExpressionSite,
+    ty: &InternedType<Prime>,
+    tcx: &mut TypeCtx<'_, '_, Prime>,
+) {
+    tcx.elaborations
+        .intrinsic_values
+        .get_or_insert_with(Default::default)
+        .insert(site.id, ty.clone().into());
+}
+
 impl TyperPhase for Prime {
     type Typer = PrimeTyper;
 }
@@ -947,7 +956,6 @@ fn prime_local_alias_items(
                 })
                 .collect();
             crate::ast::Item::TypeAlias(crate::ast::TypeAlias {
-                default_span: None,
                 vis: crate::ast::Visibility::Private,
                 name: plan.alias,
                 name_span: plan.span,
@@ -1125,7 +1133,10 @@ fn intrinsic_value_wrapper(
     let mut occupied = ambient_binders.iter().cloned().collect();
     crate::pass::typecheck_core::collect_free_type_vars(&scheme, &mut occupied);
     let mut groups = Vec::new();
-    let mut args = Vec::new();
+    let (intrinsic, mut args) = match intrinsic {
+        Expr::Call { callee, args, .. } => (*callee, args),
+        intrinsic => (intrinsic, Vec::new()),
+    };
     while let Type::Forall {
         mut param, body, ..
     } = scheme
@@ -1216,12 +1227,14 @@ fn prime_recorded_type(
     requalifier: &mut crate::pass::typecheck_core::PrimeTypeRequalifier,
     type_binders: &[String],
 ) -> crate::ast::Type<Prime> {
-    if recorded.identity_canonical {
+    let mut ty = if recorded.identity_canonical {
         let bound = type_binders.iter().cloned().collect();
         requalifier.rewrite(&recorded.resolved, &bound)
     } else {
         recorded.resolved.clone()
-    }
+    };
+    crate::pass::typecheck_core::materialize_type_binder_names(&mut ty, type_binders);
+    ty
 }
 
 /// Rebuild a Prime `Expr::Call`'s args list in fully-explicit
@@ -1646,6 +1659,45 @@ mod tests {
     }
 
     #[test]
+    fn inferred_boolean_specialization_prime_requires_an_explicit_checked_prefix() {
+        for body in [
+            "__if_then_else__(Flag, ., flag, .() -> . { () }, .() -> . { () })",
+            "let choose = __if_then_else__(Flag); choose(., flag, .() -> . { () }, .() -> . { () })",
+        ] {
+            let original = build_package(&format!(
+                "module x; import __intrinsics__; host type Flag role(bool); fn run(flag: Flag) -> . {{ {body} }}"
+            ));
+            let checked = check_package(&original).expect("an explicit Boolean prefix checks");
+            let text = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
+            let reparsed = build_package(&text);
+            assert_eq!(intrinsic_value_record_count(&reparsed), 0, "{text}");
+            let rechecked =
+                check_package(&reparsed).expect("specialized wrappers are ordinary Prime");
+            assert_eq!(
+                text,
+                crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap())
+            );
+        }
+        for declaration in [
+            "fn run() -> . { let choose = __if_then_else__; () }",
+            "fn choose() -> [A] (Flag & (. -> A) & (. -> A)) -> A { __if_then_else__ }",
+            "fn run() -> . { let choose = __if_then_else__(.); () }",
+            "fn run[B]() -> . { let choose = __if_then_else__(B); () }",
+        ] {
+            let original = build_package(&format!(
+                "module x; import __intrinsics__; host type Flag role(bool); {declaration}"
+            ));
+            let error = check_package(&original)
+                .expect_err("fresh Prime must check the written Boolean prefix");
+            assert!(
+                error.error.diag().1.contains("Boolean")
+                    || error.error.diag().1.contains("role(bool)"),
+                "{declaration}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
     fn numeric_literals_are_independently_checked_and_canonicalized() {
         let package = build_package(
             "module x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010(I) } fn minimum() -> I { -170141183460469231731687303715884105728(I) } fn maximum() -> U { 340282366920938463463374607431768211455(U) } fn zero() -> U { -0(U) } fn decimal() -> F { 0.1(F) } fn negative_zero() -> F { -1.0e-9999(F) }",
@@ -1675,6 +1727,81 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "surface")]
+    #[test]
+    fn partial_intrinsic_schemes_emit_legal_capture_safe_type_binders() {
+        use crate::pipeline::Pipeline;
+
+        let source = r#"module x;
+import __intrinsics__;
+import __comptime__;
+host type A role(bool);
+host type Flag role(bool);
+fn nominal(flag: A) -> A {
+    let choose = __if_then_else__(A);
+    choose(A, flag, .() { flag }, .() { flag })
+}
+fn rigid[A](flag: Flag, value: A) -> A {
+    let choose = __if_then_else__(Flag);
+    choose(A, flag, .() { value }, .() { value })
+}
+host type Eta role(bool);
+fn nominal_eta(flag: Eta) -> Eta {
+    let choose = __if_then_else__(Eta);
+    choose(Eta, flag, .() { flag }, .() { flag })
+}
+fn rigid_eta[Eta](flag: Flag, value: Eta) -> Eta {
+    let choose = __if_then_else__(Flag);
+    choose(Eta, flag, .() { value }, .() { value })
+}
+fn pair[B](value: B) -> B & B {
+    let pair = __pair__(B);
+    pair(B, value, value)
+}
+fn either[C](choice: . | ., value: C) -> C {
+    let pick = __either__(., .);
+    pick(C, choice, .(left: .) { value }, .(right: .) { value })
+}
+pure fn mirror_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
+macro mirror : [T] T -> T { impl mirror_impl; };
+fn keep[T](value: T) -> . -> T { .() { value } }
+fn nested_argument[Eta](value: Eta) -> Eta & Eta {
+    let delayed = keep(__pair__);
+    let pair = delayed(());
+    pair(Eta, Eta, value, value)
+}
+fn nested_local[Eta](value: Eta) -> Eta & Eta {
+    let stored = __pair__;
+    let delayed = keep(stored);
+    let pair = delayed(());
+    pair(Eta, Eta, value, value)
+}
+fn nested_replay[Eta](value: Eta) -> Eta & Eta {
+    let delayed = mirror(keep(__pair__));
+    let pair = delayed(());
+    pair(Eta, Eta, value, value)
+}
+"#;
+        let parsed = parse(source).expect("surface source parses");
+        let (modules, _) = crate::pass::full::FullPipeline::lower_package(
+            vec![(PathBuf::from("x.kio"), parsed)],
+            None,
+        )
+        .expect("surface lowering");
+        let package = Package::build(Path::new(""), modules, None).expect("package");
+        package.resolve_imports().expect("imports");
+        package.check_in_body_resolution().expect("resolution");
+        let checked = crate::pass::typecheck_full::check_package(&package)
+            .expect("partial intrinsics retain nominal and ambient binder identities");
+        let emitted = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
+        let reparsed = build_package(&emitted);
+        let rechecked = check_package(&reparsed).expect("emitted Prime checks independently");
+        assert_eq!(
+            emitted,
+            crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap())
+        );
+    }
+
     #[test]
     fn intrinsic_values_recheck_without_new_wrappers() {
         for source in [
@@ -1683,7 +1810,7 @@ mod tests {
             "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
             "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p(I32, I32, x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
             "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p(I32, I32, x, y); p(I32, I32, __fst__(I32, I32, first), y) }",
-            "module x; import __intrinsics__; default host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__; choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
+            "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__(First); choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
         ] {
             let original = build_package(source);
             assert_eq!(intrinsic_value_record_count(&original), 1, "{source}");
@@ -1717,27 +1844,19 @@ mod tests {
     }
 
     #[test]
-    fn intrinsic_values_require_a_selected_default_among_role_types() {
+    fn intrinsic_values_require_explicit_boolean_specialization() {
         let package = build_package(
             "module x; import __intrinsics__; host type First role(bool); host type Second role(bool); fn f() -> . { let choose = __if_then_else__; () }",
         );
-        let error =
-            check_package(&package).expect_err("ordinary role declarations select no default");
-        let diagnostic = error.error.diagnostic();
+        let error = check_package(&package)
+            .expect_err("visible role declarations cannot specialize an intrinsic value");
         assert!(
-            diagnostic
-                .message
-                .contains("no type is selected as the default boolean type"),
-            "{diagnostic:?}"
+            error
+                .error
+                .diag()
+                .1
+                .contains("needs a concrete Boolean type")
         );
-        for name in ["First", "Second"] {
-            assert!(
-                diagnostic.secondary().iter().any(|label| label
-                    .text
-                    .contains(&format!("`{name}` is available but is not selected"))),
-                "{diagnostic:?}"
-            );
-        }
     }
 
     #[test]
@@ -1749,7 +1868,7 @@ mod tests {
             ),
             (
                 "x.kio",
-                "module x; import __intrinsics__; import provider as provider; default type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__; pick(_Intrinsic_t0, c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
+                "module x; import __intrinsics__; import provider as provider; type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__(Selected); pick(_Intrinsic_t0, c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
             ),
         ]);
         assert_eq!(intrinsic_value_record_count(&package), 1);
@@ -1968,42 +2087,21 @@ mod tests {
     }
 
     #[test]
-    fn if_intrinsic_rejects_conflicting_bool_defaults_standalone_in_both_orders() {
+    fn if_intrinsic_accepts_unrelated_bool_roles_in_both_orders() {
         for declarations in [
-            "default host type First role(bool); default host type Second role(bool);",
-            "default host type Second role(bool); default host type First role(bool);",
+            "host type First role(bool); host type Second role(bool);",
+            "host type Second role(bool); host type First role(bool);",
         ] {
             let pkg = build_package(&format!(
                 "module x; import __intrinsics__; {declarations} \
                  fn pick(c: First) -> First {{ \
-                   __if_then_else__(First, c, \
+                   __if_then_else__(First, First, c, \
                      .() -> First {{ .t(First) }}, \
                      .() -> First {{ .f(First) }}) \
                  }}"
             ));
-            let err =
-                check_package(&pkg).expect_err("conflicting defaults reject the module eagerly");
-            let Error::Type(diagnostic) = err.error else {
-                panic!("expected Type error, got {:?}", err.error);
-            };
-            assert!(
-                diagnostic
-                    .message
-                    .contains("conflicting default boolean types"),
-                "got: {}",
-                diagnostic.message
-            );
-            assert!(
-                diagnostic.message.contains("`First`") && diagnostic.message.contains("`Second`"),
-                "got: {}",
-                diagnostic.message
-            );
-            let second_selection = declarations.rfind("default").unwrap();
-            let module_prefix = "module x; import __intrinsics__; ".len();
-            assert_eq!(
-                diagnostic.span.start as usize,
-                module_prefix + second_selection
-            );
+            check_package(&pkg)
+                .expect("the explicit carrier is independent of unrelated role declarations");
         }
     }
 
@@ -2011,13 +2109,13 @@ mod tests {
     fn if_intrinsic_rejects_a_mismatched_repeated_result() {
         let package = build_package(
             "module x; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              host type Left; \
              host type Right; \
              host fn left() -> Left; \
              host fn right() -> Right; \
              fn pick(c: Bool) -> Left { \
-               __if_then_else__(Left, c, .() { left() }, .() { right() }) \
+               __if_then_else__(Bool, Left, c, .() { left() }, .() { right() }) \
              }",
         );
         let error = check_package(&package).expect_err("both thunks must return the explicit type");
@@ -2034,9 +2132,9 @@ mod tests {
     fn if_intrinsic_keeps_selected_bool_with_another_role_declared_later() {
         let pkg = build_package(
             "module x; import __intrinsics__; \
-             default host type First role(bool); \
+             host type First role(bool); \
              fn pick(c: First) -> First { \
-               __if_then_else__(First, c, \
+               __if_then_else__(First, First, c, \
                  .() -> First { .t(First) }, \
                  .() -> First { .f(First) }) \
              } \

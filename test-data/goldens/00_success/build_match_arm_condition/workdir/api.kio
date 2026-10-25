@@ -1,9 +1,7 @@
 module api;
 
-import macros/control(macro if);
+import macros/control(Bool, macro if);
 import macros/match(macro match);
-
-default host type Bool role(bool);
 
 host fn sink(value: Bool);
 

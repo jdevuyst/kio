@@ -1,7 +1,7 @@
 module stack/testapi/main;
 
 import stack/macros/control(macro if);
-import stack/testapi(I32, default Bool);
+import stack/testapi(Bool, I32, String);
 import stack/testapi/arith as arith;
 import stack/testapi/io as io;
 import stack/testapi/iter(loop);

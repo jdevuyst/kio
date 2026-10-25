@@ -1888,10 +1888,6 @@
           "named": true
         },
         {
-          "type": "keyword_declaration",
-          "named": true
-        },
-        {
           "type": "keyword_host",
           "named": true
         },
@@ -2155,7 +2151,7 @@
       },
       "source": {
         "multiple": false,
-        "required": false,
+        "required": true,
         "types": [
           {
             "type": "identifier",
@@ -2165,13 +2161,9 @@
       }
     },
     "children": {
-      "multiple": true,
+      "multiple": false,
       "required": false,
       "types": [
-        {
-          "type": "identifier",
-          "named": true
-        },
         {
           "type": "keyword_declaration",
           "named": true
@@ -5941,10 +5933,6 @@
           "named": true
         },
         {
-          "type": "keyword_declaration",
-          "named": true
-        },
-        {
           "type": "keyword_pub",
           "named": true
         },
@@ -7146,10 +7134,6 @@
   },
   {
     "type": "keyword_control",
-    "named": true
-  },
-  {
-    "type": "keyword_default",
     "named": true
   },
   {

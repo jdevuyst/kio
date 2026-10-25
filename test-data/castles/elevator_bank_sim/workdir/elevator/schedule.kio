@@ -1,7 +1,7 @@
 module elevator/schedule;
 
 import macros/control(macro if);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 
 pub fn lobby(tick: I32) -> I32 {

@@ -1,8 +1,8 @@
 module helper;
 
-import macros/control(macro if);
+import macros/control(Bool as Control_bool, macro if);
 
-default host type Bool role(bool);
+pub type Bool = Control_bool;
 
 host fn a();
 

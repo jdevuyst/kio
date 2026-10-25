@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default I32, default String);
+import testapi(Bool, I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -18,12 +18,12 @@ fn print_line(value: I32) { print(int_to_string(value)); print("\n") }
 
 fn check_named_clause_orders() {
   let generic_first =
-    match(widen_sum(11, I32 | String)) {
+    match(widen_sum(11(I32), I32 | String)) {
       (.(_number: I32) { identity(_) }, concrete_string_clause)
     };
   let _generic_first_value = generic_first(31);
   let concrete_first =
-    match(widen_sum(11, I32 | String)) {
+    match(widen_sum(11(I32), I32 | String)) {
       (concrete_string_clause, .(_number: I32) { identity(_) })
     };
   let _concrete_first_value = concrete_first(32);
@@ -31,14 +31,14 @@ fn check_named_clause_orders() {
 }
 
 fn enclosing_common_result() -> I32_fn {
-  match(widen_sum("enclosing", I32 | String)) {
+  match(widen_sum("enclosing"(String), I32 | String)) {
     (.(_number: I32) { identity(_) }, .(_text: String) { identity(_) })
   }
 }
 
 fn check_contextual_common_results() {
   let .(explicit: I32_fn) =
-    match(widen_sum(33, I32 | String)) {
+    match(widen_sum(33(I32), I32 | String)) {
       (.(_number: I32) { identity(_) }, .(_text: String) { identity(_) })
     };
   let _explicit_value = explicit(33);
@@ -48,7 +48,7 @@ fn check_contextual_common_results() {
 
 fn check_three_result_positions() {
   let concrete_first =
-    match(widen_sum(41, I32 | String | Bool)) {
+    match(widen_sum(41(I32), I32 | String | Bool)) {
       (
       , .(_number: I32) { identity_i32 }
       , .(_text: String) { identity(_) }
@@ -57,7 +57,7 @@ fn check_three_result_positions() {
     };
   let _concrete_first_value = concrete_first(41);
   let concrete_middle =
-    match(widen_sum("middle", I32 | String | Bool)) {
+    match(widen_sum("middle"(String), I32 | String | Bool)) {
       (
       , .(_number: I32) { identity(_) }
       , .(_text: String) { identity_i32 }
@@ -66,7 +66,7 @@ fn check_three_result_positions() {
     };
   let _concrete_middle_value = concrete_middle(42);
   let concrete_last =
-    match(widen_sum(.t, I32 | String | Bool)) {
+    match(widen_sum(.t(Bool), I32 | String | Bool)) {
       (
       , .(_number: I32) { identity(_) }
       , .(_text: String) { identity(_) }
@@ -79,7 +79,7 @@ fn check_three_result_positions() {
 
 pub fn main() {
   let generic_first =
-    match(widen_sum(11, I32 | String)) {
+    match(widen_sum(11(I32), I32 | String)) {
       (
       , .(_number: I32) { print("match generic-first\n"); identity(_) }
       , .(_text: String) { print("match concrete-later\n"); identity_i32 }
@@ -87,7 +87,7 @@ pub fn main() {
     };
   print_line(generic_first(11));
   let concrete_first =
-    match(widen_sum("later", I32 | String)) {
+    match(widen_sum("later"(String), I32 | String)) {
       (
       , .(_number: I32) { print("match concrete-first\n"); identity_i32 }
       , .(_text: String) { print("match generic-later\n"); identity(_) }

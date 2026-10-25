@@ -12,12 +12,11 @@ bridge {
 module kiodoc;
 
 import match(macro match);
-import control(macro if);
+import control(Bool, macro if);
 import spine_macros(macro widen_sum, macro narrow_sum, macro fit);
 
 host type Int role(i32);
 host type String role(str);
-default host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);

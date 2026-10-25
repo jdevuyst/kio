@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/spine_macros(macro narrow_prod);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 newtype Tag : . { pub constructor mk_tag; pub projector un_tag }
@@ -15,4 +15,4 @@ fn shout(s: String) -> String { s }
 // `narrow_prod`: bidirectional flow through the UFCS chain pins
 // the elided target to the next callee's first-param type
 // (`String`), so the user doesn't write the target explicitly.
-pub fn main() { let pair = (Tag.mk_tag(()), "hello\n"); narrow_prod(pair).>shout.>print }
+pub fn main() { let pair = (Tag.mk_tag(()), "hello\n"(String)); narrow_prod(pair).>shout.>print }

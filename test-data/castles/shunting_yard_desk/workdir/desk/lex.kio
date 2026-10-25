@@ -11,7 +11,7 @@ import desk/op(divide_op, minus_op, modulo_op, negate_op, plus_op, power_op, tim
 import desk/token(Token, bad_token, lparen_token, num_token, oper_token, rparen_token);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/fmt(string_to_int);
 import testapi/text(string_eq);
 

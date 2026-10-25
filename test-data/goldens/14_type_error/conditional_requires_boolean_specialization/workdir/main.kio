@@ -1,0 +1,7 @@
+module main;
+
+import __intrinsics__;
+
+host type Bool role(bool);
+
+pub fn value() { let _ = __if_then_else__; () }

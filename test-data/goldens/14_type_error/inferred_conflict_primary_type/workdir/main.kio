@@ -1,8 +1,6 @@
 module main;
 
-import macros/control(macro if);
-
-host type Bool role(bool);
+import macros/control(Bool, macro if);
 
 host type Left;
 

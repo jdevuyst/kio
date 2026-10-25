@@ -28,7 +28,7 @@ import library/list(
 );
 import library/macros/match(macro match);
 import library/macros/spine_macros(macro widen_sum);
-import testapi(Bool, String, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, mul_i32, sub_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
@@ -88,7 +88,7 @@ pub fn main() {
   show_list_i32("xs |> dbl", xs |> dbl);
   show_list_i32("filter(<=3, xs)", filter(.(n: I32) -> Bool { leq_i32(n, 3) }, xs));
   show_list_i32("append([1,2], [3,4])", append([* 1, 2 *], [* 3, 4 *]));
-  let more = [* 6, 7 *];
+  let more = [* 6(I32), 7 *];
   show_list_i32("xs ++ [6,7]", xs ++ more);
   show("foldl(+, 0, xs)", int_to_string(foldl(add_i32, 0, xs)));
   show("foldr(-, 0, xs)", int_to_string(foldr(sub_i32, 0, xs)));
@@ -109,7 +109,7 @@ pub fn main() {
   show_result("head(empty Unit)", head(nil(.)), render_unit);
   show_result("at(unit, 0)", at(0, unit_list), render_unit);
   show_result("at(unit, 1)", at(1, unit_list), render_unit);
-  let nested_number = singleton(widen_sum(7, I32 | .));
+  let nested_number = singleton(widen_sum(7(I32), I32 | .));
   let nested_unit = singleton(widen_sum((), I32 | .));
   show_result("last(nested number)", last(nested_number), render_sum);
   show_result("last(nested unit)", last(nested_unit), render_sum);

@@ -2537,7 +2537,6 @@ impl OpPart {
 /// synonym. The typer unfolds aliases structurally.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct TypeAlias<P: Phase = Surface> {
-    pub default_span: Option<Span>,
     pub vis: Visibility,
     pub name: String,
     /// Exact span of the declared type name. Kept separately from `meta`
@@ -2688,7 +2687,6 @@ pub enum ImportKind {
 pub enum ImportItem {
     /// `foo`, `Bar` — regular identifier import (function or type).
     Name {
-        default_span: Option<Span>,
         macro_span: Option<Span>,
         name: String,
         span: Span,
@@ -4287,7 +4285,6 @@ pub struct LockFile<P: Phase = Surface> {
 /// public — host items have no private form.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HostType<P: Phase = Surface> {
-    pub default_span: Option<Span>,
     pub name: String,
     pub type_params: Vec<TypeParam>,
     pub role: Option<RoleAnnotation>,
@@ -4854,12 +4851,47 @@ pub enum ElaboratorCall<P: Phase = Surface> {
         receiver: Box<Expr<P>>,
         labels: Vec<FieldAccessLabel<P>>,
     },
-    /// Compiler-private field update shape produced from
-    /// `x.!{foo = y}`.
+    /// Compiler-private row construction or update shape. Construction
+    /// operands are ordinary constructor calls after label elaboration.
     FieldUpdate {
-        receiver: Box<Expr<P>>,
+        base: FieldUpdateBase<P>,
         updates: Vec<FieldUpdateLabel<P>>,
     },
+}
+
+/// The written distinction between a label construction and a field update.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum FieldUpdateBase<P: Phase = Surface> {
+    Construction,
+    Update(Box<Expr<P>>),
+}
+
+impl<P: Phase> FieldUpdateBase<P> {
+    pub fn receiver(&self) -> Option<&Expr<P>> {
+        match self {
+            Self::Construction => None,
+            Self::Update(receiver) => Some(receiver),
+        }
+    }
+
+    pub fn receiver_mut(&mut self) -> Option<&mut Expr<P>> {
+        match self {
+            Self::Construction => None,
+            Self::Update(receiver) => Some(receiver),
+        }
+    }
+
+    pub fn map_receiver<Q: Phase, E>(
+        self,
+        f: impl FnOnce(Expr<P>) -> Result<Expr<Q>, E>,
+    ) -> Result<FieldUpdateBase<Q>, E> {
+        match self {
+            Self::Construction => Ok(FieldUpdateBase::Construction),
+            Self::Update(receiver) => {
+                f(*receiver).map(|receiver| FieldUpdateBase::Update(Box::new(receiver)))
+            }
+        }
+    }
 }
 
 impl ElaboratorKind {
@@ -5149,9 +5181,10 @@ pub enum Expr<P: Phase = Surface> {
     },
     /// `{f = e}` and multi-label `{f = e1, g = e2}` — label-value
     /// construction sugar.
-    /// **Stripped during label-elab**: a local `f = e` lowers to the
-    /// newtype member call `F.mk(e)` (type-shaped newtype head);
-    /// multi-label right-folds into nested `__pair__` calls.
+    /// **Stripped during label-elab**: each payload becomes the ordinary
+    /// constructor call `F.mk(e)`. A construction carrier retains their row
+    /// order until typechecking selects the result permutation and substitution
+    /// emits ordinary let bindings and nested `__pair__` calls.
     ///
     /// Per-label leading trivia flows onto each `labels[i]`'s
     /// `meta.leading_trivia`.
@@ -5361,7 +5394,7 @@ pub enum Expr<P: Phase = Surface> {
         then_branch: Box<Expr<P>>,
         else_branch: Box<Expr<P>>,
         /// The result type both branches produce (`r` in the
-        /// recovered `__if_then_else__(R, …)` call).
+        /// recovered `__if_then_else__(B, R, …)` call).
         result_ty: P::ExprEnrichedSynthTy,
         meta: Meta<P>,
         ext: P::ExprEnriched,
@@ -5938,8 +5971,22 @@ pub struct FieldUpdateLabel<P: Phase = Surface> {
     /// one. See [`FieldAccessLabel::label_type`]. `None` only before label
     /// elaboration.
     pub label_type: Option<Vec<PathSegment>>,
+    /// An update's written payload, or a construction's lowered constructor call.
     pub value: Expr<P>,
     pub meta: Meta<P>,
+}
+
+impl<P: Phase> FieldUpdateLabel<P> {
+    /// The written payload of a construction's generated constructor call.
+    pub fn construction_payload(&self) -> &Expr<P> {
+        let Expr::Call { args, .. } = &self.value else {
+            unreachable!("a lowered construction lost its ordinary constructor call")
+        };
+        let [CallArg::Value(payload)] = args.as_slice() else {
+            unreachable!("a lowered constructor has exactly its written payload argument")
+        };
+        payload
+    }
 }
 
 /// A classified owner cannot reinterpret operator-generated paths as authored
@@ -7111,7 +7158,6 @@ where
     Q: Phase,
 {
     TypeAlias {
-        default_span: a.default_span,
         vis: a.vis.clone(),
         name: a.name.clone(),
         name_span: a.name_span,
@@ -7186,7 +7232,6 @@ where
     Q: Phase,
 {
     HostType {
-        default_span: h.default_span,
         name: h.name.clone(),
         type_params: h.type_params.clone(),
         role: h.role,
@@ -7577,6 +7622,18 @@ impl<P: Phase> Item<P> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn field_construction_base_keeps_receiver_pointer_layout() {
+        assert_eq!(
+            std::mem::size_of::<super::FieldUpdateBase<super::Surface>>(),
+            std::mem::size_of::<Box<super::Expr<super::Surface>>>(),
+        );
+        assert_eq!(
+            std::mem::size_of::<super::FieldUpdateBase<super::Lowered>>(),
+            std::mem::size_of::<Box<super::Expr<super::Lowered>>>(),
+        );
+    }
+
     #[test]
     fn relocated_comment_runs_keep_internal_paragraphs_and_separate_blocks() {
         use super::{append_relocated_trivia, append_source_trivia};

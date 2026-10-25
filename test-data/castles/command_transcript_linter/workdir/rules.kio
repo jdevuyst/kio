@@ -2,7 +2,7 @@ module rules;
 
 import macros/control(macro if);
 import scanner as scan;
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/text as text;
 
 fn not(value: Bool) -> Bool {

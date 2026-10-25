@@ -7,7 +7,7 @@ import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 import substitutions as subst;
 import terms as term;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

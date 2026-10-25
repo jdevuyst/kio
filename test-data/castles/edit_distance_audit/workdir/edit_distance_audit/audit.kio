@@ -4,7 +4,7 @@ import edit_distance_audit/dp as dp;
 import edit_distance_audit/render as render;
 import edit_distance_audit/tokens as tokens;
 import macros/control(macro if);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/text as text;
 

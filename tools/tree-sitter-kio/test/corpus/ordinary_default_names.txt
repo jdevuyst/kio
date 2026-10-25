@@ -1,0 +1,37 @@
+================================================================================
+ordinary default identifiers in imports and value declarations
+================================================================================
+import types(default as ordinary);
+fn default(default: .) { default }
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_named_item
+      (identifier)
+      (keyword_declaration)
+      (identifier))
+    (bracket_rparen)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))

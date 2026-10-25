@@ -27,7 +27,7 @@ import library/dict(
 import library/macros/control(macro if);
 import library/macros/match(macro match);
 import library/macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default I32, default String);
+import testapi(Bool, I32, String);
 import testapi/arith(add, eq_i32, lt_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
@@ -135,7 +135,7 @@ fn show_unit_lookup(label: String, result: . | .) {
 }
 
 fn sum_dictionary() -> Dict(I32, I32 | .) {
-  [% 1 => widen_sum(7, I32 | .), 2 => widen_sum((), I32 | .) %](cmp_i32)
+  [% 1 => widen_sum(7(I32), I32 | .), 2 => widen_sum((), I32 | .) %](cmp_i32)
 }
 
 fn show_sum_lookup(label: String, result: (I32 | .) | .) {
@@ -154,7 +154,7 @@ fn show_sum_lookup(label: String, result: (I32 | .) | .) {
 }
 
 pub fn main() {
-  let d = [% 5 => 50, 2 => 20, 8 => 80, 1 => 10, 9 => 90 %](cmp_i32);
+  let d = [% 5 => 50(I32), 2 => 20, 8 => 80, 1 => 10, 9 => 90 %](cmp_i32);
   show_entries("literal |> fold_asc", d);
   show_int("size", size(d));
   show_lookup("get(d, 8)", get(cmp_i32, d, 8));
@@ -166,8 +166,8 @@ pub fn main() {
   show_lookup("insert(d, 5, 500) |> get 5", get(cmp_i32, insert(cmp_i32, d, 5, 500), 5));
   show_entries("map_values(*2, d)", map_values(cmp_i32, .(x: I32) -> I32 { add(x, x) }, d));
   show_entries("filter(v>40, d)", filter(cmp_i32, .(x: I32) -> Flag { gt_flag(x, 40) }, d));
-  let left = [% 1 => 1, 2 => 2 %](cmp_i32);
-  let right = [% 2 => 222, 3 => 3 %](cmp_i32_equivalent);
+  let left = [% 1 => 1(I32), 2 => 2 %](cmp_i32);
+  let right = [% 2 => 222(I32), 3 => 3 %](cmp_i32_equivalent);
   show_entries("union(l, r)", union(cmp_i32_equivalent, left, right));
   show_entries("intersection(l, r)", intersection(cmp_i32_equivalent, left, right));
   show_lookup("d[8]", d <| 8 |>);

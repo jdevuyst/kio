@@ -49,5 +49,6 @@ build {
 }
 
 bridge {
+  macros/control;
   main
 }

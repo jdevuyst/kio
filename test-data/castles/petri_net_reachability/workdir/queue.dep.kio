@@ -5,4 +5,5 @@ source {
 }
 
 rehost queue/list/list to queue_host;
+rehost queue/list/macros/control to queue_host;
 rehost queue/queue to queue_host;

@@ -397,17 +397,17 @@ pure fn patch_from_pair(ct: __Comptime__, source: __Type__, value: __Checked_ter
               )
             }
           , .() -> Slot_result {
-              slot_err(ct, "set patch constructor parameter does not match payload")
+              slot_err(ct, "set patch constructor parameter does not match payload"(__Diagnostic_text__))
             }
           )
         }
       , .(_not_function: .) -> Slot_result {
-          slot_err(ct, "set patch must start with a constructor function")
+          slot_err(ct, "set patch must start with a constructor function"(__Diagnostic_text__))
         }
       )
     }
   , .(_not_product: .) -> Slot_result {
-      slot_err(ct, "set patch must be a constructor-payload pair")
+      slot_err(ct, "set patch must be a constructor-payload pair"(__Diagnostic_text__))
     }
   )
 }
@@ -447,7 +447,7 @@ pure fn parse_patch_packet_step(
               )
             }
           , .() -> Slot_list_result {
-              slot_list_err(ct, "set patch constructor parameter does not match payload")
+              slot_list_err(ct, "set patch constructor parameter does not match payload"(__Diagnostic_text__))
             }
           )
         }
@@ -477,7 +477,7 @@ pure fn parse_patch_packet_step(
       )
     }
   , .(_not_product: .) -> Slot_list_result {
-      slot_list_err(ct, "set patches must be constructor-payload pairs")
+      slot_list_err(ct, "set patches must be constructor-payload pairs"(__Diagnostic_text__))
     }
   )
 }
@@ -754,7 +754,7 @@ pure fn select_slots(
                       __left__(
                       , Slot_list_result
                       , Select_next
-                      , slot_list_err(ct, "get selector has no matching row field")
+                      , slot_list_err(ct, "get selector has no matching row field"(__Diagnostic_text__))
                       )
                     }
                   )
@@ -763,7 +763,7 @@ pure fn select_slots(
                   __left__(
                   , Slot_list_result
                   , Select_next
-                  , slot_list_err(ct, "get selector must be a projector function")
+                  , slot_list_err(ct, "get selector must be a projector function"(__Diagnostic_text__))
                   )
                 }
               )
@@ -810,7 +810,7 @@ pure fn get_macro(
       , ct
       , selected
       , target
-      , "get target must match selector order exactly"
+      , "get target must match selector order exactly"(__Diagnostic_text__)
       )
     }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }

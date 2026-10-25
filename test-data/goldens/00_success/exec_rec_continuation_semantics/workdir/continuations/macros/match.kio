@@ -360,7 +360,9 @@ pure fn clause_param_type(ct: __Comptime__, clause_type: __Type__) -> Type_resul
   , Type_result
   , function_view(ct, clause_body_type(ct, clause_type))
   , .(view: Function_view) -> Type_result { type_result_ok(ct, function_view_param(ct, view)) }
-  , .() -> Type_result { type_result_err(ct, "match clause is not a function") }
+  , .() -> Type_result {
+      type_result_err(ct, "match clause is not a function"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -371,7 +373,9 @@ pure fn clause_return_type(ct: __Comptime__, clause_type: __Type__) -> Type_resu
   , Type_result
   , function_view(ct, clause_body_type(ct, clause_type))
   , .(view: Function_view) -> Type_result { type_result_ok(ct, function_view_result(ct, view)) }
-  , .() -> Type_result { type_result_err(ct, "match clause is not a function") }
+  , .() -> Type_result {
+      type_result_err(ct, "match clause is not a function"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -515,7 +519,7 @@ pure fn split_first_slot(ct: __Comptime__, slots: Slot_list) -> Slot_split_resul
   , Slot_split_result
   , Slot_list.un_slot_list(slots)
   , .(_done: .) -> Slot_split_result {
-      __right__(Slot_take, __Diagnostic_text__, "slot list is empty")
+      __right__(Slot_take, __Diagnostic_text__, "slot list is empty"(__Diagnostic_text__))
     }
   , .(cell: Slot & Slot_list) -> Slot_split_result {
       __left__(Slot_take, __Diagnostic_text__, cell)
@@ -532,7 +536,11 @@ fn split_first_type(ct: __Comptime__, types: Type_list) -> Type_split_result {
   , Type_split_result
   , Type_list.un_type_list(types)
   , .(_done: .) -> Type_split_result {
-      __right__(__Type__ & Type_list, __Diagnostic_text__, "type list is empty")
+      __right__(
+      , __Type__ & Type_list
+      , __Diagnostic_text__
+      , "type list is empty"(__Diagnostic_text__)
+      )
     }
   , .(cell: __Type__ & Type_list) -> Type_split_result {
       __left__(__Type__ & Type_list, __Diagnostic_text__, cell)
@@ -668,7 +676,9 @@ pure fn select_clause_for_branch(ct: __Comptime__, arm_type: __Type__, clauses: 
       , Slot & Slot_list
       , Clause_result
       , Slot_list.un_slot_list(remaining)
-      , .() -> Clause_result { clause_result_err(ct, "no match clause accepts this source arm") }
+      , .() -> Clause_result {
+          clause_result_err(ct, "no match clause accepts this source arm"(__Diagnostic_text__))
+        }
       , .(cell: Slot & Slot_list) -> Clause_result {
           __either__(
           , Clause_result
@@ -717,7 +727,11 @@ pure fn remove_clause_coverage(ct: __Comptime__, clause: Slot, remaining: Type_l
               )
             }
           , .() -> Coverage_result {
-              __right__(Type_list, __Diagnostic_text__, "match clause is unreachable")
+              __right__(
+              , Type_list
+              , __Diagnostic_text__
+              , "match clause is unreachable"(__Diagnostic_text__)
+              )
             }
           )
         }
@@ -787,7 +801,11 @@ pure fn validate_clause_coverage(ct: __Comptime__, source_spine: Type_list, clau
           , Type_list.un_type_list(remaining_branches)
           , .() -> Coverage_check { __left__(., __Diagnostic_text__, ()) }
           , .(_uncovered: __Type__ & Type_list) -> Coverage_check {
-              __right__(., __Diagnostic_text__, "no match clause accepts this source arm")
+              __right__(
+              , .
+              , __Diagnostic_text__
+              , "no match clause accepts this source arm"(__Diagnostic_text__)
+              )
             }
           )
         }
@@ -838,7 +856,7 @@ pure fn fit_param_branch(
       )
     }
   , .() -> __Checked_term__ {
-      __macro_error__(ct, "matched source arm has no fitting parameter branch")
+      __macro_error__(ct, "matched source arm has no fitting parameter branch"(__Diagnostic_text__))
     }
   )
 }
@@ -984,12 +1002,12 @@ fn finish_match_dispatch(ct: __Comptime__, state: Match_dispatch_loop_state) -> 
           match_dispatch_ok(match_dispatch_mapper(match_dispatch_state(state)))
         }
       , .(_extra_param: __Type__ & Type_list) -> Match_dispatch_result {
-          match_dispatch_err("match clause route count mismatch")
+          match_dispatch_err("match clause route count mismatch"(__Diagnostic_text__))
         }
       )
     }
   , .(_extra: Slot & Slot_list) -> Match_dispatch_result {
-      match_dispatch_err("match clause route count mismatch")
+      match_dispatch_err("match clause route count mismatch"(__Diagnostic_text__))
     }
   )
 }
@@ -1006,7 +1024,9 @@ fn build_clause_dispatcher(
   , __Type__ & Type_list
   , Match_dispatch_result
   , Type_list.un_type_list(type_reverse(ct, source_spine))
-  , .(_no_source: .) -> Match_dispatch_result { match_dispatch_err("match source spine is empty") }
+  , .(_no_source: .) -> Match_dispatch_result {
+      match_dispatch_err("match source spine is empty"(__Diagnostic_text__))
+    }
   , .(source_cell: __Type__ & Type_list) -> Match_dispatch_result {
       __either__(
       , Slot_take
@@ -1727,7 +1747,7 @@ pure fn fill_match_results(
   , Slot & Slot_list
   , Fill_result
   , Slot_list.un_slot_list(clauses)
-  , .(_empty: .) -> Fill_result { fill_err(ct, fills, "match has no clauses") }
+  , .(_empty: .) -> Fill_result { fill_err(ct, fills, "match has no clauses"(__Diagnostic_text__)) }
   , .(_nonempty: Slot & Slot_list) -> Fill_result {
       __structural_recur__(
       , ct

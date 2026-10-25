@@ -8,7 +8,7 @@ import macros/control(macro if);
 import macros/match(macro match);
 import sheet/addr(Addr, addr_eq);
 import sheet/list(List, cons, nil, reverse);
-import testapi(default Bool);
+import testapi(Bool);
 import testapi/iter(loop);
 
 pub newtype Table[V] : List(Addr & V) { pub constructor pack; pub projector unpack }

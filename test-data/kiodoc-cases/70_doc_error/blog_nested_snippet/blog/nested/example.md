@@ -10,11 +10,11 @@ bridge {
 module kiodoc;
 
 host type S role(str);
-default host type I role(i32);
+host type I role(i32);
 
 __INSERT_CODE_HERE__
 -->
 
 ```kio {@example}
-pub fn greet() -> S { 42 }
+pub fn greet() -> S { 42(I) }
 ```

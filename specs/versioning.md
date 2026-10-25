@@ -61,14 +61,6 @@ A `host type`'s `role(...)` is part of its host contract: changing `role(str)` t
 `role(bool)` is a breaking env change. The changelog records each host type's
 role.
 
-A module-local `default` selection is not exported type or host-role metadata
-and is omitted from the recorded public declarations. Changing it can affect
-a module's implementation, just as changing a function body can; signature
-compatibility does not establish behavioral equivalence.
-Hand-written changelog sections likewise reject this non-contract modifier,
-including on named import selections and aliases inside recursive groups.
-That restriction belongs to signature artifacts, not ordinary Kio' modules.
-
 #### The side flip
 
 A declaration can change *which side* of the contract surface it lives on. The

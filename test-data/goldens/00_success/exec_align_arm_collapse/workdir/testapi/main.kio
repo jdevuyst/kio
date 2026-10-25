@@ -3,7 +3,7 @@ module testapi/main;
 import macros/algebraic_macros(macro align);
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default String);
+import testapi(Bool, String);
 import testapi/io(print);
 
 // The branches explicitly construct `String | String`; `align`
@@ -11,9 +11,9 @@ import testapi/io(print);
 // dropped).
 fn pick(b: Bool) -> String {
   align(if(b) {
-    widen_sum("collapsed\n", String | String)
+    widen_sum("collapsed\n"(String), String | String)
   } else {
-    widen_sum("collapsed\n", String | String)
+    widen_sum("collapsed\n"(String), String | String)
   })
 }
 

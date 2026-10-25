@@ -39,7 +39,7 @@ or export the tree for browsing and searching with local tools. Run
   raw intrinsics belong in investigations of the explicit core.
 - Default to qualified imports (`import path/to/module as p;`) and calls
   through the alias. Macros require explicit `macro name` selective imports;
-  operators and literal defaults also use explicit selectors, alongside
+  operators also use explicit selectors, alongside
   names intentionally forming the module's local vocabulary. See
   [the language tutorial](docs/tutorials/language.md) and
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).
@@ -50,11 +50,11 @@ or export the tree for browsing and searching with local tools. Run
   around a reverse-spliced call's own final labelled child.
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.
-- Keep [literal roles and defaults](docs/guides/typechecking.md#literal-types-and-module-local-defaults)
-  separate. `role` admits a literal category; a written `default` selects a
-  module-local fallback and the Boolean intrinsic's condition type. Ordinary
-  imports do not inherit it. Prefer an expected or explicit type when that
-  already expresses the intent; neither turns integer syntax into a float.
+- Prefer ordinary [inferred literals](docs/guides/typechecking.md#literal-types-and-local-inference)
+  when a concrete local context determines their carrier. Annotate literals
+  where the existing local boundary cannot determine a type, or where an
+  earlier binding or numeric width needs to be explicit. A `role` admits a
+  literal category; visible role-bearing types are never a candidate pool.
   Use a decimal point for floats, including exponent forms such as `2.0e3`.
 - Read a library's complete [operator pattern](docs/guides/operators.md)
   before composing it: `_`, `__`, and `___` have different operand permissions,

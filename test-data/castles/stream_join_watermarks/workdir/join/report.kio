@@ -5,7 +5,7 @@ import list/core as core;
 import list/list as lists;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

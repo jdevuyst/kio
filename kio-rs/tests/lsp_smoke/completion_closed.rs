@@ -422,7 +422,6 @@ fn closed_cases() -> Vec<ClosedCase> {
     };
     // Grammar sections: module declarations, host declarations, and surface items.
     let declarations = [
-        ("default", " host type A role(i64);"),
         ("macro", " make: . { impl run; };"),
         ("equiv", " same() { (); () }"),
         ("fn", " run() { () }"),
@@ -446,7 +445,7 @@ fn closed_cases() -> Vec<ClosedCase> {
         &declarations
             .iter()
             .copied()
-            .filter(|(name, _)| !["default", "pub", "equiv", "import"].contains(name))
+            .filter(|(name, _)| !["pub", "equiv", "import"].contains(name))
             .collect::<Vec<_>>(),
     );
     add(
@@ -494,10 +493,6 @@ fn closed_cases() -> Vec<ClosedCase> {
         "",
         "module app; rec { ",
         &[
-            (
-                "default",
-                " type A = B; newtype B : A { constructor make; projector read; }; }",
-            ),
             (
                 "labels",
                 " A = { next: B }; newtype B : A { constructor make; projector read; }; }",

@@ -299,7 +299,7 @@ pure fn build_branch_value_from_parts(
       , .() -> Macro_result {
           build_widen_product_from_slots(ct, target_factors, source_factors, source_slots)
         }
-      , .() -> Macro_result { err(ct, "source DNF branch would be dropped") }
+      , .() -> Macro_result { err(ct, "source DNF branch would be dropped"(__Diagnostic_text__)) }
       )
     }
   , .() -> Macro_result {
@@ -789,7 +789,7 @@ pure fn choose_target_branch(
   , Search_state
   , Macro_result
   , targets
-  , err(ct, "no target DNF branch matches source branch")
+  , err(ct, "no target DNF branch matches source branch"(__Diagnostic_text__))
   , .(
     , loop_recur: (Dnf_branch_list & Search_state) -> Macro_result
     , loop_fuel: Dnf_branch_list
@@ -1059,14 +1059,24 @@ pure fn ease_leaf_mapper(
           , __Checked_term__
           , __Diagnostic_text__
           , __Checked_term__
-          , algebraic_impl(ct, source, target, value, flags, .f, "ease POC found no DNF easing")
+          , algebraic_impl(
+            , ct
+            , source
+            , target
+            , value
+            , flags
+            , .f
+            , "ease POC found no DNF easing"(__Diagnostic_text__)
+            )
           , .(term: __Checked_term__) -> __Checked_term__ { term }
           , .(_message: __Diagnostic_text__) -> __Checked_term__ { value }
           )
         }
       )
     }
-  , .() -> Ease_adapter_result { ease_adapter_err(ct, "ease POC found no DNF easing") }
+  , .() -> Ease_adapter_result {
+      ease_adapter_err(ct, "ease POC found no DNF easing"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1186,9 +1196,17 @@ pure fn iso_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, ta
   __if_then_else__(
   , iso_branch_shape_ok(ct, source, target, (.f, .f))
   , .() -> Macro_result {
-      algebraic_impl(ct, source, target, value, (.f, .f), .t, "iso POC found no DNF bijection")
+      algebraic_impl(
+      , ct
+      , source
+      , target
+      , value
+      , (.f, .f)
+      , .t
+      , "iso POC found no DNF bijection"(__Diagnostic_text__)
+      )
     }
-  , .() -> Macro_result { err(ct, "iso POC found no DNF bijection") }
+  , .() -> Macro_result { err(ct, "iso POC found no DNF bijection"(__Diagnostic_text__)) }
   )
 }
 
@@ -1204,7 +1222,9 @@ pure fn iso_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { iso_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1223,9 +1243,17 @@ pure fn into_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
   __if_then_else__(
   , into_branch_shape_ok(ct, source, target, (.f, .t))
   , .() -> Macro_result {
-      algebraic_impl(ct, source, target, value, (.f, .t), .f, "into POC found no DNF injection")
+      algebraic_impl(
+      , ct
+      , source
+      , target
+      , value
+      , (.f, .t)
+      , .f
+      , "into POC found no DNF injection"(__Diagnostic_text__)
+      )
     }
-  , .() -> Macro_result { err(ct, "into POC found no DNF injection") }
+  , .() -> Macro_result { err(ct, "into POC found no DNF injection"(__Diagnostic_text__)) }
   )
 }
 
@@ -1241,7 +1269,9 @@ pure fn into_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { into_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1257,7 +1287,15 @@ pub pure fn into_checked(
 pub macro into : [Source] Source -> [Target] Target { impl into_checked }
 
 pure fn onto_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  algebraic_impl(ct, source, target, value, (.t, .f), .t, "onto POC found no DNF surjection")
+  algebraic_impl(
+  , ct
+  , source
+  , target
+  , value
+  , (.t, .f)
+  , .t
+  , "onto POC found no DNF surjection"(__Diagnostic_text__)
+  )
 }
 
 pure fn onto_macro(
@@ -1272,7 +1310,9 @@ pure fn onto_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { onto_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1288,7 +1328,15 @@ pub pure fn onto_checked(
 pub macro onto : [Source] Source -> [Target] Target { impl onto_checked }
 
 pure fn align_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: __Type__) -> Macro_result {
-  algebraic_impl(ct, source, target, value, (.f, .f), .f, "align POC found no DNF alignment")
+  algebraic_impl(
+  , ct
+  , source
+  , target
+  , value
+  , (.f, .f)
+  , .f
+  , "align POC found no DNF alignment"(__Diagnostic_text__)
+  )
 }
 
 pure fn align_macro(
@@ -1303,7 +1351,9 @@ pure fn align_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { align_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1343,7 +1393,9 @@ pure fn ease_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { ease_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 
@@ -1372,10 +1424,10 @@ pure fn atom_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__, t
       , value
       , (.t, .f)
       , .t
-      , "atom POC found no single-branch target"
+      , "atom POC found no single-branch target"(__Diagnostic_text__)
       )
     }
-  , .() -> Macro_result { err(ct, "atom POC found no single-branch target") }
+  , .() -> Macro_result { err(ct, "atom POC found no single-branch target"(__Diagnostic_text__)) }
   )
 }
 
@@ -1391,7 +1443,9 @@ pure fn atom_macro(
   , Macro_result
   , target
   , .(target_type: __Type__) -> Macro_result { atom_impl(ct, source, value, target_type) }
-  , .() -> Macro_result { err(ct, "macro needs an explicit or expected target type") }
+  , .() -> Macro_result {
+      err(ct, "macro needs an explicit or expected target type"(__Diagnostic_text__))
+    }
   )
 }
 

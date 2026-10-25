@@ -743,15 +743,12 @@ pub(crate) enum ResolvedBuiltinKind {
 /// One source-written operator/fold callable path paired with the semantic
 /// target selected by the ordinary declaration resolver. The LSP consumes
 /// these facts after typechecking so declaration positions use their original
-/// segment spans. `source_item_start` locates the declaration in source order
-/// after surface-only declarations have been erased;
-/// generated operator calls deliberately keep their call-site spans and are
+/// segment spans. Generated operator calls deliberately keep their call-site spans and are
 /// not used as a source-position proxy.
 #[derive(Clone)]
 #[cfg(feature = "lsp")]
 pub(crate) struct ResolvedCallableDeclaration {
     pub source_module: String,
-    pub source_item_start: u32,
     pub source_path: LexicalCallablePath,
     pub target: ResolvedCallableTarget,
 }
@@ -1122,7 +1119,6 @@ impl PackageOpScope {
                     {
                         resolved_callable_declarations.push(ResolvedCallableDeclaration {
                             source_module: source_module.clone(),
-                            source_item_start: module.items[item_index].span().start,
                             source_path: _source_path.clone(),
                             target: target.clone(),
                         });
@@ -2092,8 +2088,10 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
             ElaboratorCall::FieldAccess { receiver, .. } => {
                 fold_expr(receiver, scope)?;
             }
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                fold_expr(receiver, scope)?;
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver_mut() {
+                    fold_expr(receiver, scope)?;
+                }
                 for update in updates.iter_mut() {
                     fold_expr(&mut update.value, scope)?;
                 }

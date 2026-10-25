@@ -2,7 +2,7 @@ module main;
 
 import __comptime__;
 
-default type Bool = Comptime_bool;
+type Bool = Comptime_bool;
 
 pure fn choose_impl(ct: __Comptime__, _condition: __Checked_term__) -> __Checked_term__ {
   __term_unit__(ct)

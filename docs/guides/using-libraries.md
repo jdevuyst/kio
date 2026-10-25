@@ -71,13 +71,11 @@ import macros/match(macro match);
 import macros/spine_macros(macro widen_sum, macro one_prod);
 ```
 
-Type imports likewise distinguish capability from local choice. An ordinary
-type import retains its role but never inherits the provider's defaults.
-For example, `import numbers(default Int as Integer, Float);` selects only
-the integer default in this module. Unselected types still accept literals
-with an expected or explicit type. See
-[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
-for the categories, aliases and eager conflict rules.
+Type imports retain the original declaration identity and its literal-admission
+role. For example, `import numbers(Int as Integer, Float);` introduces those type
+identities without making them implicit literal candidates. Explicit annotations or
+concrete local context determine carriers; ordinary imports do not create an
+ambient role-bearing candidate pool.
 
 Call the selected local name directly:
 
@@ -180,9 +178,15 @@ your consumer's `bridge` block.
 | --- | --- |
 | `dict/dict` | `I32` (`role(i32)`); `add: (I32 & I32) -> I32`; `loop` |
 | `queue/queue` | `I32` (`role(i32)`); `add_i32: (I32 & I32) -> I32`; `loop` |
-| `option/option` | `Bool` (`role(bool)`), `String` (`role(str)`); `string_concat: (String & String) -> String`; `loop` |
-| `vec/vec` | `I32` (`role(i32)`), `Bool` (`role(bool)`); `add`, `sub`, `mul`, `div`, `mod: (I32 & I32) -> I32`; `eq_i32`, `leq_i32`, `lt_i32: (I32 & I32) -> Bool`; `loop` |
+| `option/option` | `String` (`role(str)`); `string_concat: (String & String) -> String`; `loop` |
+| `vec/vec` | `I32` (`role(i32)`); `add`, `sub`, `mul`, `div`, `mod: (I32 & I32) -> I32`; `eq_i32`, `leq_i32`, `lt_i32: (I32 & I32) -> Bool`; `loop` |
 | `result/result` | No host declarations of its own |
+
+The public `Bool` names in `list/list`, `option/option` and `vec/vec` are
+transparent aliases of each library's imported `control.Bool`. The Boolean
+host declaration therefore lives under `list/macros/control`,
+`option/macros/control` or `vec/macros/control`, respectively. Include that
+provider in the bridge, or rehost it to an existing Boolean-capability module.
 
 Each `loop` has the same scheme, `[S][R] ((S -> (S | R)) & S) -> R`:
 call the step with the current state, continue with its left result, and return
@@ -190,17 +194,13 @@ its right result. The [list consumer below](#a-list-consumer-with-host-bindings)
 shows this traversal capability and all of `list`'s bindings in a complete
 package.
 
-All six packages also include a macro dependency with four host types
-under `<local>/macros/testapi`: `String` (`str`), `I32` and `Int` (both `i32`),
-and `Bool` (`bool`). `option`, `queue`, and `vec` include another copy under
-`<local>/list/macros/testapi`. When bridging the full interfaces, include these
-modules and supply their type bindings as well. These are distinct
-module-qualified types unless you explicitly unify them through rehosting;
-using the same host integer representation alone does not unify Kio types.
-The [macro library case study](../poc/macros.md#adopting-the-macros) explains the four-type
-setup. Constructors in `option/core`, `queue/core`, and `list/core` use no
-host operations; importing those alone does not require their traversal
-modules' host functions.
+Library dependencies can introduce further host requirements. Inspect the
+selected package's actual bridge contract and include the capability providers
+needed by the interfaces you expose. Rehosting shares their exact Kio type
+identities with existing consumer declarations; using the same host integer
+representation alone does not unify distinct Kio types. Constructors in
+`option/core`, `queue/core` and `list/core` use no host operations; importing
+those alone does not require traversal functions' host capabilities.
 
 ### A list consumer with host bindings
 
@@ -216,6 +216,7 @@ bridge {
   invoice;
   list/core;
   list/list;
+  list/macros/control;
   list/macros/testapi
 }
 ```
@@ -240,12 +241,14 @@ that module:
 
 | Binding | Type or operation |
 | --- | --- |
-| `Bool`, `I32`, `String` | Host types with roles `bool`, `i32`, and `str` |
+| `I32`, `String` | Host types with roles `i32` and `str` |
+| `Bool` | Alias of the host type `list/macros/control.Bool` |
 | `add_i32`, `sub_i32` | `(I32 & I32) -> I32` |
 | `eq_i32`, `lt_i32` | `(I32 & I32) -> Bool` |
 | `loop` | `[S][R] ((S -> S \| R) & S) -> R`; continue on the left arm, return the right arm |
 | `string_concat` | `(String & String) -> String` |
 
+The `list/macros/control` bridge supplies `Bool` with `role(bool)`.
 The macro dependency also requires host types under `list/macros/testapi`:
 `Bool` (`bool`), `I32` and `Int` (both `i32`), and `String` (`str`).
 
@@ -254,7 +257,9 @@ function only uses addition and iteration. With those bindings, calling
 `subtotal(125, 250)` returns `375`. The [host integration guides](../README.md#host-integrations)
 show how to supply typed host values and functions in each language. To reuse
 bindings already provided by a consumer module, put
-`rehost list/list to your_module;` in `list.dep.kio` and bridge that provider;
+`rehost list/list to your_module;` and
+`rehost list/macros/control to your_module;` in `list.dep.kio`, then bridge
+that provider;
 [rehosting](pkg.md#rehosting-a-dependencys-host-items-with-rehost) explains the
 compatible-name and type requirements.
 
@@ -303,11 +308,20 @@ For example:
 
 ```kio {ignore}
 import macros/match(macro match);
-import macros/control(macro if, macro scope);
+import macros/control(Bool, macro if, macro scope);
 import macros/sequence(Bind, Sequence, macro do);
 import macros/lookup(macro contains, macro lookup);
 import macros/spine_macros(macro fit, macro widen_sum);
 ```
+
+`control` declares the concrete `Bool` host type used by `if`. Use that same
+imported type for conditions and Boolean-producing host functions. If your
+package already declares `Bool`, add `rehost macros/control to app/types;`
+to `macros.dep.kio`, where `app/types` is the provider module for that type,
+and fetch again. The generated alias keeps both sides at one exact identity;
+matching `role(bool)` alone does not unify distinct host types. Include the
+chosen provider in the package bridge. See
+[rehosting](pkg.md#rehosting-a-dependencys-host-items-with-rehost).
 
 [Defining macros](macros.md) explains the reflection ABI behind
 these modules. [Building and testing macros](macro-authoring.md)

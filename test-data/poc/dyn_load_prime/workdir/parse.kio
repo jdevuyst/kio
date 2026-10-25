@@ -3,7 +3,7 @@ module parse;
 
 import chars(c_amp, c_bang, c_bar, c_colon, c_comma, c_dot, c_eq, c_gt, c_lbrace);
 import chars(c_lbrack, c_lparen, c_minus, c_rbrace, c_rbrack, c_rparen, c_semi, c_slash, c_under);
-import host_descriptor(Host_type);
+import host_descriptor(Host_type, Role_host_type, Roleless_host_type, host_type_shape, role_name);
 import lex(Lex_err, lex, lex_err_message, lex_err_pos);
 import list/core(List, cons, nil, uncons);
 import list/list(elem, length, null, reverse);
@@ -14,13 +14,23 @@ import prime(Nat, Term, Terms);
 import prime(absurd, app, either, fst);
 import prime(ite, lam, left, let_, lit, ns, nz, pair);
 import prime(right, snd, tcons, tnil, un_terms, unit, var, {terms});
-import testapi(default Bool, default I32, default String);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
 import testapi/text(string_code_at, string_concat, string_eq);
+import token(
+, tk_punct
+, toks_cons
+, toks_nil
+, un_token
+, un_toks
+, {tk_num}
+, {tk_punct}
+, {tk_str}
+, {tk_word}
+);
 import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
-import token(toks_cons, toks_nil, un_token, un_toks, {tk_num}, {tk_punct}, {tk_str}, {tk_word});
 
 // `parse.kio` — read the Kio' term grammar (as the existing Prime emit
 // writes it) into the erased de Bruijn `Term` that `prime_eval` consumes.
@@ -60,7 +70,7 @@ import token(toks_cons, toks_nil, un_token, un_toks, {tk_num}, {tk_punct}, {tk_s
 //     then value-args: `__pair__(A, B, a, b)`, `__fst__(A, B, p)`,
 //     `__snd__(A, B, p)`, `__left__(A, B, x)`, `__right__(A, B, x)`,
 //     `__either__(A, B, C, s, f, g)`,
-//     `__if_then_else__(A, c, .() { t }, .() { e })`, `__absurd__(A, x)`.
+//     `__if_then_else__(B, A, c, .() { t }, .() { e })`, `__absurd__(A, x)`.
 //   - a host-item call uses the same staged syntax as any other value;
 //     polymorphic host items carry leading type arguments whose erased,
 //     evaluator-internal encoding uses Unit applications before their
@@ -130,22 +140,32 @@ fn pnl_has(p: Pnl, name: String) -> Bool {
 // resolving module contributes an empty spelling list, which no
 // reference matches, preserving the chain position.
 //
-/// A binder scope: a cons-list of in-scope spelling frames, innermost first.
-pub rec labels { scope: . | (Pnl & Scope) };
+/// Type-binder groups in lexical order, innermost group first.
+pub type Type_scope = List(Toks);
+
+/// Value frames and the lexical type binders used for exact carrier resolution.
+pub rec labels { scope: Type_scope & (. | (Pnl & Scope)) };
 
 /// The empty scope.
-pub fn scope_nil() -> Scope { {scope = widen_sum((), . | (Pnl & Scope))} }
+pub fn scope_nil() -> Scope { {scope = (nil(Toks), widen_sum((), . | (Pnl & Scope)))} }
+
+fn scope_type_groups(s: Scope) -> Type_scope { let .(groups, _frames) = Scope.get(s); groups }
+
+fn scope_with_type_groups(groups: Type_scope, s: Scope) -> Scope {
+  let .(_previous, frames) = Scope.get(s);
+  {scope = (groups, frames)}
+}
 
 /// Extends the scope with one frame carrying explicit spellings at index 0.
 pub fn scope_push_names(spellings: Pnl, s: Scope) -> Scope {
-  {scope = widen_sum((spellings, s), . | (Pnl & Scope))}
+  {scope = (scope_type_groups(s), widen_sum((spellings, s), . | (Pnl & Scope)))}
 }
 
 /// Extends the scope with one binder name at index 0.
 pub fn scope_push(name: String, s: Scope) -> Scope { scope_push_names(pnl_one(name), s) }
 
-/// One-step destructor on a scope.
-pub fn un_scope(s: Scope) -> . | (Pnl & Scope) { Scope.get(s) }
+/// One-step destructor on a scope's value frames.
+pub fn un_scope(s: Scope) -> . | (Pnl & Scope) { let .(_groups, frames) = Scope.get(s); frames }
 
 // `scope_index` walks the scope for `name`, accumulating the de Bruijn
 // depth, and returns the matching index or `()` when the name is unbound.
@@ -986,7 +1006,7 @@ pub labels { tg_right: . };
 pub labels { tg_either: . };
 
 /// Defines the branching target.
-pub labels { tg_ite: . };
+pub labels { tg_ite: Host_type };
 
 /// Defines the bottom-elimination target.
 pub labels { tg_absurd: . };
@@ -1024,7 +1044,7 @@ fn tg_right() -> Tg { {tg = widen_sum({tg_right=}, Tg_shape)} }
 
 fn tg_either() -> Tg { {tg = widen_sum({tg_either=}, Tg_shape)} }
 
-fn tg_ite() -> Tg { {tg = widen_sum({tg_ite=}, Tg_shape)} }
+fn tg_ite(ty: Host_type) -> Tg { {tg = widen_sum({tg_ite = ty}, Tg_shape)} }
 
 fn tg_absurd() -> Tg { {tg = widen_sum({tg_absurd=}, Tg_shape)} }
 
@@ -1169,12 +1189,15 @@ pub labels { hc_call: Tg };
 /// Defines the variable classification (the head is an ordinary variable reference).
 pub labels { hc_var: . };
 
+/// A conditional head whose first type argument identifies its Boolean carrier.
+pub labels { hc_ite: . };
+
 /// A call head is a node-building call or an ordinary variable.
-pub type Headclass = Hc_call | Hc_var;
+pub type Headclass = Hc_call | Hc_var | Hc_ite;
 
-fn hc_call(t: Tg) -> Headclass { widen_sum({hc_call = t}, Hc_call | Hc_var) }
+fn hc_call(t: Tg) -> Headclass { widen_sum({hc_call = t}, Hc_call | Hc_var | Hc_ite) }
 
-fn hc_var() -> Headclass { widen_sum({hc_var=}, Hc_call | Hc_var) }
+fn hc_var() -> Headclass { widen_sum({hc_var=}, Hc_call | Hc_var | Hc_ite) }
 
 fn classify_intrinsic2(w: String) -> . | Headclass {
   if(string_eq(w, "__right__"(String))) {
@@ -1182,7 +1205,7 @@ fn classify_intrinsic2(w: String) -> . | Headclass {
   } else if(string_eq(w, "__either__"(String))) {
     widen_sum(hc_call(tg_either()), . | Headclass)
   } else if(string_eq(w, "__if_then_else__"(String))) {
-    widen_sum(hc_call(tg_ite()), . | Headclass)
+    widen_sum(widen_sum({hc_ite=}, Headclass), . | Headclass)
   } else if(string_eq(w, "__absurd__"(String))) {
     widen_sum(hc_call(tg_absurd()), . | Headclass)
   } else {
@@ -1306,7 +1329,7 @@ fn build_app(callee: Term, args: Terms) -> Term { app(callee, product_of_args(ar
 // argument-list forms, from the target and the collected (reversed) terms.
 fn built(t: Term) -> Term | String { widen_sum(t, Term | String) }
 
-fn build_node(tg: Tg, rev_args: Terms, bool_type: Host_type | String) -> Term | String {
+fn build_node(tg: Tg, rev_args: Terms) -> Term | String {
   let args = terms_reverse(rev_args);
   match(un_tg(tg)) {
     (
@@ -1317,14 +1340,7 @@ fn build_node(tg: Tg, rev_args: Terms, bool_type: Host_type | String) -> Term | 
     , .(_l: Tg_left) { built(left(arg0(args))) }
     , .(_r: Tg_right) { built(right(arg0(args))) }
     , .(_e: Tg_either) { built(either(arg0(args), arg1(args), arg2(args))) }
-    , .(_i: Tg_ite) {
-        match(bool_type) {
-          (
-          , .(message: String) { widen_sum(message, Term | String) }
-          , .(ty: Host_type) { built(ite(ty, arg0(args), arg1(args), arg2(args))) }
-          )
-        }
-      }
+    , .(i: Tg_ite) { built(ite(Tg_ite.get(i), arg0(args), arg1(args), arg2(args))) }
     , .(_x: Tg_absurd) { built(absurd(arg0(args))) }
     )
   }
@@ -1530,86 +1546,73 @@ fn skip_semis(ts: Toks) -> Toks {
   ))
 }
 
-/// Wraps a literal annotation read's `(source-path, remaining-tokens)`.
-labels { lit_annot: String & Toks };
+/// A retained type argument and the tokens after it.
+labels { type_arg: Toks & Toks };
 
-/// Wraps the annotation path walk's exact source spelling.
-labels { annot_path: String };
-
-// The exact annotation path spelling: `I32`, `t.String`, or `a/b.Temp`.
-// Resolution belongs to the declaring module's validated namespace, so the
-// parser retains every owner/alias segment rather than dequalifying to a leaf.
-fn exact_annot_path(first: String, ts: Toks) -> String {
-  Annot_path.get(loop(
-  , .(st: Toks & String) {
-      match(st) {
-        .(cur: Toks, path: String) {
-          if(head_is_punct(cur, c_slash())) {
-            match(head_word_str(rest(cur))) {
-              (
-              , .(seg: String) {
-                  widen_sum(
-                  , (rest(rest(cur)), string_concat(path, string_concat("/"(String), seg)))
-                  , (Toks & String) | Annot_path
-                  )
-                }
-              , .(_notword: .) { widen_sum({annot_path = path}, (Toks & String) | Annot_path) }
-              )
-            }
-          } else if(head_is_punct(cur, c_dot())) {
-            match(head_word_str(rest(cur))) {
-              (
-              , .(seg: String) {
-                  widen_sum(
-                  , (rest(rest(cur)), string_concat(path, string_concat("."(String), seg)))
-                  , (Toks & String) | Annot_path
-                  )
-                }
-              , .(_notword: .) { widen_sum({annot_path = path}, (Toks & String) | Annot_path) }
-              )
-            }
-          } else {
-            widen_sum({annot_path = path}, (Toks & String) | Annot_path)
+fn reverse_toks(ts: Toks) -> Toks {
+  loop(
+  , .(state: Toks & Toks) {
+      let .(remaining, reversed) = state;
+      match(un_toks(remaining)) {
+        (
+        , .(token: Token, pos: I32, tail: Toks) {
+            widen_sum((tail, toks_cons(token, pos, reversed)), (Toks & Toks) | Toks)
           }
-        }
+        , .(_end: .) { widen_sum(reversed, (Toks & Toks) | Toks) }
+        )
       }
     }
-  , (ts, first)
-  ))
+  , (ts, toks_nil())
+  )
 }
 
-// Read a literal's mandatory host-type annotation `( <type> )`, returning
-// the type's exact source-path spelling and the tokens after the `)`, or a
-// parse error. Every Kio' literal carries the annotation (`5(I32)`,
-// `"hi"(String)`, `562.406(F64)`; grammar `LiteralCall`). The caller resolves
-// the retained spelling in the declaring module's validated namespace to the
-// exact `Host_type` the host receives. Consuming the annotation keeps `(I32)`
-// from being misread as a postfix application; `exact_annot_path` retains every
-// alias or module segment, and `skip_type_arg` walks any remaining annotation
-// type arguments to the closing `)`.
-fn read_lit_annot(ts: Toks) -> Lit_annot | Perr {
-  if(head_is_punct(ts, c_lparen())) {
-    let ts1 = rest(ts);
-    match(head_word_str(ts1)) {
-      (
-      , .(first: String) {
-          let type_name = exact_annot_path(first, rest(ts1));
-          let ts2 = skip_type_arg(ts1);
-          if(head_is_punct(ts2, c_rparen())) {
-            widen_sum({lit_annot = (type_name, rest(ts2))}, Lit_annot | Perr)
-          } else {
+// Retain the complete balanced type for the existing alias normalizer.
+// The argument delimiter belongs to the surrounding call or annotation.
+fn read_type_arg(ts: Toks) -> Type_arg {
+  loop(
+  , .(state: Toks & I32 & Toks) {
+      let .(remaining, depth, reversed) = state;
+      match(un_toks(remaining)) {
+        (
+        , .(token: Token, pos: I32, tail: Toks) {
+            let finished = if(eq_i32(depth, 0(I32))) { is_delim(token) } else { .f(Bool) };
+            if(finished) {
+              widen_sum(
+              , {type_arg = (reverse_toks(reversed), remaining)}
+              , (Toks & I32 & Toks) | Type_arg
+              )
+            } else {
+              widen_sum(
+              , (tail, bracket_delta(token, depth), toks_cons(token, pos, reversed))
+              , (Toks & I32 & Toks) | Type_arg
+              )
+            }
+          }
+        , .(_end: .) {
             widen_sum(
-            , mk_perr_at("expected `)` closing a literal's type annotation"(String), ts2)
-            , Lit_annot | Perr
+            , {type_arg = (reverse_toks(reversed), remaining)}
+            , (Toks & I32 & Toks) | Type_arg
             )
           }
-        }
-      , .(_notword: .) {
-          widen_sum(
-          , mk_perr_at("a literal's type annotation must name its host type"(String), ts1)
-          , Lit_annot | Perr
-          )
-        }
+        )
+      }
+    }
+  , (drop_comma(ts), 0(I32), toks_nil())
+  )
+}
+
+/// Wraps a literal annotation's type tokens and the tokens after its closing parenthesis.
+labels { lit_annot: Toks & Toks };
+
+fn read_lit_annot(ts: Toks) -> Lit_annot | Perr {
+  if(head_is_punct(ts, c_lparen())) {
+    let .(ty, after) = Type_arg.get(read_type_arg(rest(ts)));
+    if(head_is_punct(after, c_rparen())) {
+      widen_sum({lit_annot = (ty, rest(after))}, Lit_annot | Perr)
+    } else {
+      widen_sum(
+      , mk_perr_at("expected `)` closing a literal's type annotation"(String), after)
+      , Lit_annot | Perr
       )
     }
   } else {
@@ -1690,14 +1693,7 @@ fn start_args(tg: Tg, source_empty: Bool, ts: Toks, sc: Scope, k: Pk, fuel: I32,
         (
         , .(msg: String) { perr_halt(msg, ts1) }
         , .(_ok: .) {
-            match(build_node(
-            , tg
-            , tnil()
-            , widen_sum(
-              , "conditional descriptor requested for a non-conditional node"(String)
-              , Host_type | String
-              )
-            )) {
+            match(build_node(tg, tnil())) {
               (
               , .(message: String) { perr_halt(message, ts1) }
               , .(node: Term) {
@@ -1754,15 +1750,7 @@ fn start_args(tg: Tg, source_empty: Bool, ts: Toks, sc: Scope, k: Pk, fuel: I32,
 //               the body's result going to `Pf_letbody`.
 //   Pf_letbody — the body is `v`; re-yield `let_(rhs, v)`.
 //   Pf_lam    — the body is `v`; consume `}`, re-yield `lam(v)`.
-fn do_pyield_frame(
-, bool_type: Host_type | String
-, v: Term
-, ts: Toks
-, top: Pf
-, rest_k: Pk
-, fuel: I32
-, nt: Ntab
-) -> Pstate | Pres {
+fn do_pyield_frame(v: Term, ts: Toks, top: Pf, rest_k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
   match(un_pf(top)) {
     (
     , .(fr: Pf_post) {
@@ -1804,7 +1792,7 @@ fn do_pyield_frame(
                 (
                 , .(msg: String) { perr_halt(msg, ts) }
                 , .(_ok: .) {
-                    match(build_node(tg, rev1, bool_type)) {
+                    match(build_node(tg, rev1)) {
                       (
                       , .(message: String) { perr_halt(message, ts) }
                       , .(node: Term) {
@@ -1894,12 +1882,10 @@ fn do_pyield_frame(
 
 // Feed the yielded `(v, ts)` to the continuation: resume the top frame,
 // or finish with `P_ok` when the continuation is empty.
-fn do_pyield(bool_type: Host_type | String, v: Term, ts: Toks, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn do_pyield(v: Term, ts: Toks, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
   match(un_pk(k)) {
     (
-    , .(top: Pf, rest_k: Pk) { do_pyield_frame(bool_type, v, ts, top, rest_k, fuel, nt) }
+    , .(top: Pf, rest_k: Pk) { do_pyield_frame(v, ts, top, rest_k, fuel, nt) }
     , .(_empty: .) { phalt(p_ok(v)) }
     )
   }
@@ -1921,9 +1907,9 @@ fn yield_primary(v: Term, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Ps
 }
 
 fn yield_literal(
-, resolve_host_type: String -> (Host_type | String)
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , text: String
-, type_name: String
+, type_name: Toks
 , after: Toks
 , pos: . | I32
 , sc: Scope
@@ -1931,7 +1917,7 @@ fn yield_literal(
 , fuel: I32
 , nt: Ntab
 ) -> Pstate | Pres {
-  match(resolve_host_type(type_name)) {
+  match(resolve_host_type(type_name, scope_type_groups(sc))) {
     (
     , .(message: String) { phalt(p_err(mk_perr(message, pos))) }
     , .(host_type: Host_type) { yield_primary(lit(text, host_type), after, sc, k, fuel, nt) }
@@ -1960,7 +1946,7 @@ fn start_call(tg: Tg, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate
 // representation itself. Any other word after `.` is not
 // a Kio' value form.
 fn parse_bool_lit(
-, resolve_host_type: String -> (Host_type | String)
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , w: String
 , ts: Toks
 , sc: Scope
@@ -1973,7 +1959,7 @@ fn parse_bool_lit(
       (
       , .(a: Lit_annot) {
           match(Lit_annot.get(a)) {
-            .(ty: String, after: Toks) {
+            .(ty: Toks, after: Toks) {
               yield_literal(resolve_host_type, w, ty, after, head_pos(ts), sc, k, fuel, nt)
             }
           }
@@ -1986,47 +1972,44 @@ fn parse_bool_lit(
   }
 }
 
-/// Wraps one lambda binder-group scan's `(arity, remaining-tokens)`.
-labels { lambda_binder_scan: I32 & Toks };
+/// One lambda binder group's arity, original tokens, and remaining input.
+labels { lambda_binder_scan: I32 & Toks & Toks };
 
-// Count every unary binder in one `[A, B]` group and return the cursor after
-// it. A grouped spelling is semantically the same consecutive `forall`
-// chain as `[A][B]`, so each binder becomes its own erased Unit stage.
+// Retain the binder tokens for the existing type normalizer while preserving
+// each binder's erased Unit stage.
 fn scan_lambda_binder_group(ts: Toks) -> Lambda_binder_scan | Perr {
   let pos = head_pos(ts);
+  let offset =
+    match(pos) {
+      (.(p: I32) { p }, .(_missing: .) { 0(I32) })
+    };
   loop(
-  , .(st: Toks & I32) {
-      match(st) {
-        .(cur: Toks, n: I32) {
-          match(peek(cur)) {
-            (
-            , .(_token: Token) {
-                if(head_is_punct(cur, c_rbrack())) {
-                  widen_sum(
-                  , {lambda_binder_scan = (n, rest(cur))}
-                  , (Toks & I32) | Lambda_binder_scan | Perr
-                  )
-                } else if(head_is_punct(cur, c_comma())) {
-                  widen_sum(
-                  , (rest(cur), add_i32(n, 1(I32)))
-                  , (Toks & I32) | Lambda_binder_scan | Perr
-                  )
-                } else {
-                  widen_sum((rest(cur), n), (Toks & I32) | Lambda_binder_scan | Perr)
-                }
-              }
-            , .(_eof: .) {
-                widen_sum(
-                , mk_perr("unterminated type-binder group in a lambda"(String), pos)
-                , (Toks & I32) | Lambda_binder_scan | Perr
-                )
-              }
+  , .(state: Toks & I32 & Toks) {
+      let .(cur, n, reversed) = state;
+      match(un_toks(cur)) {
+        (
+        , .(token: Token, position: I32, after: Toks) {
+            let collected = toks_cons(token, position, reversed);
+            if(is_punct(token, c_rbrack())) {
+              widen_sum(
+              , {lambda_binder_scan = (n, reverse_toks(collected), after)}
+              , (Toks & I32 & Toks) | Lambda_binder_scan | Perr
+              )
+            } else {
+              let next = if(is_punct(token, c_comma())) { add_i32(n, 1(I32)) } else { n };
+              widen_sum((after, next, collected), (Toks & I32 & Toks) | Lambda_binder_scan | Perr)
+            }
+          }
+        , .(_eof: .) {
+            widen_sum(
+            , mk_perr("unterminated type-binder group in a lambda"(String), pos)
+            , (Toks & I32 & Toks) | Lambda_binder_scan | Perr
             )
           }
-        }
+        )
       }
     }
-  , (rest(ts), 1(I32))
+  , (rest(ts), 1(I32), toks_cons(tk_punct(c_lbrack()), offset, toks_nil()))
   )
 }
 
@@ -2133,7 +2116,7 @@ fn skip_ret_annot(ts: Toks) -> Toks {
 
 /// Wraps the lambda-signature collection's
 /// `(groups, remaining-tokens, saw-group)`.
-labels { lgroups: Pnlg & Toks & Bool };
+labels { lgroups: Pnlg & Toks & Bool & Type_scope };
 
 fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
   loop(
@@ -2155,52 +2138,72 @@ fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
 // Collect a dot-lambda signature's one or more type or value groups,
 // returning the groups in signature order and the tokens after the last
 // group.
-fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
+fn collect_lambda_groups(ts0: Toks, initial_types: Type_scope) -> Lgroups | Perr {
   let loop_result =
     loop(
-    , .(st: Toks & Pnlg & Bool) {
+    , .(st: Toks & Pnlg & Bool & Type_scope) {
         match(st) {
-          .(cur: Toks, acc: Pnlg, saw_group: Bool) {
+          .(cur: Toks, acc: Pnlg, saw_group: Bool, types: Type_scope) {
             if(head_is_punct(cur, c_lbrack())) {
               match(scan_lambda_binder_group(cur)) {
                 (
                 , .(group: Lambda_binder_scan) {
                     match(Lambda_binder_scan.get(group)) {
-                      .(arity: I32, after: Toks) {
+                      .(arity: I32, tokens: Toks, after: Toks) {
                         widen_sum(
-                        , (after, pnlg_prepend_empty(arity, acc), .t(Bool))
-                        , (Toks & Pnlg & Bool) | Lgroups | Perr
+                        , (
+                          , after
+                          , pnlg_prepend_empty(arity, acc)
+                          , .t(Bool)
+                          , cons(Toks, tokens, types)
+                          )
+                        , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
                         )
                       }
                     }
                   }
-                , .(error: Perr) { widen_sum(error, (Toks & Pnlg & Bool) | Lgroups | Perr) }
+                , .(error: Perr) {
+                    widen_sum(error, (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr)
+                  }
                 )
               }
             } else if(head_is_punct(cur, c_lparen())) {
               match(scan_lambda_params(rest(cur))) {
                 .(rev_params: Pnl, after_params: Toks) {
                   widen_sum(
-                  , (after_params, pnlg_cons(pnl_reverse(rev_params), acc), .t(Bool))
-                  , (Toks & Pnlg & Bool) | Lgroups | Perr
+                  , (after_params, pnlg_cons(pnl_reverse(rev_params), acc), .t(Bool), types)
+                  , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
                   )
                 }
               }
             } else {
               widen_sum(
-              , {lgroups = (pnlg_reverse(acc), cur, saw_group)}
-              , (Toks & Pnlg & Bool) | Lgroups | Perr
+              , {lgroups = (pnlg_reverse(acc), cur, saw_group, types)}
+              , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
               )
             }
           }
         }
       }
-    , (ts0, pnlg_nil(), .f(Bool))
+    , (ts0, pnlg_nil(), .f(Bool), initial_types)
     );
   match(loop_result) {
     (
     , .(done: Lgroups) { widen_sum(done, Lgroups | Perr) }
     , .(error: Perr) { widen_sum(error, Lgroups | Perr) }
+    )
+  }
+}
+
+/// Retain only a declaration signature's lexical type binders in its body scope.
+pub fn scope_with_signature_types(header: Toks, sc: Scope) -> Scope | Perr {
+  match(collect_lambda_groups(header, scope_type_groups(sc))) {
+    (
+    , .(done: Lgroups) {
+        let .(_groups, _after, _saw_group, types) = Lgroups.get(done);
+        widen_sum(scope_with_type_groups(types, sc), Scope | Perr)
+      }
+    , .(error: Perr) { widen_sum(error, Scope | Perr) }
     )
   }
 }
@@ -2218,16 +2221,19 @@ fn collect_lambda_groups(ts0: Toks) -> Lgroups | Perr {
 // handlers lower to — has its trailing `(args)` turned into
 // an application.
 fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
-  match(collect_lambda_groups(ts0)) {
+  match(collect_lambda_groups(ts0, scope_type_groups(sc))) {
     (
     , .(done: Lgroups) {
         match(Lgroups.get(done)) {
-          .(groups: Pnlg, after_groups: Toks, saw_group: Bool) {
+          .(groups: Pnlg, after_groups: Toks, saw_group: Bool, types: Type_scope) {
             if(saw_group) {
               let at_brace = skip_ret_annot(after_groups);
               if(head_is_punct(at_brace, c_lbrace())) {
                 pgo(mk_pstate(
-                , c_pblock(rest(at_brace), lambda_body_scope(groups, sc))
+                , c_pblock(
+                  , rest(at_brace)
+                  , lambda_body_scope(groups, scope_with_type_groups(types, sc))
+                  )
                 , pk_push(mk_lam(groups), pk_push(mk_post(sc), k))
                 , fuel
                 , nt
@@ -2250,7 +2256,7 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
 // lambda (`.(x: T) { … }` or the zero-param `.() { … }`). `ts` is
 // positioned just after the `.`.
 fn parse_dot(
-, resolve_host_type: String -> (Host_type | String)
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , ts: Toks
 , sc: Scope
 , k: Pk
@@ -2281,7 +2287,7 @@ fn parse_dot(
 }
 
 // Destructor on `Headclass` (a bare sum; the identity projects it for match).
-fn un_pheadclass(h: Headclass) -> Hc_call | Hc_var { h }
+fn un_pheadclass(h: Headclass) -> Hc_call | Hc_var | Hc_ite { h }
 
 // Resolve an in-scope variable `w` (already classified `Hc_var`) at index
 // `idx`. Every ordinary value follows the same postfix path. That path reads
@@ -2299,14 +2305,57 @@ fn and_bool(a: Bool, b: Bool) -> Bool {
 // The dotted spelling `a.b`.
 fn join2(a: String, b: String) -> String { string_concat(a, string_concat("."(String), b)) }
 
+fn conditional_role(ty: Host_type) -> Bool {
+  match(host_type_shape(ty)) {
+    (
+    , .(role: Role_host_type) { string_eq(role_name(Role_host_type.get(role)), "bool"(String)) }
+    , .(_roleless: Roleless_host_type) { .f(Bool) }
+    )
+  }
+}
+
+fn start_conditional(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
+  let .(type_tokens, after_type) = Type_arg.get(read_type_arg(ts));
+  match(resolve_host_type(type_tokens, scope_type_groups(sc))) {
+    (
+    , .(message: String) { perr_halt(message, ts) }
+    , .(ty: Host_type) {
+        if(conditional_role(ty)) {
+          start_call(tg_ite(ty), after_type, sc, k, fuel, nt)
+        } else {
+          perr_halt(
+          , "`__if_then_else__` requires a concrete `role(bool)` type as its first "
+            "argument"(String)
+          , ts
+          )
+        }
+      }
+    )
+  }
+}
+
 // Classify and parse a word that is not a dotted reference: an intrinsic
 // call, or an ordinary variable — a local binder, a seeded top-level fn
 // (possibly under an alias-qualified spelling), or a seeded host fn —
 // resolved to its de Bruijn index against the scope. An unbound name is a
 // malformed image, reported with the name and its position.
-fn parse_word_classified(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn parse_word_classified(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, w: String
+, wpos: . | I32
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
   match(un_pheadclass(classify_head(w, sc))) {
     (
     , .(c: Hc_call) {
@@ -2320,6 +2369,13 @@ fn parse_word_classified(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, f
             )
           , wpos
           )))
+        }
+      }
+    , .(_conditional: Hc_ite) {
+        if(head_is_punct(ts, c_lparen())) {
+          start_conditional(resolve_host_type, rest(ts), sc, k, fuel, nt)
+        } else {
+          perr_halt("expected `(` after the intrinsic `__if_then_else__`"(String), ts)
         }
       }
     , .(_v: Hc_var) {
@@ -2464,9 +2520,16 @@ fn parse_alias_newtype(
 // alias-qualified newtype member call (`a.Box.mk(…)`), or an
 // alias-qualified value path (`a.helper`, resolved by its joined
 // spelling against the scope the loader seeded). `ts` is at the `.`.
-fn parse_dotted(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn parse_dotted(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, w: String
+, wpos: . | I32
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
   let seg = rest(ts);
   match(head_word_str(seg)) {
     (
@@ -2478,7 +2541,16 @@ fn parse_dotted(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32,
               if(word_starts_type_name(w2)) {
                 parse_alias_newtype(w, w2, wpos, rest(seg), sc, k, fuel, nt)
               } else {
-                parse_word_classified(join2(w, w2), wpos, rest(seg), sc, k, fuel, nt)
+                parse_word_classified(
+                , resolve_host_type
+                , join2(w, w2)
+                , wpos
+                , rest(seg)
+                , sc
+                , k
+                , fuel
+                , nt
+                )
               }
             }
           )
@@ -2493,13 +2565,20 @@ fn parse_dotted(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32,
 // alias-qualified member call, or an alias-qualified item), an intrinsic
 // call, or an ordinary variable. `ts` is positioned just after the word;
 // `wpos` is the word's source offset for diagnostics.
-fn parse_word(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn parse_word(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, w: String
+, wpos: . | I32
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
   if(head_is_punct(ts, c_dot())) {
-    parse_dotted(w, wpos, ts, sc, k, fuel, nt)
+    parse_dotted(resolve_host_type, w, wpos, ts, sc, k, fuel, nt)
   } else {
-    parse_word_classified(w, wpos, ts, sc, k, fuel, nt)
+    parse_word_classified(resolve_host_type, w, wpos, ts, sc, k, fuel, nt)
   }
 }
 
@@ -2562,17 +2641,24 @@ fn is_let_binding_head(ts: Toks) -> Bool {
 // A word in expression position: `let` followed by a binding-shaped
 // lookahead opens a binding; anything else — including a reference to a
 // declaration named `let` — is a call head or variable.
-fn do_pword(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn do_pword(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, w: String
+, wpos: . | I32
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
   if(string_eq(w, "let"(String))) {
     if(is_let_binding_head(ts)) {
       parse_let(ts, sc, k, fuel, nt)
     } else {
-      parse_word(w, wpos, ts, sc, k, fuel, nt)
+      parse_word(resolve_host_type, w, wpos, ts, sc, k, fuel, nt)
     }
   } else {
-    parse_word(w, wpos, ts, sc, k, fuel, nt)
+    parse_word(resolve_host_type, w, wpos, ts, sc, k, fuel, nt)
   }
 }
 
@@ -2580,7 +2666,7 @@ fn do_pword(w: String, wpos: . | I32, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt:
 // opens the unit value `()` or a parenthesized expression (`ExprAtom ::=
 // '(' Expr ')'`). Any other punctuation is not a primary.
 fn do_ppunct(
-, resolve_host_type: String -> (Host_type | String)
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , code: I32
 , ts: Toks
 , sc: Scope
@@ -2645,7 +2731,7 @@ fn fold_str_run(first: String, ts: Toks) -> String & Toks {
 // token: a literal / unit yields directly, `let` opens a binding, `.`
 // opens a bool-literal or lambda, and a word opens a call or variable.
 fn do_pexpr(
-, resolve_host_type: String -> (Host_type | String)
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , ts: Toks
 , sc: Scope
 , k: Pk
@@ -2662,7 +2748,7 @@ fn do_pexpr(
                 (
                 , .(a: Lit_annot) {
                     match(Lit_annot.get(a)) {
-                      .(ty: String, after: Toks) {
+                      .(ty: Toks, after: Toks) {
                         yield_literal(
                         , resolve_host_type
                         , Tk_num.get(n)
@@ -2688,7 +2774,7 @@ fn do_pexpr(
                     (
                     , .(a: Lit_annot) {
                         match(Lit_annot.get(a)) {
-                          .(ty: String, after: Toks) {
+                          .(ty: Toks, after: Toks) {
                             yield_literal(
                             , resolve_host_type
                             , content
@@ -2709,7 +2795,9 @@ fn do_pexpr(
                 }
               }
             }
-          , .(w: Tk_word) { do_pword(Tk_word.get(w), head_pos(ts), rest(ts), sc, k, fuel, nt) }
+          , .(w: Tk_word) {
+              do_pword(resolve_host_type, Tk_word.get(w), head_pos(ts), rest(ts), sc, k, fuel, nt)
+            }
           , .(p: Tk_punct) { do_ppunct(resolve_host_type, Tk_punct.get(p), ts, sc, k, fuel, nt) }
           )
         }
@@ -2732,11 +2820,9 @@ fn do_pblock(ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
 // =====================================================================
 // One machine transition — the host `loop` body
 // =====================================================================
-fn ptransition(
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
-, s: Pstate
-) -> Pstate | Pres {
+fn ptransition(resolve_host_type: (Toks & Type_scope) -> (Host_type | String), s: Pstate) ->
+  Pstate | Pres
+   {
   match(un_pstate(s)) {
     .(c: Pctl, k: Pk, fuel: I32, nt: Ntab) {
       if(leq_i32(fuel, 0(I32))) {
@@ -2761,7 +2847,7 @@ fn ptransition(
             }
           , .(yv: Pc_yield) {
               match(Pc_yield.get(yv)) {
-                .(v: Term, ts: Toks) { do_pyield(bool_type, v, ts, k, fuel1, nt) }
+                .(v: Term, ts: Toks) { do_pyield(v, ts, k, fuel1, nt) }
               }
             }
           )
@@ -2782,18 +2868,17 @@ pub fn parse_fuel_default() -> I32 { 1000000(I32) }
 /// Bruijn `Term`, resolving free names against the initial scope and
 /// erasing qualified newtype constructor / projector calls against `nt`,
 /// resolving literal annotations to exact host-type descriptors, and attaching
-/// the declaring module's exact Boolean descriptor to conditional nodes, under
+/// each conditional's explicitly specialized Boolean descriptor, under
 /// an explicit step budget. The CEK machine is driven by the host `loop`.
 pub fn parse_toks_scope_ntab_fuel(
 , ts: Toks
 , sc: Scope
 , nt: Ntab
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , fuel: I32
 ) -> Pres {
   loop(
-  , .(s: Pstate) { ptransition(resolve_host_type, bool_type, s) }
+  , .(s: Pstate) { ptransition(resolve_host_type, s) }
   , mk_pstate(c_pblock(ts, sc), pk_nil(), fuel, nt)
   )
 }
@@ -2804,11 +2889,8 @@ pub fn parse_toks_scope_ntab(
 , ts: Toks
 , sc: Scope
 , nt: Ntab
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
-) -> Pres {
-  parse_toks_scope_ntab_fuel(ts, sc, nt, resolve_host_type, bool_type, parse_fuel_default())
-}
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+) -> Pres { parse_toks_scope_ntab_fuel(ts, sc, nt, resolve_host_type, parse_fuel_default()) }
 
 /// Parses one Kio' term expression with free names resolved against `sc`
 /// (no declared newtypes — the empty newtype table), under an explicit
@@ -2816,37 +2898,29 @@ pub fn parse_toks_scope_ntab(
 pub fn parse_toks_scope_fuel(
 , ts: Toks
 , sc: Scope
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 , fuel: I32
-) -> Pres { parse_toks_scope_ntab_fuel(ts, sc, ntab_nil(), resolve_host_type, bool_type, fuel) }
+) -> Pres { parse_toks_scope_ntab_fuel(ts, sc, ntab_nil(), resolve_host_type, fuel) }
 
 /// Parses one Kio' term expression with free names resolved against `sc`
 /// (no declared newtypes).
 pub fn parse_toks_scope(
 , ts: Toks
 , sc: Scope
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
-) -> Pres { parse_toks_scope_ntab(ts, sc, ntab_nil(), resolve_host_type, bool_type) }
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+) -> Pres { parse_toks_scope_ntab(ts, sc, ntab_nil(), resolve_host_type) }
 
 /// Parses one closed Kio' term expression (no free names) from a token list.
-pub fn parse_toks(
-, ts: Toks
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
-) -> Pres { parse_toks_scope(ts, scope_nil(), resolve_host_type, bool_type) }
+pub fn parse_toks(ts: Toks, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)) -> Pres {
+  parse_toks_scope(ts, scope_nil(), resolve_host_type)
+}
 
 /// Parses one closed Kio' term expression from source text: lex, then parse.
 /// A lexical error surfaces as the parse-error arm.
-pub fn parse_str(
-, src: String
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
-) -> Pres {
+pub fn parse_str(src: String, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)) -> Pres {
   match(lex(src)) {
     (
-    , .(ts: Toks) { parse_toks(ts, resolve_host_type, bool_type) }
+    , .(ts: Toks) { parse_toks(ts, resolve_host_type) }
     , .(e: Lex_err) { p_err(mk_perr(lex_err_message(e), widen_sum(lex_err_pos(e), . | I32))) }
     )
   }
@@ -2950,7 +3024,8 @@ equiv un_ntab_nil() {
 // --- Tg (argument-list target tags) ---
 //
 // One law per payload shape: the apply target carries a `Term` and the
-// intrinsic targets are nullary — a representative of each payload shape
+// conditional carries its Boolean descriptor; other intrinsic targets are nullary.
+// A representative of each payload shape
 // pins the constructor / projector pairing.
 equiv un_tg_app(t: Term) {
   un_tg(tg_app(t));
@@ -2962,9 +3037,9 @@ equiv un_tg_pair() {
   widen_sum({tg_pair=}, Tg_shape)
 }
 
-equiv un_tg_ite() {
-  un_tg(tg_ite());
-  widen_sum({tg_ite=}, Tg_shape)
+equiv un_tg_ite(ty: Host_type) {
+  un_tg(tg_ite(ty));
+  widen_sum({tg_ite = ty}, Tg_shape)
 }
 
 // --- Pres (the parse outcome) and Perr (the error payload) ---

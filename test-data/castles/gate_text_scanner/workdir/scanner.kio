@@ -1,7 +1,7 @@
 module scanner;
 
 import macros/control(macro if);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/text(string_concat, string_eq, string_len, string_slice);
 
 pub fn script() -> String { "OPEN gate\nSET mode=A\nPING 007\nBAD ??\nLOCK gate\nSET mode=B" }

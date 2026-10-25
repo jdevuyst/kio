@@ -84,6 +84,20 @@ Two READMEs are **listing pages** for a package registry / marketplace, not repo
 - **No install re-hosting on the crate page.** The crate README does not duplicate the website's cross-platform install guide (`curl | sh`); its audience installs via cargo, and `homepage` already points at the full story.
 - **Capability overview, not an action catalogue.** Check listed capabilities and availability requirements against the current implementation and relevant contracts. Do not require every supported command or code action to be listed. An inaccurate or overbroad claim is a finding; omitting an individual action from this overview is not.
 
+## 8. README and landing-page consistency
+
+Compare the root README with the landing page and its displayed
+example sources under `website/examples/`, following
+[`ai/topics/readme.md`](../../topics/readme.md) § README and landing-page consistency.
+Check shared language claims, syntax, and example behavior against the current
+contract. Check whether unfamiliar syntax needed to understand each introductory
+example is explained nearby. Different wording, depth and feature selection are
+appropriate for the pages' audiences; contradictory claims, stale examples and
+missing essential explanations are findings. Reuse this result when the website
+audit runs in the same pass.
+Apply [People and programs](../../topics/docs.md#people-and-programs): flag
+wording that confuses software behavior with a developer's integration steps.
+
 ## How to report
 
 Group findings into:
@@ -94,6 +108,7 @@ Group findings into:
 4. **Brevity violations** — tutorial / build-instructions / reference material in the README.
 5. **Suggested Features bullets** — ROADMAP-settled threads not yet reflected in the README (judgment-only).
 6. **Listing README violations** — a crate/extension listing page drifts from the anchor, omits the opening homepage link, duplicates platform metadata, half-explains the language, or re-hosts install instructions (per § 7).
+7. **Entry-point drift** — README and landing-page claims or examples disagree, or introductory examples lack essential nearby explanation.
 
 For each finding, cite the line and (where applicable) the spec section it should mirror.
 

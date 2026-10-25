@@ -4,7 +4,7 @@ import fold/bases as bases;
 import fold/numbers as numbers;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, I32, String, default Bool);
+import testapi(Array, Bool, I32, String);
 import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);

@@ -1293,7 +1293,6 @@ mod tests {
     fn eval_alias(body: crate::ast::Type<UncheckedPrime>) -> Item<UncheckedPrime> {
         let span = crate::span::Span::new(0, 0);
         Item::TypeAlias(crate::ast::TypeAlias {
-            default_span: None,
             vis: crate::ast::Visibility::Public,
             name: "Shape".to_owned(),
             name_span: span,

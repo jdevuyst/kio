@@ -9,7 +9,7 @@ import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat, string_eq);
@@ -20,21 +20,21 @@ fn guest_image() -> String {
   "I32, p1: I32) -> I32;\nhost fn leq_i32(p0: I32, p1: I32) -> Bool;\nhost fn "
   "mul_i32(p0: I32, p1: I32) -> I32;\nhost fn sub_i32(p0: I32, p1: I32) -> "
   "I32;\n\nmodule hostapi/iter;\n\nhost fn loop[S][R](step: S -> (S | R), "
-  "state: S) -> R;\n\nmodule g;\n\nimport __intrinsics__;\n\nimport "
-  "hostapi(default Bool, I32);\nimport hostapi/arith(add_i32, leq_i32, "
-  "mul_i32, sub_i32);\nimport hostapi/iter(loop);\n\npub fn sum_to(n: I32) -> "
-  "I32 {\n  loop(\n    , I32 & I32\n    , I32\n    , .(st: I32 & I32) {\n      "
-  ".(i: I32, acc: I32) {\n        __if_then_else__(\n          , (I32 & I32) "
-  "| I32\n          , leq_i32(i, 0(I32))\n          , .() { __right__(I32 & "
-  "I32, I32, acc) }\n          , .() {\n            __left__(I32 & I32, I32, "
-  "__pair__(I32, I32, sub_i32(i, 1(I32)), add_i32(acc, i)))\n          }\n          "
-  ")\n      }(\n        , __fst__(I32, I32, __pair__(I32, I32, __fst__(I32, "
-  "I32, st), __snd__(I32, I32, st)))\n        , __snd__(I32, I32, "
-  "__pair__(I32, I32, __fst__(I32, I32, st), __snd__(I32, I32, st)))\n        "
-  ")\n    }\n    , __pair__(I32, I32, n, 0(I32))\n    )\n}\n\nfn row_sum(row: "
-  "I32) -> I32 {\n  loop(\n    , I32 & I32\n    , I32\n    , .(st: I32 & I32) {\n      "
-  ".(col: I32, acc: I32) {\n        __if_then_else__(\n          , (I32 & "
-  "I32) | I32\n          , leq_i32(col, 0(I32))\n          , .() { "
+  "state: S) -> R;\n\nmodule g;\n\nimport __intrinsics__;\n\nimport hostapi(Bool, "
+  "I32);\nimport hostapi/arith(add_i32, leq_i32, mul_i32, sub_i32);\nimport "
+  "hostapi/iter(loop);\n\npub fn sum_to(n: I32) -> I32 {\n  loop(\n    , I32 & "
+  "I32\n    , I32\n    , .(st: I32 & I32) {\n      .(i: I32, acc: I32) {\n        "
+  "__if_then_else__(\n          , Bool\n          , (I32 & I32) | I32\n          "
+  ", leq_i32(i, 0(I32))\n          , .() { __right__(I32 & I32, I32, acc) }\n          "
+  ", .() {\n            __left__(I32 & I32, I32, __pair__(I32, I32, "
+  "sub_i32(i, 1(I32)), add_i32(acc, i)))\n          }\n          )\n      }(\n        "
+  ", __fst__(I32, I32, __pair__(I32, I32, __fst__(I32, I32, st), "
+  "__snd__(I32, I32, st)))\n        , __snd__(I32, I32, __pair__(I32, I32, "
+  "__fst__(I32, I32, st), __snd__(I32, I32, st)))\n        )\n    }\n    , "
+  "__pair__(I32, I32, n, 0(I32))\n    )\n}\n\nfn row_sum(row: I32) -> I32 {\n  "
+  "loop(\n    , I32 & I32\n    , I32\n    , .(st: I32 & I32) {\n      .(col: "
+  "I32, acc: I32) {\n        __if_then_else__(\n          , Bool\n          , "
+  "(I32 & I32) | I32\n          , leq_i32(col, 0(I32))\n          , .() { "
   "__right__(I32 & I32, I32, acc) }\n          , .() {\n            __left__(\n              "
   ", I32 & I32\n              , I32\n              , __pair__(I32, I32, "
   "sub_i32(col, 1(I32)), add_i32(acc, mul_i32(row, col)))\n              )\n          "
@@ -44,15 +44,15 @@ fn guest_image() -> String {
   ")\n    }\n    , __pair__(I32, I32, row, 0(I32))\n    )\n}\n\npub fn "
   "grid_sum(n: I32) -> I32 {\n  loop(\n    , I32 & I32\n    , I32\n    , .(st: "
   "I32 & I32) {\n      .(row: I32, acc: I32) {\n        __if_then_else__(\n          "
-  ", (I32 & I32) | I32\n          , leq_i32(row, 0(I32))\n          , .() { "
-  "__right__(I32 & I32, I32, acc) }\n          , .() {\n            __left__(\n              "
-  ", I32 & I32\n              , I32\n              , __pair__(I32, I32, "
-  "sub_i32(row, 1(I32)), add_i32(acc, row_sum(row)))\n              )\n          "
-  "}\n          )\n      }(\n        , __fst__(I32, I32, __pair__(I32, I32, "
-  "__fst__(I32, I32, st), __snd__(I32, I32, st)))\n        , __snd__(I32, "
-  "I32, __pair__(I32, I32, __fst__(I32, I32, st), __snd__(I32, I32, st)))\n        "
-  ")\n    }\n    , __pair__(I32, I32, n, 0(I32))\n    )\n}\n\npackage guest;\n\n"
-  "bridge { hostapi; hostapi/**; g; }\n"
+  ", Bool\n          , (I32 & I32) | I32\n          , leq_i32(row, 0(I32))\n          "
+  ", .() { __right__(I32 & I32, I32, acc) }\n          , .() {\n            "
+  "__left__(\n              , I32 & I32\n              , I32\n              , "
+  "__pair__(I32, I32, sub_i32(row, 1(I32)), add_i32(acc, row_sum(row)))\n              "
+  ")\n          }\n          )\n      }(\n        , __fst__(I32, I32, "
+  "__pair__(I32, I32, __fst__(I32, I32, st), __snd__(I32, I32, st)))\n        "
+  ", __snd__(I32, I32, __pair__(I32, I32, __fst__(I32, I32, st), "
+  "__snd__(I32, I32, st)))\n        )\n    }\n    , __pair__(I32, I32, n, "
+  "0(I32))\n    )\n}\n\npackage guest;\n\nbridge { hostapi; hostapi/**; g; }\n"
 }
 
 // Apply an `I32 -> I32` export named `name` to `arg` through the record

@@ -1,4 +1,0 @@
-  pass equiv `selected_boolean` in collision
-  pass equiv `selected_boolean` in main
-
-result: 2/2 equiv blocks passed

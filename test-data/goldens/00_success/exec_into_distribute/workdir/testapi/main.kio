@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/algebraic_macros(macro into);
 import macros/match(macro match);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 
 // Multi-branch source: `into` distributes inner sums through
@@ -14,7 +14,7 @@ fn distrib(p: String & (I32 | String)) -> (String & I32) | (String & String) { i
 pub fn main() {
   // Pick the right-arm branch (String) so the printed text confirms
   // the distribution carried the leading String through.
-  let pair = ("label: ", into("right-branch\n", I32 | String));
+  let pair = ("label: "(String), into("right-branch\n"(String), I32 | String));
   let lifted = distrib(pair);
   // lifted: (String & I32) | (String & String). Project to a
   // single String via `match`: each clause destructures one

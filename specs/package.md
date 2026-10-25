@@ -138,22 +138,12 @@ A role-bearing host type has no type parameters. Parameterized host types are
 roleless and their parameters have kind `*`; combining a type-parameter list
 with `role(...)` is a type error.
 
-Roles drive literal admission, independently of module-local default selection.
-Integer syntax admits only integer roles; float syntax requires a decimal
-point and admits only float roles. Boolean and string syntax admit their
-respective roles. Expected and explicitly annotated types need no default.
-Multiple unselected types may carry the same role.
-
-Fallback literal typing instead uses a written `default` on a host-type or
-transparent-alias declaration, or on a named selective type import. There is
-at most one terminal identity per category (integer across all widths, float
-across all widths, Boolean and string). Distinct defaults in one category
-conflict eagerly even when unused; aliases of one normalized terminal host
-identity agree. Default selections are local to the module, are not exported,
-and are not inherited by ordinary or qualified imports. The selected Boolean
-default also supplies the scheme of `__if_then_else__` and the reference
-`if` macro's branching glue. The shared scope, alias and conflict rules live
-in [`language.md`](language.md#host-declarations-and-the-bridge-block).
+Roles govern literal admission. Integer syntax admits integer roles; float
+syntax requires a decimal point and admits float roles. Boolean and string
+syntax admit their corresponding roles. An explicit literal annotation or
+concrete contextual inference determines the exact carrier. Multiple visible
+types may share a role: their availability never selects an unresolved
+literal. See [`language.md` § Literals](language.md#literals).
 
 Host types are opaque inside Kio code. Structural typing does not cross a host
 type boundary; values move in or out through host functions.
@@ -463,10 +453,7 @@ consumer module providing replacements. During materialization, the rewrite is
 **local to the named module**: every `host` item it declares is replaced in
 place by an ordinary item that forwards to the consumer module. A `host type` T
 becomes a transparent alias `pub type T = <consumer>.T` (the consumer type's
-`role(...)`, if any, is inherited by the alias for literal admission). A
-written `default` on the replaced declaration stays on that alias, in the
-same source scope; the actual normalized target must still satisfy the
-selection rule. No other module inherits that local selection. A `host fn` f becomes a forwarding wrapper
+`role(...)`, if any, is inherited by the alias for literal admission). A `host fn` f becomes a forwarding wrapper
 `pub fn f(..) -> R { <consumer>.f(..) }`. The rebound items stay exported, so a
 module that imports them keeps its import unchanged — the rewrite touches no
 other module. The consumer module must export an item of a compatible type for

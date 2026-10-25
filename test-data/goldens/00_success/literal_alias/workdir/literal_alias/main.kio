@@ -9,6 +9,6 @@ literal greeting = "hi";
 
 literal max_size = 100;
 
-fn get_greeting() -> Str { greeting }
+fn get_greeting() -> Str { greeting(Str) }
 
-fn get_max() -> I32 { max_size }
+fn get_max() -> I32 { max_size(I32) }

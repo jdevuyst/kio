@@ -36,7 +36,7 @@ import macros/spine_macros(macro widen_sum);
 import prime(Group_slots, group_slots_cons, group_slots_nil, un_group_slots);
 import result(Call_result, call_done, call_stuck);
 import result(call_apply, call_apply_then, call_fold);
-import testapi(Scalar, default Bool, default I32, default String);
+import testapi(Bool, I32, Scalar, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

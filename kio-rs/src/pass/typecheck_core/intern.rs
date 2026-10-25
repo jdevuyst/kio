@@ -189,8 +189,6 @@ where
     user_macro_artifacts: Arc<UserMacroArtifactMemo>,
     identity_alias_newtypes: OnceLock<Arc<crate::pass::resolve::IdentityAliasNewtypeIndex>>,
     #[cfg(feature = "lsp")]
-    collect_source_dependencies: bool,
-    #[cfg(feature = "lsp")]
     collect_refactoring_facts: bool,
 }
 
@@ -214,24 +212,7 @@ where
             user_macro_artifacts: Arc::new(UserMacroArtifactMemo::default()),
             identity_alias_newtypes: OnceLock::new(),
             #[cfg(feature = "lsp")]
-            collect_source_dependencies: false,
-            #[cfg(feature = "lsp")]
             collect_refactoring_facts: false,
-        })
-    }
-
-    #[cfg(feature = "lsp")]
-    pub(crate) fn with_source_dependencies(self: Arc<Self>) -> Arc<Self> {
-        Arc::new(Self {
-            cache: self.cache.clone(),
-            owner: self.owner,
-            #[cfg(feature = "surface")]
-            alpha_presentation: self.alpha_presentation.clone(),
-            #[cfg(feature = "surface")]
-            user_macro_artifacts: self.user_macro_artifacts.clone(),
-            identity_alias_newtypes: self.identity_alias_newtypes.clone(),
-            collect_source_dependencies: true,
-            collect_refactoring_facts: self.collect_refactoring_facts,
         })
     }
 
@@ -245,7 +226,6 @@ where
             #[cfg(feature = "surface")]
             user_macro_artifacts: self.user_macro_artifacts.clone(),
             identity_alias_newtypes: self.identity_alias_newtypes.clone(),
-            collect_source_dependencies: self.collect_source_dependencies,
             collect_refactoring_facts: true,
         })
     }
@@ -253,11 +233,6 @@ where
     #[cfg(feature = "lsp")]
     pub(crate) fn collects_refactoring_facts(&self) -> bool {
         self.collect_refactoring_facts
-    }
-
-    #[cfg(feature = "lsp")]
-    pub(crate) fn collects_source_dependencies(&self) -> bool {
-        self.collect_source_dependencies
     }
 
     pub(crate) fn identity_alias_newtypes(

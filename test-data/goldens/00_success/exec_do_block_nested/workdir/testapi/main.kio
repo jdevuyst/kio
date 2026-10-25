@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/sequence(macro do);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
@@ -16,7 +16,7 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // state between them; the inner expression appears as a regular
 // monadic value the outer bind step consumes.
 fn inner() -> Box(String) {
-  do(box_bind) { let s <- box_pure("nested ok\n"); box_pure(s) }
+  do(box_bind) { let s <- box_pure("nested ok\n"(String)); box_pure(s) }
 }
 
 fn outer() -> Box(String) {

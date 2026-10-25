@@ -1,0 +1,4 @@
+  pass equiv `aliased_boolean` in collision
+  pass equiv `aliased_boolean` in main
+
+result: 2/2 equiv blocks passed

@@ -5,7 +5,7 @@ import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 import queue/list/core as lists;
 import queue/list/list as traversal;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arithmetic;
 import testapi/iter(loop);
 

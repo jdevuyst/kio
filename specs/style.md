@@ -415,7 +415,7 @@ exactly one blank line:
 Within each block, statements sort lexicographically by ASCII codepoint on
 their full rendered string, without locale or case folding. Within a selective
 list, items sort by their full rendered spelling: ordinary selections retain
-their optional `default` modifier and `as` alias,
+their optional `as` alias,
 labels retain braces, and operator selections retain their complete tags and
 grammars. Empty blocks are skipped.
 
@@ -441,12 +441,6 @@ import module/path(
 Comments remain attached to their statement or selected item when sorting.
 Inter-token comments follow the general conservation and relocation rules in
 [Comments](#comments); none is discarded by import canonicalization.
-
-`default` remains explicit on local host-type or type-alias declarations and
-on selected import items. It precedes visibility (`default pub type Name = T;`)
-or the imported source type (`default Int as Number`), with one space between
-tokens. The formatter neither infers selections from role metadata nor removes
-same-identity selections. Sorting imports cannot resolve a default conflict.
 
 ## Named-field blocks (`build`, `source`, `resolved`)
 
@@ -580,7 +574,7 @@ The lexer accepts a generous input form for literals; the formatter normalizes t
 - **Literal annotations** — a literal's optional `(Type)` annotation (the `LiteralCall` form) is emitted abutting the literal with no interior space: `42(I32)`, never `42 (I32)`. An unannotated literal stays unannotated — the formatter never adds an annotation a literal didn't carry.
 
 Formatting preserves integer versus float category. It does not insert a
-decimal point because of a type annotation, expected type or available default.
+decimal point because of a type annotation, expected type or visible role-bearing type.
 Such a change is an explicit diagnostic repair, not canonicalization.
 
 ## String literal reflow

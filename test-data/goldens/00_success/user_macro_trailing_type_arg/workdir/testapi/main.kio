@@ -3,7 +3,7 @@ module testapi/main;
 import __intrinsics__;
 
 import macros(Marker_bool, macro marker);
-import testapi(I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
@@ -16,7 +16,7 @@ fn line(label: String, value: Marker_bool) {
 }
 
 pub fn main() {
-  let value = "payload";
+  let value = "payload"(String);
   line("needle String: ", marker(value, String));
   line("needle I32: ", marker(value, I32))
 }

@@ -46,8 +46,8 @@ The partial evaluator applies the small-step rules from [`prime.md`](prime.md) �
 ### 2.2. `__if_then_else__` literal recognition
 
 ```text
-__if_then_else__(A, .t(B), t, e)   →  t(())     (ι-IfTrue)
-__if_then_else__(A, .f(B), t, e)   →  e(())     (ι-IfFalse)
+__if_then_else__(B, A, .t(B), t, e)   →  t(())     (ι-IfTrue)
+__if_then_else__(B, A, .f(B), t, e)   →  e(())     (ι-IfFalse)
 ```
 
 The two ι rules fire **only** when the condition slot is the parser-recognized bool literal `.t` or `.f` (carrying its mandatory `(B)` role(bool) annotation per [`prime.md`](prime.md) § 2.2). An `__if_then_else__` whose condition is a stuck host call (or any other residual) is itself a residual — no implementation knowledge of "what the host returns" is allowed to leak in.

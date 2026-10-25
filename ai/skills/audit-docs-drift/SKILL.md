@@ -81,6 +81,10 @@ Start at `docs/README.md` and follow the order and branches it recommends as a n
   material. Preserve technical precision appropriate to advanced guides and
   case studies; terminology alone is not a finding when prerequisites or
   nearby explanations establish its meaning.
+- Apply [People and programs](../../topics/docs.md#people-and-programs):
+  flag prose such as a host learning a requirement from a guide when a developer
+  must read and configure it. Retain genuine automated reads and checks;
+  report the obscured actor or missing user step, not a verb alone.
 - Audit tutorials as a sequence. Audit each guide as a standalone topic: it must either explain its prerequisites or link to where the learning path teaches them. Treat case studies and host guides according to the specialized audiences in `ai/topics/docs.md`.
 - For each tutorial, identify its learner goal, prerequisites, and progression.
   Check consecutive `## Chapter N — Title` headings starting at 1, and whether

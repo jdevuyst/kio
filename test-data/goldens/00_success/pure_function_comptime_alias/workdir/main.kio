@@ -1,0 +1,10 @@
+module main;
+
+import provider(Flag);
+
+pure fn value() -> Flag { let flag = .t(Flag); flag }
+
+equiv aliased_boolean() {
+  value();
+  .t(Flag)
+}

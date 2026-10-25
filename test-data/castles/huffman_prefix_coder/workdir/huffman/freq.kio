@@ -9,7 +9,7 @@ import huffman/list(List, cons, keep, nil, reverse);
 import huffman/message(alphabet_size);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 

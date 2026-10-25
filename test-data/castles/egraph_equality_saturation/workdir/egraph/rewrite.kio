@@ -5,7 +5,7 @@ import egraph/numbers as n;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as num;
 import testapi/iter(loop);
 

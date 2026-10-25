@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro reorder_sum, macro widen_sum);
-import testapi(String, default I32);
+import testapi(I32, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
@@ -30,4 +30,4 @@ fn show_or(x: String | I32) {
   }
 }
 
-pub fn main() { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum(7))); print("\n") }
+pub fn main() { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum(7(I32)))); print("\n") }

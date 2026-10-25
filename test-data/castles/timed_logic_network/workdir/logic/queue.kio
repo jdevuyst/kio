@@ -6,7 +6,7 @@ import list_host as numbers;
 import logic/model as model;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

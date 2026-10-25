@@ -3,7 +3,7 @@ module testapi/main;
 import dep/core as dep;
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 fn select(value: . | dep.Box(String)) -> String {
@@ -14,7 +14,7 @@ fn select(value: . | dep.Box(String)) -> String {
   dep.get(selected)
 }
 
-fn present() -> . | dep.Box(String) { widen_sum(dep.make("present\n")) }
+fn present() -> . | dep.Box(String) { widen_sum(dep.make("present\n"(String))) }
 
 fn empty() -> . | dep.Box(String) { widen_sum(()) }
 

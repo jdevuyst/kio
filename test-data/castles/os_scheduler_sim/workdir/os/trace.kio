@@ -13,7 +13,7 @@ import os/config as config;
 import os/num as num;
 import os/proc as proc;
 import os/text as text;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/io(print);
 
 /// What the CPU did.

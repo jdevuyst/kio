@@ -63,7 +63,7 @@ pub struct RenderOpts {
     /// Render surface-form constructs as their surface spelling.
     /// When false, every construct renders to its Kio' equivalent
     /// (tuple-literal chains stay as nested `__pair__`, `IfElse`
-    /// nodes elaborate to `__if_then_else__(R, cond, .() { … },
+    /// nodes elaborate to `__if_then_else__(Bool, R, cond, .() { … },
     /// .() { … })`).
     pub surface: bool,
 }
@@ -373,7 +373,7 @@ fn render_term_opts_with_context(
     match t {
         // The explicit `(Type)` annotation form (specs/language.md
         // § Literals). An annotation pins each generated base identity
-        // independently of the module's selected default types.
+        // without relying on an expected type.
         Term::NumLit { base, repr } => format!("{repr}({})", base.type_name()),
         Term::StrLit(s) => format!("{}(String)", render_str_lit(s)),
         Term::BoolLit(b) => format!("{}(Bool)", if *b { ".t" } else { ".f" }),
@@ -876,7 +876,7 @@ fn render_term_opts_with_context(
                 debug_assert_eq!(then_ty, else_ty);
                 let result_ty = render_type_opts(then_ty, opts);
                 format!(
-                    "__if_then_else__({}, {}, .() {{ {} }}, .() {{ {} }})",
+                    "__if_then_else__(Bool, {}, {}, .() {{ {} }}, .() {{ {} }})",
                     result_ty,
                     render_term_opts_with_context(cond, opts, context),
                     render_term_opts_with_context(then, opts, context),

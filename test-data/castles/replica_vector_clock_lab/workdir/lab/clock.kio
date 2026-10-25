@@ -3,7 +3,7 @@ module lab/clock;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/text(string_concat);

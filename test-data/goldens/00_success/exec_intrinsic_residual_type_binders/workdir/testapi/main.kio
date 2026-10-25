@@ -1,0 +1,13 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, I32);
+import testapi/fmt(print_i32);
+
+fn choose[A](condition: Bool, yes: A, no: A) -> A {
+  let select = __if_then_else__(Bool);
+  select(A, condition, .() { yes }, .() { no })
+}
+
+pub fn main() { print_i32(choose(.t, 7, 8)); print_i32(choose(.f, 7, 8)) }

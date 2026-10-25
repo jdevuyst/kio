@@ -1,0 +1,8 @@
+module lituniq/main;
+
+import lituniq(Int, Str);
+
+// A sole visible type for each role does not type an independent initializer.
+fn pick_int() -> Int { let n = 100; n }
+
+fn pick_str() -> Str { let s = "hi"; s }

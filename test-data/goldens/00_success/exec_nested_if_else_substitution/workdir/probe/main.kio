@@ -3,7 +3,7 @@ module probe/main;
 import __intrinsics__;
 
 import macros/control(macro if);
-import probe(default Bool);
+import probe(Bool);
 
 fn gen() -> (. | .) | . {
   if(.t) {

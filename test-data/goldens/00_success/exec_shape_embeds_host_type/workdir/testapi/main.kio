@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(Array, default Bool, default I32, default String);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
 import testapi/fmt(int_to_string);
@@ -122,11 +122,11 @@ pub fn main() {
   // Sum_ with a host-type leaf, both arms.
   print(show_arr_or_str(widen_sum(xs, Array(I32) | String)));
   print("\n");
-  print(show_arr_or_str(widen_sum("solo", Array(I32) | String)));
+  print(show_arr_or_str(widen_sum("solo"(String), Array(I32) | String)));
   print("\n");
   // Role-only Sum_ collision on the same mint, both arms.
-  print(show_int_or_str(widen_sum(7, I32 | String)));
+  print(show_int_or_str(widen_sum(7(I32), I32 | String)));
   print("\n");
-  print(show_int_or_str(widen_sum("ok", I32 | String)));
+  print(show_int_or_str(widen_sum("ok"(String), I32 | String)));
   print("\n")
 }

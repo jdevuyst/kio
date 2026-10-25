@@ -47,9 +47,8 @@ the guarantee applies to extension of module bodies.
 
 An accepted addition to a module's imports must preserve the validity and
 meaning of its existing function bodies. Compatibility is checked against
-the module's imports and declarations, including names, operator syntax and
-default selections, without inspecting function bodies to see whether
-conflicts are used.
+the module's imports and declarations, including names and operator syntax,
+without inspecting function bodies to see whether conflicts are used.
 
 ### Self-contained operator syntax
 

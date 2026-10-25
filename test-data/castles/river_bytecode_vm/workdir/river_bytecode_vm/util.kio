@@ -2,7 +2,7 @@ module river_bytecode_vm/util;
 
 import macros/control(macro if);
 import river_bytecode_vm/constants as c;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/text(string_concat);

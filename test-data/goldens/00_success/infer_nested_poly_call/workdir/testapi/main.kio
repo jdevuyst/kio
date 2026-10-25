@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/spine_macros(macro one_prod);
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
@@ -26,6 +26,6 @@ fn fst_lens[A][B]() -> Lens(A & B, A) {
 // This let-RHS is synthesized in pure synth mode (no expected type),
 // the case the nested-poly-call inference must handle.
 pub fn main() {
-  let viewed = view(fst_lens(), ("one", 2));
+  let viewed = view(fst_lens(), ("one"(String), 2(I32)));
   print(string_concat("view(fst_lens(), (\"one\", 2)) == ", string_concat(viewed, "\n")))
 }

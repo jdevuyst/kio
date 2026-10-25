@@ -65,7 +65,7 @@ import library/type_of(
 , rep_sum
 , rep_unit
 );
-import testapi(default Bool, default I32, default String);
+import testapi(Bool, I32, String);
 import testapi/fmt(bool_to_string, i32_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
@@ -144,7 +144,7 @@ fn derived_identity_functor() -> Functor(Identity) { derive((box_functor, identi
 
 fn derive_functor_case() -> String {
   let functor = derived_identity_functor();
-  let branded = Identity.mk_id("derive functor: ok\n");
+  let branded = Identity.mk_id("derive functor: ok\n"(String));
   let mapped = Functor.fmap(functor)(String, String, .(value) { value }, branded);
   Identity.un_id(mapped)
 }
@@ -289,7 +289,7 @@ fn match_infer_right_case() -> String {
 }
 
 fn match_polymorphic_clause_case() -> String {
-  match("ignored") {
+  match("ignored"(String)) {
     .[A](_value: A) { "match polymorphic: ok\n" }
   }
 }
@@ -317,11 +317,11 @@ fn type_of_case() -> String {
   )
 }
 
-fn tuple_macros_case() -> String { concat((((), "tuple macros: ok\n"), ()), _) }
+fn tuple_macros_case() -> String { concat((((), "tuple macros: ok\n"(String)), ()), _) }
 
 fn row_elaborators_case() -> String {
   let row = mk((Bar.mk("row macros: ok\n"), (Flag.mk(.t), Foo.mk(41))), Foo & Bar & Flag);
-  let updated = row.>set((Foo.mk, 42), Foo & Bar & Flag);
+  let updated = row.>set((Foo.mk, 42(I32)), Foo & Bar & Flag);
   updated.>get(Bar.get)
 }
 
@@ -332,7 +332,10 @@ fn show_host_converters() -> Show_host_converters {
 }
 
 fn show_case() -> String {
-  string_concat(show(("show", (42, .t)))(string_concat, show_host_converters()), "\n")
+  string_concat(
+  , show(("show"(String), (42(I32), .t(Bool))))(string_concat, show_host_converters())
+  , "\n"
+  )
 }
 
 equiv spine_identity_law[A](value: A) {
@@ -736,7 +739,7 @@ equiv derive_functor_law() {
     , Identity.mk_id("derive functor: ok\n")
     )
   );
-  "derive functor: ok\n"
+  "derive functor: ok\n"(String)
 }
 
 equiv type_of_unit_law() {

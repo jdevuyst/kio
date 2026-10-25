@@ -1,13 +1,13 @@
 module testapi/main;
 
 import macros/match(macro match);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 fn identity[A](value: A) -> A { value }
 
 fn classify() -> String {
-  match(identity("ignored")) {
+  match(identity("ignored"(String))) {
     .[A](_value: A) { "matched scalar call\n" }
   }
 }

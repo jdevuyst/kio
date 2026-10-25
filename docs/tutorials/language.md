@@ -21,12 +21,11 @@ bridge {
 module kiodoc;
 
 import match(macro match);
-import control(macro if, macro scope);
+import control(Bool, macro if, macro scope);
 import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
-default host type Int role(i32);
-default host type String role(str);
-default host type Bool role(bool);
+host type Int role(i32);
+host type String role(str);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);
@@ -46,12 +45,11 @@ bridge {
 module kiodoc;
 
 import match(macro match);
-import control(macro if, macro scope);
+import control(Bool, macro if, macro scope);
 import spine_macros(macro narrow_prod, macro one_prod, macro one_sum, macro widen_sum);
 
-default host type Int role(i32);
-default host type String role(str);
-default host type Bool role(bool);
+host type Int role(i32);
+host type String role(str);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
 host fn print(p0: String);
@@ -97,6 +95,12 @@ host type String role(str);
 host fn print(p0: String);
 ```
 
+`host` marks types and functions supplied by the program running this package.
+`String` is a name this module gives a host-supplied type, not a builtin type.
+`role(str)` allows string literals to have this type. A concrete expected type,
+such as `print`'s parameter, determines the carrier of an unannotated string.
+The host also supplies `print`, which accepts values of that type.
+
 ```kio {file}
 // hello/main.kio
 module hello/main;
@@ -105,6 +109,11 @@ import hello(String, print);
 
 pub fn main() { print("hello\n") }
 ```
+
+The imported `String` and `print` retain their original type identities.
+The call's parameter type determines the string literal's carrier. See
+[literal types and local inference](../guides/typechecking.md#literal-types-and-local-inference)
+for explicit annotations and unresolved literals.
 
 <!--kio {harness=hello_check file placeholder="__CHECK__"}
 module hello/doc_check;
@@ -234,25 +243,30 @@ host type String role(str);
 host fn print(p0: String);
 ```
 
+`host` marks types and functions supplied by the program running this package.
+`String` is a name this module gives a host-supplied type, not a builtin type.
+`role(str)` allows string literals to have this type. A concrete expected
+parameter or return type can determine an unannotated string's carrier. The
+host also supplies `print`, which accepts values of that type.
+
 `host type String role(str);` says "the host supplies a type, this module will call it `String`, and string literals checked against it produce values of that type." `role(str)` says that this declared type accepts Kio string literals; the host binding supplies its representation.
 
 Role-bearing host types are atomic and therefore have no type parameters. A
 roleless host type may still be parameterized, such as `host type Array[A];`;
 `host type Array[A] role(i32);` is rejected.
 
-Other roles admit numeric literals. Use `default` when this module should also
-select a type for literals without an annotation or expected type, and for
-the core branching operation's Boolean condition:
+Other roles admit numeric literals. A concrete return type can determine
+the carrier of an ordinary unannotated literal:
 
 ```kio {variant=module}
 // arith.kio
 module arith;
 
-default host type Int role(i32);
+host type Int role(i32);
 
-default host type String role(str);
+host type String role(str);
 
-default host type Bool role(bool);
+host type Bool role(bool);
 
 host fn add(p0: Int, p1: Int) -> Int;
 
@@ -273,10 +287,9 @@ bridge {
 }
 ```
 
-Inside `arith`, these defaults let `42` produce an `Int`, `"hi"` produce a
-`String`, and `.t` / `.f` produce `Bool` values without another type cue.
-Defaults do not flow into submodules or consumers automatically: another
-module selects its own, for example `import arith(default Int, default Bool);`.
+Inside `arith`, the concrete function signatures determine the numeric and
+string literal carriers. Other modules can import these host types normally;
+merely importing them never supplies missing contextual evidence.
 
 Write a negative number with `-` touching the first digit, such as `-40` or
 `-3.14`. Kio reads that spelling as one literal where a new expression can
@@ -308,20 +321,17 @@ nearest-even rounding. Overflow is a type error; subnormals and negative
 zero are preserved, including when a tiny value underflows to zero. These
 rules determine literal values; the host still supplies arithmetic.
 
-A literal's type is resolved in three tiers. First, an explicit annotation
-such as `42(Int)` names the type. Second, an **expected type** from a function
-result or call argument can supply it. Neither route needs a default. Third,
-when neither applies, the module must have explicitly selected a `default`
-for that literal's category. `role` is capability metadata; `default` is a
-local choice. Merely importing another numeric type changes no existing choice.
+An explicit literal annotation such as `42(Int)` selects its carrier.
+Otherwise, a concrete expected return, argument or binding type can determine
+it within ordinary local inference. If the carrier remains unknown at that
+boundary, annotate the literal. Merely importing a role-bearing type does not
+select it, and there is no fallback or ambient search among visible types.
 
 There are four categories: integer (all signed and unsigned widths), float
-(`f32`/`f64`), Boolean and string. Multiple unselected types can share a role,
-but two distinct defaults in the same category are rejected even when unused.
-An integer and a float default can coexist. A transparent alias can select an
-existing type with `default type Integer = numbers.Int;`; two selected aliases
-of the same terminal host identity agree. Ordinary imports do not inherit a
-provider's selections, and local defaults follow declaration order.
+(`f32`/`f64`), Boolean and string. Multiple types can share a category or role.
+A transparent alias inherits its normalized host type's literal admission;
+it introduces no automatic selection. Ordinary untyped `let` initializers
+finish before later statements, so a later call cannot choose their type.
 
 Floating-point syntax requires a decimal point: `42.0`, `42.0e3` and
 `42.0e-3` are floats. Integers have no exponent notation, so `42e0`, `42E+3`,
@@ -329,7 +339,7 @@ Floating-point syntax requires a decimal point: `42.0`, `42.0e3` and
 `42(F64)` turns integer syntax into a float: write `42.0` or `42.0(F64)`.
 For a generic function requiring two values of the same type,
 `same(42, 42.0)` and `same(42.0, 42)` both reject.
-See [literal types and defaults](../guides/typechecking.md#literal-types-and-module-local-defaults)
+See [literal types and local inference](../guides/typechecking.md#literal-types-and-local-inference)
 for aliases, source scope, conflicts and editor repairs.
 
 Operations on these types — `add`, `mul`, `int_to_string`, `print` — are `host fn`s. Kio does not auto-include a standard library: the host supplies whatever the bridged modules' `host` declarations ask for, and reusable Kio code arrives through ordinary modules and dependencies. The compiler provides the core and compile-time pseudo-modules named in Chapter 2, but libraries such as the structural macro palette are user Kio code that a package imports explicitly.
@@ -387,7 +397,7 @@ A function value can appear inline as `.(args) { body }` — a lambda.
 fn apply(f: Int -> Int, x: Int) -> Int { f(x) }
 
 fn immediate_identity() -> Int {
-  .(n) { n }(41)
+  .(n) { n }(41(Int))
 }
 
 pub fn main() {
@@ -414,7 +424,7 @@ polymorphic annotation. Write the concrete result beneath that binder, or make
 the whole `f` annotation `_` so the surrounding function slot supplies it.
 
 An immediate call can also supply a whole missing parameter type:
-`immediate_identity` gives `n` the independently known type of `41`. The rule
+`immediate_identity` gives `n` the independently known type of `41(Int)`. The rule
 is local to that call. Binding `.(n) { n }` with an untyped `let` and calling
 the binding later does not send type information backward across the `let`;
 give the binding a concrete function-type annotation when it must be named
@@ -422,6 +432,9 @@ first.
 
 ### Conditionals
 
+`import macros/control(Bool, macro if);` selects the library's Boolean type
+and conditional macro when the dependency is named `macros`; see
+[macro-library adoption](../guides/using-libraries.md#the-macro-library).
 Importing `if` provides a macro call with a parenthesized condition and two
 blocks. Every nonempty written macro prefix uses ordinary argument-list parentheses.
 Both branches produce one common result type:
@@ -432,11 +445,10 @@ fn choose(condition: Bool, when_true: Int, when_false: Int) -> Int {
 }
 ```
 
-The condition must have the module's explicitly selected Boolean-default type.
-Other Boolean-role types can coexist, but annotating a condition at one of
-them does not override the selection. Missing and conflicting defaults are
-reported separately; merely importing a Boolean type does not select it.
-Both arms are
+The reference library's `if` uses its declared `control.Bool` host type.
+Consumers share that type by importing it, or rehost the control module to
+an existing Boolean-capability module. The generated intrinsic checks this
+concrete Boolean specialization. Both arms are
 blocks. When the surrounding position supplies an expected result type, it
 checks both arms. Without that context, the two branch results determine their
 common type together: a result that is already clear in either branch can
@@ -661,10 +673,10 @@ fn classify_again(v: String | Int) {
   ()
 }
 
-pub fn main() { let v = widen_sum("matched right\n", String | Int); classify_again(v) }
+pub fn main() { let v = widen_sum("matched right\n"(String), String | Int); classify_again(v) }
 ```
 
-`widen_sum("matched right\n", String | Int)` says "put this `String` into this target sum." Like `match`, `widen_sum` is imported library code; the tutorial harness imports it from `spine_macros`. The macro walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
+`widen_sum("matched right\n"(String), String | Int)` says "put this `String` into this target sum." Like `match`, `widen_sum` is imported library code; the tutorial harness imports it from `spine_macros`. The macro walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
 
 ## Chapter 7 — Polymorphism
 
@@ -698,8 +710,8 @@ bridge {
 
 module kiodoc;
 
-default host type Int role(i32);
-default host type String role(str);
+host type Int role(i32);
+host type String role(str);
 host type Bool role(bool);
 host fn add(p0: Int, p1: Int) -> Int;
 host fn int_to_string(p0: Int) -> String;
@@ -721,12 +733,16 @@ fn id[A](x: A) -> A { x }
 `id` takes a type argument `A` and a value `x` of that type, and returns `x`. Most call sites elide the type argument; the typer infers it from the value-arg's type:
 
 ```kio {@tutorial_poly_block}
-let _i = id(42);
+let _i = id(42(Int));
 // A inferred as Int
-let _s = id("hi");
+let _s = id("hi"(String));
 // A inferred as String
 ()
 ```
+
+The literal annotations give these arguments concrete carriers; without a
+concrete context, `id(42)` alone cannot choose one. `id` still infers its type
+argument from the resulting value type.
 
 Each type-argument slot in the current universal/function layer has three
 spellings. Write every type explicitly, put `_` in only the slots the typer
@@ -734,14 +750,14 @@ should solve, or elide that layer's leading run:
 
 ```kio {@tutorial_poly_block}
 let _explicit = pair(String, Int, "left", 1);
-let _partial = pair(String, _, "left", 1);
-let _elided = pair("left", 1);
+let _partial = pair(String, _, "left", 1(Int));
+let _elided = pair("left"(String), 1(Int));
 ()
 ```
 
 Within that layer, written type arguments and `_` placeholders are positional
 and precede its value arguments. In the partial call, `String` fills `[A]` and
-`_` asks inference to solve `[B]` from `1`. Elision omits that leading binder
+`_` asks inference to solve `[B]` from `1(Int)`. Elision omits that leading binder
 run; it is not shorthand for writing a variable number of underscores among
 value arguments. Consuming a value layer may expose a later binder run, which
 the same rule handles as the next layer of the call.
@@ -750,7 +766,7 @@ Bare polymorphic values stay polymorphic. When a surrounding function needs a
 particular instance as a value, write `_` as the type-only application:
 
 ```kio {@tutorial_poly_block}
-let _instantiated_function = id(_)(42);
+let _instantiated_function = id(_)(42(Int));
 ()
 ```
 
@@ -789,8 +805,9 @@ receiver-only UFCS call omits its list: `x.>f` means `f(x)`. The spelling
 `x.>f()` is rejected; use `x.>f(())` when the call passes Unit in addition to
 the receiver.
 
-Most of the time full elision does the right thing. When a local RHS needs a
-checked position, put the annotation on the local binder:
+Elide type arguments when value types or a concrete expected result determine
+them. When a local RHS needs a checked position, put the annotation on the
+local binder:
 `let .(f: Int -> Int) = .(x) { x };`.
 
 Multi-parameter polymorphic functions work the same way:
@@ -802,8 +819,8 @@ fn pair[A][B](x: A, y: B) -> A & B { (x, y) }
 `pair` infers both `A` and `B` from the value-arg types. The tuple spelling is equivalent to the comma-separated spelling because call arguments and tuple values use the same right-associated binary-product shape:
 
 ```kio {@tutorial_poly_block}
-let _p1 = pair("left", 1);
-let _p2 = pair(("left", 1));
+let _p1 = pair("left"(String), 1(Int));
+let _p2 = pair(("left"(String), 1(Int)));
 ()
 ```
 

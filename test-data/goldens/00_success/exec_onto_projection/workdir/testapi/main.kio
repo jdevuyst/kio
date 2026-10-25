@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/algebraic_macros(macro onto);
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/io(print);
 
 // `onto` drops source factors that aren't in the target. Here
@@ -13,4 +13,7 @@ import testapi/io(print);
 // raw products. We use a raw product here for simplicity.
 fn project_string(p: String & I32 & I32) -> String { onto(p) }
 
-pub fn main() { let triple = ("from triple\n", 1, 2); print(project_string(triple)) }
+pub fn main() {
+  let triple = ("from triple\n"(String), 1(I32), 2(I32));
+  print(project_string(triple))
+}

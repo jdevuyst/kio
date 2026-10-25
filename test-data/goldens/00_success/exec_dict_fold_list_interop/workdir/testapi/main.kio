@@ -6,7 +6,7 @@ import list/core as lc;
 import list/list as ls;
 import list/list(varop [] as [* *]);
 import macros/control(macro if);
-import testapi(String, default Bool, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;
@@ -55,7 +55,7 @@ fn render_entries(entries: lc.List(I32 & I32)) -> String {
 }
 
 pub fn main() {
-  let entries = [* (3, 30), (1, 10), (2, 20) *];
+  let .(entries: lc.List(I32 & I32)) = [* (3, 30), (1, 10), (2, 20) *];
   let dictionary =
     ls.foldl(
     , .(carry: d.Dict(I32, I32), entry: I32 & I32) -> d.Dict(I32, I32) {

@@ -28,7 +28,7 @@ import seg/script(
 , {sum_range}
 );
 import seg/tree(Tree, tag_pushes, visits);
-import testapi(Array, I32, String, default Bool);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 

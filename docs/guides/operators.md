@@ -11,10 +11,9 @@ bridge {
 
 module kiodoc;
 
-import control(macro if);
+import control(Bool, macro if);
 
 host type Int role(i32);
-default host type Bool role(bool);
 host fn add(a: Int, b: Int) -> Int;
 
 __INSERT_CODE_HERE__
@@ -99,9 +98,9 @@ The [specification](../../specs/language.md#operators) gives the full rule.
 ## Multi-token patterns
 
 A pattern can contain several symbols and operands. This example also uses a
-host `Bool` with `role(bool)`, selected as the module's Boolean default, and `if` from the
+host `Bool` with `role(bool)`, shared with or rehosted from `control.Bool`, and `if` from the
 [macro library](using-libraries.md#the-macro-library); with that
-dependency named `macros`, import it as `import macros/control(macro if);`:
+dependency named `macros`, import it as `import macros/control(Bool, macro if);`:
 
 ```kio {@module}
 fn cond[A](c: Bool, t: A, e: A) -> A {

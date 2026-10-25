@@ -84,13 +84,12 @@ always public and obey ordinary lexical scoping; another module reaches them
 through a plain `import`, like any other item. A `host type` may carry a
 `role(...)` annotation (`role(str)`, `role(i32)`, `role(bool)`, …) that records
 which literal shapes the declared type accepts. Multiple host types in one
-scope may carry the same role. When no annotation or expected type chooses a
-literal's type, it needs an explicit module-local `default`; `role` alone does
-not select one. The core branching intrinsic and the reference `if` macro's
-branching glue use the module's Boolean default too. Ordinary imports do not
-inherit a provider's selections. See
-[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults)
-for the four categories, aliases and eager conflicts.
+scope may carry the same role. A concrete expected type or explicit literal annotation determines a
+literal's exact carrier; merely declaring or importing a role-bearing type
+does not select it. The branching intrinsic checks a concrete Boolean
+specialization, and the reference `if` shares its library's `control.Bool`.
+See [literal inference](typechecking.md#literal-types-and-local-inference)
+for the four categories, aliases and local inference boundaries.
 
 A role-bearing host type is always zero-arity: type parameters and
 `role(...)` cannot appear on the same declaration. Generic host types such as
@@ -141,11 +140,9 @@ and `Bool` for the branching operation; the host roles alone do not select them.
 ```kio {variant=module}
 module array_fill;
 
-import control(macro if);
+import control(Bool, macro if);
 
-default host type I32 role(i32);
-
-default host type Bool role(bool);
+host type I32 role(i32);
 
 host type Array[T];
 
@@ -168,7 +165,10 @@ rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
   }
 }
 
-pub fn build_scores() -> Array(I32) { let scores = array_make_filled(3, 0); fill_scores(0, scores) }
+pub fn build_scores() -> Array(I32) {
+  let scores = array_make_filled(3, 0(I32));
+  fill_scores(0, scores)
+}
 ```
 
 Host helpers are just ordinary function declarations, so text-processing

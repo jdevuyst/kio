@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io as io;
 
 newtype Box[A] : A { pub constructor make; pub projector unpack }
@@ -28,6 +28,6 @@ fn inline(input: Box(String) | Other(String)) -> String {
 
 pub fn main() {
   io.print(named(Box.make("named-box\n")));
-  io.print(inline(widen_sum(Box.make("inline-box\n"), Box(String) | Other(String))));
-  io.print(inline(widen_sum(Other.make("inline-other\n"), Box(String) | Other(String))))
+  io.print(inline(widen_sum(Box.make("inline-box\n"(String)), Box(String) | Other(String))));
+  io.print(inline(widen_sum(Other.make("inline-other\n"(String)), Box(String) | Other(String))))
 }

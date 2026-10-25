@@ -1,0 +1,9 @@
+module main;
+
+host type Selected role(i32);
+
+host type Other role(i64);
+
+fn consume(value: Other) -> Other { value }
+
+fn value() -> Other { consume(17(Selected)) }

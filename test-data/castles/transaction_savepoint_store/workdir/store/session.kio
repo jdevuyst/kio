@@ -8,7 +8,7 @@ import store/audit as audit;
 import store/commands as commands;
 import store/history as history;
 import store/transactions as tx;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/io as io;

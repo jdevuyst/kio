@@ -14,16 +14,16 @@ import docs_loader/list/core(
 , tail
 , uncons
 );
-import docs_loader/list/macros/control(macro if);
+import docs_loader/list/macros/control(Bool as Control_bool, macro if);
 import docs_loader/list/macros/match(macro match);
 import docs_loader/list/macros/spine_macros(macro widen_sum);
 import docs_loader/list_host as _rehost_gmgjhdhefpgigphdhe;
 
-default pub type Bool = _rehost_gmgjhdhefpgigphdhe.Bool;
+pub type Bool = Control_bool;
 
-default pub type I32 = _rehost_gmgjhdhefpgigphdhe.I32;
+pub type I32 = _rehost_gmgjhdhefpgigphdhe.I32;
 
-default pub type String = _rehost_gmgjhdhefpgigphdhe.String;
+pub type String = _rehost_gmgjhdhefpgigphdhe.String;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_gmgjhdhefpgigphdhe.add_i32(p0, p1) }
 

@@ -40,7 +40,7 @@
 //!   under the left of a `->`, including those revealed by intra-
 //!   module alias unfolding).
 //! - Literals: `StrLit` / `IntLit` / `FloatLit` / `BoolLit` typed
-//!   against a `role(...)` host type by three-tier resolution
+//!   against an explicit annotation or concrete local expected type
 //!   (`synth_literal` / `resolve_literal_against`).
 //! - Cross-module imports: `import m(foo);` / `import m(Foo);`
 //!   are validated and their schemes flow through to the
@@ -411,11 +411,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
         tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
     ) {
         let mp = tcx.env.module_path.clone();
-        #[cfg(feature = "lsp")]
-        if let Some(binding) = resolved.lexical_role {
-            tcx.elaborations
-                .record_selected_role(&mp, literal_site.span, binding);
-        }
         let (annotation, imports, aliases) =
             prepare_literal_annotation(literal_site, &resolved.ty, tcx);
         record_prime_bindings(tcx, &imports, &aliases);
@@ -426,18 +421,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
             resolved.runtime_erases,
             resolved.numeric_value,
         );
-    }
-
-    #[cfg(feature = "lsp")]
-    fn record_selected_role<'m>(
-        span: Span,
-        binding: &str,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        if tcx.env.typecheck_scope.collects_source_dependencies() {
-            tcx.elaborations
-                .record_selected_role(&tcx.env.module_path, span, binding.to_owned());
-        }
     }
 
     fn record_fn_param_type<'m>(
@@ -525,18 +508,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
         env: &crate::pass::typecheck_core::ModuleEnv<'_, Lowered>,
         elaborations: &mut Elaborations,
     ) -> Result<(), Error> {
-        for candidate in &env.default_candidates {
-            if candidate.host_identity.0 == "__comptime__"
-                && let Some(span) = candidate.selected
-            {
-                elaborations
-                    .erased_default_selections
-                    .get_or_insert_with(Default::default)
-                    .entry(env.module_path.clone())
-                    .or_default()
-                    .insert(span);
-            }
-        }
         elaborations.discharge_deferred(env)
     }
 }
@@ -3878,7 +3849,7 @@ pub(crate) fn check_normalized_package_collect_errors_with_scope(
 ) -> Result<CheckedLoweredPackage, Vec<LocatedError>> {
     check_normalized_package_with_scope_and_execution(
         normalized,
-        typecheck_scope.with_source_dependencies(),
+        typecheck_scope,
         crate::pass::typecheck_core::TypecheckExecution::AllowParallel,
     )
 }
@@ -3952,10 +3923,6 @@ struct RecordedCallPlan {
 /// typer.
 #[derive(Debug, Default)]
 pub struct Elaborations {
-    /// Selections of compile-time-only types lose their modifier together with
-    /// the selected type's runtime erasure at the Lowered → Prime boundary.
-    #[allow(clippy::box_collection)] // Keep absent selections to one pointer in each record.
-    erased_default_selections: Option<Box<HashMap<String, HashSet<Span>>>>,
     #[allow(clippy::box_collection)] // Keep the ordinary no-rec layout to one pointer.
     rec_loop_diagnostics: Option<Box<Vec<RecLoopDiagnosticRecord>>>,
     /// Sparse, occurrence-keyed public type inventory for recursive quotation.
@@ -4001,8 +3968,6 @@ pub struct Elaborations {
         (String, crate::ast::ExpressionOccurrenceId),
         (RecordedTypeResolution, bool, Option<String>),
     >,
-    #[cfg(feature = "lsp")]
-    source_role_uses: Vec<(String, Span, String)>,
     /// Checked value-parameter types for `Expr::FnExpr` nodes. These
     /// are needed when a lambda was checked against a call-site
     /// expected function type and its parameter type is not recoverable
@@ -5678,7 +5643,6 @@ impl Elaborations {
 
     pub fn new() -> Self {
         Self {
-            erased_default_selections: None,
             rec_loop_diagnostics: None,
             rec_quote: None,
             entries: HashMap::new(),
@@ -5688,8 +5652,6 @@ impl Elaborations {
             value_at_type_slot_index: HashMap::new(),
             call_plans: HashMap::new(),
             literal_resolutions: HashMap::new(),
-            #[cfg(feature = "lsp")]
-            source_role_uses: Vec::new(),
             fn_param_types: HashMap::new(),
             generated_imports: HashMap::new(),
             prime_requalification_imports: HashMap::new(),
@@ -6258,7 +6220,7 @@ impl Elaborations {
 
     /// Record the typer's resolved host type for the literal at
     /// `literal_id` inside module `module_path` — the result of
-    /// three-tier resolution. The substitution pass bakes this
+    /// explicit annotation or contextual inference. The substitution pass bakes this
     /// into the literal's `annotation` so every post-`Prime`
     /// literal carries its concrete type. Module path keying is
     /// load-bearing — see the `literal_resolutions` field doc.
@@ -6274,17 +6236,6 @@ impl Elaborations {
             (module_path.to_owned(), literal_id),
             (resolved.into(), runtime_erases, numeric_value),
         );
-    }
-
-    #[cfg(feature = "lsp")]
-    pub(crate) fn record_selected_role(&mut self, module_path: &str, span: Span, binding: String) {
-        self.source_role_uses
-            .push((module_path.to_owned(), span, binding));
-    }
-
-    #[cfg(feature = "lsp")]
-    pub(crate) fn source_role_uses(&self) -> &[(String, Span, String)] {
-        &self.source_role_uses
     }
 
     /// Look up the typer's resolved type for the literal at
@@ -6401,14 +6352,6 @@ impl Elaborations {
     }
 
     pub fn merge(&mut self, other: Elaborations) {
-        if let Some(other) = other.erased_default_selections {
-            let selections = self
-                .erased_default_selections
-                .get_or_insert_with(Default::default);
-            for (module, spans) in *other {
-                selections.entry(module).or_default().extend(spans);
-            }
-        }
         if let Some(other) = other.rec_quote {
             self.rec_quote
                 .get_or_insert_with(Default::default)
@@ -6453,16 +6396,7 @@ impl Elaborations {
             self.record_generated_type_aliases(&module_path, &aliases);
         }
         self.position_index.merge(other.position_index);
-        #[cfg(feature = "lsp")]
-        self.source_role_uses.extend(other.source_role_uses);
         self.deferred.extend(other.deferred);
-    }
-
-    pub(crate) fn default_selection_erases(&self, module: &str, span: Span) -> bool {
-        self.erased_default_selections
-            .as_ref()
-            .and_then(|modules| modules.get(module))
-            .is_some_and(|spans| spans.contains(&span))
     }
 }
 
@@ -6788,9 +6722,9 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
                 debug_assert_eq!(*kind, ElaboratorKind::Access);
                 synth_field_access(e, receiver, labels, *span, tcx)
             }
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
+            ElaboratorCall::FieldUpdate { base, updates } => {
                 debug_assert_eq!(*kind, ElaboratorKind::Filtered);
-                synth_field_update(e, receiver, updates, None, *span, tcx)
+                synth_field_update(e, base, updates, None, *span, tcx)
             }
         },
         Expr::RecOrder { plan, .. } => synth_rec_order(e, plan, tcx),
@@ -7090,6 +7024,15 @@ fn synth_field_access<'m>(
     Ok(Synth::value_interned(prepared.result_ty))
 }
 
+pub(crate) fn construction_slot_matches_label(
+    update: &FieldUpdateLabel<Lowered>,
+    slot: &InternedType,
+    tcx: &TypeCtx<'_, '_>,
+) -> bool {
+    let label_type = resolved_label_type(update.label_type.as_deref(), update.label_span);
+    label_slot_type_args(slot, label_type, update.label_span, tcx.env).is_ok()
+}
+
 pub(crate) fn field_update_expected_type<'m>(
     update: &'m FieldUpdateLabel<Lowered>,
     expected: Option<&InternedType>,
@@ -7126,7 +7069,7 @@ pub(crate) fn field_update_expected_type<'m>(
 #[allow(clippy::too_many_arguments)] // field elaboration needs the complete source update context
 pub(crate) fn prepare_field_update_elaboration<'m>(
     original: &'m Expr,
-    receiver: &'m Expr,
+    base: &'m crate::ast::FieldUpdateBase<Lowered>,
     updates: &'m [FieldUpdateLabel<Lowered>],
     receiver_ty: InternedType,
     rhs_types: &[InternedType],
@@ -7169,6 +7112,12 @@ pub(crate) fn prepare_field_update_elaboration<'m>(
             ));
         }
         let label_type = resolved_label_type(update.label_type.as_deref(), update.label_span);
+        if matches!(base, crate::ast::FieldUpdateBase::Construction) {
+            let rhs_tmp = field_temp_name("rhs", span, index);
+            rhs_bindings.push((rhs_tmp.clone(), update.value.clone()));
+            replacement_specs.push((path_expr(&rhs_tmp, update.meta.span), rhs_ty.clone()));
+            continue;
+        }
         let is_rec_order_carrier = tcx.is_pending_rec_order_path(&update.value);
         let expected_slot_index = is_rec_order_carrier
             .then(|| find_visible_label_slot(&expected_slots, label_type, tcx.env))
@@ -7240,7 +7189,9 @@ pub(crate) fn prepare_field_update_elaboration<'m>(
         &binders,
     );
     let mut bindings = Vec::with_capacity(rhs_bindings.len() + 1);
-    bindings.push((receiver_tmp, receiver.clone()));
+    if let Some(receiver) = base.receiver() {
+        bindings.push((receiver_tmp, receiver.clone()));
+    }
     bindings.extend(rhs_bindings);
     let replacement = let_chain(bindings, body, span);
     let (imports, aliases) = take_prime_bindings(&mut prime_requalifier);
@@ -7254,12 +7205,17 @@ pub(crate) fn prepare_field_update_elaboration<'m>(
 
 fn synth_field_update<'m>(
     original: &'m Expr,
-    receiver: &'m Expr,
+    base: &'m crate::ast::FieldUpdateBase<Lowered>,
     updates: &'m [FieldUpdateLabel<Lowered>],
     expected: Option<&InternedType>,
     span: Span,
     tcx: &mut TypeCtx<'m, '_>,
 ) -> Result<Synth, Error> {
+    let Some(receiver) = base.receiver() else {
+        return crate::pass::typecheck_core::apply::run_general_ordinary_value(
+            original, expected, tcx,
+        );
+    };
     let receiver_ty = crate::pass::typecheck_core::synth_value_arg_interned(receiver, tcx)?;
     let mut rhs_types = Vec::with_capacity(updates.len());
     for update in updates {
@@ -7273,7 +7229,7 @@ fn synth_field_update<'m>(
     }
     let prepared = prepare_field_update_elaboration(
         original,
-        receiver,
+        base,
         updates,
         receiver_ty,
         &rhs_types,
@@ -8015,9 +7971,9 @@ fn check_value_against<'m>(
                 debug_assert_eq!(*kind, ElaboratorKind::Access);
                 synth_field_access(e, receiver, labels, *span, tcx)?
             }
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
+            ElaboratorCall::FieldUpdate { base, updates } => {
                 debug_assert_eq!(*kind, ElaboratorKind::Filtered);
-                synth_field_update(e, receiver, updates, Some(expected), *span, tcx)?
+                synth_field_update(e, base, updates, Some(expected), *span, tcx)?
             }
         };
         crate::pass::typecheck_core::require_type_equiv_state(
@@ -8028,10 +7984,7 @@ fn check_value_against<'m>(
             synth.ty.identity_is_canonical(),
             expected.identity_is_canonical(),
         )?;
-        // The macro's type at its own span. A record literal lowers to a
-        // `FieldUpdate` whose receiver the lowering mints at this very span, so
-        // without an entry here the record's interior — field names, `=`, the
-        // braces — resolves to that receiver instead of to the record.
+        // Field names and delimiters present the complete row's type.
         let mp = tcx.env.module_path.clone();
         let binders = tcx.in_scope_type_param_presentation();
         tcx.elaborations
@@ -10081,29 +10034,6 @@ fn decode_user_macro_result(
 // `intrinsic_scheme` lives in `crate::pass::typecheck_core`. Imported via
 // the use clause at the top of this module.
 
-pub(crate) fn bool_role_type(
-    span: Span,
-    tcx: &TypeCtx<'_, '_>,
-    #[cfg(feature = "lsp")] mut record_selected_role: impl FnMut(&str),
-) -> Result<InternedType, Error> {
-    let selected = tcx
-        .env
-        .selected_default(crate::ast::RoleShape::Bool, tcx.local_item_cutoff())
-        .ok_or_else(|| {
-            crate::pass::typecheck_core::literal_resolution_error(
-                crate::ast::RoleShape::Bool,
-                tcx.env,
-                tcx.local_item_cutoff(),
-                span,
-            )
-        })?;
-    #[cfg(feature = "lsp")]
-    if tcx.env.typecheck_scope.collects_source_dependencies() {
-        record_selected_role(selected.visible_name);
-    }
-    Ok(InternedType::fresh_canonical(selected.ty(span)))
-}
-
 // `intrinsic_call`, `synth_env_fn_def`,
 // `newtype_member_scheme`, `ty_nominal_segments`,
 // `clone_with_span`, and the tiny scheme constructors (`tp` /
@@ -10302,8 +10232,8 @@ mod tests {
         check_package_sources(&[&repaired])
             .expect("the deferred source-owned escape repair rechecks");
 
-        let source = "module main; import control(macro if);
-            default host type Bool role(bool);
+        let source = "module main; import control(Bool, macro if);
+
             host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
             host fn retain(callback: . -> Bool) -> Bool;
             rec(drive) {
@@ -10465,304 +10395,6 @@ mod tests {
                 "diagnostic hints must not change the phase artifact",
             );
         }
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_records_only_actual_lexical_fallback_when_enabled() {
-        let main = "module main; import roles as r; default type Number = r.Value; \
-            fn identity[A](value: A) -> A { value } \
-            fn inferred() -> . { let value = identity(identity(1)); () } \
-            fn expected() -> r.Value { 2 } \
-            fn explicit() -> . { let value = 3(r.Value); () }";
-        let package = lowered_package(&[
-            ("roles.kio", "module roles; pub host type Value role(i32);"),
-            ("main.kio", main),
-        ]);
-        let ordinary = check_package_preserving_normalization(&package).expect("ordinary check");
-        assert!(ordinary.elaborations().source_role_uses().is_empty());
-        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-        let scope =
-            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                &normalized,
-                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-            );
-        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
-            .expect("LSP opt-in check");
-        assert_eq!(
-            checked.elaborations().source_role_uses(),
-            &[(
-                "main".to_owned(),
-                source_span(main, "1"),
-                "Number".to_owned(),
-            )]
-        );
-        validate_substituted_package(checked.substituted()).expect("ordinary phase artifact");
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_retained_calls_publish_once_and_rollback_failed_roots() {
-        for second in [".", "!"] {
-            let source = format!(
-                "module main; default host type Number role(i32); \
-                fn identity[A](value: A) -> A {{ value }} \
-                host fn consume[A](first: A, second: {second}) -> .; \
-                fn run() -> . {{ consume(identity(identity(1)), ()) }}"
-            );
-            let package = lowered_package(&[("main.kio", &source)]);
-            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-            let scope =
-                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                    &normalized,
-                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-                )
-                .with_source_dependencies();
-            let module = &normalized.package().module("main").unwrap().module;
-            let env = ModuleEnv::build_with_typecheck_scope(
-                module,
-                None,
-                None,
-                Some(normalized.package()),
-                scope,
-            )
-            .expect("environment");
-            let run = module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(def) if def.name == "run" => Some(def),
-                    _ => None,
-                })
-                .unwrap();
-            let mut elaborations = Elaborations::new();
-            let mut tcx = TypeCtx::new(&env, &mut elaborations);
-            let result = synth_expr(&run.body, &mut tcx);
-            if second == "!" {
-                result
-                    .err()
-                    .expect("the second argument rejects the whole application");
-                assert!(elaborations.source_role_uses().is_empty());
-            } else {
-                result.expect("completed application");
-                assert_eq!(
-                    elaborations.source_role_uses(),
-                    &[(
-                        "main".to_owned(),
-                        source_span(&source, "1"),
-                        "Number".to_owned(),
-                    )]
-                );
-            }
-        }
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_observes_only_the_intrinsic_scheme_that_consumes_bool() {
-        let main = "module main; import __intrinsics__; import roles as r; \
-            default type Choice = r.Value; host fn flag() -> r.Value; \
-            fn plain() -> . & . { __pair__(., ., (), ()) } \
-            fn direct() -> . { __if_then_else__(., flag(), .() { () }, .() { () }) } \
-            fn value() -> . { let choose = __if_then_else__(.); choose(flag(), .() { () }, .() { () }) }";
-        let package = lowered_package(&[
-            ("roles.kio", "module roles; pub host type Value role(bool);"),
-            ("main.kio", main),
-        ]);
-        let ordinary = check_package_preserving_normalization(&package).expect("ordinary check");
-        assert!(ordinary.elaborations().source_role_uses().is_empty());
-        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-        let scope =
-            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                &normalized,
-                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-            );
-        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
-            .expect("observed intrinsic uses");
-        let mut actual = checked.elaborations().source_role_uses().to_vec();
-        actual.sort_by_key(|(_, span, _)| span.start);
-        let expected: Vec<_> = main
-            .match_indices("__if_then_else__")
-            .map(|(start, name)| {
-                (
-                    "main".to_owned(),
-                    Span::new(start as u32, (start + name.len()) as u32),
-                    "Choice".to_owned(),
-                )
-            })
-            .collect();
-        assert_eq!(actual, expected);
-        validate_substituted_package(checked.substituted()).expect("ordinary phase artifact");
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_bool_selection_rolls_back_with_failed_outer_calls() {
-        for second in [".", "!"] {
-            let source = format!(
-                "module main; import __intrinsics__; \
-                default host type Flag role(bool); host fn flag() -> Flag; \
-                host fn consume(first: ., second: {second}) -> .; \
-                fn run() -> . {{ consume(__if_then_else__(., flag(), .() {{ () }}, .() {{ () }}), ()) }}"
-            );
-            let package = lowered_package(&[("main.kio", &source)]);
-            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-            let scope =
-                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                    &normalized,
-                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-                )
-                .with_source_dependencies();
-            let module = &normalized.package().module("main").unwrap().module;
-            let env = ModuleEnv::build_with_typecheck_scope(
-                module,
-                None,
-                None,
-                Some(normalized.package()),
-                scope,
-            )
-            .expect("environment");
-            let run = module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(def) if def.name == "run" => Some(def),
-                    _ => None,
-                })
-                .unwrap();
-            let mut elaborations = Elaborations::new();
-            let mut tcx = TypeCtx::new(&env, &mut elaborations);
-            let result = synth_expr(&run.body, &mut tcx);
-            if second == "!" {
-                result
-                    .err()
-                    .expect("the second argument rejects the whole application");
-                assert!(elaborations.source_role_uses().is_empty());
-            } else {
-                result.expect("completed application");
-                assert_eq!(
-                    elaborations.source_role_uses(),
-                    &[(
-                        "main".to_owned(),
-                        source_span(&source, "__if_then_else__"),
-                        "Flag".to_owned(),
-                    )]
-                );
-            }
-        }
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_reflected_conditional_commits_only_with_its_outer_root() {
-        let macro_def = "module macros; import __comptime__; \
-            pure fn select_impl(ct: __Comptime__, fills: __Fill_ctx__, \
-                _condition_type: __Type__, result_type: __Type__, condition: __Checked_term__, \
-                callback: __Checked_term__, fallback: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
-                let result = __term_call__(ct, __term_type__(ct, callback), callback, __term_unit__(ct)); \
-                let fills = __fill__(ct, fills, result_type, __term_type__(ct, result)); \
-                (__intrinsic_if_then_else__(ct, result_type, condition, \
-                    .() -> __Checked_term__ { result }, .() -> __Checked_term__ { fallback }), fills) \
-            } \
-            pub macro select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
-        for second in [".", "!"] {
-            let main = format!(
-                "module main; import macros(macro select); \
-                default host type Flag role(bool); host fn flag() -> Flag; \
-                host fn consume(first: ., second: {second}) -> .; \
-                fn run() -> . {{ consume(select(flag(), .() {{ () }}, ()), ()) }}"
-            );
-            let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
-            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-            let scope =
-                crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                    &normalized,
-                    std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-                )
-                .with_source_dependencies();
-            let module = &normalized.package().module("main").unwrap().module;
-            let env = ModuleEnv::build_with_typecheck_scope(
-                module,
-                None,
-                None,
-                Some(normalized.package()),
-                scope,
-            )
-            .expect("environment");
-            let run = module
-                .items
-                .iter()
-                .find_map(|item| match item {
-                    Item::FnDef(def) if def.name == "run" => Some(def),
-                    _ => None,
-                })
-                .unwrap();
-            let mut elaborations = Elaborations::new();
-            let mut tcx = TypeCtx::new(&env, &mut elaborations);
-            let result = synth_expr(&run.body, &mut tcx);
-            if second == "!" {
-                result
-                    .err()
-                    .expect("the second argument rejects the whole application");
-                assert!(elaborations.source_role_uses().is_empty());
-            } else {
-                result.expect("completed reflected conditional");
-                let roles = elaborations.source_role_uses();
-                assert_eq!(roles.len(), 1, "{roles:?}");
-                assert_eq!((&*roles[0].0, &*roles[0].2), ("main", "Flag"));
-                assert_eq!(roles[0].1.start, source_span(&main, "select(").start);
-            }
-        }
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_lint_direct_let_literal_and_bare_intrinsic_value_are_observed() {
-        let source = "module main; import __intrinsics__; \
-            default host type Number role(i32); default host type Flag role(bool); \
-            fn run() -> . { let value = 1; let choose = __if_then_else__; () }";
-        let package = lowered_package(&[("main.kio", source)]);
-        let normalized = crate::pass::alpha_normalize::normalize_package(&package);
-        let scope =
-            crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
-                &normalized,
-                std::sync::Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
-            );
-        let checked = check_normalized_package_collect_errors_with_scope(normalized, scope)
-            .expect("direct values");
-        let mut actual = checked.elaborations().source_role_uses().to_vec();
-        actual.sort_by_key(|(_, span, _)| span.start);
-        assert_eq!(
-            actual,
-            vec![
-                (
-                    "main".to_owned(),
-                    source_span(source, "1"),
-                    "Number".to_owned()
-                ),
-                (
-                    "main".to_owned(),
-                    source_span(source, "__if_then_else__"),
-                    "Flag".to_owned()
-                ),
-            ]
-        );
-    }
-
-    #[cfg(feature = "lsp")]
-    #[test]
-    fn source_role_layout_scope_and_literal() {
-        use crate::ast::Lowered;
-        use crate::pass::typecheck_core::{InternedType, LiteralResolution, PackageTypecheckScope};
-        eprintln!(
-            "source role layout: scope={} literal={} previous_literal_result={} elaborations={}",
-            std::mem::size_of::<PackageTypecheckScope<Lowered>>(),
-            std::mem::size_of::<LiteralResolution<Lowered>>(),
-            std::mem::size_of::<InternedType<Lowered>>(),
-            std::mem::size_of::<Elaborations>(),
-        );
-        let empty = Elaborations::new();
-        assert_eq!(empty.source_role_uses.capacity(), 0);
     }
 
     #[test]
@@ -11476,10 +11108,10 @@ mod tests {
             pure fn select_second(_ct: __Comptime__, _a: __Type__, _b: __Type__, \
                 _first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ { second } \
             pub macro match : [A][B] A -> B -> B { impl select_second; };";
-        for call in ["match(.t, .f)", "(.t).>match(.f)"] {
+        for call in ["match(.t(Flag), .f)", "(.t(Flag)).>match(.f)"] {
             let main = format!(
                 "module main; import unrelated(macro match); \
-                 default host type Flag role(bool); fn run() -> Flag {{ {call} }}"
+                 host type Flag role(bool); fn run() -> Flag {{ {call} }}"
             );
             let package = lowered_package(&[("unrelated.kio", macro_def), ("main.kio", &main)]);
             let complete = check_package_preserving_normalization(&package)
@@ -11886,18 +11518,707 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn explicit_defaults_do_not_limit_expected_or_annotated_literals() {
-        check_package_sources(&["module main; host type Int role(i64); host type Float role(f64); fn integer() -> Int { 42 } fn float() -> Float { 42.0 } fn annotated() -> Int { 42(Int) }"]).expect("known types need no default");
-        let error = check_package_sources(&[
-            "module main; host type Int role(i64); fn unknown() -> . { let n = 42; () }",
-        ])
-        .expect_err("an unconstrained literal needs selection");
-        assert!(error.diag().1.contains("default integer type"), "{error:?}");
-        assert_eq!(error.diagnostic().fixes().len(), 2);
+    fn projected_condition_calls_advance_selected_layers_without_replay() {
+        let package = lowered_control_package(&[(
+            "main.kio",
+            "module main; import control(Bool, macro if); host type I32 role(i32); fn both(left: Bool, right: Bool) -> Bool { if(left) { right } else { .f(Bool) } } fn value(left: Bool, right: Bool) -> I32 { if(both(if(left) { .t(Bool) } else { .f(Bool) }, if(right) { .t(Bool) } else { .f(Bool) })) { 1(I32) } else { 0(I32) } }",
+        )]);
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
+        let (checked, scope) = check_retained_success(&package);
+        let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
+        assert_eq!(
+            work.final_selected_layer_continues, 2,
+            "the two nested argument calls each select their public layer once"
+        );
+        assert_eq!(
+            scope.memo().user_macro_template_executions(),
+            4,
+            "the outer call, two nested arguments, and the helper body each execute once"
+        );
+        validate_substituted_package(checked.substituted())
+            .expect("nested projected conditions produce ordinary Prime");
     }
 
     #[test]
-    fn missing_default_literal_annotation_fixes_keep_policy_and_binders_unchanged() {
+    fn inference_only_literals_use_local_expected_types() {
+        for (role, literal) in [
+            ("i32", "17"),
+            ("f64", "1.5"),
+            ("bool", ".t"),
+            ("str", "\"text\""),
+        ] {
+            let declarations = format!(
+                "module main; host type Chosen role({role}); host type Other role({role}); fn identity[A](value: A) -> A {{ value }} fn same[A](left: A, _right: A) -> A {{ left }}"
+            );
+            for value in [
+                literal.to_owned(),
+                format!("{literal}(_)"),
+                format!("identity({literal})"),
+                format!("let .(value: Chosen) = identity({literal}); value"),
+            ] {
+                check_package_sources(&[&format!(
+                    "{declarations} fn value() -> Chosen {{ {value} }}"
+                )])
+                .expect("the local expected type determines a bare scalar");
+            }
+            for args in [
+                format!("identity({literal}), known"),
+                format!("known, identity({literal})"),
+            ] {
+                check_package_sources(&[&format!("{declarations} fn value(known: Chosen) -> Chosen {{ let result = same({args}); result }}")])
+                    .expect("either sibling establishes the shared literal carrier");
+            }
+            let error = check_package_sources(&[&format!(
+                "{declarations} fn value() -> Chosen {{ {literal}(Other) }}"
+            )])
+            .expect_err("context cannot override a written literal annotation");
+            assert!(error.diag().1.contains("type mismatch"), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn inference_only_literals_require_a_local_anchor() {
+        for body in [
+            "let value = 1; take(value)",
+            "let value = identity(1); take(value)",
+            "let value = .() { 1 }; take(value())",
+        ] {
+            let source = format!(
+                "module main; host type Number role(i64); fn take(value: Number) -> Number {{ value }} fn identity[A](value: A) -> A {{ value }} fn run() -> Number {{ {body} }}"
+            );
+            let error = check_package_sources(&[&source])
+                .expect_err("a later use cannot type an earlier independent source");
+            assert!(
+                error.diag().1.contains("literal") || error.diag().1.contains("cannot infer"),
+                "{error:?}"
+            );
+        }
+        let error = check_package_sources(&["module main; fn value[A]() -> A { 1 }"])
+            .expect_err("a rigid generic parameter has no literal role");
+        assert!(error.diag().1.contains("role-bearing"), "{error:?}");
+    }
+
+    #[test]
+    fn inference_only_common_result_literals_resume_from_known_siblings() {
+        for (known, literal, result, use_) in [
+            ("known", "\"\"", "String", "selected()"),
+            ("known", "identity(\"\")", "String", "selected()"),
+            ("known", "get_identity()(\"\")", "String", "selected()"),
+            (
+                "(known, number)",
+                "(identity(\"\"), 2)",
+                "String & Number",
+                "selected()",
+            ),
+            (
+                ".() -> String { known }",
+                ".() { identity(\"\") }",
+                "String",
+                "selected()()",
+            ),
+            (
+                ".[A](value: A) { known }",
+                ".[B](value: B) { identity(\"\") }",
+                "String",
+                "selected()(Number, number)",
+            ),
+        ] {
+            for reversed in [false, true] {
+                let (left, right) = if reversed {
+                    (literal, known)
+                } else {
+                    (known, literal)
+                };
+                let main = format!(
+                    "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn identity[A](value: A) -> A {{ value }} host fn get_identity() -> [A] A -> A; fn run(known: String, number: Number) -> {result} {{ let selected = common2(.() {{ {left} }}, .() {{ {right} }}); {use_} }}"
+                );
+                check_package_sources(&[COMMON_RESULT_FILLS, &main]).unwrap_or_else(|error| {
+                    panic!("{known} / {literal}, reversed={reversed}: {error:?}")
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn inference_only_nested_relation_finishes_input_before_outer_literal() {
+        for reversed in [false, true] {
+            let known = "ordinary(common2(.() { 1(Number) }, .() { 2 })(), text)";
+            let literal = "\"nested\"";
+            let (left, right) = if reversed {
+                (literal, known)
+            } else {
+                (known, literal)
+            };
+            let main = format!(
+                "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn ordinary[Source](_number: Source, text: String) -> String {{ text }} fn run(text: String) -> String {{ let selected = common2(.() {{ {left} }}, .() {{ {right} }}); selected() }}"
+            );
+            let package =
+                lowered_package(&[("common.kio", COMMON_RESULT_FILLS), ("main.kio", &main)]);
+            crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
+            crate::pass::typecheck_core::apply::reset_context_wakes();
+            let (checked, scope) = check_retained_success(&package);
+            let work = crate::pass::typecheck_core::apply::fills::fill_relation_work();
+            assert_eq!(
+                crate::pass::typecheck_core::apply::context_wakes(),
+                6,
+                "each newly concrete retained expectation is consumed once: {work:?}"
+            );
+            assert_eq!(scope.memo().user_macro_template_executions(), 2);
+            validate_substituted_package(checked.substituted())
+                .expect("nested relation produces ordinary Prime");
+        }
+    }
+
+    #[test]
+    fn inference_only_fills_identity_waits_for_outer_sibling_context() {
+        let helper = "module keep; import __comptime__; pure fn keep_impl(_ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (value, fills) } pub macro keep : [A] A -> A { impl(fills) keep_impl; };";
+        for arguments in [
+            ".() { ordinary(1(Number), text) }, .() { keep(\"filled\") }",
+            ".() { keep(\"filled\") }, .() { ordinary(1(Number), text) }",
+        ] {
+            let main = format!(
+                "module main; import common(macro common2); import keep(macro keep); host type String role(str); host type Number role(i32); fn ordinary[Source](_number: Source, text: String) -> String {{ text }} fn run(text: String) -> String {{ let selected = common2({arguments}); selected() }}"
+            );
+            let package = lowered_package(&[
+                ("common.kio", COMMON_RESULT_FILLS),
+                ("keep.kio", helper),
+                ("main.kio", &main),
+            ]);
+            let (checked, scope) = check_retained_success(&package);
+            assert_eq!(scope.memo().user_macro_template_executions(), 2);
+            validate_substituted_package(checked.substituted())
+                .expect("the input is checked before the action after outer context arrives");
+        }
+    }
+
+    #[test]
+    fn inference_only_written_callback_context_reaches_retained_pair_literals() {
+        check_macro_src(
+            "module main; host type Number role(i32); host type List[A]; host fn empty[A]() -> A | .; fn fold[A][Acc](_xs: List(A), seed: Acc, _step: (Acc & A) -> Acc) -> Acc { seed } fn value[A](xs: List(A)) -> Number & (A | .) { let final = fold(xs, (0, empty(A)()), .(carry: Number & (A | .), x: A) -> Number & (A | .) { (0, widen_sum((), A | .)) }); final }",
+        )
+        .expect("a written callback result types its body and the sibling seed");
+    }
+
+    #[test]
+    fn inference_only_lambda_parameter_context_reaches_body() {
+        for (role, literal) in [
+            ("i32", "7"),
+            ("f64", "1.5"),
+            ("bool", ".t"),
+            ("str", "\"text\""),
+        ] {
+            for callback in [
+                format!(".(_next: Carrier -> Carrier) {{ {literal} }}"),
+                format!("identity(.(_next: Carrier -> Carrier) {{ {literal} }})"),
+            ] {
+                let source = format!(
+                    "module main; host type Carrier role({role}); host type Other role({role}); fn identity[A](value: A) -> A {{ value }} fn choose[A](callback: (A -> A) -> A) -> A {{ callback(.(value: A) {{ value }}) }} fn value() {{ let selected = choose({callback}); () }}"
+                );
+                let package = lowered_control_package(&[("main.kio", &source)]);
+                let (checked, _) = check_retained_success(&package);
+                validate_substituted_package(checked.substituted())
+                    .expect("the written parameter supplies the scoped body context");
+            }
+        }
+        check_package_sources(&[
+            "module main; host type A role(i32); fn choose[B](callback: (B -> B) -> B) -> B { callback(.(value: B) { value }) } fn value[A](known: A) -> A { choose(.(_next: A -> A) { known }) }",
+        ])
+        .expect("the body context preserves an enclosing rigid binder");
+        for (source, diagnostic) in [
+            (
+                "module main; host type A role(i32); fn choose[B](callback: (B -> B) -> B) -> B { callback(.(value: B) { value }) } fn value[A]() -> A { choose(.(_next: A -> A) { 7 }) }",
+                "role-bearing",
+            ),
+            (
+                "module main; host type Small role(i8); fn choose[A](callback: (A -> A) -> A) -> A { callback(.(value: A) { value }) } fn value() { let selected = choose(.(_next: Small -> Small) { 128 }); () }",
+                "range",
+            ),
+            (
+                "module main; host type Number role(i32); fn choose[A](callback: (A -> A) -> A) -> A { callback(.(value: A) { value }) } fn value() { let selected = choose(.(_next: Number -> Number) { \"wrong\" }); () }",
+                "string literal cannot have the expected type",
+            ),
+        ] {
+            let error = check_package_sources(&[source])
+                .expect_err("header context cannot bypass literal admission");
+            assert!(error.diag().1.contains(diagnostic), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn inference_only_label_construction_uses_ordinary_constructor_context() {
+        for (role, literal) in [
+            ("i32", "7"),
+            ("f64", "1.5"),
+            ("bool", ".t"),
+            ("str", "\"text\""),
+        ] {
+            for value in [
+                format!("{{box = .(_next: Carrier -> Carrier) {{ {literal} }} }}"),
+                format!("Box.mk(.(_next: Carrier -> Carrier) {{ {literal} }})"),
+            ] {
+                let source = format!(
+                    "module main; host type Carrier role({role}); host type Other role({role}); labels {{ box[A]: (A -> A) -> A }}; fn value() {{ let selected = {value}; () }}"
+                );
+                let package = lowered_control_package(&[("main.kio", &source)]);
+                let (checked, _) = check_retained_success(&package);
+                validate_substituted_package(checked.substituted())
+                    .expect("construction and its ordinary constructor share contextual inference");
+            }
+            for arguments in [
+                format!("{{item = {literal}}}, known"),
+                format!("known, {{item = {literal}}}"),
+            ] {
+                let source = format!(
+                    "module main; host type Carrier role({role}); labels {{ item[A]: A }}; fn common[A](left: A, _right: A) -> A {{ left }} fn value(known: Item(Carrier)) {{ let selected = common({arguments}); () }}"
+                );
+                check_package_sources(&[&source])
+                    .expect("a later sibling supplies the retained constructor's exact result");
+            }
+        }
+        for source in [
+            "module main; host type Scalar role(i32); host type String role(str); labels { number[A]: A, text[A]: A }; fn value() -> Text(String) & Number(Scalar) { {number = 7, text = \"text\"} }",
+            "module main; host type Number role(i32); host type Token; labels { pack[A] <U>: A & U }; fn value(token: Token) -> Pack(Number) { {pack = (7, token)} }",
+            "module main; host type Number role(i32); labels { poly[A]: [B] B -> A }; fn value() -> Poly(Number) { {poly = .[B](_value: B) { 7 }} }",
+        ] {
+            check_package_sources(&[source])
+                .expect("construction preserves order, existential and higher-rank public schemes");
+        }
+        for (source, diagnostic) in [
+            (
+                "module main; host type Small role(i8); labels { value[A]: A }; fn bad() -> Value(Small) { {value = 128} }",
+                "range",
+            ),
+            (
+                "module main; host type Number role(i32); labels { value[A]: A }; fn bad() -> Value(Number) { {value = \"wrong\"} }",
+                "string literal cannot have the expected type",
+            ),
+            (
+                "module main; host type A role(i32); labels { value[B]: B }; fn bad[A]() -> Value(A) { {value = 7} }",
+                "role-bearing",
+            ),
+        ] {
+            let error = check_package_sources(&[source])
+                .expect_err("constructor context retains literal admission checks");
+            assert!(error.diag().1.contains(diagnostic), "{error:?}");
+        }
+    }
+
+    #[cfg(feature = "prime")]
+    #[test]
+    fn label_construction_preserves_forwarded_identity_and_literal_admission() {
+        use crate::backends::kio_prime::emit_module;
+        use crate::pipeline::Pipeline;
+        use crate::prime::pipeline::PrimePipeline;
+
+        let sources = [
+            ("origin.kio", "module origin; pub labels { item[A]: A };"),
+            ("other.kio", "module other; pub labels { item[A]: A };"),
+            (
+                "relay.kio",
+                "module relay; import origin as o; pub type {entry} = {o.item};",
+            ),
+            (
+                "main.kio",
+                "module main; import origin as o; import other as d; import relay as r; host type Number role(i32); host type String role(str); fn value() -> d.Item(String) & o.Item(Number) { {r.entry = 7, d.item = \"other\"} }",
+            ),
+        ];
+        let parsed = sources
+            .iter()
+            .map(|(path, source)| (PathBuf::from(path), parse(source).expect("source module")))
+            .collect();
+        let (modules, _) = FullPipeline::lower_package(parsed, None)
+            .expect("lower the complete label environment");
+        let package = Package::build(Path::new(""), modules, None).expect("construction package");
+        package.resolve_imports().expect("resolve source imports");
+        let checked =
+            check_package(&package).expect("forwarded and same-leaf labels stay distinct");
+        let parsed = checked
+            .modules()
+            .map(|(path, module)| {
+                (
+                    PathBuf::from(format!("{path}.kio")),
+                    parse(&emit_module(module)).expect("emitted construction parses"),
+                )
+            })
+            .collect();
+        let (modules, _) =
+            PrimePipeline::lower_package(parsed, None).expect("construction is ordinary Prime");
+        let fresh =
+            Package::build(Path::new(""), modules, None).expect("fresh construction package");
+        fresh
+            .resolve_imports()
+            .expect("explicit generated imports resolve");
+        fresh
+            .check_binding_origins()
+            .expect("forwarded bindings retain origin");
+        fresh
+            .check_in_body_resolution()
+            .expect("fresh constructor calls resolve");
+        PrimePipeline::typecheck(&fresh).expect("fresh Prime preserves exact nominal identities");
+
+        for sources in [
+            vec![
+                "module origin; labels { item[A]: A };",
+                "module main; import origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7(Number)}; () }",
+            ],
+            vec![
+                "module scope/origin; pub(scope) labels { item[A]: A };",
+                "module outside; import scope/origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7(Number)}; () }",
+            ],
+        ] {
+            let error = check_package_sources(&sources)
+                .expect_err("construction cannot bypass label visibility");
+            let message = error.diag().1;
+            assert!(
+                message.contains("private") || message.contains("restricted"),
+                "{error:?}"
+            );
+        }
+        check_package_sources(&[
+            "module scope/origin; pub(scope) labels { item[A]: A };",
+            "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item(Number) { {o.item = 7} }",
+        ]).expect("ordinary scoped visibility admits the constructor in its subtree");
+
+        for source in [
+            "module main; host type Number role(i32); labels { pack<U>: U }; fn bad() -> Pack { {pack = 7} }",
+            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn bad() -> Item(Number) & Item(String) { {first = 7, second = \"second\"} }",
+        ] {
+            let error = check_package_sources(&[source])
+                .expect_err("no unique carrier follows from the result");
+            assert!(error.diag().1.contains("cannot determine"), "{error:?}");
+        }
+        check_package_sources(&[
+            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn value() -> Item(Number) & Item(String) { {first = 7(Number), second = \"second\"(String)} }",
+        ]).expect("explicit carriers keep repeated nominal heads admissible");
+        check_package_sources(&[
+            "module main; labels { box[A]: A }; fn value[Box](known: Box) { let selected = {box = known}; () }",
+        ]).expect("an enclosing binder cannot capture the resolved label constructor");
+    }
+
+    #[test]
+    fn label_construction_binds_payloads_before_expected_row_permutation() {
+        let package = lowered_package(&[(
+            "main.kio",
+            "module main; host type Number role(i32); host fn first_effect() -> Number; host fn second_effect() -> Number; labels { first[A]: A, second[A]: A }; fn value() -> Second(Number) & First(Number) { {first = first_effect(), second = second_effect()} }",
+        )]);
+        let (checked, _) = check_retained_success(&package);
+        let module = &checked.package().module("main").expect("module").module;
+        let function = module
+            .items
+            .iter()
+            .find_map(|item| match item {
+                Item::FnDef(function) if function.name == "value" => Some(function),
+                _ => None,
+            })
+            .expect("function");
+        let RecordedElaboration::Lowered(replacement) = checked
+            .elaborations()
+            .elaboration_for("main", &function.body)
+            .expect("construction replacement")
+        else {
+            panic!("construction records an ordinary lowered let/product")
+        };
+        let Expr::Let {
+            name: first,
+            value: first_value,
+            body,
+            ..
+        } = replacement
+        else {
+            panic!("first source is bound once")
+        };
+        let Expr::Let {
+            name: second,
+            value: second_value,
+            body,
+            ..
+        } = body.as_ref()
+        else {
+            panic!("second source is bound once")
+        };
+        for (value, constructor, effect) in [
+            (first_value, "First", "first_effect"),
+            (second_value, "Second", "second_effect"),
+        ] {
+            let Expr::Call { callee, args, .. } = value.as_ref() else {
+                panic!("ordinary constructor")
+            };
+            let Expr::Path { segments, .. } = callee.as_ref() else {
+                panic!("constructor path")
+            };
+            assert_eq!(segments[segments.len() - 2].as_str(), constructor);
+            let [CallArg::Value(Expr::Call { callee, args, .. })] = args.as_slice() else {
+                panic!("one payload call")
+            };
+            assert!(args.is_empty());
+            let Expr::Path { segments, .. } = callee.as_ref() else {
+                panic!("host effect path")
+            };
+            assert_eq!(segments.last().expect("effect").as_str(), effect);
+        }
+        let Expr::Call { callee, args, .. } = body.as_ref() else {
+            panic!("reordered product")
+        };
+        let Expr::Path { segments, .. } = callee.as_ref() else {
+            panic!("pair path")
+        };
+        assert_eq!(segments.last().expect("pair").as_str(), "__pair__");
+        let [
+            CallArg::Type(_),
+            CallArg::Type(_),
+            CallArg::Value(Expr::Path { segments: left, .. }),
+            CallArg::Value(Expr::Path {
+                segments: right, ..
+            }),
+        ] = args.as_slice()
+        else {
+            panic!("product contains only bound references")
+        };
+        assert_eq!(left[0].as_str(), second);
+        assert_eq!(right[0].as_str(), first);
+        validate_substituted_package(checked.substituted())
+            .expect("the source-ordered permutation validates as Prime");
+    }
+
+    #[test]
+    fn inference_only_connected_callable_result_types_earlier_literals() {
+        check_package_sources(&[
+            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V); host fn insert_entry[K][V](build: Compare(K) -> Dict(K, V), key: K, val: V) -> Compare(K) -> Dict(K, V); fn value(compare: Compare(Number)) -> Dict(Number, Number) { insert_entry(insert_entry(empty_builder(), 1, 10), 2, 20)(compare) }",
+        ])
+        .expect("the connected monomorphic callable retains its public type equations");
+        check_package_sources(&[
+            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V); host fn insert_entry[K][V](build: Compare(K) -> Dict(K, V), key: K, val: V) -> Compare(K) -> Dict(K, V); fn value(compare: Compare(Number)) -> Dict(Number, Number) { let built = insert_entry(empty_builder(), 1, 10(Number))(compare); built }",
+        ])
+        .expect("the later ordinary argument supplies the earlier key's type");
+    }
+
+    #[test]
+    fn inference_only_computed_callable_uses_argument_context() {
+        for body in [
+            "let result = keep(1)(known); result",
+            "let result = keep(keep(3)(known))(known); result",
+            "keep(6)(7)",
+        ] {
+            let source = format!(
+                "module main; host type Number role(i32); fn keep[A](first: A) -> A -> A {{ .(_later: A) {{ first }} }} fn value(known: Number) -> Number {{ {body} }}"
+            );
+            let package = lowered_control_package(&[("main.kio", &source)]);
+            crate::pass::typecheck_core::apply::reset_paired_computed_work();
+            let (checked, _) = check_retained_success(&package);
+            let work = crate::pass::typecheck_core::apply::paired_computed_work();
+            let written_edges = if body.contains("keep(keep") { 2 } else { 1 };
+            assert!(
+                work.created > 0 && work.created <= written_edges,
+                "{body}: {work:?}"
+            );
+            assert_eq!(work.applications_completed, work.created, "{body}");
+            assert_eq!(work.callees_completed, work.created, "{body}");
+            validate_substituted_package(checked.substituted())
+                .expect("both retained derivations produce validated Prime");
+        }
+    }
+
+    #[test]
+    fn inference_only_computed_callable_preserves_literal_validation() {
+        for (expression, diagnostic) in [
+            ("keep(128)(1(Number))", "range"),
+            (
+                "keep(\"wrong\")(1(Number))",
+                "string literal cannot have the expected type",
+            ),
+            ("let result = keep(1)(2); ()", "cannot determine"),
+        ] {
+            let result = if expression.starts_with("let") {
+                "."
+            } else {
+                "Number"
+            };
+            let source = format!(
+                "module main; host type Number role(i8); fn keep[A](first: A) -> A -> A {{ .(_later: A) {{ first }} }} fn value() -> {result} {{ {expression} }}"
+            );
+            let error = check_package_sources(&[&source])
+                .expect_err("computed context does not admit an invalid or unconstrained scalar");
+            assert!(
+                error.diag().1.contains(diagnostic),
+                "{expression}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn inference_only_computed_callable_validates_macro_input_once() {
+        for (schedule, implementation) in [
+            (
+                "impl",
+                "pure fn identity_impl(ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }",
+            ),
+            (
+                "impl(fills)",
+                "pure fn identity_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }",
+            ),
+        ] {
+            let macros = format!(
+                "module macros; import __comptime__; {implementation} pub macro identity : [A] A -> A {{ {schedule} identity_impl; }};"
+            );
+            for (literal, diagnostic) in [
+                ("127", None),
+                ("128", Some("outside the range")),
+                (
+                    "\"bad\"",
+                    Some("string literal cannot have the expected type"),
+                ),
+            ] {
+                let call = format!("identity({literal})");
+                let main = format!(
+                    "module main; import macros(macro identity); host type Number role(i8); fn keep[A](first: A) -> A -> A {{ .(_later: A) {{ first }} }} fn run(known: Number) -> Number {{ let result = keep({call})(known); result }}"
+                );
+                let package = lowered_package(&[("macros.kio", &macros), ("main.kio", &main)]);
+                let original = retained_call_at(&package, "main", source_span(&main, &call));
+                if let Some(message) = diagnostic {
+                    let (elaborations, scope, errors) =
+                        check_retained_module_error(&package, "main");
+                    assert_eq!(errors.len(), 1);
+                    assert!(
+                        errors[0].diag().1.contains(message),
+                        "{schedule} {literal}: {:?}",
+                        errors[0]
+                    );
+                    assert_eq!(errors[0].diag().0, source_span(&main, literal));
+                    assert_eq!(scope.memo().user_macro_template_executions(), 0);
+                    assert_retained_call_unpublished(&elaborations, "main", &original);
+                } else {
+                    let (checked, scope) = check_retained_success(&package);
+                    assert_eq!(scope.memo().user_macro_template_executions(), 1);
+                    assert_retained_call_published(checked.elaborations(), "main", &original);
+                    validate_substituted_package(checked.substituted())
+                        .expect("paired macro input yields Prime");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inference_only_conditional_literal_uses_either_known_arm() {
+        for arms in ["\"\" } else { separator", "separator } else { \"\""] {
+            check_package_sources(&[&format!("module main; import control(Bool, macro if); host type String role(str); fn choose(flag: Bool, separator: String) -> String {{ let lead = if(flag) {{ {arms} }}; lead }}")])
+                .expect("a known sibling determines the common conditional result");
+        }
+    }
+
+    #[test]
+    fn inferred_boolean_specialization_uses_the_selected_condition() {
+        for expression in [
+            "__if_then_else__(flag, .() { known }, .() { known })",
+            "__if_then_else__(Flag, String, flag, .() { known }, .() { known })",
+            "__if_then_else__(Flag, String)(flag, .() { known }, .() { known })",
+            "__if_then_else__(_, String)(flag, .() { known }, .() { known })",
+            "__if_then_else__(Flag)(String, flag, .() { known }, .() { known })",
+            "let choose = __if_then_else__(Flag); choose(String, flag, .() { known }, .() { known })",
+            "let .(choose: [A] (Flag & (. -> A) & (. -> A)) -> A) = __if_then_else__; choose(String, flag, .() { known }, .() { known })",
+        ] {
+            let source = format!(
+                "module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); host type String role(str); fn run(flag: Flag, known: String) -> String {{ {expression} }}"
+            );
+            check_package_sources(&[&source])
+                .unwrap_or_else(|error| panic!("{expression}: {error:?}"));
+        }
+    }
+
+    #[test]
+    fn inferred_boolean_specialization_preserves_exact_alias_and_result_identity() {
+        for carrier in ["Flag", "Alias(.)", "Other"] {
+            check_package_sources(&[&format!("module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); type Alias[A] = Flag; fn run[A](flag: {carrier}, value: A) -> A {{ __if_then_else__({carrier}, A, flag, .() {{ value }}, .() {{ value }}) }}")])
+                .expect("only the selected exact Boolean carrier matters; result binders remain ordinary");
+        }
+    }
+
+    #[test]
+    fn inferred_boolean_specialization_preserves_ordinary_type_only_values() {
+        check_package_sources(&[
+            "module main; fn value[A] { () } fn run() -> . { let saved = value; saved(.) }",
+        ])
+        .expect("an ordinary type-only value has no intrinsic specialization obligation");
+        for callee in ["ordinary", "__if_then_else__"] {
+            let source = format!(
+                "module main; import __intrinsics__; host type Flag role(bool); fn ordinary[A](condition: Flag, yes: . -> A, _no: . -> A) -> A {{ yes() }} fn value() -> (Flag & (. -> .) & (. -> .)) -> . {{ {callee} }}"
+            );
+            check_package_sources(&[&source])
+                .expect_err("a polymorphic path does not implicitly instantiate its result binder");
+        }
+    }
+
+    #[test]
+    fn inferred_boolean_specialization_rejects_unknown_or_wrong_carriers() {
+        for declaration in [
+            "fn run() -> . { let choose = __if_then_else__; () }",
+            "fn run() -> . { let _ = __if_then_else__; () }",
+            "fn run() -> . { let pair = (__if_then_else__, ()); () }",
+            "fn identity[A](value: A) -> A { value } fn run() -> . { let choose = identity(__if_then_else__); () }",
+            "fn run() -> . { let choose = __if_then_else__(String); () }",
+            "fn run[B]() -> . { let choose = __if_then_else__(B); () }",
+            "fn run[B](flag: B) -> . { __if_then_else__(flag, .() { () }, .() { () }) }",
+            "fn run() -> [B] [A] (B & (. -> A) & (. -> A)) -> A { __if_then_else__ }",
+        ] {
+            let source = format!(
+                "module main; import __intrinsics__; host type String role(str); {declaration}"
+            );
+            let error = check_package_sources(&[&source]).expect_err(declaration);
+            assert!(matches!(error, Error::Type(_)), "{declaration}: {error:?}");
+            assert!(
+                error.diag().1.contains("Boolean") || error.diag().1.contains("role(bool)"),
+                "{declaration}: {error:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostic_text_literals_use_checked_context_or_imported_annotations() {
+        for declaration in ["", "type Message = __Diagnostic_text__;"] {
+            let annotation = if declaration.is_empty() {
+                "__Diagnostic_text__"
+            } else {
+                "Message"
+            };
+            check_package_sources(&[&format!("module main; import __comptime__; {declaration} pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ let text = \"message\"({annotation}); text }}")])
+                .expect("explicit diagnostic text keeps its existing compiler type");
+        }
+        check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\" }"])
+            .expect("checked diagnostic context admits a string literal");
+        let error = check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"(Comptime_str) }"])
+            .expect_err("a diagnostic result cannot retarget a string literal");
+        assert!(error.diag().1.contains("type mismatch"), "{error:?}");
+        check_package_sources(&[
+            "module main; fn message() -> . { let text = \"message\"(__Diagnostic_text__); () }",
+        ])
+        .expect_err("a reserved spelling does not import the diagnostic type");
+        for literal in ["\"message\"(Message)", "\"message\""] {
+            check_package_sources(&[
+                "module provider; import __comptime__; pub type Message = __Diagnostic_text__; pure fn consume_impl(ct: __Comptime__, _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } pub macro consume : Message -> . { impl consume_impl; };",
+                &format!("module main; import provider(Message, macro consume); fn message() -> . {{ consume({literal}) }}"),
+            ]).expect("the provider's imported diagnostic identity is consumed before runtime");
+        }
+        for literal in [
+            "17(__Diagnostic_text__)",
+            ".t(__Diagnostic_text__)",
+            "1.5(__Diagnostic_text__)",
+        ] {
+            let source = format!(
+                "module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ {literal} }}"
+            );
+            let error =
+                check_package_sources(&[&source]).expect_err("diagnostic text admits only strings");
+            assert!(
+                error.diag().1.contains("not a role-bearing host type"),
+                "{error:?}"
+            );
+        }
+        let error = check_package_sources(&["module main; import __comptime__; host type String role(str); pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"(String) }"])
+            .expect_err("a diagnostic expectation cannot override an explicit ordinary carrier");
+        assert!(error.diag().1.contains("type mismatch"), "{error:?}");
+    }
+
+    #[test]
+    fn unanchored_literal_annotation_fixes_preserve_binder_identity() {
         fn checked(sources: &[&str]) -> Result<(), Error> {
             let parsed = sources
                 .iter()
@@ -11913,7 +12234,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             check_package(&package).map(|_| ()).map_err(|e| e.error)
         }
         let shadowed = "module main; host type Int role(i64); fn value[Int](x: Int) -> Int { let number = 42; x }";
-        let error = checked(&[shadowed]).expect_err("missing integer default");
+        let error = checked(&[shadowed]).expect_err("an independent literal needs an annotation");
         assert!(
             error
                 .diagnostic()
@@ -11922,11 +12243,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .all(|fix| !fix.title.starts_with("Annotate this literal"))
         );
         assert!(
-            error
-                .diagnostic()
-                .fixes()
-                .iter()
-                .any(|fix| fix.title == "Use Int as the default integer type in this module")
+            error.diagnostic().fixes().is_empty(),
+            "a shadowed unqualified carrier is not an actionable annotation"
         );
         let provider = "module provider; pub host type Int role(i64);";
         let other = "module other; pub host type Int role(i64);";
@@ -11934,7 +12252,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             let source = format!(
                 "module main; import provider(Int); import provider as numbers; import other as provider; fn value[Int](x: Int) -> Int {{ let number = {literal}; x }}"
             );
-            let error = checked(&[provider, other, &source]).expect_err("missing integer default");
+            let error = checked(&[provider, other, &source])
+                .expect_err("an independent literal needs an annotation");
             let fix = error
                 .diagnostic()
                 .fixes()
@@ -11956,34 +12275,37 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn explicit_defaults_resolve_applied_aliases_without_binder_capture() {
-        check_package_sources(&["module main; host type Int role(i64); type Ignore[A] = Int; default type Selected = Ignore(.); default type Again = Ignore(.); fn value[Selected](x: Selected) -> Int { let n = 42; n }"]).expect("equivalent applied aliases select one terminal host identity");
-        check_package_sources(&["module main; import __intrinsics__; default host type Flag role(bool); fn choose[Flag](x: Flag) -> Flag { __if_then_else__(Flag, .t, .() { x }, .() { x }) }"]).expect("the intrinsic Boolean slot is not the source binder");
+    fn explicit_literals_resolve_applied_aliases_without_binder_capture() {
+        check_package_sources(&["module main; host type Int role(i64); type Ignore[A] = Int; type Selected = Ignore(.); type Again = Ignore(.); fn value[Selected](x: Selected) -> Int { let n = 42(Again); n }"]).expect("equivalent applied aliases select one terminal host identity");
+        check_package_sources(&["module main; import __intrinsics__; host type Flag role(bool); type Concrete = Flag; fn choose[Flag](x: Flag) -> Flag { __if_then_else__(Concrete, Flag, .t, .() { x }, .() { x }) }"]).expect("the intrinsic Boolean slot is not the source binder");
     }
 
     #[test]
-    fn explicit_defaults_keep_comptime_types_distinct_from_source_binders() {
-        let error = check_package_sources(&["module main; import __comptime__; fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }"]).expect_err("the fixed default is not an arbitrary type binder");
+    fn explicit_comptime_types_stay_distinct_from_source_binders() {
+        let error = check_package_sources(&["module main; import __comptime__; fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }"]).expect_err("a concrete literal cannot inhabit an arbitrary type binder");
         assert!(
-            !error.diag().1.contains("default boolean type"),
+            error
+                .diag()
+                .1
+                .contains("requires an admitting role-bearing host type"),
             "{error:?}"
         );
-        check_package_sources(&["module main; import __comptime__; fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t; x }"]).expect("fixed default remains available under the source binder spelling");
+        check_package_sources(&["module main; import __comptime__; type Flag = Comptime_bool; fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x }"]).expect("an explicit alias retains its owner under a same-spelled source binder");
     }
 
     #[test]
-    fn imported_builtin_defaults_retain_owner_identity_and_erase_without_capture() {
+    fn imported_builtin_literal_annotations_retain_owner_identity_and_erase_without_capture() {
         let provider = "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity(Comptime_bool);";
-        let keep = "module main; import provider(default Flag); fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t; x }";
+        let keep = "module main; import provider(Flag); fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x }";
         check_package_sources(&[provider, keep])
             .expect("imported builtin aliases preserve their owner identity");
-        let wrong = "module main; import provider(default Flag); fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }";
+        let wrong = "module main; import provider(Flag); fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }";
         check_package_sources(&[provider, wrong])
             .expect_err("alias expansion cannot capture a consumer binder");
-        let expected = "module main; import provider(Flag); fn expected() -> Flag { .t } fn explicit() -> Flag { .t(Flag) }";
+        let expected = "module main; import provider(Flag); fn expected() -> Flag { .t(Flag) } fn explicit() -> Flag { .t(Flag) }";
         check_package_sources(&[provider, expected])
-            .expect("known imported builtin aliases need no default");
-        let colliding = "module main; import provider(default Flag); host type Comptime_bool[A]; pure fn value() -> Flag { let flag = .t; flag } equiv selected_boolean() { value(); .t(Flag) }";
+            .expect("explicit imported builtin aliases need no default");
+        let colliding = "module main; import provider(Flag); host type Comptime_bool[A]; pure fn value() -> Flag { let flag = .t(Flag); flag } equiv selected_boolean() { value(); .t(Flag) }";
         check_package_sources(&[provider, colliding])
             .expect("a canonical builtin keeps its kind under a same-leaf nominal declaration");
     }
@@ -11993,12 +12315,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let types = "module types; pub host type Bool role(bool);";
         let other = "module other; pub host type Bool role(bool);";
         for body in [
-            "__if_then_else__(., condition, .() { () }, .() { () })",
-            "let choose = __if_then_else__(.); choose(condition, .() { () }, .() { () })",
-            "if (condition) { () } else { () }",
+            "__if_then_else__(Bool, ., condition, .() { () }, .() { () })",
+            "let choose = __if_then_else__(Bool, .); choose(condition, .() { () }, .() { () })",
         ] {
             let consumer = format!(
-                "module main; import __intrinsics__; import control(macro if); import other as types; import types as real; default type Bool = real.Bool; fn choose(condition: Bool) -> . {{ {body} }}"
+                "module main; import __intrinsics__; import control(macro if); import other as types; import types as real; type Bool = real.Bool; fn choose(condition: Bool) -> . {{ {body} }}"
             );
             check_package_sources(&[types, other, &consumer])
                 .expect("selected nominal identity cannot be recaptured by an import alias");
@@ -12007,7 +12328,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[cfg(feature = "prime")]
     #[test]
-    fn imported_default_aliases_preserve_evaluation_and_reparse_after_runtime_erasure() {
+    fn imported_literal_aliases_preserve_evaluation_and_reparse_after_runtime_erasure() {
         use crate::backends::kio_prime::emit_module;
         use crate::pipeline::Pipeline;
         use crate::prime::pipeline::PrimePipeline;
@@ -12026,7 +12347,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 ("provider.kio", provider),
                 (
                     "main.kio",
-                    "module main; import provider(default Flag); pure fn value() -> Flag { let flag = .t; flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t; x } equiv selected_boolean() { value(); .t(Flag) }",
+                    "module main; import provider(Flag); pure fn value() -> Flag { let flag = .t(Flag); flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x } equiv selected_boolean() { value(); .t(Flag) }",
                 ),
             ]);
             let completed = check_package_preserving_normalization(&package)
@@ -12035,7 +12356,6 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .expect("validate runtime erasure");
             let runtime = completed.runtime();
             let emitted = emit_module(runtime.module("main").expect("runtime consumer"));
-            assert_eq!(emitted.contains("default Flag"), !erases, "{emitted}");
             assert_eq!(emitted.contains(".t("), !erases, "{emitted}");
             let reparsed = runtime
                 .modules()
@@ -12092,32 +12412,33 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn explicit_defaults_are_source_ordered_and_conflicts_are_eager() {
-        let before =
-            "module main; fn earlier() -> . { let n = 42; () } default host type Int role(i64);";
-        assert!(
-            check_package_sources(&[before])
-                .expect_err("later selections are not active")
-                .diag()
-                .1
-                .contains("default integer type")
-        );
-        let unused =
-            "module main; default host type Int role(i64); default host type Narrow role(i32);";
-        assert!(
-            check_package_sources(&[unused])
-                .expect_err("unused conflict is rejected")
-                .diag()
-                .1
-                .contains("conflicting default integer types")
-        );
+    fn visible_role_declarations_do_not_choose_literal_carriers() {
+        for declarations in [
+            "host type Int role(i64); host type Narrow role(i32);",
+            "host type Narrow role(i32); host type Int role(i64);",
+        ] {
+            check_package_sources(&[&format!(
+                "module main; {declarations} fn value() -> Int {{ 42 }}"
+            )])
+            .expect("the local expected type selects its exact carrier");
+            let error = check_package_sources(&[&format!(
+                "module main; {declarations} fn value() {{ let n = 42; () }}"
+            )])
+            .expect_err("visible candidates supply no inference authority");
+            assert!(
+                error
+                    .diag()
+                    .1
+                    .contains("cannot determine the type of this integer literal")
+            );
+        }
     }
 
     #[test]
     fn literal_admission_respects_shadowing_type_binders() {
         for body in ["42", "42(Int)"] {
             let source = format!(
-                "module main; default host type Int role(i64); fn wrong[Int]() -> Int {{ {body} }}"
+                "module main; host type Int role(i64); fn wrong[Int]() -> Int {{ {body} }}"
             );
             check_package_sources(&[&source])
                 .expect_err("a rigid type binder does not inherit a same-named host role");
@@ -12126,24 +12447,29 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn numeric_literal_categories_do_not_depend_on_argument_order() {
-        let prefix = "module main; default host type Int role(i64); default host type Float role(f64); fn same[A](left: A, right: A) -> A { left } ";
+        let prefix = "module main; host type Int role(i64); host type Float role(f64); fn same[A](left: A, right: A) -> A { left } ";
         for args in ["42, 42.0", "42.0, 42"] {
             check_package_sources(&[&format!(
                 "{prefix}fn value() -> . {{ let n = same({args}); () }}"
             )])
             .expect_err("mixed categories do not share a literal type");
         }
-        for args in ["42, 43", "42.0, 43.0"] {
+        for (args, carrier) in [("42, 43", "Int"), ("42.0, 43.0", "Float")] {
             check_package_sources(&[&format!(
-                "{prefix}fn value() -> . {{ let n = same({args}); () }}"
+                "{prefix}fn value() -> . {{ let .(n: {carrier}) = same({args}); () }}"
             )])
             .expect("same-category inference");
         }
         let error = check_package_sources(&[
-            "module main; default host type Float role(f64); fn value() -> . { let n = 42; () }",
+            "module main; host type Float role(f64); fn value() -> . { let n = 42; () }",
         ])
         .expect_err("float selection does not imply integer intent");
-        assert!(error.diag().1.contains("default integer type"));
+        assert!(
+            error
+                .diag()
+                .1
+                .contains("cannot determine the type of this integer literal")
+        );
         assert!(error.diagnostic().fixes().is_empty());
     }
 
@@ -12200,11 +12526,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 for body in [
                     value.to_owned(),
                     format!("{value}(Alias(.))"),
-                    format!("let x = {value}; x"),
+                    format!("let .(x: Number) = {value}; x"),
                     format!("id({value})"),
                 ] {
                     let source = format!(
-                        "module main; default host type Number role({role}); host type Wider role(u128); type Alias[A] = Number; fn id[A](x: A) -> A {{ x }} fn value() -> Number {{ {body} }}"
+                        "module main; host type Number role({role}); host type Wider role(u128); type Alias[A] = Number; fn id[A](x: A) -> A {{ x }} fn value() -> Number {{ {body} }}"
                     );
                     let result = check_package_sources(&[&source]);
                     if succeeds {
@@ -12226,17 +12552,25 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn numeric_literal_aliases_are_untyped_until_expansion() {
         let prefix = "module main; host type Small role(i8); literal enormous = 340282366920938463463374607431768211456;";
         check_package_sources(&[prefix]).expect("unused literal aliases have no role");
-        let error =
-            check_package_sources(&[&format!("{prefix} fn value() -> Small {{ enormous }}")])
-                .expect_err("alias is checked at use");
+        let error = check_package_sources(&[&format!(
+            "{prefix} fn value() -> Small {{ enormous(Small) }}"
+        )])
+        .expect_err("alias is checked at use");
         assert!(error.diag().1.contains("outside the range"));
         assert!(
             !error.diagnostic().secondary().is_empty(),
             "alias definition remains diagnostic context"
         );
+        for declaration in ["", "host type Provider role(i64);"] {
+            let provider = format!("module provider; {declaration} pub literal amount = 42;");
+            let consumer = "module main; import provider(amount); host type Local role(i32); host type Other role(i64); fn selected() -> Local { amount } fn annotated() -> Other { amount(Other) }";
+            check_package_sources(&[&provider, consumer]).expect(
+                "literal aliases use the consumer's policy, independent of provider growth",
+            );
+        }
         for role in ["f32", "f64"] {
             let source = format!(
-                "module main; host type Number role({role}); fn value() -> Number {{ 1.0e9999 }}"
+                "module main; host type Number role({role}); fn value() -> Number {{ 1.0e9999(Number) }}"
             );
             assert!(
                 check_package_sources(&[&source])
@@ -12249,12 +12583,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn numeric_literal_range_uses_expected_role_before_default() {
+    fn numeric_literal_range_uses_expected_or_annotated_role() {
+        let declarations = "module main; host type Small role(i8); host type Wide role(i16);";
         for body in ["128", "128(Wide)"] {
-            check_package_sources(&[&format!("module main; default host type Small role(i8); host type Wide role(i16); fn value() -> Wide {{ {body} }}")]).expect("expected or explicit role wins over narrow default");
+            check_package_sources(&[&format!("{declarations} fn value() -> Wide {{ {body} }}")])
+                .expect("the expected or explicit wide carrier admits 128");
         }
-        let error = check_package_sources(&["module main; host type Small role(i8); default host type Wide role(i16); fn value() -> Small { 128 }"]).expect_err("wide default cannot rescue expected narrow overflow");
-        assert!(error.diag().1.contains("outside the range"));
+        for body in ["128", "128(Small)"] {
+            let error = check_package_sources(&[&format!(
+                "{declarations} fn value() -> Small {{ {body} }}"
+            )])
+            .expect_err("the narrow carrier rejects 128");
+            assert!(error.diag().1.contains("outside the range"));
+        }
     }
 
     #[test]
@@ -12286,22 +12627,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn integer_spelling_fixes_preserve_tokens_and_annotations() {
         for literal in ["-4_2", "42", "4_200"] {
-            for body in [literal.to_owned(), format!("{literal}(Float)")] {
-                let source = format!(
-                    "module main; host type Float role(f64); fn value() -> Float {{ {body} }}"
-                );
-                let error = check_package_sources(&[&source])
-                    .expect_err("integer syntax cannot have float type");
-                assert!(error.diag().1.contains("decimal point"), "{error:?}");
-                let edit = &error.diagnostic().fixes()[0].edits[0];
-                assert_eq!(edit.replacement, ".0");
-                assert_eq!(edit.span.start, edit.span.end);
-                let mut fixed = source.clone();
-                fixed.insert_str(edit.span.start as usize, &edit.replacement);
-                check_package_sources(&[&fixed])
-                    .unwrap_or_else(|error| panic!("{fixed}\n{error:?}"));
-                assert_eq!(fixed.replace(".0", ""), source);
-            }
+            let body = format!("{literal}(Float)");
+            let source =
+                format!("module main; host type Float role(f64); fn value() -> Float {{ {body} }}");
+            let error = check_package_sources(&[&source])
+                .expect_err("integer syntax cannot have float type");
+            assert!(error.diag().1.contains("decimal point"), "{error:?}");
+            let edit = &error.diagnostic().fixes()[0].edits[0];
+            assert_eq!(edit.replacement, ".0");
+            assert_eq!(edit.span.start, edit.span.end);
+            let mut fixed = source.clone();
+            fixed.insert_str(edit.span.start as usize, &edit.replacement);
+            check_package_sources(&[&fixed]).unwrap_or_else(|error| panic!("{fixed}\n{error:?}"));
+            assert_eq!(fixed.replace(".0", ""), source);
         }
     }
 
@@ -12739,8 +13077,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let provider = include_str!("../../../test-data/poc/macros/workdir/control.kio")
             .replace("module control;", "module alternate;")
             .replace("pub macro if :", "pub macro choose :");
-        let main = "module main; import alternate(macro choose); \
-                 host type Data; default host type Bool role(bool); \
+        let main = "module main; import alternate(Bool, macro choose); \
+                 host type Data; \
                  host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
                  rec(loop) fn search(outer: Bool, inner: Bool, value: Data | .) -> Data | . { \
                    choose (outer) { \
@@ -12762,8 +13100,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             ] {
                 let call = invoke.replace("ANNOTATION", annotation);
                 let main = format!(
-                    "module main; import control(macro if);
-                    default host type Bool role(bool);
+                    "module main; import control(Bool, macro if);
+
                     host fn loop[S][R](step: S -> (S | R), state: S) -> R;
                     host fn make[A]() -> A;
                     fn invoke(predicate: . -> Bool) -> Bool {{ predicate() }}
@@ -12781,8 +13119,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn ordinary_optional_rec_callback_checks_contextual_lambda_body_once() {
-        let main = "module main; import control(macro if);
-            default host type Bool role(bool);
+        let main = "module main; import control(Bool, macro if);
+
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(factory: . -> (Bool -> Bool), value: Bool) -> Bool { factory()(value) }
             rec(loop) fn repeat(go: Bool) -> Bool {
@@ -12809,8 +13147,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn ordinary_optional_rec_callback_keeps_return_annotation_errors() {
-        let message = err("module main; import control(macro if);
-            host type Bool role(bool);
+        let message = err("module main; import control(Bool, macro if);
+
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
@@ -12821,8 +13159,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn ordinary_optional_rec_callback_does_not_admit_recursive_closures() {
-        let error = check_package_sources(&["module main; import control(macro if);
-            host type Bool role(bool);
+        let error = check_package_sources(&["module main; import control(Bool, macro if);
+
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             fn invoke(predicate: . -> Bool) -> Bool { predicate() }
             rec(loop) fn repeat(go: Bool) -> Bool {
@@ -12921,7 +13259,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             } \
             pub macro select : [Condition][Result] Condition -> (. -> Result) -> Result -> Result { impl(fills) select_impl }";
         let main = "module main; import macros(macro select); \
-            default host type Bool role(bool); \
+            host type Bool role(bool); \
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(condition: Bool) -> . { \
@@ -13060,8 +13398,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn do_contract_cps_copies_keep_an_outer_continuation_under_its_owner() {
-        ok("module main; import control(macro if); import sequence(macro do);
-            default host type Bool role(bool);
+        ok("module main; import control(Bool, macro if); import sequence(macro do);
+
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             fn bind[A][B](input: A, next: A -> B) -> B { next(input) }
             rec(loop) {
@@ -14518,18 +14856,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     // ---- Deferred constructs surface clear errors ----------------------
 
     #[test]
-    fn literal_without_default_in_scope_errors() {
+    fn literal_without_an_admitting_expected_type_errors() {
         let msg = err("module x; fn f() -> . { \"hi\" }");
         assert!(
-            msg.contains("no type is selected as the default string type"),
+            msg.contains("requires an admitting role-bearing host type"),
             "got: {msg}"
         );
     }
 
     #[test]
     fn string_literal_typed_against_role_str() {
-        // With `role(str) String` in the host, a string
-        // literal types as String.
+        // The selected string carrier types each bare string literal.
         let m = module(
             "module main; \
              host type String role(str); \
@@ -14541,8 +14878,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn int_literal_typed_against_role_i32() {
-        // A bare integer literal resolves to the root host's unique
-        // int-admitted host type (tier 3).
+        // A bare integer literal uses the module's selected integer type.
         let m = module(
             "module main; \
              host type I32 role(i32); \
@@ -14555,7 +14891,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn literal_annotation_to_non_admitting_role_errors() {
         // A float literal explicitly annotated with an int-shaped
         // role: the literal's shape does not admit that role, so the
-        // tier-1 annotation check errors.
+        // explicit annotation check errors.
         let m = module(
             "module main; \
              host type I32 role(i32); \
@@ -14578,9 +14914,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         let m = module(
             "module main; \
              import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              fn pick(c: Bool) -> . { \
-               __if_then_else__(., c, .() { () }, .() { () }) \
+               __if_then_else__(Bool, ., c, .() { () }, .() { () }) \
              }",
         );
         check_module(&m).unwrap();
@@ -14630,8 +14966,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn surface_if_else_returns_common_arm_type() {
         control_ok(
-            "module main; import control(macro if); \
-             default host type Bool role(bool); host type I32 role(i32); \
+            "module main; import control(Bool, macro if); \
+              host type I32 role(i32); \
              fn pick(c: Bool, a: I32, b: I32) -> I32 { \
                if (c) { a } else { b } \
              }",
@@ -14641,8 +14977,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn surface_if_else_synthesis_is_branch_order_invariant() {
         control_ok(
-            "module main; import control(macro if); \
-            default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+             \
             host type I32; \
             host fn make[A]() -> A; \
             host fn concrete() -> I32; \
@@ -14660,8 +14996,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_early_expected_reaches_widening_arms_in_both_orders() {
         control_ok(
-            "module main; import control(macro if); \
-            default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+             \
             host type Left; \
             host type Right; \
             host fn left() -> Left; \
@@ -14682,8 +15018,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "if (condition) { state } else { state.!{second = replacement} }",
         ] {
             control_ok(&format!(
-                "module main; import control(macro if); \
-                 default host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -14698,8 +15034,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn conditional_late_expected_reaches_existing_widening_arm_cursors() {
         let package = lowered_control_package_result(&[(
             "main.kio",
-            "module main; import control(macro if); \
-             default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+              \
              host type Left; \
              host type Right; \
              host fn left() -> Left; \
@@ -14729,8 +15065,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "if (c) { right() } else { left() }",
         ] {
             let message = control_err(&format!(
-                "module main; import control(macro if); \
-                 host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  host type Left; \
                  host type Right; \
                  host fn left() -> Left; \
@@ -14745,8 +15081,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn uncontextual_conditional_preserves_a_complete_function_scheme() {
         let branches = "if (condition) { identity } else { identity }";
         let source = format!(
-            "module main; import control(macro if); \
-             default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+              \
              fn identity[A](value: A) -> A {{ value }} \
              fn select(condition: Bool) -> . {{ \
                let selected = {branches}; \
@@ -14776,8 +15112,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "if (condition) { identity_b } else { identity_a }",
         ] {
             let source = format!(
-                "module main; import control(macro if); \
-                 host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  fn identity_a[A](value: A) -> A {{ value }} \
                  fn identity_b[B](value: B) -> B {{ value }} \
                  fn mono[A](_function: A -> A, _value: A) -> . {{ () }} \
@@ -14793,8 +15129,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_function_scheme_is_instantiable_as_an_immediate_callee() {
-        let source = "module main; import control(macro if); \
-             default host type Bool role(bool); \
+        let source = "module main; import control(Bool, macro if); \
+              \
              fn identity[A](value: A) -> A { value } \
              fn apply[T](condition: Bool, value: T) -> T { \
                (if (condition) { identity } else { identity })(value) \
@@ -14807,8 +15143,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_accepts_a_whole_forall_context() {
-        let source = "module main; import control(macro if); \
-             default host type Bool role(bool); \
+        let source = "module main; import control(Bool, macro if); \
+              \
              fn identity_a[A](value: A) -> A { value } \
              fn identity_b[B](value: B) -> B { value } \
              fn accept(_function: [T] T -> T) -> . { () } \
@@ -14825,8 +15161,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn conditional_function_scheme_constrains_an_inferred_goal() {
         let branches = "if (condition) { identity_a } else { identity_b }";
         let source = format!(
-            "module main; import control(macro if); \
-             default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+              \
              fn identity_a[A](value: A) -> A {{ value }} \
              fn identity_b[B](value: B) -> B {{ value }} \
              fn identity_c[C](value: C) -> C {{ value }} \
@@ -14851,8 +15187,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn conditional_function_scheme_completes_before_a_late_equivalent_peer() {
-        let source = "module main; import control(macro if); \
-             default host type Bool role(bool); \
+        let source = "module main; import control(Bool, macro if); \
+              \
              fn identity_a[A](value: A) -> A { value } \
              fn identity_b[B](value: B) -> B { value } \
              fn identity_c[C](value: C) -> C { value } \
@@ -14884,8 +15220,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let source = format!(
-                "module main; import control(macro if); \
-                 default host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn accept(_function: [T] T -> T) -> . {{ () }} \
                  fn run(condition: Bool) -> . {{ accept({branches}) }}"
@@ -14921,8 +15257,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let source = format!(
-                "module main; import control(macro if); \
-                 host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -14961,9 +15297,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let main = format!(
-                "module main; import control(macro if); \
+                "module main; import control(Bool, macro if); \
                  import macros(macro finish); \
-                 host type Bool role(bool); \
+                  \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -15024,8 +15360,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let source = format!(
-                "module main; import control(macro if); \
-                 host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  host type First_payload; \
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
@@ -15060,9 +15396,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let main = format!(
-                "module main; import control(macro if); \
+                "module main; import control(Bool, macro if); \
                  import macros(macro finish); \
-                 default host type Bool role(bool); \
+                  \
                  host fn make[A]() -> A; \
                  fn ignore[A](_value: A) -> . {{ () }} \
                  fn run(condition: Bool) -> . {{ ignore({body}) }}"
@@ -15099,9 +15435,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ),
         ] {
             let main = format!(
-                "module main; import control(macro if); \
+                "module main; import control(Bool, macro if); \
                  import macros(macro finish, macro identity_target); \
-                 default host type Bool role(bool); \
+                  \
                  fn ignore[A](_value: A) -> . {{ () }} \
                  fn run(condition: Bool) -> . {{ ignore({body}) }}"
             );
@@ -15124,8 +15460,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn surface_if_else_rejects_an_underdetermined_common_result() {
         let package = lowered_control_package_result(&[(
             "main.kio",
-            "module main; import control(macro if); \
-            host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+             \
             host fn make[A]() -> A; \
             fn pick(c: Bool) -> . { \
               let _result = if (c) { make() } else { make() }; \
@@ -15146,8 +15482,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "if (first) { make() } else if (second) { make() } else { concrete() }",
         ] {
             control_ok(&format!(
-                "module main; import control(macro if); \
-                 default host type Bool role(bool); \
+                "module main; import control(Bool, macro if); \
+                  \
                  host type I32; \
                  host fn make[A]() -> A; \
                  host fn concrete() -> I32; \
@@ -15162,8 +15498,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_result_uses_a_later_connected_sibling() {
         control_ok(
-            "module main; import control(macro if); \
-            default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+             \
             host type I32; \
             host fn make[A]() -> A; \
             host fn witness() -> I32; \
@@ -15177,8 +15513,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn conditional_result_does_not_read_through_a_later_let_body() {
         let message = control_err(
-            "module main; import control(macro if); \
-            host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
+             \
             host type I32; \
             host fn make[A]() -> A; \
             host fn witness() -> I32; \
@@ -15194,7 +15530,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn if_intrinsic_repeated_result_is_argument_order_invariant() {
         ok("module main; \
             import __intrinsics__; \
-            default host type Bool role(bool); \
+            host type Bool role(bool); \
             host type I32; \
             host fn make[A]() -> A; \
             host fn concrete() -> I32; \
@@ -15477,6 +15813,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             ("main.kio", main),
         ]);
         crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
+        crate::pass::typecheck_core::apply::reset_context_wakes();
         let (checked, scope) = check_retained_success(&package);
 
         assert_eq!(
@@ -15510,12 +15847,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "each accepted producer must close physically exactly once: {work:?}"
         );
         assert_eq!(
-            work.producer_request_visits, 18,
-            "the bounded two-wave cohort must retain its exact producer request count: {work:?}"
+            crate::pass::typecheck_core::apply::context_wakes(),
+            2,
+            "the two newly concrete producer expectations each wake once: {work:?}"
         );
-        assert_eq!(
-            work.producer_advance_visits, 13,
-            "completed producers must skip exactly five re-advances across those requests: {work:?}"
+        assert!(
+            work.producer_request_visits <= 18,
+            "context wakes must stay within the existing two-wave request bound: {work:?}"
+        );
+        assert!(
+            work.producer_advance_visits <= 13,
+            "completed producers must stay within the existing advancement bound: {work:?}"
         );
         assert_eq!(
             work.relation_wave_scan_visits, 6,
@@ -15640,9 +15982,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn fills_common_result_in_a_later_conditional_branch_closes_an_earlier_peer() {
         check_package_sources(&[
             COMMON_RESULT_FILLS,
-            "module main; import control(macro if); \
+            "module main; import control(Bool, macro if); \
              import common(macro common2); \
-             default host type Bool role(bool); \
+              \
              host type Output; \
              host fn make[A]() -> A; \
              host fn concrete() -> Output; \
@@ -15795,7 +16137,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; }; \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\") \
+                __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -15810,7 +16152,7 @@ fn generic_last() -> . {
               pub type Rep_payload = Rep; \
             } \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\") \
+                __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -16428,6 +16770,83 @@ fn generic_last() -> . {
     }
 
     #[test]
+    fn inference_only_validates_ignored_macro_literals_before_execution() {
+        let macros = "module macros; import __comptime__; \
+            pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) \
+              -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) } \
+            pub macro ignore : [A] A -> . { impl(fills) ignore_impl; };";
+        for (literal, diagnostic) in [
+            ("128", Some("outside the range")),
+            ("\"bad\"(Number)", Some("string literal cannot be typed")),
+            ("127", None),
+        ] {
+            for argument in [literal.to_owned(), format!("identity({literal})")] {
+                let call = format!("ignore(Number, {argument})");
+                let main = format!(
+                    "module main; import macros(macro ignore); host type Number role(i8); fn identity[A](value: A) -> A {{ value }} fn run() -> . {{ {call} }}"
+                );
+                let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+                let original = retained_call_at(&package, "main", source_span(&main, &call));
+                if let Some(message) = diagnostic {
+                    let (elaborations, scope, errors) =
+                        check_retained_module_error(&package, "main");
+                    assert_eq!(errors.len(), 1);
+                    let error = errors[0].diagnostic();
+                    assert!(error.message.contains(message), "{error:?}");
+                    let literal_span = source_span(&main, literal);
+                    assert!(
+                        error.span.start >= literal_span.start
+                            && error.span.end <= literal_span.end
+                    );
+                    assert_eq!(scope.memo().user_macro_template_executions(), 0);
+                    assert_retained_call_unpublished(&elaborations, "main", &original);
+                } else {
+                    let (checked, scope) = check_retained_success(&package);
+                    assert_eq!(scope.memo().user_macro_template_executions(), 1);
+                    assert_retained_call_published(checked.elaborations(), "main", &original);
+                    validate_substituted_package(checked.substituted())
+                        .expect("validated scalar can be ignored by the macro");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn inference_only_unanchored_macro_input_rejects_before_action() {
+        let macros = "module macros; import __comptime__; pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) } pub macro ignore : [A] A -> . { impl(fills) ignore_impl; };";
+        for argument in ["1", "identity(1)", "discard(1)", "discard(identity(1))"] {
+            let call = format!("ignore({argument})");
+            let main = format!(
+                "module main; import macros(macro ignore); fn identity[A](value: A) -> A {{ value }} fn discard[A](_value: A) -> . {{ () }} fn run() -> . {{ {call} }}"
+            );
+            let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+            let original = retained_call_at(&package, "main", source_span(&main, &call));
+            let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
+            assert_eq!(errors.len(), 1);
+            assert!(
+                matches!(&errors[0], Error::Type { .. }),
+                "{argument}: {:?}",
+                errors[0]
+            );
+            assert!(
+                errors[0]
+                    .diag()
+                    .1
+                    .contains("cannot determine the type of this integer literal"),
+                "{argument}: {:?}",
+                errors[0]
+            );
+            assert_eq!(errors[0].diag().0, source_span(&main, "1"), "{argument}");
+            assert_eq!(
+                scope.memo().user_macro_template_executions(),
+                0,
+                "{argument}"
+            );
+            assert_retained_call_unpublished(&elaborations, "main", &original);
+        }
+    }
+
+    #[test]
     fn fills_sparse_private_value_abi_forces_every_unrequested_source_once() {
         let source = "module main; \
             import __comptime__; \
@@ -16581,12 +17000,12 @@ fn generic_last() -> . {
                       ) \
                     }, \
                     .(_failed: Specialize_tail) -> (__Checked_term__ & __Fill_ctx__) { \
-                      (__macro_error__(ct, \"specialization failed\"), fills) \
+                      (__macro_error__(ct, \"specialization failed\"(__Diagnostic_text__)), fills) \
                     } \
                   ) \
                 }, \
                 .() -> (__Checked_term__ & __Fill_ctx__) { \
-                  (__macro_error__(ct, \"expected forall\"), fills) \
+                  (__macro_error__(ct, \"expected forall\"(__Diagnostic_text__)), fills) \
                 } \
               ) \
             } \
@@ -17182,7 +17601,7 @@ fn generic_last() -> . {
                      import label_dep(Slot); import label_shadow as label_dep; \
                      import shadow as dep; import other as types; \
                      pure fn local_impl(ct: __Comptime__, _source: __Type__) -> __Checked_term__ { \
-                         __macro_error__(ct, \"not evaluated\") \
+                         __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
                        } \
                      macro local : [A] . -> A { impl local_impl; };",
                 ),
@@ -17448,7 +17867,7 @@ fn generic_last() -> . {
              import __comptime__; \
              import pkg/helper as h; \
              pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__, _target: __Type__ | .) -> __Checked_term__ { \
-                 __macro_error__(ct, \"not evaluated\") \
+                 __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
                } \
              pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
         );
@@ -17938,7 +18357,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  pure fn package_content_probe_impl( \
                    ct: __Comptime__, _source: __Type__, _value: __Checked_term__ \
-                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\") }} \
+                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\"(__Diagnostic_text__)) }} \
                  pub macro package_content_probe : [Source] Source -> Source {{ \
                    impl package_content_probe_impl; \
                  }};"
@@ -18659,7 +19078,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn if_then_else_without_default_bool_errors() {
+    fn if_then_else_rejects_a_non_boolean_specialization() {
         let m = module(
             "module pkg/main; \
              import __intrinsics__; \
@@ -18671,7 +19090,7 @@ fn generic_last() -> . {
         match res {
             Err(Error::Type(Diagnostic { message, .. })) => {
                 assert!(
-                    message.contains("no type is selected as the default boolean type"),
+                    message.contains("role(bool)") || message.contains("type mismatch"),
                     "got: {message}"
                 );
             }
@@ -19067,7 +19486,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn duplicate_exact_roles_without_defaults_remain_available_for_annotations() {
+    fn duplicate_exact_roles_remain_available_for_annotations() {
         let m = module(
             "module main; \
              host type First role(bool); host type Second role(bool); \
@@ -19078,37 +19497,34 @@ fn generic_last() -> . {
 
         let env = ModuleEnv::build(&m, None, None, None).expect("env");
         assert_eq!(
-            env.resolve_exact_role(Role::Bool),
-            crate::pass::typecheck_core::RoleResolution::Missing
+            env.annotation_candidates
+                .iter()
+                .filter(|candidate| candidate.role == Role::Bool)
+                .count(),
+            2
         );
-        assert!(!env.roles_in_scope.contains_key(&Role::Bool));
     }
 
     #[test]
-    fn if_else_rejects_conflicting_bool_defaults_in_both_declaration_orders() {
+    fn if_else_accepts_unrelated_bool_roles_in_both_declaration_orders() {
         for declarations in [
-            "default host type First role(bool); default host type Second role(bool);",
-            "default host type Second role(bool); default host type First role(bool);",
+            "host type First role(bool); host type Second role(bool);",
+            "host type Second role(bool); host type First role(bool);",
         ] {
             let source = format!(
-                "module main; import control(macro if); {declarations} \
-                 fn pick(c: First) -> First {{ if(c) {{ .t(First) }} else {{ .f(First) }} }}"
+                "module main; import control(Bool, macro if); {declarations} \
+                 fn pick(c: Bool) -> First {{ if(c) {{ .t(First) }} else {{ .f(First) }} }}"
             );
-            let msg = err(&source);
-            assert!(
-                msg.contains("conflicting default boolean types")
-                    && msg.contains("`First`")
-                    && msg.contains("`Second`"),
-                "got: {msg}"
-            );
+            check_package_sources(&[&source])
+                .expect("unrelated role declarations do not choose the condition carrier");
         }
     }
 
     #[test]
     fn if_else_ignores_bool_role_declared_later() {
-        ok("module main; import control(macro if); \
-             default host type First role(bool); \
-             fn pick(c: First) -> First { if (c) { .t(First) } else { .f(First) } } \
+        ok("module main; import control(Bool, macro if); \
+             host type First role(bool); \
+             fn pick(c: Bool) -> First { if (c) { .t(First) } else { .f(First) } } \
              host type Later role(bool);");
     }
 
@@ -19117,27 +19533,27 @@ fn generic_last() -> . {
         check_package_sources(&[
             "module first; host type Bool role(bool);",
             "module second; host type Bool role(bool);",
-            "module consumer; import control(macro if); \
+            "module consumer; import control(Bool, macro if); \
              import __intrinsics__; \
              import first as first; \
              import second as second; \
-             default type First = first.Bool; \
-             fn pick(c: First) -> First { if (c) { .t(First) } else { .f(First) } } \
+             type First = first.Bool; \
+             fn pick(c: Bool) -> First { if (c) { .t(First) } else { .f(First) } } \
              type Later = second.Bool;",
         ])
-        .expect("an ordinary later alias does not change the selected default");
+        .expect("an ordinary later alias does not change the known condition type");
     }
 
     #[test]
-    fn default_source_order_preserves_imported_selection() {
+    fn imported_boolean_identity_is_independent_of_later_roles() {
         check_package_sources(&[
-            "module provider; pub host type Bool role(bool);",
+            "module provider; import control(Bool); pub type Truth = Bool;",
             "module consumer; import control(macro if); \
-             import provider(default Bool); \
+             import provider(Truth as Bool); \
              fn pick(c: Bool) -> Bool { if (c) { .t(Bool) } else { .f(Bool) } } \
              host type Later role(bool);",
         ])
-        .expect("an imported default remains selected before a later local declaration");
+        .expect("an imported Boolean identity remains stable after a later local declaration");
     }
 
     #[test]
@@ -19208,16 +19624,16 @@ fn generic_last() -> . {
     #[test]
     fn role_source_order_ignores_later_host_for_bare_literal() {
         ok("module main; \
-            default host type First role(bool); \
-            fn value() -> . { let value = .t; () } \
+            host type First role(bool); \
+            fn value() -> . { let value = .t(First); () } \
             host type Later role(bool);");
     }
 
     #[test]
     fn role_source_order_ignores_later_host_in_equiv() {
-        ok("module main; import control(macro if); \
-            default host type First role(bool); \
-            equiv choose(c: First) { \
+        ok("module main; import control(Bool, macro if); \
+            host type First role(bool); \
+            equiv choose(c: Bool) { \
               if (c) { .t(First) } else { .f(First) }; \
               if (c) { .t(First) } else { .f(First) } \
             } \
@@ -19226,10 +19642,10 @@ fn generic_last() -> . {
 
     #[test]
     fn role_source_order_ignores_later_host_in_macro_implementation() {
-        ok("module main; import control(macro if); \
+        ok("module main; import __intrinsics__; \
             import __comptime__; \
             pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                if (.t(Comptime_bool)) { __term_unit__(ct) } else { __term_unit__(ct) } \
+                __if_then_else__(Comptime_bool, __Checked_term__, .t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
               } \
             macro choose : . -> . { impl choose_impl; }; \
             host type Later role(bool);");
@@ -19238,10 +19654,10 @@ fn generic_last() -> . {
     #[test]
     fn role_source_order_uses_definition_site_for_imported_macro_recheck() {
         check_package_sources(&[
-            "module provider; import control(macro if); \
+            "module provider; import __intrinsics__; \
              import __comptime__; \
              pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                 if (.t(Comptime_bool)) { __term_unit__(ct) } else { __term_unit__(ct) } \
+                 __if_then_else__(Comptime_bool, __Checked_term__, .t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
                } \
              pub macro choose : . -> . { impl choose_impl; }; \
              host type Later role(bool);",
@@ -19253,10 +19669,10 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn direct_if_intrinsic_rejects_conflicting_bool_defaults_in_both_declaration_orders() {
+    fn direct_if_intrinsic_accepts_unrelated_bool_roles_in_both_declaration_orders() {
         for declarations in [
-            "default host type First role(bool); default host type Second role(bool);",
-            "default host type Second role(bool); default host type First role(bool);",
+            "host type First role(bool); host type Second role(bool);",
+            "host type Second role(bool); host type First role(bool);",
         ] {
             let source = format!(
                 "module main; import __intrinsics__; {declarations} \
@@ -19264,31 +19680,26 @@ fn generic_last() -> . {
                    __if_then_else__(First, c, .() {{ .t(First) }}, .() {{ .f(First) }}) \
                  }}"
             );
-            let msg = err(&source);
-            assert!(
-                msg.contains("conflicting default boolean types")
-                    && msg.contains("`First`")
-                    && msg.contains("`Second`"),
-                "got: {msg}"
-            );
+            check_package_sources(&[&source])
+                .expect("unrelated role declarations do not choose the condition carrier");
         }
     }
 
     #[test]
-    fn surface_if_else_without_default_bool_errors() {
+    fn surface_if_else_rejects_a_non_boolean_condition() {
         let message = err(
             "module main; import control(macro if); fn pick() -> . { if () { () } else { () } }",
         );
         assert!(
-            message.contains("no type is selected as the default boolean type"),
+            message.contains("role(bool)") || message.contains("type mismatch"),
             "got: {message}"
         );
     }
 
     #[test]
-    fn if_intrinsic_selected_default_uses_ordinary_call_shapes() {
+    fn if_intrinsic_checked_prefix_uses_ordinary_call_shapes() {
         ok(
-            "module main; import __intrinsics__; default host type Bool role(bool); \
+            "module main; import __intrinsics__; host type Bool role(bool); \
             fn direct(c: Bool) -> Bool { \
               __if_then_else__(Bool, c, .() { .t(Bool) }, .() { .f(Bool) }) \
             } \
@@ -19320,14 +19731,13 @@ fn generic_last() -> . {
 
     #[test]
     fn role_inheriting_bool_alias_drives_if_else() {
-        let host = "module pkg/host; \
-             host type Bool role(bool);";
+        let host = "module pkg/host; import control(Bool as Truth); pub type Bool = Truth;";
         let adapter = "module pkg/adapter; \
              import pkg/host as host; \
              pub type Bool = host.Bool;";
         let consumer = "module pkg/consumer; import control(macro if); \
              import pkg/adapter as adapter; \
-             default pub type Bool = adapter.Bool; \
+             pub type Bool = adapter.Bool; \
              fn pick(c: Bool) -> . { if (c) { () } else { () } }";
         let package = lowered_control_package(&[
             ("pkg/host.kio", host),
@@ -21932,46 +22342,46 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn immediate_lambda_expected_dependent_scalar_roles() {
+    fn immediate_lambda_selected_and_annotated_scalar_roles() {
         ok("module x; \
-            default host type I32 role(i32); \
-            fn unique() -> I32 { .(value) { value }(42) }");
+            host type I32 role(i32); \
+            fn unique() -> I32 { .(value) { value }(42(I32)) }");
 
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
             fn sibling_pin() -> I32 { \
-              .[A](first: A, second: A) { second }(_, 42(I32), 42) \
+              .[A](first: A, second: A) { second }(_, 42(I32), 42(I32)) \
             }");
 
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn explicit_type() -> I32 { .[A](value: A) { value }(I32, 42) }");
+            fn explicit_type() -> I32 { .[A](value: A) { value }(I32, 42(I32)) }");
 
         check_package_sources(&[
             "module provider; pub host type Other role(i32);",
             "module main; import provider as p; \
-             default host type I32 role(i32); \
-             fn qualified_does_not_perturb() -> I32 { .(value) { value }(42) }",
+             host type I32 role(i32); \
+             fn qualified_does_not_perturb() -> I32 { .(value) { value }(42(I32)) }",
         ])
-        .expect("a qualified role provider must not perturb the selected default");
+        .expect("a qualified role provider must not perturb the contextual carrier");
     }
 
     #[test]
-    fn immediate_lambda_expected_result_disambiguates_scalar_role() {
+    fn immediate_lambda_result_checks_annotated_scalar_role() {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](value: A) { value }(42) }");
+            fn run() -> I32 { .[A](value: A) { value }(42(I32)) }");
     }
 
     #[test]
-    fn immediate_lambda_param_hole_precedes_expected_result_scalar_role() {
+    fn immediate_lambda_param_hole_with_annotated_scalar_role() {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](seed, value: A) { value }((), 42) }");
+            fn run() -> I32 { .[A](seed, value: A) { value }((), 42(I32)) }");
     }
 
     #[test]
@@ -21979,7 +22389,7 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](first)(second)(value: A) { value }((), (), 42) }");
+            fn run() -> I32 { .[A](first)(second)(value: A) { value }((), (), 42(I32)) }");
 
         ok("module x; \
             host type I32 role(i32); \
@@ -21990,7 +22400,7 @@ fn generic_last() -> . {
             fn run() -> . { \
               accept(.[T](token, value: T) -> [A] A -> T { \
                 delayed(T, token) \
-              }((), 42)) \
+              }((), 42(I32))) \
             }");
 
         ok("module x; \
@@ -22001,7 +22411,7 @@ fn generic_last() -> . {
             fn run() -> . { \
               accept(.[T](token, value: T) -> [A] A -> T { \
                 delayed(T, token) \
-              }((), 42)) \
+              }((), 42(I32))) \
             }");
     }
 
@@ -22054,26 +22464,26 @@ fn generic_last() -> . {
         assert!(
             missing
                 .message
-                .contains("no type is selected as the default integer type"),
+                .contains("cannot determine the type of this integer literal"),
             "got: {missing:?}"
         );
-        for candidate in ["`I32`", "`Other`"] {
+        for candidate in ["I32", "Other"] {
             assert!(
                 missing
-                    .secondary()
+                    .fixes()
                     .iter()
-                    .any(|label| label.text.contains(candidate))
+                    .any(|fix| fix.title == format!("Annotate this literal with {candidate}"))
             );
         }
     }
 
     #[test]
-    fn polymorphic_call_expected_result_disambiguates_scalar_role() {
+    fn polymorphic_call_result_checks_annotated_scalar_role() {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
-            fn run() -> I32 { identity(42) }");
+            fn run() -> I32 { identity(42(I32)) }");
     }
 
     #[test]
@@ -22552,9 +22962,9 @@ fn generic_last() -> . {
 
     #[test]
     fn recursive_callee_synthesizes_before_arguments() {
-        let source = "module x; import control(macro if); \
-            default host type Bool role(bool); \
-            default host type I32 role(i32); \
+        let source = "module x; import control(Bool, macro if); \
+             \
+            host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             host fn condition() -> Bool; \
             fn identity(value: Bool) -> Bool { value } \
@@ -22570,8 +22980,8 @@ fn generic_last() -> . {
 
     #[test]
     fn recursive_branch_keeps_bare_parameter_bound() {
-        let source = "module x; import control(macro if); \
-            default host type Bool role(bool); \
+        let source = "module x; import control(Bool, macro if); \
+             \
             host type I32 role(i32); \
             host type String role(str); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
@@ -22764,18 +23174,14 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn int_literal_rejected_against_str_role_param() {
-        // `42` flowing into a `role(str)` host-type param: the literal's
-        // int shape does not admit the `str` role of the expected host
-        // type, so the tier-2 admission check must reject it.
+    fn integer_literal_rejects_string_context() {
         let msg = err("module main; \
+            host type I32 role(i32); \
             host type S role(str); \
             host fn f(x: S) -> .; \
             fn run() -> . { f(42) }");
         assert!(
-            msg.contains("cannot be typed")
-                || msg.contains("does not admit")
-                || msg.contains("no type"),
+            msg.contains("requires an admitting role-bearing host type"),
             "got: {msg}"
         );
     }
@@ -22783,8 +23189,7 @@ fn generic_last() -> . {
     #[test]
     fn int_literal_admitted_against_rehost_alias_role() {
         // A `type` alias of a role-bearing host type inherits its role;
-        // a bare `42` into a param of that alias type is admitted through
-        // the single-segment (bare-name) admission arm.
+        // the expected alias retains the underlying carrier identity.
         ok("module main; \
             host type I32 role(i32); \
             type Myint = I32; \
@@ -22806,10 +23211,10 @@ fn generic_last() -> . {
             (
                 "main.kio",
                 "module main; import provider as p; import dep as d; \
-                 fn direct_expected() -> p.Int { 42 } \
+                 fn direct_expected() -> p.Int { 42(p.Int) } \
                  fn direct_annotated() -> . { let value = 42(p.Int); () } \
                  fn take(value: d.Count) -> . { () } \
-                 fn alias_expected() -> . { take(42) } \
+                 fn alias_expected() -> . { take(42(d.Count)) } \
                  fn alias_annotated() -> . { let value = 42(d.Count); () }",
             ),
         ]);
@@ -23133,7 +23538,7 @@ fn generic_last() -> . {
              pub host type String role(str); \
              pub host type I32 role(i32);",
             "module x; \
-             import types(default String, default I32); \
+             import types(String, I32); \
              import __intrinsics__; \
              type Lens[S][A] = (S -> A) & ((A & S) -> S); \
              fn view[S][A](lens: Lens(S, A), value: S) -> A { \
@@ -23147,7 +23552,7 @@ fn generic_last() -> . {
                __pair__((A & B) -> A, (A & (A & B)) -> (A & B), get, put) \
              } \
              fn run() -> String { \
-               let viewed = view(fst_lens(), (\"one\", 2)); \
+               let viewed = view(fst_lens(), (\"one\"(String), 2(I32))); \
                viewed \
              }",
         ])
@@ -23180,7 +23585,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type Other role(i32); \
             fn keep[T](value: T) -> T { value } \
-            fn run() -> I32 { keep(.[A](value: A) { value }(42)) }");
+            fn run() -> I32 { keep(.[A](value: A) { value }(42(I32))) }");
     }
 
     #[test]
@@ -23189,7 +23594,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type Other role(i32); \
             fn same[T](_left: T, right: T) -> T { right } \
-            fn run() -> I32 { same(.[A](value: A) { value }(42), 43(I32)) }");
+            fn run() -> I32 { same(.[A](value: A) { value }(42(I32)), 43(I32)) }");
     }
 
     #[test]
@@ -23199,7 +23604,7 @@ fn generic_last() -> . {
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
             fn keep[T](value: T) -> T { value } \
-            fn run() -> I32 { keep(identity(42)) }");
+            fn run() -> I32 { keep(identity(42(I32))) }");
     }
 
     #[test]
@@ -23209,11 +23614,11 @@ fn generic_last() -> . {
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
             fn same[T](_left: T, right: T) -> T { right } \
-            fn run() -> I32 { same(identity(42), 43(I32)) }");
+            fn run() -> I32 { same(identity(42(I32)), 43(I32)) }");
     }
 
     #[test]
-    fn deferred_nested_scalar_prefers_qualified_expected_role_over_unique_local_role() {
+    fn nested_scalar_annotation_preserves_qualified_role() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23221,13 +23626,13 @@ fn generic_last() -> . {
              host type Local role(i32); \
              fn identity[A](value: A) -> A { value } \
              fn keep[T](value: T) -> T { value } \
-             fn run() -> r.Remote { keep(identity(42)) }",
+             fn run() -> r.Remote { keep(identity(42(r.Remote))) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_scalar_prefers_later_explicit_role_over_unique_local_role() {
+    fn nested_scalar_annotations_agree_across_generic_siblings() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23236,13 +23641,13 @@ fn generic_last() -> . {
              fn identity[A](value: A) -> A { value } \
              fn same[T](_left: T, right: T) -> T { right } \
              fn discard[T](_value: T) -> . { () } \
-             fn run() -> . { discard(same(identity(42), identity(43(r.Remote)))) }",
+             fn run() -> . { discard(same(identity(42(r.Remote)), identity(43(r.Remote)))) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_scalar_prefers_later_partial_expected_role_over_unique_local_role() {
+    fn nested_scalar_annotation_constrains_partial_generic_sibling() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23251,7 +23656,7 @@ fn generic_last() -> . {
              fn identity[A](value: A) -> A { value } \
              host fn pair_same[A]() -> A & A; \
              fn constrain[T](_value: T, _pair: r.Remote & T) -> . { () } \
-             fn run() -> . { constrain(identity(42), pair_same()) }",
+             fn run() -> . { constrain(identity(42(r.Remote)), pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23267,14 +23672,14 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(from_fn(.(x: r.Remote) -> r.Remote { x }), identity(42)) \
+               constrain(from_fn(.(x: r.Remote) -> r.Remote { x }), identity(42(r.Remote))) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_scalar_gathers_later_annotated_lambda_before_tier3_fallback() {
+    fn nested_scalar_annotation_agrees_with_later_annotated_lambda() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23284,7 +23689,7 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(identity(42), from_fn(.(x: r.Remote) -> r.Remote { x })) \
+               constrain(identity(42(r.Remote)), from_fn(.(x: r.Remote) -> r.Remote { x })) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
@@ -23301,14 +23706,14 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(identity(42), from_fn(.(x: r.Remote) { x })) \
+               constrain(identity(42(r.Remote)), from_fn(.(x: r.Remote) { x })) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_expected_sources_precede_tier3_in_one_forward_pass() {
+    fn nested_expected_sources_agree_with_annotated_scalar() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23317,13 +23722,13 @@ fn generic_last() -> . {
              host fn pair_same[A]() -> A & A; \
              fn identity[A](value: A) -> A { value } \
              fn outer[X][Y](_seed: r.Remote & X, _early: Y, _late: X & Y) -> . { () } \
-             fn run() -> . { outer(pair_same(), identity(42), pair_same()) }",
+             fn run() -> . { outer(pair_same(), identity(42(r.Remote)), pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_expected_source_precedes_direct_literal_tier3() {
+    fn nested_expected_source_agrees_with_direct_annotated_literal() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23331,13 +23736,13 @@ fn generic_last() -> . {
              host type Local role(i32); \
              host fn pair_same[A]() -> A & A; \
              fn outer[T](_early: T, _late: r.Remote & T) -> . { () } \
-             fn run() -> . { outer(42, pair_same()) }",
+             fn run() -> . { outer(42(r.Remote), pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_immediate_lambda_expected_source_precedes_literal_tier3() {
+    fn nested_immediate_lambda_expected_source_agrees_with_annotated_literal() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23345,14 +23750,14 @@ fn generic_last() -> . {
              host type Local role(i32); \
              host fn pair_same[A]() -> A & A; \
              fn run() -> . { \
-               .[T](_seed, _early: T, _late: r.Remote & T) { () }((), 42, pair_same()) \
+               .[T](_seed, _early: T, _late: r.Remote & T) { () }((), 42(r.Remote), pair_same()) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_nested_lambda_expected_result_precedes_tier3() {
+    fn nested_lambda_expected_result_agrees_with_annotated_literal() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
@@ -23361,30 +23766,34 @@ fn generic_last() -> . {
              host fn pair_same[A]() -> A & A; \
              fn identity[A](value: A) -> A { value } \
              fn outer[T](_early: T, _late: . -> (r.Remote & T)) -> . { () } \
-             fn run() -> . { outer(identity(42), .() { pair_same() }) }",
+             fn run() -> . { outer(identity(42(r.Remote)), .() { pair_same() }) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_omitted_return_lambda_uses_later_expected_source_before_literal_fallback() {
+    fn omitted_return_lambda_annotated_literal_agrees_with_later_source() {
         check_package_sources(&[
             "module roles; pub host type Remote role(i32);",
             "module x; \
              import roles as r; \
              host type Local role(i32); \
              fn consume[T](_make: . -> T, _value: T) -> . { () } \
-             fn run() -> . { consume(.() { 42 }, 43(r.Remote)) }",
+             fn run() -> . { consume(.() { 42(r.Remote) }, 43(r.Remote)) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
 
     #[test]
-    fn deferred_omitted_return_lambda_uses_literal_fallback_when_no_expected_source_exists() {
-        ok("module x; \
-            default host type Local role(i32); \
+    fn omitted_return_lambda_without_a_result_anchor_requires_annotation() {
+        let message = err("module x; \
+            host type Local role(i32); \
             fn consume[T](_make: . -> T) -> . { () } \
             fn run() -> . { consume(.() { 42 }) }");
+        assert!(
+            message.contains("cannot determine the type of this integer literal"),
+            "{message}"
+        );
     }
 
     #[test]
@@ -23453,8 +23862,8 @@ fn generic_last() -> . {
 
     #[test]
     fn deferred_omitted_return_lambda_threads_expected_into_if_else_branches() {
-        ok("module x; import control(macro if); \
-            default host type Bool role(bool); \
+        ok("module x; import control(Bool, macro if); \
+             \
             host type Witness; \
             host fn condition() -> Bool; \
             host fn witness() -> Witness; \
@@ -23502,8 +23911,8 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn deferred_omitted_return_lambda_does_not_stage_open_lowered_field_elaboration() {
-        let message = package_type_err(&["module x; \
+    fn deferred_omitted_return_lambda_shares_constructor_result_context() {
+        ok("module x; \
             host type Witness; \
             labels { value[A]: A }; \
             host fn witness() -> Witness; \
@@ -23511,10 +23920,32 @@ fn generic_last() -> . {
             fn consume[T](_make: . -> T, _value: T) -> . { () } \
             fn run() -> . { \
               consume(.() { {value = make()} }, {value = witness()}) \
+            }");
+        ok("module x; \
+            host type Witness; \
+            labels { value[A]: A }; \
+            host fn witness() -> Witness; \
+            host fn make[A]() -> A; \
+            fn consume[T](_make: . -> T, _value: T) -> . { () } \
+            fn run() -> . { \
+              consume(.() { Value.mk(make()) }, Value.mk(witness())) \
+            }");
+    }
+
+    #[test]
+    fn deferred_omitted_return_lambda_does_not_stage_open_field_update() {
+        let message = package_type_err(&["module x; \
+            host type Witness; \
+            labels { value[A]: A }; \
+            host fn witness() -> Witness; \
+            host fn make[A]() -> A; \
+            fn consume[T](_make: . -> T, _value: T) -> . { () } \
+            fn run() -> . { \
+              consume(.() { ().!{value = make()} }, {value = witness()}) \
             }"]);
         assert!(
             message.contains("cannot infer"),
-            "the open field elaboration must remain concrete-only, got: {message}"
+            "an authored update retains its independent payload boundary, got: {message}"
         );
     }
 
@@ -23548,8 +23979,8 @@ fn generic_last() -> . {
 
     #[test]
     fn retained_if_else_rejects_incompatible_common_result() {
-        let message = err("module x; import control(macro if); \
-            host type Bool role(bool); \
+        let message = err("module x; import control(Bool, macro if); \
+             \
             host type Left; \
             host type Right; \
             host fn left() -> Left; \
@@ -23572,12 +24003,12 @@ fn generic_last() -> . {
     #[test]
     fn retained_nested_applications_keep_private_holes_independent() {
         ok("module x; \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn consume[K][V](_key: K, _pair: K & V) -> . { () } \
             fn run() -> . { \
-              consume(0, choose((1, \"left\"), (2, \"right\"))) \
+              consume(0(I32), choose((1, \"left\"(String)), (2, \"right\"))) \
             }");
     }
 
@@ -24172,10 +24603,10 @@ fn generic_last() -> . {
     fn retained_multi_goal_type_producing_macro_closes_and_evaluates_once() {
         let main = "module main; \
             import macros(macro infer_pair); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn run() -> I32 & String { \
-              let pair = infer_pair((0, \"closed\")); \
+              let pair = infer_pair((0(I32), \"closed\"(String))); \
               pair \
             }";
         let package =
@@ -24183,7 +24614,7 @@ fn generic_last() -> . {
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0, \"closed\"))"),
+            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -24425,17 +24856,17 @@ fn generic_last() -> . {
     #[test]
     fn optional_macro_abi_cannot_generalize_an_unsolved_public_call() {
         for (case, call, retained) in [
-            ("ordinary prefix", "ordinary(0, _)", false),
-            ("Required prefix", "required(0, _)", true),
-            ("Optional prefix", "optional(0, _)", true),
-            ("ordinary UFCS", "0.>ordinary(_)", false),
-            ("Required UFCS", "0.>required(_)", true),
-            ("Optional UFCS", "0.>optional(_)", true),
+            ("ordinary prefix", "ordinary(0(I32), _)", false),
+            ("Required prefix", "required(0(I32), _)", true),
+            ("Optional prefix", "optional(0(I32), _)", true),
+            ("ordinary UFCS", "0(I32).>ordinary(_)", false),
+            ("Required UFCS", "0(I32).>required(_)", true),
+            ("Optional UFCS", "0(I32).>optional(_)", true),
         ] {
             let main = format!(
                 "module main; \
                  import provider(ordinary, macro required, macro optional); \
-                 default host type I32 role(i32); \
+                 host type I32 role(i32); \
                  fn run() -> . {{ let _residual = {call}; () }}"
             );
             let package = lowered_package(&[
@@ -24467,17 +24898,17 @@ fn generic_last() -> . {
     #[test]
     fn macro_abi_waits_for_public_residual_constraints() {
         for (case, call, retained) in [
-            ("ordinary prefix", "ordinary(0, _)", false),
-            ("Required prefix", "required(0, _)", true),
-            ("Optional prefix", "optional(0, _)", true),
-            ("ordinary UFCS", "0.>ordinary(_)", false),
-            ("Required UFCS", "0.>required(_)", true),
-            ("Optional UFCS", "0.>optional(_)", true),
+            ("ordinary prefix", "ordinary(0(I32), _)", false),
+            ("Required prefix", "required(0(I32), _)", true),
+            ("Optional prefix", "optional(0(I32), _)", true),
+            ("ordinary UFCS", "0(I32).>ordinary(_)", false),
+            ("Required UFCS", "0(I32).>required(_)", true),
+            ("Optional UFCS", "0(I32).>optional(_)", true),
         ] {
             let main = format!(
                 "module main; \
                  import provider(ordinary, macro required, macro optional); \
-                 default host type I32 role(i32); \
+                 host type I32 role(i32); \
                  fn consume[T](_function: T -> T, _value: T) -> . {{ () }} \
                  fn run() -> . {{ consume({call}, ()) }}"
             );
@@ -25659,17 +26090,18 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro inspect); \
             host type String role(str); \
+            host fn make[A]() -> A; \
             labels { identity: [A] A -> A }; \
             type Surface = Identity; \
             fn run(surface: Surface) -> . { \
-              inspect(surface.?{identity}(\"value\")) \
+              inspect(surface.?{identity}(make())) \
             }";
-        let source = "surface.?{identity}(\"value\")";
+        let source = "surface.?{identity}(make())";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "inspect(surface.?{identity}(\"value\"))"),
+            source_span(main, "inspect(surface.?{identity}(make()))"),
         );
         let field =
             retained_field_access_at(&package, "main", source_span(main, "surface.?{identity}"));
@@ -25934,14 +26366,14 @@ fn generic_last() -> . {
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
             import macros(macro mixed_pair); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
-            fn run() -> I32 & String { mixed_pair((0, \"closed\"), I32, _) }";
+            host type I32 role(i32); \
+            host type String role(str); \
+            fn run() -> I32 & String { mixed_pair((0(I32), \"closed\"(String)), I32, _) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0, \"closed\"), I32, _)"),
+            source_span(main, "mixed_pair((0(I32), \"closed\"(String)), I32, _)"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -25972,17 +26404,17 @@ fn generic_last() -> . {
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
             import macros(macro mixed_pair); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair((0, \"closed\"), _, _); \
+              let _pair = mixed_pair((0(I32), \"closed\"(String)), _, _); \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0, \"closed\"), _, _)"),
+            source_span(main, "mixed_pair((0(I32), \"closed\"(String)), _, _)"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26013,17 +26445,17 @@ fn generic_last() -> . {
             pub macro mixed_pair : [Source] Source -> [A] [B] A & B { impl mixed_pair_impl; };";
         let main = "module main; \
             import macros(macro mixed_pair); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair((0, \"closed\")); \
+              let _pair = mixed_pair((0(I32), \"closed\"(String))); \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0, \"closed\"))"),
+            source_span(main, "mixed_pair((0(I32), \"closed\"(String)))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26054,10 +26486,10 @@ fn generic_last() -> . {
             pub macro shadow : [A] A -> [A] A { impl shadow_impl; };";
         let main = "module main; \
             import macros(macro shadow); \
-            default host type I32 role(i32); \
-            fn run() -> . { shadow(0) }";
+            host type I32 role(i32); \
+            fn run() -> . { shadow(0(I32)) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "shadow(0)"));
+        let original = retained_call_at(&package, "main", source_span(main, "shadow(0(I32))"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26421,7 +26853,11 @@ fn generic_last() -> . {
                     matches!(event, Event::Work(Phase::SelectLinkedHeaders, _)).then_some(index)
                 })
                 .collect();
-            assert_eq!(selections.len(), 1, "{events:?}");
+            assert_eq!(
+                selections.len(),
+                2,
+                "each linked source is preflighted once: {events:?}"
+            );
             let selected = selections[0];
             assert!(
                 events[..selected]
@@ -26539,12 +26975,12 @@ fn generic_last() -> . {
             "(value, identity(value))",
             "(value, (identity(value), value))",
             "(identity(identity(value)), value)",
-            "(identity(\"value\"), value)",
-            "(value, (\"value\".>identity, ()))",
+            "(identity(\"value\"(String)), value)",
+            "(value, (\"value\"(String).>identity, ()))",
         ] {
             let call = format!("observe({source})");
             let main = format!(
-                "module main; import macros(macro observe); default host type String role(str); \
+                "module main; import macros(macro observe); host type String role(str); \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn run[T](value: T) -> . {{ {call} }}"
             );
@@ -28038,16 +28474,16 @@ fn generic_last() -> . {
             pub macro wrong_shape : [Source] Source -> [A] I32 & A { impl wrong_shape_impl; };";
         let main = "module main; \
             import macros(I32, macro wrong_shape); \
-            default host type String role(str); \
+            host type String role(str); \
             fn run() -> . { \
-              let _wrong = wrong_shape(\"not a product\"); \
+              let _wrong = wrong_shape(\"not a product\"(String)); \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "wrong_shape(\"not a product\")"),
+            source_span(main, "wrong_shape(\"not a product\"(String))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -28065,16 +28501,16 @@ fn generic_last() -> . {
     fn retained_type_producing_macro_solves_a_partial_contextual_result() {
         let main = "module main; \
             import macros(macro infer_pair); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             host fn take[H](pair: I32 & H) -> H; \
-            fn run() -> String { take(infer_pair((0, \"closed\"))) }";
+            fn run() -> String { take(infer_pair((0(I32), \"closed\"(String)))) }";
         let package =
             lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0, \"closed\"))"),
+            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -28164,9 +28600,9 @@ fn generic_last() -> . {
     #[test]
     fn failed_later_sibling_rolls_back_macro_actions_without_evaluation() {
         let cases = [
-            ("ordinary", "infer_pair((0, \"closed\"))"),
-            ("receiver_first", "(0, \"closed\").>infer_pair"),
-            ("receiver_last", "(0, \"closed\").>>infer_pair"),
+            ("ordinary", "infer_pair((0(I32), \"closed\"(String)))"),
+            ("receiver_first", "(0(I32), \"closed\"(String)).>infer_pair"),
+            ("receiver_last", "(0(I32), \"closed\"(String)).>>infer_pair"),
         ];
         let mut premature_evaluations = Vec::new();
 
@@ -28175,8 +28611,8 @@ fn generic_last() -> . {
             let main = format!(
                 "module main; \
                  import macros(macro infer_pair); \
-                 default host type I32 role(i32); \
-                 default host type String role(str); \
+                 host type I32 role(i32); \
+                 host type String role(str); \
                  host fn good_i32() -> I32; \
                  host fn bad() -> String; \
                  fn consume[T](_value: T, _must_i32: I32) -> . {{ () }} \
@@ -28254,17 +28690,17 @@ fn generic_last() -> . {
             pub macro require_type : [Required] . -> . { impl require_type_impl; };";
         let main = "module main; \
             import macros(macro infer_pair, macro require_type); \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn consume[T](_first: T, _second: .) -> . { () } \
             fn run() -> . { \
-              consume(infer_pair((0, \"closed\")), require_type()) \
+              consume(infer_pair((0(I32), \"closed\"(String))), require_type()) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let first = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0, \"closed\"))"),
+            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
         );
         let second = retained_call_at(&package, "main", source_span(main, "require_type()"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
@@ -28478,80 +28914,80 @@ fn generic_last() -> . {
     #[test]
     fn deferred_nested_application_infers_polytype_for_outer_binder() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             fn identity[A](value: A) -> A { value } \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn consume[T](_value: T) -> . { () } \
-            fn run() -> . { consume(make_poly(identity(42))) }");
+            fn run() -> . { consume(make_poly(identity(42(Local)))) }");
     }
 
     #[test]
     fn deferred_nested_application_infers_aliased_polytype_for_outer_binder() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             pub type Poly = [B] B -> Local; \
             fn identity[A](value: A) -> A { value } \
             host fn make_poly[A](value: A) -> Poly; \
             fn consume[T](_value: T) -> . { () } \
-            fn run() -> . { consume(make_poly(identity(42))) }");
+            fn run() -> . { consume(make_poly(identity(42(Local)))) }");
     }
 
     #[test]
     fn deferred_returned_forall_waits_for_a_later_monomorphic_constraint() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn consume[T](_left: T, _right: T) -> . { () } \
             fn run() -> . { \
-              consume(make_poly(42), .(_value: Local) { 42 }) \
+              consume(make_poly(42(Local)), .(_value: Local) { 42(Local) }) \
             }");
     }
 
     #[test]
     fn deferred_nested_application_infers_its_own_binder_as_polytype() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity(make_poly(42))) }");
+            fn run() -> . { consume(identity(make_poly(42(Local)))) }");
     }
 
     #[test]
     fn deferred_nested_application_infers_its_own_binder_as_polytype_alias() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             pub type Poly = [B] B -> Local; \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: Poly) -> . { () } \
-            fn run() -> . { consume(identity(make_poly(42))) }");
+            fn run() -> . { consume(identity(make_poly(42(Local)))) }");
     }
 
     #[test]
     fn deferred_nested_application_allows_explicit_polytype_argument() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity([B] B -> Local, make_poly(42))) }");
+            fn run() -> . { consume(identity([B] B -> Local, make_poly(42(Local)))) }");
     }
 
     #[test]
     fn deferred_nested_application_infers_placeholder_as_polytype() {
         ok("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity(_, make_poly(42))) }");
+            fn run() -> . { consume(identity(_, make_poly(42(Local)))) }");
     }
 
     #[test]
     fn deferred_nested_literal_mismatch_hides_internal_hole_names() {
         let msg = err("module x; \
-            default host type Local role(i32); \
+            host type Local role(i32); \
             host type Witness; \
             fn consume[T](_value: T & Witness) -> . { () } \
             fn run() -> . { consume(42) }");
@@ -28583,11 +29019,11 @@ fn generic_last() -> . {
             "module x; \
              import roles as r; \
              host type A; \
-             default host type Local role(i32); \
+             host type Local role(i32); \
              host fn mirrored[X][Y]() -> (X & Y) & Y; \
              fn identity[A](value: A) -> A { value } \
              fn outer[T](_early: T, _late: [A] A -> ((A & r.Remote) & T)) -> . { () } \
-             fn run() -> . { outer(identity(42), .[A](value: A) { mirrored() }) }",
+             fn run() -> . { outer(identity(42(r.Remote)), .[A](value: A) { mirrored() }) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -28595,10 +29031,10 @@ fn generic_last() -> . {
     #[test]
     fn deferred_nested_application_does_not_capture_outer_composite_binder() {
         ok("module x; \
-            default host type I32 role(i32); \
+            host type I32 role(i32); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[K][V](_key: K, _pair: K & V) -> . { () } \
-            fn run() -> . { take(0, choose((1, 1), (2, 2))) }");
+            fn run() -> . { take(0(I32), choose((1, 1(I32)), (2, 2))) }");
     }
 
     #[test]
@@ -28615,39 +29051,39 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            default host type String role(str); \
+            host type String role(str); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[V](_pair: I32 & V) -> . { () } \
-            fn run() -> . { take(choose((1, \"a\"), (2, \"b\"))) }");
+            fn run() -> . { take(choose((1, \"a\"(String)), (2, \"b\"))) }");
     }
 
     #[test]
     fn deferred_nested_application_distinguishes_unresolved_same_named_binders() {
         ok("module x; \
-            default host type I32 role(i32); \
+            host type I32 role(i32); \
             fn build[P][Q](p: P, q: Q) -> P & Q { (p, q) } \
             fn take[A][B](_b: B, _pair: B & A) -> . { () } \
-            fn run[A](x: A) -> . { take(x, build(x, 1)) }");
+            fn run[A](x: A) -> . { take(x, build(x, 1(I32))) }");
     }
 
     #[test]
     fn deferred_nested_application_defers_outer_hkt_head() {
         ok("module x; \
-            default host type I32 role(i32); \
+            host type I32 role(i32); \
             newtype Box[T] : T { pub constructor mk_box; pub projector un_box; }; \
             fn identity_app[*F][A](value: F(A)) -> F(A) { value } \
             fn take[*G][V](_value: V, _wrapped: G(V)) -> . { () } \
-            fn run() -> . { take(1, identity_app(Box.mk_box(2))) }");
+            fn run() -> . { take(1(I32), identity_app(Box.mk_box(2))) }");
     }
 
     #[test]
     fn deferred_nested_application_checks_fixed_leaf_after_hole_completion() {
         let msg = err("module x; \
-            default host type I32 role(i32); \
-            default host type String role(str); \
+            host type I32 role(i32); \
+            host type String role(str); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[V](_pair: I32 & V) -> . { () } \
-            fn run() -> . { take(choose((\"a\", \"b\"), (\"c\", \"d\"))) }");
+            fn run() -> . { take(choose((\"a\"(String), \"b\"(String)), (\"c\", \"d\"))) }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
     }
 
@@ -28663,10 +29099,10 @@ fn generic_last() -> . {
     #[test]
     fn deferred_nested_application_diagnostics_hide_internal_hole_names() {
         let msg = package_type_err(&["module x; \
-            default host type I32 role(i32); \
+            host type I32 role(i32); \
             fn choose[T](left: T, _right: T) -> T { left } \
             fn take[A][B](_b: B, _pair: B & A) -> . { () } \
-            fn run[A](x: A) -> . { take(x, choose((1, 1), (2, 2))) }"]);
+            fn run[A](x: A) -> . { take(x, choose((1(I32), 1(I32)), (2, 2))) }"]);
         assert!(msg.contains("type mismatch"), "got: {msg}");
         assert!(
             msg.contains('A'),

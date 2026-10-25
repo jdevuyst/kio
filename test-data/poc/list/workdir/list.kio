@@ -14,15 +14,15 @@ import core(
 , tail
 , uncons
 );
-import macros/control(macro if);
+import macros/control(Bool as Control_bool, macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 
-default host type Bool role(bool);
+pub type Bool = Control_bool;
 
-default host type I32 role(i32);
+host type I32 role(i32);
 
-default host type String role(str);
+host type String role(str);
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 

@@ -5,7 +5,7 @@ import earley/chart as chart;
 import earley/model as model;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/iter(loop);

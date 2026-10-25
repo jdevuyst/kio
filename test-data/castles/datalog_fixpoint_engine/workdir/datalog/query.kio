@@ -12,7 +12,7 @@ import datalog/subst as subst;
 import datalog/unify as unify;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 

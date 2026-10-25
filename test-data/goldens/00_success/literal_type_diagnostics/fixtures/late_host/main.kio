@@ -1,0 +1,5 @@
+module main;
+
+fn earlier() { let n = 42; () }
+
+host type Int role(i64);

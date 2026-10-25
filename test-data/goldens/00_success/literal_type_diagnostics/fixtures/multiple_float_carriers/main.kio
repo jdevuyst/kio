@@ -1,0 +1,9 @@
+module main;
+
+host type Float role(f64);
+
+host type Narrow role(f32);
+
+fn wide() -> Float { 42.0 }
+
+fn narrow() -> Narrow { 42.0 }

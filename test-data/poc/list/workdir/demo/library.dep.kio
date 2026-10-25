@@ -6,3 +6,4 @@ source {
 
 rehost library/list to list_host;
 rehost library/macros/testapi to testapi;
+rehost library/macros/control to list_host;

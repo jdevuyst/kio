@@ -1799,7 +1799,7 @@ fn lsp_record_block_positions(
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
 fn lsp_record_callable_declaration_positions(
-    parsed: &package_collection::ParsedPackageCollection,
+    _parsed: &package_collection::ParsedPackageCollection,
     callable_declarations: &BTreeMap<PackageKey, crate::pass::full::LspSourceDeclarations>,
     lowered: &PackageCollection<crate::ast::Lowered>,
     position_index: &mut crate::pass::typecheck_full::PositionIndex,
@@ -1810,9 +1810,8 @@ fn lsp_record_callable_declaration_positions(
         ResolvedBuiltinKind, ResolvedCallableTarget, ResolvedCallableTypeHead,
     };
     use crate::pass::typecheck_core::{
-        InternedType, ModuleEnv, comptime_scheme, intrinsic_scheme_resolved,
-        newtype_member_scheme_in_module, nominal_segments_in_module, synth_env_fn_def_in_module,
-        synth_top_fn_def_in_module,
+        InternedType, comptime_scheme, intrinsic_scheme, newtype_member_scheme_in_module,
+        nominal_segments_in_module, synth_env_fn_def_in_module, synth_top_fn_def_in_module,
     };
     use crate::pass::typecheck_full::ResolvedBinder;
 
@@ -1837,43 +1836,11 @@ fn lsp_record_callable_declaration_positions(
         if facts.is_empty() {
             continue;
         }
-        let parsed_package = parsed
-            .packages
-            .get(package_key)
-            .expect("callable facts belong to a parsed LSP package");
         let lowered_package = &lowered
             .packages
             .get(package_key)
             .expect("every parsed package has a lowered LSP package")
             .package;
-        let package_name = parsed_package
-            .package_file
-            .as_ref()
-            .map(|entry| entry.package_name.as_str());
-        let builtin_source_modules = facts
-            .iter()
-            .filter_map(|fact| {
-                matches!(fact.target, ResolvedCallableTarget::Builtin { .. })
-                    .then_some(fact.source_module.as_str())
-            })
-            .collect::<BTreeSet<_>>();
-        let mut builtin_envs_by_module = HashMap::new();
-        for source_module in builtin_source_modules {
-            let source_entry = lowered_package
-                .module(source_module)
-                .expect("resolved callable source remains in the lowered package");
-            let source_env = ModuleEnv::build(
-                &source_entry.module,
-                lowered_package
-                    .package_file()
-                    .map(|entry| &entry.package_file),
-                package_name,
-                Some(lowered_package),
-            )
-            .expect("a successfully typed LSP module retains its lexical environment");
-            builtin_envs_by_module.insert(source_module.to_owned(), source_env);
-        }
-
         let needed_module_targets = facts
             .iter()
             .filter_map(|fact| {
@@ -1996,35 +1963,16 @@ fn lsp_record_callable_declaration_positions(
             match &fact.target {
                 ResolvedCallableTarget::Builtin { kind, name } => {
                     debug_assert_eq!(source_segments.len(), 1);
-                    let source_env = builtin_envs_by_module
-                        .get(&fact.source_module)
-                        .expect("built an environment for every builtin callable source");
-                    // Surface-only declarations disappear before `ModuleEnv` is
-                    // built, so translate the retained source position into a
-                    // Lowered item cutoff rather than retaining an unstable index.
-                    let lowered_item_cutoff = source_env
-                        .module
-                        .items
-                        .partition_point(|item| item.span().start < fact.source_item_start);
                     let synth = match kind {
                         ResolvedBuiltinKind::Intrinsic => {
-                            let bool_role = source_env.resolve_exact_role_at(
-                                crate::ast::Role::Bool,
-                                Some(lowered_item_cutoff),
-                            );
-                            intrinsic_scheme_resolved::<Lowered>(name, leaf.span, bool_role)
-                                .and_then(Result::ok)
+                            intrinsic_scheme::<Lowered>(name, leaf.span).and_then(Result::ok)
                         }
                         ResolvedBuiltinKind::Comptime => {
                             crate::comptime::ComptimeBuiltin::from_public_name(name).and_then(
                                 |builtin| {
-                                    comptime_scheme::<Lowered>(
-                                        builtin,
-                                        leaf.span,
-                                        &source_env.roles_in_scope,
-                                    )
-                                    .ok()
-                                    .flatten()
+                                    comptime_scheme::<Lowered>(builtin, leaf.span)
+                                        .ok()
+                                        .flatten()
                                 },
                             )
                         }
@@ -2390,7 +2338,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
     let mut merged_index = user_macro_memos.position_index();
     let root_key = lowered_workspace.root.clone();
     let mut root_package_lowered = None;
-    let mut root_source_role_uses = Vec::new();
     for (key, entry) in &lowered_workspace.packages {
         if cancel_token.is_cancelled() {
             return None;
@@ -2415,7 +2362,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
         }
         if *key == root_key {
             merged_index.merge(checked.elaborations().position_index().clone());
-            root_source_role_uses.extend_from_slice(checked.elaborations().source_role_uses());
             root_package_lowered = Some(entry.package.clone());
         } else {
             merged_index.merge(checked.into_elaborations().into_position_index());
@@ -2499,7 +2445,6 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
         callable_declarations
             .get(&root_key)
             .expect("root source decisions were retained"),
-        &root_source_role_uses,
         cancel_token,
     )?);
 
@@ -3157,10 +3102,16 @@ fn collect_unused_expr_decls(
             ElaboratorCall::FieldAccess { receiver, .. } => {
                 collect_unused_expr_decls(source, file_path, module_path, receiver, declarations);
             }
-            ElaboratorCall::FieldUpdate {
-                receiver, updates, ..
-            } => {
-                collect_unused_expr_decls(source, file_path, module_path, receiver, declarations);
+            ElaboratorCall::FieldUpdate { base, updates, .. } => {
+                if let Some(receiver) = base.receiver() {
+                    collect_unused_expr_decls(
+                        source,
+                        file_path,
+                        module_path,
+                        receiver,
+                        declarations,
+                    );
+                }
                 for update in updates {
                     collect_unused_expr_decls(
                         source,
@@ -4487,7 +4438,7 @@ mod tests {
             "import __intrinsics__;\n",
             "\n",
             "op _ ^ _ { impl __fst__; };\n",
-            "default host type Early_bool role(bool);\n",
+            "host type Early_bool role(bool);\n",
             "op _ %% _ { impl __if_then_else__; };\n",
             "host type Later_bool role(bool);\n",
             "op _ ** _ { impl __pair__; };\n",
@@ -4636,7 +4587,7 @@ mod tests {
 
         let conditional_start = role_source
             .find("__if_then_else__")
-            .expect("role-sensitive intrinsic target");
+            .expect("conditionally specialized intrinsic target");
         let conditional_span = crate::span::Span::new(
             conditional_start as u32,
             (conditional_start + "__if_then_else__".len()) as u32,
@@ -4650,13 +4601,18 @@ mod tests {
         let conditional_ty = analysis
             .position_index
             .type_at("pkg/roles", conditional_span)
-            .expect("the role-sensitive intrinsic has its selected-default hover type");
+            .expect("the intrinsic exposes its unspecialized public callable type");
         let mut rendered_conditional_ty = String::new();
         write_type(conditional_ty, &mut rendered_conditional_ty);
         assert!(
-            rendered_conditional_ty.contains("Early_bool")
+            matches!(conditional_ty, crate::ast::Type::Forall { body, .. }
+                if matches!(body.as_ref(), crate::ast::Type::Forall { .. })),
+            "the intrinsic target retains its Boolean and result type parameters: `{rendered_conditional_ty}`"
+        );
+        assert!(
+            !rendered_conditional_ty.contains("Early_bool")
                 && !rendered_conditional_ty.contains("Later_bool"),
-            "the intrinsic target must use the exact default selected before its declaration, got `{rendered_conditional_ty}`"
+            "unrelated role-bearing declarations must not select the intrinsic's Boolean type: `{rendered_conditional_ty}`"
         );
 
         let pair_start = role_source
@@ -6897,10 +6853,10 @@ mod tests {
              pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Optional_type) -> __Checked_term__ {\n\
                __either__(__Type__, ., __Checked_term__, target, .(_target: __Type__) -> __Checked_term__ {\n\
                  value\n\
-               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\") })\n\
+               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\"(__Diagnostic_text__)) })\n\
              }\n\n\
              pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Optional_type) -> __Checked_term__ {\n\
-               __macro_error__(ct, \"bad macro ran\")\n\
+               __macro_error__(ct, \"bad macro ran\"(__Diagnostic_text__))\n\
              }\n\n\
              pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
              pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
@@ -7292,7 +7248,10 @@ mod tests {
 
         let provider_path = dir.path().join("macros.kio");
         let provider = std::fs::read_to_string(&provider_path).expect("read macro provider");
-        let edited = provider.replace("\nvalue\n", "\n__macro_error__(ct, \"edited macro ran\")\n");
+        let edited = provider.replace(
+            "\nvalue\n",
+            "\n__macro_error__(ct, \"edited macro ran\"(__Diagnostic_text__))\n",
+        );
         assert_ne!(
             edited, provider,
             "provider edit should replace the branch body"

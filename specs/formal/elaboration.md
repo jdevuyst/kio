@@ -128,40 +128,28 @@ Variables in the local context synthesize their bound type. Three categories of 
 **Module-scoped identifiers** — top-level `fn`s and intrinsics (`__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__absurd__`) — share a single **scope-aware scheme registry** keyed by name:
 
 ```text
-(name ↦ scheme(name, Γ_roles)) ∈ Registry
+(name ↦ scheme(name)) ∈ Registry
 ─────────────────────────────────────────────  E-Named
-Γ ⊢ name ⇑ scheme(name, Γ_roles) ↪ name
+Γ ⊢ name ⇑ scheme(name) ↪ name
 ```
 
-For each literal category, `Γ_roles` records the explicit module-local
-`default` selection visible at this source position, or the empty set.
-Categories are integer, float, Boolean and string. Selections normalize
-ordinary saturated alias applications to terminal role-bearing host identities
-`(declaring module, name)`. Repeated selections of one identity agree;
-conflicting distinct defaults are rejected independently of body use.
-An ordinary import or unmarked type declaration adds no selection. Imports
-are header-active; local selections follow ordinary declaration/recursive-group
-scope. No direct-host-over-alias fallback applies. The scope parameter is
-needed because `__if_then_else__` has scheme `∀α. (B, . → α, . → α) → α`
-only when `Γ_roles(bool) = {B}`. Its absence is a type error; most registry
-entries ignore `Γ_roles`.
-
-The fixed full-Kio `__comptime__` block import supplies its specified
-compile-time Boolean/string selections and participates in the same conflict
-checks. Ordinary imports do not transfer provider selections.
-
-Each registry entry pairs a polytype scheme with an optional **side condition** that fires after the standard call-typing rule succeeds. For intrinsics, side conditions are trivial or absent.
+Most entries expose their ordinary resolved polytype. The branching intrinsic
+first checks its Boolean-specialization prefix against a concrete `role(bool)`
+host type, using explicit or finite local contextual evidence; after that check
+its result-type scheme is ordinary. A rigid generic Boolean parameter cannot
+satisfy the prefix. This requirement searches no ambient declaration set and
+introduces no role constraint or dictionary.
 
 The registry's contract is
 
 ```text
-scheme : Name × RoleEnv → σ
+scheme : Name → σ
 side_condition : Name × Γ × bound_args → Elaboration | Error
 ```
 
 with `bound_args` the type and value arguments after the standard call rule has substituted them in. User-defined macro calls have their own rule in § 7.4: they resolve through ordinary scope to a macro declaration, then use that declaration's call type and compile-time implementation ABI.
 
-> **Implementation note.** The kio-rs implementation routes intrinsics through `intrinsic_scheme(name, span)` and standard application typing. User-defined macros route through `Expr::UserMacro`; their implementation returns reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
+> **Implementation note.** The kio-rs implementation uses intrinsic schemes and standard application typing after any checked specialization prefix. User-defined macros route through `Expr::UserMacro`; their implementation returns reflected checked terms through the `__comptime__` ABI, and the substitute pass swaps those terms in at the Lowered → Prime boundary.
 
 ### Kind-checking discipline
 
@@ -437,15 +425,17 @@ schedule is fixed:
 2. Enter each immediate value source fresh once, from left to right. A value
    that completes independently constrains its parameter slot. A value blocked
    only on information in the connected domain retains its unconsumed source
-   action; an unannotated literal without an exact expected slot is delayed
-   rather than defaulted immediately.
+   action. A scalar literal with a concrete explicit or contextual carrier
+   completes normally; otherwise its unresolved source action remains within
+   this same finite local domain.
 3. Run the **expected-only pass** from left to right. Consume a retained action
-   whose parameter slot is now usable, with no lexical literal fallback.
+   whose parameter slot is now usable. Concrete expected types determine
+   unresolved literal carriers and check explicitly annotated ones.
    Information from a completed sibling or connected descendant may constrain
    owner-scoped goals; a still-blocked action contributes nothing.
-4. Run the **lexical-fallback pass**. Each still-untyped literal uses the
-   documented lexical candidate rule from [`language.md`](../language.md)
-   § Literals. Its closed type may further refine the finite domain.
+4. Propagate completed closed value types through the finite domain. An
+   unresolved scalar literal has no fallback: it must obtain a concrete
+   admitting carrier before this local boundary closes.
 5. Run a **final preflight** without executing retained source actions. It
    verifies that all remaining parameter slots and terminal states can close,
    and advances a deferred expected-result equation only after a retained-child
@@ -632,7 +622,7 @@ Now `.[A](x) { x }` sits in a checking position (the value-arg slot of `identity
 
 Unit and annotated integer, float, string and Boolean literals synthesize
 their type using the lexical-category admission check from [`prime.md`](prime.md)
-§ 2.2. An annotated literal does not need a default. The rules are inherited
+§ 2.2. An annotated literal names its carrier directly. The rules are inherited
 from that core typing relation:
 
 ```text
@@ -645,7 +635,7 @@ from that core typing relation:
    etc.
 ```
 
-Unannotated surface literals (the tier-2 / tier-3 resolution described in [`language.md`](../language.md) § Literals) are resolved to one of these annotated forms before E-True / E-Float / etc. fires. That resolution is part of the elaborator's responsibility; the rule fires only on the resolved form.
+Unannotated surface literals (the concrete contextual inference described in [`language.md`](../language.md) § Literals) are resolved to one of these annotated forms before E-True / E-Float / etc. fires. That resolution is part of the elaborator's responsibility; the rule fires only on the resolved form.
 
 ### 7.2. Blocks
 
@@ -1036,10 +1026,11 @@ across its binding boundary. A sequenced expression requires `F(.)`, whereas
 
 The reference `if`, `scope`, `do`, and `match` are ordinary library
 declarations using these projections. `if` relates its two thunk results
-through the repeated result in its public type. Its condition synthesizes
-first and must have the explicitly selected Boolean-default type required by the
-branching intrinsic; result information never flows backwards into it. A surrounding result checks
-both arms. Otherwise either independently determined arm may determine or
+through the repeated result in its public type. Its condition is checked against the library's concrete `control.Bool`
+host identity, or its ordinary rehosted replacement; the common result
+does not select that condition type. The generated branching intrinsic checks
+that exact concrete Boolean specialization. A surrounding result checks both
+arms, including scalar literals whose carriers it makes concrete. Otherwise either independently determined arm may determine or
 refine the common result, with no source-order priority.
 
 The reference `match` independently determines each clause's dispatch-pattern

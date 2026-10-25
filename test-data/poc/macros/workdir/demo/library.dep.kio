@@ -5,3 +5,4 @@ source {
 }
 
 rehost library/testapi to testapi;
+rehost library/control to testapi;

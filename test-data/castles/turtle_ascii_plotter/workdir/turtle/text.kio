@@ -4,7 +4,7 @@
 module turtle/text;
 
 import macros/control(macro if);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);

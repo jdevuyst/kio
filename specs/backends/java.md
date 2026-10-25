@@ -367,8 +367,9 @@ select one Java type for several declarations or different Java types for
 declarations sharing a role.
 
 A lexical literal can select an exact host-type declaration only when its
-lexical role matches that declaration's role. An annotation or expected type
-chooses the exact declaration; it does not change the literal's role. A
+category is admitted by that declaration's role. An explicit literal annotation
+or concrete local context chooses the exact declaration.
+Selection does not change the literal's category. A
 roleless host type therefore has no matching lexical literal. After this
 compile-time check, Java constructs the value through that declaration's
 existing role-shaped private body type and exact adapter pair.

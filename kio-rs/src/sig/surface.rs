@@ -110,7 +110,6 @@ where
     Some(match item {
         Item::HostType(host) => {
             let mut host: HostType<Surface> = crate::ast::convert_host_type(host);
-            host.default_span = None;
             host.owned = false;
             host.doc = None;
             SigItem::HostType(host)
@@ -125,7 +124,6 @@ where
         }
         Item::TypeAlias(alias) if alias.vis.is_exported() => {
             let mut alias: TypeAlias<Surface> = crate::ast::convert_type_alias(alias);
-            alias.default_span = None;
             alias.doc = None;
             SigItem::TypeAlias(alias)
         }
@@ -148,7 +146,6 @@ where
         match member {
             TypeRecMember::TypeAlias(alias) if alias.vis.is_exported() => {
                 let mut alias: TypeAlias<Surface> = crate::ast::convert_type_alias(alias);
-                alias.default_span = None;
                 alias.doc = None;
                 items.push(SigItem::TypeAlias(alias.clone()));
                 members.push(TypeRecMember::TypeAlias(alias));

@@ -377,8 +377,8 @@ pub trait SurfaceToDesugared {
                     })
                     .collect::<Result<_, Error>>()?,
             },
-            ElaboratorCall::FieldUpdate { receiver, updates } => ElaboratorCall::FieldUpdate {
-                receiver: Box::new(self.walk_expr(*receiver)?),
+            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
                 updates: updates
                     .into_iter()
                     .map(|update| {
@@ -828,7 +828,6 @@ pub trait SurfaceToDesugared {
     /// Walk a `type` Surface → Desugared.
     fn walk_type_alias(&mut self, a: TypeAlias<Surface>) -> Result<TypeAlias<Desugared>, Error> {
         let TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -839,7 +838,6 @@ pub trait SurfaceToDesugared {
             doc,
         } = a;
         Ok(TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -989,7 +987,6 @@ pub trait SurfaceToDesugared {
 
     fn walk_host_type(&mut self, h: HostType<Surface>) -> Result<HostType<Desugared>, Error> {
         let HostType {
-            default_span,
             name,
             type_params,
             role,
@@ -998,7 +995,6 @@ pub trait SurfaceToDesugared {
             doc,
         } = h;
         Ok(HostType {
-            default_span,
             name,
             type_params,
             role,

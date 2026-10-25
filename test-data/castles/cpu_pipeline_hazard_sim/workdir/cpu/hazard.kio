@@ -40,7 +40,7 @@ import cpu/machine(Cpu, Machine, stage_empty);
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/array(array_get);
 
 /// Where an operand value actually came from, which is the same thing as

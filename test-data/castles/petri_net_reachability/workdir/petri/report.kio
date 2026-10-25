@@ -8,7 +8,7 @@ import petri/search as search;
 import petri/witness as witness;
 import queue/list/core as lists;
 import queue/list/list as traversal;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/text as text;

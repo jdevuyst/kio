@@ -1,5 +1,0 @@
-module main;
-
-default host type Float role(f64);
-
-default host type Narrow role(f32);

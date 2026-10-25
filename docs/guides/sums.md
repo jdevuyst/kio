@@ -20,9 +20,9 @@ Here `macros` is the configured dependency name. Follow
 that name or adjust the imports to the name you choose.
 
 Assumed setup: a module whose host supplies `Int`, `String`, `Bool`, `int_to_string`, `string_concat`, and `print`. Snippets are module bodies.
-`Int` and `String` are selected defaults for literal inputs whose source type
-must be determined before a macro expands; see
-[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
+Annotate a literal source when the macro needs its carrier before expansion;
+ordinary concrete contexts can infer literals. See
+[literal inference](typechecking.md#literal-types-and-local-inference).
 
 <!--kio {harness=module placeholder="__INSERT_CODE_HERE__"}
 bridge {
@@ -35,8 +35,8 @@ import match(macro match);
 import tuple_macros(macro concat);
 import spine_macros(macro widen_sum);
 
-default host type Int role(i32);
-default host type String role(str);
+host type Int role(i32);
+host type String role(str);
 host type Bool role(bool);
 host fn int_to_string(p0: Int) -> String;
 host fn string_concat(p0: String, p1: String) -> String;
@@ -50,9 +50,9 @@ __INSERT_CODE_HERE__
 `String | Int` is the type of a value that is either a `String` or an `Int`. It does not need to be declared:
 
 ```kio {@module}
-fn build_string_sum() -> String | Int { "hello\n".>widen_sum }
+fn build_string_sum() -> String | Int { "hello\n"(String).>widen_sum }
 
-fn build_int_sum() -> String | Int { 42.>widen_sum }
+fn build_int_sum() -> String | Int { 42(Int).>widen_sum }
 ```
 
 `widen_sum` injects the source value into a target sum that contains its type.
@@ -61,7 +61,7 @@ the `|` structure. When the expected type is not obvious, write the target
 explicitly:
 
 ```kio {@module}
-fn explicit_target() -> String | Int { widen_sum("hello\n", String | Int) }
+fn explicit_target() -> String | Int { widen_sum("hello\n"(String), String | Int) }
 ```
 
 For a sum-valued source, grouping matters: `widen_sum` matches the alternatives
@@ -285,7 +285,7 @@ fn text_clauses() -> (String -> String) & (Int -> String) {
 fn describe_extended(v: String | Int | .) -> String {
   let clauses =
     concat(
-    , (text_clauses(), .(_unit: .) { "unit" })
+    , (text_clauses(), .(_unit: .) -> String { "unit" })
     , (String -> String) & (Int -> String) & (. -> String)
     );
   match(v) { clauses }

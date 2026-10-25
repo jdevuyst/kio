@@ -1,0 +1,29 @@
+module testapi/main;
+
+import testapi(I32, String);
+import testapi/fmt(print_i32);
+import testapi/io(print);
+
+labels { box[A]: (A -> A) -> A, first[A]: A, second[A]: A };
+
+fn mark(tag: String, value: I32) -> I32 { print(tag); value }
+
+fn constructed() -> Second(I32) & First(I32) { {first = mark("A", 1), second = mark("B", 2)} }
+
+fn direct() -> Second(I32) & First(I32) {
+  let first = First.mk(mark("C", 3));
+  let second = Second.mk(mark("D", 4));
+  (second, first)
+}
+
+pub fn main() {
+  let chosen = {box = .(_identity: I32 -> I32) { 7 }};
+  print_i32(Box.get(chosen)(.(value: I32) { value }));
+  let row = constructed();
+  print_i32(row.?{first});
+  print_i32(row.?{second});
+  let comparison = direct();
+  print_i32(comparison.?{first});
+  print_i32(comparison.?{second});
+  print("\n")
+}

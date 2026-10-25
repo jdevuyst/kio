@@ -28,7 +28,7 @@ import library/optics(
 , view
 , view_iso
 );
-import testapi(default I32, default String);
+import testapi(I32, String);
 import testapi/arith(add);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -117,7 +117,7 @@ fn show_hmt(x: Hed & Mid & Tal) {
 fn tour() {
   let inc = .(n: I32) -> I32 { add(n, 1) };
   // ---------- Lens basics ----------
-  let p = (42, "hello");
+  let p = (42(I32), "hello"(String));
   let l_fst = fst_lens(I32, String);
   let l_snd = snd_lens(I32, String);
   say_i32(view(l_fst, p));
@@ -135,7 +135,7 @@ fn tour() {
   // ---------- Lens compose ----------
   // outer : (I32 & String) & I32; reach the inner String via
   // fst_lens(I32 & String, I32) >>> snd_lens(I32, String).
-  let outer = ((42, "hello"), 7);
+  let outer = ((42(I32), "hello"(String)), 7(I32));
   let l_outer = fst_lens(I32 & String, I32);
   let l_inner = snd_lens(I32, String);
   let l_deep = compose_lens(l_outer, l_inner);
@@ -146,8 +146,8 @@ fn tour() {
   // ---------- Prism basics ----------
   let p_left = left_prism(I32, String);
   let p_right = right_prism(I32, String);
-  let v_left = widen_sum(42, I32 | String);
-  let v_right = widen_sum("kio", I32 | String);
+  let v_left = widen_sum(42(I32), I32 | String);
+  let v_right = widen_sum("kio"(String), I32 | String);
   // preview: hit
   say_opt_i32(preview(p_left, v_left));
   // preview: miss (left prism on right value)
@@ -178,12 +178,12 @@ fn tour() {
   // generated against the abstract `A` (a single opaque spine slot), so
   // its `__left__` glue stays valid when `A` is instantiated to the
   // sum `I32 | String`. No intrinsic or macro from `algebraic_macros`.
-  let deep_hit = review(p_outer, widen_sum(5, I32 | String));
-  let deep_inner_miss = review(p_outer, widen_sum("no", I32 | String));
+  let deep_hit = review(p_outer, widen_sum(5(I32), I32 | String));
+  let deep_inner_miss = review(p_outer, widen_sum("no"(String), I32 | String));
   // The outer-right arm IS reachable via `widen_sum` directly: source
   // `100: I32` finds a like-typed target arm in `(I32 | String) | I32`'s
   // outer spine at position 1 (the outer-right `I32`).
-  let deep_outer_miss = widen_sum(100, (I32 | String) | I32);
+  let deep_outer_miss = widen_sum(100(I32), (I32 | String) | I32);
   say_opt_i32(preview(p_deep, deep_hit));
   say_opt_i32(preview(p_deep, deep_inner_miss));
   say_opt_i32(preview(p_deep, deep_outer_miss));
@@ -208,7 +208,7 @@ fn tour() {
   say_str(view(l_snd, round_trip));
   // assoc_iso: ((1, 2), 3) → (1, (2, 3)). Project the new head and the
   // head of the inner pair.
-  let triple = ((1, 2), 3);
+  let triple = ((1(I32), 2(I32)), 3(I32));
   let ai = assoc_iso(I32, I32, I32);
   let reassoc = view_iso(ai, triple);
   print(int_to_string(view(fst_lens(_, _), reassoc)));

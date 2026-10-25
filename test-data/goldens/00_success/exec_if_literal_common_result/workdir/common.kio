@@ -1,0 +1,45 @@
+module common;
+
+import __comptime__;
+import testapi(String);
+
+pure fn common_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _left_type: __Type__
+, left: __Checked_term__
+, _right_type: __Type__
+, right: __Checked_term__
+, target: __Type__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let with_left = __fill__(ct, fills, target, __term_type__(ct, left));
+  let with_right = __fill__(ct, with_left, target, __term_type__(ct, right));
+  (left, with_right)
+}
+
+pub macro common : [Left] Left -> [Right] Right -> [Target] Target { impl(fills) common_impl }
+
+pure fn keep_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub macro keep : [A] A -> A { impl keep_impl }
+
+pure fn from_number_impl(
+, _ct: __Comptime__
+, _source: __Type__
+, _number: __Checked_term__
+, text: __Checked_term__
+, _target: __Type__ | .
+) -> __Checked_term__ { text }
+
+pub macro from_number : [Source] Source -> String -> [Target] Target { impl from_number_impl }
+
+pure fn keep_fills_impl(
+, _ct: __Comptime__
+, fills: __Fill_ctx__
+, _type: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (value, fills) }
+
+pub macro keep_fills : [A] A -> A { impl(fills) keep_fills_impl }

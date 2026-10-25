@@ -1,0 +1,21 @@
+module main;
+
+host type Int role(i64);
+
+host type Float role(f64);
+
+pure fn same[A](left: A, right: A) -> A { left }
+
+pure fn integers() -> Int { let value = same(42(Int), 43); value }
+
+pure fn floats() -> Float { let value = same(42.0(Float), 43.0); value }
+
+equiv ints_inferred() {
+  integers();
+  42(Int)
+}
+
+equiv floats_inferred() {
+  floats();
+  42.0(Float)
+}

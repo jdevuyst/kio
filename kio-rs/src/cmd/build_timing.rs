@@ -427,8 +427,10 @@ impl BuildShapeStats {
                     crate::ast::ElaboratorCall::FieldAccess { receiver, .. } => {
                         self.visit_expr(receiver, depth + 1);
                     }
-                    crate::ast::ElaboratorCall::FieldUpdate { receiver, updates } => {
-                        self.visit_expr(receiver, depth + 1);
+                    crate::ast::ElaboratorCall::FieldUpdate { base, updates } => {
+                        if let Some(receiver) = base.receiver() {
+                            self.visit_expr(receiver, depth + 1);
+                        }
                         for update in updates {
                             self.visit_expr(&update.value, depth + 1);
                         }

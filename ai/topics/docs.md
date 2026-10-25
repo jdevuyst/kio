@@ -37,6 +37,19 @@ during elaboration; do not imply that all elaboration must finish before any
 normalization occurs. Reflected source arguments describe code, not its computed
 runtime value.
 
+## People and programs
+
+Distinguish software behavior from actions a person takes. A host program
+supplies capabilities and invokes package entries; its developer reads the
+integration guide and configures the build. Apply the same distinction to
+compilers and tools. Saying that software reads a file, checks a type or
+selects a configuration value describes an actual automated mechanism;
+saying that it learns a requirement from this page can hide a step its user
+must perform. Name the person or describe the mechanism when that distinction
+matters to understanding or completing the task. Ordinary technical shorthand
+is fine when the actor and action remain clear; this is not a ban on particular
+verbs or a requirement for new terminology.
+
 ## Website and offline bundle inputs
 
 `docs/`, `specs/`, and the explicit root files `KIO-FOR-AGENTS.md` and

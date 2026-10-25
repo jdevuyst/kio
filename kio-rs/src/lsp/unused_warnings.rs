@@ -12,7 +12,6 @@ pub(crate) fn source_warnings(
     file_to_module: &BTreeMap<PathBuf, String>,
     positions: &crate::pass::typecheck_full::PositionIndex,
     declarations: &crate::pass::full::LspSourceDeclarations,
-    role_uses: &[(String, Span, String)],
     cancel: &super::cancel::CancellationToken,
 ) -> Option<Vec<crate::cmd::check::LspWarning>> {
     use crate::cmd::check::{LspWarning, LspWarningKind};
@@ -28,13 +27,6 @@ pub(crate) fn source_warnings(
             .entry(&usage.source_module)
             .or_default()
             .push(usage);
-    }
-    let mut roles_by_module: HashMap<&str, Vec<_>> = HashMap::new();
-    for (module, span, binding) in role_uses {
-        roles_by_module
-            .entry(module)
-            .or_default()
-            .push((*span, binding.as_str()));
     }
     let mut warnings = Vec::new();
     for (file_path, module) in modules {
@@ -109,13 +101,6 @@ pub(crate) fn source_warnings(
             }
             if let Some(origin) = bindings.origin(&reference) {
                 mark_origin(reference.span, origin);
-            }
-        }
-        if let Some(uses) = roles_by_module.get(semantic_module.as_str()) {
-            for (span, binding) in uses {
-                if let Some(origin) = bindings.selected_module_type_origin(binding, span.start) {
-                    mark_origin(*span, origin);
-                }
             }
         }
         let source_module = module
@@ -935,13 +920,13 @@ mod tests {
     }
 
     #[test]
-    fn source_warning_graph_counts_actual_implicit_role_selection_only() {
+    fn source_warning_graph_counts_written_type_alias_uses_only() {
         for (body, expected_dead) in [
-            ("pub fn run() -> . { let _value = 1; () }", false),
+            ("pub fn run() -> . { let _value = 1(Fallback); () }", false),
             ("pub fn run() -> r.Number { 1 }", true),
+            ("pub fn run() -> r.Number { 1(r.Number) }", true),
         ] {
-            let main =
-                format!("module main; import roles as r; default type Fallback = r.Number; {body}");
+            let main = format!("module main; import roles as r; type Fallback = r.Number; {body}");
             let analysis = analyze_sources(&[
                 ("roles", "module roles; pub host type Number role(i32);"),
                 ("main", &main),
@@ -1040,7 +1025,7 @@ mod tests {
     #[test]
     fn source_warning_graph_tracks_erased_literals_without_shadowed_import_uses() {
         for (body, unused) in [
-            ("pub fn run() -> r.Number { marker }", false),
+            ("pub fn run() -> r.Number { marker(r.Number) }", false),
             ("pub fn run(marker: r.Number) -> r.Number { marker }", true),
         ] {
             let source = format!("module main; import literals(marker); import roles as r; {body}");

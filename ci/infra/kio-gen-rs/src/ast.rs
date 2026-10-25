@@ -190,11 +190,11 @@ pub enum Term {
         member: String,
         args: Vec<Term>,
     },
-    /// `if cond { then } else { else_ }`. Both arms have the same
+    /// `if(cond) { then } else { else_ }`. Both arms have the same
     /// result type; the whole expression has that type.
     /// Renders two ways depending on `RenderOpts.surface`:
-    /// - surface: an imported `if <cond> { <then> } else { <else_> }` call.
-    /// - Kio': `__if_then_else__(R, cond, .() { then }, .() { else_ })`,
+    /// - surface: an imported `if(<cond>) { <then> } else { <else_> }` call.
+    /// - Kio': `__if_then_else__(Bool, R, cond, .() { then }, .() { else_ })`,
     ///   matching the ordinary conditional macro's result.
     IfElse {
         cond: Box<Term>,

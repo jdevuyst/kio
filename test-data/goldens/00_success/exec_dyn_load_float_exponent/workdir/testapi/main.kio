@@ -13,7 +13,7 @@ import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 import prime(Term);
 import result(Ev_done, Ev_stuck);
-import testapi(F64, Scalar, String, default Bool);
+import testapi(Bool, F64, Scalar, String);
 import testapi/arith(add_f64, sub_f64);
 import testapi/fmt(f64_to_string);
 import testapi/io(print);

@@ -31,8 +31,8 @@
 use super::PrePrime;
 use crate::ast::{
     CallArg, Equiv, Expr, FnDef, HostFn, HostFnParam, HostFnValueParam, HostType, Item, Lowered,
-    Meta, Module, Newtype, PackageFile, Param, RoleShape, Signature, SignatureParam, Type,
-    TypeAlias, convert_meta, convert_type_member,
+    Meta, Module, Newtype, PackageFile, Param, Signature, SignatureParam, Type, TypeAlias,
+    convert_meta, convert_type_member,
 };
 use crate::error::Error;
 use crate::span::Span;
@@ -240,7 +240,6 @@ pub(super) trait LoweredToPrePrime {
             value: value.clone(),
             annotation: self.walk_literal_annotation(
                 annotation,
-                RoleShape::Str,
                 meta.span,
                 e.occurrence().assigned_key(),
             )?,
@@ -265,7 +264,6 @@ pub(super) trait LoweredToPrePrime {
             digits: digits.clone(),
             annotation: self.walk_literal_annotation(
                 annotation,
-                RoleShape::Int,
                 meta.span,
                 e.occurrence().assigned_key(),
             )?,
@@ -288,7 +286,6 @@ pub(super) trait LoweredToPrePrime {
             digits: digits.clone(),
             annotation: self.walk_literal_annotation(
                 annotation,
-                RoleShape::Float,
                 meta.span,
                 e.occurrence().assigned_key(),
             )?,
@@ -311,7 +308,6 @@ pub(super) trait LoweredToPrePrime {
             value: *value,
             annotation: self.walk_literal_annotation(
                 annotation,
-                RoleShape::Bool,
                 meta.span,
                 e.occurrence().assigned_key(),
             )?,
@@ -320,7 +316,7 @@ pub(super) trait LoweredToPrePrime {
     }
 
     /// Walk a literal's `(Type)` annotation to its now-mandatory Kio'
-    /// form. The typer's three-tier resolution — recorded keyed by the
+    /// form. The typer's literal selection — recorded keyed by the
     /// literal's occurrence — is baked in here, so every `PrePrime` literal
     /// carries its concrete host type: `specs/grammar.md` § Kio'
     /// grammar mandates a `(Type)` on every literal, so the container
@@ -328,7 +324,6 @@ pub(super) trait LoweredToPrePrime {
     fn walk_literal_annotation(
         &mut self,
         annotation: &Option<Type<Lowered>>,
-        shape: crate::ast::RoleShape,
         span: Span,
         occurrence: Option<crate::ast::ExpressionOccurrenceId>,
     ) -> Result<Type<PrePrime>, Error> {
@@ -340,39 +335,20 @@ pub(super) trait LoweredToPrePrime {
         {
             return self.walk_type(t);
         }
-        if let Some(resolved) = self.resolved_literal_by_role(shape, span)? {
-            return Ok(resolved);
-        }
         unreachable!(
             "literal at {span:?} reached Lowered → PrePrime with no recorded resolution, \
-             no concrete `(Type)` annotation, and no unique role-admitted host type; \
+             no concrete `(Type)` annotation; \
              the typer must pin every literal's host type before substitution"
         )
     }
 
-    /// The typer's recorded three-tier resolution for the literal at
+    /// The typer's recorded literal selection for the literal at
     /// `occurrence`, walked to `PrePrime`. Default: none — an implementer with
     /// an elaboration table (the full pipeline's `substitute`)
     /// overrides this to bake the resolved host type in.
     fn resolved_literal(
         &mut self,
         _occurrence: Option<crate::ast::ExpressionOccurrenceId>,
-    ) -> Result<Option<Type<PrePrime>>, Error> {
-        Ok(None)
-    }
-
-    /// Tier-3 fill-in for a bare literal the elaboration table did not
-    /// record: the unique role-bearing host type its `shape` admits,
-    /// from the enclosing module's env (`specs/language.md` § Literals
-    /// tier 3). Default: none — an implementer with a package
-    /// (the full pipeline's `substitute`) overrides this to consult it,
-    /// so a Kio' literal produced from an untyped Lowered module (a
-    /// compile-time-eval term, a macro template, an emitter test
-    /// fixture) still resolves its mandatory annotation.
-    fn resolved_literal_by_role(
-        &mut self,
-        _shape: crate::ast::RoleShape,
-        _span: Span,
     ) -> Result<Option<Type<PrePrime>>, Error> {
         Ok(None)
     }
@@ -569,7 +545,6 @@ pub(super) trait LoweredToPrePrime {
     /// Walk an `TypeAlias` Lowered → PrePrime.
     fn walk_alias(&mut self, a: &TypeAlias<Lowered>) -> Result<TypeAlias<PrePrime>, Error> {
         Ok(TypeAlias {
-            default_span: a.default_span,
             vis: a.vis.clone(),
             name: a.name.clone(),
             name_span: a.name_span,
@@ -604,7 +579,6 @@ pub(super) trait LoweredToPrePrime {
 
     fn walk_host_type(&mut self, h: &HostType<Lowered>) -> Result<HostType<PrePrime>, Error> {
         Ok(HostType {
-            default_span: h.default_span,
             name: h.name.clone(),
             type_params: h.type_params.clone(),
             role: h.role,

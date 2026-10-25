@@ -2,7 +2,7 @@ module packet_frame_decoder/checksum;
 
 import macros/control(macro if);
 import packet_frame_decoder/frame as frame;
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/text as text;
 
 fn expected_for_alpha(packet: String) -> String {

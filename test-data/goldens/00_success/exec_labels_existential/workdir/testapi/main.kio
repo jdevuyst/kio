@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 // A `labels` entry with an existential binder run desugars to a
@@ -17,4 +17,8 @@ fn extract[A](b: Box(A)) {
   Box.get(A, b)(.[U](pair) { discard(pair) })
 }
 
-pub fn main() { let b = make_box("x\n", "y\n"); extract(b); print("labels-existential-ok\n") }
+pub fn main() {
+  let b = make_box("x\n"(String), "y\n"(String));
+  extract(b);
+  print("labels-existential-ok\n")
+}

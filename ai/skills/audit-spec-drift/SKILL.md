@@ -24,6 +24,12 @@ handoffs, unexplained shorthand, and maintenance bookkeeping that obscure the
 contract. Preserve formal precision and audience-appropriate technical detail;
 specialized terminology alone is not a finding.
 
+Apply [People and programs](../../topics/docs.md#people-and-programs): when
+prose says a host, compiler or tool reads or learns something, distinguish the
+actual automated mechanism from an action its developer must take. Flag hidden
+configuration steps or unclear actors; ordinary technical shorthand alone is
+not a finding.
+
 Compare relevant explanations in `TERMINOLOGY.md` with the owning contract.
 Flag misleading shorthand and meaningful missing distinctions under
 [`docs.md` § Terminology](../../topics/docs.md#terminology); do not turn the
@@ -145,7 +151,11 @@ preservation](../../topics/language-surface-tooling.md#canonical-formatting-not-
 ## 6. Surface and Prime semantics
 
 Trace [numeric literal values](../../topics/implementation.md#numeric-literal-values)
-from each typing route through normalization and host construction. Check the
+from explicit literal annotations and concrete local contextual inference
+through normalization and host construction. Unresolved carriers fail at the
+existing local boundary without an ambient role census or fallback. Cover all
+four categories and checked Boolean specialization, including rigid generic
+Boolean rejection and ordinary generic result types. Check the
 selected role's integer bounds and floating-point rounding rules, including
 signed minima, subnormals, overflow, underflow and signed zero. Equivalent
 spellings must agree before and after formatting, cache reuse and textual Prime

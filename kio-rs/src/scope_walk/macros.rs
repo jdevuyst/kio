@@ -262,8 +262,10 @@ impl Classifier {
                 self.id(*ext);
                 match call {
                     ElaboratorCall::FieldAccess { receiver, .. } => self.expr(receiver),
-                    ElaboratorCall::FieldUpdate { receiver, updates } => {
-                        self.expr(receiver);
+                    ElaboratorCall::FieldUpdate { base, updates } => {
+                        if let Some(receiver) = base.receiver() {
+                            self.expr(receiver);
+                        }
                         for update in updates {
                             self.expr(&update.value);
                         }

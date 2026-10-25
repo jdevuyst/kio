@@ -1,8 +1,0 @@
-module litamb/main;
-
-import litamb(I32, I64);
-
-// Neither ordinarily imported integer type is selected as a default.
-// The let right-hand side has no expected type, so `100` needs an explicit
-// annotation or a module-local default selection.
-fn ambiguous() -> I32 { let n = 100; n }

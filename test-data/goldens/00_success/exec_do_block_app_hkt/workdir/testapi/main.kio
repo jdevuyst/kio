@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/sequence(macro do);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 import testapi/text(string_concat);
 
@@ -26,8 +26,8 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // site is `Box.un_box(String, run())`.
 fn run() -> Box(String) {
   do(box_bind) {
-    let greeting <- box_pure("hello, ");
-    let suffix = "world\n";
+    let greeting <- box_pure("hello, "(String));
+    let suffix = "world\n"(String);
     let full <- box_pure(string_concat(greeting, suffix));
     box_pure(full)
   }

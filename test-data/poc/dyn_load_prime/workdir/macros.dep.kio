@@ -4,4 +4,5 @@ source {
   path "../../macros/workdir/macros.pkg.kio"
 }
 
+rehost macros/control to testapi;
 rehost macros/testapi to list_host;

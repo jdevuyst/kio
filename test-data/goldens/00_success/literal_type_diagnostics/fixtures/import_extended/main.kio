@@ -1,0 +1,11 @@
+module main;
+
+import numbers(Int);
+import numbers(Other_bool, Other_float, Other_int, Other_string);
+
+pure fn value() -> Int { let value = 42(Int); value }
+
+equiv imported_annotation() {
+  value();
+  42(Int)
+}

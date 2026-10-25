@@ -45,6 +45,7 @@ build {
 }
 
 bridge {
+  macros/control;
   api;
   macros/testapi
 }

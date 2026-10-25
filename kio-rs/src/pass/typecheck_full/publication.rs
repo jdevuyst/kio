@@ -158,8 +158,6 @@ enum PublicationCommand<T> {
         segment_span: Span,
         binder: ResolvedBinder,
     },
-    #[cfg(feature = "lsp")]
-    SelectedRole { span: Span, binding: String },
     LocalDecl {
         name: String,
         decl_span: Span,
@@ -182,8 +180,6 @@ enum PublicationCommand<T> {
         resolved: InternedType,
         runtime_erases: bool,
         numeric_value: Option<String>,
-        #[cfg(feature = "lsp")]
-        lexical_role: Option<String>,
     },
     PrimeRequalificationBindings {
         imports: Vec<UserMacroTemplateGeneratedImport>,
@@ -307,10 +303,6 @@ impl<T> PublicationCommand<T> {
                 segment_span,
                 binder,
             },
-            #[cfg(feature = "lsp")]
-            Self::SelectedRole { span, binding } => {
-                PublicationCommand::SelectedRole { span, binding }
-            }
             Self::LocalDecl {
                 name,
                 decl_span,
@@ -343,15 +335,11 @@ impl<T> PublicationCommand<T> {
                 resolved,
                 runtime_erases,
                 numeric_value,
-                #[cfg(feature = "lsp")]
-                lexical_role,
             } => PublicationCommand::LiteralResolution {
                 literal_site,
                 resolved,
                 runtime_erases,
                 numeric_value,
-                #[cfg(feature = "lsp")]
-                lexical_role,
             },
             Self::PrimeRequalificationBindings { imports, aliases } => {
                 PublicationCommand::PrimeRequalificationBindings { imports, aliases }
@@ -736,17 +724,6 @@ pub(crate) struct PublicationBuilder {
     entries: Vec<PublicationEntry>,
 }
 
-#[cfg(all(test, feature = "lsp"))]
-#[test]
-fn source_role_layout_publication() {
-    eprintln!(
-        "source role layout: publication_command={} publication_entry={} publication_builder={}",
-        std::mem::size_of::<PublicationCommand<PublicationValue<PublicationGoalInput>>>(),
-        std::mem::size_of::<PublicationEntry>(),
-        std::mem::size_of::<PublicationBuilder>(),
-    );
-}
-
 impl PublicationBuilder {
     pub(crate) fn new(store: &GoalStore, delta: &GoalDelta) -> Self {
         let owner = delta.owner();
@@ -972,11 +949,6 @@ impl PublicationBuilder {
         });
     }
 
-    #[cfg(feature = "lsp")]
-    pub(crate) fn record_selected_role(&mut self, span: Span, binding: String) {
-        self.push_command(PublicationCommand::SelectedRole { span, binding });
-    }
-
     pub(crate) fn record_local_decl(
         &mut self,
         name: String,
@@ -1046,15 +1018,12 @@ impl PublicationBuilder {
         resolved: InternedType,
         runtime_erases: bool,
         numeric_value: Option<String>,
-        #[cfg(feature = "lsp")] lexical_role: Option<String>,
     ) {
         self.push_command(PublicationCommand::LiteralResolution {
             literal_site,
             resolved,
             runtime_erases,
             numeric_value,
-            #[cfg(feature = "lsp")]
-            lexical_role,
         });
     }
 
@@ -1750,10 +1719,6 @@ impl ClosedPublicationDelta {
                 } => {
                     elaborations.record_position_binder(module_path, segment_span, binder);
                 }
-                #[cfg(feature = "lsp")]
-                PublicationCommand::SelectedRole { span, binding } => {
-                    elaborations.record_selected_role(module_path, span, binding);
-                }
                 PublicationCommand::LocalDecl {
                     name,
                     decl_span,
@@ -1803,13 +1768,7 @@ impl ClosedPublicationDelta {
                     resolved,
                     runtime_erases,
                     numeric_value,
-                    #[cfg(feature = "lsp")]
-                    lexical_role,
                 } => {
-                    #[cfg(feature = "lsp")]
-                    if let Some(binding) = lexical_role {
-                        elaborations.record_selected_role(module_path, literal_site.span, binding);
-                    }
                     elaborations.record_literal_resolution(
                         module_path,
                         literal_site.id,

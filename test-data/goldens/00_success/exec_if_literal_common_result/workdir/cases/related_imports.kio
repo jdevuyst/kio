@@ -1,0 +1,63 @@
+module cases/related_imports;
+
+import common(macro common, macro from_number);
+import macros/testapi(String as Other_string);
+import testapi(I32, String);
+
+type Alias[A] = A;
+
+fn identity[A](value: A) -> A { value }
+
+fn alias_identity[A](value: Alias(A)) -> Alias(A) { value }
+
+pub fn direct_first(witness: String) -> String {
+  let selected = common(.() { from_number(1(I32), witness) }, .() { "direct" });
+  selected()
+}
+
+pub fn direct_last(witness: String) -> String {
+  let selected = common(.() { "direct" }, .() { from_number(1(I32), witness) });
+  selected()
+}
+
+pub fn nested_first(witness: String) -> String {
+  let selected =
+    common(
+    , .() {
+        from_number(common(.() { 1(I32) }, .() { 2 })(), witness)
+      }
+    , .() { "nested" }
+    );
+  selected()
+}
+
+pub fn nested_last(witness: String) -> String {
+  let selected =
+    common(
+    , .() { "nested" }
+    , .() {
+        from_number(common(.() { 1(I32) }, .() { 2 })(), witness)
+      }
+    );
+  selected()
+}
+
+pub fn identity_first(witness: String) -> String {
+  let selected = common(.() { from_number(1(I32), witness) }, .() { identity("identity") });
+  selected()
+}
+
+pub fn identity_last(witness: String) -> String {
+  let selected = common(.() { identity("identity") }, .() { from_number(1(I32), witness) });
+  selected()
+}
+
+pub fn alias_first(witness: String) -> String {
+  let selected = common(.() { from_number(1(I32), witness) }, .() { alias_identity("alias") });
+  selected()
+}
+
+pub fn alias_last(witness: String) -> String {
+  let selected = common(.() { alias_identity("alias") }, .() { from_number(1(I32), witness) });
+  selected()
+}

@@ -3,3 +3,5 @@ dependency macros;
 source {
   path "../../../../poc/macros/workdir/macros.pkg.kio"
 }
+
+rehost macros/control to build_rec_loop_recursive_state;

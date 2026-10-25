@@ -637,7 +637,9 @@ pure fn unit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__) -
   __if_then_else__(
   , __type_equal__(ct, source, __type_unit__(ct))
   , .() -> __Checked_term__ { value }
-  , .() -> __Checked_term__ { __macro_error__(ct, "unit_only requires a unit source") }
+  , .() -> __Checked_term__ {
+      __macro_error__(ct, "unit_only requires a unit source"(__Diagnostic_text__))
+    }
   )
 }
 

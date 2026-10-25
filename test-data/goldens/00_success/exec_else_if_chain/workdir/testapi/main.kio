@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/control(macro if);
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/io(print);
 
 // The `else if` chain parses to the same right-spined
@@ -9,7 +9,7 @@ import testapi/io(print);
 // `a = false` and `b = true` the middle arm fires; the output is
 // `B\n`. The chain's nested `Expr::IfElse` nodes all return `()`.
 pub fn main() {
-  let a = .f;
-  let b = .t;
+  let a = .f(Bool);
+  let b = .t(Bool);
   if(a) { print("A\n") } else if(b) { print("B\n") } else { print("C\n") }
 }

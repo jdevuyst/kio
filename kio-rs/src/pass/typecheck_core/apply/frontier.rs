@@ -18,8 +18,7 @@ use crate::pass::typecheck_full::publication::{PublicationBuilder, PublicationCh
 /// descends through immediate children left-to-right under the inherited mode.
 /// `RelationProbe` is admitted only by an enclosing symmetric relation host;
 /// ordinary roots skip it.
-/// This is not a flat queue: a nested child's literal
-/// fallback can never jump ahead of an earlier child of its parent.
+/// Nested children advance under their parent's mode before later siblings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum FrontierMode {
     ExpectedOnly,

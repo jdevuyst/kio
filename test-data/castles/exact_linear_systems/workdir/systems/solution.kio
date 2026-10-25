@@ -9,7 +9,7 @@ import macros/spine_macros(macro widen_sum);
 import systems/matrix as m;
 import systems/rational as q;
 import systems/reduce as reduction;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 
 pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List(I32) };
 

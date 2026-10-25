@@ -24,9 +24,8 @@ bridge {
 
 module kiodoc;
 
-import control(macro if);
+import control(Bool, macro if);
 
-default host type Bool role(bool);
 host type I32 role(i32);
 host type String role(str);
 host fn eq_i32(p0: I32, p1: I32) -> Bool;
@@ -43,14 +42,13 @@ The examples use host types `I32`, `Bool`, and `String` with roles `i32`,
 `bool`, and `str`. The host comparisons `eq_i32` and `leq_i32` take two `I32`
 values and return `Bool`; `sub_i32` and `mul_i32` take two `I32` values and
 return `I32`. Import the conditional macro with
-`import macros/control(macro if);` after following the
+`import macros/control(Bool, macro if);` after following the
 [macro-library setup](using-libraries.md#the-macro-library) under
 the dependency name `macros`.
 
-Select `Bool` as this module's Boolean default for the generated branch
-operation, for example `default host type Bool role(bool);`. This is separate
-from the role's literal capability; see
-[literal defaults](typechecking.md#literal-types-and-module-local-defaults).
+The reference `if` uses its library's concrete `control.Bool`. Import that
+same type or rehost the dependency's control module to the existing module
+that supplies `Bool`; see [macro-library adoption](using-libraries.md#the-macro-library).
 
 For a single function, put `rec(loop)` directly before the `fn` keyword:
 

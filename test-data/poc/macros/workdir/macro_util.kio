@@ -1720,10 +1720,10 @@ pure fn literal_unit(ct: __Comptime__, factors: Type_list, slots: Slot_list) -> 
       __if_then_else__(
       , slot_empty(ct, slots)
       , .() -> Macro_result { ok(ct, __term_unit__(ct)) }
-      , .() -> Macro_result { err(ct, "DNF branch has extra unit slots") }
+      , .() -> Macro_result { err(ct, "DNF branch has extra unit slots"(__Diagnostic_text__)) }
       )
     }
-  , .() -> Macro_result { err(ct, "DNF branch is not unit") }
+  , .() -> Macro_result { err(ct, "DNF branch is not unit"(__Diagnostic_text__)) }
   )
 }
 
@@ -1746,19 +1746,19 @@ pure fn literal_atom(ct: __Comptime__, target: __Type__, factors: Type_list, slo
               , Slot & Slot_list
               , Macro_result
               , Slot_list.un_slot_list(__fst__(Slot_list, Slot_list, parts))
-              , .(_empty: .) -> Macro_result { err(ct, "DNF branch atom slot is empty") }
+              , .(_empty: .) -> Macro_result { err(ct, "DNF branch atom slot is empty"(__Diagnostic_text__)) }
               , .(cell: Slot & Slot_list) -> Macro_result {
                   ok(ct, slot_term(ct, __fst__(Slot, Slot_list, cell)))
                 }
               )
             }
-          , .() -> Macro_result { err(ct, "DNF branch has extra atom slots") }
+          , .() -> Macro_result { err(ct, "DNF branch has extra atom slots"(__Diagnostic_text__)) }
           )
         }
-      , .(_bad: .) -> Macro_result { err(ct, "DNF branch atom slot does not match target") }
+      , .(_bad: .) -> Macro_result { err(ct, "DNF branch atom slot does not match target"(__Diagnostic_text__)) }
       )
     }
-  , .() -> Macro_result { err(ct, "DNF branch atom does not match target") }
+  , .() -> Macro_result { err(ct, "DNF branch atom does not match target"(__Diagnostic_text__)) }
   )
 }
 
@@ -1794,7 +1794,7 @@ pure fn materialize_product_search(
     , Product_materialize_state
     , Product_materialize_attempt
     , (__type_product__(ct, left, right), candidates)
-    , err(ct, "DNF branch does not match target product")
+    , err(ct, "DNF branch does not match target product"(__Diagnostic_text__))
     , .(
       , loop_recur: (Product_materialize_fuel & Product_materialize_state) -> Product_materialize_attempt
       , loop_fuel: Product_materialize_fuel
@@ -1895,7 +1895,7 @@ pure fn materialize_sum(
           ok(ct, __intrinsic_right__(ct, target, right_term))
         }
       , .(_right_message: __Diagnostic_text__) -> Macro_result {
-          err(ct, "DNF branch does not match target sum")
+          err(ct, "DNF branch does not match target sum"(__Diagnostic_text__))
         }
       )
     }
@@ -1928,7 +1928,7 @@ pure fn materialize_literal_target(
       , .() -> Macro_result {
           __if_then_else__(
           , __type_equal__(ct, loop_fuel, __type_bottom__(ct))
-          , .() -> Macro_result { err(ct, "DNF branch cannot materialize bottom target") }
+          , .() -> Macro_result { err(ct, "DNF branch cannot materialize bottom target"(__Diagnostic_text__)) }
           , .() -> Macro_result {
               __either__(
               , Type_pair
@@ -2225,7 +2225,7 @@ pure fn finish_product_build(
       __if_then_else__(
       , slot_empty(ct, build_slots(state))
       , .() -> Macro_result { ok(ct, built) }
-      , .() -> Macro_result { err(ct, "source has unused product slots") }
+      , .() -> Macro_result { err(ct, "source has unused product slots"(__Diagnostic_text__)) }
       )
     }
   , .() -> Macro_result { ok(ct, built) }
@@ -2305,7 +2305,7 @@ pub pure fn build_product_from_slots(
                   __left__(
                   , Macro_result
                   , Build_product_next
-                  , err(ct, "target product slot not provided by source")
+                  , err(ct, "target product slot not provided by source"(__Diagnostic_text__))
                   )
                 }
               )
@@ -2380,7 +2380,7 @@ pure fn build_widen_missing(
           __left__(
           , Macro_result
           , Build_product_next
-          , err(ct, "target product slot cannot be widened")
+          , err(ct, "target product slot cannot be widened"(__Diagnostic_text__))
           )
         }
       )
@@ -2524,7 +2524,7 @@ pub pure fn pick_first_slot(
   , Macro_result
   , take_first_matching(ct, target, slot_types, slots)
   , .(taken: Matched_slot) -> Macro_result { ok(ct, slot_term(ct, matched_slot_value(ct, taken))) }
-  , .(_missing: .) -> Macro_result { err(ct, "no product slot matches target") }
+  , .(_missing: .) -> Macro_result { err(ct, "no product slot matches target"(__Diagnostic_text__)) }
   )
 }
 
@@ -3026,7 +3026,7 @@ pub pure fn route_source_arms_unique(
                   __left__(
                   , Route_result
                   , Unique_route_next
-                  , routes_err(ct, "no matching target sum arm")
+                  , routes_err(ct, "no matching target sum arm"(__Diagnostic_text__))
                   )
                 }
               )
@@ -3119,7 +3119,7 @@ pub pure fn route_source_arms_collapse(
                   __left__(
                   , Route_result
                   , Collapse_route_next
-                  , routes_err(ct, "source sum arm has no target arm")
+                  , routes_err(ct, "source sum arm has no target arm"(__Diagnostic_text__))
                   )
                 }
               )
@@ -3415,7 +3415,7 @@ pure fn finish_dispatch(ct: __Comptime__, state: Dispatch_loop_state) -> Dispatc
       dispatch_ok(ct, dispatch_mapper(ct, dispatch_state(ct, state)))
     }
   , .(_extra: Type_list & Route_list) -> Dispatch_result {
-      dispatch_err(ct, "sum dispatch route count mismatch")
+      dispatch_err(ct, "sum dispatch route count mismatch"(__Diagnostic_text__))
     }
   )
 }
@@ -3432,14 +3432,14 @@ pure fn build_sum_dispatcher(
   , __Type__ & Type_list
   , Dispatch_result
   , Type_list.un_type_list(type_reverse(ct, source_spine))
-  , .(_no_source: .) -> Dispatch_result { dispatch_err(ct, "sum source spine is empty") }
+  , .(_no_source: .) -> Dispatch_result { dispatch_err(ct, "sum source spine is empty"(__Diagnostic_text__)) }
   , .(source_cell: __Type__ & Type_list) -> Dispatch_result {
       __either__(
       , .
       , Type_list & Route_list
       , Dispatch_result
       , Route_list.un_route_list(route_reverse(ct, routes))
-      , .(_no_route: .) -> Dispatch_result { dispatch_err(ct, "sum route list is empty") }
+      , .(_no_route: .) -> Dispatch_result { dispatch_err(ct, "sum route list is empty"(__Diagnostic_text__)) }
       , .(route_cell: Type_list & Route_list) -> Dispatch_result {
           __structural_recur__(
           , ct
@@ -3485,7 +3485,7 @@ pure fn build_sum_dispatcher(
                           __left__(
                           , Dispatch_result
                           , Dispatch_next
-                          , dispatch_err(ct, "sum dispatch route count mismatch")
+                          , dispatch_err(ct, "sum dispatch route count mismatch"(__Diagnostic_text__))
                           )
                         }
                       , .(route_head: Type_list & Route_list) -> Dispatch_step {
@@ -3568,14 +3568,14 @@ fn first_two_types(ct: __Comptime__, types: Type_list) -> Type_pair_result {
   , __Type__ & Type_list
   , Type_pair_result
   , Type_list.un_type_list(types)
-  , .(_empty: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots") }
+  , .(_empty: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots"(__Diagnostic_text__)) }
   , .(first_cell: __Type__ & Type_list) -> Type_pair_result {
       __either__(
       , .
       , __Type__ & Type_list
       , Type_pair_result
       , Type_list.un_type_list(__snd__(__Type__, Type_list, first_cell))
-      , .(_one: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots") }
+      , .(_one: .) -> Type_pair_result { type_pair_err("type spine has fewer than two slots"(__Diagnostic_text__)) }
       , .(second_cell: __Type__ & Type_list) -> Type_pair_result {
           type_pair_ok(
           , __fst__(__Type__, Type_list, first_cell)
@@ -3642,17 +3642,17 @@ pure fn flatten_product_once(ct: __Comptime__, current_type: __Type__, value: __
               flatten_product_step_from_parts(ct, current_type, value, outer, inner)
             }
           , .(_not_inner_product: .) -> Type_term_result {
-              type_term_err(ct, "product source has no left-nested product to flatten")
+              type_term_err(ct, "product source has no left-nested product to flatten"(__Diagnostic_text__))
             }
           )
         }
       , .() -> Type_term_result {
-          type_term_err(ct, "product source has no left-nested product to flatten")
+          type_term_err(ct, "product source has no left-nested product to flatten"(__Diagnostic_text__))
         }
       )
     }
   , .(_not_product: .) -> Type_term_result {
-      type_term_err(ct, "product source has no left-nested product to flatten")
+      type_term_err(ct, "product source has no left-nested product to flatten"(__Diagnostic_text__))
     }
   )
 }
@@ -3726,17 +3726,17 @@ pure fn flatten_sum_once(ct: __Comptime__, current_type: __Type__, value: __Chec
               flatten_sum_step_from_parts(ct, current_type, value, outer, inner)
             }
           , .(_not_inner_sum: .) -> Type_term_result {
-              type_term_err(ct, "sum source has no left-nested sum to flatten")
+              type_term_err(ct, "sum source has no left-nested sum to flatten"(__Diagnostic_text__))
             }
           )
         }
       , .() -> Type_term_result {
-          type_term_err(ct, "sum source has no left-nested sum to flatten")
+          type_term_err(ct, "sum source has no left-nested sum to flatten"(__Diagnostic_text__))
         }
       )
     }
   , .(_not_sum: .) -> Type_term_result {
-      type_term_err(ct, "sum source has no left-nested sum to flatten")
+      type_term_err(ct, "sum source has no left-nested sum to flatten"(__Diagnostic_text__))
     }
   )
 }
@@ -3808,7 +3808,7 @@ pub pure fn flatten_product_to(
                       __left__(
                       , Macro_result
                       , Flatten_next
-                      , err(ct, "product source has no left-nested product to flatten")
+                      , err(ct, "product source has no left-nested product to flatten"(__Diagnostic_text__))
                       )
                     }
                   )
@@ -3886,7 +3886,7 @@ pub pure fn flatten_sum_to(
                       __left__(
                       , Macro_result
                       , Flatten_next
-                      , err(ct, "sum source has no left-nested sum to flatten")
+                      , err(ct, "sum source has no left-nested sum to flatten"(__Diagnostic_text__))
                       )
                     }
                   )

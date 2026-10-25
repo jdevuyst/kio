@@ -6758,9 +6758,11 @@ impl<'m> Resolver<'m> {
                         debug_assert_eq!(*kind, crate::ast::ElaboratorKind::Access);
                         self.check_expr(receiver, locals)
                     }
-                    crate::ast::ElaboratorCall::FieldUpdate { receiver, updates } => {
+                    crate::ast::ElaboratorCall::FieldUpdate { base, updates } => {
                         debug_assert_eq!(*kind, crate::ast::ElaboratorKind::Filtered);
-                        self.check_expr(receiver, locals)?;
+                        if let Some(receiver) = base.receiver() {
+                            self.check_expr(receiver, locals)?;
+                        }
                         for update in updates {
                             self.check_expr(&update.value, locals)?;
                         }

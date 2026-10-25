@@ -18,7 +18,7 @@ import os/proc as proc;
 import os/proc(Compute, Phase, Touch, {compute}, {touch});
 import os/queue as queue;
 import os/trace as trace;
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/iter(loop);

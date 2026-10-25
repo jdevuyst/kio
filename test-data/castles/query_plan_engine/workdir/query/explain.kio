@@ -9,7 +9,7 @@ import query/list as list;
 import query/plan as plan;
 import query/schema as schema;
 import query/text as text;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, mul_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

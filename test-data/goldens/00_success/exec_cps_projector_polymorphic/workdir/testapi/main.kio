@@ -2,7 +2,7 @@ module testapi/main;
 
 import __intrinsics__;
 
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 // Polymorphic CPS-projector apply: a newtype whose header declares
@@ -25,4 +25,7 @@ fn extract_via_cps[T](b: Boxed(T)) -> T {
   Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) })
 }
 
-pub fn main() { let b = box_value("cps-projector-polymorphic-ok\n"); print(extract_via_cps(b)) }
+pub fn main() {
+  let b = box_value("cps-projector-polymorphic-ok\n"(String));
+  print(extract_via_cps(b))
+}

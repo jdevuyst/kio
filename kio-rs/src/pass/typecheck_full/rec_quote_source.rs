@@ -477,8 +477,8 @@ pub(super) fn compose(
                                 ElaboratorCall::FieldAccess { receiver, .. } => {
                                     pending.push(Work::Enter(receiver));
                                 }
-                                ElaboratorCall::FieldUpdate { receiver, updates } => {
-                                    pending.push(Work::Enter(receiver));
+                                ElaboratorCall::FieldUpdate { base, updates } => {
+                                    pending.extend(base.receiver().map(Work::Enter));
                                     pending.extend(
                                         updates.iter().map(|update| Work::Enter(&update.value)),
                                     );

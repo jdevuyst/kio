@@ -7,7 +7,7 @@ import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 import systems/matrix as m;
 import systems/rational as q;
-import testapi(I32, default Bool, default String);
+import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/fmt as fmt;
 import testapi/io as io;

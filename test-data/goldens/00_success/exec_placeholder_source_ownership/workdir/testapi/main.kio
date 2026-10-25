@@ -1,7 +1,7 @@
 module testapi/main;
 
 import control as control;
-import testapi(default String);
+import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
@@ -46,7 +46,7 @@ pub fn main() {
   io.print("\n");
   io.print(apply3(._p. { _p3 }));
   io.print("\n");
-  let p1 = "captured";
+  let p1 = "captured"(String);
   io.print(apply1(.x. { let ignored = x1; p1 }));
   io.print("\n")
 }

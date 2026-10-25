@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(String, default Bool, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -269,7 +269,7 @@ fn mergesort(xs: Run) -> Run {
 fn join_step_cons(x: I32, rest: Run, acc: String, is_first: I32) -> (Run & String & I32) | String {
   widen_sum(
   , if(leq_i32(is_first, 0)) {
-      (rest, int_to_string(x), 1)
+      (rest, int_to_string(x), 1(I32))
     } else {
       (rest, string_concat(acc, string_concat(",", int_to_string(x))), 1)
     }

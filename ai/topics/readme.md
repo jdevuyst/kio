@@ -1,6 +1,7 @@
 # `README.md`
 
-Trigger: editing `README.md` or `website/.vitepress/theme/components/Landing.vue`.
+Trigger: editing `README.md`, `website/.vitepress/theme/components/Landing.vue`,
+or its displayed examples under `website/examples/`.
 
 `README.md` is the public entry point on GitHub. Rules:
 
@@ -13,6 +14,19 @@ Listing READMEs give a concise capability overview, not an exhaustive inventory
 of commands or code actions. Keep capability and availability claims accurate
 when the artifact changes; detailed action lists belong in reference material.
 The README audit checks these claims without requiring every action to appear.
+Apply [People and programs](docs.md#people-and-programs) when explaining
+integration responsibilities or tool behavior on these entry pages.
+
+## README and landing-page consistency
+
+When changing a language claim, explanation or example in either entry point,
+review the corresponding content in the other, including the canonical sources
+of displayed website examples. Keep shared claims and examples consistent with
+the current contract. Explain unfamiliar syntax near its first use when readers
+need it to understand the example. Each page may use different wording and detail
+for its audience; neither needs to repeat the other's complete feature list.
+Record the paired check with the change's validation evidence, including any
+required counterpart edits awaiting protected-wording approval.
 
 ## Landing-page visual review
 

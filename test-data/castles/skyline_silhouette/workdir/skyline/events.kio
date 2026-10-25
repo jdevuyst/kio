@@ -13,7 +13,7 @@ import macros/spine_macros(macro widen_sum);
 import skyline/city as city;
 import skyline/list as lst;
 import skyline/logic as logic;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32);
 import testapi/iter(loop);
 

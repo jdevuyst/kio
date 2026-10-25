@@ -1,0 +1,5 @@
+module main;
+
+host type Bool role(bool);
+
+fn value() { let flag = .t; () }

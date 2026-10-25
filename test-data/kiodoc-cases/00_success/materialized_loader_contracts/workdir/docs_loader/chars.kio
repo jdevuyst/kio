@@ -2,7 +2,7 @@
 module docs_loader/chars;
 
 import docs_loader/macros/control(macro if);
-import docs_loader/testapi(default Bool, default I32);
+import docs_loader/testapi(Bool, I32);
 import docs_loader/testapi/arith(eq_i32, leq_i32);
 
 // `chars.kio` — the lexer's character vocabulary.

@@ -64,12 +64,8 @@ where
     pub user_macros: HashMap<&'m str, &'m crate::ast::UserMacroDef<P>>,
     /// Whether `import __intrinsics__;` appears in the module's import list.
     pub intrinsics_in_scope: bool,
-    /// Singleton exact-role bindings retained for API consumers. Missing
-    /// and ambiguous roles are absent. [`Self::resolve_exact_role`] is the
-    /// authoritative query when a caller must distinguish those states.
-    pub roles_in_scope: HashMap<crate::ast::Role, &'m str>,
-    pub(crate) default_candidates: Vec<DefaultTypeCandidate<'m>>,
-    selected_defaults: [Option<usize>; 4],
+    /// Source-visible role types offered only as explicit annotation fixes.
+    pub(crate) annotation_candidates: Vec<AnnotationCandidate<'m>>,
     pub env_type_names: HashSet<&'m str>,
     /// Env fn declarations available at call sites.
     pub env_fn_defs: HashMap<&'m str, &'m crate::ast::HostFn<P>>,
@@ -85,7 +81,7 @@ where
     /// dependency's `(module, Meters)`, never the consumer's same-named
     /// type. Mirrors `cross_module_user_macro_modules`.
     pub cross_module_fn_def_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
-    /// User macro declarations imported for `name!(...)` call sites.
+    /// User macro declarations imported for `name(...)` call sites.
     pub cross_module_user_macros: HashMap<&'m str, &'m crate::ast::UserMacroDef<P>>,
     pub cross_module_user_macro_modules: HashMap<&'m str, &'m crate::ast::Module<P>>,
     /// Cross-module type-alias imports — `import m(Foo);` where `Foo`
@@ -158,41 +154,18 @@ pub(crate) struct MemberNewtypeResolution<'m, P: crate::ast::Phase> {
     pub(crate) declaring_module: &'m crate::ast::Module<P>,
 }
 
-/// The explicit default selection for an exact role at one use site.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RoleResolution<'m> {
-    Missing,
-    Unique(&'m str),
-}
-
 #[derive(Clone)]
-pub(crate) struct DefaultTypeCandidate<'m> {
+pub(crate) struct AnnotationCandidate<'m> {
     pub(crate) visible_name: &'m str,
     pub(crate) role: crate::ast::Role,
-    pub(crate) host_identity: (String, String),
-    reference: Vec<String>,
     pub(crate) local_item_index: Option<usize>,
-    pub(crate) selected: Option<Span>,
     pub(crate) insertion: Span,
 }
 
-impl DefaultTypeCandidate<'_> {
+impl AnnotationCandidate<'_> {
     pub(crate) fn visible_at(&self, cutoff: Option<usize>) -> bool {
         self.local_item_index
             .is_none_or(|index| cutoff.is_none_or(|cutoff| index < cutoff))
-    }
-
-    pub(crate) fn ty<P: crate::ast::Phase>(&self, span: Span) -> crate::ast::Type<P> {
-        crate::ast::Type::synth_path(self.reference.clone(), Vec::new(), span)
-    }
-}
-
-fn default_category(shape: crate::ast::RoleShape) -> usize {
-    match shape {
-        crate::ast::RoleShape::Int => 0,
-        crate::ast::RoleShape::Float => 1,
-        crate::ast::RoleShape::Bool => 2,
-        crate::ast::RoleShape::Str => 3,
     }
 }
 
@@ -292,9 +265,7 @@ where
             fn_defs: HashMap::new(),
             user_macros: HashMap::new(),
             intrinsics_in_scope: false,
-            roles_in_scope: HashMap::new(),
-            default_candidates: Vec::new(),
-            selected_defaults: [None; 4],
+            annotation_candidates: Vec::new(),
             env_type_names: HashSet::new(),
             env_fn_defs: HashMap::new(),
             cross_module_fn_defs: HashMap::new(),
@@ -411,8 +382,7 @@ where
         if let Some(pkg) = package {
             populate_cross_module_imports(&mut env, &module.imports, pkg);
         }
-        env.register_default_types()?;
-        rebuild_singleton_roles_in_scope(&mut env);
+        env.register_annotation_candidates();
         Ok(env)
     }
 }
@@ -421,35 +391,6 @@ impl<'m, P: crate::ast::Phase> ModuleEnv<'m, P> {
     #[cfg(feature = "surface")]
     pub(crate) fn typecheck_execution(&self) -> TypecheckExecution {
         self.typecheck_execution
-    }
-
-    /// Resolve an exact role from the module's explicit category selection.
-    /// Admission already rejects conflicting terminal identities; equivalent
-    /// selections share the earliest active spelling.
-    pub fn resolve_exact_role(&self, role: crate::ast::Role) -> RoleResolution<'m> {
-        self.resolve_exact_role_at(role, None)
-    }
-
-    pub(crate) fn resolve_exact_role_at(
-        &self,
-        role: crate::ast::Role,
-        local_item_cutoff: Option<usize>,
-    ) -> RoleResolution<'m> {
-        self.selected_default(role.shape(), local_item_cutoff)
-            .filter(|candidate| candidate.role == role)
-            .map_or(RoleResolution::Missing, |candidate| {
-                RoleResolution::Unique(candidate.visible_name)
-            })
-    }
-
-    pub(crate) fn selected_default(
-        &self,
-        shape: crate::ast::RoleShape,
-        cutoff: Option<usize>,
-    ) -> Option<&DefaultTypeCandidate<'m>> {
-        self.selected_defaults[default_category(shape)]
-            .map(|index| &self.default_candidates[index])
-            .filter(|candidate| candidate.visible_at(cutoff))
     }
 
     /// Resolve one exact module identity without requiring the source module
@@ -533,71 +474,35 @@ where
         Some((host.role?.role, (module_path, host.name.clone())))
     }
 
-    fn register_default_types(&mut self) -> Result<(), Error> {
+    fn register_annotation_candidates(&mut self) {
         use crate::ast::{ImportItem, ImportKind, Item, TypeRecMember};
         let mut candidates = Vec::new();
-        let mut add = |name: &'m str,
-                       insertion: Span,
-                       selected: Option<Span>,
-                       local_item_index|
-         -> Result<(), Error> {
+        let mut add = |name: &'m str, insertion: Span, local_item_index| {
             let ty = crate::ast::Type::synth_path(vec![name.to_owned()], Vec::new(), insertion);
-            let Some((role, host_identity)) = self.role_type_identity(&ty, false) else {
-                if let Some(span) = selected {
-                    return Err(Error::type_(
-                        span,
-                        format!(
-                            "`{name}` cannot be selected as a default type: it must resolve to a closed role-bearing host type"
-                        ),
-                    ));
-                }
-                return Ok(());
+            let Some((role, _)) = self.role_type_identity(&ty, false) else {
+                return;
             };
-            let reference = if host_identity.0 == "__comptime__" {
-                self.qualify_nominal_segments(&[crate::ast::PathSegment::new(
-                    name.to_owned(),
-                    insertion,
-                )])
-                .into_iter()
-                .map(|segment| segment.name)
-                .collect()
-            } else {
-                host_identity
-                    .0
-                    .split('/')
-                    .map(str::to_owned)
-                    .chain(std::iter::once(host_identity.1.clone()))
-                    .collect()
-            };
-            candidates.push(DefaultTypeCandidate {
+            candidates.push(AnnotationCandidate {
                 visible_name: name,
                 role,
-                host_identity,
-                reference,
                 local_item_index,
-                selected,
                 insertion,
             });
-            Ok(())
         };
         for import in &self.module.imports {
             match &import.kind {
                 ImportKind::Comptime => {
-                    add("Comptime_bool", import.span, Some(import.span), None)?;
-                    add("Comptime_str", import.span, Some(import.span), None)?;
+                    add("Comptime_bool", import.span, None);
+                    add("Comptime_str", import.span, None);
                 }
                 ImportKind::Selective { items, .. } => {
                     for item in items {
-                        if let ImportItem::Name {
-                            default_span, span, ..
-                        } = item
-                        {
+                        if let ImportItem::Name { span, .. } = item {
                             add(
                                 item.as_local_name().expect("named import has local name"),
                                 *span,
-                                *default_span,
                                 None,
-                            )?;
+                            );
                         }
                     }
                 }
@@ -606,48 +511,19 @@ where
         }
         for (index, item) in self.module.items.iter().enumerate() {
             match item {
-                Item::HostType(host) => {
-                    add(&host.name, host.meta.span, host.default_span, Some(index))?
-                }
-                Item::TypeAlias(alias) => add(
-                    &alias.name,
-                    alias.meta.span,
-                    alias.default_span,
-                    Some(index),
-                )?,
+                Item::HostType(host) => add(&host.name, host.meta.span, Some(index)),
+                Item::TypeAlias(alias) => add(&alias.name, alias.meta.span, Some(index)),
                 Item::TypeRecGroup(group) => {
                     for member in &group.members {
                         if let TypeRecMember::TypeAlias(alias) = member {
-                            add(
-                                &alias.name,
-                                alias.meta.span,
-                                alias.default_span,
-                                Some(index),
-                            )?;
+                            add(&alias.name, alias.meta.span, Some(index));
                         }
                     }
                 }
                 _ => {}
             }
         }
-        let mut selected: [Option<usize>; 4] = [None; 4];
-        for (index, candidate) in candidates.iter().enumerate() {
-            let Some(span) = candidate.selected else {
-                continue;
-            };
-            let slot = &mut selected[default_category(candidate.role.shape())];
-            if let Some(previous) = slot.map(|index| &candidates[index]) {
-                if previous.host_identity != candidate.host_identity {
-                    return Err(Error::type_(span, format!("conflicting default {} types: `{}` and `{}` select different host types", super::synth::literal_shape_noun(candidate.role.shape()), previous.visible_name, candidate.visible_name))
-                        .with_secondary(previous.selected.expect("selected candidate"), "the other default type is selected here"));
-                }
-            } else {
-                *slot = Some(index);
-            }
-        }
-        self.default_candidates = candidates;
-        self.selected_defaults = selected;
-        Ok(())
+        self.annotation_candidates = candidates;
     }
 
     /// Lift the env's two type-alias maps into the shared
@@ -1007,16 +883,6 @@ pub fn populate_cross_module_imports<'m, P>(
             }
             _ => {}
         }
-    }
-    rebuild_singleton_roles_in_scope(env);
-}
-
-fn rebuild_singleton_roles_in_scope<P: crate::ast::Phase>(env: &mut ModuleEnv<'_, P>) {
-    env.roles_in_scope.clear();
-    for index in env.selected_defaults.iter().flatten() {
-        let candidate = &env.default_candidates[*index];
-        env.roles_in_scope
-            .insert(candidate.role, candidate.visible_name);
     }
 }
 
@@ -1406,10 +1272,6 @@ where
 
     pub(crate) fn local_item_cutoff(&self) -> Option<usize> {
         self.item_index
-    }
-
-    pub fn resolve_exact_role(&self, role: crate::ast::Role) -> RoleResolution<'m> {
-        self.env.resolve_exact_role_at(role, self.item_index)
     }
 
     pub fn require_pure_fn(
@@ -2443,8 +2305,22 @@ mod tests {
         );
     }
 
+    fn annotation_identity(
+        env: &ModuleEnv<'_, Lowered>,
+        candidate: &AnnotationCandidate<'_>,
+    ) -> (String, String) {
+        let ty = crate::ast::Type::synth_path(
+            vec![candidate.visible_name.to_owned()],
+            Vec::new(),
+            candidate.insertion,
+        );
+        env.role_type_identity(&ty, false)
+            .expect("visible role-bearing annotation candidate")
+            .1
+    }
+
     #[test]
-    fn selective_role_recovery_reuses_the_target_declaration_provider() {
+    fn annotation_inventory_reuses_the_target_declaration_provider() {
         const DECLARATIONS: usize = 64;
         const IMPORTS: usize = 48;
 
@@ -2463,17 +2339,21 @@ mod tests {
             ("consumer.kio", consumer.as_str()),
         ]);
         let consumer = &package.module("consumer").expect("consumer module").module;
-        let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
-
         reset_nominal_provider_item_visits();
-        assert!(matches!(
-            env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Missing
-        ));
+        let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
+        let inventory_visits = nominal_provider_item_visits();
+        assert_eq!(env.annotation_candidates.len(), IMPORTS);
+        for (index, candidate) in env.annotation_candidates.iter().enumerate() {
+            assert_eq!(candidate.role, crate::ast::Role::Bool);
+            assert_eq!(
+                annotation_identity(&env, candidate),
+                ("provider".to_owned(), format!("Type{index}"))
+            );
+        }
         assert!(
-            nominal_provider_item_visits() <= DECLARATIONS,
-            "role recovery must reuse the indexed target provider in O(D + U), not scan all D declarations for each of U imports: {} visits",
-            nominal_provider_item_visits()
+            inventory_visits <= DECLARATIONS + 4 * IMPORTS,
+            "annotation inventory must reuse the indexed target provider in O(D + U), not scan all D declarations for each of U imports: {} visits",
+            inventory_visits
         );
     }
 
@@ -2498,7 +2378,7 @@ mod tests {
 
         reset_nominal_provider_item_visits();
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
-        assert_eq!(env.default_candidates.len(), ALIASES);
+        assert_eq!(env.annotation_candidates.len(), ALIASES);
         assert!(
             nominal_provider_item_visits() <= DECLARATIONS + 4 * ALIASES,
             "inherited-role lookup must project each exact provider declaration in O(D + K), not rescan all D declarations for every alias: {} visits",
@@ -2507,7 +2387,7 @@ mod tests {
     }
 
     #[test]
-    fn selected_aliases_deduplicate_terminal_host_identity() {
+    fn annotation_aliases_retain_their_terminal_host_identity() {
         let package = package(&[
             (
                 "pkg/provider.kio",
@@ -2521,20 +2401,26 @@ mod tests {
             (
                 "pkg/consumer.kio",
                 "module pkg/consumer; import pkg/adapter as adapter; \
-                 default type Zeta = adapter.Rehost; default type Alpha = adapter.Rehost;",
+                 type Zeta = adapter.Rehost; type Alpha = adapter.Rehost;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
 
         assert_eq!(
-            env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Unique("Zeta")
+            env.annotation_candidates
+                .iter()
+                .map(|candidate| candidate.visible_name)
+                .collect::<Vec<_>>(),
+            ["Zeta", "Alpha"]
         );
-        assert_eq!(
-            env.roles_in_scope.get(&crate::ast::Role::Bool),
-            Some(&"Zeta")
-        );
+        for candidate in &env.annotation_candidates {
+            assert_eq!(candidate.role, crate::ast::Role::Bool);
+            assert_eq!(
+                annotation_identity(&env, candidate),
+                ("pkg/provider".to_owned(), "Bool".to_owned())
+            );
+        }
     }
 
     #[test]
@@ -2568,12 +2454,12 @@ mod tests {
             .map(crate::ast::PathSegment::as_str)
             .collect::<Vec<_>>(),
             ["standalone", "I32"],
-            "unique role resolution must not mark a bare standalone name as canonical"
+            "source qualification must not mark a bare standalone name as canonical"
         );
     }
 
     #[test]
-    fn selected_aliases_reject_distinct_same_leaf_origins_eagerly() {
+    fn annotation_inventory_preserves_distinct_same_leaf_origins() {
         let package = package(&[
             (
                 "pkg/first.kio",
@@ -2586,18 +2472,27 @@ mod tests {
             (
                 "pkg/consumer.kio",
                 "module pkg/consumer; import pkg/first as first; import pkg/second as second; \
-                 default type Zeta = second.Bool; default type Alpha = first.Bool;",
+                 type Zeta = second.Bool; type Alpha = first.Bool;",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
-        let error = ModuleEnv::build(consumer, None, None, Some(&package))
-            .err()
-            .expect("conflicting defaults");
-        assert!(error.diag().1.contains("conflicting default boolean types"));
+        let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
+        let candidates = &env.annotation_candidates;
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].visible_name, "Zeta");
+        assert_eq!(
+            annotation_identity(&env, &candidates[0]),
+            ("pkg/second".to_owned(), "Bool".to_owned())
+        );
+        assert_eq!(candidates[1].visible_name, "Alpha");
+        assert_eq!(
+            annotation_identity(&env, &candidates[1]),
+            ("pkg/first".to_owned(), "Bool".to_owned())
+        );
     }
 
     #[test]
-    fn imported_default_is_active_before_local_aliases() {
+    fn annotation_suggestions_respect_imports_and_local_declaration_cutoffs() {
         let package = package(&[
             (
                 "pkg/first.kio",
@@ -2614,7 +2509,7 @@ mod tests {
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(default Flag); \
+                "module pkg/consumer; import pkg/provider(Flag); \
                  import pkg/second as second; fn earlier() -> . { () } \
                  type Other = second.Bool;",
             ),
@@ -2622,18 +2517,22 @@ mod tests {
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
 
+        let candidates = &env.annotation_candidates;
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].visible_name, "Flag");
         assert_eq!(
-            env.resolve_exact_role_at(crate::ast::Role::Bool, Some(0)),
-            RoleResolution::Unique("Flag")
+            annotation_identity(&env, &candidates[0]),
+            ("pkg/first".to_owned(), "Bool".to_owned())
         );
-        assert_eq!(
-            env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Unique("Flag")
-        );
+        assert!(candidates[0].visible_at(Some(0)));
+        assert_eq!(candidates[1].visible_name, "Other");
+        assert!(!candidates[1].visible_at(Some(0)));
+        assert!(!candidates[1].visible_at(Some(1)));
+        assert!(candidates[1].visible_at(Some(2)));
     }
 
     #[test]
-    fn differently_renamed_defaults_of_one_identity_remain_unique() {
+    fn annotation_suggestions_keep_renamed_imports_of_one_identity() {
         let package = package(&[
             (
                 "pkg/provider.kio",
@@ -2641,17 +2540,26 @@ mod tests {
             ),
             (
                 "pkg/consumer.kio",
-                "module pkg/consumer; import pkg/provider(default Bool); \
-                 import pkg/provider(default Bool as Flag);",
+                "module pkg/consumer; import pkg/provider(Bool); \
+                 import pkg/provider(Bool as Flag);",
             ),
         ]);
         let consumer = &package.module("pkg/consumer").expect("consumer").module;
         let env = ModuleEnv::build(consumer, None, None, Some(&package)).expect("environment");
 
         assert_eq!(
-            env.resolve_exact_role(crate::ast::Role::Bool),
-            RoleResolution::Unique("Bool")
+            env.annotation_candidates
+                .iter()
+                .map(|candidate| candidate.visible_name)
+                .collect::<Vec<_>>(),
+            ["Bool", "Flag"]
         );
+        for candidate in &env.annotation_candidates {
+            assert_eq!(
+                annotation_identity(&env, candidate),
+                ("pkg/provider".to_owned(), "Bool".to_owned())
+            );
+        }
     }
 
     #[test]

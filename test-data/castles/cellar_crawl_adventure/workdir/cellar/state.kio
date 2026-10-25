@@ -11,7 +11,7 @@ import cellar/world as world;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add, mul, sub);
 
 pub labels Loc = { in_room: ids.Room_id } | { held: . };

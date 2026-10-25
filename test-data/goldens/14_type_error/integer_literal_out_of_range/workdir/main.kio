@@ -1,7 +1,7 @@
 module main;
 
-default host type Narrow role(i8);
+host type Narrow role(i8);
 
 host type Wider role(i16);
 
-fn value() { let n = 128; () }
+fn value() { let n = 128(Narrow); () }

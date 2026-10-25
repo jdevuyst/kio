@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/algebraic_macros(macro into);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 // `into` identity absorption: `A & . ↔ A` and `A | ! ↔ A` in
@@ -18,10 +18,10 @@ fn drop_bottom(s: String | !) -> String { into(s) }
 
 pub fn main() {
   // `A & . → A`: build a `(String, ())` pair, then peel the unit.
-  let pair = ("unit-absorbed\n", ());
+  let pair = ("unit-absorbed\n"(String), ());
   print(drop_unit(pair));
   // `A | ! → A`: inject into the left arm of `(String | !)` (the
   // `!` arm has no inhabitants), then drop the bottom branch.
-  let summed = into("bottom-absorbed\n", String | !);
+  let summed = into("bottom-absorbed\n"(String), String | !);
   print(drop_bottom(summed))
 }

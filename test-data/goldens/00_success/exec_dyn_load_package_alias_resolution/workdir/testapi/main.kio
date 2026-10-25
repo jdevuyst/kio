@@ -17,7 +17,7 @@ import macros/control(macro if);
 import macros/match(macro match);
 import prime(group_slots_cons, group_slots_nil);
 import result(Call_result, call_done, call_stuck);
-import testapi(I32, Scalar, String, default Bool);
+import testapi(Bool, I32, Scalar, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 import testapi/scalar(scalar_of_i32);

@@ -21,7 +21,8 @@ evidence. Notes to self, AI-to-AI handoffs, unexplained shorthand, and repositor
 maintenance bookkeeping do not belong in the public contract. An editorial
 clarification preserves the accepted programs, behavior, and guarantees; an
 ambiguous or conflicting rule requires a contract decision, not a silent
-wording repair.
+wording repair. Follow [People and programs](docs.md#people-and-programs)
+when distinguishing automated behavior from a developer's required actions.
 
 Specifications are also original-byte inputs to the version-matched installed
 `kio manual` bundle, alongside their website/checkout role. Follow

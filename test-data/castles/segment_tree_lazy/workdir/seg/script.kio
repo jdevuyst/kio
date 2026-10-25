@@ -13,7 +13,7 @@ module seg/script;
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
 import seg/num(int_eq);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
 import testapi/iter(loop);

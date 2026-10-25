@@ -3,7 +3,7 @@ module result;
 
 import host_descriptor(Host_fn);
 import macros/spine_macros(macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import value(Value);
 
 // `result.kio` — the evaluator outcome types, factored out of `eval.kio`.

@@ -4,4 +4,5 @@ source {
   path "../../../poc/vec/workdir/vec.pkg.kio"
 }
 
+rehost vec/macros/control to testapi;
 rehost vec/macros/testapi to testapi;

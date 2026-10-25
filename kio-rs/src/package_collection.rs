@@ -1797,7 +1797,6 @@ fn host_type_to_alias(h: &crate::ast::HostType, provider_alias: &str) -> crate::
     let body =
         crate::ast::Type::synth_path(vec![provider_alias.to_owned(), h.name.clone()], args, span);
     crate::ast::TypeAlias {
-        default_span: h.default_span,
         vis: crate::ast::Visibility::Public,
         name: h.name.clone(),
         name_span: span,
@@ -1913,7 +1912,6 @@ fn reexport_type_alias(
         span,
     );
     crate::ast::TypeAlias {
-        default_span: None,
         vis: visibility,
         name: name.to_owned(),
         name_span: span,
@@ -2685,7 +2683,6 @@ fn apply_retype(
                 .difference(&public_names)
                 .map(|name| ImportItem::Name {
                     macro_span: None,
-                    default_span: None,
                     leading_trivia: Vec::new(),
                     name: name.clone(),
                     span: module.path.span,
@@ -3435,7 +3432,6 @@ fn push_retype_snapshot_alias(
         .map(|(_file, module)| module)
         .expect("a retype snapshot owner was copied into the type projection");
     module.items.push(Item::TypeAlias(crate::ast::TypeAlias {
-        default_span: None,
         vis: crate::ast::Visibility::Private,
         name: name.to_owned(),
         name_span: span,

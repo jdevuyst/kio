@@ -3023,9 +3023,10 @@ pub(crate) fn synth_let_bound_type<'m>(
     tcx: &mut TypeCtx<'m, '_, Lowered>,
 ) -> Result<InternedType<Lowered>, Error> {
     let Some(annotation) = annotation else {
-        return Ok(
-            <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::synth_expr(value, tcx)?.ty,
-        );
+        let found =
+            <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::synth_expr(value, tcx)?;
+        found.require_value_specialization()?;
+        return Ok(found.ty);
     };
     let lexical = PlanningLexicalView::borrowed(tcx);
     let plan = plan_source_annotation(annotation, tcx, &lexical, false)?;
@@ -3040,10 +3041,10 @@ pub(crate) fn synth_let_bound_type<'m>(
         return Ok(expected);
     }
 
-    let found =
-        <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::synth_expr(value, tcx)?.ty;
-    plan.commit_against(annotation, &found, annotation.span(), tcx)?;
-    Ok(found)
+    let found = <<Lowered as TyperPhase>::Typer as super::Typer<Lowered>>::synth_expr(value, tcx)?;
+    found.require_value_specialization()?;
+    plan.commit_against(annotation, &found.ty, annotation.span(), tcx)?;
+    Ok(found.ty)
 }
 
 #[cfg(feature = "surface")]
@@ -3104,7 +3105,9 @@ where
     P: TyperPhase + crate::pass::resolve::ExportContractPhase + Clone,
 {
     let Some(annotation) = annotation else {
-        return Ok(<P::Typer as super::Typer<P>>::synth_expr(value, tcx)?.ty);
+        let found = <P::Typer as super::Typer<P>>::synth_expr(value, tcx)?;
+        found.require_value_specialization()?;
+        return Ok(found.ty);
     };
     let lexical = PlanningLexicalView::borrowed(tcx);
     let plan = plan_source_annotation(annotation, tcx, &lexical, false)?;

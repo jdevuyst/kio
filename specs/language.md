@@ -131,14 +131,15 @@ precede values within the current universal/function layer; applying its value
 layer may expose another binder run. The typer reads explicit type arguments
 left-to-right, then solves remaining binders from the finite local relation
 described above: value-argument types, connected nested results, and the call's
-expected return type. An unannotated literal first uses a refined parameter
-slot when one is available; only then does the lexical default apply. Any
+expected return type. An unannotated scalar literal may use a concrete
+role-bearing type supplied by those finite local constraints. A literal still
+unresolved at that boundary requires an explicit annotation. Any
 binder still unknown after the bounded schedule is a type error. UFCS calls use
 the same positional list and application rules: `r.>f(T, x)` supplies `T`,
 inserts `r` into a value slot, and checks the resulting ordinary call plan —
 see § UFCS.
 
-**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and macro names (such as `iso`, `fit`, `match`, `derive`, or a package-defined `checked` after the corresponding import) are all looked up by name and expose a declared polytype. Macro names use direct local call syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the macro's declared call type by the ordinary call-type rules. `__if_then_else__`'s scheme uses the module's explicitly selected Boolean default; without that selection the name has no scheme and its use is a type error. Distinct conflicting defaults are rejected at their declarations or imports, not deferred until this use.
+**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and macro names (such as `iso`, `fit`, `match`, `derive`, or a package-defined `checked` after the corresponding import) are all looked up by name and expose a declared polytype. Macro names use direct local call syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the macro's declared call type by the ordinary call-type rules. `__if_then_else__` has a checked Boolean-specialization prefix: its first type argument must resolve to a concrete `role(bool)` host type before the intrinsic becomes an ordinary value. Its result-type argument then follows the ordinary call rules; see [Conditionals](#conditionals).
 
 A macro implementation produces checked Kio' terms through its
 compile-time interface rather than making a runtime call. Those terms replace
@@ -1136,13 +1137,6 @@ the same literal-admission metadata; a renamed newtype retains
 partial type application. An import alias is not a wrapper, transparent type
 declaration, or re-export. Braced label selections have no alias form.
 
-A named type selection may be marked `default`, before its source name:
-`import numbers(default Int as Integer, Float);`. This imports the ordinary
-type binding and explicitly selects its normalized role-bearing host identity
-for this module. An unmarked selection never inherits the provider's default.
-The modifier does not apply to values, labels, operator grammar or qualified
-module aliases. See [module-local defaults](#host-declarations-and-the-bridge-block).
-
 Distinct local aliases of one declaration are allowed, as are distinct module
 aliases of one module. Each local spelling is nevertheless introduced once:
 `import m(f as first, f as second);` is valid, while
@@ -1182,23 +1176,19 @@ Open-world is preserved **structurally**, not by bookkeeping. `into` and `onto` 
 **Consumer import extension.** An accepted addition to a module's imports
 preserves the validity and meaning of its existing function bodies. Admission
 checks the complete import and declaration headers, including namespace
-collisions, operator grammar and default selections; it does not inspect
+collisions and operator grammar; it does not inspect
 function bodies to discover whether a conflict is used. A conflicting import
 addition is rejected even if no body mentions the conflicting name or syntax.
 The guarantee preserves grouping, resolved identities, inferred types and
 meaning, not diagnostics, completion menus, dependency inventories, generated
 bytes or package host/export contracts.
 
-**Explicit defaults preserve selection.** A role-bearing type admits literals
-of its category but does not silently select itself as a default. Written
-`default` modifiers select the module-local identity used by literal fallback
-and Boolean intrinsic typing. Repeated selections of one terminal host identity
-agree; a distinct identity in the same category is rejected independently of
-body use. An ordinary or qualified import activates no provider defaults.
-Thus accepted import additions extend, rather than replace, each earlier
-successful selection. The whole-language import guarantee also depends on the
-namespace, source-order, operator and binding-owner rules; this default rule
-does not replace those obligations.
+**Literal inference preserves meaning.** A role-bearing type admits literals
+of its category but does not select itself by being visible. A literal's
+explicit annotation or concrete contextual type determines its carrier within
+the existing finite local inference boundary. Adding another role-bearing type
+cannot participate in that inference or change a successful result. No rule
+counts visible roles or searches an ambient candidate pool.
 
 **Host items preserve open-world.** A module's `host` items are part of its contract surface — peers of a function signature. Adding or removing a `host` declaration is a versioning event, not an ordinary module-body edit, and the break (a newly-required host capability) lands on the host at its recompile against the regenerated interface, caught by the type system at the boundary. No ordinary `pub fn` / `type` added to any other module body can change which host capabilities an existing bridge requires.
 
@@ -1278,66 +1268,17 @@ host type String role(str);
 ```
 
 The full role list: `i8`, `i16`, `i32`, `i64`, `i128`, `u8`, `u16`, `u32`,
-`u64`, `u128`, `f32`, `f64`, `bool`, `str`. These form four **categories**:
+`u64`, `u128`, `f32`, `f64`, `bool`, `str`. These form four **literal categories**:
 integer (all signed and unsigned widths), float (`f32`, `f64`), Boolean, and
 string. A role-bearing host type carries exactly one role; multiple types may
 carry the same role. `role` applies only to host types and establishes literal
-admission, not default selection. The spelling of a numeric literal fixes its
+admission, not an implicit type-selection rule. The spelling of a numeric literal fixes its
 integer or float category independently of its expected or explicit type;
 see [Literals](#literals).
 
-**Module-local defaults.** `default` selects one role-bearing type per category
-for literal fallback and, in the Boolean category, intrinsic condition typing.
-Selection is written before a local host-type or type-alias declaration, or
-before a type in a named selective import:
-
-```text
-default host type Integer role(i64);
-default pub host type Text role(str); // pub is redundant on host declarations
-default type Number = numbers.Int;
-import numbers(default Int as Local_int, Float);
-```
-
-These lines illustrate alternative declaration/import positions, not a module
-with several distinct integer defaults. The modifier precedes visibility;
-`default` does not assign a role or create a new nominal identity. It is not
-admitted on a newtype, function or recursive-group header. A type alias inside
-a recursive type group may carry its own modifier.
-
-The selected type must normalize to a closed kind-`*` role-bearing host type.
-Ordinary transparent alias application and substitution apply, including
-`type Ignore[A] = numbers.Int; default type Number = Ignore(.);`.
-An unsaturated type constructor, structural type, roleless host type or newtype
-wrapper cannot select a literal default. Selection uses the terminal host
-identity, not an alias spelling: two aliases of one identity agree, while two
-declarations with the same leaf name in different modules remain distinct.
-
-All selections are checked eagerly, independent of whether a literal or
-intrinsic uses them. Two distinct defaults in one category are an error even
-across integer widths or float widths; there is no overriding, import-order
-priority or direct-host-over-alias preference. Integer and float defaults can
-coexist because their admitted literal categories are disjoint. Ordinary name
-collision and duplicate-import rules still apply to repeated spellings.
-
-Imported defaults are active from the import header. A local selection follows
-ordinary declaration scope: it is active after its declaration, or after the
-complete recursive type group containing that declaration. A later selection
-does not change an earlier function body's scope. Module-wide conflict checks
-nevertheless reject conflicting selections even when they occur after all
-uses or are unused. A default is not exported: importing an exported type
-without `default`, or importing a module under an alias, activates none of its
-defaults. A consumer chooses its own defaults explicitly.
-
-The fixed builtin `import __comptime__;` additionally selects its specified
-compile-time Boolean and string defaults. Those selections participate in the
-same eager category-conflict checks; this builtin block import is not an
-ordinary provider import and does not make ordinary defaults transitive.
-
-The selected Boolean identity supplies the scheme of `__if_then_else__` and
-the reference `if` macro's branching glue (see [Conditionals](#conditionals)).
-An explicit Boolean literal annotation does not override that scheme.
-Unselected role-bearing types remain available for expected-type checking and
-explicit literal annotations; neither requires a default of that category.
+Literal carriers are determined by explicit literal annotations or concrete
+contextual inference; see [Literals](#literals). Merely declaring or importing
+a role-bearing type does not make an otherwise unresolved literal typable.
 
 ### Embeddability and portability
 
@@ -1382,7 +1323,7 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
   leading import clause; `as` introduces a module alias. Inside a selective
   list, `op` tags a fixed operator grammar and `varop` tags a variadic delimiter
   pair, while `macro` tags a named macro selection once the complete selector
-  is known. `default` marks a type selection as a local literal default.
+  is known.
   These spellings remain ordinary names elsewhere.
 - **Inside operator declarations**: a `varop` body contains exactly one of
   `foldl`, `foldr`, `foldl1`, or `foldr1` and optionally `finalize`, in either
@@ -1551,7 +1492,9 @@ fn cap(n: I32) -> I32 { min_i32(n, max_size(I32)) }
 fn hello() -> String { greeting(String) }
 ```
 
-After expansion, `hello` is identical to one where `"hello"(String)` is written directly. A literal alias declaration itself carries no type; the literal is checked only after expansion in the use-site expression context.
+After expansion, `hello` is identical to one where `"hello"(String)` is written directly. A literal alias declaration itself carries no type; the literal is typed only after expansion, using its explicit annotation or
+concrete context at the use site. The provider contributes the token, not a
+preselected carrier.
 
 **Restrictions** (parser-enforced):
 
@@ -2292,27 +2235,26 @@ a universally quantified product, not a direct product result.
 ordinary imported block macro:
 
 ```kio
-import macros/control(macro if);
+import macros/control(Bool, macro if);
 
 if(cond) { a } else { b }
 ```
 
-Its public type is `[Condition][Result] Condition -> (. -> Result) ->
+Its public type is `[Result] Bool -> (. -> Result) ->
 (. -> Result) -> Result`, with an unlabelled `thunk` descriptor followed by
 `trailing thunk else;`. Its implementation constructs ordinary
 `__if_then_else__` glue from the checked condition and the two projected
-thunks. The condition must have the explicitly selected Boolean-default host
-identity in the module's source scope, as required by the branching intrinsic.
-Other Boolean-role types may remain in scope without being selected. A missing
-default gives the intrinsic no scheme; conflicting distinct defaults are
-rejected independently of use. Annotating the condition at another type does
-not override the selection. The library's generic `Condition`
-parameter does not relax this intrinsic contract; see
+thunks. The library declares its own concrete `Bool` host type with
+`role(bool)` and checks the condition against that type. Consumers can import
+that same type or rehost the library's control module to their own Boolean
+capabilities. The generated intrinsic is explicitly specialized at this
+concrete Boolean type; the library's name grants no compiler privilege. See
 [`prime.md`](prime.md#branching-intrinsic).
 
 Both arms are blocks, and their results jointly constrain the one result type
 of the whole expression. In check mode, the surrounding expected type checks
-both arms directly. In synth mode, either arm whose result is independently
+both arms directly. Concrete arm contexts can determine unannotated scalar
+literal carriers through ordinary local inference. In synth mode, either arm whose result is independently
 determined may establish or refine the common result; swapping the arms does
 not change whether the expression is accepted or which result type it infers.
 If neither context nor either arm determines the result, the common-result
@@ -3347,12 +3289,12 @@ equiv <name>[A](x: A) {
 
 ### Literals
 
-Four literal **shapes** are recognized — string, integer, float, and bool. String, integer, and float are lexer tokens; bool is the parser-recognized token sequence `.t` or `.f`. A literal carries no width suffix; its type is a `host type` carrying a `role(...)` marker (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)), resolved by the three-tier rule below.
+Four literal **shapes** are recognized — string, integer, float, and bool. String, integer, and float are lexer tokens; bool is the parser-recognized token sequence `.t` or `.f`. A literal carries no width suffix; its type is a `host type` carrying a `role(...)` marker (see [Host declarations and the bridge block](#host-declarations-and-the-bridge-block)), selected by the literal-type rule below.
 
 - **String** — double-quoted, with JSON-style escapes interpreted at compile time: `\"`, `\\`, `\/`, `\b`, `\f`, `\n`, `\r`, `\t`, and `\uXXXX` for code points in the Basic Multilingual Plane.
 
     ```kio
-    let s = "hello, world\n";   // assuming `default host type String role(str);` — s : String
+    let s = "hello, world\n"(String); // s : String
     ```
 
     **Adjacent literal concatenation.** Two or more string literal tokens with only trivia (whitespace, newlines, comments) between them fold at parse time into a single string literal whose value is the concatenation. The chunking present in the source is informational only — the AST stores the joined value, and `kio fmt` re-chunks deterministically on emission.
@@ -3394,7 +3336,7 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 
 - **Bool** — `.t` or `.f`. These spellings are recognized only in expression-leading literal position as `.` followed immediately by identifier `t` or `f`; the words `true` and `false` are ordinary identifiers.
 
-**The literal-call annotation form.** Any literal may carry a trailing parenthesized type — `42(I32)`, `3.14(F64)`, `"hi"(String)`, `.t(Bool)` — naming the host type the literal should take. This is the **`LiteralCall`** form (see [`grammar.md`](grammar.md)). The annotation is optional in the full surface language and **mandatory in Kio'** — Kio' admits no unannotated-literal form, so every Kio' literal carries its annotation by parse rule (see [`grammar.md` § Kio' grammar](grammar.md#kio-grammar) and [`prime.md` § Host declarations](prime.md#host-declarations)). Full-Kio checking records the three-tier resolution on the Lowered tree, and the Lowered → Prime substitute pass materializes it on the literal node.
+**The literal-call annotation form.** Any literal may carry a trailing parenthesized type — `42(I32)`, `3.14(F64)`, `"hi"(String)`, `.t(Bool)` — naming the host type the literal should take. This is the **`LiteralCall`** form (see [`grammar.md`](grammar.md)). The annotation is optional in the full surface language and **mandatory in Kio'** — Kio' admits no unannotated-literal form, so every Kio' literal carries its annotation by parse rule (see [`grammar.md` § Kio' grammar](grammar.md#kio-grammar) and [`prime.md` § Host declarations](prime.md#host-declarations)). Full-Kio checking records the inferred literal carrier on the Lowered tree, and the Lowered → Prime substitute pass materializes it on the literal node.
 
 **The admission relation.** A literal of a given shape may be typed as a role only when the role's shape *admits* the literal's:
 
@@ -3403,39 +3345,47 @@ Four literal **shapes** are recognized — string, integer, float, and bool. Str
 - A **string** literal admits the string-shaped role (`str`) only.
 - A **bool** literal admits the boolean-shaped role (`bool`) only.
 
-**Three-tier resolution (surface only).** Tiers 2 and 3 below apply only to the full Kio surface — Kio' admits no unannotated-literal form (see [`grammar.md` § Kio' grammar](grammar.md#kio-grammar)), so a Kio' literal's host type is always tier 1. A surface literal's host type is resolved in order:
+**Literal-type inference.** An explicit literal annotation such as `42(I32)`
+selects the carrier. It must normalize to a role-bearing host type whose role
+admits the literal's category. A string may also use the compiler-owned diagnostic text type through an
+explicit annotation or concrete expected diagnostic-text context; see the
+[compile-time diagnostic text contract](../docs/guides/builtin-modules.md#diagnostic-text).
 
-1. **Explicit annotation.** If the literal carries a `(Type)` annotation, that host type is its type. The annotation must name a role-bearing `host type` whose role the literal's shape admits. This is the only tier Kio' admits.
-2. **Expected type.** Otherwise, if the surrounding position supplies an expected type — a function-return type, a call argument checked against a parameter type, a macro target, or a fully concrete typed `let` binder — and that expected type is a role-bearing `host type` whose role the literal's shape admits, the literal takes it. An untyped or partially typed `let` right-hand side remains a synthesis position and supplies no expected type; only the fully concrete binding pattern creates the checked RHS position (see [Bindings and expressions](#bindings-and-expressions)).
-3. **Explicit module-local default.** Otherwise, use the in-scope `default`
-   selection for the literal's category. A role-bearing type that is merely
-   declared or imported is not a fallback candidate.
-4. **Otherwise, a type error.** Select a local default, supply an admitting
-   expected type, or annotate the literal with its intended role-bearing type.
+Without a concrete annotation, a scalar literal obtains its carrier from
+concrete local context: an expected return, argument or binding type, or the
+finite connected call constraints described in [Bidirectional elaboration](#bidirectional-elaboration).
+A placeholder annotation such as `42(_)` leaves the carrier to that same
+inference. If it remains unresolved at the existing local boundary, the
+literal is a type error; write an explicit annotation. A role declaration or
+import never supplies a candidate merely by being visible. There is no
+ambient role census, fallback carrier or program-wide inference.
 
-Admission is checked in every tier. `42(Float)` and an integer literal checked
-against a float role are errors even if that is the only available default.
-Use `42.0(Float)` or `42.0` in that expected position. Conversely, `42.0(Int)`
-does not become an integer because its mathematical value is integral.
+A concrete `let` binder can provide the expected type of its initializer.
+An untyped or partially typed `let` initializer instead synthesizes before
+its tail is examined: later uses cannot select the earlier literal's type.
+For example, `fn number() -> I32 { 42 }` determines `I32`, while
+`let number = 42; consume_i32(number);` requires an annotation at the literal
+or a concrete binding pattern before the semicolon.
+
+Admission follows the selected type. `42(Float)` is an error; use
+`42.0(Float)` or a floating literal in a concrete float context. Conversely,
+`42.0(Int)` does not become an integer because its value is integral.
 For `same : [A] (A & A) -> A`, both `same(42, 42.0)` and
-`same(42.0, 42)` reject: argument order does not authorize a cross-category
-conversion. Literal admission does not add a different inference schedule.
-Numeric range checking and rounding follow selection of that exact role;
-failure never retries a wider role or a different default.
+`same(42.0, 42)` reject: argument order cannot authorize cross-category
+conversion. Numeric ranges and IEEE rounding are checked at the resolved
+role; failure never retries a wider type or another carrier.
 
 **Role-inheriting aliases.** A transparent alias names the same type as its
-normalized body, including through saturated alias applications. When that
-body is a role-bearing host type, expected and explicit literal typing use
-the host's role. The alias changes neither literal category nor host identity.
-It contributes a tier-3 selection only when explicitly marked `default`;
-there is no direct-host pool or alias fallback pool. See
-[module-local defaults](#host-declarations-and-the-bridge-block) for selection,
-scope, conflicts and imported aliases. A dependency `rehost` preserves a
-selected declaration's modifier on the replacement alias, without granting
-that alias any role beyond its actual terminal type.
+normalized body, including through saturated alias applications. If that body
+is a role-bearing host type, annotations and concrete contextual inference
+use its role. An alias changes neither literal category nor host identity,
+and its presence does not select an unresolved literal.
 
-The full-Kio typer records each tier-2 or tier-3 resolution while checking the Lowered tree. The Lowered → Prime substitute pass writes that resolution into the literal's `annotation` field, so every resulting Kio' literal carries its tier-1 annotation.
-
-The lexer emits the same token shape regardless of whether an admitting host type exists — three-tier resolution at type-check time is what rejects an unresolvable literal. Literals are not calls: `42` is a single token, and `42(I32)` is a literal with an annotation, not a function invocation.
+The full-Kio typer records each inferred scalar carrier on the Lowered tree.
+The Lowered → Prime substitute pass materializes it as an explicit annotation.
+Kio' requires these concrete annotations; it admits no unannotated scalar
+literal or `_` literal annotation. The lexer emits the same token shape
+regardless of the available types; unresolved or inadmissible carriers are
+type errors. `42(I32)` is a literal with an annotation, not a function call.
 
 **Source-syntax vs emitted-syntax.** The lexer productions above are Kio's surface syntax. Checking establishes the numeric value before normalization or host emission. Kio' and each backend preserve that value independently of source spelling: an integer denotes its checked mathematical value, and a float denotes its selected IEEE value, including its zero sign. For example, an `i32` literal may become a JavaScript number and an `i64` literal a BigInt. The host representation or constructor is a backend concern; interpreting source spelling or choosing a different numeric value is not. Custom host carriers must preserve their role's literal values; the compiler does not police host implementations at runtime.

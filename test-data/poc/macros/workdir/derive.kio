@@ -826,7 +826,7 @@ pure fn no_fresh_step(ct: __Comptime__, fuel: Type_var_list, state: No_fresh_sta
               , validation_err(
                 , ct
                 , "derive POC candidate has a fresh binder\n  = help: remove the "
-                  "precondition binder or include it in the result type"
+                  "precondition binder or include it in the result type"(__Diagnostic_text__)
                 )
               )
             }
@@ -904,7 +904,7 @@ pure fn decreasing_step(ct: __Comptime__, fuel: Type_list, result: Decreasing_st
           , validation_err(
             , ct
             , "derive POC candidate is not structurally decreasing\n  = help: make every "
-              "precondition structurally smaller than the result"
+              "precondition structurally smaller than the result"(__Diagnostic_text__)
             )
           )
         }
@@ -1990,7 +1990,7 @@ pure fn finish_rule_error(ct: __Comptime__, error: Rule_error) -> __Checked_term
       finish_macro_result(ct, err(ct, message))
     }
   , .(_non_function: .) -> __Checked_term__ {
-      __type_error__(ct, "`derive` candidate must be an expression of function type")
+      __type_error__(ct, "`derive` candidate must be an expression of function type"(__Diagnostic_text__))
     }
   )
 }
@@ -2876,16 +2876,16 @@ pure fn no_rule_message(ct: __Comptime__, goal: __Type__) -> __Diagnostic_text__
   , ct
   , __diagnostic_concat__(
     , ct
-    , "derive POC found no candidate rule that derives "
+    , "derive POC found no candidate rule that derives "(__Diagnostic_text__)
     , __type_display__(ct, goal)
     )
-  , "\n  = help: add a candidate rule that derives the requested goal"
+  , "\n  = help: add a candidate rule that derives the requested goal"(__Diagnostic_text__)
   )
 }
 
 pure fn ambiguity_help(ct: __Comptime__) -> __Diagnostic_text__ {
   "\n  = help: remove redundant candidate rules so exactly one derivation "
-  "remains"
+  "remains"(__Diagnostic_text__)
 }
 
 pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diagnostic_text__ {
@@ -2895,7 +2895,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
   , __Diagnostic_text__
   , Search_count.un_search_count(count)
   , .(_zero: .) -> __Diagnostic_text__ {
-      __diagnostic_concat__(ct, "derive POC found distinct derivations", ambiguity_help(ct))
+      __diagnostic_concat__(ct, "derive POC found distinct derivations"(__Diagnostic_text__), ambiguity_help(ct))
     }
   , .(one_less: Search_count) -> __Diagnostic_text__ {
       __either__(
@@ -2904,7 +2904,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
       , __Diagnostic_text__
       , Search_count.un_search_count(one_less)
       , .(_one: .) -> __Diagnostic_text__ {
-          __diagnostic_concat__(ct, "derive POC found distinct derivations", ambiguity_help(ct))
+          __diagnostic_concat__(ct, "derive POC found distinct derivations"(__Diagnostic_text__), ambiguity_help(ct))
         }
       , .(two_less: Search_count) -> __Diagnostic_text__ {
           __either__(
@@ -2915,7 +2915,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
           , .(_two: .) -> __Diagnostic_text__ {
               __diagnostic_concat__(
               , ct
-              , "derive POC found 2 distinct derivations"
+              , "derive POC found 2 distinct derivations"(__Diagnostic_text__)
               , ambiguity_help(ct)
               )
             }
@@ -2928,7 +2928,7 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
               , .(_three: .) -> __Diagnostic_text__ {
                   __diagnostic_concat__(
                   , ct
-                  , "derive POC found 3 distinct derivations"
+                  , "derive POC found 3 distinct derivations"(__Diagnostic_text__)
                   , ambiguity_help(ct)
                   )
                 }
@@ -2941,14 +2941,14 @@ pure fn ambiguous_count_message(ct: __Comptime__, count: Search_count) -> __Diag
                   , .(_four: .) -> __Diagnostic_text__ {
                       __diagnostic_concat__(
                       , ct
-                      , "derive POC found 4 distinct derivations"
+                      , "derive POC found 4 distinct derivations"(__Diagnostic_text__)
                       , ambiguity_help(ct)
                       )
                     }
                   , .(_more: Search_count) -> __Diagnostic_text__ {
                       __diagnostic_concat__(
                       , ct
-                      , "derive POC found more than 4 distinct derivations"
+                      , "derive POC found more than 4 distinct derivations"(__Diagnostic_text__)
                       , ambiguity_help(ct)
                       )
                     }

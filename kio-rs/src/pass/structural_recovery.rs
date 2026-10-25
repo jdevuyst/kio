@@ -50,7 +50,7 @@
 //!   scrutinee is exactly the bound `r`; it stops otherwise. Computed
 //!   handlers with unknown effects are staged before dispatch in source-call
 //!   order; proved-pure factories may move into their selected arms.
-//! - **Conditional** — `__if_then_else__(c, then, else)` becomes an
+//! - **Conditional** — `__if_then_else__(B, A, c, then, else)` becomes an
 //!   [`Expr::EnrichedConditional`]. A literal `.() { body }` thunk
 //!   has its wrapper stripped; a thunk expression with unknown
 //!   evaluation effects is staged before branch selection
@@ -1148,7 +1148,7 @@ impl<'a> Recoverer<'a> {
 
     // ---- pattern: conditional ---------------------------------------
 
-    /// `__if_then_else__(c, then_thunk, else_thunk)` →
+    /// `__if_then_else__(B, A, c, then_thunk, else_thunk)` →
     /// [`Expr::EnrichedConditional`]. A literal `.() { body }` thunk
     /// has its wrapper stripped (`body` becomes the branch
     /// expression); a thunk whose evaluation has unknown effects is
@@ -1156,11 +1156,11 @@ impl<'a> Recoverer<'a> {
     /// `Call(bound_thunk, [])` only on the selected branch.
     fn recover_conditional(&mut self, e: &Expr<Prime>) -> Option<Expr<Enriched>> {
         let span = e.span();
-        // `__if_then_else__(Res, …)` pins the branches' shared result
+        // `__if_then_else__(Bool, Res, …)` pins the branches' shared result
         // type `Res`.
         let call = classify_intrinsic("__if_then_else__", call_args(e)?)?;
         let result_ty =
-            convert_type::<Prime, Enriched>(type_arg_type(call.type_part.first()?).as_ref());
+            convert_type::<Prime, Enriched>(type_arg_type(call.type_part.get(1)?).as_ref());
         let values = call.value_part;
         let cond = value_arg(values, 0)?;
         let then_thunk = value_arg(values, 1)?;
@@ -1717,7 +1717,7 @@ fn intrinsic_arity(name: &str) -> Option<(usize, usize)> {
         "__fst__" | "__snd__" => (2, 1),
         "__left__" | "__right__" => (2, 1),
         "__either__" => (3, 3),
-        "__if_then_else__" => (1, 3),
+        "__if_then_else__" => (2, 3),
         _ => return None,
     })
 }
@@ -2098,23 +2098,62 @@ mod tests {
     }
 
     fn resolve_bound_value<'a>(
-        e: &'a Expr<Enriched>,
+        mut e: &'a Expr<Enriched>,
         bindings: &[LeadingBinding<'a>],
-        before: usize,
+        mut before: usize,
     ) -> (Option<usize>, &'a Expr<Enriched>) {
-        let Expr::Path { segments, .. } = e else {
-            return (None, e);
+        let mut resolved = None;
+        while let Expr::Path { segments, .. } = e {
+            let [segment] = segments.as_slice() else {
+                break;
+            };
+            let Some(index) = bindings[..before]
+                .iter()
+                .rposition(|(name, _)| *name == segment.name)
+            else {
+                break;
+            };
+            resolved = Some(index);
+            e = bindings[index].1;
+            before = index;
+        }
+        (resolved, e)
+    }
+
+    #[test]
+    fn constructor_oracle_follows_only_earlier_lexical_aliases() {
+        let first = effect_call("first");
+        let later = effect_call("later");
+        let value = local_path("value");
+        let alias = local_path("alias");
+        let bindings = [("value", &first), ("alias", &value), ("value", &later)];
+        let (index, resolved) = resolve_bound_value(&alias, &bindings, bindings.len());
+        assert_eq!(index, Some(0));
+        assert_eq!(direct_call_name(resolved), Some("first"));
+        let (index, resolved) = resolve_bound_value(&value, &bindings, bindings.len());
+        assert_eq!(index, Some(2));
+        assert_eq!(direct_call_name(resolved), Some("later"));
+
+        let a = local_path("a");
+        let b = local_path("b");
+        let forward = [("a", &b), ("b", &a)];
+        let (index, resolved) = resolve_bound_value(&a, &forward, forward.len());
+        assert_eq!(index, Some(0));
+        assert_eq!(resolved, &b, "a forward spelling cannot become a cycle");
+        let free = local_path("free");
+        assert_eq!(
+            resolve_bound_value(&free, &bindings, bindings.len()),
+            (None, &free)
+        );
+        let mut qualified = local_path("value");
+        let Expr::Path { segments, .. } = &mut qualified else {
+            unreachable!()
         };
-        let [segment] = segments.as_slice() else {
-            return (None, e);
-        };
-        let Some(index) = bindings[..before]
-            .iter()
-            .rposition(|(name, _)| *name == segment.name)
-        else {
-            return (None, e);
-        };
-        (Some(index), bindings[index].1)
+        segments.insert(0, PathSegment::new("module".to_owned(), Span::new(0, 0)));
+        assert_eq!(
+            resolve_bound_value(&qualified, &bindings, bindings.len()),
+            (None, &qualified)
+        );
     }
 
     fn constructor_slot<'a>(
@@ -2526,10 +2565,10 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool) -> . { \
-               __if_then_else__(., c, factory(), factory()) \
+               __if_then_else__(Bool, ., c, factory(), factory()) \
              } \
              fn either(s: . | .) -> . { \
                __either__(., ., ., s, factory(), factory()) \
@@ -2555,11 +2594,11 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              host fn callback() -> .; \
              pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } \
              fn conditional(c: Bool) -> . { \
-               __if_then_else__(., c, factory(callback), factory(callback)) \
+               __if_then_else__(Bool, ., c, factory(callback), factory(callback)) \
              } \
              fn either(s: . | .) -> . { \
                __either__(., ., ., s, factory(callback), factory(callback)) \
@@ -2581,10 +2620,10 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool, factory: . -> (. -> .)) -> . { \
-               __if_then_else__(., c, factory(), factory()) \
+               __if_then_else__(Bool, ., c, factory(), factory()) \
              } \
              fn either(s: . | ., factory: . -> (. -> .)) -> . { \
                __either__(., ., ., s, factory(), factory()) \
@@ -2792,8 +2831,7 @@ mod tests {
     fn if_else_recovers_to_enriched_conditional() {
         let m = recover_one(
             "main",
-            "module main; import control(macro if); \
-             default host type Bool role(bool); \
+            "module main; import control(Bool, macro if); \
              fn choose(c: Bool) -> . { if (c) { () } else { () } }",
             None,
         );
@@ -2818,12 +2856,12 @@ mod tests {
         let m = recover_one(
             "main",
             "module main; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              host fn condition() -> Bool; \
              host fn then_factory() -> . -> .; \
              host fn else_factory() -> . -> .; \
              fn choose() -> . { \
-               __if_then_else__(., condition(), then_factory(), else_factory()) \
+               __if_then_else__(Bool, ., condition(), then_factory(), else_factory()) \
              }",
             None,
         );
@@ -2861,11 +2899,11 @@ mod tests {
         let m = recover_one(
             "main",
             "module main; import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              host fn condition() -> Bool; \
              host fn then_factory() -> . -> .; \
              fn choose(otherwise: . -> .) -> . { \
-               __if_then_else__(., condition(), then_factory(), otherwise) \
+               __if_then_else__(Bool, ., condition(), then_factory(), otherwise) \
              }",
             None,
         );
@@ -3084,9 +3122,9 @@ mod tests {
             "main",
             "module main; \
              import __intrinsics__; \
-             default host type Bool role(bool); \
+             host type Bool role(bool); \
              fn pick(c: Bool, t: . -> ., e: . -> .) -> . { \
-               __if_then_else__(., c, t, e) \
+               __if_then_else__(Bool, ., c, t, e) \
              }",
             None,
         );
@@ -3472,9 +3510,8 @@ mod tests {
     }
 
     /// A 4-field record with effectful payloads recovers to one flat
-    /// n-ary tuple. The payload and constructor bindings retain source
-    /// order, and every tuple slot still resolves through its matching
-    /// newtype constructor.
+    /// n-ary tuple. Payload effects and constructors retain source order,
+    /// and every tuple slot still resolves through its matching constructor.
     #[test]
     fn four_field_record_keeps_wraps() {
         let m = recover_one(
@@ -3515,15 +3552,17 @@ mod tests {
             .zip(["A", "B", "C", "D"])
             .zip(["10", "20", "30", "40"])
         {
-            let (constructor_index, Some(payload_index), payload) =
-                constructor_slot(slot, &bindings, expected_newtype)
-            else {
-                panic!("{expected_newtype}: constructor payload is not let-bound");
-            };
-            assert!(
-                payload_index < constructor_index,
-                "{expected_newtype}: payload evaluates before its constructor"
-            );
+            let (constructor_index, payload_index, payload) =
+                constructor_slot(slot, &bindings, expected_newtype);
+            if let Some(payload_index) = payload_index {
+                assert!(
+                    payload_index < constructor_index,
+                    "{expected_newtype}: bound payload evaluates before its constructor"
+                );
+            }
+            // An inline argument executes at its constructor's position; a
+            // separately bound payload executes at that earlier binding.
+            let payload_index = payload_index.unwrap_or(constructor_index);
             if let Some(previous) = previous_payload {
                 assert!(
                     previous < payload_index,

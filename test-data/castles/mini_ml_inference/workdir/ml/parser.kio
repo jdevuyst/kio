@@ -5,7 +5,7 @@ import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
 import ml/syntax as ast;
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/iter(loop);
 import testapi/text as text;
 

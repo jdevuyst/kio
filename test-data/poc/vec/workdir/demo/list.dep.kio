@@ -6,3 +6,4 @@ source {
 
 rehost list/list to vec_host;
 rehost list/macros/testapi to testapi;
+rehost list/macros/control to vec_host;

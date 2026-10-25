@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(default String);
+import testapi(String);
 import testapi/io as io;
 
 newtype Message : String { constructor make; projector read }
@@ -15,7 +15,7 @@ varop [* *] { foldr1 first keep }
 
 equiv first_message() {
   [* "boundaries", "discarded" *] <+> "ignored";
-  "boundaries"
+  "boundaries"(String)
 }
 
 pub fn main() {

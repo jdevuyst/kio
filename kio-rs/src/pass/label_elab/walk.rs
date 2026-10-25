@@ -331,8 +331,8 @@ pub trait DesugaredToLowered {
                     })
                     .collect::<Result<_, Error>>()?,
             },
-            ElaboratorCall::FieldUpdate { receiver, updates } => ElaboratorCall::FieldUpdate {
-                receiver: Box::new(self.walk_expr(*receiver)?),
+            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
                 updates: updates
                     .into_iter()
                     .map(|update| {
@@ -705,7 +705,6 @@ pub trait DesugaredToLowered {
     /// Walk an `TypeAlias` Desugared → Lowered.
     fn walk_alias(&mut self, a: TypeAlias<Desugared>) -> Result<TypeAlias<Lowered>, Error> {
         let TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -716,7 +715,6 @@ pub trait DesugaredToLowered {
             doc,
         } = a;
         Ok(TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -791,7 +789,6 @@ pub trait DesugaredToLowered {
 
     fn walk_host_type(&mut self, h: HostType<Desugared>) -> Result<HostType<Lowered>, Error> {
         let HostType {
-            default_span,
             name,
             type_params,
             role,
@@ -800,7 +797,6 @@ pub trait DesugaredToLowered {
             doc,
         } = h;
         Ok(HostType {
-            default_span,
             name,
             type_params,
             role,

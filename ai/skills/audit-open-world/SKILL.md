@@ -42,16 +42,16 @@ not trigger shorter-word splitting, another frame interpretation or a smaller
 successful grouping. Also test accepted consumer-import additions, keeping
 rejected header conflicts distinct from changes to existing body grouping.
 
-For consumer imports, exercise ordinary names, module aliases, selective aliases,
-operators and explicit defaults. Conflict admission must inspect imports and
-declaration headers even when no body uses the conflicting item. Compare resolved
-identities, grouping and inferred types in retained bodies before and after an
-accepted addition; equal successful exit codes alone do not establish equal
-meaning. Include a first default added beside an already context-typed literal,
-same-terminal-identity aliases, an unused distinct-default conflict, and Boolean
-intrinsic references. Challenge retained inference and marked fills: absence of a
-default must not select a different successful inference path. Ordinary imports
-must not activate provider-local defaults.
+For consumer imports, exercise ordinary names, module aliases, selective aliases
+and operators. Conflict admission inspects import/declaration headers even when
+no body uses the conflict. Compare resolved identities, grouping and inferred
+types before and after accepted additions; equal exit codes alone do not prove
+equal meaning. Include unrelated role-bearing types and aliases beside literals
+whose types are already determined by concrete local context. No ambient role
+census or fallback may choose an unresolved carrier. Cover integer, float,
+Boolean and string categories, explicit annotations and checked Boolean
+specialization. Challenge retained inference and marked fills within the same
+finite written call tree; imports cannot supply new inference candidates.
 
 Discharged pattern — multi-reading resolution over the parser-validated module map: a "try reading A, else reading B" lookup whose readings disagree on how many trailing segments name the item (fn-in-module vs newtype-member) is safe when the readings are **name-role-disjoint** — module path segments match the exact value-name grammar while type names match the exact type-name grammar (specs/language.md § Naming conventions), so the segment that would have to be both a module leaf and a newtype name can never make both readings viable, and first-match ordering cannot be hijacked by a new declaration. This discharge holds only for resolvers over the parser-validated module map; the dyn_load_prime runtime loader consumes hand-written Kio' image text whose module names are *not* role-validated, so its one-dot lookups face a genuine fn-vs-member collision and resolve it by an explicit documented fn-first preference (its ambiguity reporting covers same-kind duplicates) — a resolver-local policy, not this role-disjointness discharge.
 

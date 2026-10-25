@@ -1,7 +1,6 @@
-use std::collections::HashMap;
 use std::fmt::Write as _;
 
-use crate::ast::{Role, Surface};
+use crate::ast::Surface;
 use crate::comptime::{ComptimeBuiltin, PUBLIC_COMPTIME_NAMES};
 use crate::pass::resolve::PRIME_INTRINSICS;
 use crate::span::Span;
@@ -138,7 +137,7 @@ pub fn render_markdown_guide() -> String {
         "If you are trying to construct or inspect sums and products in a normal\nprogram, use the structural guides instead of this reference. The\n`import __intrinsics__;` snippet below is a reference entry for core-level code,\nnot a package or module starter.\n\n",
     );
     out.push_str("Import and signature blocks are reference fragments and are marked `{ignore}`. Worked examples use standalone checked fences. The first paragraph of each entry is the concise summary used by editor hover; the following text is the long-form reference.\n\n");
-    out.push_str("See [literal defaults](typechecking.md#literal-types-and-module-local-defaults) for module-local selection, scope and alias rules.\n\n");
+    out.push_str("See [literal types and local inference](typechecking.md#literal-types-and-local-inference) for explicit annotations, concrete context and local inference boundaries.\n\n");
     render_module_section(&mut out, BuiltinModule::Intrinsics);
     render_module_section(&mut out, BuiltinModule::Comptime);
     let trimmed_len = out.trim_end().len();
@@ -212,14 +211,10 @@ fn intrinsic_doc(label: &str) -> Option<BuiltinDoc> {
 
 fn intrinsic_scheme(label: &str) -> Option<String> {
     if label == "__if_then_else__" {
-        return Some("[A](Bool & (. -> A) & (. -> A)) -> A".to_owned());
+        return Some("[B][A](B & (. -> A) & (. -> A)) -> A".to_owned());
     }
-    let scheme = crate::pass::typecheck_core::intrinsic_scheme::<Surface>(
-        label,
-        Span::new(0, 0),
-        &HashMap::new(),
-    )?
-    .ok()?;
+    let scheme =
+        crate::pass::typecheck_core::intrinsic_scheme::<Surface>(label, Span::new(0, 0))?.ok()?;
     Some(crate::pretty::pretty_type(&scheme.ty))
 }
 
@@ -234,7 +229,7 @@ fn intrinsic_summary(name: &str) -> &'static str {
         "__fst__" => "Projects the first field from a product value.",
         "__snd__" => "Projects the second field from a product value.",
         "__if_then_else__" => {
-            "Branches on the module's explicit Boolean default. The true and false branches are thunks so only the selected branch is evaluated."
+            "Checks a concrete Boolean specialization before branching. The true and false branches are thunks so only the selected branch is invoked."
         }
         "__absurd__" => "Eliminates a bottom value into any requested result type.",
         _ => "Kio' core intrinsic.",
@@ -262,7 +257,7 @@ fn intrinsic_details(name: &str) -> &'static str {
             "The value must have exactly the product type `A & B`; the result is its right component. The helper does not search a wider product spine, so a different product shape is a type error."
         }
         "__if_then_else__" => {
-            "The selected type comes from a written `default` on a local host type, type alias or named type import. Other Boolean-role types can remain in scope, but annotating the condition at one of them does not override the selection. With no Boolean default the intrinsic has no type scheme; distinct conflicting defaults are rejected even when unused. Both branches are unit-domain functions returning the same `A`; only the chosen thunk is invoked."
+            "The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__(Bool)` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked."
         }
         "__absurd__" => {
             "The argument must have bottom type `!`; because `!` has no values, a well-typed closed program cannot reach this eliminator with a constructed value. It supplies no fallback behavior: an argument of any inhabited type is rejected, and a stuck host computation returning `!` remains opaque during compile-time evaluation."
@@ -297,12 +292,8 @@ fn comptime_builtin(label: &str) -> Option<ComptimeBuiltin> {
 }
 
 fn comptime_scheme(builtin: ComptimeBuiltin) -> Option<String> {
-    let mut roles = HashMap::new();
-    roles.insert(Role::Bool, "Comptime_bool");
-    roles.insert(Role::Str, "Comptime_str");
-    let scheme =
-        crate::pass::typecheck_core::comptime_scheme::<Surface>(builtin, Span::new(0, 0), &roles)
-            .ok()??;
+    let scheme = crate::pass::typecheck_core::comptime_scheme::<Surface>(builtin, Span::new(0, 0))
+        .ok()??;
     Some(crate::pretty::pretty_type(&scheme.ty))
 }
 
@@ -351,10 +342,10 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         TypeArity => "Opaque arity value used by reflected type variables, names, and binders.",
         DiagnosticText => "Compile-time text used in macro diagnostics.",
         ComptimeBool => {
-            "Compile-time boolean type with `role(bool)`. The fixed `__comptime__` block import selects it as the importing module's Boolean default."
+            "Compile-time Boolean type with `role(bool)`, exposed by `import __comptime__;`."
         }
         ComptimeStr => {
-            "Compile-time string type with `role(str)`. The fixed `__comptime__` block import selects it as the importing module's string default. These builtin selections participate in the ordinary eager conflict checks; another distinct default in either category is not an override."
+            "Compile-time string type with `role(str)`, exposed by `import __comptime__;`."
         }
         FillCtx => "Opaque immutable transcript of explicit fill relations for one marked call.",
         ReflectType => {
@@ -475,13 +466,13 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Arity is a compile-time natural number used for kinds and function parameter packets. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation."
         }
         DiagnosticText => {
-            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it from `Comptime_str`, display helpers, and concatenation. It is compiler-owned text, not a runtime string."
+            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `\"message\"(__Diagnostic_text__)`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string."
         }
         ComptimeBool => {
-            "The literals `.t` and `.f` form the compile-time predicate result used by reflection helpers and `if`/`else`. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type."
+            "The literals `.t` and `.f` form compile-time predicate results used by reflection helpers and concrete compile-time branching. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type."
         }
         ComptimeStr => {
-            "String literals in a macro implementation can inhabit this compile-time role string and flow into diagnostic text. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code."
+            "A concrete `Comptime_str` context or an explicit annotation determines this carrier for a string literal. An already typed `Comptime_str` value is not implicitly converted to `__Diagnostic_text__`; diagnostic-text contexts can instead determine the carrier of an unannotated literal. It is distinct from package host strings, is erased after evaluation, and cannot cross into generated runtime code."
         }
         FillCtx => {
             "The compiler supplies one fresh context as the second argument of an `impl(fills)` implementation. `__fill__` returns a descendant context instead of mutating its input, so Kio code threads the returned value explicitly. A context cannot be constructed by source, converted to or from `__Comptime__`, inspected, or allowed to reach runtime."
@@ -655,7 +646,7 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Constructs a checked runtime bottom elimination from `bottom_value` to `result_type`. The value must have type `!`; any inhabited source type makes construction fail."
         }
         IntrinsicIfThenElse => {
-            "Constructs a checked runtime `__if_then_else__` call. The condition must use the caller's explicitly selected Boolean default and both zero-argument callbacks must return `result_type`. A missing selection or branch mismatch makes construction fail; distinct conflicting defaults are rejected before use."
+            "Constructs a checked runtime `__if_then_else__` call. The condition must have a concrete `role(bool)` host type, which is written as the Boolean specialization of the generated call. Both zero-argument callbacks must return `result_type`. An unresolved or non-Boolean condition type, or a branch mismatch, makes construction fail."
         }
     }
 }

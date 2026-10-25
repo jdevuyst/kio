@@ -6,7 +6,7 @@ import egraph/numbers as n;
 import egraph/rewrite as rewrite;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32, String);
 import testapi/array as arr;
 import testapi/fmt as fmt;
 import testapi/io as io;

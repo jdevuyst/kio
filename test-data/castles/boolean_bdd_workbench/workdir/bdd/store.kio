@@ -6,7 +6,7 @@ import list/list as walk;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro reorder_prod, macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 
 pub newtype Node_id : I32 { pub constructor from_int; pub projector to_int }

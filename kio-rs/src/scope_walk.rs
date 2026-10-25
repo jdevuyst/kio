@@ -858,8 +858,10 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => expr_scope(receiver, offset, ns, out),
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                expr_scope(receiver, offset, ns, out);
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver() {
+                    expr_scope(receiver, offset, ns, out);
+                }
                 for update in updates {
                     expr_scope(&update.value, offset, ns, out);
                 }

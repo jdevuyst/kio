@@ -1,0 +1,8 @@
+module lituniq/main;
+
+import lituniq(Int, Str);
+
+// Typed local bindings provide context for the bare scalar initializers.
+fn pick_int() -> Int { let .(n: Int) = 100; n }
+
+fn pick_str() -> Str { let .(s: Str) = "hi"; s }

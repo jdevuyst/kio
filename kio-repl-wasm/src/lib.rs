@@ -325,27 +325,27 @@ fn js_error(message: String) -> JsValue {
 }
 
 #[cfg(test)]
-fn default_types_repl() -> Repl {
-    let root = PathBuf::from("/kio-wasm-tests/default-types");
+fn literal_types_repl() -> Repl {
+    let root = PathBuf::from("/kio-wasm-tests/literal-inference");
     let files = [
         (
             "app.pkg.kio",
-            include_str!("../../kio-rs/tests/fixtures/default-types/app.pkg.kio"),
+            include_str!("../../kio-rs/tests/fixtures/literal-inference/app.pkg.kio"),
         ),
         (
             "app.kio",
-            include_str!("../../kio-rs/tests/fixtures/default-types/app.kio"),
+            include_str!("../../kio-rs/tests/fixtures/literal-inference/app.kio"),
         ),
         (
             "provider.kio",
-            include_str!("../../kio-rs/tests/fixtures/default-types/provider.kio"),
+            include_str!("../../kio-rs/tests/fixtures/literal-inference/provider.kio"),
         ),
     ]
     .into_iter()
     .map(|(path, source)| (root.join(path), source.to_owned()))
     .collect();
     Repl {
-        poc_id: "default-types".to_owned(),
+        poc_id: "literal-inference".to_owned(),
         session: Session::new_in_memory(root, files),
         init_banner: String::new(),
         completion_names: OnceCell::new(),
@@ -638,8 +638,8 @@ mod tests {
     }
 
     #[test]
-    fn browser_defaults_keep_integer_float_categories_and_ordinary_default_names() {
-        let mut repl = default_types_repl();
+    fn browser_literal_inference_keeps_categories_and_ordinary_default_names() {
+        let mut repl = literal_types_repl();
         assert!(
             repl.run_command(Command::Load("app".to_owned()))
                 .output
@@ -653,12 +653,12 @@ mod tests {
             .unwrap();
         assert_eq!(ordinary.kind.tag(), "fn");
         for expression in [
-            "42",
-            "42.0e0",
-            "42.0E+3",
-            "42.0",
-            "42.0e-3",
-            ".t",
+            "42(Int)",
+            "42.0e0(Float)",
+            "42.0E+3(Float)",
+            "42.0(Float)",
+            "42.0e-3(Float)",
+            ".t(Bool)",
             "default()",
             "same(42, default())",
             "same(42.0, floating())",
@@ -674,7 +674,14 @@ mod tests {
                 "{expression}: {output}"
             );
         }
-        for expression in ["same(42.0, 42)", "same(42, 42.0)", "42(Float)"] {
+        for expression in [
+            "42",
+            "42.0",
+            ".t",
+            "same(42.0, 42)",
+            "same(42, 42.0)",
+            "42(Float)",
+        ] {
             let output = strip_ansi(
                 &repl
                     .run_command(Command::Type(expression.to_owned()))

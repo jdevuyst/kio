@@ -18,7 +18,7 @@ import forge/vm as vm;
 import forge/vm(Faulted, Halted, Out_of_fuel, Ran_off, Stop, Vm, Words);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, sub_i32);
 import testapi/iter(loop);
 

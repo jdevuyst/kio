@@ -18,7 +18,7 @@ import gc/num(int_lt);
 import gc/slot(Imm, Ptr, ptr_cell, {ptr});
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, default Bool, default I32);
+import testapi(Array, Bool, I32);
 import testapi/arith(add_i32, leq_i32);
 import testapi/array(array_get, array_len, array_make_filled, array_pop_back, array_set);
 import testapi/iter(loop);

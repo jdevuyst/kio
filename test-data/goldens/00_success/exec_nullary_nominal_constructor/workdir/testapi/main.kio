@@ -1,6 +1,6 @@
 module testapi/main;
 
-import testapi(I32);
+import testapi(I32, String);
 import testapi/fmt as fmt;
 import testapi/io as io;
 

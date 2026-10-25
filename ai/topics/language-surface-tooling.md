@@ -118,19 +118,19 @@ each provider boundary.
 
 ## Impact checklist
 
-For literal/default changes, separate lexical admission from selection.
-Exercise all four categories, expected/explicit types without a default,
-same-terminal aliases including applied RHSs, eager unused conflicts,
-source-order scope and non-propagation through ordinary imports. Integer and
-float spelling categories apply in both full and Prime input, independent of
-argument order. All point-free exponent forms reject, including no sign,
-`+`, negative exponents and `-0`; decimal-point float exponents remain valid. Cover
-source-authenticated missing-dot/default fixes and stale refusal, alias
-definition/use attribution, explicit artifact selections and the independent
-loader. An accepted consumer-import extension must preserve all existing
-body grouping, identities, types and meaning; a unique default map proves
-only one part of that language-wide obligation. Keep configuration words and
-inspector declaration selectors distinct from the new type-selection modifier.
+For literal inference changes, separate lexical admission from carrier inference.
+Exercise all four categories, explicit annotations, concrete return/argument/
+binding context, connected generic-call constraints and unresolved local
+boundaries. Include applied aliases, source-order scope, unrelated role-bearing
+import additions and signed/numeric category/range/IEEE rules. A visible type
+must never become an ambient fallback. Test checked Boolean specialization
+from explicit, condition and expected-callable evidence; reject rigid generic
+Boolean parameters while preserving ordinary generic result types. Fresh
+Prime artifacts validate concrete literal annotations and Boolean specializations.
+Source-authenticated missing-dot fixes preserve literal aliases and stale-edit
+refusal; configuration words and inspector selectors remain separate grammar.
+An accepted consumer-import extension preserves body grouping, identities,
+types and meaning.
 
 A surface or semantic change is not complete until the language and tooling agree on the same accepted spelling and the same user-facing behavior. Before implementation or landing, state the impact argument: which bridge surfaces must change, which are intentionally unchanged, and why "unchanged" follows from the boundary being modified.
 

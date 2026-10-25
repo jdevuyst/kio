@@ -4,7 +4,7 @@ module imageio;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default I32, default String);
+import testapi(Bool, I32, String);
 import testapi/arith(eq_i32);
 import testapi/io(read_ascii_line);
 import testapi/iter(loop);

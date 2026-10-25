@@ -1481,8 +1481,8 @@ mod tests {
             (
                 "consumer.kio",
                 "module consumer; import __intrinsics__; import provider as p; import provider(factory); \
-                default host type Bool role(bool); \
-                fn conditional(c: Bool) { __if_then_else__(., c, p.factory(), factory()) } \
+                host type Bool role(bool); \
+                fn conditional(c: Bool) { __if_then_else__(Bool, ., c, p.factory(), factory()) } \
                 fn either(s: . | .) { __either__(., ., ., s, p.factory(), factory()) }",
             ),
         ];

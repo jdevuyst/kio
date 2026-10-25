@@ -10,7 +10,7 @@ module justify/word;
 import justify/list(List);
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, lt_i32);
 import testapi/iter(loop);
 

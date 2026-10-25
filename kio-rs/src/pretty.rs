@@ -558,18 +558,11 @@ fn import_item_display(item: &crate::ast::ImportItem) -> String {
     match item {
         ImportItem::Name {
             macro_span,
-            default_span,
             name,
             alias,
             ..
         } => {
-            let prefix = if macro_span.is_some() {
-                "macro "
-            } else if default_span.is_some() {
-                "default "
-            } else {
-                ""
-            };
+            let prefix = if macro_span.is_some() { "macro " } else { "" };
             alias.as_ref().map_or_else(
                 || format!("{prefix}{name}"),
                 |alias| format!("{prefix}{name} as {}", alias.local),
@@ -973,15 +966,7 @@ fn doc_type_alias(a: &TypeAlias) -> Doc {
 fn doc_type_alias_with_terminator(a: &TypeAlias, terminated: bool) -> Doc {
     let doc_prefix = a.doc.as_ref().map(doc_doc_comment).unwrap_or_else(empty);
     let pubword = doc_vis(&a.vis);
-    let head = concat_all([
-        text(if a.default_span.is_some() {
-            "default "
-        } else {
-            ""
-        }),
-        pubword,
-        text(format!("type {}", a.name)),
-    ]);
+    let head = concat_all([pubword, text(format!("type {}", a.name))]);
     let params = if a.type_params.is_empty() {
         empty()
     } else {
@@ -2123,9 +2108,26 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             ElaboratorCall::FieldAccess { receiver, labels } => {
                 doc_field_access(receiver, labels, delimited_closing(source_trivia))
             }
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                doc_field_update(receiver, updates, delimited_closing(source_trivia))
-            }
+            ElaboratorCall::FieldUpdate { base, updates } => match base.receiver() {
+                Some(receiver) => {
+                    doc_field_update(receiver, updates, delimited_closing(source_trivia))
+                }
+                None => doc_comma_list_with_trivia(
+                    text("{"),
+                    updates
+                        .iter()
+                        .map(|update| {
+                            doc_label_payload(&update.label, update.construction_payload())
+                        })
+                        .collect(),
+                    &updates
+                        .iter()
+                        .map(|update| update.meta.leading_trivia.clone())
+                        .collect::<Vec<_>>(),
+                    delimited_closing(source_trivia),
+                    text("}"),
+                ),
+            },
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
         Expr::UserMacro {
@@ -2718,11 +2720,13 @@ fn expr_symbol_edges(expr: &Expr) -> (bool, bool) {
         }
         Expr::Elaborator { call, .. } => {
             let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. }
-                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
+                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
             };
             (
-                !operator_expr_needs_grouping(receiver) && expr_symbol_edges(receiver).0,
+                receiver.is_some_and(|receiver| {
+                    !operator_expr_needs_grouping(receiver) && expr_symbol_edges(receiver).0
+                }),
                 false,
             )
         }
@@ -2931,12 +2935,14 @@ fn exposes_operator_boundary_inner<'a>(
         }
         Expr::Elaborator { call, .. } if !matches!(boundary, OperatorBoundary::RightClaim(_)) => {
             let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. }
-                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
+                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
             };
-            !operator_expr_needs_grouping(receiver)
-                && !expr_boundary_has_comments(receiver, true, true)
-                && exposes_operator_boundary(receiver, boundary, cache)
+            receiver.is_some_and(|receiver| {
+                !operator_expr_needs_grouping(receiver)
+                    && !expr_boundary_has_comments(receiver, true, true)
+                    && exposes_operator_boundary(receiver, boundary, cache)
+            })
         }
         Expr::OpChain {
             kind: crate::ast::OpChainKind::Normal { pattern, slots },
@@ -3008,7 +3014,7 @@ fn call_arg_trivia(args: &[CallArg]) -> Vec<Vec<Trivia>> {
 fn doc_call_arg(arg: &CallArg) -> Doc {
     match arg {
         // A type passed as a call argument (an intrinsic form's type
-        // operand — `__if_then_else__(T, …)`, `__left__(T, v)`, …) sits
+        // operand — `__if_then_else__(B, T, …)`, `__left__(T, v)`, …) sits
         // at a bare position: the comma-list provides no delimiter, so a
         // wide `Sum` / `Product` chain that breaks to the leading-operator
         // layout must parenthesize itself or its leading operator would
@@ -3170,13 +3176,15 @@ fn call_splice_arg_starts_with_dot(expr: &Expr) -> bool {
         }
         Expr::Elaborator { call, .. } => {
             let receiver = match call {
-                ElaboratorCall::FieldAccess { receiver, .. }
-                | ElaboratorCall::FieldUpdate { receiver, .. } => receiver,
+                ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
+                ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
             };
-            !matches!(receiver.as_ref(), Expr::OpChain { .. })
-                && !has_comments(&receiver.meta().leading_trivia)
-                && !has_comments(&receiver.meta().trailing_trivia)
-                && call_splice_arg_starts_with_dot(receiver)
+            receiver.is_some_and(|receiver| {
+                !matches!(receiver, Expr::OpChain { .. })
+                    && !has_comments(&receiver.meta().leading_trivia)
+                    && !has_comments(&receiver.meta().trailing_trivia)
+                    && call_splice_arg_starts_with_dot(receiver)
+            })
         }
         _ => false,
     }
@@ -4241,18 +4249,7 @@ fn doc_host_type(h: &HostType) -> Doc {
         None => empty(),
     };
     let owned = if h.owned { text(" { owned }") } else { empty() };
-    concat_all([
-        doc_prefix,
-        text(if h.default_span.is_some() {
-            "default "
-        } else {
-            ""
-        }),
-        head,
-        params,
-        role,
-        owned,
-    ])
+    concat_all([doc_prefix, head, params, role, owned])
 }
 
 fn doc_host_fn(h: &HostFn) -> Doc {
@@ -5759,6 +5756,40 @@ import p( // opening selection
     fn empty_module() {
         let pp = roundtrip("module foo;");
         assert_eq!(pp, "module foo;\n");
+    }
+
+    #[test]
+    fn construction_carrier_renders_only_its_written_payload() {
+        let module = parse("module x; fn f() { receiver.!{alias.entry = compute()} }")
+            .expect("source update");
+        let mut expression = function_body(&module, "f").clone();
+        let Expr::Elaborator {
+            call: ElaboratorCall::FieldUpdate { base, updates },
+            ..
+        } = &mut expression
+        else {
+            panic!("parsed field update")
+        };
+        *base = crate::ast::FieldUpdateBase::Construction;
+        let update = &mut updates[0];
+        let span = update.meta.span;
+        update.value = Expr::synth_call(
+            Expr::Path {
+                occurrence: (),
+                segments: ["alias", "Item", "mk"]
+                    .map(|name| crate::ast::PathSegment::new(name.to_owned(), span))
+                    .to_vec(),
+                meta: crate::ast::Meta::new(span),
+                ext: (),
+            },
+            vec![CallArg::Value(update.value.clone())],
+            span,
+        );
+        let rendered = render(&doc_expr(&expression), WIDTH);
+        assert_eq!(rendered, "{alias.entry = compute()}");
+        let reparsed = roundtrip(&format!("module x; fn f() {{ {rendered} }}"));
+        assert!(reparsed.contains("{alias.entry = compute()}"));
+        assert!(!reparsed.contains(".mk"));
     }
 
     #[test]

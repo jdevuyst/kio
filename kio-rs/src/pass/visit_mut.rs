@@ -368,10 +368,10 @@ where
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => visitor.visit_expr(receiver),
-            ElaboratorCall::FieldUpdate {
-                receiver, updates, ..
-            } => {
-                visitor.visit_expr(receiver);
+            ElaboratorCall::FieldUpdate { base, updates, .. } => {
+                if let Some(receiver) = base.receiver_mut() {
+                    visitor.visit_expr(receiver);
+                }
                 for update in updates {
                     visitor.visit_expr(&mut update.value);
                 }

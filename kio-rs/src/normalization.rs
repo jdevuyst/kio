@@ -2078,6 +2078,7 @@ fn checked_term_node_expr_with(
         } => intrinsic_expr(
             "__if_then_else__",
             vec![
+                CallArg::Type(condition.ty().clone()),
                 CallArg::Type(result_ty.clone()),
                 CallArg::Value(child(condition)),
                 CallArg::Value(Expr::FnExpr {
@@ -15668,7 +15669,7 @@ mod tests {
                         result_ty.clone(),
                     ),
                     concat!(
-                        "__if_then_else__(T:ReplayResult,V:condition,",
+                        "__if_then_else__(T:Bool,T:ReplayResult,V:condition,",
                         "V:fn<V0>(){true_result},V:fn<V0>(){false_result})"
                     ),
                 ),

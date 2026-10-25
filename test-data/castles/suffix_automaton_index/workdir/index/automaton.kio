@@ -2,7 +2,7 @@ module index/automaton;
 
 import index/numbers as num;
 import macros/control(macro if);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith as n;
 import testapi/array as a;
 import testapi/iter(loop);

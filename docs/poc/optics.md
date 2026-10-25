@@ -73,8 +73,8 @@ It supplies the same host shape the POC's `testapi` modules declare — `Bool`,
 `I32`, `Int`, `String`, and the `add` / `int_to_string` / `print` host functions
 — plus the spine macros and `match`. The three worked tour expressions
 below compile separately against the real `optics` library with the host types
-they use. The prism examples select `I32` as their module-local integer
-default so the literal source of `widen_sum` has a type before injection.
+they use. When a literal source needs its type before injection, annotate
+it with `I32`; concrete surrounding contexts can infer ordinary literals.
 
 <!--kio {harness=optics placeholder="__INSERT_CODE_HERE__" accumulate}
 bridge {
@@ -123,7 +123,7 @@ module kiodoc;
 import optics(left_prism, review);
 import macros/spine_macros(macro widen_sum);
 
-default host type I32 role(i32);
+host type I32 role(i32);
 host type String role(str);
 
 fn check_prism() {
@@ -678,7 +678,7 @@ prism's own* `review`:
 
 ```kio {@prism_use}
 let p_outer = left_prism(I32 | String, I32);
-let deep_hit = review(p_outer, widen_sum(5, I32 | String));
+let deep_hit = review(p_outer, widen_sum(5(I32), I32 | String));
 ```
 
 `left_prism(I32 | String, I32)`'s `rev` is `widen_sum(av, A | B)` generated
@@ -690,7 +690,7 @@ reaches the nested arm. The outer-*right* arm, by contrast, is reachable with
 the outer-right slot:
 
 ```kio {@prism_use}
-let deep_outer_miss = widen_sum(100, (I32 | String) | I32);
+let deep_outer_miss = widen_sum(100(I32), (I32 | String) | I32);
 ```
 
 Previewing the composed prism against these three values — outer-left hit

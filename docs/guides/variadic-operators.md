@@ -197,7 +197,7 @@ module dictionary_example;
 
 import dict(Compare, Dict, op _ => _, varop [% %]);
 
-default host type I32 role(i32);
+host type I32 role(i32);
 
 fn two_entries(compare: Compare(I32)) -> Dict(I32, I32) { [% 1 => 10, 2 => 20 %](compare) }
 

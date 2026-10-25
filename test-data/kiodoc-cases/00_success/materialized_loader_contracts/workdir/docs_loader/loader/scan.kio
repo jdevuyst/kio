@@ -25,7 +25,7 @@ import docs_loader/loader(
 , binders_cons
 , binders_nil
 , binders_reverse
-, mk_alias_decl_selected
+, mk_alias_decl
 , tyaliases_cons
 , tyaliases_nil
 , tyaliases_reverse
@@ -61,7 +61,7 @@ import docs_loader/loader(
 import docs_loader/loader(
 , imports_cons
 , imports_nil
-, mk_import_selected
+, mk_import_as
 , mk_module
 , modules_cons
 , modules_nil
@@ -83,7 +83,7 @@ import docs_loader/loader(diag_bare_message, diag_pos);
 import docs_loader/loader(lr_diag, resolve_package, un_load_outcome);
 import docs_loader/loader(members_cons, members_nil, members_reverse);
 import docs_loader/loader(mk_diag_at);
-import docs_loader/loader(mk_host_header_selected);
+import docs_loader/loader(mk_host_header);
 import docs_loader/loader(pgroups_cons, pgroups_nil);
 import docs_loader/loader(pnames_cons, pnames_has, pnames_nil, {pnames});
 import docs_loader/loader(pnames_len, un_pgroups, un_pnames);
@@ -94,7 +94,7 @@ import docs_loader/macros/match(macro match);
 import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/parse(Nt_info, Ntab);
 import docs_loader/parse(mk_nt_info, ntab_cons, ntab_nil);
-import docs_loader/testapi(default Bool, default I32, default String);
+import docs_loader/testapi(Bool, I32, String);
 import docs_loader/testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import docs_loader/testapi/fmt(int_to_string);
 import docs_loader/testapi/iter(loop);
@@ -1485,25 +1485,11 @@ fn skip_import_commas(ts: Toks) -> Toks {
 }
 
 fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
-  let selected =
-    if(head_word_is(ts, "default"(String))) {
-      match(head_word(rest(ts))) {
-        (
-        , .(name: String) {
-            if(import_value_name(name)) { .f(Bool) } else { import_item_name(name) }
-          }
-        , .(_missing: .) { .f(Bool) }
-        )
-      }
-    } else {
-      .f(Bool)
-    };
-  let item = if(selected) { rest(ts) } else { ts };
-  match(head_word(item)) {
+  match(head_word(ts)) {
     (
     , .(original: String) {
         if(import_item_name(original)) {
-          let after = rest(item);
+          let after = rest(ts);
           if(head_word_is(after, "as"(String))) {
             let destination = rest(after);
             match(head_word(destination)) {
@@ -1519,7 +1505,7 @@ fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
                     };
                     if(same_class) {
                       widen_sum(
-                      , (mk_import_selected(local, original, provider, selected), rest(destination))
+                      , (mk_import_as(local, original, provider), rest(destination))
                       , (Import & Toks) | Diag
                       )
                     } else {
@@ -1547,10 +1533,7 @@ fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
               )
             }
           } else {
-            widen_sum(
-            , (mk_import_selected(original, original, provider, selected), after)
-            , (Import & Toks) | Diag
-            )
+            widen_sum((mk_import_as(original, original, provider), after), (Import & Toks) | Diag)
           }
         } else {
           widen_sum(
@@ -2065,7 +2048,7 @@ fn with_decl(w: Wip, d2: Decl) -> Wip {
   }
 }
 
-fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32, selected: Bool) -> Wip {
+fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32) -> Wip {
   match(Wip.get(w)) {
     .(
     , n: String
@@ -2095,16 +2078,7 @@ fn with_host_decl(w: Wip, is_fn: Bool, name: String, header: Toks, decl_pos: I32
                 , hostfns
                 , (
                   , typenames
-                  , (
-                    , mm
-                    , (
-                      , ta
-                      , host_headers_cons(
-                        , mk_host_header_selected(is_fn, name, header, decl_pos, selected)
-                        , hh
-                        )
-                      )
-                    )
+                  , (mm, (ta, host_headers_cons(mk_host_header(is_fn, name, header, decl_pos), hh)))
                   )
                 )
               )
@@ -2429,36 +2403,11 @@ fn scan_visible_decl(
 , ts: Toks
 , visibility: Visibility
 , pure: Bool
-, selected: Bool
 , recursive_scope: . | Recursive_type_scope
 , in_group: Bool
 , w: Wip
 ) -> Decl_scan {
-  let invalid_default =
-    if(selected) {
-      if(head_word_is(ts, "type"(String))) {
-        .f(Bool)
-      } else if(head_word_is(ts, "host"(String))) {
-        let after_host = rest(ts);
-        let head = if(head_word_is(after_host, "pub"(String))) {
-          rest(after_host)
-        } else {
-          after_host
-        };
-        if(head_word_is(head, "type"(String))) { .f(Bool) } else { .t(Bool) }
-      } else {
-        .t(Bool)
-      }
-    } else {
-      .f(Bool)
-    };
-  if(invalid_default) {
-    ds_err(mk_diag_at(
-    , "dyn_load_prime: malformed image — `default` requires a type alias or "
-      "host type"(String)
-    , head_pos(ts)
-    ))
-  } else if(pure) {
+  if(pure) {
     if(head_word_is(ts, "fn"(String))) {
       scan_visible_fn(ts, visibility, w)
     } else {
@@ -2524,14 +2473,13 @@ fn scan_visible_decl(
                                         ds_ok(
                                         , with_tyalias(
                                           , with_typename(w, name)
-                                          , mk_alias_decl_selected(
+                                          , mk_alias_decl(
                                             , name
                                             , binders
                                             , body
                                             , visibility
                                             , decl_pos
                                             , recursive_scope
-                                            , selected
                                             )
                                           )
                                         , after
@@ -2618,7 +2566,7 @@ fn scan_visible_decl(
                 , head_pos(ts)
                 ))
               } else {
-                ds_ok(with_host_decl(w, is_fn, name, header, decl_pos, selected), after)
+                ds_ok(with_host_decl(w, is_fn, name, header, decl_pos), after)
               }
             }
           }
@@ -2636,19 +2584,10 @@ fn scan_visible_decl(
 }
 
 fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
-  let selected = head_word_is(ts0, "default"(String));
-  let after_default = if(selected) { rest(ts0) } else { ts0 };
-  let local_pub = head_word_is(after_default, "pub"(String));
-  let before_visibility = if(local_pub) { rest(after_default) } else { after_default };
+  let local_pub = head_word_is(ts0, "pub"(String));
+  let before_visibility = if(local_pub) { rest(ts0) } else { ts0 };
   let visible = if(local_pub) { .t(Bool) } else { exported };
-  let invalid_order = if(selected) { exported } else { .f(Bool) };
-  if(invalid_order) {
-    ds_err(mk_diag_at(
-    , "dyn_load_prime: malformed image — `default` precedes declaration "
-      "visibility"(String)
-    , head_pos(ts0)
-    ))
-  } else match(read_visibility(before_visibility, visible)) {
+  match(read_visibility(before_visibility, visible)) {
     (
     , .(read: Visibility_read) {
         match(Visibility_read.get(read)) {
@@ -2665,7 +2604,6 @@ fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
                   , ts
                   , visibility
                   , .t(Bool)
-                  , selected
                   , no_recursive_type_scope()
                   , .f(Bool)
                   , w
@@ -2676,21 +2614,12 @@ fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
                 , rest(ts)
                 , visibility
                 , .t(Bool)
-                , selected
                 , no_recursive_type_scope()
                 , .f(Bool)
                 , w
                 )
               } else {
-                scan_visible_decl(
-                , ts
-                , visibility
-                , .f(Bool)
-                , selected
-                , no_recursive_type_scope()
-                , .f(Bool)
-                , w
-                )
+                scan_visible_decl(ts, visibility, .f(Bool), no_recursive_type_scope(), .f(Bool), w)
               }
             } else {
               ds_err(mk_diag_at(
@@ -2727,10 +2656,8 @@ fn type_group_diag(message: String, ts: Toks) -> Type_group_scan {
 // compile-time property; the runtime loader retains the same alias/newtype
 // records as it does for ordinary declarations.
 fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, w: Wip) -> Decl_scan {
-  let selected = head_word_is(ts0, "default"(String));
-  let after_default = if(selected) { rest(ts0) } else { ts0 };
-  let exported = head_word_is(after_default, "pub"(String));
-  let after_pub = if(exported) { rest(after_default) } else { after_default };
+  let exported = head_word_is(ts0, "pub"(String));
+  let after_pub = if(exported) { rest(ts0) } else { ts0 };
   match(read_visibility(after_pub, exported)) {
     (
     , .(read: Visibility_read) {
@@ -2738,9 +2665,9 @@ fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, 
           .(visibility: Visibility, ts: Toks) {
             if(visibility_valid_for_owner(visibility, wip_name(w))) {
               if(head_word_is(ts, "type"(String))) {
-                scan_visible_decl(ts, visibility, .f(Bool), selected, recursive_scope, .t(Bool), w)
+                scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
               } else if(head_word_is(ts, "newtype"(String))) {
-                scan_visible_decl(ts, visibility, .f(Bool), selected, recursive_scope, .t(Bool), w)
+                scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
               } else {
                 ds_err(mk_diag_at(
                 , "dyn_load_prime: malformed image — a recursive type group member must be "
@@ -2919,7 +2846,7 @@ fn is_decl_head(ts: Toks) -> Bool {
   } else if(head_word_is(ts, "host"(String))) {
     .t(Bool)
   } else {
-    head_word_is(ts, "default"(String))
+    .f(Bool)
   }
 }
 

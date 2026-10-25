@@ -1,0 +1,3 @@
+cannot determine the type of this integer literal
+annotate this literal
+let n = 100

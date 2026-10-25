@@ -54,6 +54,7 @@ bridge {
   core;
   vec;
   macros/testapi;
+  macros/control;
   list/core;
   list/macros/testapi
 }

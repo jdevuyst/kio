@@ -1,0 +1,30 @@
+module cases/anchored;
+
+import common(macro keep);
+import macros/control(macro if);
+import testapi(Bool, String);
+
+pub fn literals(flag: Bool) -> String {
+  let result = if(flag) { "left"(String) } else { "right" };
+  result
+}
+
+pub fn required_first(flag: Bool) -> String {
+  let selected =
+    if(flag) {
+      keep(.() { "macro"(String) })
+    } else {
+      .() { "fallback" }
+    };
+  selected()
+}
+
+pub fn required_last(flag: Bool) -> String {
+  let selected =
+    if(flag) {
+      .() { "fallback" }
+    } else {
+      keep(.() { "macro"(String) })
+    };
+  selected()
+}

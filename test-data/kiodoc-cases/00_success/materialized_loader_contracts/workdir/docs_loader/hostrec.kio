@@ -16,7 +16,7 @@ import docs_loader/macros/match(macro match);
 import docs_loader/macros/spine_macros(macro widen_sum);
 import docs_loader/marshal(loop_op);
 import docs_loader/result(Call_result, call_done, call_stuck);
-import docs_loader/testapi(Scalar, default Bool, default F64, default I32, default String);
+import docs_loader/testapi(Bool, F64, I32, Scalar, String);
 import docs_loader/testapi/arith(
 , add_i32
 , div_i32

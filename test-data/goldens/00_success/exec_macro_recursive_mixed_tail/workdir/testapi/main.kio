@@ -1,7 +1,7 @@
 module testapi/main;
 
 import choose(macro choose);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(leq_i32);
 import testapi/io(print);
 import testapi/iter(loop);

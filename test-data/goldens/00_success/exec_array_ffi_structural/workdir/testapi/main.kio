@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(Array, default Bool, default I32, default String);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_push);
 import testapi/fmt(int_to_string);
@@ -113,9 +113,9 @@ pub fn main() {
   print("\n");
   // Array(I32 | String): mixed sum arms.
   let mixed = array_make_empty(I32 | String, ());
-  array_push(mixed, widen_sum(7, I32 | String));
-  array_push(mixed, widen_sum("hi", I32 | String));
-  array_push(mixed, widen_sum(9, I32 | String));
+  array_push(mixed, widen_sum(7(I32), I32 | String));
+  array_push(mixed, widen_sum("hi"(String), I32 | String));
+  array_push(mixed, widen_sum(9(I32), I32 | String));
   print(render_array(show_sum, mixed));
   print("\n");
   // Array((I32 & String) & Bool): nested product.
@@ -126,8 +126,8 @@ pub fn main() {
   print("\n");
   // Array((I32 & String) | (Bool & String)): sum of products.
   let sop = array_make_empty((I32 & String) | (Bool & String), ());
-  array_push(sop, widen_sum((3, "three"), (I32 & String) | (Bool & String)));
-  array_push(sop, widen_sum((leq_i32(1, 2), "four"), (I32 & String) | (Bool & String)));
+  array_push(sop, widen_sum((3(I32), "three"(String)), (I32 & String) | (Bool & String)));
+  array_push(sop, widen_sum((leq_i32(1, 2), "four"(String)), (I32 & String) | (Bool & String)));
   print(render_array(show_sum_of_prod, sop));
   print("\n")
 }

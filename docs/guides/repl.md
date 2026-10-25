@@ -166,11 +166,12 @@ selector with its required parentheses.
 
 ## Expression queries
 
-Expressions use the loaded module's ordinary literal rules. A bare literal
-with no expected type needs that module's explicit `default`; `42(Int)` names
-an admitted type without needing a default. `role` alone does not select one,
+Expressions use the loaded module's ordinary literal rules. A scalar literal needs an explicit
+annotation such as `42(Int)` or a concrete local context that determines its
+carrier. A bare `42` query without that evidence is unresolved. `role` alone
+does not select a carrier,
 and `42(Float)` does not convert integer spelling into a float. See
-[literal types and defaults](typechecking.md#literal-types-and-module-local-defaults).
+[literal types and local inference](typechecking.md#literal-types-and-local-inference).
 
 A line that doesn't start with `:` is a bare query. The REPL looks at what the line is and dispatches it the same way the matching meta-command would:
 

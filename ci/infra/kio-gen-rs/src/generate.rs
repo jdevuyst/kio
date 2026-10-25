@@ -1025,7 +1025,7 @@ fn gen_at<R: Rng>(
             };
             Term::PolyCall {
                 name: "__if_then_else__".to_string(),
-                type_args: vec![target.clone()],
+                type_args: vec![Type::bool(), target.clone()],
                 args: vec![cond, then_lam, else_lam],
             }
         }
@@ -1495,9 +1495,9 @@ fn intro<R: Rng>(
             //   - __left__(A, B, x: A)
             //   - __right__(a, b, y:b)
             //   - IfElse(cond, x:target, y:target) — a surface-form
-            //     node that renders as `if c { x } else { y }` when
+            //     node that renders as `if(c) { x } else { y }` when
             //     surface mode is on, and as
-            //     `__if_then_else__(target, c, .(){x}, .(){y})`
+            //     `__if_then_else__(Bool, target, c, .(){x}, .(){y})`
             //     otherwise. Including it as a Kio'-mode-renderable
             //     production keeps the body-level Kio' render signal
             //     honest: a program with IfElse renders the function

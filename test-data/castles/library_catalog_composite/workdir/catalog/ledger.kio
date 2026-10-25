@@ -9,7 +9,7 @@ import list/list as list;
 import macros/control(macro if);
 import macros/match(macro match);
 import result/result as result;
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, mul_i32);
 
 pub type Member_result = result.Result(Member, Failure);

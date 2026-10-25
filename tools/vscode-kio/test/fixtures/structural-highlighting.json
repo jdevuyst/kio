@@ -1,66 +1,12 @@
 [
   {
-    "name": "default_type_declaration_modifiers",
-    "source": "module source; default pub host type Int role(i64); default pub(source) type Integer = Int;",
-    "targets": [
-      {
-        "text": "default",
-        "start": 15,
-        "end": 22,
-        "kind": "keyword.declaration",
-        "owners": [
-          "host_decl"
-        ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
-      },
-      {
-        "text": "default",
-        "start": 52,
-        "end": 59,
-        "kind": "keyword.declaration",
-        "owners": [
-          "type_alias_decl_head"
-        ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
-      },
-      {
-        "text": "i64",
-        "start": 46,
-        "end": 49,
-        "kind": "keyword.declaration",
-        "owners": [
-          "role_annotation"
-        ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
-      }
-    ]
-  },
-  {
-    "name": "default_import_modifier_and_ordinary_name",
-    "source": "module source; import types(default Int as Integer, default as ordinary);",
+    "name": "ordinary_default_value_import",
+    "source": "module source; import types(default as ordinary);",
     "targets": [
       {
         "text": "default",
         "start": 28,
         "end": 35,
-        "kind": "keyword.declaration",
-        "owners": [
-          "import_decl"
-        ],
-        "textmate": [
-          "keyword.declaration.kio"
-        ]
-      },
-      {
-        "text": "default",
-        "start": 52,
-        "end": 59,
         "kind": "identifier",
         "owners": [
           "import_decl"
@@ -103,30 +49,6 @@
         "kind": "identifier",
         "owners": [
           "expression_path"
-        ]
-      }
-    ]
-  },
-  {
-    "name": "default_multiline_owner_evidence",
-    "source": "module source; import types(default // import policy\n Int); default // local policy\n pub host type Bool role(bool);",
-    "targets": [
-      {
-        "text": "default",
-        "start": 28,
-        "end": 35,
-        "kind": "keyword.declaration",
-        "owners": [
-          "import_decl"
-        ]
-      },
-      {
-        "text": "default",
-        "start": 60,
-        "end": 67,
-        "kind": "keyword.declaration",
-        "owners": [
-          "host_decl"
         ]
       }
     ]

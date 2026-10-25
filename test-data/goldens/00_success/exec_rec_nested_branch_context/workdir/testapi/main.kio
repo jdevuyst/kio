@@ -3,14 +3,14 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default I32);
+import testapi(Bool, I32);
 import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
 rec(loop) fn search(outer: Bool, inner: Bool) -> I32 | . {
   if(outer) {
-    if(inner) { widen_sum(7) } else { recur search(.f, .f) }
+    if(inner) { widen_sum(7(I32)) } else { recur search(.f, .f) }
   } else {
     widen_sum(())
   }

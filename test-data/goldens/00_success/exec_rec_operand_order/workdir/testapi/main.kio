@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/control(macro scope);
-import testapi(String, default Bool, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith(leq_i32);
 import testapi/io(print);
 import testapi/iter(loop);
@@ -140,7 +140,7 @@ rec(loop) fn deferred_call_order(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     mark("B", 28)
   } else {
-    consume(effectful_identity("A"), 0, recur(cont) deferred_call_order(0))
+    consume(effectful_identity("A"), 0(I32), recur(cont) deferred_call_order(0))
   }
 }
 

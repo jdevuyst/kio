@@ -141,7 +141,7 @@ impl GeneratedTypeNameMaterializer {
 impl TypecheckVisitMut<PrePrime> for GeneratedTypeNameMaterializer {
     fn enter_type_binder(&mut self, param: &mut crate::ast::TypeParam, _scope: crate::span::Span) {
         let source = param.name.clone();
-        let materialized = if crate::normalization::is_generated_checked_term_type_name(&source) {
+        let materialized = if !crate::naming::is_type_name(&source) {
             let fresh = fresh_type_var("Ct", &self.reserved);
             self.reserved.insert(fresh.clone());
             fresh
@@ -194,9 +194,9 @@ fn materialize_generated_type_names(
     expr: &mut Expr<PrePrime>,
     reserved_type_names: &HashSet<String>,
 ) {
-    // A checked-term binder is deliberately unspellable until every raw term,
-    // template value, and residual eta layer has joined this one replay tree.
-    // Seed the ordinary Kio namespace only here, at its complete lexical owner.
+    // Checked-term identities stay private until raw terms, template values,
+    // and residual eta layers have joined this replay tree. Materialize them
+    // and internal scheme binders in the complete owner's Kio namespace.
     let mut reserved = reserved_type_names.clone();
     TypeNameCollector(&mut reserved).visit_expr(expr);
     GeneratedTypeNameMaterializer::new(reserved).visit_expr(expr);

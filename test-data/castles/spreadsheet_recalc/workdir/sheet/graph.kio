@@ -10,7 +10,7 @@ import sheet/formula(Expr);
 import sheet/formula(precedents);
 import sheet/list(List, append, cons, filter, len, nil, reverse);
 import sheet/table(Table, empty, get_or, put);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32, sub_i32);
 import testapi/iter(loop);
 

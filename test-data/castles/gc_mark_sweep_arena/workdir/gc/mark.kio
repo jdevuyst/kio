@@ -11,7 +11,7 @@ import gc/num(int_lt);
 import gc/slot(Imm, Ptr, {ptr});
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(Array, I32, default Bool);
+import testapi(Array, Bool, I32);
 import testapi/arith(add_i32);
 import testapi/array(
 , array_get

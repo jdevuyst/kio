@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/sequence(macro do);
-import testapi(default String);
+import testapi(String);
 import testapi/io as io;
 import testapi/text as text;
 
@@ -16,7 +16,7 @@ fn pure[A](value: A) -> Box(A) { Box.box(value) }
 fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
 
 fn ordinary() -> String {
-  let _ = "discard";
+  let _ = "discard"(String);
   let .(typed: String) = "typed:";
   let .(whole: (first: String, second: String)) = ("a", "b");
   let .(again, last) = whole;

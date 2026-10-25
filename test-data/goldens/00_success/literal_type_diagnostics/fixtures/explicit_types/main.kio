@@ -1,0 +1,39 @@
+module main;
+
+host type Int role(i64);
+
+host type Float role(f64);
+
+host type Bool role(bool);
+
+host type String role(str);
+
+pure fn integer() -> Int { 42(Int) }
+
+pure fn float() -> Float { 42.0(Float) }
+
+pure fn flag() -> Bool { .t(Bool) }
+
+pure fn text() -> String { "expected"(String) }
+
+pure fn annotated() -> Float { 42.0(Float) }
+
+equiv expected_integer() {
+  integer();
+  42(Int)
+}
+
+equiv expected_float() {
+  float();
+  annotated()
+}
+
+equiv expected_bool() {
+  flag();
+  .t(Bool)
+}
+
+equiv expected_string() {
+  text();
+  "expected"(String)
+}

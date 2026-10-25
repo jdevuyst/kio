@@ -1,6 +1,7 @@
 module sensitivity/models;
 
 import sensitivity/jet as jet;
+import testapi(F64);
 
 pub fn elastic_energy(x: jet.Jet, y: jet.Jet) -> jet.Jet {
   let u = jet.sub(jet.scale(2.0, x), y);

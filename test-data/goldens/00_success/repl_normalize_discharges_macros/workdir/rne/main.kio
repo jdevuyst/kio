@@ -2,12 +2,12 @@ module rne/main;
 
 import macros/lookup as lookup;
 import macros/lookup(Lookup_bool, macro contains);
-import macros/testapi(default I32);
+import macros/testapi(I32);
 import macros/type_of(rep_unit);
 import rne/closure(marker_fn);
 import rne/other(rep_of_unit);
 
-fn pair_has_i32() -> Lookup_bool { contains((1, ()), I32) }
+fn pair_has_i32() -> Lookup_bool { contains((1(I32), ()), I32) }
 
 equiv pair_has_i32_matches_true() {
   pair_has_i32();
@@ -15,7 +15,7 @@ equiv pair_has_i32_matches_true() {
 }
 
 equiv reordered_pair_has_i32_matches_true() {
-  contains(((), 1), I32);
+  contains(((), 1(I32)), I32);
   lookup.true()
 }
 

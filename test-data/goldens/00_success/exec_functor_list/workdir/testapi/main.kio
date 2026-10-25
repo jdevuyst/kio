@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro one_sum, macro widen_sum);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);
@@ -91,7 +91,7 @@ fn join_step(state: List(String) & String) -> (List(String) & String) | String {
       match(remaining.>List.un_list) {
         (
         , .(x: String, rest: List(String)) {
-            let sep =
+            let .(sep: String) =
               match(rest.>List.un_list) {
                 (.(_hd: String, _tl: List(String)) { "," }, .(_empty: .) { "\n" })
               };

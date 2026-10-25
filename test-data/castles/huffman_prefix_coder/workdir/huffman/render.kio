@@ -13,7 +13,7 @@ import huffman/tree(Node, Step, is_leaf, key, symbol_or, weight);
 import huffman/tree({step_left}, {step_merged}, {step_right});
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, eq_i32);
 import testapi/io(print);
 import testapi/iter(loop);

@@ -2,7 +2,7 @@
 module chars;
 
 import macros/control(macro if);
-import testapi(default Bool, default I32);
+import testapi(Bool, I32);
 import testapi/arith(eq_i32, leq_i32);
 
 // `chars.kio` — the lexer's character vocabulary.

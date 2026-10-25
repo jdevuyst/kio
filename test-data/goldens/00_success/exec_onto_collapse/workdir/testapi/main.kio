@@ -3,7 +3,7 @@ module testapi/main;
 import macros/algebraic_macros(macro onto);
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
-import testapi(default Bool, default String);
+import testapi(Bool, String);
 import testapi/io(print);
 
 // `onto`-only collapse cases:
@@ -25,11 +25,11 @@ fn collapse_pair(p: String & String) -> String { onto(p) }
 pub fn main() {
   let chosen =
     if(.t) {
-      widen_sum("sum-collapsed\n", String | String)
+      widen_sum("sum-collapsed\n"(String), String | String)
     } else {
-      widen_sum("unreachable\n", String | String)
+      widen_sum("unreachable\n"(String), String | String)
     };
   print(collapse_sum(chosen));
-  let pair = ("pair-collapsed\n", "pair-collapsed\n");
+  let pair = ("pair-collapsed\n"(String), "pair-collapsed\n"(String));
   print(collapse_pair(pair))
 }

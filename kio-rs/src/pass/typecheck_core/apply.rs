@@ -44,7 +44,7 @@ use super::{
 use super::{
     CloseReadyEquationConstraint, ClosedGoalOutput, ExpectedEquationOperand, GoalDelta, GoalEscape,
     GoalOrigin, GoalOwnerKind, GoalRole, GoalSolutionPolicy, GoalStore, PreparedCloseType,
-    PreparedTypeShell, ReservedGoalRef, RigidScope, ScopedType,
+    PreparedTypeShell, ReservedGoalRef, RigidScope, ScopedType, ScopedTypeEdge,
 };
 #[cfg(feature = "surface")]
 use crate::pass::typecheck_full::publication::PublicationBuilder;
@@ -66,6 +66,26 @@ struct OrdinaryPlanningWork {
     semantic_packet_decodes: usize,
     semantic_successor_advances: usize,
     max_driver_frames: usize,
+    context_wakes: usize,
+    paired_computed: PairedComputedWork,
+}
+
+#[cfg(all(test, feature = "surface"))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct PairedComputedWork {
+    pub(crate) created: usize,
+    pub(crate) applications_completed: usize,
+    pub(crate) callees_completed: usize,
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn reset_paired_computed_work() {
+    update_ordinary_planning_work(|work| work.paired_computed = PairedComputedWork::default());
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn paired_computed_work() -> PairedComputedWork {
+    ordinary_planning_work().paired_computed
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -80,6 +100,8 @@ thread_local! {
             semantic_packet_decodes: 0,
             semantic_successor_advances: 0,
             max_driver_frames: 0,
+            context_wakes: 0,
+            paired_computed: PairedComputedWork { created: 0, applications_completed: 0, callees_completed: 0 },
         }) };
 }
 
@@ -91,6 +113,21 @@ fn reset_ordinary_planning_work() {
 #[cfg(all(test, feature = "surface"))]
 fn ordinary_planning_work() -> OrdinaryPlanningWork {
     ORDINARY_PLANNING_WORK.with(std::cell::Cell::get)
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn reset_context_wakes() {
+    update_ordinary_planning_work(|work| work.context_wakes = 0);
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn context_wakes() -> usize {
+    ordinary_planning_work().context_wakes
+}
+
+#[cfg(all(test, feature = "surface"))]
+fn record_context_wake() {
+    update_ordinary_planning_work(|work| work.context_wakes += 1);
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -192,6 +229,7 @@ fn update_terminal_public_layer_work(update: impl FnOnce(&mut TerminalPublicLaye
 #[cfg(all(test, feature = "surface"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FinalMacroSuccessorWork {
+    pub(crate) final_selected_layer_continues: usize,
     pub(crate) terminal_continues: usize,
     pub(crate) migrated_descents: usize,
     pub(crate) earlier_terminal_yields: usize,
@@ -202,6 +240,7 @@ pub(crate) struct FinalMacroSuccessorWork {
 thread_local! {
     static FINAL_MACRO_SUCCESSOR_WORK: std::cell::Cell<FinalMacroSuccessorWork> =
         const { std::cell::Cell::new(FinalMacroSuccessorWork {
+            final_selected_layer_continues: 0,
             terminal_continues: 0,
             migrated_descents: 0,
             earlier_terminal_yields: 0,
@@ -1376,6 +1415,15 @@ fn synth_prime_path_call<'m>(
         return Ok(None);
     };
     let callee_synth = super::synth::synth_path(segments, meta.span, tcx)?;
+    if callee_synth.specialization.is_some() {
+        let boolean = args
+            .first()
+            .map(CallArgRef::from_arg)
+            .ok_or_else(|| super::synth::unspecialized_intrinsic_error(site.span))?
+            .to_type_arg()?;
+        super::types::compute_checked_kind(&boolean, boolean.span(), tcx)?;
+        super::synth::check_boolean_specialization(&InternedType::fresh(boolean), site.span, tcx)?;
+    }
     let applied = apply_mono_interned_with_context(
         &callee_synth.ty,
         args,
@@ -1390,7 +1438,11 @@ fn synth_prime_path_call<'m>(
         tcx,
     )?;
     if !applied.consumed_value {
-        crate::prime::typer::record_intrinsic_value(callee, &callee_synth.ty, tcx);
+        if callee_synth.specialization.is_some() {
+            crate::prime::typer::record_intrinsic_application(site, &applied.ty, tcx);
+        } else {
+            crate::prime::typer::record_intrinsic_value(callee, &callee_synth.ty, tcx);
+        }
     }
     Ok(Some(
         Synth::value_interned(applied.ty)
@@ -3228,6 +3280,7 @@ fn select_path_unit_call_chain<'m>(
 
 #[cfg(feature = "surface")]
 struct GoalCallShape<'m> {
+    specialization: Option<Box<super::IntrinsicSpecialization<crate::ast::Lowered>>>,
     binders: Vec<crate::ast::TypeParam>,
     param: SemanticValueDomain<crate::ast::Lowered>,
     ret: crate::ast::Type<crate::ast::Lowered>,
@@ -3295,6 +3348,7 @@ struct OpenPathUnitPreflight<'m> {
 }
 
 #[cfg(feature = "surface")]
+#[allow(clippy::large_enum_variant)] // keep the ordinary preflight plan inline without a per-call allocation
 enum OpenPathUnitPreflightDecision<'m> {
     Planned(OpenPathUnitPreflight<'m>),
     NeedsDynamic,
@@ -3320,19 +3374,7 @@ struct PreparedDirectCallee {
     span: Span,
     synth: Synth<crate::ast::Lowered>,
     binders: Vec<(Span, crate::pass::typecheck_full::ResolvedBinder)>,
-    #[cfg(feature = "lsp")]
-    selected_role: Option<(Span, String)>,
     retained_type: Option<std::sync::Arc<super::env::RetainedLocalType>>,
-}
-
-#[cfg(all(test, feature = "surface", feature = "lsp"))]
-#[test]
-fn source_role_layout_prepared_values() {
-    eprintln!(
-        "source role layout: prepared_callee={} prepared_value={}",
-        std::mem::size_of::<PreparedDirectCallee>(),
-        std::mem::size_of::<PreparedOrdinaryValue<'_>>(),
-    );
 }
 
 #[cfg(feature = "surface")]
@@ -3354,8 +3396,6 @@ impl PreparedDirectCallee {
     ) -> Result<Self, Error> {
         let mut binders = Vec::new();
         let mut retained_type = None;
-        #[cfg(feature = "lsp")]
-        let mut selected_role = None;
         let synth = super::synth::synth_path_with_binder_recorder(
             segments,
             span,
@@ -3371,15 +3411,11 @@ impl PreparedDirectCallee {
                     ),
                 ));
             },
-            #[cfg(feature = "lsp")]
-            |span, binding, _| selected_role = Some((span, binding.to_owned())),
         )?;
         Ok(Self {
             span,
             synth,
             binders,
-            #[cfg(feature = "lsp")]
-            selected_role,
             retained_type,
         })
     }
@@ -3393,10 +3429,6 @@ impl PreparedDirectCallee {
     ) -> Result<(), Error> {
         for (span, binder) in &self.binders {
             publication.record_position_binder(*span, binder.clone());
-        }
-        #[cfg(feature = "lsp")]
-        if let Some((span, binding)) = &self.selected_role {
-            publication.record_selected_role(*span, binding.clone());
         }
         stage_direct_callee_position_type(
             &self.synth,
@@ -3698,8 +3730,6 @@ struct PreparedOrdinaryValue<'m> {
     source: &'m crate::ast::Expr<crate::ast::Lowered>,
     synth: Synth<crate::ast::Lowered>,
     binders: Vec<(Span, crate::pass::typecheck_full::ResolvedBinder)>,
-    #[cfg(feature = "lsp")]
-    selected_role: Option<(Span, String)>,
     retained_type: Option<std::sync::Arc<super::env::RetainedLocalType>>,
 }
 
@@ -3713,8 +3743,6 @@ impl<'m> PreparedOrdinaryValue<'m> {
         record_prepared_ordinary_value();
         let mut binders = Vec::new();
         let mut retained_type = None;
-        #[cfg(feature = "lsp")]
-        let mut selected_role = None;
         let synth = match source {
             crate::ast::Expr::Path { segments, meta, .. } => {
                 super::synth::synth_path_with_binder_recorder(
@@ -3732,8 +3760,6 @@ impl<'m> PreparedOrdinaryValue<'m> {
                             ),
                         ));
                     },
-                    #[cfg(feature = "lsp")]
-                    |span, binding, _| selected_role = Some((span, binding.to_owned())),
                 )?
             }
             crate::ast::Expr::Unit {
@@ -3749,8 +3775,6 @@ impl<'m> PreparedOrdinaryValue<'m> {
             source,
             synth,
             binders,
-            #[cfg(feature = "lsp")]
-            selected_role,
             retained_type,
         }))
     }
@@ -3793,14 +3817,39 @@ impl<'m> PreparedOrdinaryValue<'m> {
         Ok(())
     }
 
+    fn specialize_for_expected(
+        &mut self,
+        expected: Option<&InternedType<crate::ast::Lowered>>,
+        owner: crate::ast::TypeGoalOwner,
+        store: &GoalStore,
+        publication: &mut PublicationBuilder,
+        tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), Error> {
+        if self.synth.specialization.is_none() {
+            return Ok(());
+        }
+        let expected = expected
+            .ok_or_else(|| super::synth::unspecialized_intrinsic_error(self.source.span()))?;
+        let (specialized, boolean) = super::synth::specialize_boolean_intrinsic_from_expected(
+            expected,
+            self.source.span(),
+            tcx,
+        )?;
+        let boolean = store.scoped_type(owner, boolean, self.source.span())?;
+        publication.record_type_resolution(self.source.site(), 0, boolean);
+        self.synth = specialized;
+        Ok(())
+    }
+
     fn stage_and_type(
-        self,
+        mut self,
         expected: Option<&InternedType<crate::ast::Lowered>>,
         owner: crate::ast::TypeGoalOwner,
         store: &GoalStore,
         publication: &mut PublicationBuilder,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<CompletedInFrame, Error> {
+        self.specialize_for_expected(expected, owner, store, publication, tcx)?;
         self.validate_expected(expected, tcx)?;
         self.stage_validated(owner, store, publication, tcx)
     }
@@ -3812,15 +3861,16 @@ impl<'m> PreparedOrdinaryValue<'m> {
         publication: &mut PublicationBuilder,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<CompletedInFrame, Error> {
+        if self.synth.specialization.is_some() {
+            return Err(super::synth::unspecialized_intrinsic_error(
+                self.source.span(),
+            ));
+        }
         #[cfg(test)]
         record_staged_prepared_ordinary_value();
         let scoped = self.scoped_type(owner, store, tcx)?;
         for (span, binder) in self.binders {
             publication.record_position_binder(span, binder);
-        }
-        #[cfg(feature = "lsp")]
-        if let Some((span, binding)) = self.selected_role {
-            publication.record_selected_role(span, binding);
         }
         let is_scheme = self.synth.is_scheme;
         let inferred_type_arg_suffix = self.synth.inferred_type_arg_suffix;
@@ -3883,6 +3933,9 @@ fn preflight_goal_call<'m>(
     require_inferred_slot: bool,
     tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<Option<(GoalCallShape<'m>, usize)>, Error> {
+    if callee.specialization.is_some() {
+        return Ok(None);
+    }
     let ambient_binders = tcx.in_scope_type_param_binders();
     let Some(cursor) = SemanticCallCursor::from_type(&callee.ty, tcx) else {
         return Ok(None);
@@ -3958,6 +4011,7 @@ fn preflight_goal_call<'m>(
     Ok((!require_inferred_slot || has_inferred_slot).then(|| {
         (
             GoalCallShape {
+                specialization: callee.specialization.clone(),
                 binders,
                 param: shape_param,
                 ret: shape_ret,
@@ -4184,6 +4238,7 @@ fn preflight_general_goal_call_layer<'m>(
             ))
         };
     let mut shape = GoalCallShape {
+        specialization: callee.specialization.clone(),
         binders,
         param: shape_param,
         ret,
@@ -4554,6 +4609,7 @@ fn plan_immediate_lambda_call<'m>(
     let (_, candidates) = args.split_at(selected.explicit_prefix);
     let layer = &immediate.layers[0];
     let shape = GoalCallShape {
+        specialization: None,
         binders: layer.binders.clone(),
         param: activated.param,
         ret: activated.result.clone_type(),
@@ -5623,6 +5679,35 @@ impl<'m> OpenGoalCall<'m> {
         })
     }
 
+    fn pending_intrinsic_specialization(
+        &mut self,
+        store: &GoalStore,
+        delta: &GoalDelta,
+        tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<Option<ScopedType>, Error> {
+        let ty = match self.shape.specialization.as_deref() {
+            None => return Ok(None),
+            Some(super::IntrinsicSpecialization::BooleanPrefix(_)) => {
+                let binder = self
+                    .shape
+                    .binders
+                    .first()
+                    .expect("Boolean specialization retains its selected prefix slot");
+                self.replacements
+                    .get(self.owner, &binder.name)
+                    .expect("a selected type slot has a replacement")
+            }
+            Some(super::IntrinsicSpecialization::Boolean(ty)) => ty.clone(),
+        };
+        let ty = store.scoped_type(self.owner, ty, self.call_site.span)?;
+        let Some(closed) = store.try_zonk_goal_free(delta, ty.clone(), tcx)? else {
+            return store.zonk_for_progress(delta, ty, tcx).map(Some);
+        };
+        super::synth::check_boolean_specialization(closed.ty(), self.call_site.span, tcx)?;
+        self.shape.specialization = None;
+        Ok(None)
+    }
+
     fn stage_residual_eta_once(
         &mut self,
         residual: ScopedType,
@@ -6274,6 +6359,11 @@ enum RetainedCallableProgress {
 enum CompletedInFrame {
     Value(ScopedType, usize),
     FunctionScheme(ScopedType, usize),
+    IntrinsicCallable {
+        output: ScopedType,
+        boolean: Box<ScopedType>,
+        inferred_type_arg_suffix: usize,
+    },
     UserMacroCall {
         output: ScopedType,
         inferred_type_arg_suffix: usize,
@@ -6357,6 +6447,20 @@ struct AdvancingOrdinaryCall<'m> {
     destination: crate::ast::TypeGoalOwner,
     pending: Vec<PendingOrdinaryCallChild<'m>>,
     pending_expected_result: Option<PendingExpectedResult>,
+    // Selected under the call's lexical alias scope after its public packet is fixed.
+    result_context_available: bool,
+}
+
+#[cfg(feature = "surface")]
+impl AdvancingOrdinaryCall<'_> {
+    fn install_result_context(&mut self, expected: OwnerBoundType) {
+        assert!(std::mem::replace(&mut self.result_context_available, false));
+        assert!(
+            self.pending_expected_result
+                .replace(PendingExpectedResult::new(expected))
+                .is_none()
+        );
+    }
 }
 
 #[cfg(feature = "surface")]
@@ -6479,6 +6583,21 @@ enum OrdinaryCallContinuation<'m> {
 
 #[cfg(feature = "surface")]
 impl OrdinaryCallContinuation<'_> {
+    fn result_context_available(&self) -> bool {
+        match self {
+            Self::Advancing(advancing) => advancing.result_context_available,
+            Self::AdvancingLayer(layer) => layer.advancing.result_context_available,
+            _ => false,
+        }
+    }
+
+    fn install_result_context(&mut self, expected: OwnerBoundType) {
+        match self {
+            Self::Advancing(advancing) => advancing.install_result_context(expected),
+            Self::AdvancingLayer(layer) => layer.advancing.install_result_context(expected),
+            _ => unreachable!("a result context reached an unselected public call"),
+        }
+    }
     fn result_inferred_type_arg_suffix(&self) -> usize {
         match self {
             Self::Advancing(advancing) => advancing.result_inferred_type_arg_suffix,
@@ -6857,6 +6976,23 @@ enum ComputedCallContinuation<'m> {
         callee_child: frontier::OpenRetainedPremise<'m>,
         application: OrdinaryChildContinuation<'m>,
     },
+    Paired(Box<PairedComputedCall<'m>>),
+}
+
+#[cfg(feature = "surface")]
+struct RetainedComputedCallee<'m> {
+    cursor: Box<OrdinaryValueCursor<'m>>,
+    next_mode: frontier::FrontierMode,
+    suspension: OrdinarySuspension,
+}
+
+#[cfg(feature = "surface")]
+struct PairedComputedCall<'m> {
+    callee_child: frontier::OpenRetainedPremise<'m>,
+    callee: Option<RetainedComputedCallee<'m>>,
+    application: OrdinaryChildAdvance<'m>,
+    result: ScopedType,
+    pending_expected_result: Option<PendingExpectedResult>,
 }
 
 #[cfg(feature = "surface")]
@@ -6981,7 +7117,7 @@ impl CompletedInFrame {
     fn scoped(&self) -> &ScopedType {
         match self {
             Self::Value(ty, _) | Self::FunctionScheme(ty, _) => ty,
-            Self::UserMacroCall { output, .. } => output,
+            Self::UserMacroCall { output, .. } | Self::IntrinsicCallable { output, .. } => output,
         }
     }
 
@@ -6989,6 +7125,10 @@ impl CompletedInFrame {
         match self {
             Self::Value(_, suffix) | Self::FunctionScheme(_, suffix) => *suffix,
             Self::UserMacroCall {
+                inferred_type_arg_suffix,
+                ..
+            }
+            | Self::IntrinsicCallable {
                 inferred_type_arg_suffix,
                 ..
             } => *inferred_type_arg_suffix,
@@ -7128,6 +7268,14 @@ impl<'m> OrdinaryValueCursor<'m> {
                         current: child,
                         ..
                     }) => nodes.push(CompletionNode::Value(&child.cursor)),
+                    PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Paired(pair)) => {
+                        if let Some(callee) = &pair.callee {
+                            nodes.push(CompletionNode::Value(&callee.cursor));
+                        }
+                        if let OrdinaryChildAdvance::Pending(application) = &pair.application {
+                            nodes.push(CompletionNode::Value(&application.cursor));
+                        }
+                    }
                     PlannedOrdinaryValue::RecOrder(continuation) => match continuation {
                         RecOrderContinuation::OrdinaryBypass(child)
                         | RecOrderContinuation::ExpectedBody(child)
@@ -7830,16 +7978,56 @@ impl<'m> OrdinaryValueCursor<'m> {
     /// one expectation-dependent argument without abandoning or replaying the
     /// already-open retained premise.
     fn awaits_expected(&self) -> bool {
+        self.awaits_context(false, false)
+    }
+
+    fn awaits_context(&self, result_context: bool, checked_callable: bool) -> bool {
         let mut cursor = self;
         loop {
             if cursor.expected.is_some() {
                 return false;
             }
             match &cursor.planned {
+                PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AdvancingLayer(layer))
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state:
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::AdvancingLayer(
+                            layer,
+                        )),
+                    ..
+                }) if result_context => {
+                    return layer.advancing.result_context_available
+                        && (!checked_callable
+                            || layer.advancing.call.shape.specialization.is_none());
+                }
+                PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Advancing(advancing))
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state:
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::Advancing(
+                            advancing,
+                        )),
+                    ..
+                }) if result_context => {
+                    return advancing.result_context_available
+                        && (!checked_callable || advancing.call.shape.specialization.is_none());
+                }
                 PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state: PlannedUserMacroCallState::Fills(state),
                     ..
-                }) => return state.awaits_expected(),
+                }) => {
+                    if result_context
+                        && let Some(OrdinaryCallContinuation::Successor(child)) =
+                            state.project_call()
+                    {
+                        cursor = &child.cursor;
+                    } else {
+                        return state.awaits_context(result_context);
+                    }
+                }
+                PlannedOrdinaryValue::Call(
+                    OrdinaryCallContinuation::AwaitingExpected(completed)
+                    | OrdinaryCallContinuation::AwaitingReturnedForall { completed, .. },
+                ) if checked_callable => return completed.call.shape.specialization.is_none(),
                 PlannedOrdinaryValue::PendingRecOrderPath
                 | PlannedOrdinaryValue::Literal
                 | PlannedOrdinaryValue::Lambda(PlannedOrdinaryLambda {
@@ -7892,6 +8080,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     application: child,
                     ..
                 }) => cursor = child.cursor.as_ref(),
+                PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Paired(_)) => {
+                    return result_context;
+                }
                 PlannedOrdinaryValue::Leaf(_)
                 | PlannedOrdinaryValue::PendingRecOrderSource(_)
                 | PlannedOrdinaryValue::ConnectedCall { .. }
@@ -7907,6 +8098,54 @@ impl<'m> OrdinaryValueCursor<'m> {
                 | PlannedOrdinaryValue::Recursive(_) => return false,
             }
         }
+    }
+
+    fn can_accept_result_context(&self) -> bool {
+        self.awaits_context(true, false)
+    }
+
+    fn refresh_concrete_expected(
+        &mut self,
+        frontier: &mut impl OrdinaryFrontierReentry<'m>,
+        tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<bool, Error> {
+        let Some(expected) = self
+            .expected
+            .as_ref()
+            .filter(|expected| super::type_contains_goal(expected.ty().as_type()))
+        else {
+            return Ok(false);
+        };
+        let (store, owner, delta, _publication) = frontier.parts_mut();
+        let scoped = expected
+            .clone()
+            .into_scoped(owner, store, self.source.span())?;
+        let Some(closed) = store.try_zonk_goal_free(delta, scoped, tcx)? else {
+            return Ok(false);
+        };
+        let mut replacement = expected.clone();
+        let solver = match &mut replacement {
+            OwnerBoundType::Diagnostic { solver, .. } => solver.as_mut(),
+            solver => solver,
+        };
+        match solver {
+            OwnerBoundType::Plain(ty) => *ty = closed.into_interned_type(),
+            OwnerBoundType::Retained { owner, ty } => {
+                *ty = store.rebase_goal_free_type_to_owner(
+                    closed,
+                    *owner,
+                    self.source.span(),
+                    tcx,
+                )?;
+            }
+            OwnerBoundType::Diagnostic { .. } => {
+                unreachable!("an expected type has one diagnostic wrapper")
+            }
+        }
+        // Consume the open-to-concrete transition without changing the
+        // operand's destination: pending-header export also uses it there.
+        self.expected = Some(replacement);
+        Ok(true)
     }
 
     /// Whether this source is already known to occupy exactly one value slot
@@ -7948,8 +8187,16 @@ impl<'m> OrdinaryValueCursor<'m> {
     /// receives the same occurrence; earlier children stay closed and are not
     /// replayed.
     fn supply_expected(&mut self, expected: OwnerBoundType) {
+        self.supply_context(expected, false);
+    }
+
+    fn supply_result_context(&mut self, expected: OwnerBoundType) {
+        self.supply_context(expected, true);
+    }
+
+    fn supply_context(&mut self, expected: OwnerBoundType, result_context: bool) {
         assert!(
-            self.awaits_expected(),
+            self.awaits_context(result_context, false),
             "an expected type was supplied before standalone synthesis reached its boundary"
         );
         let mut cursor = self;
@@ -7960,12 +8207,48 @@ impl<'m> OrdinaryValueCursor<'m> {
             );
             cursor.expected = Some(expected.clone());
             match &mut cursor.planned {
+                PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AdvancingLayer(layer))
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state:
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::AdvancingLayer(
+                            layer,
+                        )),
+                    ..
+                }) if result_context => {
+                    layer.advancing.install_result_context(expected);
+                    return;
+                }
+                PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Advancing(advancing))
+                | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                    state:
+                        PlannedUserMacroCallState::Advancing(OrdinaryCallContinuation::Advancing(
+                            advancing,
+                        )),
+                    ..
+                }) if result_context => {
+                    advancing.install_result_context(expected);
+                    return;
+                }
                 PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state: PlannedUserMacroCallState::Fills(state),
                     ..
                 }) => {
-                    state.supply_expected();
-                    return;
+                    if result_context
+                        && matches!(
+                            state.project_call(),
+                            Some(OrdinaryCallContinuation::Successor(_))
+                        )
+                    {
+                        let Some(OrdinaryCallContinuation::Successor(child)) =
+                            state.project_call_mut()
+                        else {
+                            unreachable!()
+                        };
+                        cursor = &mut child.cursor;
+                    } else {
+                        state.supply_context(expected, result_context);
+                        return;
+                    }
                 }
                 PlannedOrdinaryValue::Let(LetContinuation::Body { body, .. })
                 | PlannedOrdinaryValue::Sequence(SequenceContinuation::Body(body)) => {
@@ -7995,6 +8278,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                         "a completed macro call accepted a second expectation"
                     );
                     *expected_application = UserMacroExpectedApplication::Deferred;
+                    return;
+                }
+                PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Paired(pair)) => {
+                    assert!(pair.pending_expected_result.is_none());
+                    pair.pending_expected_result = Some(PendingExpectedResult::new(expected));
                     return;
                 }
                 PlannedOrdinaryValue::PendingRecOrderPath
@@ -9474,6 +9762,33 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
+        if leaf.prepared.synth.specialization.is_some() {
+            let concrete = if let Some(expected) = expected.as_ref() {
+                let (store, owner, delta, _publication) = frontier.parts_mut();
+                let scoped = expected.clone().into_scoped(owner, store, source.span())?;
+                store.try_zonk_goal_free(delta, scoped, tcx)?
+            } else {
+                None
+            };
+            let Some(concrete) = concrete else {
+                if mode.is_final_check() {
+                    return Err(super::synth::unspecialized_intrinsic_error(source.span()));
+                }
+                return Ok(OrdinaryValueAdvance::pending(Self {
+                    source,
+                    expected,
+                    planned: PlannedOrdinaryValue::Leaf(leaf),
+                }));
+            };
+            let (store, owner, _delta, publication) = frontier.parts_mut();
+            leaf.prepared.specialize_for_expected(
+                Some(concrete.ty()),
+                owner,
+                store,
+                publication,
+                tcx,
+            )?;
+        }
         leaf.prepared
             .validate_expected(expected.as_ref().map(OwnerBoundType::ty), tcx)?;
         if let Some(expected_type) = expected.as_ref() {
@@ -9806,6 +10121,40 @@ impl<'m> OrdinaryValueCursor<'m> {
         Ok(advancing)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    fn retain_intrinsic_specialization(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<OwnerBoundType>,
+        mut completed: Box<CompletedPathUnitGoalCall<'m>>,
+        boolean: ScopedType,
+        mode: frontier::FrontierMode,
+        demand: OrdinaryCompletionDemand,
+        frontier: &mut impl OrdinaryFrontierReentry<'m>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryValueAdvance<'m>, Error> {
+        if demand == OrdinaryCompletionDemand::ImmediateCallee
+            && Self::retain_callable_progress(&mut completed.result, frontier, tcx)?.is_some()
+        {
+            return Ok(OrdinaryValueAdvance::Complete(
+                CompletedInFrame::IntrinsicCallable {
+                    output: completed.result,
+                    boolean: Box::new(boolean),
+                    inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
+                },
+            ));
+        }
+        if mode.is_final_check() {
+            return Err(super::synth::unspecialized_intrinsic_error(source.span()));
+        }
+        Ok(OrdinaryValueAdvance::pending(Self {
+            source,
+            expected,
+            planned: PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AwaitingExpected(
+                completed,
+            )),
+        }))
+    }
+
     fn completed_selected_call(
         mut completed: Box<CompletedPathUnitGoalCall<'m>>,
     ) -> CompletedInFrame {
@@ -9835,8 +10184,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                 RetainedCallableProgress::FunctionScheme,
             ) => CompletedInFrame::FunctionScheme(output, inferred_type_arg_suffix),
             (completed @ CompletedInFrame::UserMacroCall { .. }, _) => completed,
-            (CompletedInFrame::FunctionScheme(_, _), _) => {
-                unreachable!("a selected call was already classified as a function scheme")
+            (CompletedInFrame::FunctionScheme(_, _), _)
+            | (CompletedInFrame::IntrinsicCallable { .. }, _) => {
+                unreachable!("a selected call was already classified as callable progress")
             }
         }
     }
@@ -9949,6 +10299,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         let (_, candidates) = remaining.split_at(selected.explicit_prefix);
         let layer = &immediate.layers[next_ordinal];
         let next_shape = GoalCallShape {
+            specialization: None,
             binders: layer.binders.clone(),
             param: activated.param,
             ret: activated.result.clone_type(),
@@ -10180,6 +10531,18 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<FinishedSelectedLayer<'m>, Error> {
+        let pending_boolean = {
+            let (store, _owner, delta, _publication) = frontier.parts_mut();
+            completed
+                .call
+                .pending_intrinsic_specialization(store, delta, tcx)?
+        };
+        if let Some(boolean) = pending_boolean {
+            let advanced = Self::retain_intrinsic_specialization(
+                source, expected, completed, boolean, mode, demand, frontier, tcx,
+            )?;
+            return Ok(FinishedSelectedLayer::Ready(advanced));
+        }
         let declared_transition = completed
             .call
             .immediate_lambda
@@ -10301,6 +10664,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                             .and_then(|immediate| immediate.outer_expected.take())
                             .expect("a post-body returned-Forall equation lost its expectation");
                         let advancing = Box::new(AdvancingOrdinaryCall {
+                            result_context_available: false,
                             call: completed.call,
                             result: completed.result,
                             result_inferred_type_arg_suffix: completed
@@ -10824,15 +11188,23 @@ impl<'m> OrdinaryValueCursor<'m> {
                         && let Some(written) =
                             lambda.header.complete_written_type(candidate.span(), tcx)?
                     {
-                        let (store, owner, delta, _) = frontier.parts_mut();
-                        let written = store.scoped_type(owner, written, candidate.span())?;
+                        let mut gather = frontier.begin_gather(candidate.span(), tcx)?;
+                        let store = frontier.store();
+                        let written =
+                            store.scoped_type(gather.owner(), written, candidate.span())?;
                         let expected = expected.clone().into_expected_equation_operand(
-                            owner,
+                            gather.owner(),
                             store,
                             candidate.span(),
                         )?;
                         store
-                            .constrain_equation(delta, written, expected, candidate.span(), tcx)
+                            .constrain_equation(
+                                gather.delta_mut(),
+                                written,
+                                expected,
+                                candidate.span(),
+                                tcx,
+                            )
                             .map_err(|error| {
                                 error.with_type_failure_origin(
                                     crate::error::TypeFailureOrigin::Application {
@@ -10841,6 +11213,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     },
                                 )
                             })?;
+                        frontier.close_gather(gather, tcx)?;
                     }
                     (
                         SelectingOrdinaryValue { child, preselected },
@@ -10981,6 +11354,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     .mark_observed(&immediate_unit_evidence);
             }
             let advancing = AdvancingOrdinaryCall {
+                result_context_available: false,
                 call: completed.call,
                 result: completed.result,
                 result_inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
@@ -11018,13 +11392,12 @@ impl<'m> OrdinaryValueCursor<'m> {
             false
         };
         let is_immediate = selecting.call.immediate_lambda.is_some();
-        let expected_result = (remaining.is_empty() && !returned_forall && !is_immediate)
-            .then(|| expected.clone())
-            .flatten();
+        let result_context_eligible = remaining.is_empty() && !returned_forall && !is_immediate;
+        let expected_result = result_context_eligible.then(|| expected.clone()).flatten();
         if let Some(immediate) = selecting.call.immediate_lambda.as_mut() {
             immediate.outer_expected = remaining.is_empty().then(|| expected.clone()).flatten();
         }
-        let advancing = begin_general_goal_call(
+        let mut advancing = begin_general_goal_call(
             frontier,
             selecting.call,
             selecting.selected,
@@ -11032,6 +11405,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             expected_result,
             tcx,
         )?;
+        advancing.result_context_available = result_context_eligible && expected.is_none();
         Ok(SelectingOrdinaryCallAdvance::Layer(
             AdvancingOrdinaryLayer {
                 advancing: Box::new(advancing),
@@ -11391,6 +11765,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     .map(OrdinaryDriverStep::Ready);
                 };
                 Box::new(AdvancingOrdinaryCall {
+                    result_context_available: false,
                     call: completed.call,
                     result: completed.result,
                     result_inferred_type_arg_suffix: completed.result_inferred_type_arg_suffix,
@@ -11522,6 +11897,18 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
+        let pending_boolean = {
+            let (store, _owner, delta, _publication) = frontier.parts_mut();
+            completed
+                .call
+                .pending_intrinsic_specialization(store, delta, tcx)?
+        };
+        if let Some(boolean) = pending_boolean {
+            let advanced = Self::retain_intrinsic_specialization(
+                source, expected, completed, boolean, mode, demand, frontier, tcx,
+            )?;
+            return Ok(advanced);
+        }
         if let Some(successor) = Self::begin_ready_user_macro_terminal_public_layer(
             source,
             expected.clone(),
@@ -12276,159 +12663,196 @@ impl<'m> OrdinaryValueCursor<'m> {
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
         let PlannedUserMacroCall { action, state } = continuation;
         let (mut action, call, mut marked_projection) = match state {
-            PlannedUserMacroCallState::Fills(state) => {
-                match state.into_advance() {
-                    fills::MarkedCallPhase::Project {
-                        action: marked_action,
-                        call,
-                        projection,
-                    } => (Some(marked_action), call, Some(projection)),
-                    fills::MarkedCallPhase::Completed {
-                        action,
-                        output,
-                        inferred_type_arg_suffix,
-                        transcript,
-                        mut expected_application,
-                        mut projection,
-                    } => {
-                        if let Some(request) =
-                            projection.advance_declared_headers(action.span(), frontier, tcx)?
-                        {
-                            let owner = request.parent;
-                            return Ok(OrdinaryDriverStep::AtAncestor {
-                                owner,
-                                resume: Box::new(move |header_frontier, tcx| {
-                                    projection.resume_declared_header(
-                                        request,
-                                        action.span(),
-                                        header_frontier,
-                                        tcx,
-                                    )?;
-                                    let continuation = PlannedUserMacroCall {
-                                        action: None,
-                                        state: PlannedUserMacroCallState::Fills(Box::new(
-                                            fills::MarkedCallState::completed(
-                                                action,
-                                                output,
-                                                inferred_type_arg_suffix,
-                                                transcript,
-                                                expected_application,
-                                                projection,
-                                            ),
-                                        )),
-                                    };
-                                    Ok(Box::new(move |frontier, tcx| {
-                                        Self::advance_user_macro_step(
-                                            source,
-                                            expected,
-                                            continuation,
-                                            mode,
-                                            demand,
-                                            frontier,
-                                            tcx,
-                                        )
-                                    }))
-                                }),
-                            });
-                        }
-                        expected_application = Self::retry_deferred_user_macro_expected(
-                            expected.as_ref(),
-                            &output,
-                            expected_application,
-                            source.span(),
-                            frontier,
-                            tcx,
-                        )?;
-                        let (declared_inputs, frozen_residual) =
-                            projection.declared_inputs(&action, &transcript, frontier, tcx)?;
-                        projection.retain_transcript(transcript);
-                        let (proof, fills) = projection.capabilities();
-                        let ready = action.into_projected_ready(
-                            declared_inputs,
-                            frozen_residual,
-                            proof,
-                            fills,
-                            tcx,
-                        )?;
-                        let evaluation = crate::pass::typecheck_full::evaluate_ready_projected_user_macro_action(ready, tcx)?;
-                        let (ready, checked, returned_context) = crate::pass::typecheck_full::prevalidate_ready_projected_user_macro_action(evaluation)?;
-                        projection.resolve_deferred_rec_tails(
-                            &checked,
-                            ready.has_residual_abstraction(),
-                            source.span(),
-                        )?;
-                        let adoption = projection.prepare_adoption(
-                            &returned_context,
-                            source.span(),
-                            frontier,
-                            tcx,
-                        )?;
-                        let continuation = PlannedUserMacroCall {
-                            action: None,
-                            state: PlannedUserMacroCallState::Fills(Box::new(
-                                fills::MarkedCallState::adopting_fills(
-                                    ready,
-                                    checked,
-                                    adoption,
-                                    projection,
-                                    output,
-                                    inferred_type_arg_suffix,
-                                    expected_application,
-                                ),
-                            )),
-                        };
-                        return Ok(OrdinaryDriverStep::Continue(Box::new(
-                            move |frontier, tcx| {
-                                Self::advance_user_macro_step(
-                                    source,
-                                    expected,
-                                    continuation,
+            PlannedUserMacroCallState::Fills(state) => match state.into_advance() {
+                fills::MarkedCallPhase::Project {
+                    action: marked_action,
+                    call,
+                    projection,
+                } => (Some(marked_action), call, Some(projection)),
+                fills::MarkedCallPhase::Completed {
+                    action,
+                    output,
+                    inferred_type_arg_suffix,
+                    transcript,
+                    mut expected_application,
+                    mut projection,
+                } => {
+                    expected_application = Self::retry_deferred_user_macro_expected(
+                        expected.as_ref(),
+                        &output,
+                        expected_application,
+                        source.span(),
+                        frontier,
+                        tcx,
+                    )?;
+                    let header_advance =
+                        projection.advance_declared_headers(action.span(), mode, frontier, tcx)?;
+                    if let fills::ProjectedHeaderAdvance::AtAncestor(request) = header_advance {
+                        let owner = request.parent;
+                        return Ok(OrdinaryDriverStep::AtAncestor {
+                            owner,
+                            resume: Box::new(move |header_frontier, tcx| {
+                                let advanced = projection.resume_declared_header(
+                                    request,
+                                    action.span(),
                                     mode,
-                                    demand,
-                                    frontier,
+                                    header_frontier,
                                     tcx,
-                                )
+                                )?;
+                                let continuation = PlannedUserMacroCall {
+                                    action: None,
+                                    state: PlannedUserMacroCallState::Fills(Box::new(
+                                        fills::MarkedCallState::completed(
+                                            action,
+                                            output,
+                                            inferred_type_arg_suffix,
+                                            transcript,
+                                            expected_application,
+                                            projection,
+                                        ),
+                                    )),
+                                };
+                                Ok(Box::new(move |frontier, tcx| {
+                                    if !advanced {
+                                        return Ok(OrdinaryDriverStep::Ready(
+                                            OrdinaryValueAdvance::pending(Self {
+                                                source,
+                                                expected,
+                                                planned: PlannedOrdinaryValue::UserMacro(
+                                                    continuation,
+                                                ),
+                                            }),
+                                        ));
+                                    }
+                                    Self::advance_user_macro_step(
+                                        source,
+                                        expected,
+                                        continuation,
+                                        mode,
+                                        demand,
+                                        frontier,
+                                        tcx,
+                                    )
+                                }))
+                            }),
+                        });
+                    }
+                    if matches!(header_advance, fills::ProjectedHeaderAdvance::Pending) {
+                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+                            Self {
+                                source,
+                                expected,
+                                planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                                    action: None,
+                                    state: PlannedUserMacroCallState::Fills(Box::new(
+                                        fills::MarkedCallState::completed(
+                                            action,
+                                            output,
+                                            inferred_type_arg_suffix,
+                                            transcript,
+                                            expected_application,
+                                            projection,
+                                        ),
+                                    )),
+                                }),
                             },
                         )));
                     }
-                    fills::MarkedCallPhase::AdoptingFills {
-                        ready,
-                        checked,
-                        mut adoption,
-                        mut projection,
-                        output,
-                        inferred_type_arg_suffix,
-                        mut expected_application,
-                    } => {
-                        expected_application = Self::retry_deferred_user_macro_expected(
-                            expected.as_ref(),
-                            &output,
-                            expected_application,
-                            source.span(),
-                            frontier,
-                            tcx,
+                    let (declared_inputs, frozen_residual) =
+                        projection.declared_inputs(&action, &transcript, frontier, tcx)?;
+                    projection.retain_transcript(transcript);
+                    let (proof, fills) = projection.capabilities();
+                    let ready = action.into_projected_ready(
+                        declared_inputs,
+                        frozen_residual,
+                        proof,
+                        fills,
+                        tcx,
+                    )?;
+                    let evaluation =
+                        crate::pass::typecheck_full::evaluate_ready_projected_user_macro_action(
+                            ready, tcx,
                         )?;
-                        let advance = adoption.advance(
-                            &mut projection,
-                            &checked,
-                            &output,
-                            mode,
-                            source.span(),
-                            frontier,
-                            tcx,
+                    let (ready, checked, returned_context) =
+                        crate::pass::typecheck_full::prevalidate_ready_projected_user_macro_action(
+                            evaluation,
                         )?;
-                        if matches!(&advance, fills::FillAdoptionAdvance::Complete) {
-                            let residual_binders =
-                                ready.residual_lexical_binders().cloned().collect();
-                            let materialized = projection.materialize(
+                    projection.resolve_deferred_rec_tails(
+                        &checked,
+                        ready.has_residual_abstraction(),
+                        source.span(),
+                    )?;
+                    let adoption = projection.prepare_adoption(
+                        &returned_context,
+                        source.span(),
+                        frontier,
+                        tcx,
+                    )?;
+                    let continuation = PlannedUserMacroCall {
+                        action: None,
+                        state: PlannedUserMacroCallState::Fills(Box::new(
+                            fills::MarkedCallState::adopting_fills(
+                                ready,
                                 checked,
+                                adoption,
+                                projection,
                                 output,
-                                residual_binders,
-                                source.span(),
+                                inferred_type_arg_suffix,
+                                expected_application,
+                            ),
+                        )),
+                    };
+                    return Ok(OrdinaryDriverStep::Continue(Box::new(
+                        move |frontier, tcx| {
+                            Self::advance_user_macro_step(
+                                source,
+                                expected,
+                                continuation,
+                                mode,
+                                demand,
                                 frontier,
                                 tcx,
-                            )?;
-                            let obligation = crate::pass::typecheck_full::materialize_ready_projected_user_macro_action(
+                            )
+                        },
+                    )));
+                }
+                fills::MarkedCallPhase::AdoptingFills {
+                    ready,
+                    checked,
+                    mut adoption,
+                    mut projection,
+                    output,
+                    inferred_type_arg_suffix,
+                    mut expected_application,
+                } => {
+                    expected_application = Self::retry_deferred_user_macro_expected(
+                        expected.as_ref(),
+                        &output,
+                        expected_application,
+                        source.span(),
+                        frontier,
+                        tcx,
+                    )?;
+                    let advance = adoption.advance(
+                        &mut projection,
+                        &checked,
+                        &output,
+                        mode,
+                        source.span(),
+                        frontier,
+                        tcx,
+                    )?;
+                    if matches!(&advance, fills::FillAdoptionAdvance::Complete) {
+                        let residual_binders = ready.residual_lexical_binders().cloned().collect();
+                        let materialized = projection.materialize(
+                            checked,
+                            output,
+                            residual_binders,
+                            source.span(),
+                            frontier,
+                            tcx,
+                        )?;
+                        let obligation = crate::pass::typecheck_full::materialize_ready_projected_user_macro_action(
                             ready,
                             materialized.typed,
                             materialized.checked,
@@ -12438,86 +12862,83 @@ impl<'m> OrdinaryValueCursor<'m> {
                             materialized.quoted_public_recipe,
                             tcx,
                         )?;
-                            match expected_application {
-                                UserMacroExpectedApplication::Absent => {
-                                    assert!(expected.is_none())
-                                }
-                                UserMacroExpectedApplication::Applied => {
-                                    assert!(expected.is_some())
-                                }
-                                UserMacroExpectedApplication::Deferred => {
-                                    let expected = expected
-                                        .as_ref()
-                                        .expect("a deferred fills macro expectation lost its type");
-                                    assert!(try_apply_expected_equation(
-                                        frontier,
-                                        materialized.public_residual_result.clone(),
-                                        expected,
-                                        source.span(),
-                                        tcx,
-                                    )?);
-                                }
+                        match expected_application {
+                            UserMacroExpectedApplication::Absent => {
+                                assert!(expected.is_none())
                             }
-                            let closed_result = materialized.public_residual_result;
-                            let (_store, _owner, _delta, publication) = frontier.parts_mut();
-                            publication.record_position_type(
-                                source.span(),
-                                closed_result.clone(),
-                                tcx.in_scope_type_param_presentation(),
-                            );
-                            publication.record_user_macro(obligation);
-                            return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Complete(
-                                CompletedInFrame::Value(closed_result, inferred_type_arg_suffix),
-                            )));
-                        }
-                        let request = match advance {
-                            fills::FillAdoptionAdvance::Producer(request) => Some(request),
-                            fills::FillAdoptionAdvance::Pending => None,
-                            fills::FillAdoptionAdvance::BarrierApplied => {
-                                return Self::continue_projected_adoption_after_producer(
-                                    source,
-                                    expected,
-                                    ready,
-                                    checked,
-                                    adoption,
-                                    projection,
-                                    output,
-                                    inferred_type_arg_suffix,
-                                    expected_application,
-                                    mode,
-                                    demand,
+                            UserMacroExpectedApplication::Applied => {
+                                assert!(expected.is_some())
+                            }
+                            UserMacroExpectedApplication::Deferred => {
+                                let expected = expected
+                                    .as_ref()
+                                    .expect("a deferred fills macro expectation lost its type");
+                                assert!(try_apply_expected_equation(
                                     frontier,
+                                    materialized.public_residual_result.clone(),
+                                    expected,
+                                    source.span(),
                                     tcx,
-                                );
+                                )?);
                             }
-                            fills::FillAdoptionAdvance::Complete => {
-                                unreachable!("a completed fills adoption skipped materialization")
-                            }
-                        };
-                        if let Some(request) = request {
-                            let owner = request.parent;
-                            return Ok(OrdinaryDriverStep::AtAncestor {
-                                owner,
-                                resume: Box::new(move |producer_frontier, tcx| {
-                                    let resumed = projection.resume_producer(
-                                        request,
-                                        producer_frontier,
-                                        tcx,
-                                    )?;
-                                    Ok(Box::new(move |frontier, tcx| {
-                                        let accept_immediately =
-                                            adoption.accepts_resumed_producer_immediately();
-                                        if accept_immediately {
-                                            projection.accept_resumed_producer(
-                                                &resumed,
-                                                source.span(),
-                                                frontier,
-                                                tcx,
-                                            )?;
-                                        }
-                                        adoption.record_producer(&resumed);
-                                        if accept_immediately {
-                                            return Self::continue_projected_adoption_after_producer(
+                        }
+                        let closed_result = materialized.public_residual_result;
+                        let (_store, _owner, _delta, publication) = frontier.parts_mut();
+                        publication.record_position_type(
+                            source.span(),
+                            closed_result.clone(),
+                            tcx.in_scope_type_param_presentation(),
+                        );
+                        publication.record_user_macro(obligation);
+                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Complete(
+                            CompletedInFrame::Value(closed_result, inferred_type_arg_suffix),
+                        )));
+                    }
+                    let request = match advance {
+                        fills::FillAdoptionAdvance::Producer(request) => Some(request),
+                        fills::FillAdoptionAdvance::Pending => None,
+                        fills::FillAdoptionAdvance::BarrierApplied => {
+                            return Self::continue_projected_adoption_after_producer(
+                                source,
+                                expected,
+                                ready,
+                                checked,
+                                adoption,
+                                projection,
+                                output,
+                                inferred_type_arg_suffix,
+                                expected_application,
+                                mode,
+                                demand,
+                                frontier,
+                                tcx,
+                            );
+                        }
+                        fills::FillAdoptionAdvance::Complete => {
+                            unreachable!("a completed fills adoption skipped materialization")
+                        }
+                    };
+                    if let Some(request) = request {
+                        let owner = request.parent;
+                        return Ok(OrdinaryDriverStep::AtAncestor {
+                            owner,
+                            resume: Box::new(move |producer_frontier, tcx| {
+                                let resumed =
+                                    projection.resume_producer(request, producer_frontier, tcx)?;
+                                Ok(Box::new(move |frontier, tcx| {
+                                    let accept_immediately =
+                                        adoption.accepts_resumed_producer_immediately();
+                                    if accept_immediately {
+                                        projection.accept_resumed_producer(
+                                            &resumed,
+                                            source.span(),
+                                            frontier,
+                                            tcx,
+                                        )?;
+                                    }
+                                    adoption.record_producer(&resumed);
+                                    if accept_immediately {
+                                        return Self::continue_projected_adoption_after_producer(
                                             source,
                                             expected,
                                             ready,
@@ -12532,77 +12953,76 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             frontier,
                                             tcx,
                                         );
-                                        }
-                                        let continuation = PlannedUserMacroCall {
-                                            action: None,
-                                            state: PlannedUserMacroCallState::Fills(Box::new(
-                                                fills::MarkedCallState::adopting_fills(
-                                                    ready,
-                                                    checked,
-                                                    adoption,
-                                                    projection,
-                                                    output,
-                                                    inferred_type_arg_suffix,
-                                                    expected_application,
-                                                ),
-                                            )),
-                                        };
-                                        Self::advance_user_macro_step(
-                                            source,
-                                            expected,
-                                            continuation,
-                                            mode,
-                                            demand,
-                                            frontier,
-                                            tcx,
-                                        )
-                                    }))
-                                }),
-                            });
-                        }
-                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
-                            Self {
-                                source,
-                                expected,
-                                planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
-                                    action: None,
-                                    state: PlannedUserMacroCallState::Fills(Box::new(
-                                        fills::MarkedCallState::adopting_fills(
-                                            ready,
-                                            checked,
-                                            adoption,
-                                            projection,
-                                            output,
-                                            inferred_type_arg_suffix,
-                                            expected_application,
-                                        ),
-                                    )),
-                                }),
-                            },
-                        )));
+                                    }
+                                    let continuation = PlannedUserMacroCall {
+                                        action: None,
+                                        state: PlannedUserMacroCallState::Fills(Box::new(
+                                            fills::MarkedCallState::adopting_fills(
+                                                ready,
+                                                checked,
+                                                adoption,
+                                                projection,
+                                                output,
+                                                inferred_type_arg_suffix,
+                                                expected_application,
+                                            ),
+                                        )),
+                                    };
+                                    Self::advance_user_macro_step(
+                                        source,
+                                        expected,
+                                        continuation,
+                                        mode,
+                                        demand,
+                                        frontier,
+                                        tcx,
+                                    )
+                                }))
+                            }),
+                        });
                     }
-                    fills::MarkedCallPhase::Ready {
-                        ready,
-                        output,
-                        inferred_type_arg_suffix,
-                        expected_application,
-                    } => {
-                        return Self::finish_ready_fills_user_macro(
+                    return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+                        Self {
                             source,
-                            expected.as_ref(),
-                            fills::MarkedCallState::ready(
-                                ready,
-                                output,
-                                inferred_type_arg_suffix,
-                                expected_application,
-                            ),
-                            frontier,
-                            tcx,
-                        )
-                        .map(OrdinaryDriverStep::Ready);
-                    }
+                            expected,
+                            planned: PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                                action: None,
+                                state: PlannedUserMacroCallState::Fills(Box::new(
+                                    fills::MarkedCallState::adopting_fills(
+                                        ready,
+                                        checked,
+                                        adoption,
+                                        projection,
+                                        output,
+                                        inferred_type_arg_suffix,
+                                        expected_application,
+                                    ),
+                                )),
+                            }),
+                        },
+                    )));
                 }
-            }
+                fills::MarkedCallPhase::Ready {
+                    ready,
+                    output,
+                    inferred_type_arg_suffix,
+                    expected_application,
+                } => {
+                    return Self::finish_ready_fills_user_macro(
+                        source,
+                        expected.as_ref(),
+                        fills::MarkedCallState::ready(
+                            ready,
+                            output,
+                            inferred_type_arg_suffix,
+                            expected_application,
+                        ),
+                        frontier,
+                        tcx,
+                    )
+                    .map(OrdinaryDriverStep::Ready);
+                }
+            },
             PlannedUserMacroCallState::Advancing(call) => (action, call, None),
             state => {
                 return Self::finish_user_macro_state(
@@ -12670,13 +13090,37 @@ impl<'m> OrdinaryValueCursor<'m> {
                     }
                     let advanced = match advance {
                         SelectingOrdinaryCallAdvance::Layer(layer) => {
-                            OrdinaryValueAdvance::pending(Self {
-                                source,
-                                expected: call_expected.clone(),
-                                planned: PlannedOrdinaryValue::Call(
-                                    OrdinaryCallContinuation::AdvancingLayer(layer),
-                                ),
-                            })
+                            #[cfg(test)]
+                            if mode == frontier::FrontierMode::Final {
+                                update_final_macro_successor_work(|work| {
+                                    work.final_selected_layer_continues += 1;
+                                });
+                            }
+                            let continuation = PlannedUserMacroCall {
+                                action: None,
+                                state: PlannedUserMacroCallState::Fills(Box::new(
+                                    fills::MarkedCallState::project_with(
+                                        action
+                                            .take()
+                                            .expect("a selected marked layer lost its action"),
+                                        OrdinaryCallContinuation::AdvancingLayer(layer),
+                                        projection,
+                                    ),
+                                )),
+                            };
+                            return Ok(OrdinaryDriverStep::Continue(Box::new(
+                                move |frontier, tcx| {
+                                    Self::advance_user_macro_step(
+                                        source,
+                                        expected,
+                                        continuation,
+                                        mode,
+                                        demand,
+                                        frontier,
+                                        tcx,
+                                    )
+                                },
+                            )));
                         }
                         SelectingOrdinaryCallAdvance::Ready(advanced) => advanced,
                         SelectingOrdinaryCallAdvance::Descend { .. } => {
@@ -13234,7 +13678,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             OrdinaryLambdaSelection::Synthesizing {
                 annotated_return: None
             }
-        ) && body.cursor.awaits_expected()
+        ) && body.cursor.can_accept_result_context()
         {
             match expected.as_ref() {
                 Some(expected) => select_ordinary_lambda(
@@ -13460,6 +13904,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                         None => match &body {
                             CompletedInFrame::Value(body, _)
                             | CompletedInFrame::FunctionScheme(body, _) => body.ty().clone(),
+                            CompletedInFrame::IntrinsicCallable { .. } => {
+                                unreachable!(
+                                    "unchecked intrinsic specialization escaped its immediate callee"
+                                )
+                            }
                             CompletedInFrame::UserMacroCall { .. } => {
                                 unreachable!("a macro transcript escaped its owning value cursor")
                             }
@@ -13774,7 +14223,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     PlannedOrdinaryValue::Call(call) => {
                         fills::projected_call_header_result(call, span, &mut child_frontier, tcx)?
                     }
-                    PlannedOrdinaryValue::Field(_) => fills::projected_field_header_result(
+                    PlannedOrdinaryValue::Field(_) => fills::observed_cursor_header_result(
                         &mut child.cursor,
                         &mut child_frontier,
                         tcx,
@@ -14021,8 +14470,12 @@ impl<'m> OrdinaryValueCursor<'m> {
         let entry_mark = tcx.save();
         let public_header_only = demand == OrdinaryCompletionDemand::PublicHeader;
         assert!(
-            !public_header_only || mode == frontier::FrontierMode::ExpectedOnly,
-            "body-free header preparation must stay in its expectation-only pass"
+            !public_header_only
+                || matches!(
+                    mode,
+                    frontier::FrontierMode::ExpectedOnly | frontier::FrontierMode::FinalPreflight
+                ),
+            "body-free header preparation cannot execute retained actions"
         );
         let OrdinaryChildContinuation {
             child,
@@ -14064,6 +14517,29 @@ impl<'m> OrdinaryValueCursor<'m> {
                 && (active.completion_wait
                     || active.next_mode.rank() > active.inherited_mode.rank())
             {
+                if !active.completion_wait {
+                    let refreshed = active
+                        .cursor
+                        .as_mut()
+                        .expect("a parked child retains its cursor")
+                        .refresh_concrete_expected(
+                            &mut frontier.ordinary_child_frontier(&mut active.child),
+                            tcx,
+                        );
+                    match refreshed {
+                        Ok(true) => {
+                            active.next_mode = frontier::FrontierMode::ExpectedOnly;
+                            #[cfg(test)]
+                            record_context_wake();
+                            continue;
+                        }
+                        Ok(false) => {}
+                        Err(error) => {
+                            tcx.restore(entry_mark);
+                            return Err(error);
+                        }
+                    }
+                }
                 let before_unwind = (|| {
                     let cursor = active
                         .cursor
@@ -14209,7 +14685,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     let advanced = (|| {
                         if public_header_only {
                             let body_free = match &cursor.planned {
-                                PlannedOrdinaryValue::Leaf(_) => true,
+                                PlannedOrdinaryValue::Leaf(_) | PlannedOrdinaryValue::Literal => {
+                                    true
+                                }
                                 PlannedOrdinaryValue::Call(call) => {
                                     call.open_goal_call().is_some_and(|call| {
                                         call.immediate_lambda.is_none()
@@ -14585,6 +15063,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     ty.clone(),
                     tcx.in_scope_type_param_presentation(),
                 ),
+            CompletedInFrame::IntrinsicCallable { .. } => {}
             CompletedInFrame::UserMacroCall { .. } => {
                 unreachable!("a macro transcript escaped its owning value cursor")
             }
@@ -14920,6 +15399,9 @@ impl<'m> OrdinaryValueCursor<'m> {
             CompletedInFrame::FunctionScheme(_, _) => {
                 Err(super::types::scheme_in_mono_position(span))
             }
+            CompletedInFrame::IntrinsicCallable { .. } => {
+                unreachable!("unchecked intrinsic specialization escaped its immediate callee")
+            }
             CompletedInFrame::UserMacroCall { .. } => {
                 unreachable!("a macro transcript escaped its owning value cursor")
             }
@@ -14927,19 +15409,68 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn begin_field_update_value(
+        base: &'m crate::ast::FieldUpdateBase<crate::ast::Lowered>,
         update: &'m crate::ast::FieldUpdateLabel<crate::ast::Lowered>,
         expected: Option<&OwnerBoundType>,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryChildContinuation<'m>, Error> {
-        let expected = Self::progressed_field_expected(expected, update.meta.span, frontier, tcx)?;
-        let expected = crate::pass::typecheck_full::field_update_expected_type(
-            update,
-            expected.as_ref(),
-            tcx,
-        )?
-        .map(OwnerBoundType::Plain);
+        let expected = match base {
+            crate::ast::FieldUpdateBase::Construction => {
+                Self::construction_value_context(update, expected, frontier, tcx)?
+            }
+            crate::ast::FieldUpdateBase::Update(_) => {
+                let expected =
+                    Self::progressed_field_expected(expected, update.meta.span, frontier, tcx)?;
+                crate::pass::typecheck_full::field_update_expected_type(
+                    update,
+                    expected.as_ref(),
+                    tcx,
+                )?
+                .map(OwnerBoundType::Plain)
+            }
+        };
         Self::begin_child(&update.value, expected, frontier, tcx)
+    }
+
+    fn construction_value_context(
+        update: &crate::ast::FieldUpdateLabel<crate::ast::Lowered>,
+        expected: Option<&OwnerBoundType>,
+        frontier: &mut impl OrdinaryFrontierReentry<'m>,
+        tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<Option<OwnerBoundType>, Error> {
+        let Some(expected) = expected else {
+            return Ok(None);
+        };
+        let (store, owner, delta, _) = frontier.parts_mut();
+        let expected = expected
+            .clone()
+            .into_scoped(owner, store, update.meta.span)?;
+        let mut remaining = store
+            .zonk_for_progress(delta, expected, tcx)?
+            .canonicalized_for_comparison(tcx);
+        let mut matching = None;
+        loop {
+            let (slot, tail) =
+                match remaining.projected_structural_child(ScopedTypeEdge::ProductLeft) {
+                    Some(left) => (
+                        left,
+                        remaining.projected_structural_child(ScopedTypeEdge::ProductRight),
+                    ),
+                    None => (remaining, None),
+                };
+            if crate::pass::typecheck_full::construction_slot_matches_label(update, slot.ty(), tcx)
+            {
+                if matching.is_some() {
+                    return Ok(None);
+                }
+                matching = Some(OwnerBoundType::Retained { owner, ty: slot });
+            }
+            match tail {
+                Some(tail) => remaining = tail,
+                None => return Ok(matching),
+            }
+        }
     }
 
     fn progressed_field_expected(
@@ -14986,11 +15517,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                     tcx,
                 )
             }
-            crate::ast::ElaboratorCall::FieldUpdate { receiver, updates } => {
+            crate::ast::ElaboratorCall::FieldUpdate { base, updates } => {
                 let expected = Self::progressed_field_expected(expected, *span, frontier, tcx)?;
                 crate::pass::typecheck_full::prepare_field_update_elaboration(
                     source,
-                    receiver,
+                    base,
                     updates,
                     receiver_ty,
                     rhs_types,
@@ -15015,20 +15546,47 @@ impl<'m> OrdinaryValueCursor<'m> {
             unreachable!("the Field continuation received another expression family")
         };
         let receiver_source = match call {
-            crate::ast::ElaboratorCall::FieldAccess { receiver, .. }
-            | crate::ast::ElaboratorCall::FieldUpdate { receiver, .. } => receiver.as_ref(),
+            crate::ast::ElaboratorCall::FieldAccess { receiver, .. } => Some(receiver.as_ref()),
+            crate::ast::ElaboratorCall::FieldUpdate { base, .. } => base.receiver(),
         };
         let continuation = match continuation {
             Some(continuation) => continuation,
-            None => FieldContinuation::Receiver(Self::begin_child(
-                receiver_source,
-                None,
-                frontier,
-                tcx,
-            )?),
+            None => match receiver_source {
+                Some(receiver) => {
+                    FieldContinuation::Receiver(Self::begin_child(receiver, None, frontier, tcx)?)
+                }
+                None => {
+                    let crate::ast::ElaboratorCall::FieldUpdate { base, updates } = call else {
+                        unreachable!("only construction has no field receiver")
+                    };
+                    let first = updates.first().expect("empty construction lowers to Unit");
+                    let receiver = frontier.store().scoped_type(
+                        frontier.owner(),
+                        InternedType::fresh_canonical(crate::ast::Type::Unit {
+                            meta: crate::ast::Meta::new(source.span()),
+                        }),
+                        source.span(),
+                    )?;
+                    let current = Self::begin_field_update_value(
+                        base,
+                        first,
+                        expected.as_ref(),
+                        frontier,
+                        tcx,
+                    )?;
+                    FieldContinuation::UpdateValues {
+                        receiver,
+                        completed: Vec::with_capacity(updates.len()),
+                        current,
+                        next: 0,
+                    }
+                }
+            },
         };
         match continuation {
             FieldContinuation::Receiver(mut receiver) => {
+                let receiver_source =
+                    receiver_source.expect("a receiver child belongs to an update or access");
                 receiver.child.mark_independent_source();
                 Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
                     child: receiver,
@@ -15055,7 +15613,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                             OrdinaryChildAdvance::Complete(completed) => {
                                 let receiver =
                                     Self::field_value_type(completed, receiver_source.span())?;
-                                let crate::ast::ElaboratorCall::FieldUpdate { updates, .. } = call
+                                let crate::ast::ElaboratorCall::FieldUpdate { base, updates } =
+                                    call
                                 else {
                                     let prepared = Self::prepare_completed_field(
                                         source,
@@ -15085,6 +15644,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     .map(OrdinaryDriverStep::Ready);
                                 };
                                 let current = Self::begin_field_update_value(
+                                    base,
                                     first,
                                     expected.as_ref(),
                                     frontier,
@@ -15116,9 +15676,23 @@ impl<'m> OrdinaryValueCursor<'m> {
                 mut current,
                 next,
             } => {
-                let crate::ast::ElaboratorCall::FieldUpdate { updates, .. } = call else {
+                let crate::ast::ElaboratorCall::FieldUpdate { base, updates } = call else {
                     unreachable!("a field-access continuation retained update-value state")
                 };
+                if matches!(base, crate::ast::FieldUpdateBase::Construction)
+                    && current.cursor.can_accept_result_context()
+                    && let Some(context) = Self::construction_value_context(
+                        &updates[next],
+                        expected.as_ref(),
+                        frontier,
+                        tcx,
+                    )?
+                {
+                    current.cursor.supply_result_context(context);
+                    if !current.is_completion_wait() {
+                        current.next_mode = frontier::FrontierMode::ExpectedOnly;
+                    }
+                }
                 let value_span = updates[next].value.span();
                 current.child.mark_independent_source();
                 Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
@@ -15172,6 +15746,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     .map(OrdinaryDriverStep::Ready);
                                 }
                                 let current = Self::begin_field_update_value(
+                                    base,
                                     &updates[next],
                                     expected.as_ref(),
                                     frontier,
@@ -15252,6 +15827,297 @@ impl<'m> OrdinaryValueCursor<'m> {
         })
     }
 
+    fn begin_paired_computed_application(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        callee: &mut OrdinaryValueCursor<'m>,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<Option<(OrdinaryChildContinuation<'m>, ScopedType)>, Error> {
+        let crate::ast::Expr::Call { args, .. } = source else {
+            unreachable!("a computed application retains its written call")
+        };
+        let Some((header, result)) = fills::observed_application_header(
+            callee,
+            &call_arg_refs(args),
+            source.span(),
+            frontier,
+            tcx,
+        )?
+        else {
+            return Ok(None);
+        };
+        let expected_result = OwnerBoundType::Retained {
+            owner: frontier.owner(),
+            ty: result.clone(),
+        };
+        let application = Self::begin_computed_application(
+            source,
+            Synth::value_interned(header.ty().clone())
+                .with_inferred_type_arg_suffix(callee.result_inferred_type_arg_suffix()),
+            Some(expected_result),
+            frontier,
+            tcx,
+        )?;
+        Ok(Some((application, result)))
+    }
+
+    fn apply_paired_computed_context(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        pair: &mut PairedComputedCall<'m>,
+        child_completed: bool,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<(), Error> {
+        let Some(pending) = pair.pending_expected_result.as_ref() else {
+            return Ok(());
+        };
+        let mut callee_frontier = frontier.ordinary_child_frontier(&mut pair.callee_child);
+        let snapshot = {
+            let (store, owner, delta, _) = callee_frontier.parts_mut();
+            let expected = pending
+                .expected
+                .clone()
+                .into_scoped(owner, store, source.span())?;
+            EquationSnapshot::zonked(store, delta, pair.result.clone(), expected, tcx)?
+        };
+        if let EquationProgress::AwaitingProgress(previous) = &pending.progress
+            && !child_completed
+            && !snapshot.differs_from(previous)
+        {
+            return Ok(());
+        }
+        let mut pending = pair.pending_expected_result.take().expect("checked above");
+        if !try_apply_expected_equation(
+            &mut callee_frontier,
+            pair.result.clone(),
+            &pending.expected,
+            source.span(),
+            tcx,
+        )? {
+            pending.progress = EquationProgress::AwaitingProgress(snapshot);
+            pair.pending_expected_result = Some(pending);
+        }
+        Ok(())
+    }
+
+    fn advance_paired_computed_application(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<OwnerBoundType>,
+        mut pair: PairedComputedCall<'m>,
+        mode: frontier::FrontierMode,
+        demand: OrdinaryCompletionDemand,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryDriverStep<'m>, Error> {
+        Self::apply_paired_computed_context(source, &mut pair, false, frontier, tcx)?;
+        let PairedComputedCall {
+            callee_child,
+            callee,
+            application,
+            result,
+            pending_expected_result,
+        } = pair;
+        match application {
+            OrdinaryChildAdvance::Pending(application) => {
+                Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
+                    child: application,
+                    inherited_mode: mode,
+                    demand,
+                    handoff: OrdinaryDriverHandoff::Bridge {
+                        bridge: OrdinaryDriverBridge::Direct(callee_child),
+                        resume: Box::new(move |bridge, application, frontier, tcx| {
+                            let OrdinaryDriverBridge::Direct(callee_child) = bridge else {
+                                unreachable!("a computed application retains a direct callee owner")
+                            };
+                            let child_completed =
+                                matches!(application, OrdinaryChildAdvance::Complete(_));
+                            let mut pair = PairedComputedCall {
+                                callee_child,
+                                callee,
+                                application,
+                                result,
+                                pending_expected_result,
+                            };
+                            if child_completed {
+                                #[cfg(test)]
+                                update_ordinary_planning_work(|work| {
+                                    work.paired_computed.applications_completed += 1
+                                });
+                                Self::apply_paired_computed_context(
+                                    source, &mut pair, true, frontier, tcx,
+                                )?;
+                            }
+                            Self::advance_paired_computed_callee(
+                                source, expected, pair, mode, demand, frontier, tcx,
+                            )
+                        }),
+                    },
+                    scope_exit: OrdinaryDriverScopeExit::None,
+                }))
+            }
+            application @ OrdinaryChildAdvance::Complete(_) => {
+                Self::advance_paired_computed_callee(
+                    source,
+                    expected,
+                    PairedComputedCall {
+                        callee_child,
+                        callee,
+                        application,
+                        result,
+                        pending_expected_result,
+                    },
+                    mode,
+                    demand,
+                    frontier,
+                    tcx,
+                )
+            }
+        }
+    }
+
+    fn advance_paired_computed_callee(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<OwnerBoundType>,
+        pair: PairedComputedCall<'m>,
+        mode: frontier::FrontierMode,
+        demand: OrdinaryCompletionDemand,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryDriverStep<'m>, Error> {
+        let PairedComputedCall {
+            callee_child,
+            callee,
+            application,
+            result,
+            pending_expected_result,
+        } = pair;
+        let Some(callee) = callee else {
+            return Self::finish_paired_computed_call(
+                source,
+                expected,
+                PairedComputedCall {
+                    callee_child,
+                    callee: None,
+                    application,
+                    result,
+                    pending_expected_result,
+                },
+                mode,
+                frontier,
+                tcx,
+            );
+        };
+        Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
+            child: OrdinaryChildContinuation {
+                child: callee_child,
+                cursor: callee.cursor,
+                next_mode: callee.next_mode,
+                suspension: callee.suspension,
+            },
+            inherited_mode: mode,
+            demand: OrdinaryCompletionDemand::ImmediateCallee,
+            handoff: OrdinaryDriverHandoff::Open(Box::new(move |advance, frontier, tcx| {
+                match advance {
+                    OpenOrdinaryChildAdvance::Pending(callee) => Self::finish_paired_computed_call(
+                        source,
+                        expected,
+                        PairedComputedCall {
+                            callee_child: callee.child,
+                            callee: Some(RetainedComputedCallee {
+                                cursor: callee.cursor,
+                                next_mode: callee.next_mode,
+                                suspension: callee.suspension,
+                            }),
+                            application,
+                            result,
+                            pending_expected_result,
+                        },
+                        mode,
+                        frontier,
+                        tcx,
+                    ),
+                    OpenOrdinaryChildAdvance::Complete { child, completed } => {
+                        assert!(
+                            !matches!(completed, CompletedInFrame::IntrinsicCallable { .. }),
+                            "an unchecked intrinsic prefix entered a paired computed call"
+                        );
+                        #[cfg(test)]
+                        update_ordinary_planning_work(|work| {
+                            work.paired_computed.callees_completed += 1
+                        });
+                        // This consumed callee completion can resume a still-pending
+                        // application once; the callee cursor is no longer retained.
+                        let mut pair = PairedComputedCall {
+                            callee_child: child,
+                            callee: None,
+                            application,
+                            result,
+                            pending_expected_result,
+                        };
+                        Self::apply_paired_computed_context(
+                            source, &mut pair, true, frontier, tcx,
+                        )?;
+                        Self::advance_paired_computed_application(
+                            source, expected, pair, mode, demand, frontier, tcx,
+                        )
+                    }
+                }
+            })),
+            scope_exit: OrdinaryDriverScopeExit::None,
+        }))
+    }
+
+    fn finish_paired_computed_call(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<OwnerBoundType>,
+        mut pair: PairedComputedCall<'m>,
+        mode: frontier::FrontierMode,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryDriverStep<'m>, Error> {
+        Self::apply_paired_computed_context(source, &mut pair, false, frontier, tcx)?;
+        if pair.callee.is_none() && matches!(pair.application, OrdinaryChildAdvance::Complete(_)) {
+            if let Some(pending) = &pair.pending_expected_result {
+                if mode == frontier::FrontierMode::Final {
+                    let mut callee_frontier =
+                        frontier.ordinary_child_frontier(&mut pair.callee_child);
+                    let (store, owner, delta, _) = callee_frontier.parts_mut();
+                    store.require_goal_free_after_delta(delta, pair.result.clone(), tcx)?;
+                    let expected =
+                        pending
+                            .expected
+                            .clone()
+                            .into_scoped(owner, store, source.span())?;
+                    store.require_goal_free_after_delta(delta, expected, tcx)?;
+                    unreachable!("a completed computed call retained a closed deferred equation")
+                }
+            } else {
+                let OrdinaryChildAdvance::Complete(completed) = pair.application else {
+                    unreachable!()
+                };
+                let destination = frontier.owner();
+                return close_completed_ordinary_child(
+                    frontier,
+                    pair.callee_child,
+                    completed,
+                    destination,
+                    tcx,
+                )
+                .map(OrdinaryValueAdvance::Complete)
+                .map(OrdinaryDriverStep::Ready);
+            }
+        }
+        Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+            Self {
+                source,
+                expected,
+                planned: PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Paired(
+                    Box::new(pair),
+                )),
+            },
+        )))
+    }
+
     fn advance_computed_call_step(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
@@ -15297,7 +16163,54 @@ impl<'m> OrdinaryValueCursor<'m> {
                     demand: OrdinaryCompletionDemand::ImmediateCallee,
                     handoff: OrdinaryDriverHandoff::Open(Box::new(
                         move |advance, frontier, tcx| match advance {
-                            OpenOrdinaryChildAdvance::Pending(callee_continuation) => {
+                            OpenOrdinaryChildAdvance::Pending(mut callee_continuation) => {
+                                if callee_continuation.cursor.awaits_context(true, true) {
+                                    let paired = {
+                                        let mut callee_frontier = frontier.ordinary_child_frontier(
+                                            &mut callee_continuation.child,
+                                        );
+                                        Self::begin_paired_computed_application(
+                                            source,
+                                            &mut callee_continuation.cursor,
+                                            &mut callee_frontier,
+                                            tcx,
+                                        )?
+                                    };
+                                    if let Some((application, result)) = paired {
+                                        #[cfg(test)]
+                                        update_ordinary_planning_work(|work| {
+                                            work.paired_computed.created += 1
+                                        });
+                                        callee_continuation.child.finish_independent_source();
+                                        // Creating this written application is one new context
+                                        // edge. Later visits retain the callee's own mode.
+                                        let callee = RetainedComputedCallee {
+                                            cursor: callee_continuation.cursor,
+                                            next_mode: frontier::FrontierMode::ExpectedOnly,
+                                            suspension: callee_continuation.suspension,
+                                        };
+                                        return Self::advance_computed_call_step(
+                                            source,
+                                            expected.clone(),
+                                            Some(ComputedCallContinuation::Paired(Box::new(
+                                                PairedComputedCall {
+                                                    callee_child: callee_continuation.child,
+                                                    callee: Some(callee),
+                                                    application: OrdinaryChildAdvance::Pending(
+                                                        application,
+                                                    ),
+                                                    result,
+                                                    pending_expected_result: expected
+                                                        .map(PendingExpectedResult::new),
+                                                },
+                                            ))),
+                                            mode,
+                                            demand,
+                                            frontier,
+                                            tcx,
+                                        );
+                                    }
+                                }
                                 if mode == frontier::FrontierMode::Final
                                     && !callee_continuation.is_completion_wait()
                                 {
@@ -15325,6 +16238,17 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     }
                                     CompletedInFrame::FunctionScheme(ty, _) => {
                                         Synth::complete_scheme_interned(ty.ty().clone())
+                                    }
+                                    CompletedInFrame::IntrinsicCallable {
+                                        output, boolean, ..
+                                    } => {
+                                        let mut callee = Synth::value_interned(output.ty().clone());
+                                        callee.specialization = Some(Box::new(
+                                            super::IntrinsicSpecialization::Boolean(
+                                                boolean.ty().clone(),
+                                            ),
+                                        ));
+                                        callee
                                     }
                                     CompletedInFrame::UserMacroCall { .. } => unreachable!(
                                         "a macro transcript escaped its owning value cursor"
@@ -15360,6 +16284,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     scope_exit: OrdinaryDriverScopeExit::None,
                 }))
             }
+            ComputedCallContinuation::Paired(pair) => Self::advance_paired_computed_application(
+                source, expected, *pair, mode, demand, frontier, tcx,
+            ),
             ComputedCallContinuation::Application {
                 callee_child,
                 application,
@@ -15434,6 +16361,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             .map(|expected| store.try_zonk_goal_free(delta, expected.clone(), tcx))
             .transpose()?
             .flatten();
+        let explicit = annotation.is_some_and(|ty| !matches!(ty, crate::ast::Type::Infer { .. }));
         let resolved = match ready {
             Some(ready) => super::synth::resolve_literal_against_unrecorded(
                 shape,
@@ -15443,9 +16371,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 super::numeric_literal_diagnostic(self.source),
                 tcx,
             )?,
-            None if mode == frontier::FrontierMode::ExpectedOnly
-                && is_expected_dependent_scalar(self.source) =>
-            {
+            None if !explicit && !mode.is_final_check() => {
                 return Ok(OrdinaryValueAdvance::pending(self));
             }
             None => super::synth::synth_literal_unrecorded(
@@ -15472,8 +16398,6 @@ impl<'m> OrdinaryValueCursor<'m> {
             annotation,
             resolved.runtime_erases,
             resolved.numeric_value,
-            #[cfg(feature = "lsp")]
-            resolved.lexical_role,
         );
         publication.record_prime_requalification_bindings(imports, aliases);
         publication.record_position_type(
@@ -15831,7 +16755,31 @@ fn prepare_ordinary_lambda_header<'m>(
         let expected = expected.into_scoped(owner, store, annotation.span())?;
         header.constrain_reserved_return(expected, store, delta, publication, tcx)?;
     }
+    let selection = match selection {
+        OrdinaryLambdaSelection::Check { body_type } => OrdinaryLambdaSelection::Check {
+            body_type: normalize_lambda_body_context(body_type, source.span(), frontier, tcx)?,
+        },
+        selection => selection,
+    };
     Ok((selection, prepared_value_types))
+}
+
+#[cfg(feature = "surface")]
+fn normalize_lambda_body_context<'m>(
+    body_type: OwnerBoundType,
+    span: Span,
+    frontier: &mut impl OrdinaryFrontierReentry<'m>,
+    tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<OwnerBoundType, Error> {
+    if !super::type_contains_goal(body_type.ty().as_type()) {
+        return Ok(body_type);
+    }
+    let (store, owner, delta, _publication) = frontier.parts_mut();
+    let (body_type, written) = body_type.into_scoped_parts(owner, store, span)?;
+    // The body child cannot read its parent's tentative header equations.
+    // Carry their resolved operand through the existing scoped child edge.
+    let ty = store.zonk_for_progress(delta, body_type, tcx)?;
+    Ok(OwnerBoundType::Retained { owner, ty }.with_diagnostic(written))
 }
 
 #[cfg(feature = "surface")]
@@ -15885,7 +16833,7 @@ fn prepare_ordinary_lambda_check_equations<'m>(
         let expected = body_type.clone().into_scoped(owner, store, source.span())?;
         header.constrain_reserved_return(expected, store, delta, publication, tcx)?;
     }
-    Ok(body_type)
+    normalize_lambda_body_context(body_type, source.span(), frontier, tcx)
 }
 
 #[cfg(feature = "surface")]
@@ -15902,7 +16850,7 @@ fn handoff_ordinary_lambda_check<'m>(
     tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<OrdinaryLambdaSelection, Error> {
     assert!(
-        body.cursor.awaits_expected(),
+        body.cursor.can_accept_result_context(),
         "a late lambda checking handoff lost its expected-dependent body"
     );
     let body_type = prepare_ordinary_lambda_check_equations(
@@ -15919,7 +16867,7 @@ fn handoff_ordinary_lambda_check<'m>(
     // The retained body has only consumed its standalone passes. Attach the
     // newly concrete slot to that same cursor and let it resume from its
     // existing boundary; no body premise is abandoned or replayed.
-    body.cursor.supply_expected(body_type.clone());
+    body.cursor.supply_result_context(body_type.clone());
     body.next_mode = frontier::FrontierMode::ExpectedOnly;
     Ok(OrdinaryLambdaSelection::Check { body_type })
 }
@@ -17162,6 +18110,7 @@ fn begin_general_goal_call<'m>(
     frontier.close_gather(gather, tcx)?;
 
     Ok(AdvancingOrdinaryCall {
+        result_context_available: false,
         call,
         result,
         result_inferred_type_arg_suffix,
@@ -17612,7 +18561,11 @@ fn finish_immediate_lambda_body_advance<'m>(
             }
             let actual = match actual {
                 CompletedInFrame::Value(actual, _) => actual,
-                CompletedInFrame::FunctionScheme(_, _) | CompletedInFrame::UserMacroCall { .. } => {
+                CompletedInFrame::FunctionScheme(_, _)
+                | CompletedInFrame::IntrinsicCallable { .. } => {
+                    unreachable!("unchecked intrinsic specialization escaped its immediate callee")
+                }
+                CompletedInFrame::UserMacroCall { .. } => {
                     unreachable!("an anonymous lambda completed as another semantic family")
                 }
             };
@@ -18095,26 +19048,11 @@ fn advance_general_goal_call_driver_deferred<'m>(
     tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     next: GeneralGoalCallDriverContinue<'m>,
 ) -> Result<OrdinaryDriverStep<'m>, Error> {
-    if let Some(PendingOrdinaryCallChild { mut child, role }) = state.remaining.pop_front() {
+    if let Some(PendingOrdinaryCallChild { child, role }) = state.remaining.pop_front() {
         assert!(
             matches!(role, PendingOrdinaryChildRole::Value),
             "the post-body child phase retained immediate evidence"
         );
-        let span = child.cursor.source.span();
-        if let Some(expected) = child.cursor.expected.clone() {
-            let destination = frontier.owner();
-            let progressed = {
-                let (store, owner, delta, _publication) = frontier.parts_mut();
-                let expected = expected.into_scoped(owner, store, span)?;
-                store.try_zonk_goal_free(delta, expected, tcx)?
-            };
-            if let Some(ty) = progressed {
-                child.cursor.expected = Some(OwnerBoundType::Retained {
-                    owner: destination,
-                    ty,
-                });
-            }
-        }
         return Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
             child,
             inherited_mode: state.mode,
@@ -18287,6 +19225,9 @@ fn close_completed_ordinary_child<'m>(
             suffix,
             true,
         ),
+        CompletedInFrame::IntrinsicCallable { .. } => {
+            unreachable!("unchecked intrinsic specialization escaped its immediate callee")
+        }
         CompletedInFrame::UserMacroCall { .. } => {
             unreachable!("the user-macro completion was handled above")
         }
@@ -18469,6 +19410,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                     )
                 },
             ),
+            CompletedInFrame::IntrinsicCallable { .. } => {
+                unreachable!("unchecked intrinsic specialization escaped its immediate callee")
+            }
             CompletedInFrame::UserMacroCall { .. } => {
                 unreachable!("a macro transcript escaped its owning value cursor")
             }
@@ -18677,6 +19621,7 @@ impl<'m> UnpreparedConnectedCallChain<'m> {
     ) -> Result<frontier::PlanningSelection<Self, ConnectedPlanOutcome>, Error> {
         let mut callee = Synth {
             ty: direct.synth.ty.clone(),
+            specialization: direct.synth.specialization.clone(),
             is_scheme: direct.synth.is_scheme,
             complete_scheme: direct.synth.complete_scheme,
             inferred_type_arg_suffix: direct.synth.inferred_type_arg_suffix,
@@ -18752,6 +19697,7 @@ impl<'m> UnpreparedConnectedCallChain<'m> {
             // link consumed by the successor plan.
             callee = Synth {
                 ty: result_ty,
+                specialization: None,
                 is_scheme: false,
                 complete_scheme: super::kind_scheme::CompleteScheme::Incomplete,
                 inferred_type_arg_suffix: result_inferred_type_arg_suffix,
@@ -19200,25 +20146,6 @@ fn is_inline_fn_expr<P: crate::ast::Phase>(e: &crate::ast::Expr<P>) -> bool {
     matches!(e, crate::ast::Expr::FnExpr { .. })
 }
 
-/// A scalar whose admitted type can depend on its enclosing value slot.
-/// Bare literals use the ordinary expected-role tier; diagnostic text is a
-/// compile-time intrinsic type admitted only by its exact expected slot.
-fn is_expected_dependent_scalar<P>(e: &crate::ast::Expr<P>) -> bool
-where
-    P: crate::ast::Phase,
-{
-    super::literal_check_parts(e).is_some_and(|(_, annotation, _)| {
-        annotation.is_none_or(|annotation| {
-            matches!(annotation, crate::ast::Type::Infer { .. })
-                || matches!(annotation,
-                    crate::ast::Type::Path { segments, args, .. }
-                        if segments.len() == 1
-                            && segments[0].as_str() == "__Diagnostic_text__"
-                            && args.is_empty())
-        })
-    })
-}
-
 #[derive(Clone, Copy)]
 enum PlannedApplicationCompletion {
     Inferred,
@@ -19299,9 +20226,6 @@ where
         body: Option<Box<DispatchState<'m, P>>>,
         synth_param_types: Option<Vec<InternedType<P>>>,
         selection: LambdaSelection<P>,
-    },
-    Literal {
-        source: &'m crate::ast::Expr<P>,
     },
     LetTail {
         source: &'m crate::ast::Expr<P>,
@@ -21090,36 +22014,6 @@ where
                     }
                 }
             }
-            Self::Literal { source } => {
-                let unresolved = holes.unresolved_names();
-                if let Some(expected) = expected
-                    && !has_free_binder(expected.as_type(), &unresolved)
-                {
-                    <P::Typer as Typer<P>>::check_value_against_interned(source, expected, tcx)?;
-                    let resolved = InternedType::fresh_with_identity(
-                        holes.normalize_type(expected.clone_type()),
-                        expected.identity_is_canonical(),
-                    );
-                    return Ok(DispatchState::Complete(CompletedValue::Check(resolved)));
-                }
-                if mode == ValuePreparationMode::ExpectedOnly {
-                    return Ok(DispatchState::NeedsExpected(Box::new(Self::Literal {
-                        source,
-                    })));
-                }
-                let actual = <P::Typer as Typer<P>>::synth_expr(source, tcx)?;
-                if let Some(expected) = expected {
-                    require_completed_type(
-                        &actual.ty,
-                        expected,
-                        source.span(),
-                        holes,
-                        ambient_binders,
-                        tcx,
-                    )?;
-                }
-                Ok(DispatchState::Complete(CompletedValue::Synth(actual)))
-            }
             Self::LetTail {
                 source,
                 name,
@@ -21455,12 +22349,6 @@ fn plan_value_arg<'m, P>(
 where
     P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
 {
-    if mode == ValuePreparationMode::ExpectedOnly && is_expected_dependent_scalar(e) {
-        return Ok(DispatchState::NeedsExpected(Box::new(
-            ExpectedValue::Literal { source: e },
-        )));
-    }
-
     if let crate::ast::Expr::Let {
         name,
         name_span,
@@ -21923,7 +22811,7 @@ mod tests {
             std::mem::size_of::<Option<Box<Expr>>>(),
         );
         assert_eq!(std::mem::size_of::<UserMacroCallTranscript>(), 96);
-        assert_eq!(std::mem::size_of::<OpenGoalCall<'_>>(), 616);
+        assert_eq!(std::mem::size_of::<OpenGoalCall<'_>>(), 624);
         assert_eq!(std::mem::size_of::<PlannedUserMacroCallState<'_>>(), 432);
         assert_eq!(std::mem::size_of::<CompletedInFrame>(), 200);
         assert_eq!(std::mem::size_of::<OrdinaryDriverStep<'_>>(), 240);
@@ -22028,6 +22916,14 @@ mod tests {
     #[cfg(all(feature = "surface", target_pointer_width = "64"))]
     #[test]
     fn relation_state_layouts_and_owned_shallow_footprints_stay_exact() {
+        eprintln!(
+            "computed call layout: continuation={}, paired={}, cursor={}",
+            std::mem::size_of::<ComputedCallContinuation<'_>>(),
+            std::mem::size_of::<PairedComputedCall<'_>>(),
+            std::mem::size_of::<OrdinaryValueCursor<'_>>()
+        );
+        assert_eq!(std::mem::size_of::<ComputedCallContinuation<'_>>(), 400);
+        assert_eq!(std::mem::size_of::<PairedComputedCall<'_>>(), 584);
         assert_eq!(std::mem::size_of::<frontier::FrontierMode>(), 1);
         assert_eq!(std::mem::size_of::<ActiveOrdinaryDriverChild<'_>>(), 104);
         assert_eq!(std::mem::size_of::<FieldContinuation<'_>>(), 232);
@@ -22040,21 +22936,8 @@ mod tests {
     fn retained_local_proof_storage_is_one_optional_pointer_per_prepared_use() {
         assert_eq!(std::mem::size_of::<super::super::Local<'_, Lowered>>(), 104);
         assert_eq!(std::mem::size_of::<TypeCtx<'_, '_, Lowered>>(), 112);
-        let source_role_bytes = if cfg!(feature = "lsp") {
-            std::mem::size_of::<Option<(Span, String)>>()
-        } else {
-            0
-        };
-        #[cfg(feature = "lsp")]
-        assert_eq!(source_role_bytes, 32);
-        assert_eq!(
-            std::mem::size_of::<PreparedDirectCallee>(),
-            88 + source_role_bytes
-        );
-        assert_eq!(
-            std::mem::size_of::<PreparedOrdinaryValue<'_>>(),
-            88 + source_role_bytes
-        );
+        assert_eq!(std::mem::size_of::<PreparedDirectCallee>(), 96);
+        assert_eq!(std::mem::size_of::<PreparedOrdinaryValue<'_>>(), 96);
         assert_eq!(
             std::mem::size_of::<Option<std::sync::Arc<super::super::env::RetainedLocalType>>>(),
             8
@@ -23601,6 +24484,7 @@ mod tests {
             )
             .expect("open kind-validation owner");
         let shape = GoalCallShape {
+            specialization: None,
             binders: vec![star.clone(), hkt.clone()],
             param: SemanticValueDomain::known(InternedType::fresh(unit_ty())),
             ret: unit_ty(),
@@ -23692,6 +24576,7 @@ mod tests {
                 .expect("open mixed explicit/inferred owner");
             let call = OpenGoalCall::begin(
                 GoalCallShape {
+                    specialization: None,
                     binders,
                     param: SemanticValueDomain::known(InternedType::fresh(unit_ty())),
                     ret: unit_ty(),
@@ -23995,6 +24880,7 @@ mod tests {
             .expect("open canonical substitution owner");
         let call = OpenGoalCall::begin(
             GoalCallShape {
+                specialization: None,
                 binders: vec![binder_a, binder_b],
                 param: SemanticValueDomain::known(InternedType::fresh(Type::Product {
                     left: Box::new(path_ty("Local")),
@@ -24124,8 +25010,8 @@ mod tests {
     fn general_ordinary_root_composes_recursive_value_families() {
         let module = parse(
             "module main;
-             import control(macro if);
-             default host type Bool role(bool);
+             import control(Bool, macro if);
+
              host type I32;
              fn id[T](value: T) -> T { value }
              fn choose(flag: Bool, value: I32) -> I32 {
@@ -24198,7 +25084,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn general_ordinary_root_uses_a_later_path_solution_before_literal_fallback() {
+    fn general_ordinary_root_infers_literal_from_typed_sibling() {
         let module = parse(
             "module main;
              host type First role(i32);
@@ -24256,7 +25142,7 @@ mod tests {
         let resolved = tcx
             .elaborations
             .literal_resolution_for("main", literal_span.id)
-            .expect("the accepted literal must publish its exact expected type");
+            .expect("the accepted literal must publish its exact selected type");
         assert!(matches!(
             &resolved.0.resolved,
             Type::Path { segments, args, .. }
@@ -24267,24 +25153,26 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn general_ordinary_root_literal_fallback_covers_all_scalar_families() {
+    fn general_ordinary_root_explicit_annotations_covers_all_scalar_families() {
         for (role_declaration, literal_source, expected_name) in [
-            ("default host type Str role(str);", "\"text\"", "Str"),
-            ("default host type I32 role(i32);", "42", "I32"),
-            ("default host type F64 role(f64);", "1.5", "F64"),
-            ("default host type Bool role(bool);", ".t", "Bool"),
+            ("host type Str role(str);", "\"text\"", "Str"),
+            ("host type I32 role(i32);", "42", "I32"),
+            ("host type F64 role(f64);", "1.5", "F64"),
+            ("host type Bool role(bool);", ".t", "Bool"),
         ] {
             let source = format!(
                 "module main;
                  {role_declaration}
                  fn identity[T](value: T) -> T {{ value }}
-                 fn witness() -> {expected_name} {{ identity({literal_source}) }}"
+                 fn witness() -> {expected_name} {{ identity({literal_source}({expected_name})) }}"
             );
             let module = parse(&source)
-                .unwrap_or_else(|error| panic!("parse `{expected_name}` fallback: {error:?}"));
+                .unwrap_or_else(|error| panic!("parse `{expected_name}` annotation: {error:?}"));
             let (modules, _) =
                 FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
-                    .unwrap_or_else(|error| panic!("lower `{expected_name}` fallback: {error:?}"));
+                    .unwrap_or_else(|error| {
+                        panic!("lower `{expected_name}` annotation: {error:?}")
+                    });
             let package =
                 Package::build(Path::new(""), modules, None).expect("build resolved package shell");
             package.resolve_imports().expect("resolve imports");
@@ -24313,7 +25201,7 @@ mod tests {
             let mut elaborations = Elaborations::new();
             let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(item_index);
             let applied = run_general_ordinary_value(&def.body, None, &mut tcx)
-                .unwrap_or_else(|error| panic!("advance `{expected_name}` fallback: {error:?}"));
+                .unwrap_or_else(|error| panic!("advance `{expected_name}` annotation: {error:?}"));
 
             assert!(matches!(
                 applied.ty.as_type(),
@@ -24346,11 +25234,11 @@ mod tests {
     fn general_ordinary_root_rolls_back_conflicting_literal_siblings() {
         let module = parse(
             "module main;
-             default host type I32 role(i32);
-             default host type Str role(str);
+             host type I32 role(i32);
+             host type Str role(str);
              fn same[T](first: T, _second: T) -> T { first }
-             fn bad() -> I32 { same(42, \"wrong\") }
-             fn good() -> I32 { same(42, 7) }",
+             fn bad() -> I32 { same(42(I32), \"wrong\"(Str)) }
+             fn good() -> I32 { same(42(I32), 7(I32)) }",
         )
         .expect("parse literal rollback witnesses");
         let (modules, _) =
@@ -24830,7 +25718,7 @@ mod tests {
                 nested = format!("enter_now(.() {{ {nested} }})");
             }
             cases.push((format!("marked-depth-{depth}"), format!(
-                "fn result() -> . {{ let chosen = choose_lazy(.t, .() {{ {nested} }}, .() {{ infer_unit() }}); chosen }}"
+                "fn result() -> . {{ let chosen = choose_lazy(.t(Flag), .() {{ {nested} }}, .() {{ infer_unit() }}); chosen }}"
             ), depth + 2, depth + 2, true));
         }
         for width in [4, 16, 64] {
@@ -24853,7 +25741,7 @@ mod tests {
         }
         for (label, declarations, bodies, actions, waiting) in cases {
             let main = format!(
-                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); default host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
+                "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); host type Flag role(bool); host fn supply[A]() -> A; {declarations}"
             );
             let (modules, _) = FullPipeline::lower_package(
                 vec![
@@ -24932,9 +25820,9 @@ mod tests {
         ] {
             let main = format!(
                 "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); \
-                 default host type Caller_flag role(bool); host fn supply[A]() -> A; \
+                 host type Caller_flag role(bool); host fn supply[A]() -> A; \
                  fn result() -> . {{ \
-                   let chosen = choose_lazy(.t, .() {{ {left} }}, .() {{ {right} }}); \
+                   let chosen = choose_lazy(.t(Caller_flag), .() {{ {left} }}, .() {{ {right} }}); \
                    chosen \
                  }}"
             );
@@ -25674,10 +26562,10 @@ mod tests {
     fn later_sibling_can_require_multiple_causal_result_equation_attempts() {
         let module = parse(
             "module main;
-             default host type I32 role(i32);
+             host type I32 role(i32);
              host fn make[A, B](value: A) -> B & .;
              fn same[T](_left: T, _right: T) -> . { () }
-             fn witness() -> . { same(make(0), (1, ())) }",
+             fn witness() -> . { same(make(0(I32)), (1(I32), ())) }",
         )
         .expect("parse multiply deferred result-equation witness");
         let (modules, _) =
@@ -25695,11 +26583,11 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn deferred_result_equation_is_not_replayed_across_pending_child_modes() {
+    fn result_equation_discharges_after_immediate_literal_completion() {
         let module = parse(
             "module main;
-             default host type I32 role(i32);
-             fn literal() -> I32 { 0 }",
+             host type I32 role(i32);
+             fn literal() -> I32 { 0(I32) }",
         )
         .expect("parse scheduler-state witness");
         let (modules, _) =
@@ -25755,6 +26643,7 @@ mod tests {
                 )?;
                 let call = OpenGoalCall::begin(
                     GoalCallShape {
+                        specialization: None,
                         binders: Vec::new(),
                         param: SemanticValueDomain::known(InternedType::fresh(unit_ty())),
                         ret: unit_ty(),
@@ -25831,6 +26720,7 @@ mod tests {
                 .open_ordinary_child(child_reservation)
                 .expect("open result-solving child");
             let advancing = AdvancingOrdinaryCall {
+                result_context_available: false,
                 call,
                 result,
                 result_inferred_type_arg_suffix: 0,
@@ -25850,7 +26740,7 @@ mod tests {
             };
             Box::new(advancing)
         };
-        let mut continuation = OrdinaryChildContinuation {
+        let continuation = OrdinaryChildContinuation {
             child: call_child,
             cursor: Box::new(OrdinaryValueCursor {
                 source,
@@ -25862,35 +26752,17 @@ mod tests {
         };
 
         reset_ordinary_planning_work();
-        continuation = match OrdinaryValueCursor::advance_child_for_test(
+        let completed = match OrdinaryValueCursor::advance_child_for_test(
             continuation,
             frontier::FrontierMode::ExpectedOnly,
             &mut frontier,
             &mut tcx,
         )
-        .expect("advance the expected-only schedule")
-        {
-            OrdinaryChildAdvance::Pending(continuation) => continuation,
-            OrdinaryChildAdvance::Complete(_) => {
-                panic!("the literal must remain pending before lexical fallback")
-            }
-        };
-        assert_eq!(
-            ordinary_planning_work().expected_result_equations,
-            1,
-            "the result equation gets one initial blocked attempt"
-        );
-        let completed = match OrdinaryValueCursor::advance_child_for_test(
-            continuation,
-            frontier::FrontierMode::LexicalFallback,
-            &mut frontier,
-            &mut tcx,
-        )
-        .expect("advance the lexical-fallback schedule")
+        .expect("advance the annotated literal in the first schedule")
         {
             OrdinaryChildAdvance::Complete(completed) => completed,
             OrdinaryChildAdvance::Pending(_) => {
-                panic!("lexical fallback should close the literal and result equation")
+                panic!("a annotated literal must close without a lexical retry")
             }
         };
         assert_eq!(
@@ -25992,8 +26864,6 @@ mod tests {
             source: &source,
             synth: Synth::value_interned(InternedType::fresh_canonical(goal_type(ancestor))),
             binders: Vec::new(),
-            #[cfg(feature = "lsp")]
-            selected_role: None,
             retained_type: None,
         };
 
@@ -26158,6 +27028,7 @@ mod tests {
                         )?;
                         let call = OpenGoalCall::begin(
                             GoalCallShape {
+                                specialization: None,
                                 binders: Vec::new(),
                                 param: SemanticValueDomain::known(InternedType::fresh(unit_ty())),
                                 ret: unit_ty(),
@@ -26232,6 +27103,7 @@ mod tests {
                 )
             };
             let advancing = AdvancingOrdinaryCall {
+                result_context_available: false,
                 call,
                 result,
                 result_inferred_type_arg_suffix: 0,
@@ -26416,6 +27288,7 @@ mod tests {
                 frontier::OrdinaryFrontier::begin_root_with(sp(), &tcx, |store, owner| {
                     OpenGoalCall::begin_at_slot_offset_with_transcript(
                         GoalCallShape {
+                            specialization: None,
                             binders: Vec::new(),
                             param: SemanticValueDomain::known(InternedType::fresh(unit_ty())),
                             ret: unit_ty(),
@@ -26635,6 +27508,12 @@ mod tests {
                     semantic_packet_decodes: 2,
                     semantic_successor_advances: 2,
                     max_driver_frames: 2,
+                    context_wakes: 0,
+                    paired_computed: PairedComputedWork {
+                        created: 0,
+                        applications_completed: 0,
+                        callees_completed: 0,
+                    },
                 },
             ),
             (
@@ -26648,6 +27527,12 @@ mod tests {
                     semantic_packet_decodes: 3,
                     semantic_successor_advances: 3,
                     max_driver_frames: 3,
+                    context_wakes: 0,
+                    paired_computed: PairedComputedWork {
+                        created: 0,
+                        applications_completed: 0,
+                        callees_completed: 0,
+                    },
                 },
             ),
         ] {
@@ -26722,7 +27607,7 @@ mod tests {
         fn scaling_package(source: &str) -> Package {
             let module = parse(source).expect("parse natural-boundary scaling witness");
             let mut sources = vec![(PathBuf::from("main.kio"), module)];
-            if source.contains("import control(macro if)") {
+            if source.contains("import control(") {
                 sources.push((
                     PathBuf::from("control.kio"),
                     parse(include_str!(
@@ -26791,7 +27676,7 @@ mod tests {
         fn prelude(extra: &str) -> String {
             format!(
                 "module main; \
-                 default host type Bool role(bool); \
+                 host type Bool role(bool); \
                  host fn make[A]() -> A; \
                  fn id[A](value: A) -> A {{ value }} \
                  fn same[A](_left: A, _right: A) -> . {{ () }} \
@@ -26800,7 +27685,13 @@ mod tests {
         }
 
         fn control_prelude(extra: &str) -> String {
-            prelude(extra).replacen("module main;", "module main; import control(macro if);", 1)
+            prelude(extra)
+                .replace("host type Bool role(bool);", "")
+                .replacen(
+                    "module main;",
+                    "module main; import control(Bool, macro if);",
+                    1,
+                )
         }
 
         fn let_prefixes(width: usize) -> String {
@@ -26899,6 +27790,12 @@ mod tests {
                 semantic_packet_decodes: calls,
                 semantic_successor_advances: advances,
                 max_driver_frames: max_frames,
+                context_wakes: 0,
+                paired_computed: PairedComputedWork {
+                    created: 0,
+                    applications_completed: 0,
+                    callees_completed: 0,
+                },
             }
         }
 
@@ -29780,8 +30677,8 @@ mod tests {
     fn failed_later_sibling_does_not_publish_a_conditional_recipe() {
         let module = parse(
             "module main;
-             import control(macro if);
-             default host type Bool role(bool);
+             import control(Bool, macro if);
+
              host type I32;
              host type String;
              fn consume(_value: I32, _later: I32) -> . { () }
@@ -33392,7 +34289,7 @@ mod tests {
              fn witness() -> I32 -> I32 {
                  accept(.[T](token, value: T) -> [A] A -> T {
                      delayed(T, token)
-                 }((), 42))
+                 }((), 42(I32)))
              }",
         )
         .expect("parse immediate returned-Forall witness");
@@ -35227,8 +36124,8 @@ mod tests {
     fn check_retained_literal_scope(reconcile_sibling: bool) {
         let package = resolved_lowered_test_package(
             "module main;
-             default host type Token role(i32);
-             fn literal() -> Token { 1 }",
+             host type Token role(i32);
+             fn literal() -> Token { 1(main.Token) }",
         );
         let module = &package.module("main").expect("main module").module;
         let (index, definition) = module
@@ -35259,62 +36156,29 @@ mod tests {
             &HashSet::from(["Token".to_owned()]),
             &mut tcx,
         )
-        .expect("plan the naturally expected-dependent literal");
+        .expect("plan the annotated literal in the caller scope");
         assert_eq!(consumed, 1);
-        assert!(matches!(
-            plan.args[0].state,
-            DispatchState::NeedsExpected(_)
-        ));
+        assert!(matches!(plan.args[0].state, DispatchState::Complete(_)));
         let mut subst = HashMap::new();
-        let mut holes = ApplicationHoleState::default();
-        let scope = holes.begin_scope(&plan.binders, &subst, &mut tcx);
         let names = HashSet::from(["Token".to_owned()]);
-        plan.run_retained_pass(
-            &mut subst,
-            &names,
-            definition.body.span(),
-            &mut holes,
-            &scope,
-            ValuePreparationMode::ExpectedOnly,
-            RetainedArgumentFilter::All,
-            &mut tcx,
-        )
-        .expect("the unresolved expected type leaves the literal retained");
-        assert!(matches!(
-            plan.args[0].state,
-            DispatchState::NeedsExpected(_)
-        ));
-        assert!(subst.is_empty());
         if reconcile_sibling {
-            let hole = &scope.bindings[0].1;
-            let retained = plan.args[0]
-                .retained_holes
-                .as_mut()
-                .expect("ExpectedOnly preserved the argument's private frame");
-            retained.subst.insert(
-                hole.clone(),
+            subst.insert(
+                "Token".to_owned(),
                 Type::synth_path(
                     vec!["main".to_owned(), "Token".to_owned()],
                     Vec::new(),
                     sp(),
                 ),
             );
-            holes.subst.insert(hole.clone(), path_ty("Token"));
         }
-        plan.run_retained_pass(
-            &mut subst,
+        plan.gather_synthesized_constraints(
             &names,
+            &mut subst,
             definition.body.span(),
-            &mut holes,
-            &scope,
-            ValuePreparationMode::LexicalFallback,
-            RetainedArgumentFilter::All,
-            &mut tcx,
+            &tcx.env.alias_ctx(),
         )
-        .expect("literal fallback must solve the callee binder with the caller nominal");
-        assert!(matches!(plan.args[0].state, DispatchState::Complete(_)));
+        .expect("the selected literal solves the callee binder with the caller nominal");
         assert_eq!(display_type(&subst["Token"]), "main.Token");
-        assert!(holes.unresolved_names().is_empty());
     }
 
     #[cfg(feature = "surface")]

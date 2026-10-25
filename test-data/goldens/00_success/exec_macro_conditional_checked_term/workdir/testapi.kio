@@ -1,3 +1,7 @@
 module testapi;
 
+import __comptime__;
+
+pub type Bool = Comptime_bool;
+
 host type String role(str);

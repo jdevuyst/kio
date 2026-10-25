@@ -10,7 +10,7 @@ them before codegen through:
   operator folding; desugaring of tuple literals, recursive-call
   syntax, literal aliases, and `.stem. { ... }` placeholder lambdas; and label elaboration.
 - Full-Kio typing plus Lowered → Prime substitution for inferred
-  annotations and call arguments, UFCS normalization, and imported macro
+  annotations and call arguments, UFCS normalization, and imported
   macro calls, including their generic trailing-block projections. An `equiv` item survives through Lowered but substitution drops
   it, so it does not enter the Prime package used for code generation. The
   reference source-to-target coercion palettes, `if`, `scope`, `do`,
@@ -247,7 +247,7 @@ Variables, units, and literals:
 Γ ⊢ s(S) : S
 ```
 
-Each literal carries its host-type annotation as a syntactic slot of the term — Kio' admits no unannotated-literal form (see [`../grammar.md` § Kio' grammar](../grammar.md#kio-grammar)). Its annotation must match the literal's lexical shape via the role-admission relation in [`../language.md` § Literals](../language.md#literals). Integer values must lie in the role's signed or unsigned range; integer negative zero denotes zero. `round_k` rounds the exact decimal directly to IEEE binary32 or binary64 using round to nearest, ties to even, preserving subnormals and signed zero, including underflow to signed zero. Type-checking is local: there is no context-driven resolution, no candidate pool, no unification. The surface language's tier-2 and tier-3 resolution rules (see [`../language.md` § Literals](../language.md#literals)) elaborate every unannotated literal to one of the annotated forms above before the program reaches Kio'; that elaboration is part of the surface→Kio' bridge described in [`elaboration.md` § 7.1](elaboration.md#71-unit-literals-and-absurd), not part of the Kio' core. Standalone Kio' checking independently validates the numeric premises.
+Each literal carries its host-type annotation as a syntactic slot of the term — Kio' admits no unannotated-literal form (see [`../grammar.md` § Kio' grammar](../grammar.md#kio-grammar)). Its annotation must match the literal's lexical shape via the role-admission relation in [`../language.md` § Literals](../language.md#literals). Integer values must lie in the role's signed or unsigned range; integer negative zero denotes zero. `round_k` rounds the exact decimal directly to IEEE binary32 or binary64 using round to nearest, ties to even, preserving subnormals and signed zero, including underflow to signed zero. Type-checking is local: there is no context-driven resolution, no candidate pool, no unification. The surface language's concrete contextual inference rule (see [`../language.md` § Literals](../language.md#literals)) elaborates every unannotated literal to one of the annotated forms above before the program reaches Kio'; that elaboration is part of the surface→Kio' bridge described in [`elaboration.md` § 7.1](elaboration.md#71-unit-literals-and-absurd), not part of the Kio' core. Standalone Kio' checking independently validates the numeric premises.
 
 `let` and functions:
 
@@ -367,28 +367,28 @@ __either__        : ∀α. ∀β. ∀γ. (α | β, α → γ, β → γ) → γ
 __pair__       : ∀α. ∀β. (α, β) → α & β
 __fst__           : ∀α. ∀β. (α & β) → α
 __snd__           : ∀α. ∀β. (α & β) → β
-__if_then_else__  : ∀α. (B, . → α, . → α) → α   (Γ_roles(bool) = {B})
+__if_then_else__(B) : ∀α. (B, . → α, . → α) → α   (B concrete; role(B) = bool)
 __absurd__        : ∀α. ! → α
 ```
 
-`Γ_roles(bool)` contains the module's explicit Boolean default, or is empty
-when none is selected. It is derived from the written `default` modifiers on
-imports and in-scope host-type or transparent-alias declarations, not from all
-visible role-bearing types. Normalize saturated aliases by ordinary type
-substitution and compare terminal host identities `(declaring module, name)`.
-Same-identity selections agree; distinct selections in one category are
-rejected before bodies are checked. The same selection syntax and scope rules
-apply in full Kio and Kio', including freshly reparsed artifacts.
-
-`__if_then_else__` requires `Γ_roles(bool) = {B}`; an empty set gives it no
-scheme. T-True / T-False instead carry `B` explicitly and need no default, so
-they can use any admitted Boolean-role type. Annotating a condition at another
-type does not override the intrinsic's selected `B`. The literal forms and
-the intrinsic are the places where typing observes Boolean role metadata.
+`__if_then_else__` first checks a Boolean specialization `B`. The type must
+normalize to one concrete `role(bool)` host identity written in the explicit
+Boolean type argument. Surface
+inference must materialize that argument before this boundary. A rigid generic
+binder does not prove that role and is rejected. This is a checked intrinsic
+prefix, not an inferred role constraint. After specialization, the remaining
+`∀α` scheme is an ordinary value and admits generic result types. Unresolved
+Boolean specialization is a type error; no visible-role search supplies it.
+The literal rules T-True / T-False independently validate their concrete
+annotations. The same rules hold on freshly parsed artifacts.
 
 `__absurd__` is well-typed at every `α`; it is sound because the bottom type `!` has no introduction form (see § 4 — Type safety), so its precondition can never be discharged at runtime.
 
-All eight intrinsics are ordinary System F polymorphic constants — their schemes name uniform `∀α. …` binders that range over arbitrary types, and the typing rule for a call site is the standard `apply_scheme` with positional substitution.
+After the branching intrinsic's checked Boolean prefix, each remaining
+intrinsic scheme is an ordinary System F polymorphic constant: its `∀α`
+binders range over arbitrary types, and calls use the standard `apply_scheme`
+with positional substitution. The concrete Boolean role check precedes that
+ordinary scheme; it does not constrain a generic `α`.
 
 **Existentials live inside `newtype`.** Kio' has no separate existential introduction or elimination intrinsic. The `newtype`-declared existential binder run (see § 1.3 and [`../prime.md` § Existential introduction and elimination](../prime.md#existential-introduction-and-elimination)) is the only existential-introducing construct; the newtype's CPS projector
 
@@ -577,8 +577,8 @@ N.p(T̄, N.c(T̄, v))                          →  v                           
 N.p(T̄, N.c(T̄, Ū, v)) → Λρ. λ(k: ∀β̄. Payload[T̄, β̄] → ρ). k[Ū](v)   (ι-NewtypeExists)
                        (where Ū are N's existential witnesses and ρ is fresh)
 
-__if_then_else__(A, .t(B), t, e)       →  t(())                              (ι-IfTrue)
-__if_then_else__(A, .f(B), t, e)       →  e(())                              (ι-IfFalse)
+__if_then_else__(B, A, .t(B), t, e)       →  t(())                              (ι-IfTrue)
+__if_then_else__(B, A, .f(B), t, e)       →  e(())                              (ι-IfFalse)
 ```
 
 `__absurd__` has no head-reduction rule: `!` has no introduction value to
@@ -847,16 +847,16 @@ This is the "open-world by structural construction" claim from the prose pages, 
 **Consumer import extension contract.** In addition to provider extension,
 an accepted addition to a consumer's imports preserves the validity and meaning
 of its existing function bodies. Header admission checks names, alias edges,
-operator syntax and default selections against that module's declarations,
+and operator syntax against that module's declarations,
 without inspecting bodies to see which conflicts are used. Preservation
 includes grouping, resolved identities and inferred types, modulo hygienic
 renaming; it does not fix diagnostic text, generated bytes or package contracts.
-Explicit defaults make each category's selection a partial identity map:
-accepted selections extend that map without replacing a successful lookup.
-That fact is only the default-selection part of the argument. The contract
-also requires namespace disjointness, lexical binding ownership, source-order
-visibility, syntax-local operator compatibility and the ordinary application
-rules; default-map uniqueness alone is not a proof for the whole language.
+Literal inference consults only written annotations and concrete constraints
+from the finite local call tree, never an ambient role-bearing declaration
+pool. Accepted imports therefore cannot replace an inferred carrier. This is
+one part of the argument: namespace disjointness, lexical ownership,
+source-order visibility and syntax-local operator compatibility must also
+preserve the existing body.
 
 ## 8. References
 

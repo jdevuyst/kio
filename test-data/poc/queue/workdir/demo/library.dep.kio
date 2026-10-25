@@ -5,8 +5,10 @@ source {
 }
 
 rehost library/list/list to queue_host;
+rehost library/list/macros/control to queue_host;
 rehost library/list/macros/testapi to testapi;
 rehost library/macros/testapi to testapi;
+rehost library/macros/control to testapi;
 rehost library/queue to queue_host;
 
 retype library/list/core.List to list/core.List;

@@ -2,7 +2,7 @@ module packet_checksum_classifier/rules;
 
 import macros/control(macro if);
 import packet_checksum_classifier/scanner as scan;
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/text as text;
 
 fn is_packet(frame: String) -> Bool { text.string_eq(scan.prefix(frame), "PKT") }

@@ -1817,8 +1817,8 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
                     .map(|label| self.resolve_field_access_label(label))
                     .collect::<Result<_, _>>()?,
             },
-            ElaboratorCall::FieldUpdate { receiver, updates } => ElaboratorCall::FieldUpdate {
-                receiver: Box::new(self.walk_expr(*receiver)?),
+            ElaboratorCall::FieldUpdate { base, updates } => ElaboratorCall::FieldUpdate {
+                base: base.map_receiver(|receiver| self.walk_expr(receiver))?,
                 updates: updates
                     .into_iter()
                     .map(|update| self.resolve_field_update_label(update))
@@ -2011,7 +2011,6 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
     /// same-named label in `visit_type_path`.
     fn walk_alias(&mut self, a: TypeAlias<Desugared>) -> Result<TypeAlias<Lowered>, Error> {
         let TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -2028,7 +2027,6 @@ impl DesugaredToLowered for LabelElabVisitor<'_> {
         let body = self.walk_type(body)?;
         self.restore_bound(mark);
         Ok(TypeAlias {
-            default_span,
             vis,
             name,
             name_span,
@@ -2375,7 +2373,6 @@ impl LabelElabVisitor<'_> {
                 ]
             });
             out.push(Item::TypeAlias(TypeAlias {
-                default_span: None,
                 vis,
                 name,
                 name_span: type_alias_span.expect("named labels carry a type-name span"),
@@ -2403,11 +2400,7 @@ impl LabelElabVisitor<'_> {
         ))
     }
 
-    /// Lower a label-value expression `{f = e1, g = e2}` to the same
-    /// private field-update elaborator used by `r.!{...}`, with `()`
-    /// as the receiver. The shared typer path decides the default
-    /// product order and records the final constructor/projection
-    /// elaboration.
+    /// Retain the row-order shell around ordinary constructor calls.
     fn lower_label_value(
         &mut self,
         labels: Vec<LabelValueLabel<Desugared>>,
@@ -2447,6 +2440,19 @@ impl LabelElabVisitor<'_> {
             let label_type =
                 info.newtype_path(self.module_path, label_span, &mut self.terminal_aliases);
             let value = self.walk_expr(value)?;
+            let mut constructor = label_type.clone();
+            constructor.push(PathSegment::new("mk", label_span));
+            let value = Expr::synth_call(
+                Expr::Path {
+                    occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
+                    segments: constructor,
+                    meta: Meta::new(label_span),
+                    ext: (),
+                },
+                vec![crate::ast::CallArg::Value(value)],
+                label_full_span,
+            )
+            .with_fresh_occurrence();
             updates.push(FieldUpdateLabel {
                 label,
                 label_span,
@@ -2460,16 +2466,7 @@ impl LabelElabVisitor<'_> {
             kind: ElaboratorKind::Filtered,
             source_trivia: Default::default(),
             call: ElaboratorCall::FieldUpdate {
-                // Zero-width: this receiver is minted here, not written by the
-                // user. Giving it the record literal's own span made it claim
-                // that span in the position index — and a query anywhere inside
-                // the braces then answered with this unit rather than with the
-                // record.
-                receiver: Box::new(Expr::Unit {
-                    source_trivia: Default::default(),
-                    occurrence: Default::default(),
-                    meta: Meta::new(Span::new(span.start, span.start)),
-                }),
+                base: crate::ast::FieldUpdateBase::Construction,
                 updates,
             },
             meta: Meta::new(span),
@@ -3872,7 +3869,7 @@ mod tests {
             .expect("user-written `fn f`");
         let Expr::Elaborator {
             kind: ElaboratorKind::Filtered,
-            call: ElaboratorCall::FieldUpdate { receiver, updates },
+            call: ElaboratorCall::FieldUpdate { base, updates },
             ..
         } = &user_fn_def.body
         else {
@@ -3881,7 +3878,7 @@ mod tests {
                 user_fn_def.body
             );
         };
-        assert!(matches!(receiver.as_ref(), Expr::Unit { .. }));
+        assert!(matches!(base, crate::ast::FieldUpdateBase::Construction));
         assert_eq!(updates.len(), 1);
         assert_eq!(updates[0].label, "foo");
         // A local label keeps the ordinary same-module source spelling;
@@ -3894,7 +3891,10 @@ mod tests {
             .map(crate::ast::PathSegment::as_str)
             .collect();
         assert_eq!(label_path, vec!["Foo"]);
-        assert!(matches!(updates[0].value, Expr::Unit { .. }));
+        assert!(matches!(
+            updates[0].construction_payload(),
+            Expr::Unit { .. }
+        ));
     }
 
     #[test]

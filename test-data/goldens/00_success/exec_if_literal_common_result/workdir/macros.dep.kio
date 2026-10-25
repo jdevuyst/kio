@@ -1,0 +1,7 @@
+dependency macros;
+
+source {
+  path "../../../../poc/macros/workdir/macros.pkg.kio"
+}
+
+rehost macros/control to testapi;

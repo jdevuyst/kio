@@ -16,5 +16,6 @@ build {
 
 bridge {
   effects;
-  effects/**
+  effects/**;
+  macros/control
 }

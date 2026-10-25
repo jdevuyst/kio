@@ -19,6 +19,39 @@ pub(crate) struct PrimeLocalTypeAlias {
     pub(crate) span: Span,
 }
 
+/// Give compiler-internal forall binders legal names when a recorded type
+/// becomes part of a phase artifact, preserving its lexical type identities.
+pub(crate) fn materialize_type_binder_names<P>(ty: &mut Type<P>, lexical_binders: &[String])
+where
+    P: crate::pass::visit_mut::TypecheckVisitPhase,
+{
+    use crate::pass::visit_mut::{TypecheckVisitMut, walk_type};
+
+    struct BinderNames(HashSet<String>);
+
+    impl<P: crate::pass::visit_mut::TypecheckVisitPhase> TypecheckVisitMut<P> for BinderNames {
+        fn visit_type(&mut self, ty: &mut Type<P>) {
+            if let Type::Forall { param, body, .. } = ty {
+                if !crate::naming::is_type_name(&param.name) {
+                    let fresh = super::fresh_type_var("Eta", &self.0);
+                    let replacement = Type::synth_path(vec![fresh.clone()], Vec::new(), param.span);
+                    **body = super::subst_type(
+                        body,
+                        &HashMap::from([(param.name.clone(), replacement)]),
+                    );
+                    param.rename(fresh);
+                }
+                self.0.insert(param.name.clone());
+            }
+            walk_type(self, ty);
+        }
+    }
+
+    let mut reserved = lexical_binders.iter().cloned().collect();
+    super::collect_free_type_vars(ty, &mut reserved);
+    BinderNames(reserved).visit_type(ty);
+}
+
 /// Re-spells identity-canonical type paths into bindings that are valid in
 /// one emitted Prime module. Source-spelled paths must bypass this helper so
 /// a user alias keeps its written meaning.

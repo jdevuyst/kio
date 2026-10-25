@@ -81,28 +81,31 @@ impl Drop for TempPackage {
 }
 
 #[test]
-fn repl_defaults_keep_integer_float_categories_and_ordinary_default_names() {
-    let package = TempPackage::new("literal-defaults");
+fn repl_literal_inference_keeps_categories_and_ordinary_default_names() {
+    let package = TempPackage::new("literal-inference");
     for (path, source) in [
         (
             "app.pkg.kio",
-            include_str!("fixtures/default-types/app.pkg.kio"),
+            include_str!("fixtures/literal-inference/app.pkg.kio"),
         ),
-        ("app.kio", include_str!("fixtures/default-types/app.kio")),
+        (
+            "app.kio",
+            include_str!("fixtures/literal-inference/app.kio"),
+        ),
         (
             "provider.kio",
-            include_str!("fixtures/default-types/provider.kio"),
+            include_str!("fixtures/literal-inference/provider.kio"),
         ),
     ] {
         package.write(path, source);
     }
     let queries = [
-        "42",
-        "42.0e0",
-        "42.0E+3",
-        "42.0",
-        "42.0e-3",
-        ".t",
+        "42(Int)",
+        "42.0e0(Float)",
+        "42.0E+3(Float)",
+        "42.0(Float)",
+        "42.0e-3(Float)",
+        ".t(Bool)",
         "default()",
         "same(42, default())",
         "same(42.0, floating())",
@@ -138,7 +141,14 @@ fn repl_defaults_keep_integer_float_categories_and_ordinary_default_names() {
         "{output}"
     );
     assert!(output.contains("pub fn default() -> Int"), "{output}");
-    for query in ["same(42.0, 42)", "same(42, 42.0)", "42(Float)"] {
+    for query in [
+        "42",
+        "42.0",
+        ".t",
+        "same(42.0, 42)",
+        "same(42, 42.0)",
+        "42(Float)",
+    ] {
         let output = run_repl(
             package.path(),
             &[":load app", &format!(":type {query}"), ":quit"],

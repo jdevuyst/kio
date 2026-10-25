@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
-import testapi(String, default Bool, default I32);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, mul_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
@@ -58,7 +58,7 @@ fn lookup_dispatch(name: String, cell: . | ((String & I32) & List(String & I32))
           .(k: String, v: I32) { lookup_head(name, k, v, rest) }
         }
       }
-    , .(_empty: .) { widen_sum(0, (String & Env) | I32) }
+    , .(_empty: .) { widen_sum(0(I32), (String & Env) | I32) }
     )
   }
 }
@@ -99,9 +99,9 @@ rec newtype Expr : I32 | (I32 & Expr & Expr) | (String & Expr & Expr) | String {
 
 fn lit(n: I32) -> Expr { Expr.mk_expr(widen_sum(n)) }
 
-fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((0, l, r))) }
+fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((0(I32), l, r))) }
 
-fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1, l, r))) }
+fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1(I32), l, r))) }
 
 fn let_(name: String, value: Expr, body: Expr) -> Expr {
   Expr.mk_expr(widen_sum((name, value, body)))

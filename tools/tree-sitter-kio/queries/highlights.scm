@@ -28,8 +28,6 @@
 (macro_impl_clause (keyword_declaration) @keyword.declaration)
 (import_decl (keyword_declaration) @keyword.declaration)
 (import_named_item (keyword_declaration) @keyword.declaration)
-(host_decl (keyword_declaration) @keyword.declaration)
-(type_alias_decl_head (keyword_declaration) @keyword.declaration)
 (import_macro_item (keyword_declaration) @keyword.declaration)
 (import_macro_item (entity_name_function) @entity.name.macro)
 (import_operator_item (keyword_declaration) @keyword.declaration)

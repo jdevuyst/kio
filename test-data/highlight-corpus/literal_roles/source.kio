@@ -1,0 +1,10 @@
+module source;
+
+import types(Int as Integer, Bool, String, default as ordinary);
+
+pub host type Float role(f64);
+pub(source) type Alias = Integer;
+
+pub fn default(default: .) -> . { default }
+
+fn literals() { 42; 42.0e0; 42.0E+3; 42.0; 42.0e-3 }

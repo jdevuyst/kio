@@ -6,3 +6,4 @@ source {
 
 rehost list/list to option_host;
 rehost list/macros/testapi to testapi;
+rehost list/macros/control to option_host;

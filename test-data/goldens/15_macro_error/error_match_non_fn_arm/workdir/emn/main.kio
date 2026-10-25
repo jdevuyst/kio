@@ -1,7 +1,7 @@
 module emn/main;
 
 import macros/match(macro match);
-import testapi(String, default I32);
+import testapi(I32, String);
 
 // A `match` arms-tuple element that isn't a function. The first arm
 // `42` is an `I32` literal, not a fn, so the imported `match` macro
@@ -9,7 +9,7 @@ import testapi(String, default I32);
 fn bad(v: I32 | String) {
   let .(_r: .) =
     match(v) {
-      (42, .(s: String) { () })
+      (42(I32), .(s: String) { () })
     };
   ()
 }

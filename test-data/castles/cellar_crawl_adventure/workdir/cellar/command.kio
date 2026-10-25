@@ -11,7 +11,7 @@ module cellar/command;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(String, default Bool);
+import testapi(Bool, String);
 import testapi/text(string_eq);
 
 pub labels Verb =

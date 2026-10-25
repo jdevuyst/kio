@@ -1402,8 +1402,10 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
         }
         Expr::Elaborator { call, .. } => match call {
             ElaboratorCall::FieldAccess { receiver, .. } => walk_rename_expr(receiver, visit),
-            ElaboratorCall::FieldUpdate { receiver, updates } => {
-                walk_rename_expr(receiver, visit);
+            ElaboratorCall::FieldUpdate { base, updates } => {
+                if let Some(receiver) = base.receiver() {
+                    walk_rename_expr(receiver, visit);
+                }
                 for update in updates {
                     walk_rename_expr(&update.value, visit);
                 }
@@ -1478,7 +1480,7 @@ mod tests {
     fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
         let root = test_file_path("/virtual/selective-alias-tooling");
         let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
-        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count }";
+        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count(Number) }";
         let main_file = root.join("main.kio");
         let provider_file = root.join("provider.kio");
         let overlay = crate::package_collection::SourceOverlay::complete(
@@ -1535,7 +1537,7 @@ mod tests {
                 ("external as invoke", "invoke,", "invoke()"),
                 ("Box as Parcel", "Parcel,", "Parcel.get"),
                 ("Int as Number", "Number,", "Number;"),
-                ("token as count", "count,", "count }"),
+                ("token as count", "count,", "count(Number)"),
                 ("identity as preserve", "preserve)", "preserve"),
             ] {
                 let definitions: Vec<_> = [source_site, destination_site, use_site]
@@ -1577,7 +1579,7 @@ mod tests {
                 .unwrap_err()
                 .contains("conflict")
             );
-            let literal_position = position_of(source, "count }");
+            let literal_position = position_of(source, "count(Number)");
             let definition = crate::lsp::definition::handle_definition(
                 &uri,
                 &literal_position,

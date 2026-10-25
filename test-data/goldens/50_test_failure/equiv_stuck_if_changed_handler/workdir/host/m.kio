@@ -1,6 +1,6 @@
 module host/m;
 
-import host(Input, bar, baz, condition, default Bool, foo);
+import host(Bool, Input, bar, baz, condition, foo);
 import macros/control(macro if);
 
 equiv stuck_if_ne(x: Input) {

@@ -84,7 +84,7 @@ Read the linked topic before acting.
 | Packaging or publishing the `kio-lang` source crate | [`ai/topics/docs.md`](ai/topics/docs.md) § Website and offline bundle inputs — automatic preparation, archive completeness and dirty guards |
 | Editing `KIO-FOR-AGENTS.md` | [`ai/topics/kio-authoring.md`](ai/topics/kio-authoring.md) — portable workflow and repository supplement ownership |
 | Editing under `docs/poc/` or `test-data/poc/<x>/` | [`ai/topics/docs.md`](ai/topics/docs.md) § Keeping a case study paired with its POC — keep the pair in sync |
-| Editing `README.md`, `website/.vitepress/theme/components/Landing.vue`, or editor marketplace links | [`ai/topics/readme.md`](ai/topics/readme.md) — exact-wording protection, visual review and listing-link consistency |
+| Editing `README.md`, `website/.vitepress/theme/components/Landing.vue`, `website/examples/`, or editor marketplace links | [`ai/topics/readme.md`](ai/topics/readme.md) — paired content checks, exact-wording protection, visual review and listing links |
 | Editing `DESIGN.md` | [`ai/topics/design.md`](ai/topics/design.md) |
 | Editing `ROADMAP.md` | [`ai/topics/roadmap.md`](ai/topics/roadmap.md) |
 | Editing `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`, `.github/PULL_REQUEST_TEMPLATE.md`, `.github/workflows/pr-auto-close.yml`, `.github/workflows/pr-policy-check.yml`, `.github/workflows/contrib-run.yml`, or `test-data/contrib/README.md` | [`ai/topics/contributing.md`](ai/topics/contributing.md) |

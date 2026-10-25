@@ -630,16 +630,6 @@ fn import_list_candidates(
     let mut push = |entry: &crate::doc_entry::DocEntry<'_>, label: String, kind, selection| {
         let admitted = match context.kind {
             ImportSelectionKind::Any => true,
-            ImportSelectionKind::DefaultType => {
-                selection == ImportSelectionKind::Name
-                    && kind == CompletionItemKind::STRUCT
-                    && matches!(
-                        entry,
-                        crate::doc_entry::DocEntry::HostType(_)
-                            | crate::doc_entry::DocEntry::TypeAlias(..)
-                    )
-                    && crate::naming::is_type_reference_name(&label)
-            }
             requested => requested == selection,
         };
         if selected.contains(&label)
@@ -1580,56 +1570,33 @@ mod tests {
     }
 
     #[test]
-    fn default_import_completion_keeps_the_modifier_and_ordinary_value_names() {
+    fn ordinary_default_import_completion_preserves_the_value_namespace() {
         let provider = concat!(
             "module syntax; host type Int role(i64); pub type Alias = Int;\n",
-            "pub newtype Wrapped : . { pub constructor wrap; pub projector unwrap }\n",
-            "pub labels Packet = { left: . };\n",
             "pub fn default() -> . { () } pub literal answer = 42;\n",
         );
         let analysis = operator_catalog(provider);
-        for tail in ["default ", "default In", "default // policy\n In"] {
-            let source = format!("module app; import syntax({tail}");
-            let list = import_list_completions(&source, source.len() as u32, None, Some(&analysis))
-                .expect("default type slot");
-            assert_eq!(labels(&list.items), ["Alias", "Int"], "{source}");
-            for item in list.items {
-                let Some(CompletionTextEdit::Edit(edit)) = item.text_edit else {
-                    panic!("default import completion needs a source edit");
-                };
-                let index = LineIndex::new(&source);
-                let start = index.position_to_offset(LspPosition {
-                    line: edit.range.start.line,
-                    character: edit.range.start.character,
-                }) as usize;
-                let end = index.position_to_offset(LspPosition {
-                    line: edit.range.end.line,
-                    character: edit.range.end.character,
-                }) as usize;
-                assert!(start >= source.find("default").unwrap() + "default ".len());
-                let applied = format!("{}{}{});", &source[..start], edit.new_text, &source[end..]);
-                assert_eq!(applied.matches("default ").count(), 1);
-                assert_eq!(applied.contains("// policy"), source.contains("// policy"));
-                let module = crate::pass::parser::parse(&applied)
-                    .expect("completion keeps selection syntax");
-                let crate::ast::ImportKind::Selective { items, .. } = &module.imports[0].kind
-                else {
-                    panic!("selective import");
-                };
-                assert!(matches!(
-                    &items[0],
-                    crate::ast::ImportItem::Name {
-                        default_span: Some(_),
-                        ..
-                    }
-                ));
-            }
-        }
-        let source = "module app; import syntax(default as ordinary, ";
+        let source = "module app; import syntax(";
         let list = import_list_completions(source, source.len() as u32, None, Some(&analysis))
             .expect("ordinary selection slot");
         assert!(labels(&list.items).contains(&"default"));
         assert!(labels(&list.items).contains(&"answer"));
+        assert!(labels(&list.items).contains(&"Int"));
+        let item = list
+            .items
+            .iter()
+            .find(|item| item.label == "default")
+            .unwrap();
+        assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
+        let Some(CompletionTextEdit::Edit(edit)) = &item.text_edit else {
+            panic!("ordinary import completion needs a source edit");
+        };
+        assert_eq!(edit.new_text, "default");
+        let parsed = crate::pass::parser::parse(&format!("{source}{});", edit.new_text)).unwrap();
+        let crate::ast::ImportKind::Selective { items, .. } = &parsed.imports[0].kind else {
+            panic!("selective import");
+        };
+        assert_eq!(items[0].as_name(), Some("default"));
     }
 
     #[test]

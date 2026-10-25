@@ -1,7 +1,7 @@
 module testapi/main;
 
 import macros/sequence(macro do);
-import testapi(default String);
+import testapi(String);
 import testapi/io(print);
 
 // User-defined `<-` operator. `a <- b` calls `arrow`, which
@@ -25,10 +25,13 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 // lead — parses as a user-op expression call to `arrow`. Both
 // coexist freely.
 fn run() -> Box(String) {
-  do(box_bind) { let s <- box_pure("left" <- "arrow-op final inside do\n"); box_pure(s) }
+  do(box_bind) {
+    let s <- box_pure("left"(String) <- "arrow-op final inside do\n"(String));
+    box_pure(s)
+  }
 }
 
 // Outside any do-block, `<-` is purely the user-defined operator.
-fn outside_do() -> String { "left" <- "arrow-op outside do\n" }
+fn outside_do() -> String { "left"(String) <- "arrow-op outside do\n" }
 
 pub fn main() { print(outside_do()); print(Box.un_box(run())) }

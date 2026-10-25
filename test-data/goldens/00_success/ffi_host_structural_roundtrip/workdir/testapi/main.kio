@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(String, default I32);
+import testapi(I32, String);
 import testapi/arith(make_pair);
 import testapi/fmt(i32_to_string, sum_to_string);
 import testapi/io(print);
@@ -17,7 +17,7 @@ pub fn main() {
       print("\n"(String))
     }
   };
-  print(sum_to_string(widen_sum(7, I32 | String)));
+  print(sum_to_string(widen_sum(7(I32), I32 | String)));
   print("\n"(String));
   print(sum_to_string(widen_sum("sum-host"(String), I32 | String)));
   print("\n"(String))

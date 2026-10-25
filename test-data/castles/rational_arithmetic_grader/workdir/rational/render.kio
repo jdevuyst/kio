@@ -7,7 +7,7 @@ import rational/core as core;
 import rational/core(Division_by_zero, Eval, Fraction, Rational);
 import rational/expr(Add, Div, Expr, Lit, Mul, Sub);
 import rational/text as text;
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/iter(loop);

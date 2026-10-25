@@ -686,13 +686,11 @@ first error only if that error's unchanged source span maps wholly outside this
 range. Unresolved-name diagnostics additionally carry `data.unresolvedName`
 for lazy code actions.
 
-Literal diagnostics distinguish missing default selection from category
-mismatch. A missing-default error explains that `role` admits literals
-but does not select a module-local fallback. When the current source has an
-eligible host declaration, transparent alias or named import item, separate
-maybe-incorrect actions can mark those exact occurrences `default`; they do
-not choose a winner silently or edit the provider. A supplied expected or
-explicit type can avoid fallback, but cannot cross literal categories.
+Literal diagnostics distinguish an unresolved carrier from category or range
+mismatch. If concrete local inference cannot determine a carrier, the error
+requests an explicit literal annotation. It does not choose a visible
+role-bearing declaration. Concrete
+expected types and explicit annotations still obey lexical category admission.
 
 A point-free exponent, including `42e0`, `42E+3` or `42e-0`, is a lexical
 error explaining that integer exponent notation is not admitted. If a float
@@ -701,7 +699,7 @@ was intended, a native fix inserts `.0` immediately before the written
 such as `42` is explicitly or contextually required to have a float role.
 These maybe-incorrect actions preserve the sign, digits,
 separators, exponent, annotation and comments. A valid intended integer is not
-rewritten merely because a floating default is selected. For literal aliases,
+rewritten merely because a floating-role type is visible. For literal aliases,
 diagnostics relate the authenticated definition and use. An alias-use repair
 replaces the complete use's name with the definition's literal spelling with
 `.0` inserted, preserving its annotation and surrounding trivia. It does
@@ -843,11 +841,9 @@ operator requires outer parentheses, as in `math/arith.(op _ + _)` or
 and `math/arith.{field}`; wrapping either in parentheses is rejected. Inner
 operator-pattern parentheses retain token quotation such as `(=)`; they cannot
 contain slots. Unparenthesized qualified operators, selector lists, import
-statements, renaming clauses, `macro name` tags and `default` selection modifiers
-are rejected. Macro declarations remain inspectable by their ordinary local
+statements, renaming clauses and `macro name` tags are rejected. Macro declarations remain inspectable by their ordinary local
 name, explicit alias or fully qualified identity, such as `:doc local_macro`
 or `:doc module.build`; qualification here does not admit qualified invocation.
-An ordinary declaration named `default` remains queryable as that identifier.
 A bare symbol is not a complete
 operator selector. These command selectors do not extend the expression grammar
 or change bare-input classification or the `:t` / `:pure` categories.

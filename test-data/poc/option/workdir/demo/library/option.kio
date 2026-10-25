@@ -21,13 +21,13 @@ import library/core(
 , to_sum
 );
 import library/list/core(uncons);
-import library/macros/control(macro if);
+import library/macros/control(Bool as Control_bool, macro if);
 import library/macros/match(macro match);
 import library/macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
 import list/core(List);
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
-default pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
+pub type Bool = Control_bool;
 
 pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
 

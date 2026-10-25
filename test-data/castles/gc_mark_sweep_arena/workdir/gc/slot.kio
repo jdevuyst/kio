@@ -11,7 +11,7 @@ module gc/slot;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 
 literal ptr_base = 1000;

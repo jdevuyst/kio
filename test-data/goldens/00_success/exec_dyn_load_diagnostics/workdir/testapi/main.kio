@@ -1,7 +1,7 @@
 /// This case's loading host: feed each class of malformed image to the loader and print its diagnostic.
 module testapi/main;
 
-import host_descriptor(Host_type, Role, bool_role, i32_role, mk_host_id, mk_role_host_type);
+import host_descriptor(Host_type, Role, i32_role, mk_host_id, mk_role_host_type);
 import lex(Lex_err, lex);
 import loader(Load_outcome, Lr_diag, Lr_image);
 import loader(diag_message, un_load_outcome);
@@ -9,12 +9,12 @@ import loader/scan(load_package);
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import parse(P_err, P_ok);
+import parse(P_err, P_ok, Type_scope);
 import parse(parse_toks_scope_fuel, perr_message, scope_nil, scope_push);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/io(print);
 import testapi/text(string_concat, string_eq);
-import token(Toks);
+import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Toks, un_token, un_toks);
 
 // Render a load outcome's diagnostic under the case's label; a load that
 // unexpectedly succeeds renders as `(loaded)` so a silently-accepted
@@ -34,16 +34,29 @@ fn parser_host_type(local_name: String, role: Role) -> Host_type {
   mk_role_host_type(mk_host_id("hostapi"(String), local_name), role)
 }
 
-fn resolve_parser_host_type(local_name: String) -> Host_type | String {
-  if(string_eq(local_name, "I32"(String))) {
-    widen_sum(parser_host_type(local_name, i32_role()), Host_type | String)
-  } else {
-    widen_sum(local_name, Host_type | String)
+fn resolve_parser_host_type(tokens: Toks, _types: Type_scope) -> Host_type | String {
+  match(un_toks(tokens)) {
+    (
+    , .(token: Token, _position: I32, _tail: Toks) {
+        match(un_token(token)) {
+          (
+          , .(word: Tk_word) {
+              let local_name = Tk_word.get(word);
+              if(string_eq(local_name, "I32"(String))) {
+                widen_sum(parser_host_type(local_name, i32_role()), Host_type | String)
+              } else {
+                widen_sum(local_name, Host_type | String)
+              }
+            }
+          , .(_number: Tk_num) { widen_sum("expected host type"(String), Host_type | String) }
+          , .(_string: Tk_str) { widen_sum("expected host type"(String), Host_type | String) }
+          , .(_punct: Tk_punct) { widen_sum("expected host type"(String), Host_type | String) }
+          )
+        }
+      }
+    , .(_empty: .) { widen_sum("missing host type"(String), Host_type | String) }
+    )
   }
-}
-
-fn parser_bool_type() -> Host_type | String {
-  widen_sum(parser_host_type("Bool"(String), bool_role()), Host_type | String)
 }
 
 // The parser-fuel diagnostic, exercised through the public parser surface
@@ -56,7 +69,6 @@ fn fuel_diag() -> String {
         , ts
         , scope_push("add_i32"(String), scope_nil())
         , resolve_parser_host_type
-        , parser_bool_type()
         , 2(I32)
         )) {
           (

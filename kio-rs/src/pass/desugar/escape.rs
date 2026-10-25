@@ -70,9 +70,9 @@ fn rec_call(
             }
             Expr::Elaborator { call, .. } => match call {
                 ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate { receiver, updates } => {
+                ElaboratorCall::FieldUpdate { base, updates } => {
                     pending.extend(updates.iter().map(|update| &update.value));
-                    pending.push(receiver);
+                    pending.extend(base.receiver());
                 }
             },
             Expr::OpChain { kind, .. } => match kind {

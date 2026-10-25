@@ -6,9 +6,9 @@ import macros/control(macro if);
 import other as types;
 import types as real;
 
-default type Actual = types.Other;
+type Actual = types.Other;
 
-default type Bool = real.Bool;
+type Bool = real.Bool;
 
 newtype Box[A] : A { constructor mk_box; projector un_box }
 
@@ -35,7 +35,7 @@ fn field_roundtrip[Cell](value: d.Flag) -> d.Flag { {cell = value}.?{cell} }
 fn consume_other(value: types.Other) -> types.Other { value }
 
 fn inferred_literal_under_same_named_binder[Actual]() -> types.Other {
-  let value = 1;
+  let .(value: types.Other) = 1;
   consume_other(value)
 }
 

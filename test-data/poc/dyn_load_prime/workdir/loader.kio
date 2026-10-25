@@ -37,23 +37,23 @@ import host_descriptor(host_type_shape, param_kind_eq, un_param_kind, un_param_k
 import host_descriptor(host_types_cons, host_types_nil);
 import host_descriptor(mk_role_host_type, mk_roleless_host_type, param_kinds_cons, param_kinds_nil);
 import host_descriptor(role_from_name);
-import host_descriptor(role_name);
 import lex(Lex_err, ascii_char, lex, lex_err_message, lex_err_pos);
 import list/core(List, cons, nil, uncons);
 import list/list(append, elem, length, reverse);
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import parse(Nt_entry, Nt_info, Ntab, P_err, P_ok, Perr, Pnl, Pres, Scope);
+import parse(Nt_entry, Nt_info, Ntab, P_err, P_ok, Perr, Pnl, Pres, Scope, Type_scope);
 import parse(nt_ctor, nt_existential, nt_proj);
 import parse(nt_entry_info);
 import parse(ntab_cons_visible, ntab_lookup, ntab_nil, un_ntab);
 import parse(parse_toks_scope_ntab, perr_message, perr_pos, scope_nil, scope_push);
 import parse(pnl_cons, pnl_nil, pnl_one, scope_push_names);
+import parse(scope_with_signature_types);
 import prime(Group_slots, Nat, Term, app, fst, lam, let_, ns, nz, snd, var);
 import prime(group_slots_cons, group_slots_nil, hostfn_ref, un_group_slots);
 import result(Call_result, Ev_done, Ev_stuck, Eval_result, stuck_reason);
-import testapi(Scalar, default Bool, default F64, default I32, default String);
+import testapi(Bool, F64, I32, Scalar, String);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import testapi/fmt(int_to_string);
 import testapi/iter(loop);
@@ -486,43 +486,30 @@ fn decls_find(ds: Decls, name: String) -> . | Decl {
 // module alias `import m as a;`, is recorded separately (`Aliases` below); it
 // provides `a.name` spellings subject to the same visibility gate rather than
 // importing names one by one.
-/// A selective import's local spelling, original declaration name, provider module,
-/// and explicit module-local default selection.
-pub labels { import: String & String & String & Bool };
-
-/// Builds an import with its explicit module-local default selection.
-pub fn mk_import_selected(local: String, original: String, from_module: String, selected: Bool) -> Import {
-  {import = (local, original, from_module, selected)}
-}
+/// A selective import's local spelling, original declaration name, and provider module.
+pub labels { import: String & String & String };
 
 /// Builds an import entry (local name, source module).
 pub fn mk_import(name: String, from_module: String) -> Import {
-  mk_import_selected(name, name, from_module, .f(Bool))
+  {import = (name, name, from_module)}
 }
 
 /// Construct a selective import with an explicit local spelling and source name.
 pub fn mk_import_as(local: String, original: String, from_module: String) -> Import {
-  mk_import_selected(local, original, from_module, .f(Bool))
-}
-
-/// Whether this import explicitly selects its type as a local default.
-pub fn import_is_default(i: Import) -> Bool {
-  match(Import.get(i)) {
-    .(_local: String, _original: String, _provider: String, selected: Bool) { selected }
-  }
+  {import = (local, original, from_module)}
 }
 
 /// Return an import's local spelling and provider module.
 pub fn un_import(i: Import) -> String & String {
   match(Import.get(i)) {
-    .(local: String, _original: String, provider: String, _selected: Bool) { (local, provider) }
+    .(local: String, _original: String, provider: String) { (local, provider) }
   }
 }
 
 /// Return the declaration name selected in the provider module.
 pub fn import_source(i: Import) -> String {
   match(Import.get(i)) {
-    .(_local: String, original: String, _provider: String, _selected: Bool) { original }
+    .(_local: String, original: String, _provider: String) { original }
   }
 }
 
@@ -874,28 +861,8 @@ pub fn binders_reverse(binders: Binders) -> Binders {
 
 /// One retained `type` alias declaration: name, positional binders, body
 /// token-run (the text after `=`, semicolon excluded), visibility, and
-/// declaration byte offset, exact recursive group when present, and explicit
-/// module-local default selection.
-pub labels { alias_decl: & String
-& Binders
-& Toks
-& Visibility
-& I32
-& (. | Recursive_type_scope)
-& Bool };
-
-/// Builds an alias with its explicit module-local default selection.
-pub fn mk_alias_decl_selected(
-, name: String
-, binders: Binders
-, body: Toks
-, visibility: Visibility
-, decl_pos: I32
-, recursive_scope: . | Recursive_type_scope
-, selected: Bool
-) -> Alias_decl {
-  {alias_decl = (name, binders, body, visibility, decl_pos, recursive_scope, selected)}
-}
+/// declaration byte offset, and exact recursive group when present.
+pub labels { alias_decl: String & Binders & Toks & Visibility & I32 & (. | Recursive_type_scope) };
 
 /// Builds a retained alias record.
 pub fn mk_alias_decl(
@@ -905,52 +872,23 @@ pub fn mk_alias_decl(
 , visibility: Visibility
 , decl_pos: I32
 , recursive_scope: . | Recursive_type_scope
-) -> Alias_decl {
-  mk_alias_decl_selected(name, binders, body, visibility, decl_pos, recursive_scope, .f(Bool))
-}
-
-/// Whether this alias explicitly selects its terminal type as a local default.
-pub fn tyalias_is_default(a: Alias_decl) -> Bool {
-  match(Alias_decl.get(a)) {
-    .(
-    , _n: String
-    , _b: Binders
-    , _t: Toks
-    , _v: Visibility
-    , _p: I32
-    , _scope: . | Recursive_type_scope
-    , selected: Bool
-    ) { selected }
-  }
-}
+) -> Alias_decl { {alias_decl = (name, binders, body, visibility, decl_pos, recursive_scope)} }
 
 /// The alias's name.
 pub fn tyalias_name(a: Alias_decl) -> String {
   match(Alias_decl.get(a)) {
-    .(
-    , n: String
-    , _b: Binders
-    , _t: Toks
-    , _v: Visibility
-    , _p: I32
-    , _scope: . | Recursive_type_scope
-    , _selected: Bool
-    ) { n }
+    .(n: String, _b: Binders, _t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
+      n
+    }
   }
 }
 
 /// The alias's binder names, declaration order.
 pub fn tyalias_binders(a: Alias_decl) -> Binders {
   match(Alias_decl.get(a)) {
-    .(
-    , _n: String
-    , b: Binders
-    , _t: Toks
-    , _v: Visibility
-    , _p: I32
-    , _scope: . | Recursive_type_scope
-    , _selected: Bool
-    ) { b }
+    .(_n: String, b: Binders, _t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
+      b
+    }
   }
 }
 
@@ -986,15 +924,9 @@ fn tyalias_binder_names(a: Alias_decl) -> Pnames {
 /// The alias's body token-run.
 pub fn tyalias_body(a: Alias_decl) -> Toks {
   match(Alias_decl.get(a)) {
-    .(
-    , _n: String
-    , _b: Binders
-    , t: Toks
-    , _v: Visibility
-    , _p: I32
-    , _scope: . | Recursive_type_scope
-    , _selected: Bool
-    ) { t }
+    .(_n: String, _b: Binders, t: Toks, _v: Visibility, _p: I32, _scope: . | Recursive_type_scope) {
+      t
+    }
   }
 }
 
@@ -1008,7 +940,6 @@ pub fn tyalias_visibility(a: Alias_decl) -> Visibility {
     , visibility: Visibility
     , _p: I32
     , _scope: . | Recursive_type_scope
-    , _selected: Bool
     ) { visibility }
   }
 }
@@ -1016,30 +947,18 @@ pub fn tyalias_visibility(a: Alias_decl) -> Visibility {
 /// The declaration-name byte offset within the source image.
 pub fn tyalias_decl_pos(a: Alias_decl) -> I32 {
   match(Alias_decl.get(a)) {
-    .(
-    , _n: String
-    , _b: Binders
-    , _t: Toks
-    , _v: Visibility
-    , p: I32
-    , _scope: . | Recursive_type_scope
-    , _selected: Bool
-    ) { p }
+    .(_n: String, _b: Binders, _t: Toks, _v: Visibility, p: I32, _scope: . | Recursive_type_scope) {
+      p
+    }
   }
 }
 
 /// The alias's exact recursive group, when present.
 pub fn tyalias_recursive_scope(a: Alias_decl) -> . | Recursive_type_scope {
   match(Alias_decl.get(a)) {
-    .(
-    , _n: String
-    , _b: Binders
-    , _t: Toks
-    , _v: Visibility
-    , _p: I32
-    , scope: . | Recursive_type_scope
-    , _selected: Bool
-    ) { scope }
+    .(_n: String, _b: Binders, _t: Toks, _v: Visibility, _p: I32, scope: . | Recursive_type_scope) {
+      scope
+    }
   }
 }
 
@@ -1110,56 +1029,39 @@ fn tyaliases_find(aliases: Tyaliases, name: String) -> . | Alias_decl {
 
 /// One retained host declaration header: whether it is a function, its
 /// declaration-local name, the tokens after that name through the terminating
-/// semicolon (with the semicolon excluded), declaration byte offset, and explicit
-/// module-local default selection.
-pub labels { host_header: Bool & String & Toks & I32 & Bool };
-
-/// Builds a retained host declaration with its local default selection.
-pub fn mk_host_header_selected(
-, is_fn: Bool
-, name: String
-, header: Toks
-, decl_pos: I32
-, selected: Bool
-) -> Host_header { {host_header = (is_fn, name, header, decl_pos, selected)} }
+/// semicolon (with the semicolon excluded), and declaration byte offset.
+pub labels { host_header: Bool & String & Toks & I32 };
 
 /// Builds one retained host declaration header.
 pub fn mk_host_header(is_fn: Bool, name: String, header: Toks, decl_pos: I32) -> Host_header {
-  mk_host_header_selected(is_fn, name, header, decl_pos, .f(Bool))
-}
-
-/// Whether this host type explicitly selects itself as a local default.
-pub fn host_header_is_default(header: Host_header) -> Bool {
-  match(Host_header.get(header)) {
-    .(_is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32, selected: Bool) { selected }
-  }
+  {host_header = (is_fn, name, header, decl_pos)}
 }
 
 /// Whether the retained declaration is a host function rather than a host type.
 pub fn host_header_is_fn(header: Host_header) -> Bool {
   match(Host_header.get(header)) {
-    .(is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32, _selected: Bool) { is_fn }
+    .(is_fn: Bool, _name: String, _tokens: Toks, _decl_pos: I32) { is_fn }
   }
 }
 
 /// The declaration-local name of a retained host declaration.
 pub fn host_header_name(header: Host_header) -> String {
   match(Host_header.get(header)) {
-    .(_is_fn: Bool, name: String, _tokens: Toks, _decl_pos: I32, _selected: Bool) { name }
+    .(_is_fn: Bool, name: String, _tokens: Toks, _decl_pos: I32) { name }
   }
 }
 
 /// The retained tokens following a host declaration's local name.
 pub fn host_header_tokens(header: Host_header) -> Toks {
   match(Host_header.get(header)) {
-    .(_is_fn: Bool, _name: String, tokens: Toks, _decl_pos: I32, _selected: Bool) { tokens }
+    .(_is_fn: Bool, _name: String, tokens: Toks, _decl_pos: I32) { tokens }
   }
 }
 
 /// The declaration-name byte offset within the source image.
 pub fn host_header_decl_pos(header: Host_header) -> I32 {
   match(Host_header.get(header)) {
-    .(_is_fn: Bool, _name: String, _tokens: Toks, decl_pos: I32, _selected: Bool) { decl_pos }
+    .(_is_fn: Bool, _name: String, _tokens: Toks, decl_pos: I32) { decl_pos }
   }
 }
 
@@ -2533,14 +2435,20 @@ fn resolve_decl(
 , d: Decl
 , fn_scope: Scope
 , nt: Ntab
-, resolve_host_type: String -> (Host_type | String)
-, bool_type: Host_type | String
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
 ) -> Decl_result {
-  let scope = body_scope(decl_params(d), fn_scope);
-  match(un_pres(parse_toks_scope_ntab(decl_body(d), scope, nt, resolve_host_type, bool_type))) {
+  match(scope_with_signature_types(decl_header(d), fn_scope)) {
     (
-    , .(t: P_ok) { dr_ok(wrap_fn(decl_params(d), P_ok.get(t))) }
-    , .(e: P_err) { dr_err(P_err.get(e)) }
+    , .(lexical: Scope) {
+        let scope = body_scope(decl_params(d), lexical);
+        match(un_pres(parse_toks_scope_ntab(decl_body(d), scope, nt, resolve_host_type))) {
+          (
+          , .(t: P_ok) { dr_ok(wrap_fn(decl_params(d), P_ok.get(t))) }
+          , .(e: P_err) { dr_err(P_err.get(e)) }
+          )
+        }
+      }
+    , .(error: Perr) { dr_err(error) }
     )
   }
 }
@@ -3514,8 +3422,7 @@ labels { resolve_walk: Gdecls & Gdecls & Terms_acc & Maybe_fn_scope_cache };
 fn resolve_gdecls_step(
 , hostfns: Hostfns
 , ms: Modules
-, resolve_host_type: (String & I32 & String) -> (Host_type | String)
-, resolve_bool_type: (String & I32) -> (Host_type | String)
+, resolve_host_type: (String & I32 & Toks & Type_scope) -> (Host_type | String)
 , st: Resolve_walk
 ) -> Resolve_walk | Resolve_result {
   match(Resolve_walk.get(st)) {
@@ -3528,10 +3435,9 @@ fn resolve_gdecls_step(
             , gdecl_decl(g)
             , scope
             , gdecl_ntab(g)
-            , .(spelling: String) {
-                resolve_host_type(gdecl_owner(g), decl_pos(gdecl_decl(g)), spelling)
+            , .(spelling: Toks, scope_types: Type_scope) {
+                resolve_host_type(gdecl_owner(g), decl_pos(gdecl_decl(g)), spelling, scope_types)
               }
-            , resolve_bool_type(gdecl_owner(g), decl_pos(gdecl_decl(g)))
             ))) {
               (
               , .(t: Dr_ok) {
@@ -4386,8 +4292,7 @@ fn load_package_terms(
 , requirements: Host_contract
 , visible_newtypes: Modules -> Module -> (Ntab | Diag)
 , derive_exports: (Gdecls & Omembers) -> (Export_infos | Diag)
-, resolve_host_type: (String & I32 & String) -> (Host_type | String)
-, resolve_bool_type: (String & I32) -> (Host_type | String)
+, resolve_host_type: (String & I32 & Toks & Type_scope) -> (Host_type | String)
 ) -> Load_outcome {
   match(un_topo(topo_sort(ms))) {
     (
@@ -4397,9 +4302,7 @@ fn load_package_terms(
           (
           , .(gs: Gdecls) {
               match(un_resolve_result(loop(
-              , .(st: Resolve_walk) {
-                  resolve_gdecls_step(hostfns, ms, resolve_host_type, resolve_bool_type, st)
-                }
+              , .(st: Resolve_walk) { resolve_gdecls_step(hostfns, ms, resolve_host_type, st) }
               , {resolve_walk = (
                 , gs
                 , (gdecls_nil(), (terms_acc_nil(), widen_sum((), Maybe_fn_scope_cache)))
@@ -11760,17 +11663,9 @@ fn derive_named_source_hostfn(modules: Modules, types: Host_types, module: Modul
   )
 }
 
-fn exact_alias_host_type_for_literal(spelling: String, env: Type_env) -> Host_type | String {
-  let subject =
-    string_concat(
-    , "dyn_load_prime: literal annotation `"(String)
-    , string_concat(spelling, "`"(String))
-    );
-  match(parse_result_contract_payload(
-  , subject
-  , toks_cons(tk_word(spelling), 0(I32), toks_nil())
-  , env
-  )) {
+fn normalized_host_type_for_tokens(env: Type_env, tokens: Toks) -> Host_type | String {
+  let subject = "dyn_load_prime: host type argument"(String);
+  match(parse_result_contract_payload(subject, tokens, env)) {
     (
     , .(canonical: Canonical_type) {
         match(Terminal_host_type.get(canonical_type_terminal(canonical))) {
@@ -11778,7 +11673,7 @@ fn exact_alias_host_type_for_literal(spelling: String, env: Type_env) -> Host_ty
           , .(descriptor: Host_type) { widen_sum(descriptor, Host_type | String) }
           , .(_not_host: .) {
               widen_sum(
-              , string_concat(subject, " does not resolve to one exact host type"(String))
+              , "dyn_load_prime: type argument does not resolve to one exact host type"(String)
               , Host_type | String
               )
             }
@@ -11790,30 +11685,54 @@ fn exact_alias_host_type_for_literal(spelling: String, env: Type_env) -> Host_ty
   }
 }
 
-fn exact_host_type_for_spelling(context: Type_context, spelling: String) -> Host_type | String {
-  let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
-  match(resolve_exact_type_head(spelling, env)) {
+fn exact_host_type_for_tokens(env: Type_env, tokens: Toks) -> Host_type | String {
+  match(read_type_path(tokens)) {
     (
-    , .(ok: Exact_type_head_ok) {
-        match(exact_type_head_ok_head(ok)) {
+    , .(path: Type_path_read) {
+        let .(spelling, remaining) = Type_path_read.get(path);
+        match(un_toks(remaining)) {
           (
-          , .(host: Exact_head_host) { widen_sum(Exact_head_host.get(host), Host_type | String) }
-          , .(_nominal: Exact_head_nominal) {
-              widen_sum(
-              , string_concat(
-                , "dyn_load_prime: literal annotation `"(String)
-                , string_concat(spelling, "` does not name a host type"(String))
-                )
-              , Host_type | String
-              )
+          , .(_token: Token, _position: I32, _tail: Toks) {
+              normalized_host_type_for_tokens(env, tokens)
             }
-          , .(_alias: Exact_head_alias) { exact_alias_host_type_for_literal(spelling, env) }
+          , .(_end: .) {
+              match(type_bound_index(type_env_bounds(env), spelling)) {
+                (
+                , .(_bound: I32) { normalized_host_type_for_tokens(env, tokens) }
+                , .(_unbound: .) {
+                    match(resolve_exact_type_head(spelling, env)) {
+                      (
+                      , .(ok: Exact_type_head_ok) {
+                          match(exact_type_head_ok_head(ok)) {
+                            (
+                            , .(host: Exact_head_host) {
+                                widen_sum(Exact_head_host.get(host), Host_type | String)
+                              }
+                            , .(_nominal: Exact_head_nominal) {
+                                widen_sum(
+                                , "dyn_load_prime: type argument does not name a host type"(String)
+                                , Host_type | String
+                                )
+                              }
+                            , .(_alias: Exact_head_alias) {
+                                normalized_host_type_for_tokens(env, tokens)
+                              }
+                            )
+                          }
+                        }
+                      , .(bad: Exact_type_head_bad) {
+                          widen_sum(diag_message(Exact_type_head_bad.get(bad)), Host_type | String)
+                        }
+                      )
+                    }
+                  }
+                )
+              }
+            }
           )
         }
       }
-    , .(bad: Exact_type_head_bad) {
-        widen_sum(diag_message(Exact_type_head_bad.get(bad)), Host_type | String)
-      }
+    , .(_not_path: .) { normalized_host_type_for_tokens(env, tokens) }
     )
   }
 }
@@ -11828,255 +11747,6 @@ fn direct_host_type_at(context: Type_context, owner: String, name: String) -> Di
     , .(_conflict: Conflicting_host_type) {
         widen_sum(conflicting_image_host_type(mk_host_id(owner, name)), Direct_host_type_lookup)
       }
-    )
-  }
-}
-
-fn default_category(descriptor: Host_type) -> String {
-  match(host_type_shape(descriptor)) {
-    (
-    , .(_roleless: Roleless_host_type) { ""(String) }
-    , .(role: Role_host_type) {
-        let name = role_name(Role_host_type.get(role));
-        if(string_eq(name, "bool"(String))) {
-          "Boolean"(String)
-        } else if(string_eq(name, "str"(String))) {
-          "string"(String)
-        } else match(string_code_at(name, 0(I32))) {
-          (
-          , .(first: I32) {
-              if(eq_i32(first, 102(I32))) {
-                "float"(String)
-              } else if(eq_i32(first, 105(I32))) {
-                "integer"(String)
-              } else if(eq_i32(first, 117(I32))) {
-                "integer"(String)
-              } else {
-                ""(String)
-              }
-            }
-          , .(_empty: .) { ""(String) }
-          )
-        }
-      }
-    )
-  }
-}
-
-fn default_decl_visible(context: Type_context, position: I32, whole_module: Bool) -> Bool {
-  if(whole_module) { .t(Bool) } else { lt_i32(position, type_context_alias_cutoff(context)) }
-}
-
-fn selected_import_names(imports: Imports, initial: Pnames) -> Pnames {
-  loop(
-  , .(state: Imports & Pnames) {
-      let .(remaining, names) = state;
-      match(un_imports(remaining)) {
-        (
-        , .(entry: Import, tail: Imports) {
-            let .(name, _provider) = un_import(entry);
-            widen_sum(
-            , (tail, if(import_is_default(entry)) { pnames_cons(name, names) } else { names })
-            , (Imports & Pnames) | Pnames
-            )
-          }
-        , .(_end: .) { widen_sum(names, (Imports & Pnames) | Pnames) }
-        )
-      }
-    }
-  , (imports, initial)
-  )
-}
-
-fn selected_alias_names(context: Type_context, whole_module: Bool, initial: Pnames) -> Pnames {
-  loop(
-  , .(state: Tyaliases & Pnames) {
-      let .(remaining, names) = state;
-      match(un_tyaliases(remaining)) {
-        (
-        , .(entry: Alias_decl, tail: Tyaliases) {
-            let selected =
-              if(tyalias_is_default(entry)) {
-                default_decl_visible(context, tyalias_decl_pos(entry), whole_module)
-              } else {
-                .f(Bool)
-              };
-            widen_sum(
-            , (tail, if(selected) { pnames_cons(tyalias_name(entry), names) } else { names })
-            , (Tyaliases & Pnames) | Pnames
-            )
-          }
-        , .(_end: .) { widen_sum(names, (Tyaliases & Pnames) | Pnames) }
-        )
-      }
-    }
-  , (module_tyaliases(type_context_module(context)), initial)
-  )
-}
-
-fn selected_host_names(context: Type_context, whole_module: Bool, initial: Pnames) -> Pnames {
-  loop(
-  , .(state: Host_headers & Pnames) {
-      let .(remaining, names) = state;
-      match(un_host_headers(remaining)) {
-        (
-        , .(entry: Host_header, tail: Host_headers) {
-            let selected =
-              if(host_header_is_default(entry)) {
-                default_decl_visible(context, host_header_decl_pos(entry), whole_module)
-              } else {
-                .f(Bool)
-              };
-            widen_sum(
-            , (tail, if(selected) { pnames_cons(host_header_name(entry), names) } else { names })
-            , (Host_headers & Pnames) | Pnames
-            )
-          }
-        , .(_end: .) { widen_sum(names, (Host_headers & Pnames) | Pnames) }
-        )
-      }
-    }
-  , (module_host_headers(type_context_module(context)), initial)
-  )
-}
-
-fn selected_default_descriptor(context: Type_context, name: String) -> Host_type | Diag {
-  let subject =
-    string_concat("dyn_load_prime: default type `"(String), string_concat(name, "`"(String)));
-  let env = mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32));
-  match(parse_result_contract_payload(subject, toks_cons(tk_word(name), 0(I32), toks_nil()), env)) {
-    (
-    , .(canonical: Canonical_type) {
-        match(Terminal_host_type.get(canonical_type_terminal(canonical))) {
-          (
-          , .(descriptor: Host_type) {
-              if(string_eq(default_category(descriptor), ""(String))) {
-                widen_sum(
-                , signature_diag(subject, "requires a literal role"(String))
-                , Host_type | Diag
-                )
-              } else {
-                widen_sum(descriptor, Host_type | Diag)
-              }
-            }
-          , .(_not_host: .) {
-              widen_sum(
-              , signature_diag(subject, "must resolve to one role-bearing host type"(String))
-              , Host_type | Diag
-              )
-            }
-          )
-        }
-      }
-    , .(diag: Diag) { widen_sum(diag, Host_type | Diag) }
-    )
-  }
-}
-
-labels { default_search: Host_types };
-
-fn insert_default_descriptor(found: Host_types, descriptor: Host_type) -> Host_types | Diag {
-  let category = default_category(descriptor);
-  loop(
-  , .(state: Default_search) {
-      match(un_host_types(Default_search.get(state))) {
-        (
-        , .(prior: Host_type, tail: Host_types) {
-            if(string_eq(default_category(prior), category)) {
-              if(host_type_eq(prior, descriptor)) {
-                widen_sum(found, Default_search | Host_types | Diag)
-              } else {
-                widen_sum(
-                , mk_diag(string_concat(
-                  , "dyn_load_prime: conflicting default "(String)
-                  , string_concat(category, " types"(String))
-                  ))
-                , Default_search | Host_types | Diag
-                )
-              }
-            } else {
-              widen_sum({default_search = tail}, Default_search | Host_types | Diag)
-            }
-          }
-        , .(_end: .) {
-            widen_sum(host_types_cons(descriptor, found), Default_search | Host_types | Diag)
-          }
-        )
-      }
-    }
-  , {default_search = found}
-  )
-}
-
-fn selected_default_types(context: Type_context, whole_module: Bool) -> Host_types | Diag {
-  let names =
-    selected_host_names(
-    , context
-    , whole_module
-    , selected_alias_names(
-      , context
-      , whole_module
-      , selected_import_names(module_imports(type_context_module(context)), pnames_nil())
-      )
-    );
-  loop(
-  , .(state: Pnames & Host_types) {
-      let .(remaining, found) = state;
-      match(un_pnames(remaining)) {
-        (
-        , .(name: String, tail: Pnames) {
-            match(selected_default_descriptor(context, name)) {
-              (
-              , .(descriptor: Host_type) {
-                  match(insert_default_descriptor(found, descriptor)) {
-                    (
-                    , .(updated: Host_types) {
-                        widen_sum((tail, updated), (Pnames & Host_types) | Host_types | Diag)
-                      }
-                    , .(diag: Diag) { widen_sum(diag, (Pnames & Host_types) | Host_types | Diag) }
-                    )
-                  }
-                }
-              , .(diag: Diag) { widen_sum(diag, (Pnames & Host_types) | Host_types | Diag) }
-              )
-            }
-          }
-        , .(_end: .) { widen_sum(found, (Pnames & Host_types) | Host_types | Diag) }
-        )
-      }
-    }
-  , (names, host_types_nil())
-  )
-}
-
-fn exact_bool_type_for_context(context: Type_context) -> Host_type | String {
-  match(selected_default_types(context, .f(Bool))) {
-    (
-    , .(selected: Host_types) {
-        loop(
-        , .(remaining: Host_types) {
-            match(un_host_types(remaining)) {
-              (
-              , .(descriptor: Host_type, tail: Host_types) {
-                  if(string_eq(default_category(descriptor), "Boolean"(String))) {
-                    widen_sum(descriptor, Host_types | Host_type | String)
-                  } else {
-                    widen_sum(tail, Host_types | Host_type | String)
-                  }
-                }
-              , .(_end: .) {
-                  widen_sum(
-                  , "dyn_load_prime: no type is selected as the default Boolean type"(String)
-                  , Host_types | Host_type | String
-                  )
-                }
-              )
-            }
-          }
-        , selected
-        )
-      }
-    , .(diag: Diag) { widen_sum(diag_message(diag), Host_type | String) }
     )
   }
 }
@@ -13301,47 +12971,58 @@ fn derive_bridge_contract(modules: Modules, bridge: Bridge, all_types: Host_type
   )
 }
 
+fn lexical_type_env(context: Type_context, groups: Type_scope) -> Type_env | String {
+  loop(
+  , .(state: Type_scope & Type_env) {
+      let .(remaining, env) = state;
+      match(uncons(Toks, remaining)) {
+        (
+        , .(tokens: Toks, tail: Type_scope) {
+            match(parse_host_binders(tokens)) {
+              (
+              , .(done: Host_binders_done) {
+                  let .(binders, _after) = Host_binders_done.get(done);
+                  let .(_canonical, extended) =
+                    Canonical_binders_result.get(canonicalize_binders(binders, env));
+                  widen_sum((tail, extended), (Type_scope & Type_env) | Type_env | String)
+                }
+              , .(bad: Host_binders_bad) {
+                  widen_sum(Host_binders_bad.get(bad), (Type_scope & Type_env) | Type_env | String)
+                }
+              )
+            }
+          }
+        , .(_end: .) { widen_sum(env, (Type_scope & Type_env) | Type_env | String) }
+        )
+      }
+    }
+  , (
+    , reverse(Toks, groups)
+    , mk_type_env(context, type_bounds_nil(), type_substs_nil(), alias_refs_nil(), 0(I32))
+    )
+  )
+}
+
 fn exact_host_type_for_decl(
 , modules: Modules
 , types: Host_types
 , owner: String
 , decl_position: I32
-, spelling: String
+, spelling: Toks
+, scope_types: Type_scope
 ) -> Host_type | String {
   match(find_module(modules, owner)) {
     (
     , .(module: Module) {
-        exact_host_type_for_spelling(
+        match(lexical_type_env(
         , mk_type_context(modules, types, module, decl_position, no_recursive_type_scope())
-        , spelling
-        )
-      }
-    , .(_missing: .) {
-        widen_sum(
-        , string_concat(
-          , "dyn_load_prime: declaration owner module is absent: `"(String)
-          , string_concat(owner, "`"(String))
+        , scope_types
+        )) {
+          (
+          , .(env: Type_env) { exact_host_type_for_tokens(env, spelling) }
+          , .(message: String) { widen_sum(message, Host_type | String) }
           )
-        , Host_type | String
-        )
-      }
-    )
-  }
-}
-
-fn exact_bool_type_for_decl(modules: Modules, types: Host_types, owner: String, decl_position: I32) ->
-  Host_type | String
-   {
-  match(find_module(modules, owner)) {
-    (
-    , .(module: Module) {
-        exact_bool_type_for_context(mk_type_context(
-        , modules
-        , types
-        , module
-        , decl_position
-        , no_recursive_type_scope()
-        ))
+        }
       }
     , .(_missing: .) {
         widen_sum(
@@ -15554,38 +15235,6 @@ fn ntab_for_module_with_exact_type_origins(
   }
 }
 
-fn validate_package_default_types(modules: Modules, types: Host_types) -> Imports_validation {
-  loop(
-  , .(remaining: Modules) {
-      match(un_modules(remaining)) {
-        (
-        , .(module: Module, tail: Modules) {
-            let context =
-              mk_type_context(modules, types, module, 2147483647(I32), no_recursive_type_scope());
-            match(selected_default_types(context, .t(Bool))) {
-              (
-              , .(_selected: Host_types) { widen_sum(tail, Modules | Imports_validation) }
-              , .(diag: Diag) { widen_sum(diag, Modules | Imports_validation) }
-              )
-            }
-          }
-        , .(_end: .) { widen_sum({imports_valid=}, Modules | Imports_validation) }
-        )
-      }
-    }
-  , modules
-  )
-}
-
-fn validate_package_declarations(modules: Modules, types: Host_types) -> Imports_validation {
-  match(validate_package_binding_origins(modules)) {
-    (
-    , .(_valid: Imports_valid) { validate_package_default_types(modules, types) }
-    , .(diag: Diag) { widen_sum(diag, Imports_validation) }
-    )
-  }
-}
-
 /// Resolves a whole package (topo-sorted, per-module-scoped, host fns
 /// derived from the modules' declarations) to a resolved image, or a
 /// diagnostic naming malformed host declarations, imports, cycles, or
@@ -15594,7 +15243,7 @@ pub(loader) fn resolve_package(ms: Modules, bridge: Bridge) -> Load_outcome {
   match(collect_host_types(ms)) {
     (
     , .(types: Host_types) {
-        match(validate_package_declarations(ms, types)) {
+        match(validate_package_binding_origins(ms)) {
           (
           , .(_imports_valid: Imports_valid) {
               match(validate_package_bridge(ms, bridge)) {
@@ -15650,17 +15299,20 @@ pub(loader) fn resolve_package(ms: Modules, bridge: Bridge) -> Load_outcome {
                                           }
                                         }
                                       }
-                                    , .(owner: String, position: I32, spelling: String) {
+                                    , .(
+                                      , owner: String
+                                      , position: I32
+                                      , spelling: Toks
+                                      , scope_types: Type_scope
+                                      ) {
                                         exact_host_type_for_decl(
                                         , ms
                                         , types
                                         , owner
                                         , position
                                         , spelling
+                                        , scope_types
                                         )
-                                      }
-                                    , .(owner: String, position: I32) {
-                                        exact_bool_type_for_decl(ms, types, owner, position)
                                       }
                                     )
                                   }

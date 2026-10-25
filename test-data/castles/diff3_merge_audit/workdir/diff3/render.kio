@@ -13,7 +13,7 @@ import diff3/prim as prim;
 import diff3/scan as scan;
 import macros/control(macro if);
 import macros/match(macro match);
-import testapi(I32, String, default Bool);
+import testapi(Bool, I32, String);
 import testapi/arith(add_i32, mul_i32);
 import testapi/fmt(int_to_string);
 import testapi/io(print);

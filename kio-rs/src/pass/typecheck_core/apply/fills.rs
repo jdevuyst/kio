@@ -251,9 +251,10 @@ impl<'m> MarkedProjection<'m> {
     pub(super) fn advance_declared_headers(
         &mut self,
         span: crate::span::Span,
+        mode: super::frontier::FrontierMode,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<Option<ProjectedHeaderRequest>, crate::error::Error> {
+    ) -> Result<ProjectedHeaderAdvance, crate::error::Error> {
         if self.header_cursor.phase == ProjectedHeaderPhase::Prepare
             && self.header_cursor.source == 0
         {
@@ -283,13 +284,13 @@ impl<'m> MarkedProjection<'m> {
                         ProjectedHeaderPhase::CloseProducerlessPairs
                     }
                     ProjectedHeaderPhase::CloseProducerlessPairs => ProjectedHeaderPhase::Complete,
-                    ProjectedHeaderPhase::Complete => return Ok(None),
+                    ProjectedHeaderPhase::Complete => return Ok(ProjectedHeaderAdvance::Complete),
                 };
                 continue;
             }
 
             if phase == ProjectedHeaderPhase::Complete {
-                return Ok(None);
+                return Ok(ProjectedHeaderAdvance::Complete);
             }
             let source = self
                 .sources
@@ -300,11 +301,11 @@ impl<'m> MarkedProjection<'m> {
                     .state
                     .as_ref()
                     .expect("a linked source lost its staged state");
-                if !has_unselected_projected_lambda(state) {
+                if !has_pending_projected_header(state) {
                     self.header_cursor.source += 1;
                     continue;
                 }
-                refresh_linked_lambda_context(state, frontier, tcx)?;
+                refresh_linked_source_context(state, frontier, tcx)?;
             }
             if phase == ProjectedHeaderPhase::CloseProducerlessPairs
                 && !matches!(source.state, Some(StagedOperand::Pair(_)))
@@ -342,9 +343,11 @@ impl<'m> MarkedProjection<'m> {
                     phase,
                     source_index,
                 ));
-                return Ok(Some(request));
+                return Ok(ProjectedHeaderAdvance::AtAncestor(request));
             }
-            self.resume_declared_header(request, span, frontier, tcx)?;
+            if !self.resume_declared_header(request, span, mode, frontier, tcx)? {
+                return Ok(ProjectedHeaderAdvance::Pending);
+            }
         }
     }
 
@@ -352,9 +355,10 @@ impl<'m> MarkedProjection<'m> {
         &mut self,
         request: ProjectedHeaderRequest,
         span: crate::span::Span,
+        mode: super::frontier::FrontierMode,
         frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<(), crate::error::Error> {
+    ) -> Result<bool, crate::error::Error> {
         let phase = self.header_cursor.phase;
         let source_index = self.header_cursor.source;
         assert_eq!(
@@ -430,7 +434,11 @@ impl<'m> MarkedProjection<'m> {
                     .state
                     .take()
                     .expect("a linked source lost its staged state");
-                retained.state = Some(select_linked_lambda_headers(state, frontier, tcx)?);
+                let (state, ready) = select_linked_source_headers(state, mode, frontier, tcx)?;
+                retained.state = Some(state);
+                if !ready {
+                    return Ok(false);
+                }
             }
             ProjectedHeaderPhase::CloseProducerlessPairs => {
                 let Some(StagedOperand::Pair(pair)) = retained.state.as_mut() else {
@@ -472,7 +480,7 @@ impl<'m> MarkedProjection<'m> {
         #[cfg(test)]
         record_projected_header_work(ProjectedHeaderWorkEvent::Work(phase, source_index));
         self.header_cursor.source += 1;
-        Ok(())
+        Ok(true)
     }
 
     #[allow(clippy::unused_enumerate_index)] // indices pin exact link/seal order in cfg(test) causals
@@ -1949,8 +1957,14 @@ fn install_staged_expected<'m>(
                     continuation.cursor.source.span(),
                     tcx,
                 )?;
+            } else {
+                continuation.cursor.expected = Some(retained());
+                if !continuation.is_completion_wait() {
+                    continuation.next_mode = super::frontier::FrontierMode::ExpectedOnly;
+                    #[cfg(test)]
+                    super::record_context_wake();
+                }
             }
-            continuation.cursor.expected = Some(retained());
             Ok(())
         }
         StagedOperand::Completed { .. } | StagedOperand::OpenCompleted { .. } => {
@@ -3153,23 +3167,10 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                 false_body,
             } => {
                 let (condition, condition_closed) = self.close(condition)?;
-                #[cfg(feature = "lsp")]
-                let mut selected_role = None;
-                let bool_type = {
-                    let ty = crate::pass::typecheck_full::bool_role_type(
-                        span,
-                        self.tcx,
-                        #[cfg(feature = "lsp")]
-                        |binding| selected_role = Some(binding.to_owned()),
-                    )?;
-                    let (store, owner, _delta, _publication) = self.frontier.parts_mut();
-                    store.scoped_type(owner, ty, span)?
-                };
-                let bool_type = self.close_type(bool_type)?;
-                self.relation(
-                    &condition_closed,
-                    &bool_type,
-                    "__intrinsic_if_then_else__ condition did not have the unique bool-role type",
+                super::super::synth::check_boolean_specialization(
+                    condition_closed.ty(),
+                    span,
+                    self.tcx,
                 )?;
                 let true_body = self.close_expected(
                     true_body,
@@ -3181,13 +3182,6 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     &closed,
                     "__intrinsic_if_then_else__ branch had the wrong result type",
                 )?;
-                #[cfg(feature = "lsp")]
-                if let Some(binding) = selected_role {
-                    self.frontier
-                        .parts_mut()
-                        .3
-                        .record_selected_role(span, binding);
-                }
                 crate::normalization::ProjectedTermConstruction::IfThenElse {
                     condition,
                     true_body,
@@ -3647,13 +3641,29 @@ pub(super) enum MarkedCallPhase<'m> {
 }
 
 impl<'m> MarkedCallState<'m> {
-    pub(super) fn awaits_expected(&self) -> bool {
+    pub(super) fn project_call(&self) -> Option<&super::OrdinaryCallContinuation<'m>> {
         match &self.phase {
-            MarkedCallPhase::Project { call, .. } => matches!(
-                call,
-                super::OrdinaryCallContinuation::AwaitingExpected(_)
-                    | super::OrdinaryCallContinuation::AwaitingReturnedForall { .. }
-            ),
+            MarkedCallPhase::Project { call, .. } => Some(call),
+            _ => None,
+        }
+    }
+
+    pub(super) fn project_call_mut(&mut self) -> Option<&mut super::OrdinaryCallContinuation<'m>> {
+        match &mut self.phase {
+            MarkedCallPhase::Project { call, .. } => Some(call),
+            _ => None,
+        }
+    }
+
+    pub(super) fn awaits_context(&self, result_context: bool) -> bool {
+        match &self.phase {
+            MarkedCallPhase::Project { call, .. } => {
+                matches!(
+                    call,
+                    super::OrdinaryCallContinuation::AwaitingExpected(_)
+                        | super::OrdinaryCallContinuation::AwaitingReturnedForall { .. }
+                ) || result_context && call.result_context_available()
+            }
             MarkedCallPhase::Completed {
                 expected_application,
                 ..
@@ -3669,13 +3679,17 @@ impl<'m> MarkedCallState<'m> {
         }
     }
 
-    pub(super) fn supply_expected(&mut self) {
+    pub(super) fn supply_context(&mut self, expected: super::OwnerBoundType, result_context: bool) {
         assert!(
-            self.awaits_expected(),
+            self.awaits_context(result_context),
             "a marked call accepted a second expectation"
         );
         match &mut self.phase {
-            MarkedCallPhase::Project { .. } => {}
+            MarkedCallPhase::Project { call, .. } => {
+                if result_context && call.result_context_available() {
+                    call.install_result_context(expected);
+                }
+            }
             MarkedCallPhase::Completed {
                 expected_application,
                 ..
@@ -3908,6 +3922,12 @@ impl Default for ProjectedHeaderCursor {
             source: 0,
         }
     }
+}
+
+pub(super) enum ProjectedHeaderAdvance {
+    Complete,
+    Pending,
+    AtAncestor(ProjectedHeaderRequest),
 }
 
 pub(super) struct ProjectedHeaderRequest {
@@ -4954,109 +4974,6 @@ fn certified_fresh_field_source(
         }
 }
 
-fn projected_scalar_result_goals_are_contributed(
-    ty: &crate::ast::Type<crate::ast::Lowered>,
-    contributed: &std::collections::HashSet<crate::ast::TypeGoalRef>,
-) -> bool {
-    match ty {
-        crate::ast::Type::Goal { goal, args, .. } => args.is_empty() && contributed.contains(goal),
-        crate::ast::Type::Infer { .. } => false,
-        crate::ast::Type::Unit { .. } | crate::ast::Type::Bottom { .. } => true,
-        crate::ast::Type::Function { param, ret, .. } => {
-            projected_scalar_result_goals_are_contributed(param, contributed)
-                && projected_scalar_result_goals_are_contributed(ret, contributed)
-        }
-        crate::ast::Type::Product { left, right, .. }
-        | crate::ast::Type::Sum { left, right, .. } => {
-            projected_scalar_result_goals_are_contributed(left, contributed)
-                && projected_scalar_result_goals_are_contributed(right, contributed)
-        }
-        crate::ast::Type::Path { args, .. } => args
-            .iter()
-            .all(|arg| projected_scalar_result_goals_are_contributed(arg, contributed)),
-        crate::ast::Type::Forall { body, .. } => {
-            projected_scalar_result_goals_are_contributed(body, contributed)
-        }
-        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
-    }
-}
-
-fn certified_scalar_literal_call_at_lexical_fallback<'m>(
-    child: &mut super::OrdinaryChildContinuation<'m>,
-    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
-    tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
-) -> Result<bool, crate::error::Error> {
-    if child.next_mode != super::frontier::FrontierMode::LexicalFallback {
-        return Ok(false);
-    }
-    let super::OrdinaryChildContinuation {
-        child: premise,
-        cursor,
-        ..
-    } = child;
-    let super::PlannedOrdinaryValue::Call(call) = &cursor.planned else {
-        return Ok(false);
-    };
-    let advancing = match call {
-        super::OrdinaryCallContinuation::Advancing(advancing) => advancing.as_ref(),
-        super::OrdinaryCallContinuation::AdvancingLayer(layer) if layer.remaining.is_empty() => {
-            layer.advancing.as_ref()
-        }
-        _ => return Ok(false),
-    };
-    if advancing.pending.is_empty() {
-        return Ok(false);
-    }
-    let result = advancing.result.clone();
-    let mut child_frontier = frontier.ordinary_child_frontier(premise);
-    let (store, owner, delta, _publication) = child_frontier.parts_mut();
-    assert_eq!(
-        advancing.destination, owner,
-        "a retained scalar call must advance in its exact child owner"
-    );
-    let ambient_binders = tcx.in_scope_type_param_binders();
-    let aliases = tcx.binder_alias_ctx(&ambient_binders);
-    let mut contributed = std::collections::HashSet::with_capacity(advancing.pending.len());
-    for pending in &advancing.pending {
-        if !matches!(&pending.role, super::PendingOrdinaryChildRole::Value)
-            || pending.child.next_mode != super::frontier::FrontierMode::LexicalFallback
-            || super::super::literal_check_parts(pending.child.cursor.source).is_none()
-        {
-            return Ok(false);
-        }
-        let span = pending.child.cursor.source.span();
-        let Some(expected) = pending.child.cursor.expected.clone() else {
-            return Ok(false);
-        };
-        let expected = expected.into_scoped(owner, store, span)?;
-        let expected = store.zonk_for_progress(delta, expected, tcx)?;
-        let (expected, _) = crate::pass::typecheck_core::aliases::canonicalize_deep_for_comparison(
-            expected.ty().as_type(),
-            &aliases,
-            expected.ty().identity_is_canonical(),
-        );
-        match expected {
-            crate::ast::Type::Goal { goal, args, .. } if args.is_empty() => {
-                contributed.insert(goal);
-            }
-            expected
-                if !crate::pass::typecheck_core::type_contains_goal(&expected)
-                    && !crate::pass::typecheck_core::type_contains_infer(&expected) => {}
-            _ => return Ok(false),
-        }
-    }
-    let result = store.zonk_for_progress(delta, result, tcx)?;
-    let (result, _) = crate::pass::typecheck_core::aliases::canonicalize_deep_for_comparison(
-        result.ty().as_type(),
-        &aliases,
-        result.ty().identity_is_canonical(),
-    );
-    Ok(projected_scalar_result_goals_are_contributed(
-        &result,
-        &contributed,
-    ))
-}
-
 fn stage_projected_source_operand<'m>(
     continuation: super::OrdinaryChildContinuation<'m>,
     frontier: &mut impl super::OrdinaryFrontierReentry<'m>,
@@ -5094,9 +5011,92 @@ fn projected_fallback_header<'m>(
         .into_scoped(frontier.owner(), frontier.store(), span)
 }
 
+#[derive(Clone, Copy)]
+enum ObservedHeaderProjection<'a, 'm> {
+    Whole,
+    Application {
+        args: &'a [super::CallArgRef<'m, crate::ast::Lowered>],
+        span: crate::span::Span,
+    },
+}
+
+fn project_observed_header<'m>(
+    header: Option<crate::pass::typecheck_core::ScopedType>,
+    projection: ObservedHeaderProjection<'_, 'm>,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+    tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
+    let ObservedHeaderProjection::Application { args, span } = projection else {
+        return Ok(header);
+    };
+    let Some(mut header) = header else {
+        return Ok(None);
+    };
+    if !matches!(
+        super::OrdinaryValueCursor::retain_callable_progress(&mut header, frontier, tcx)?,
+        Some(super::RetainedCallableProgress::Function)
+    ) {
+        return Ok(None);
+    }
+    let Some(result) = projected_written_type_tail(header.clone(), args, span, frontier, tcx)?
+    else {
+        return Ok(None);
+    };
+    Ok(header.projected_binary_peer(
+        &result,
+        crate::pass::typecheck_core::ScopedTypeBinaryKind::Product,
+        span,
+    ))
+}
+
+pub(super) fn observed_application_header<'m>(
+    cursor: &mut super::OrdinaryValueCursor<'m>,
+    args: &[super::CallArgRef<'m, crate::ast::Lowered>],
+    span: crate::span::Span,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+    tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<
+    Option<(
+        crate::pass::typecheck_core::ScopedType,
+        crate::pass::typecheck_core::ScopedType,
+    )>,
+    crate::error::Error,
+> {
+    let mut exports = Vec::new();
+    let bundle = reserve_observed_cursor_header(
+        cursor,
+        ObservedHeaderProjection::Application { args, span },
+        &mut exports,
+        frontier,
+        tcx,
+    )?;
+    let Some(bundle) = bundle else {
+        assert!(
+            exports.is_empty(),
+            "a declined callable projection reserved owner exports"
+        );
+        return Ok(None);
+    };
+    let mut exports = exports.into_iter();
+    install_observed_cursor_header(cursor, &mut exports, frontier, tcx)?;
+    assert!(
+        exports.next().is_none(),
+        "a callable projection left an owner export uninstalled"
+    );
+    Ok(Some((
+        bundle
+            .projected_structural_child(crate::pass::typecheck_core::ScopedTypeEdge::ProductLeft)
+            .expect("callable bundle header"),
+        bundle
+            .projected_structural_child(crate::pass::typecheck_core::ScopedTypeEdge::ProductRight)
+            .expect("callable bundle result"),
+    )))
+}
+
 fn reserve_observed_call_header<'m>(
     call: &mut super::OrdinaryCallContinuation<'m>,
     source_span: crate::span::Span,
+    projection: ObservedHeaderProjection<'_, 'm>,
     exports: &mut Vec<crate::pass::typecheck_core::ReservedParentHeaderExport>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -5106,6 +5106,7 @@ fn reserve_observed_call_header<'m>(
             let mut child_frontier = frontier.ordinary_child_frontier(&mut successor.child);
             reserve_observed_cursor_header(
                 &mut successor.cursor,
+                projection,
                 exports,
                 &mut child_frontier,
                 tcx,
@@ -5120,28 +5121,33 @@ fn reserve_observed_call_header<'m>(
         exports.push(export);
         return Ok(Some(header));
     }
-    projected_call_header_result(call, source_span, frontier, tcx)
+    let header = projected_call_header_result(call, source_span, frontier, tcx)?;
+    project_observed_header(header, projection, frontier, tcx)
 }
 
 fn reserve_observed_marked_header<'m>(
     state: &mut MarkedCallState<'m>,
     source_span: crate::span::Span,
+    projection: ObservedHeaderProjection<'_, 'm>,
     exports: &mut Vec<crate::pass::typecheck_core::ReservedParentHeaderExport>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
     match &mut state.phase {
         MarkedCallPhase::Project { call, .. } => {
-            reserve_observed_call_header(call, source_span, exports, frontier, tcx)
+            reserve_observed_call_header(call, source_span, projection, exports, frontier, tcx)
         }
         MarkedCallPhase::Completed { output, .. }
         | MarkedCallPhase::AdoptingFills { output, .. }
-        | MarkedCallPhase::Ready { output, .. } => Ok(Some(output.clone())),
+        | MarkedCallPhase::Ready { output, .. } => {
+            project_observed_header(Some(output.clone()), projection, frontier, tcx)
+        }
     }
 }
 
 fn reserve_observed_cursor_header<'m>(
     cursor: &mut super::OrdinaryValueCursor<'m>,
+    projection: ObservedHeaderProjection<'_, 'm>,
     exports: &mut Vec<crate::pass::typecheck_core::ReservedParentHeaderExport>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -5150,6 +5156,9 @@ fn reserve_observed_cursor_header<'m>(
     match &mut cursor.planned {
         super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::RecQuote)
         | super::PlannedOrdinaryValue::RecQuote(_) => {
+            if matches!(projection, ObservedHeaderProjection::Application { .. }) {
+                return Ok(None);
+            }
             let crate::ast::Expr::RecQuote { plan, .. } = cursor.source else {
                 unreachable!("quoted source header keeps its carrier")
             };
@@ -5167,7 +5176,7 @@ fn reserve_observed_cursor_header<'m>(
             )?))
         }
         super::PlannedOrdinaryValue::Call(call) => {
-            reserve_observed_call_header(call, span, exports, frontier, tcx)
+            reserve_observed_call_header(call, span, projection, exports, frontier, tcx)
         }
         super::PlannedOrdinaryValue::ComputedCall(
             super::ComputedCallContinuation::Application {
@@ -5182,6 +5191,7 @@ fn reserve_observed_cursor_header<'m>(
                         callee_frontier.ordinary_child_frontier(&mut application.child);
                     reserve_observed_cursor_header(
                         &mut application.cursor,
+                        projection,
                         exports,
                         &mut application_frontier,
                         tcx,
@@ -5204,6 +5214,26 @@ fn reserve_observed_cursor_header<'m>(
             exports.push(export);
             Ok(Some(header))
         }
+        super::PlannedOrdinaryValue::ComputedCall(super::ComputedCallContinuation::Paired(
+            pair,
+        )) => {
+            let header = {
+                let mut callee_frontier = frontier.ordinary_child_frontier(&mut pair.callee_child);
+                project_observed_header(
+                    Some(pair.result.clone()),
+                    projection,
+                    &mut callee_frontier,
+                    tcx,
+                )?
+            };
+            let Some(header) = header else {
+                return Ok(None);
+            };
+            let export = frontier.reserve_parent_header_export(&pair.callee_child, header, span)?;
+            let header = export.parent_header().clone();
+            exports.push(export);
+            Ok(Some(header))
+        }
         super::PlannedOrdinaryValue::Field(super::FieldContinuation::Receiver(receiver))
             if matches!(
                 cursor.source,
@@ -5213,10 +5243,14 @@ fn reserve_observed_cursor_header<'m>(
                 }
             ) =>
         {
+            if matches!(projection, ObservedHeaderProjection::Application { .. }) {
+                return Ok(None);
+            }
             let observed = {
                 let mut receiver_frontier = frontier.ordinary_child_frontier(&mut receiver.child);
                 let observed = reserve_observed_cursor_header(
                     &mut receiver.cursor,
+                    projection,
                     exports,
                     &mut receiver_frontier,
                     tcx,
@@ -5260,12 +5294,14 @@ fn reserve_observed_cursor_header<'m>(
         }
         super::PlannedOrdinaryValue::UserMacro(call) => match &mut call.state {
             super::PlannedUserMacroCallState::Advancing(call) => {
-                reserve_observed_call_header(call, span, exports, frontier, tcx)
+                reserve_observed_call_header(call, span, projection, exports, frontier, tcx)
             }
             super::PlannedUserMacroCallState::Completed { output, .. }
-            | super::PlannedUserMacroCallState::Ready { output, .. } => Ok(Some(output.clone())),
+            | super::PlannedUserMacroCallState::Ready { output, .. } => {
+                project_observed_header(Some(output.clone()), projection, frontier, tcx)
+            }
             super::PlannedUserMacroCallState::Fills(state) => {
-                reserve_observed_marked_header(state, span, exports, frontier, tcx)
+                reserve_observed_marked_header(state, span, projection, exports, frontier, tcx)
             }
         },
         _ => Ok(None),
@@ -5350,6 +5386,9 @@ fn install_observed_cursor_header<'m>(
             }
             install_observed_header_edge(callee_child, exports, span, frontier, tcx)
         }
+        super::PlannedOrdinaryValue::ComputedCall(super::ComputedCallContinuation::Paired(
+            pair,
+        )) => install_observed_header_edge(&mut pair.callee_child, exports, span, frontier, tcx),
         super::PlannedOrdinaryValue::Field(super::FieldContinuation::Receiver(receiver))
             if matches!(
                 cursor.source,
@@ -5384,18 +5423,24 @@ fn install_observed_cursor_header<'m>(
     }
 }
 
-pub(super) fn projected_field_header_result<'m>(
+pub(super) fn observed_cursor_header_result<'m>(
     cursor: &mut super::OrdinaryValueCursor<'m>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
     let mut exports = Vec::new();
-    let observed = reserve_observed_cursor_header(cursor, &mut exports, frontier, tcx)?;
+    let observed = reserve_observed_cursor_header(
+        cursor,
+        ObservedHeaderProjection::Whole,
+        &mut exports,
+        frontier,
+        tcx,
+    )?;
     let mut exports = exports.into_iter();
     install_observed_cursor_header(cursor, &mut exports, frontier, tcx)?;
     assert!(
         exports.next().is_none(),
-        "a field header left an uninstalled owner export"
+        "an observed header left an uninstalled owner export"
     );
     Ok(observed)
 }
@@ -5709,6 +5754,7 @@ fn reserve_projected_header<'m>(
                 let mut child_frontier = frontier.ordinary_child_frontier(&mut continuation.child);
                 reserve_observed_cursor_header(
                     &mut continuation.cursor,
+                    ObservedHeaderProjection::Whole,
                     exports,
                     &mut child_frontier,
                     tcx,
@@ -6017,7 +6063,7 @@ fn untouched_projected_selecting_result(
 /// Written values consume known function layers without entering their term
 /// bodies. A bare goal or an omitted successor binder stays opaque so the
 /// ordinary call frontier remains the only inference scheduler.
-fn projected_written_type_tail(
+pub(super) fn projected_written_type_tail(
     mut result: crate::pass::typecheck_core::ScopedType,
     mut remaining: &[super::CallArgRef<'_, crate::ast::Lowered>],
     source_span: crate::span::Span,
@@ -7005,6 +7051,49 @@ fn prepare_staged_pair_headers<'m>(
     Ok(())
 }
 
+fn advance_projected_public_header<'m>(
+    continuation: super::OrdinaryChildContinuation<'m>,
+    leaf: Option<ProjectedLeaf>,
+    mode: super::frontier::FrontierMode,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
+    tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<StagedOperand<'m>, crate::error::Error> {
+    assert!(
+        leaf.as_ref().is_some_and(|leaf| leaf.producer.is_some()),
+        "a public source header advanced before producer reservation"
+    );
+    let source = continuation.cursor.source;
+    match super::OrdinaryValueCursor::advance_open_child_iterative(
+        continuation,
+        mode,
+        super::OrdinaryCompletionDemand::PublicHeader,
+        false,
+        frontier,
+        tcx,
+    )? {
+        super::OpenOrdinaryChildAdvance::Pending(pending) => {
+            Ok(StagedOperand::Ordinary(pending, leaf))
+        }
+        super::OpenOrdinaryChildAdvance::Complete { child, completed } => {
+            let preview = child.preview_goal_free_close_output(
+                frontier.store(),
+                completed.scoped().clone(),
+                tcx,
+            )?;
+            Ok(StagedOperand::OpenCompleted {
+                source,
+                child,
+                completed,
+                preview,
+                accepted: false,
+                #[cfg(test)]
+                accepted_by_relation_wave: false,
+                leaf,
+            })
+        }
+    }
+}
+
 fn prepare_projected_source_header<'m>(
     state: StagedOperand<'m>,
     mode: super::frontier::FrontierMode,
@@ -7012,100 +7101,31 @@ fn prepare_projected_source_header<'m>(
     tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<StagedOperand<'m>, crate::error::Error> {
     isolate_staged_producer(&state, frontier, tcx)?;
-    let StagedOperand::Ordinary(mut continuation, leaf) = state else {
-        return prepare_staged_header(state, mode, frontier, tcx);
-    };
-    if !certified_scalar_literal_call_at_lexical_fallback(&mut continuation, frontier, tcx)?
-        && matches!(
-            continuation.cursor.planned,
-            super::PlannedOrdinaryValue::Call(_)
-                | super::PlannedOrdinaryValue::ComputedCall(_)
-                | super::PlannedOrdinaryValue::Recursive(
-                    super::OrdinaryRecursiveFamily::ComputedCall
-                )
-                | super::PlannedOrdinaryValue::Field(_)
-                | super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::Field)
-        )
-    {
-        assert!(
-            leaf.as_ref().is_some_and(|leaf| leaf.producer.is_some()),
-            "a public call header advanced before producer reservation"
-        );
-        let source = continuation.cursor.source;
-        match super::OrdinaryValueCursor::advance_open_child_iterative(
-            continuation,
-            super::frontier::FrontierMode::ExpectedOnly,
-            super::OrdinaryCompletionDemand::PublicHeader,
-            false,
-            frontier,
-            tcx,
-        )? {
-            super::OpenOrdinaryChildAdvance::Pending(pending) => {
-                continuation = pending;
-            }
-            super::OpenOrdinaryChildAdvance::Complete { child, completed } => {
-                let preview = child.preview_goal_free_close_output(
-                    frontier.store(),
-                    completed.scoped().clone(),
-                    tcx,
-                )?;
-                return Ok(StagedOperand::OpenCompleted {
-                    source,
-                    child,
-                    completed,
-                    preview,
-                    accepted: false,
-                    #[cfg(test)]
-                    accepted_by_relation_wave: false,
-                    leaf,
-                });
-            }
-        }
-    }
-    if !certified_scalar_literal_call_at_lexical_fallback(&mut continuation, frontier, tcx)? {
-        return prepare_staged_header(
-            StagedOperand::Ordinary(continuation, leaf),
-            mode,
-            frontier,
-            tcx,
-        );
-    }
-    assert_eq!(
-        mode,
-        super::frontier::FrontierMode::LexicalFallback,
-        "a projected scalar call advanced outside its fixed lexical pass"
-    );
-    assert!(
-        leaf.as_ref().is_some_and(|leaf| leaf.producer.is_some()),
-        "a projected scalar call reached header preparation before producer reservation"
-    );
-    advance_staged_producer(
-        StagedOperand::Ordinary(continuation, leaf),
-        mode,
-        false,
-        frontier,
-        tcx,
-    )
-    .map(|(state, complete)| {
-        assert!(
-            if complete {
-                matches!(&state, StagedOperand::OpenCompleted { .. })
-            } else {
-                matches!(
-                    &state,
-                    StagedOperand::Ordinary(
-                        super::OrdinaryChildContinuation {
-                            next_mode: super::frontier::FrontierMode::FinalPreflight,
-                            ..
-                        },
-                        _
+    let state = match state {
+        StagedOperand::Ordinary(continuation, leaf)
+            if matches!(
+                continuation.cursor.planned,
+                super::PlannedOrdinaryValue::Literal
+                    | super::PlannedOrdinaryValue::Call(_)
+                    | super::PlannedOrdinaryValue::ComputedCall(_)
+                    | super::PlannedOrdinaryValue::Recursive(
+                        super::OrdinaryRecursiveFamily::ComputedCall
                     )
-                )
-            },
-            "a projected scalar call left its bounded lexical header state"
-        );
-        state
-    })
+                    | super::PlannedOrdinaryValue::Field(_)
+                    | super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::Field)
+            ) =>
+        {
+            advance_projected_public_header(
+                continuation,
+                leaf,
+                super::frontier::FrontierMode::ExpectedOnly,
+                frontier,
+                tcx,
+            )?
+        }
+        state => state,
+    };
+    prepare_staged_header(state, mode, frontier, tcx)
 }
 
 fn prepare_staged_header<'m>(
@@ -7119,31 +7139,6 @@ fn prepare_staged_header<'m>(
             prepare_staged_pair_headers(&mut pair, mode, frontier, tcx)?;
             Ok(StagedOperand::Pair(pair))
         }
-        StagedOperand::Ordinary(continuation, leaf)
-            if matches!(
-                &continuation.cursor.planned,
-                super::PlannedOrdinaryValue::Literal
-            ) =>
-        {
-            assert_eq!(
-                continuation.next_mode, mode,
-                "a projected literal skipped its lexical header pass"
-            );
-            advance_staged_producer(
-                StagedOperand::Ordinary(continuation, leaf),
-                mode,
-                false,
-                frontier,
-                tcx,
-            )
-            .map(|(state, complete)| {
-                assert!(
-                    complete && matches!(state, StagedOperand::OpenCompleted { .. }),
-                    "a projected literal remained open after its lexical header pass"
-                );
-                state
-            })
-        }
         StagedOperand::Ordinary(continuation, leaf) => {
             prepare_staged_lambda_header(continuation, leaf, mode, frontier, tcx)
         }
@@ -7154,35 +7149,29 @@ fn prepare_staged_header<'m>(
     }
 }
 
-fn has_unselected_projected_lambda(state: &StagedOperand<'_>) -> bool {
+fn has_pending_projected_header(state: &StagedOperand<'_>) -> bool {
     match state {
         StagedOperand::Pair(pair) => pair.operands.iter().any(|operand| {
-            has_unselected_projected_lambda(
+            has_pending_projected_header(
                 operand
                     .state
                     .as_ref()
                     .expect("a staged pair lost its operand"),
             )
         }),
-        StagedOperand::Ordinary(continuation, _) => matches!(
-            continuation.cursor.planned,
-            super::PlannedOrdinaryValue::Lambda(super::PlannedOrdinaryLambda {
-                state: super::OrdinaryLambdaState::Unselected,
-                ..
-            })
-        ),
+        StagedOperand::Ordinary(_, _) => true,
         _ => false,
     }
 }
 
-fn refresh_linked_lambda_context<'m>(
+fn refresh_linked_source_context<'m>(
     state: &StagedOperand<'m>,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
     if let StagedOperand::Pair(pair) = state {
         for operand in &pair.operands {
-            refresh_linked_lambda_context(
+            refresh_linked_source_context(
                 operand
                     .state
                     .as_ref()
@@ -7191,38 +7180,74 @@ fn refresh_linked_lambda_context<'m>(
                 tcx,
             )?;
         }
-    } else if has_unselected_projected_lambda(state) {
+    } else if has_pending_projected_header(state) {
         isolate_staged_producer(state, frontier, tcx)?;
     }
     Ok(())
 }
 
-fn select_linked_lambda_headers<'m>(
+fn select_linked_source_headers<'m>(
     state: StagedOperand<'m>,
+    mode: super::frontier::FrontierMode,
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, 'm>,
     tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
-) -> Result<StagedOperand<'m>, crate::error::Error> {
-    if !has_unselected_projected_lambda(&state) {
-        return Ok(state);
+) -> Result<(StagedOperand<'m>, bool), crate::error::Error> {
+    if !has_pending_projected_header(&state) {
+        return Ok((state, true));
     }
-    refresh_linked_lambda_context(&state, frontier, tcx)?;
+    refresh_linked_source_context(&state, frontier, tcx)?;
     match state {
         StagedOperand::Pair(mut pair) => {
             let mut pair_frontier = frontier.ordinary_child_frontier(&mut pair.premise);
+            let mut ready = true;
             for operand in &mut pair.operands {
                 let state = operand
                     .state
                     .take()
                     .expect("a staged pair lost its operand");
-                operand.state = Some(select_linked_lambda_headers(
-                    state,
-                    &mut pair_frontier,
-                    tcx,
-                )?);
+                let (state, child_ready) =
+                    select_linked_source_headers(state, mode, &mut pair_frontier, tcx)?;
+                operand.state = Some(state);
+                ready &= child_ready;
             }
-            Ok(StagedOperand::Pair(pair))
+            Ok((StagedOperand::Pair(pair), ready))
         }
-        StagedOperand::Ordinary(continuation, leaf) => {
+        StagedOperand::Ordinary(mut continuation, leaf) => {
+            if !matches!(
+                &continuation.cursor.planned,
+                super::PlannedOrdinaryValue::Lambda(super::PlannedOrdinaryLambda {
+                    state: super::OrdinaryLambdaState::Unselected,
+                    ..
+                })
+            ) {
+                if !mode.is_final_check() {
+                    let mut child_frontier =
+                        frontier.ordinary_child_frontier(&mut continuation.child);
+                    let (store, owner, delta, _) = child_frontier.parts_mut();
+                    let closed = match continuation.cursor.expected.as_ref() {
+                        Some(expected) => {
+                            let expected = expected.clone().into_scoped(
+                                owner,
+                                store,
+                                continuation.cursor.source.span(),
+                            )?;
+                            store.try_zonk_goal_free(delta, expected, tcx)?.is_some()
+                        }
+                        None => false,
+                    };
+                    if !closed {
+                        return Ok((StagedOperand::Ordinary(continuation, leaf), false));
+                    }
+                }
+                return advance_projected_public_header(
+                    continuation,
+                    leaf,
+                    super::frontier::FrontierMode::FinalPreflight,
+                    frontier,
+                    tcx,
+                )
+                .map(|state| (state, true));
+            }
             let mut state = prepare_staged_lambda_header(
                 continuation,
                 leaf,
@@ -7233,7 +7258,7 @@ fn select_linked_lambda_headers<'m>(
             if let StagedOperand::DeferredRecLambda(deferred, _) = &mut state {
                 deferred.public_header = deferred.lambda.expected.clone();
             }
-            Ok(state)
+            Ok((state, true))
         }
         _ => unreachable!("linked header selection crossed a selected source"),
     }
@@ -11714,7 +11739,7 @@ mod tests {
         let package = fixture(
             "module certificate_catalogue; \
              import __intrinsics__; \
-             default host type Bool role(bool);",
+             host type Bool role(bool);",
             "certificate_catalogue",
         );
         let module = &package
@@ -13990,11 +14015,11 @@ mod tests {
     }
 
     #[test]
-    fn projected_literal_prepares_a_closed_header_before_its_single_physical_close() {
+    fn projected_annotated_literal_closes_during_initial_header_staging() {
         let package = fixture(
             "module projected_literal_header; \
-             default host type String role(str); \
-             fn witness() -> String { \"ignored\" }",
+             host type String role(str); \
+             fn witness() -> String { \"ignored\"(String) }",
             "projected_literal_header",
         );
         let module = &package
@@ -14040,15 +14065,8 @@ mod tests {
         .expect("stage literal against its open public type");
         assert!(matches!(
             &staged,
-            StagedOperand::Ordinary(continuation, None)
-                if continuation.next_mode
-                    == super::super::frontier::FrontierMode::LexicalFallback
-                    && matches!(
-                        &continuation.cursor.planned,
-                        super::super::PlannedOrdinaryValue::Literal
-                    )
+            StagedOperand::Completed { leaf: None, .. }
         ));
-
         let mut next_template = 0;
         let mut next_producer = 0;
         let mut producer_locations = Vec::new();
@@ -14059,50 +14077,8 @@ mod tests {
             &mut next_producer,
             &mut producer_locations,
         );
-        assert_eq!((next_template, next_producer), (1, 1));
-        assert_eq!(producer_locations[0].source, 0);
-        assert!(producer_locations[0].path.is_empty());
-        assert!(matches!(
-            &staged,
-            StagedOperand::Ordinary(
-                _,
-                Some(ProjectedLeaf {
-                    template_index: 0,
-                    producer: Some(0),
-                })
-            )
-        ));
-
-        staged = prepare_staged_header(
-            staged,
-            super::super::frontier::FrontierMode::LexicalFallback,
-            &mut frontier,
-            &mut tcx,
-        )
-        .expect("prepare the literal's closed lexical header");
-        let StagedOperand::OpenCompleted {
-            child,
-            preview,
-            leaf: Some(leaf),
-            ..
-        } = &staged
-        else {
-            panic!("the prepared literal must retain one open physical completion")
-        };
-        assert_eq!(child.parent_owner(), parent);
-        assert_eq!((leaf.template_index, leaf.producer), (0, Some(0)));
-        let preview = {
-            let (store, _owner, delta, _publication) = frontier.parts_mut();
-            store
-                .require_goal_free_after_delta(delta, preview.clone(), &tcx)
-                .expect("the literal preview must be goal-free before header reservation")
-        };
-        assert!(matches!(
-            preview.ty().as_type(),
-            crate::ast::Type::Path { segments, .. }
-                if segments.last().is_some_and(|segment| segment.name == "String")
-        ));
-
+        assert_eq!((next_template, next_producer), (1, 0));
+        assert!(producer_locations.is_empty());
         let mut exports = Vec::new();
         let structural = reserve_projected_header(
             &mut staged,
@@ -14140,113 +14116,12 @@ mod tests {
                 if segments.last().is_some_and(|segment| segment.name == "String")
         ));
 
-        let seal = InvocationSeal::fresh();
-        let mut specialization =
-            crate::pass::typecheck_core::IsolatedSpecializationContextBuilder::new(&tcx);
-        let recipe = project_operand_recipe_from_header(
-            &staged,
-            progressed,
-            &seal,
-            &mut specialization,
-            &tcx,
-        )
-        .expect("seal the closed literal recipe");
-        let mut projection = MarkedProjection {
-            seal,
-            specialization: Some(specialization),
-            header_cursor: ProjectedHeaderCursor {
-                phase: ProjectedHeaderPhase::Complete,
-                source: 0,
-            },
-            terminal_result: None,
-            transcript: None,
-            sources: vec![RetainedProjectedSource {
-                state: Some(staged),
-                header: RetainedProjectedHeader::Sealed(recipe),
-                inherited_mode: super::super::frontier::FrontierMode::LexicalFallback,
-                layer: 0,
-                expanded_start: 0,
-                expanded_width: 1,
-            }],
-            next_template,
-            next_producer,
-            next_close_producer: 0,
-            producer_locations,
-            producer_completed: vec![false],
-            template_slots: vec![ProjectedTemplateSlot::default()],
-        };
-        reset_fill_relation_work();
-        let resumed = projection
-            .resume_producer(
-                FillProducerRequest {
-                    producer: 0,
-                    parent,
-                    producer_mode: super::super::frontier::FrontierMode::ExpectedOnly,
-                    inherited_mode: super::super::frontier::FrontierMode::LexicalFallback,
-                    relation_probe: false,
-                    expected: None,
-                },
-                &mut frontier,
-                &mut tcx,
-            )
-            .expect("resume the independently prepared literal");
-        assert!(resumed.complete);
-        assert!(!resumed.newly_complete);
-        projection
-            .accept_resumed_producer(&resumed, source.span(), &mut frontier, &tcx)
-            .expect("accept the prepared literal as an independent producer");
-        let revisited = projection
-            .resume_producer(
-                FillProducerRequest {
-                    producer: 0,
-                    parent,
-                    producer_mode: super::super::frontier::FrontierMode::ExpectedOnly,
-                    inherited_mode: super::super::frontier::FrontierMode::LexicalFallback,
-                    relation_probe: false,
-                    expected: None,
-                },
-                &mut frontier,
-                &mut tcx,
-            )
-            .expect("revisit the accepted literal before its physical close");
-        assert!(revisited.complete);
-        assert!(!revisited.newly_complete);
-        projection
-            .accept_resumed_producer(&revisited, source.span(), &mut frontier, &tcx)
-            .expect("preserve the accepted literal across a stale revisit");
-        assert!(matches!(
-            projection.producer_state(0),
-            StagedOperand::OpenCompleted {
-                accepted: true,
-                accepted_by_relation_wave: false,
-                ..
-            }
-        ));
-        let close = projection
-            .next_ready_producer_close(source.span(), &mut frontier, &tcx)
-            .expect("inspect the prepared literal close")
-            .expect("the prepared literal must be ready for its one physical close");
-        assert_eq!((close.producer, close.parent), (0, parent));
-        projection
-            .close_ready_producer(close, source.span(), &mut frontier, &mut tcx)
-            .expect("physically close the prepared literal exactly once");
-        assert_eq!(fill_relation_work(), FillRelationWork::default());
-        assert_eq!(projection.next_close_producer, 1);
-        assert_eq!(projection.producer_completed, [true]);
-        assert!(matches!(
-            projection.sources[0].state,
-            Some(StagedOperand::Completed { leaf: None, .. })
-        ));
-        let captured = projection.template_slots[0]
-            .source
-            .as_ref()
-            .expect("the literal close must capture its dense template source");
-        assert_eq!(captured.source.span(), source.span());
-        assert!(matches!(
-            captured.ty.as_type(),
-            crate::ast::Type::Path { segments, .. }
-                if segments.last().is_some_and(|segment| segment.name == "String")
-        ));
+        assert!(
+            tcx.elaborations
+                .literal_resolution_for("projected_literal_header", source.site().id,)
+                .is_none(),
+            "a closed literal remains inside its enclosing publication transaction"
+        );
     }
 
     #[test]
@@ -14493,10 +14368,10 @@ mod tests {
              fn path_receiver_last(value: String, known: String) -> String { value.>>same(known) } \
              fn path_argument_first(value: String, known: String) -> String { same(known).<<value } \
              fn path_argument_last(value: String, known: String) -> String { same(known).<value } \
-             fn scalar_receiver_first(known: String) -> String { \"value\".>same(known) } \
-             fn scalar_receiver_last(known: String) -> String { \"value\".>>same(known) } \
-             fn scalar_argument_first(known: String) -> String { same(known).<<\"value\" } \
-             fn scalar_argument_last(known: String) -> String { same(known).<\"value\" }",
+             fn scalar_receiver_first(known: String) -> String { \"value\"(String).>same(known) } \
+             fn scalar_receiver_last(known: String) -> String { \"value\"(String).>>same(known) } \
+             fn scalar_argument_first(known: String) -> String { same(known).<<\"value\"(String) } \
+             fn scalar_argument_last(known: String) -> String { same(known).<\"value\"(String) }",
             "projected_regular_ufcs_header",
         );
         let module = &package
@@ -14639,24 +14514,10 @@ mod tests {
 
             let mut staged = stage_projected_source_operand(continuation, &mut frontier, &mut tcx)
                 .unwrap_or_else(|error| panic!("stage projected regular UFCS `{name}`: {error:?}"));
-            let retains_scalar_fallback = scalar && receiver_first;
-            if retains_scalar_fallback {
-                assert!(
-                    matches!(
-                        &staged,
-                        StagedOperand::Ordinary(continuation, None)
-                            if continuation.next_mode
-                                == super::super::frontier::FrontierMode::LexicalFallback
-                    ),
-                    "scalar-first regular UFCS `{name}` did not retain LexicalFallback work"
-                );
-            } else {
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::Completed { leaf: None, .. }
-                ));
-            }
-
+            assert!(matches!(
+                &staged,
+                StagedOperand::Completed { leaf: None, .. }
+            ));
             let mut next_template = 0;
             let mut next_producer = 0;
             let mut producer_locations = Vec::new();
@@ -14667,44 +14528,18 @@ mod tests {
                 &mut next_producer,
                 &mut producer_locations,
             );
-            assert_eq!(next_template, 1);
-            assert_eq!(next_producer, u32::from(retains_scalar_fallback));
-            assert_eq!(
-                producer_locations.len(),
-                usize::from(retains_scalar_fallback)
-            );
-            if retains_scalar_fallback {
-                staged = prepare_projected_source_header(
-                    staged,
-                    super::super::frontier::FrontierMode::LexicalFallback,
-                    &mut frontier,
-                    &mut tcx,
-                )
-                .unwrap_or_else(|error| {
-                    panic!("prepare projected regular scalar UFCS `{name}`: {error:?}")
-                });
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::OpenCompleted {
-                        leaf: Some(ProjectedLeaf {
-                            template_index: 0,
-                            producer: Some(0),
-                        }),
-                        ..
-                    }
-                ));
-            } else {
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::Completed {
-                        leaf: Some(ProjectedLeaf {
-                            template_index: 0,
-                            producer: None,
-                        }),
-                        ..
-                    }
-                ));
-            }
+            assert_eq!((next_template, next_producer), (1, 0));
+            assert!(producer_locations.is_empty());
+            assert!(matches!(
+                &staged,
+                StagedOperand::Completed {
+                    leaf: Some(ProjectedLeaf {
+                        template_index: 0,
+                        producer: None
+                    }),
+                    ..
+                }
+            ));
             let actual = match &staged {
                 StagedOperand::Completed { completed, .. } => completed.scoped().clone(),
                 StagedOperand::OpenCompleted { preview, .. } => preview.clone(),
@@ -14903,10 +14738,10 @@ mod tests {
     }
 
     #[test]
-    fn projected_scalar_call_retries_only_when_literals_contribute_every_result_goal() {
+    fn projected_scalar_call_closes_only_when_selected_arguments_solve_result() {
         let package = fixture(
             "module projected_scalar_call_header; \
-             default host type String role(str); \
+             host type String role(str); \
              host type Box[A]; \
              type Identity[A] = A; \
              type Keep[A][B] = A; \
@@ -14919,14 +14754,14 @@ mod tests {
              host fn dropped[A][B](value: Keep(Box(A), B)) -> B; \
              host fn shadowed[*F][A][B](value: A) -> F(B); \
              host fn mixed[A](literal: A, known: A) -> Box(A); \
-             fn identity_case() -> String { identity(\"value\") } \
-             fn boxed_case() -> Box(String) { boxed(\"value\") } \
-             fn alias_case() -> Box(String) { alias_boxed(\"value\") } \
-             fn shadowed_case[*F]() -> . { shadowed(F, \"value\") } \
-             fn phantom_case() -> . { phantom(\"value\") } \
-             fn applied_case() -> . { applied(\"value\") } \
-             fn dropped_case() -> . { dropped(\"value\") } \
-             fn mixed_case(value: String) -> Box(String) { mixed(\"value\", value) }",
+             fn identity_case() -> String { identity(\"value\"(String)) } \
+             fn boxed_case() -> Box(String) { boxed(\"value\"(String)) } \
+             fn alias_case() -> Box(String) { alias_boxed(\"value\"(String)) } \
+             fn shadowed_case[*F]() -> . { shadowed(F, \"value\"(String)) } \
+             fn phantom_case() -> . { phantom(\"value\"(String)) } \
+             fn applied_case() -> . { applied(\"value\"(String)) } \
+             fn dropped_case() -> . { dropped(\"value\"(String)) } \
+             fn mixed_case(value: String) -> Box(String) { mixed(\"value\"(String), value) }",
             "projected_scalar_call_header",
         );
         let module = &package
@@ -14936,15 +14771,15 @@ mod tests {
         let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
             .expect("projected scalar call environment");
 
-        for (name, expected_pre_reserve_complete, expected_lexical_complete) in [
-            ("identity_case", false, true),
-            ("boxed_case", false, true),
-            ("alias_case", false, true),
-            ("shadowed_case", false, false),
-            ("phantom_case", false, false),
-            ("applied_case", false, false),
-            ("dropped_case", false, false),
-            ("mixed_case", false, true),
+        for (name, expected_closed) in [
+            ("identity_case", true),
+            ("boxed_case", true),
+            ("alias_case", true),
+            ("shadowed_case", false),
+            ("phantom_case", false),
+            ("applied_case", false),
+            ("dropped_case", false),
+            ("mixed_case", true),
         ] {
             let (item_index, witness) = module
                 .items
@@ -15000,78 +14835,42 @@ mod tests {
             .unwrap_or_else(|error| panic!("plan projected scalar call `{name}`: {error:?}"));
             assert!(certified_one_layer_scalar_literal_source(source, &tcx));
             assert!(certified_fresh_scalar_literal_call(&continuation, &tcx));
-            let mut staged = stage_projected_source_operand(continuation, &mut frontier, &mut tcx)
-                .unwrap_or_else(|error| panic!("stage projected scalar call `{name}`: {error:?}"));
+            let staged = match stage_projected_source_operand(continuation, &mut frontier, &mut tcx)
+            {
+                Ok(staged) => staged,
+                Err(error) => {
+                    let expected = match name {
+                        "applied_case" => "type mismatch: expected `F(A)`, found `String`",
+                        "dropped_case" => {
+                            "type mismatch: expected `Keep(Box(A), B)`, found `String`"
+                        }
+                        _ => panic!("scalar header `{name}` unexpectedly failed: {error:?}"),
+                    };
+                    assert_eq!(error.diagnostic().message, expected);
+                    continue;
+                }
+            };
+            let closed = match &staged {
+                StagedOperand::Completed { completed, .. } => {
+                    let (store, _owner, delta, _publication) = frontier.parts_mut();
+                    store
+                        .try_zonk_goal_free(delta, completed.scoped().clone(), &tcx)
+                        .expect("inspect the exact staged scalar result")
+                        .is_some()
+                }
+                StagedOperand::Ordinary(..) => false,
+                _ => panic!("a scalar call changed its staged expression family"),
+            };
+            assert!(
+                !matches!(name, "applied_case" | "dropped_case"),
+                "invalid scalar argument `{name}` was admitted"
+            );
             assert_eq!(
                 matches!(staged, StagedOperand::Completed { .. }),
-                expected_pre_reserve_complete,
-                "unexpected pre-reserve completion for `{name}`"
+                name != "shadowed_case",
+                "only a rigid unapplied constructor keeps unfinished producer work"
             );
-            if !expected_pre_reserve_complete {
-                assert!(matches!(
-                    &staged,
-                    StagedOperand::Ordinary(continuation, None)
-                        if continuation.next_mode
-                            == super::super::frontier::FrontierMode::LexicalFallback
-                ));
-            }
-
-            let mut next_template = 0;
-            let mut next_producer = 0;
-            let mut producer_locations = Vec::new();
-            reserve_projected_source(
-                &mut staged,
-                0,
-                &mut next_template,
-                &mut next_producer,
-                &mut producer_locations,
-            );
-            assert_eq!(next_template, 1);
-            assert_eq!(next_producer, u32::from(!expected_pre_reserve_complete));
-            if !expected_pre_reserve_complete {
-                staged = prepare_projected_source_header(
-                    staged,
-                    super::super::frontier::FrontierMode::LexicalFallback,
-                    &mut frontier,
-                    &mut tcx,
-                )
-                .unwrap_or_else(|error| {
-                    panic!("prepare projected scalar call `{name}`: {error:?}")
-                });
-                assert_eq!(
-                    matches!(staged, StagedOperand::OpenCompleted { .. }),
-                    expected_lexical_complete,
-                    "unexpected lexical completion for `{name}`"
-                );
-                if !expected_lexical_complete {
-                    assert!(matches!(
-                        staged,
-                        StagedOperand::Ordinary(
-                            super::super::OrdinaryChildContinuation {
-                                next_mode: super::super::frontier::FrontierMode::LexicalFallback,
-                                ..
-                            },
-                            Some(ProjectedLeaf {
-                                template_index: 0,
-                                producer: Some(0),
-                            })
-                        )
-                    ));
-                }
-            }
-            if expected_pre_reserve_complete || expected_lexical_complete {
-                let actual = match &staged {
-                    StagedOperand::Completed { completed, .. } => completed.scoped().clone(),
-                    StagedOperand::OpenCompleted { preview, .. } => preview.clone(),
-                    _ => unreachable!("a completed scalar causal changed staged family"),
-                };
-                let (store, _owner, delta, _publication) = frontier.parts_mut();
-                store
-                    .require_goal_free_after_delta(delta, actual, &tcx)
-                    .unwrap_or_else(|error| {
-                        panic!("completed projected scalar call `{name}` stayed open: {error:?}")
-                    });
-            }
+            assert_eq!(closed, expected_closed, "selected scalar result `{name}`");
         }
     }
 
@@ -15312,7 +15111,7 @@ mod tests {
             occurrence: Default::default(),
             kind: crate::ast::ElaboratorKind::Filtered,
             call: crate::ast::ElaboratorCall::FieldUpdate {
-                receiver: Box::new(path("surface")),
+                base: crate::ast::FieldUpdateBase::Update(Box::new(path("surface"))),
                 updates: vec![crate::ast::FieldUpdateLabel {
                     label: "value".to_owned(),
                     label_span: span,
@@ -15449,8 +15248,8 @@ mod tests {
              fn bare[P](surface: Surface(P), value: P) -> P | . { \
                surface.?{apply}((value, surface.?{unit_in})) \
              } \
-             fn pending[P](surface: Surface(P)) -> String { \
-               surface.?{identity}(\"value\") \
+             fn scalar[P](surface: Surface(P)) -> String { \
+               surface.?{identity}(\"value\"(String)) \
              }",
             "projected_computed_field_header",
         );
@@ -15468,7 +15267,7 @@ mod tests {
             ("direct", true),
             ("nested", true),
             ("bare", true),
-            ("pending", false),
+            ("scalar", true),
         ] {
             let (item_index, witness) = module
                 .items
@@ -15789,12 +15588,12 @@ mod tests {
     }
 
     #[test]
-    fn projected_nested_pair_scalar_call_closes_in_its_lexical_pass() {
+    fn projected_nested_pair_scalar_call_closes_in_its_header_pass() {
         let package = fixture(
             "module projected_nested_scalar_call; \
-             default host type String role(str); \
+             host type String role(str); \
              host fn identity[A](value: A) -> A; \
-             fn witness() -> . & . { (\"value\".>identity, ()) }",
+             fn witness() -> . & . { (\"value\"(String).>identity, ()) }",
             "projected_nested_scalar_call",
         );
         let module = &package
@@ -15991,8 +15790,6 @@ mod tests {
                 crate::pass::typecheck_core::InternedType::fresh_canonical(goal_type(ancestor)),
             ),
             binders: Vec::new(),
-            #[cfg(feature = "lsp")]
-            selected_role: None,
             retained_type: None,
         };
         let mut frontier = root.retained_value_frontier(&mut parent_child);

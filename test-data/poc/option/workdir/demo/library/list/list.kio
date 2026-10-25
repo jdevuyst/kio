@@ -13,17 +13,17 @@ import library/list/core(
 , tail
 , uncons
 );
-import library/list/macros/control(macro if);
+import library/list/macros/control(Bool as Control_bool, macro if);
 import library/list/macros/match(macro match);
 import library/list/macros/spine_macros(macro widen_sum);
 import list/core(List);
 import option_host as _rehost_gphahegjgpgofpgigphdhe;
 
-default pub type Bool = _rehost_gphahegjgpgofpgigphdhe.Bool;
+pub type Bool = Control_bool;
 
-default pub type I32 = _rehost_gphahegjgpgofpgigphdhe.I32;
+pub type I32 = _rehost_gphahegjgpgofpgigphdhe.I32;
 
-default pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
+pub type String = _rehost_gphahegjgpgofpgigphdhe.String;
 
 pub fn add_i32(p0: I32, p1: I32) -> I32 { _rehost_gphahegjgpgofpgigphdhe.add_i32(p0, p1) }
 

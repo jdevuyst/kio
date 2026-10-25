@@ -505,10 +505,10 @@ fn visit_elaborator_call<'a>(
 ) {
     match call {
         ElaboratorCall::FieldAccess { receiver, .. } => visit_expr(receiver, offset, best),
-        ElaboratorCall::FieldUpdate {
-            receiver, updates, ..
-        } => {
-            visit_expr(receiver, offset, best);
+        ElaboratorCall::FieldUpdate { base, updates, .. } => {
+            if let Some(receiver) = base.receiver() {
+                visit_expr(receiver, offset, best);
+            }
             for update in updates {
                 visit_expr(&update.value, offset, best);
             }

@@ -337,10 +337,8 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
             }
             Expr::Elaborator { call, .. } => match call {
                 ElaboratorCall::FieldAccess { receiver, .. } => pending.push(receiver),
-                ElaboratorCall::FieldUpdate {
-                    receiver, updates, ..
-                } => {
-                    pending.push(receiver);
+                ElaboratorCall::FieldUpdate { base, updates, .. } => {
+                    pending.extend(base.receiver());
                     pending.extend(updates.iter().map(|update| &update.value));
                 }
             },

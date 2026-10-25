@@ -1,6 +1,6 @@
 module host/m;
 
-import host(default Bool);
+import host(Bool);
 import macros/control(macro if);
 import macros/match(macro match);
 
@@ -10,10 +10,10 @@ equiv if_else_same_shape() {
 }
 
 equiv match_same_shape() {
-  match(.t) {
+  match(.t(Bool)) {
     .(x: Bool) { () }
   };
-  match(.t) {
+  match(.t(Bool)) {
     .(y: Bool) { () }
   }
 }

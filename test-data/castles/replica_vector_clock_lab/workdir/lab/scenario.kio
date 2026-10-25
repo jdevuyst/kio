@@ -8,7 +8,7 @@ import list/list as lists;
 import list/list(varop [] as [* *]);
 import macros/spine_macros(macro widen_sum);
 import result/result as result;
-import testapi(String);
+import testapi(I32, String);
 
 fn after_resolution(
 , first: replica.Replica

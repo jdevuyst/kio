@@ -28,7 +28,7 @@ import desk/token(Bad, Lparen, Num, Oper, Placed, Rparen, at_of, tok_of, {num}, 
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro widen_sum);
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith(lt_i32);
 import testapi/iter(loop);
 

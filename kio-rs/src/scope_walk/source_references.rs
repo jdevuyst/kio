@@ -318,16 +318,6 @@ impl<'a> SourceBindingIndex<'a> {
         }
         self.module_origin(slot, &reference.path, offset, active)
     }
-
-    /// Project a type name already chosen by lexical role selection, whose
-    /// module scope is independent of a same-spelled local type parameter.
-    pub(crate) fn selected_module_type_origin(
-        &self,
-        name: &str,
-        offset: u32,
-    ) -> Option<CandidateOrigin> {
-        self.module_origin(1, name, offset, self.active_item(offset))
-    }
 }
 
 #[cfg(test)]
@@ -382,14 +372,6 @@ mod tests {
             panic!("Hidden declaration")
         };
         assert_eq!(origins[9], CandidateOrigin::Declaration(hidden.name_span));
-        assert_eq!(
-            index.selected_module_type_origin("Foo", types[2].span.start),
-            Some(import)
-        );
-        assert_eq!(
-            index.selected_module_type_origin("Hidden", types[7].span.start),
-            Some(CandidateOrigin::Declaration(hidden.name_span))
-        );
         for reference in types
             .iter()
             .filter(|reference| !reference.path.contains('.'))

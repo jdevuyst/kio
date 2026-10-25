@@ -5,7 +5,7 @@ import helpers as a;
 import helpers(macro choose);
 import testapi/io(print);
 
-default type Bool = Comptime_bool;
+type Bool = Comptime_bool;
 
 fn combine(_first: ., last: .) { last }
 

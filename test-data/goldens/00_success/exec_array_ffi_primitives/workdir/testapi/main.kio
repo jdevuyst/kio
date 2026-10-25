@@ -3,7 +3,7 @@ module testapi/main;
 import macros/control(macro if);
 import macros/match(macro match);
 import macros/spine_macros(macro one_sum, macro widen_sum);
-import testapi(Array, I32, default Bool, default String);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len, array_make_empty, array_make_filled, array_push);
 import testapi/fmt(bool_to_string);
@@ -61,7 +61,7 @@ pub fn main() {
   print("\n");
   // Host-produced, Kio-consumed: `array_make_filled` allocates and
   // fills the array host-side; Kio consumes it via len/get.
-  let filled = array_make_filled(4, "x");
+  let filled = array_make_filled(4, "x"(String));
   print(render_array(.(s: String) -> String { s }, filled));
   print("\n")
 }

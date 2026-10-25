@@ -4,19 +4,16 @@ import loader(
 , Import
 , Lr_diag
 , Lr_image
-, import_is_default
 , import_source
 , mk_import
 , mk_import_as
-, mk_import_selected
 , un_import
 , un_load_outcome
 , {import}
 );
 import loader/scan(load_package);
-import macros/control(macro if);
 import macros/match(macro match);
-import testapi(String, default Bool);
+import testapi(String);
 import testapi/io(print);
 
 fn show(entry: Import) {
@@ -27,11 +24,6 @@ fn show(entry: Import) {
       print(import_source(entry));
       print("@"(String));
       print(provider);
-      if(import_is_default(entry)) {
-        print(":selected"(String))
-      } else {
-        print(":unselected"(String))
-      };
       print("\n"(String))
     }
   }
@@ -49,18 +41,17 @@ fn load_result(source: String) {
 pub fn main() {
   show(mk_import("same"(String), "origin"(String)));
   show(mk_import_as("local"(String), "source"(String), "origin"(String)));
-  show(mk_import_selected("Selected"(String), "Number"(String), "origin"(String), .t(Bool)));
-  let raw = {import = ("raw"(String), "source"(String), "origin"(String), .t(Bool))};
+  show(mk_import_as("Selected"(String), "Number"(String), "origin"(String)));
+  let raw = {import = ("raw"(String), "source"(String), "origin"(String))};
   show(raw);
   match(Import.get(raw)) {
-    .(local: String, original: String, provider: String, selected: Bool) {
+    .(local: String, original: String, provider: String) {
       print(local);
       print("\n"(String));
       print(original);
       print("\n"(String));
       print(provider);
-      print("\n"(String));
-      if(selected) { print("selected\n"(String)) } else { print("unselected\n"(String)) }
+      print("\n"(String))
     }
   };
   load_result("module origin; pub fn source() { () } module consumer; import "
@@ -77,5 +68,11 @@ pub fn main() {
               "bridge { consumer; }"(String));
   load_result("module origin; pub fn local() { () } module consumer; import "
               "origin(missing as local); pub fn run() { local() } package guest; bridge "
-              "{ consumer; }"(String))
+              "{ consumer; }"(String));
+  load_result("module origin; pub fn default() { () } module consumer; import "
+              "origin(default); pub fn run() { default() } package guest; bridge { "
+              "consumer; }"(String));
+  load_result("module origin; host type Number role(i32); module consumer; import "
+              "origin(default Number); pub fn run(value: Number) -> Number { value } "
+              "package guest; bridge { origin; consumer; }"(String))
 }

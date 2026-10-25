@@ -12,7 +12,7 @@ bridge {
 
 module kiodoc;
 
-default host type S role(str);
+host type S role(str);
 host fn print(p0: S) -> .;
 
 pub fn main() {
@@ -23,7 +23,7 @@ __INSERT_CODE_HERE__
 First, a let binding.
 
 ```kio {@block}
-let greeting = "hello\n";
+let greeting = "hello\n"(S);
 ```
 
 Then a final expression to flush the block.

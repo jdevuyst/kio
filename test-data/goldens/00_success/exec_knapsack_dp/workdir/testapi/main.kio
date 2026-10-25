@@ -2,7 +2,7 @@ module testapi/main;
 
 import macros/control(macro if);
 import macros/spine_macros(macro widen_sum);
-import testapi(Array, String, default Bool, default I32);
+import testapi(Array, Bool, I32, String);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_make_empty, array_make_filled, array_push, array_set);
 import testapi/fmt(int_to_string);
@@ -74,7 +74,7 @@ fn item_step(dp: Array(I32), ws: Array(I32), vs: Array(I32), i: I32) -> I32 | . 
 pub fn main() {
   // DP table indexed 0..=cap; dp[c] is the best value achievable
   // with capacity c using the items processed so far.
-  let dp = array_make_filled(add_i32(cap(), 1), 0);
+  let dp = array_make_filled(add_i32(cap(), 1), 0(I32));
   let ws = weights();
   let vs = values();
   let _ = loop(I32, ., .(i: I32) { item_step(dp, ws, vs, i) }, 0);

@@ -1,0 +1,15 @@
+module cases/additional_role;
+
+import macros/control(macro if as branch);
+import macros/testapi(String as Other_string);
+import testapi(Bool, String);
+
+pub fn literal_first(flag: Bool, separator: String) -> String {
+  let lead = branch(flag) { "empty" } else { separator };
+  lead
+}
+
+pub fn literal_last(flag: Bool, separator: String) -> String {
+  let lead = branch(flag) { separator } else { "empty" };
+  lead
+}

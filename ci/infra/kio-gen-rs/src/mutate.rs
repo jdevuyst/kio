@@ -214,10 +214,6 @@ fn corrupt_macro(files: &mut Vec<(String, String)>) {
     // other macro modules carry no host items and need no glob.
     admit_root_module(files, "testapi");
     let source = prog_kio_mut(files);
-    let string_declaration = source
-        .find("\nhost type String role(str);")
-        .expect("generated root declares String");
-    source.insert_str(string_declaration + 1, "default ");
     if !source.contains("import algebraic_macros(macro ") {
         // Insert the import right after the `import __intrinsics__;` line.
         let anchor = "import __intrinsics__;\n";
@@ -234,7 +230,9 @@ fn corrupt_macro(files: &mut Vec<(String, String)>) {
             }
         }
     }
-    source.push_str("\npub fn kio_gen_macro_bug() -> I32 {\n  into(\"kio_gen_macro_bug\")\n}\n");
+    source.push_str(
+        "\npub fn kio_gen_macro_bug() -> I32 {\n  into(\"kio_gen_macro_bug\"(String))\n}\n",
+    );
 }
 
 fn corrupt_import(files: &mut Vec<(String, String)>) {
@@ -324,9 +322,14 @@ mod tests {
                         }
                         (Mutation::Import, true) => (
                             "kio_gen_empty",
-                            "bridge {\n  prog;\n  testapi;\n  kio_gen_empty\n}\n",
+                            "bridge {\n  prog;\n  testapi;\n  control;\n  kio_gen_empty\n}\n",
                         ),
-                        (Mutation::Macro, _) => ("testapi", "bridge {\n  prog;\n  testapi\n}\n"),
+                        (Mutation::Macro, false) => {
+                            ("testapi", "bridge {\n  prog;\n  testapi\n}\n")
+                        }
+                        (Mutation::Macro, true) => {
+                            ("testapi", "bridge {\n  prog;\n  testapi;\n  control\n}\n")
+                        }
                         _ => unreachable!(),
                     };
                     assert_eq!(package_kio_mut(&mut files), &format!("{prefix}{bridge}"));
@@ -373,13 +376,7 @@ mod tests {
                     source.contains("import __intrinsics__;\nimport algebraic_macros(macro into);")
                 );
             }
-            assert_eq!(
-                source
-                    .matches("default host type String role(str);")
-                    .count(),
-                1
-            );
-            assert!(source.contains("into(\"kio_gen_macro_bug\")"));
+            assert!(source.contains("into(\"kio_gen_macro_bug\"(String))"));
         }
     }
 }

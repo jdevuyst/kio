@@ -8,22 +8,22 @@ import vec/macros/macro_util(Optional_type);
 import vec/macros/testapi(String);
 
 /// Renders the unit value.
-pub fn show_unit_text() -> String { "()" }
+pub fn show_unit_text() -> String { "()"(String) }
 
 /// The opening parenthesis that wraps a product's rendered fields.
-pub fn show_open_paren() -> String { "(" }
+pub fn show_open_paren() -> String { "("(String) }
 
 /// The closing parenthesis that wraps a product's rendered fields.
-pub fn show_close_paren() -> String { ")" }
+pub fn show_close_paren() -> String { ")"(String) }
 
 /// The separator between a product's rendered fields.
-pub fn show_comma_space() -> String { ", " }
+pub fn show_comma_space() -> String { ", "(String) }
 
 /// The prefix tagging a sum's left arm.
-pub fn show_left_prefix() -> String { "left(" }
+pub fn show_left_prefix() -> String { "left("(String) }
 
 /// The prefix tagging a sum's right arm.
-pub fn show_right_prefix() -> String { "right(" }
+pub fn show_right_prefix() -> String { "right("(String) }
 
 type Type_pair = __Type__ & __Type__;
 
@@ -96,7 +96,10 @@ pure fn concat_text_right(
 }
 
 pure fn unsupported_show(ct: __Comptime__) -> __Checked_term__ {
-  __macro_error__(ct, "show supports only host leaves, unit, products, sums, and bottom")
+  __macro_error__(
+  , ct
+  , "show supports only host leaves, unit, products, sums, and bottom"(__Diagnostic_text__)
+  )
 }
 
 pure fn render_host_or_error(

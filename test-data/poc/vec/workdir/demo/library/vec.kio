@@ -25,15 +25,15 @@ import library/core(
 , yes_bnd
 );
 import library/list/core(cons, nil, uncons);
-import library/macros/control(macro if);
+import library/macros/control(Bool as Control_bool, macro if);
 import library/macros/match(macro match);
 import library/macros/spine_macros(macro widen_sum);
 import list/core(List);
 import vec_host as _rehost_hggfgdfpgigphdhe;
 
-default pub type Bool = _rehost_hggfgdfpgigphdhe.Bool;
+pub type Bool = Control_bool;
 
-default pub type I32 = _rehost_hggfgdfpgigphdhe.I32;
+pub type I32 = _rehost_hggfgdfpgigphdhe.I32;
 
 pub fn add(p0: I32, p1: I32) -> I32 { _rehost_hggfgdfpgigphdhe.add(p0, p1) }
 
@@ -514,14 +514,14 @@ pub op _ <@> _ { impl flip_map }
 // `length(empty(A)) == 0` - the empty arm yields the literal `0`, no loop.
 equiv length_empty[A]() {
   length(empty(A));
-  0
+  0(I32)
 }
 
 // `length(singleton(x)) == 1` - `singleton` builds a `vfull(1, ...)`; the
 // `length` match projects the literal count.
 equiv length_singleton[A](x: A) {
   length(singleton(x));
-  1
+  1(I32)
 }
 
 // `at(empty(A), i) == ()` for opaque `i` - the empty vec matches its

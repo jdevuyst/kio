@@ -19,7 +19,7 @@
 
 use super::{ContractSide, QualifiedName};
 use crate::ast::{
-    Import, ImportItem, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
+    Import, ImportKind, Phase, Purity, SigItem, SigItemRef, SigModuleSection, Surface,
     TypeRecMember,
 };
 use crate::pass::resolve::{ExportContractPhase, Package};
@@ -250,11 +250,6 @@ pub(super) fn imports_needed_by(items: &[SigItem<Surface>], imports: Vec<Import>
                     item.as_local_name()
                         .is_some_and(|name| referenced.bare.contains(name))
                 });
-                for item in items.iter_mut() {
-                    if let ImportItem::Name { default_span, .. } = item {
-                        *default_span = None;
-                    }
-                }
                 (!items.is_empty()).then_some(usage)
             }
             ImportKind::Qualified { alias, .. } => {
@@ -412,9 +407,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recorded_imports_keep_names_but_drop_default_selections() {
+    fn recorded_imports_keep_only_referenced_names_and_aliases() {
         let module = crate::pass::parser::parse(
-            "module consumer; import numbers(default Int as I, default Text, Other); \
+            "module consumer; import numbers(Int as I, Text, Other); \
              import extra as extra_api; pub type Result = I & extra_api.Value;",
         )
         .expect("parse source module");

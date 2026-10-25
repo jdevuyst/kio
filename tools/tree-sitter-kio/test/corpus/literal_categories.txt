@@ -1,0 +1,25 @@
+================================================================================
+integer and decimal-point floating literals retain number roles
+================================================================================
+42 42.0e0 42.0E+3 42.0 42.0e-3
+--------------------------------------------------------------------------------
+
+(source_file
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal))
+
+================================================================================
+point-free exponents stay whole during spelling-error recovery
+================================================================================
+1e12 42e0 42E+3 42e-3 42E-0
+--------------------------------------------------------------------------------
+
+(source_file
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal)
+  (number_literal))

@@ -17,7 +17,7 @@ import symbolic_units/model(
 , {meter_exp}
 , {second_exp}
 );
-import testapi(I32, default Bool);
+import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 

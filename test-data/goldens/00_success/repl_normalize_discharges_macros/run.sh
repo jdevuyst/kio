@@ -35,4 +35,4 @@ do
 done
 
 cat out/parity-warm.out
-printf ':normalize pair_has_i32()\n:normalize contains(((), 1), I32)\n:normalize rep_of_unit()\n:normalize marker_fn()\n' | "$KIO_BIN" repl rne/main
+printf ':normalize pair_has_i32()\n:normalize contains(((), 1(I32)), I32)\n:normalize rep_of_unit()\n:normalize marker_fn()\n' | "$KIO_BIN" repl rne/main

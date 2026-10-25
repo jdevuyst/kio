@@ -66,6 +66,12 @@ V1 has no run buttons and no Kiodoc Phase 2 run-marker schema. Do not require ru
 
 ## 10. Landing-page visual review
 
+Compare the landing page and its displayed example sources with the root README
+under [`ai/topics/readme.md`](../../topics/readme.md) § README and landing-page
+consistency. Reuse `audit-readme`'s paired content check if already completed in
+this pass; otherwise perform it here. Report contradictory shared claims, stale
+examples and missing essential first-use explanations.
+
 For landing-page changes, verify the rendered candidate was visually reviewed
 by an agent or user under [`ai/topics/readme.md`](../../topics/readme.md)
 § Landing-page visual review. Inspect the review evidence for the changed
