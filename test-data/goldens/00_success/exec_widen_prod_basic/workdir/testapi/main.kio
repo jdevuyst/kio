@@ -17,7 +17,7 @@ pub fn main() {
   // Recover the data slots by `one_prod` (it picks the leftmost
   // source slot of each type). The synthesized `()` slot is just
   // there to verify the widen produced a valid 3-slot product.
-  let s = one_prod(extended, String);
-  let n = one_prod(extended, I32);
+  let s = one_prod(extended)[String];
+  let n = one_prod(extended)[I32];
   print(string_concat(s, string_concat(int_to_string(n), "\n")))
 }

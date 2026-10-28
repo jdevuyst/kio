@@ -9,15 +9,15 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub rec newtype Node : String & lists.List(Node) { constructor make; projector open }
+pub rec newtype Node : String & lists.List[Node] { constructor make; projector open }
 
-pub fn branch(name: String, children: lists.List(Node)) -> Node { Node.make((name, children)) }
+pub fn branch(name: String, children: lists.List[Node]) -> Node { Node.make((name, children)) }
 
-pub fn leaf(name: String) -> Node { branch(name, lists.nil(_)) }
+pub fn leaf(name: String) -> Node { branch(name, lists.nil[_]) }
 
 pub fn name(node: Node) -> String { let .(title, _children) = Node.open(node); title }
 
-pub fn children(node: Node) -> lists.List(Node) {
+pub fn children(node: Node) -> lists.List[Node] {
   let .(_title, descendants) = Node.open(node);
   descendants
 }
@@ -30,9 +30,9 @@ pub fn append(node: Node, child: Node) -> Node {
 
 type Visit = Node & String;
 
-rec(loop) fn render_pending(pending: lists.List(Visit)) {
+rec(loop) fn render_pending(pending: lists.List[Visit]) {
   match(lists.uncons(pending)) {
-    .(visit: Visit, rest: lists.List(Visit)) {
+    .(visit: Visit, rest: lists.List[Visit]) {
       let .(node, indent) = visit;
       io.print(name(node).>text.string_concat("\n").>>text.string_concat(indent));
       let next_indent = text.string_concat(indent, "  ");
@@ -45,9 +45,9 @@ rec(loop) fn render_pending(pending: lists.List(Visit)) {
 
 pub fn render(node: Node) { render_pending(lists.singleton((node, "  "))) }
 
-rec(loop) fn count_pending(pending: lists.List(Node), count: I32) -> I32 {
+rec(loop) fn count_pending(pending: lists.List[Node], count: I32) -> I32 {
   match(lists.uncons(pending)) {
-    .(node: Node, rest: lists.List(Node)) {
+    .(node: Node, rest: lists.List[Node]) {
       recur count_pending(traversal.append(children(node), rest), arith.add_i32(count, 1))
     };
     .() { count }

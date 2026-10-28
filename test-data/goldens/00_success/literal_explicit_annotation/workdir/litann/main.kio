@@ -2,12 +2,12 @@ module litann/main;
 
 import litann(Bool, F64, I32, Str);
 
-fn s() -> Str { "hi"(Str) }
+fn s() -> Str { "hi"[Str] }
 
-fn b() -> Bool { .t(Bool) }
+fn b() -> Bool { .t[Bool] }
 
-fn i() -> I32 { 42(I32) }
+fn i() -> I32 { 42[I32] }
 
-fn f() -> F64 { 3.14(F64) }
+fn f() -> F64 { 3.14[F64] }
 
-fn explicit_float() -> F64 { 7.0(F64) }
+fn explicit_float() -> F64 { 7.0[F64] }

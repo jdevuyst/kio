@@ -1412,7 +1412,12 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         args: Vec<Value>,
         result: &mut Value,
     ) -> Control<'code> {
-        self.reflect(builtin, args, true, result)
+        self.reflect(
+            builtin,
+            adapt_reflection_packet(builtin, args),
+            true,
+            result,
+        )
     }
 
     fn reflect(
@@ -1619,10 +1624,12 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         result: &mut Value,
     ) -> Control<'code> {
         let name = atom.as_str();
-        if let Some(arity) = intrinsic_elim_value_arity(name)
-            && args.len() > arity
+        if let Some(arity) =
+            intrinsic_elim_value_arity(name).or_else(|| intrinsic_ctor_value_arity(name))
+            && arity > 1
+            && args.len() == 1
         {
-            args = args.split_off(args.len() - arity);
+            args = split_product_packet_slots(args.pop().expect("one packet"), arity);
         }
         if name == "__if_then_else__"
             && let [Value::Bool(left), _, _] = args.as_slice()

@@ -11,12 +11,12 @@ newtype Box[A] : A { constructor box; projector unbox }
 
 newtype Pack <U> : (U -> String) & U { constructor pack; projector unpack }
 
-fn pure[A](value: A) -> Box(A) { Box.box(value) }
+fn pure[A](value: A) -> Box[A] { Box.box(value) }
 
-fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
 
 fn ordinary() -> String {
-  let _ = "discard"(String);
+  let _ = "discard"[String];
   let .(typed: String) = "typed:";
   let .(whole: (first: String, second: String)) = ("a", "b");
   let .(again, last) = whole;

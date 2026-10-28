@@ -11,7 +11,7 @@ import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
-pub type Assignment = lists.List(I32 & Bool);
+pub type Assignment = lists.List[I32 & Bool];
 
 pub fn assigned(values: Assignment, variable: I32) -> Bool {
   match(walk.find(.(key: I32, _value: Bool) { arith.eq_i32(key, variable) }, values)) {
@@ -45,16 +45,16 @@ rec(loop) fn choose(store: table.Store, root: table.Node_id, values: Assignment)
 }
 
 pub fn satisfying_assignment(store: table.Store, root: table.Node_id) -> Assignment | . {
-  choose(store, root, lists.nil(_))
+  choose(store, root, lists.nil[_])
 }
 
 rec(loop) fn collect(
 , store: table.Store
-, pending: lists.List(table.Node_id)
-, seen: lists.List(table.Node_id)
-) -> lists.List(table.Node_id) {
+, pending: lists.List[table.Node_id]
+, seen: lists.List[table.Node_id]
+) -> lists.List[table.Node_id] {
   match(lists.uncons(pending)) {
-    .(id: table.Node_id, tail: lists.List(table.Node_id)) {
+    .(id: table.Node_id, tail: lists.List[table.Node_id]) {
       if(logic.or(table.terminal(id), walk.elem(table.same_id, id, seen))) {
         recur collect(store, tail, seen)
       } else match(table.lookup(store, id)) {
@@ -73,7 +73,7 @@ rec(loop) fn collect(
 }
 
 pub fn node_count(store: table.Store, root: table.Node_id) -> I32 {
-  walk.length(collect(store, lists.singleton(root), lists.nil(_)))
+  walk.length(collect(store, lists.singleton(root), lists.nil[_]))
 }
 
 fn valid_child(store: table.Store, level: I32, child: table.Node_id) -> Bool {

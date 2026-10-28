@@ -11,5 +11,5 @@ pub fn floating() -> Float { 42.0 }
 pub fn same[A](left: A, _right: A) -> A { left }
 
 pub fn choose(flag: Bool) -> Int {
-  __if_then_else__(Bool, Int, flag, .() { 42 }, .() { 0 })
+  __if_then_else__[Bool][Int](flag, .() { 42 }, .() { 0 })
 }

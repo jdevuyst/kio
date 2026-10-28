@@ -970,32 +970,6 @@ fn comptime_erased_path_kind(
     }
 }
 
-fn intrinsic_call_arity(name: &str) -> Option<(usize, usize)> {
-    match name {
-        "__left__" | "__right__" => Some((2, 1)),
-        "__either__" => Some((3, 3)),
-        "__pair__" => Some((2, 2)),
-        "__fst__" | "__snd__" => Some((2, 1)),
-        "__absurd__" => Some((1, 1)),
-        "__if_then_else__" => Some((2, 3)),
-        _ => None,
-    }
-}
-
-fn explicit_intrinsic_type_arity(
-    callee: &Expr<Lowered>,
-    args: &[CallArg<Lowered>],
-) -> Option<usize> {
-    let Expr::Path { segments, .. } = callee else {
-        return None;
-    };
-    let [segment] = segments.as_slice() else {
-        return None;
-    };
-    let (type_arity, value_arity) = intrinsic_call_arity(segment.as_str())?;
-    (args.len() == type_arity + value_arity).then_some(type_arity)
-}
-
 #[derive(Clone, Copy)]
 enum ComptimeEraseKind {
     Bottom,
@@ -1237,9 +1211,130 @@ impl<'a> SubstituteVisitor<'a> {
         Ok(keep(annotation, meta))
     }
 
-    fn walk_value_shaped_type_arg(&mut self, e: &Expr<Lowered>) -> Result<Type<PrePrime>, Error> {
-        let ty = crate::pass::typecheck_core::expr_to_type_arg(e)?;
-        self.walk_type(&ty)
+    fn materialize_call_stage(
+        &mut self,
+        callee: Expr<PrePrime>,
+        args: &[CallArg<Lowered>],
+        call_span: Span,
+        occurrence: Option<crate::ast::ExpressionOccurrenceId>,
+    ) -> Result<Expr<PrePrime>, Error> {
+        // The table is external to the visitor: recursive conversion can
+        // borrow its recorded types and call plan without copying their trees.
+        let elabs = self.elabs;
+        let residual_eta =
+            occurrence.and_then(|id| elabs.call_residual_eta_type_for(&self.module_path, id));
+        let implicit_unit_slots = occurrence
+            .and_then(|id| elabs.call_implicit_unit_slots_for(&self.module_path, id))
+            .unwrap_or_default();
+        use crate::pass::typecheck_core::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
+        let mut new_args: Vec<CallArg<PrePrime>> = Vec::with_capacity(args.len() + 2);
+        let mut cursor = CanonicalCallCursor::default();
+        loop {
+            let arg = args.get(cursor.written());
+            let written = arg.map(|arg| match arg {
+                CallArg::Type(Type::Infer { .. }) => WrittenCallArg::Infer,
+                CallArg::Type(_) => WrittenCallArg::Type,
+                CallArg::Value(_) => WrittenCallArg::Value,
+            });
+            let implicit = implicit_unit_slots
+                .binary_search(&cursor.canonical())
+                .is_ok();
+            let resolution = (!implicit)
+                .then(|| {
+                    occurrence.and_then(|id| {
+                        elabs.type_resolution_for(&self.module_path, id, cursor.canonical())
+                    })
+                })
+                .flatten();
+            match cursor.advance(written, implicit, resolution.is_some()) {
+                Some(CanonicalCallSlot::ImplicitUnit) => {
+                    new_args.push(CallArg::Value(Expr::Unit {
+                        source_trivia: Default::default(),
+                        occurrence: Default::default(),
+                        meta: Meta::new(call_span),
+                    }))
+                }
+                Some(CanonicalCallSlot::ResolvedType { .. }) => {
+                    new_args.push(CallArg::Type(self.walk_recorded_type(
+                        resolution.expect("resolved canonical slot has a recorded type"),
+                    )?));
+                }
+                Some(CanonicalCallSlot::Written) => {
+                    new_args.push(
+                        match arg.expect("written canonical slot has a source argument") {
+                            CallArg::Type(Type::Infer { meta, .. }) => {
+                                CallArg::Type(self.missing_type_infer(
+                                    meta.span,
+                                    "every `Type::Infer` in a call's args list must have a \
+                             recorded resolution — `apply_polymorphic_function` \
+                             records one per `_`",
+                                ))
+                            }
+                            CallArg::Type(ty) => CallArg::Type(self.walk_type(ty)?),
+                            CallArg::Value(value) => CallArg::Value(self.walk_expr(value)?),
+                        },
+                    );
+                }
+                None => break,
+            }
+        }
+        if args.is_empty() && implicit_unit_slots.is_empty() {
+            // A source-empty packet is itself the ordinary spelling of one
+            // Unit value application. Typed calls reach this boundary with an
+            // implicit-Unit marker and are handled in the canonical-slot loop
+            // above. Evaluator inputs can intentionally be untyped, so retain
+            // the same source rule here without treating a written type-only
+            // packet as an implicit value application.
+            new_args.push(CallArg::Value(Expr::Unit {
+                source_trivia: Default::default(),
+                occurrence: Default::default(),
+                meta: Meta::new(call_span),
+            }));
+        }
+        for arg in &mut new_args {
+            if let CallArg::Type(ty) = arg {
+                crate::pass::typecheck_core::canonicalize_type_expression_function_abi(ty);
+            }
+        }
+        let Some(residual_eta) = residual_eta else {
+            return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
+        };
+        let residual_ty = self.walk_recorded_type(residual_eta)?;
+        let Some(plan) = first_eta_layer_from_residual_type(&residual_ty) else {
+            return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
+        };
+        let prefix = self.call_with_recorded_splits(callee, new_args, call_span, occurrence);
+
+        // Every applied prefix is evaluated when the residual value is formed
+        // exactly once. Looking up a named function may itself be pure, but a
+        // type application is an ordinary application boundary: its body may
+        // perform effects before returning the remaining callable layers.
+        // Bind the result before eta-wrapping only those residual layers so a
+        // later optimizer cannot move the application under the fresh lambda.
+        let callee_name = "__eta_callee__".to_owned();
+        let callee_path = Expr::Path {
+            occurrence: Default::default(),
+            segments: vec![PathSegment::new(callee_name.clone(), call_span)],
+            meta: Meta::new(call_span),
+            ext: (),
+        };
+        Ok(Expr::Let {
+            occurrence: Default::default(),
+            name: callee_name,
+            name_span: call_span,
+            ty: Some(residual_ty),
+            pattern: (),
+            value: Box::new(prefix),
+            body: Box::new(eta_materialize_pre_prime(
+                &plan,
+                EtaTerminal::Call {
+                    callee: callee_path,
+                    args: Vec::new(),
+                },
+                call_span,
+            )),
+            meta: Meta::new(call_span),
+        })
     }
 
     fn call_with_recorded_splits(
@@ -1739,7 +1834,24 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
 
     fn rewrite_expr_user_macro(&mut self, e: &Expr<Lowered>) -> Result<Expr<PrePrime>, Error> {
         if let Some(elab) = self.elabs.elaboration_for(&self.module_path, e) {
-            return self.walk_recorded_elaboration(elab);
+            let mut output = self.walk_recorded_elaboration(elab)?;
+            if let Some(first) = self
+                .semantic_occurrence(e)
+                .and_then(|id| self.elabs.macro_output_stage_for(&self.module_path, id))
+            {
+                let Expr::UserMacro { stages, .. } = e else {
+                    unreachable!()
+                };
+                for stage in &stages[first..] {
+                    output = self.materialize_call_stage(
+                        output,
+                        &stage.args,
+                        stage.meta.span,
+                        Some(stage.occurrence.key()),
+                    )?;
+                }
+            }
+            return Ok(output);
         }
         self.missing_elaboration_expr(
             e,
@@ -1797,7 +1909,7 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             ComptimeLoweringMode::EvalPreserve => Ok(crate::ast::residual_literal_type_hole(span)),
             ComptimeLoweringMode::RuntimeErase => unreachable!(
                 "literal at {span:?} reached the Lowered → PrePrime substitution with no \
-                 recorded resolution or `(Type)` annotation; the typer must pin every \
+                 recorded resolution or `[Type]` annotation; the typer must pin every \
                  literal's host type before \
                  substitution"
             ),
@@ -2000,137 +2112,8 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
         else {
             unreachable!()
         };
-        let call_span = meta.span;
-        // The table is external to the visitor: recursive conversion can
-        // borrow its recorded types and call plan without copying their trees.
-        let elabs = self.elabs;
-        let residual_eta =
-            occurrence.and_then(|id| elabs.call_residual_eta_type_for(&self.module_path, id));
-        let implicit_unit_slots = occurrence
-            .and_then(|id| elabs.call_implicit_unit_slots_for(&self.module_path, id))
-            .unwrap_or_default();
-        use crate::pass::typecheck_core::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallArg};
-        let mut new_args: Vec<CallArg<PrePrime>> = Vec::with_capacity(args.len() + 2);
-        let mut cursor = CanonicalCallCursor::default();
-        let explicit_intrinsic_type_arity = explicit_intrinsic_type_arity(callee, args);
-        loop {
-            let arg = args.get(cursor.written());
-            let written = arg.map(|arg| match arg {
-                CallArg::Type(Type::Infer { .. }) => WrittenCallArg::Infer,
-                CallArg::Type(_) => WrittenCallArg::Type,
-                CallArg::Value(_) => WrittenCallArg::Value,
-            });
-            let implicit = implicit_unit_slots
-                .binary_search(&cursor.canonical())
-                .is_ok();
-            let resolution = (!implicit)
-                .then(|| {
-                    occurrence.and_then(|id| {
-                        elabs.type_resolution_for(&self.module_path, id, cursor.canonical())
-                    })
-                })
-                .flatten();
-            let intrinsic_type =
-                explicit_intrinsic_type_arity.is_some_and(|arity| cursor.written() < arity);
-            let value_at_type_slot = resolution.is_some()
-                && matches!(written, Some(WrittenCallArg::Value))
-                && (intrinsic_type
-                    || occurrence.is_some_and(|id| {
-                        elabs.is_value_at_type_slot(&self.module_path, id, cursor.canonical())
-                    }));
-            match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
-                Some(CanonicalCallSlot::ImplicitUnit) => {
-                    new_args.push(CallArg::Value(Expr::Unit {
-                        source_trivia: Default::default(),
-                        occurrence: Default::default(),
-                        meta: Meta::new(call_span),
-                    }))
-                }
-                Some(CanonicalCallSlot::ResolvedType { .. }) => {
-                    new_args.push(CallArg::Type(self.walk_recorded_type(
-                        resolution.expect("resolved canonical slot has a recorded type"),
-                    )?));
-                }
-                Some(CanonicalCallSlot::Written) => {
-                    new_args.push(
-                        match arg.expect("written canonical slot has a source argument") {
-                            CallArg::Type(Type::Infer { meta, .. }) => {
-                                CallArg::Type(self.missing_type_infer(
-                                    meta.span,
-                                    "every `Type::Infer` in a call's args list must have a \
-                             recorded resolution — `apply_polymorphic_function` \
-                             records one per `_`",
-                                ))
-                            }
-                            CallArg::Type(ty) => CallArg::Type(self.walk_type(ty)?),
-                            CallArg::Value(value) if intrinsic_type => {
-                                CallArg::Type(self.walk_value_shaped_type_arg(value)?)
-                            }
-                            CallArg::Value(value) => CallArg::Value(self.walk_expr(value)?),
-                        },
-                    );
-                }
-                None => break,
-            }
-        }
-        if args.is_empty() && implicit_unit_slots.is_empty() {
-            // A source-empty packet is itself the ordinary spelling of one
-            // Unit value application. Typed calls reach this boundary with an
-            // implicit-Unit marker and are handled in the canonical-slot loop
-            // above. Evaluator inputs can intentionally be untyped, so retain
-            // the same source rule here without treating a written type-only
-            // packet as an implicit value application.
-            new_args.push(CallArg::Value(Expr::Unit {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                meta: Meta::new(call_span),
-            }));
-        }
-        for arg in &mut new_args {
-            if let CallArg::Type(ty) = arg {
-                crate::pass::typecheck_core::canonicalize_type_expression_function_abi(ty);
-            }
-        }
         let callee = self.walk_expr(callee)?;
-        let Some(residual_eta) = residual_eta else {
-            return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
-        };
-        let residual_ty = self.walk_recorded_type(residual_eta)?;
-        let Some(plan) = first_eta_layer_from_residual_type(&residual_ty) else {
-            return Ok(self.call_with_recorded_splits(callee, new_args, call_span, occurrence));
-        };
-        let prefix = self.call_with_recorded_splits(callee, new_args, call_span, occurrence);
-
-        // Every applied prefix is evaluated when the residual value is formed
-        // exactly once. Looking up a named function may itself be pure, but a
-        // type application is an ordinary application boundary: its body may
-        // perform effects before returning the remaining callable layers.
-        // Bind the result before eta-wrapping only those residual layers so a
-        // later optimizer cannot move the application under the fresh lambda.
-        let callee_name = "__eta_callee__".to_owned();
-        let callee_path = Expr::Path {
-            occurrence: Default::default(),
-            segments: vec![PathSegment::new(callee_name.clone(), call_span)],
-            meta: Meta::new(call_span),
-            ext: (),
-        };
-        Ok(Expr::Let {
-            occurrence: Default::default(),
-            name: callee_name,
-            name_span: call_span,
-            ty: Some(residual_ty),
-            pattern: (),
-            value: Box::new(prefix),
-            body: Box::new(eta_materialize_pre_prime(
-                &plan,
-                EtaTerminal::Call {
-                    callee: callee_path,
-                    args: Vec::new(),
-                },
-                call_span,
-            )),
-            meta: Meta::new(call_span),
-        })
+        self.materialize_call_stage(callee, args, meta.span, occurrence)
     }
 }
 
@@ -2473,8 +2456,12 @@ mod tests {
         let Expr::Call { args, .. } = &annotated.body else {
             panic!("expected call body");
         };
-        let Some(CallArg::Value(Expr::FnExpr { sig, .. })) = args.last() else {
-            panic!("expected lambda final argument");
+        let Some(CallArg::Value(packet)) = args.last() else {
+            panic!("expected the product value packet");
+        };
+        let (_, lambda) = pair_values(packet);
+        let Expr::FnExpr { sig, .. } = lambda else {
+            panic!("expected lambda as the second product component");
         };
         let [
             crate::ast::SignatureParam::Type(inner),
@@ -2714,23 +2701,6 @@ mod tests {
             "eval substitution produced a compiler-only value binder: {:#?}",
             update.body
         );
-    }
-
-    #[test]
-    fn intrinsic_call_arity_covers_every_type_bearing_intrinsic() {
-        // The `(type_arity, value_arity)` table drives leading-type-arg
-        // splitting at the Lowered→Prime boundary. A missing arm collapses
-        // to `None`, so an explicit `__left__(A, B, x)` would keep its
-        // type args as VALUE args in Prime.
-        assert_eq!(intrinsic_call_arity("__left__"), Some((2, 1)));
-        assert_eq!(intrinsic_call_arity("__right__"), Some((2, 1)));
-        assert_eq!(intrinsic_call_arity("__either__"), Some((3, 3)));
-        assert_eq!(intrinsic_call_arity("__pair__"), Some((2, 2)));
-        assert_eq!(intrinsic_call_arity("__fst__"), Some((2, 1)));
-        assert_eq!(intrinsic_call_arity("__snd__"), Some((2, 1)));
-        assert_eq!(intrinsic_call_arity("__absurd__"), Some((1, 1)));
-        assert_eq!(intrinsic_call_arity("__if_then_else__"), Some((2, 3)));
-        assert_eq!(intrinsic_call_arity("not_an_intrinsic"), None);
     }
 
     #[test]
@@ -3465,11 +3435,11 @@ mod tests {
 
         let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
         assert!(
-            emitted.contains("type Kioq1[Qp0_s1] = Hidden(Qp0_s1);"),
+            emitted.contains("type Kioq1[Qp0_s1] = Hidden[Qp0_s1];"),
             "generated alias declaration and application must retain one parameter identity:\n{emitted}"
         );
         assert!(
-            emitted.contains("type Uses_generated = Kioq1(.);"),
+            emitted.contains("type Uses_generated = Kioq1[.];"),
             "the emitted owner must use the generated alias reference:\n{emitted}"
         );
         let reparsed = parse(&emitted)
@@ -3627,7 +3597,7 @@ mod tests {
             "x",
             "module x; \
              newtype Box[A] : A { pub constructor mk; pub projector un; }; \
-             fn f[A](y: A) -> . { let .(h: Box(_)) = Box.mk(A, y); () }",
+             fn f[A](y: A) -> . { let .(h: Box[_]) = Box.mk[A](y); () }",
         );
         let f = module
             .items
@@ -3708,6 +3678,24 @@ mod tests {
             crate::ast::RoleShape::Str => "\"erased\"",
             crate::ast::RoleShape::Bool => ".t",
         }
+    }
+
+    fn pair_values<P: Phase>(packet: &Expr<P>) -> (&Expr<P>, &Expr<P>) {
+        let Expr::Call { callee, args, .. } = packet else {
+            panic!("expected one synthesized product packet")
+        };
+        assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "__pair__"));
+        let [
+            CallArg::Type(_),
+            CallArg::Type(_),
+            CallArg::Value(first),
+            CallArg::Value(second),
+        ] = args.as_slice()
+        else {
+            panic!("a synthesized pair has exactly two type and two value operands")
+        };
+        (first, second)
     }
 
     fn prime_fn<'a>(module: &'a Module<Prime>, name: &str) -> &'a FnDef<Prime> {
@@ -3849,11 +3837,10 @@ mod tests {
     fn eval_substitution_rejects_missing_user_macro() {
         let span = Span::new(0, 0);
         let expr: Expr<Lowered> = Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             form: crate::ast::UserMacroCallForm::Ordinary,
             name: "demo".to_owned(),
-            args: Vec::new(),
+            stages: Vec::new(),
             meta: Meta::new(span),
             ext: crate::ast::NodeId(1),
         };
@@ -4020,11 +4007,11 @@ mod tests {
             ),
             (
                 "numbers",
-                "module numbers; import other as numbers; pub host type Float role(f64); pub type Identity[A] = A; pub pure fn value() -> Float { 42.0(Float) }",
+                "module numbers; import other as numbers; pub host type Float role(f64); pub type Identity[A] = A; pub pure fn value() -> Float { 42.0[Float] }",
             ),
             (
                 "main",
-                "module main; import numbers as n; import other as numbers; import quoted(macro preserve); type Float = n.Identity(n.Float); pure fn local() -> Float { let .(value: Float) = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0(n.Float); id(42.0(n.Float)); preserve(n.Float, 42.0(n.Float)) }",
+                "module main; import numbers as n; import other as numbers; import quoted(macro preserve); type Float = n.Identity[n.Float]; pure fn local() -> Float { let .(value: Float) = 42.0; value } pure fn id[A](value: A) -> A { value } equiv selected() { local(); n.value(); 42.0[n.Float]; id(42.0[n.Float]); preserve[n.Float](42.0[n.Float]) }",
             ),
         ];
         let parsed = sources
@@ -4197,9 +4184,14 @@ mod tests {
             let Expr::Call { args, .. } = &def.body else {
                 panic!("call witness")
             };
-            let CallArg::Value(literal) = &args[0] else {
-                panic!("literal argument")
+            let [CallArg::Value(packet)] = args.as_slice() else {
+                panic!("one public product packet")
             };
+            let (literal, _) = pair_values(packet);
+            assert!(
+                matches!(literal, Expr::FloatLit { .. }),
+                "first written component"
+            );
             let annotation = tcx
                 .elaborations
                 .literal_resolution_for("main", literal.site().id);
@@ -4321,14 +4313,14 @@ mod tests {
     #[test]
     fn literal_aliases_follow_comptime_erasure_and_reparse() {
         let source = "module main; import __comptime__; host type Int role(i64); \
-            type Identity[A] = A; type Flag = Identity(Comptime_bool); \
+            type Identity[A] = A; type Flag = Identity[Comptime_bool]; \
             type Text = Comptime_str; \
-            fn value() -> . { let flag = .t(Flag); let text = \"hello\"(Text); let number = 42(Int); () }";
+            fn value() -> . { let flag = .t[Flag]; let text = \"hello\"[Text]; let number = 42[Int]; () }";
         let prime = substitute_one("main", source);
         let emitted = crate::backends::kio_prime::emit_module_for_test(&prime);
         assert!(emitted.contains("host type Int role(i64)"), "{emitted}");
         assert!(
-            emitted.contains("type Flag = Identity(.);") && emitted.contains("type Text = .;"),
+            emitted.contains("type Flag = Identity[.];") && emitted.contains("type Text = .;"),
             "{emitted}"
         );
         assert!(!emitted.contains("__comptime__"), "{emitted}");
@@ -4385,8 +4377,8 @@ mod tests {
                constructor make; projector read; \
              }; \
              rec { \
-               type Keep_group_alias[Comptime_bool] = Keep_group_newtype(Comptime_bool); \
-               newtype Keep_group_newtype[Comptime_str] : Keep_group_alias(Comptime_str) { \
+               type Keep_group_alias[Comptime_bool] = Keep_group_newtype[Comptime_bool]; \
+               newtype Keep_group_newtype[Comptime_str] : Keep_group_alias[Comptime_str] { \
                  constructor make_group; projector read_group; \
                }; \
              } \
@@ -4692,7 +4684,7 @@ mod tests {
                 "module pkg/main; \
                  import pkg/refl(Rep); \
                  import pkg/refl(macro make_rep); \
-                 fn main() -> Rep { make_rep(., ()) }",
+                 fn main() -> Rep { make_rep[.](()) }",
             ),
         ]);
         let main_entry = prime.module("pkg/main").expect("main module");
@@ -4746,7 +4738,7 @@ mod tests {
     fn no_elaborations_passes_through_unchanged() {
         let src = "module x/main; \
                    fn id[A](x: A) -> A { x } \
-                   fn use_id(y: .) -> . { id(., y) }";
+                   fn use_id(y: .) -> . { id[.](y) }";
         let module = substitute_one("x/main", src);
         assert_eq!(module.items.len(), 2);
         assert_eq!(module.imports.len(), 0);
@@ -4769,12 +4761,12 @@ mod tests {
              fn identity[A](value: A) -> A { value } \
              fn implicit() -> . { identity() } \
              fn explicit() -> . { identity(()) } \
-             fn explicit_type_and_value() -> . { identity(., ()) } \
-             fn selected_unit() -> . -> . { identity(.) } \
-             fn selected_unit_alias() -> Unit_alias -> Unit_alias { identity(Unit_alias) } \
-             fn residual() -> N -> N { identity(N) } \
+             fn explicit_type_and_value() -> . { identity[.](()) } \
+             fn selected_unit() -> . -> . { identity[.] } \
+             fn selected_unit_alias() -> Unit_alias -> Unit_alias { identity[Unit_alias] } \
+             fn residual() -> N -> N { identity[N] } \
              fn product[A](value: A, tail: .) -> . { tail } \
-             fn product_residual() -> (. & .) -> . { product(.) }",
+             fn product_residual() -> (. & .) -> . { product[.] }",
         );
 
         for name in ["implicit", "explicit", "explicit_type_and_value"] {
@@ -4829,7 +4821,7 @@ mod tests {
             "main",
             "module main; \
              fn producer[A] -> . -> . { .(value: .) { value } } \
-             fn selected() -> . -> . { producer(.) }",
+             fn selected() -> . -> . { producer[.] }",
         );
         let Expr::Let { value, body, .. } = &prime_fn(&module, "selected").body else {
             panic!("the consumed type stage must remain an outer binding")
@@ -4909,12 +4901,12 @@ mod tests {
     }
 
     #[test]
-    fn multi_layer_flat_call_substitutes_to_nested_prime_calls() {
+    fn multi_layer_staged_call_substitutes_to_nested_prime_calls() {
         let src = "module main; \
                    newtype A : . { pub constructor mk_a; pub projector un_a; }; \
                    newtype B : . { pub constructor mk_b; pub projector un_b; }; \
                    fn foo[A](v1: A)[B](v2: B) -> . { () } \
-                   fn flat() -> . { foo(A, A.mk_a(()), B, B.mk_b(())) }";
+                   fn flat() -> . { foo[A](A.mk_a(()))[B](B.mk_b(())) }";
         let module = substitute_one("main", src);
         let flat = prime_fn(&module, "flat");
 
@@ -4947,17 +4939,17 @@ mod tests {
     }
 
     #[test]
-    fn inferred_two_layer_flat_call_substitutes_at_the_global_slot_boundary() {
+    fn inferred_two_layer_call_preserves_written_stage_boundaries() {
         let src = "module main; \
                    host type I32; \
                    host type String; \
                    fn curried[T](first: T)(second: T) -> T { first } \
                    fn curried_two[A][B](first: A)(second: A) -> A { first } \
-                   fn flat(first: I32, second: I32) -> I32 { curried(first, second) } \
+                   fn flat(first: I32, second: I32) -> I32 { curried(first)(second) } \
                    fn flat_two(first: I32, second: I32) -> I32 { \
-                     curried_two(_, String, first, second) \
+                     curried_two[_][String](first)(second) \
                    } \
-                   fn ufcs(first: I32, second: I32) -> I32 { first.>curried(second) }";
+                   fn ufcs(first: I32, second: I32) -> I32 { (first.>curried)(second) }";
         let module = substitute_one("main", src);
         let flat = prime_fn(&module, "flat");
 
@@ -5167,12 +5159,22 @@ mod tests {
                 })),
                 "{name} lowered to the wrong callee: {callee:?}"
             );
-            assert_eq!(args.len(), expected_args, "{name} lost a written value");
-            assert!(
-                args.iter()
-                    .all(|arg| matches!(arg, CallArg::Value(Expr::Unit { .. }))),
-                "{name} must carry only explicit Unit values: {args:?}"
-            );
+            let [CallArg::Value(packet)] = args.as_slice() else {
+                panic!("{name} must retain exactly one public value packet: {args:?}");
+            };
+            if expected_args == 1 {
+                assert!(matches!(packet, Expr::Unit { .. }), "{name}: {packet:?}");
+            } else {
+                let (first, second) = pair_values(packet);
+                assert!(
+                    matches!(first, Expr::Unit { .. }),
+                    "{name}: first written Unit"
+                );
+                assert!(
+                    matches!(second, Expr::Unit { .. }),
+                    "{name}: second written Unit"
+                );
+            }
         }
     }
 

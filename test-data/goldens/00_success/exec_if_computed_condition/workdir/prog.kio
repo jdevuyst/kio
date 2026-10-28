@@ -5,14 +5,14 @@ import testapi(Bool, I32);
 import testapi/fmt(print_i32);
 
 fn both(left: Bool, right: Bool) -> Bool {
-  if(left) { right } else { .f(Bool) }
+  if(left) { right } else { .f[Bool] }
 }
 
 fn choose(left: Bool, right: Bool) -> I32 {
-  if(both(if(left) { .t(Bool) } else { .f(Bool) }, if(right) { .t(Bool) } else { .f(Bool) })) {
-    1(I32)
+  if(both(if(left) { .t[Bool] } else { .f[Bool] }, if(right) { .t[Bool] } else { .f[Bool] })) {
+    1[I32]
   } else {
-    0(I32)
+    0[I32]
   }
 }
 

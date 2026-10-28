@@ -5,14 +5,14 @@ import testapi/io as io;
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
   io.print("bind\n");
   next(Box.unbox(value))
 }
 
-fn make_bind() -> [A][B] (Box(A) & (A -> Box(B))) -> Box(B) { io.print("factory\n"); bind }
+fn make_bind() -> [A][B] (Box[A] & (A -> Box[B])) -> Box[B] { io.print("factory\n"); bind }
 
-fn action() -> Box(.) { io.print("action\n"); Box.box(()) }
+fn action() -> Box[.] { io.print("action\n"); Box.box(()) }
 
 pub fn main() {
   io.print("zero\n");

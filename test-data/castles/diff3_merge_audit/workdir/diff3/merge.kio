@@ -37,9 +37,9 @@ pub labels Verdict =
 /// audit reports on text that never reaches the merged document.
 pub labels Region = {
 , mark: Verdict
-, base_span: list.List(String)
-, ours_span: list.List(String)
-, theirs_span: list.List(String)
+, base_span: list.List[String]
+, ours_span: list.List[String]
+, theirs_span: list.List[String]
 };
 
 /// A base line both alignments kept, with its index in each of the three
@@ -49,38 +49,38 @@ pub type Anchor = I32 & I32 & I32;
 /// Region counts by verdict, in the order the verdicts are declared.
 pub type Tally = I32 & I32 & I32 & I32 & I32;
 
-fn stable_mark() -> Verdict { {stable=}.>widen_sum(Verdict) }
+fn stable_mark() -> Verdict { ({stable=}.>widen_sum)[Verdict] }
 
-fn ours_mark() -> Verdict { {ours_only=}.>widen_sum(Verdict) }
+fn ours_mark() -> Verdict { ({ours_only=}.>widen_sum)[Verdict] }
 
-fn theirs_mark() -> Verdict { {theirs_only=}.>widen_sum(Verdict) }
+fn theirs_mark() -> Verdict { ({theirs_only=}.>widen_sum)[Verdict] }
 
-fn both_mark() -> Verdict { {both_same=}.>widen_sum(Verdict) }
+fn both_mark() -> Verdict { ({both_same=}.>widen_sum)[Verdict] }
 
-fn conflict_mark() -> Verdict { {conflict=}.>widen_sum(Verdict) }
+fn conflict_mark() -> Verdict { ({conflict=}.>widen_sum)[Verdict] }
 
 fn region(
 , mark: Verdict
-, base: list.List(String)
-, ours: list.List(String)
-, theirs: list.List(String)
+, base: list.List[String]
+, ours: list.List[String]
+, theirs: list.List[String]
 ) -> Region { {mark, base_span = base, ours_span = ours, theirs_span = theirs} }
 
 pub fn mark_of(reg: Region) -> Verdict { reg.?{mark} }
 
-pub fn base_of(reg: Region) -> list.List(String) { reg.?{base_span} }
+pub fn base_of(reg: Region) -> list.List[String] { reg.?{base_span} }
 
-pub fn ours_of(reg: Region) -> list.List(String) { reg.?{ours_span} }
+pub fn ours_of(reg: Region) -> list.List[String] { reg.?{ours_span} }
 
-pub fn theirs_of(reg: Region) -> list.List(String) { reg.?{theirs_span} }
+pub fn theirs_of(reg: Region) -> list.List[String] { reg.?{theirs_span} }
 
-rec(loop) fn lines_eq(left: list.List(String), right: list.List(String)) -> Bool {
+rec(loop) fn lines_eq(left: list.List[String], right: list.List[String]) -> Bool {
   match(list.List.unpack(left)) {
     (
-    , .(line: String, left_rest: list.List(String)) {
+    , .(line: String, left_rest: list.List[String]) {
         match(list.List.unpack(right)) {
           (
-          , .(other: String, right_rest: list.List(String)) {
+          , .(other: String, right_rest: list.List[String]) {
               if(string_eq(line, other)) { recur lines_eq(left_rest, right_rest) } else { .f }
             }
           , .(_empty: .) { .f }
@@ -96,7 +96,7 @@ rec(loop) fn lines_eq(left: list.List(String), right: list.List(String)) -> Bool
 /// side that still equals the base did not touch the chunk, so the other
 /// side's text wins outright; only two genuinely different rewrites of the
 /// same base text are a conflict.
-fn classify(base: list.List(String), ours: list.List(String), theirs: list.List(String)) -> Region {
+fn classify(base: list.List[String], ours: list.List[String], theirs: list.List[String]) -> Region {
   if(lines_eq(ours, base)) {
     region(theirs_mark(), base, ours, theirs)
   } else if(lines_eq(theirs, base)) {
@@ -128,13 +128,13 @@ fn anchor_theirs(anchor: Anchor) -> I32 {
 
 /// Intersect the two matchings on the base index. Both are increasing in
 /// that index, so one merge pass over the pair finds every anchor.
-rec(loop) fn join(ours: list.List(lcs.Match), theirs: list.List(lcs.Match), acc: list.List(Anchor)) -> list.List(Anchor) {
+rec(loop) fn join(ours: list.List[lcs.Match], theirs: list.List[lcs.Match], acc: list.List[Anchor]) -> list.List[Anchor] {
   match(list.List.unpack(ours)) {
     (
-    , .(our_pair: lcs.Match, ours_rest: list.List(lcs.Match)) {
+    , .(our_pair: lcs.Match, ours_rest: list.List[lcs.Match]) {
         match(list.List.unpack(theirs)) {
           (
-          , .(their_pair: lcs.Match, theirs_rest: list.List(lcs.Match)) {
+          , .(their_pair: lcs.Match, theirs_rest: list.List[lcs.Match]) {
               let ours_base = lcs.base_at(our_pair);
               let theirs_base = lcs.base_at(their_pair);
               if(prim.int_eq(ours_base, theirs_base)) {
@@ -155,8 +155,8 @@ rec(loop) fn join(ours: list.List(lcs.Match), theirs: list.List(lcs.Match), acc:
   }
 }
 
-pub fn anchors(ours: lcs.Dp, theirs: lcs.Dp) -> list.List(Anchor) {
-  join(lcs.matches(ours), lcs.matches(theirs), list.nil(Anchor))
+pub fn anchors(ours: lcs.Dp, theirs: lcs.Dp) -> list.List[Anchor] {
+  join(lcs.matches(ours), lcs.matches(theirs), list.nil[Anchor])
 }
 
 fn follows(earlier: Anchor, later: Anchor) -> Bool {
@@ -171,13 +171,13 @@ fn follows(earlier: Anchor, later: Anchor) -> Bool {
 
 /// The length of the maximal run of anchors that advances all three cursors
 /// in lockstep. One run is one stable region of the merged document.
-rec(loop) fn run_from(anchors_left: list.List(Anchor), acc: I32) -> I32 {
+rec(loop) fn run_from(anchors_left: list.List[Anchor], acc: I32) -> I32 {
   match(list.List.unpack(anchors_left)) {
     (
-    , .(head: Anchor, rest: list.List(Anchor)) {
+    , .(head: Anchor, rest: list.List[Anchor]) {
         match(list.List.unpack(rest)) {
           (
-          , .(next: Anchor, _tail: list.List(Anchor)) {
+          , .(next: Anchor, _tail: list.List[Anchor]) {
               if(follows(head, next)) {
                 recur run_from(rest, add_i32(acc, 1))
               } else {
@@ -196,7 +196,7 @@ rec(loop) fn run_from(anchors_left: list.List(Anchor), acc: I32) -> I32 {
 /// The chunk between where the last region ended and where the next anchor
 /// starts. Two adjacent anchors leave nothing between them on any side, and
 /// that empty chunk is not a region.
-fn chunk(doc: scan.Doc, from: Anchor, to: Anchor, acc: list.List(Region)) -> list.List(Region) {
+fn chunk(doc: scan.Doc, from: Anchor, to: Anchor, acc: list.List[Region]) -> list.List[Region] {
   let base_span = list.slice(scan.base_lines(doc), anchor_base(from), anchor_base(to));
   let ours_span = list.slice(scan.our_lines(doc), anchor_ours(from), anchor_ours(to));
   let theirs_span = list.slice(scan.their_lines(doc), anchor_theirs(from), anchor_theirs(to));
@@ -221,13 +221,13 @@ fn ends(doc: scan.Doc) -> Anchor {
 
 rec(loop) fn walk(
 , doc: scan.Doc
-, anchors_left: list.List(Anchor)
+, anchors_left: list.List[Anchor]
 , at: Anchor
-, acc: list.List(Region)
-) -> list.List(Region) {
+, acc: list.List[Region]
+) -> list.List[Region] {
   match(list.List.unpack(anchors_left)) {
     (
-    , .(anchor: Anchor, _rest: list.List(Anchor)) {
+    , .(anchor: Anchor, _rest: list.List[Anchor]) {
         let gapped = chunk(doc, at, anchor, acc);
         let run = run_from(anchors_left, 0);
         let base_at = anchor_base(anchor);
@@ -244,8 +244,8 @@ rec(loop) fn walk(
   }
 }
 
-pub fn regions(doc: scan.Doc, found: list.List(Anchor)) -> list.List(Region) {
-  walk(doc, found, (0, 0, 0), list.nil(Region))
+pub fn regions(doc: scan.Doc, found: list.List[Anchor]) -> list.List[Region] {
+  walk(doc, found, (0, 0, 0), list.nil[Region])
 }
 
 fn bump(counts: Tally, mark: Verdict) -> Tally {
@@ -264,13 +264,13 @@ fn bump(counts: Tally, mark: Verdict) -> Tally {
   }
 }
 
-rec(loop) fn tally_from(found: list.List(Region), acc: Tally) -> Tally {
+rec(loop) fn tally_from(found: list.List[Region], acc: Tally) -> Tally {
   match(list.List.unpack(found)) {
     (
-    , .(reg: Region, rest: list.List(Region)) { recur tally_from(rest, bump(acc, mark_of(reg))) }
+    , .(reg: Region, rest: list.List[Region]) { recur tally_from(rest, bump(acc, mark_of(reg))) }
     , .(_empty: .) { acc }
     )
   }
 }
 
-pub fn tally(found: list.List(Region)) -> Tally { tally_from(found, (0, 0, 0, 0, 0)) }
+pub fn tally(found: list.List[Region]) -> Tally { tally_from(found, (0, 0, 0, 0, 0)) }

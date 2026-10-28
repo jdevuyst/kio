@@ -11,17 +11,17 @@ fn direct(flag: Bool) -> I32 {
 }
 
 fn stored(flag: Bool) -> I32 {
-  let choose = __if_then_else__(Bool);
-  choose(I32, flag, .() { 21 }, .() { 22 })
+  let choose = __if_then_else__[Bool];
+  choose[I32](flag, .() { 21 }, .() { 22 })
 }
 
 fn contextual(flag: Other) -> I32 {
   let .(choose: [A] (Other & (. -> A) & (. -> A)) -> A) = __if_then_else__;
-  choose(I32, flag, .() { 31 }, .() { 32 })
+  choose[I32](flag, .() { 31 }, .() { 32 })
 }
 
 fn composed(flag: Bool) -> I32 {
-  __if_then_else__(_, I32)(flag, .() { 41 }, .() { 42 })
+  __if_then_else__[_][I32](flag, .() { 41 }, .() { 42 })
 }
 
 pub fn main() {

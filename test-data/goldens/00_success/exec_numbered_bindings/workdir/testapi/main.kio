@@ -6,24 +6,24 @@ import testapi/io(print);
 
 newtype Box[A] : A { constructor mk; projector get }
 
-fn pure[A](value: A) -> Box(A) { Box.mk(value) }
+fn pure[A](value: A) -> Box[A] { Box.mk(value) }
 
-fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.get(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.get(value)) }
 
-fn receiver() -> Bind(Box) { print("receiver\n"); bind }
+fn receiver() -> Bind[Box] { print("receiver\n"); bind }
 
-fn display(value: String) -> Box(.) { print(value); pure(()) }
+fn display(value: String) -> Box[.] { print(value); pure(()) }
 
-fn sequence() -> Box(String) {
+fn sequence() -> Box[String] {
   do(receiver()) {
-    let .x. <- pure(("unused"(String), "sequence pair\n"(String)));
+    let .x. <- pure(("unused"[String], "sequence pair\n"[String]));
     display(x2);
-    let .x. <- pure(("unused"(String), "unused"(String), "sequence triple\n"(String)));
+    let .x. <- pure(("unused"[String], "unused"[String], "sequence triple\n"[String]));
     display(x3);
-    let .x. = ("sequence old\n"(String), "sequence new\n"(String));
+    let .x. = ("sequence old\n"[String], "sequence new\n"[String]);
     let .x. <- pure((x1, x2));
     display(x1);
-    let .y. = "sequence different\n"(String);
+    let .y. = "sequence different\n"[String];
     display(x2);
     pure(y1)
   }
@@ -42,9 +42,9 @@ fn pair(value: String & String) -> String { let .x. = value; x2 }
 fn identity(value: String) -> String { value }
 
 fn lambda_shadow() -> String {
-  .x. { print(x2); let .x. = ("unused"(String), "unused"(String), "lambda binding\n"(String)); x3 }((
-  , "unused"(String)
-  , "lambda pair\n"(String)
+  .x. { print(x2); let .x. = ("unused"[String], "unused"[String], "lambda binding\n"[String]); x3 }((
+  , "unused"[String]
+  , "lambda pair\n"[String]
   ))
 }
 
@@ -64,26 +64,26 @@ equiv numbered_sequence[A](value: A) {
 }
 
 pub fn main() {
-  let .x. = ("unused"(String), "pair\n"(String));
+  let .x. = ("unused"[String], "pair\n"[String]);
   print(x2);
-  let .x. = ("unused"(String), "unused"(String), "triple\n"(String));
+  let .x. = ("unused"[String], "unused"[String], "triple\n"[String]);
   print(x3);
-  let .x. = ("old\n"(String), "new\n"(String));
+  let .x. = ("old\n"[String], "new\n"[String]);
   let .x. = (x1, x2);
   print(x1);
   print(x2);
-  let .left. = "left\n"(String);
-  let .right. = "right\n"(String);
+  let .left. = "left\n"[String];
+  let .right. = "right\n"[String];
   print(left1);
   print(right1);
-  let .tail. = ("unused"(String), ("unused"(String), "tail\n"(String)));
+  let .tail. = ("unused"[String], ("unused"[String], "tail\n"[String]));
   print(pair(tail2));
-  let .call. = ("call\n"(String), identity);
+  let .call. = ("call\n"[String], identity);
   print(call1.>call2);
-  let .x. = "outer\n"(String);
+  let .x. = "outer\n"[String];
   print(.(x01: String) { print(x1); x01 }(apply(.x. { x3 })));
   print(lambda_shadow());
-  let .x. = "operator\n"(String);
+  let .x. = "operator\n"[String];
   print(x1 + ());
   let .once. = make();
   print(once1);

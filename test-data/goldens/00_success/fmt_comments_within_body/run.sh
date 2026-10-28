@@ -11,9 +11,9 @@
 # - Inside a tuple literal `(a, b)` — comments above any element.
 # - Inside a label-value `{f = e, g = e'}` — comments above any
 #   label.
-# - Inside a type-application argument list `Foo(A, B)` — comments
-#   above any type-arg, including when calling a polymorphic newtype
-#   member with type-args interleaved with value-args.
+# - Inside singleton type-application groups `Foo[A][B]` — comments
+#   above each type argument, including on a polymorphic newtype member
+#   with multiple type stages before its value packet.
 # - Inside a `labels { f: X, g: Y }` block — comments above any
 #   label entry.
 #

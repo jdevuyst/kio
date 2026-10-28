@@ -18,11 +18,11 @@ rec(iter.loop_reentry) fn placeholder(remaining: I32) -> I32 -> I32 {
 
 type Deferred[A] = . -> A;
 
-fn chain[A][B](action: Deferred(A), next: A -> Deferred(B)) -> Deferred(B) {
+fn chain[A][B](action: Deferred[A], next: A -> Deferred[B]) -> Deferred[B] {
   .() { next(action())() }
 }
 
-rec(iter.loop_reentry) fn sequenced(remaining: I32) -> Deferred(I32) {
+rec(iter.loop_reentry) fn sequenced(remaining: I32) -> Deferred[I32] {
   if(arith.leq_i32(remaining, 0)) {
     .() { 41 }
   } else do(chain) {

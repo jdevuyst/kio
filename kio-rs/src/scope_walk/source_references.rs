@@ -388,7 +388,7 @@ mod tests {
     #[test]
     fn source_dependency_index_preserves_recursive_type_and_value_namespaces() {
         let source = "module main; import provider(marker, Foo);
-            rec newtype Tree[A] : A & Tree(A) { constructor mk; projector un; };
+            rec newtype Tree[A] : A & Tree[A] { constructor mk; projector un; };
             rec { type Left = Right; newtype Right[Left] : Left { constructor right; projector unright; }; }
             fn bare() -> . { marker }
             fn parameter(marker: .) -> . { marker }

@@ -16,9 +16,9 @@ type Nested[A][B][C] = A // outer operand
 & C);
 
 type Applied[*F][A][B] = A // before application
-| F( // type argument
+| F[ // type argument
   B // closing argument
-  );
+  ];
 KIO
 )
 again=$(printf '%s\n' "$formatted" | "$KIO_BIN" fmt -)

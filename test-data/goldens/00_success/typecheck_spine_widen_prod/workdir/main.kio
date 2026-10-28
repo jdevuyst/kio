@@ -32,4 +32,4 @@ fn add_unit_slot(a: A) -> A & . { widen_prod(a) }
 fn mixed_diag_and_unit(p: A & B) -> A & B & A & . { widen_prod(p) }
 
 // UFCS spelling — same rule, postfix form.
-fn ufcs(a: A) -> A & A { a.>widen_prod(A & A) }
+fn ufcs(a: A) -> A & A { (a.>widen_prod)[A & A] }

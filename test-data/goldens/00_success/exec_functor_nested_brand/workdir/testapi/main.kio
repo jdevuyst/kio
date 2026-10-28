@@ -17,13 +17,13 @@ pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_e
 // brand's carrier, where the inner brand is multi-arity. `Wrapped`'s
 // own carrier-conversion delegates the value position through
 // `Either`'s arity-2 (`Brand2`) erase / recover.
-pub newtype Wrapped[A] : Either(String, A) { pub constructor mk_wrap; pub projector un_wrap }
+pub newtype Wrapped[A] : Either[String][A] { pub constructor mk_wrap; pub projector un_wrap }
 
 // A `Functor[*F]` dictionary with a polymorphic-function payload:
 // `fmap` lifts an `A -> B` through the brand to an `F(A) ->
 // F(B)`. Every brand crossing is mediated by the concrete brand's
 // constructor / projector at the instance site.
-pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
   pub constructor mk_functor;
   pub projector fmap
   }
@@ -33,21 +33,15 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // payload re-wraps a `left` error unchanged and lifts a `right` value
 // through the user's step function `s`, re-wrapping both legs through
 // `Either.mk_either` / `Wrapped.mk_wrap`.
-fn wrapped_functor() -> Functor(Wrapped) {
-  Functor.mk_functor(
-  , Wrapped
-  , .[A][B](s, m) {
-      let inner = Wrapped.un_wrap(A, m);
-      __either__(
-      , String
-      , A
-      , Wrapped(B)
-      , Either.un_either(String, A, inner)
-      , .(err) { Wrapped.mk_wrap(B, Either.mk_either(String, B, __left__(String, B, err))) }
-      , .(av) { Wrapped.mk_wrap(B, Either.mk_either(String, B, __right__(String, B, s(av)))) }
-      )
-    }
-  )
+fn wrapped_functor() -> Functor[Wrapped] {
+  Functor.mk_functor[Wrapped](.[A][B](s, m) {
+    let inner = Wrapped.un_wrap[A](m);
+    __either__[String][A][Wrapped[B]](
+    , Either.un_either[String][A](inner)
+    , .(err) { Wrapped.mk_wrap[B](Either.mk_either[String][B](__left__[String][B](err))) }
+    , .(av) { Wrapped.mk_wrap[B](Either.mk_either[String][B](__right__[String][B](s(av)))) }
+    )
+  })
 }
 
 // Exercise the dictionary on a `right` value: brand a String into a
@@ -56,20 +50,10 @@ fn wrapped_functor() -> Functor(Wrapped) {
 fn use_dictionary() -> String {
   let dict = wrapped_functor();
   let m =
-    Wrapped.mk_wrap(
-    , String
-    , Either.mk_either(
-      , String
-      , String
-      , __right__(String, String, "functor on nested brand ok\n"(String))
-      )
-    );
-  let mapped = Functor.fmap(Wrapped, dict)(String, String, .(s) { s }, m);
-  __either__(
-  , String
-  , String
-  , String
-  , Either.un_either(String, String, Wrapped.un_wrap(String, mapped))
+    Wrapped.mk_wrap[String](Either.mk_either[String][String](__right__[String][String]("functor on nested brand ok\n"[String])));
+  let mapped = Functor.fmap[Wrapped](dict)[String][String](.(s) { s }, m);
+  __either__[String][String][String](
+  , Either.un_either[String][String](Wrapped.un_wrap[String](mapped))
   , .(err) { err }
   , .(s) { s }
   )

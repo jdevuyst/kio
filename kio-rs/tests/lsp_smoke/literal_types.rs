@@ -50,7 +50,7 @@ fn lsp_missing_dot_fixes_preserve_literal_spelling_and_refuse_stale_edits() {
     let source_for = |literal: &str| {
         format!("module app; host type Float role(f64); pub fn run() -> Float {{ {literal} }}")
     };
-    let initial = source_for("-4_2E-0(Float)");
+    let initial = source_for("-4_2E-0[Float]");
     let file = dir.write("app.kio", &initial);
     let uri = path_to_file_uri(&file);
     let mut lsp = LspProcess::spawn();
@@ -60,12 +60,12 @@ fn lsp_missing_dot_fixes_preserve_literal_spelling_and_refuse_stale_edits() {
         json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": initial}}),
     );
     for (ordinal, (literal, fixed, code)) in [
-        ("-4_2E-0(Float)", "-4_2.0E-0(Float)", 11),
+        ("-4_2E-0[Float]", "-4_2.0E-0[Float]", 11),
         ("42e-3", "42.0e-3", 11),
-        ("42(Float)", "42.0(Float)", 14),
+        ("42[Float]", "42.0[Float]", 14),
         ("42", "42.0", 14),
         ("4_2E+3", "4_2.0E+3", 11),
-        ("4_2E+3(Float)", "4_2.0E+3(Float)", 11),
+        ("4_2E+3[Float]", "4_2.0E+3[Float]", 11),
     ]
     .into_iter()
     .enumerate()
@@ -147,7 +147,7 @@ fn lsp_explicit_literal_annotations_are_checked_against_expected_types() {
         let dir = TempDir::new("annotated-literal-mismatch");
         dir.write("app.pkg.kio", "package app; bridge { app; }");
         let source = format!(
-            "module app; host type Known role({role}); host type Other role({role}); pub fn run() -> Known {{ {literal}(Other) }}"
+            "module app; host type Known role({role}); host type Other role({role}); pub fn run() -> Known {{ {literal}[Other] }}"
         );
         let uri = path_to_file_uri(&dir.write("app.kio", &source));
         let mut lsp = LspProcess::spawn();
@@ -169,7 +169,7 @@ fn lsp_explicit_literal_annotations_are_checked_against_expected_types() {
             send_code_action(&mut lsp, &uri, diagnostic)["result"],
             json!([])
         );
-        let annotated = source.replace(&format!("{literal}(Other)"), &format!("{literal}(Known)"));
+        let annotated = source.replace(&format!("{literal}[Other]"), &format!("{literal}[Known]"));
         send_full_text_change(&mut lsp, &uri, 2, &annotated);
         assert_eq!(
             wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"],
@@ -227,7 +227,7 @@ fn lsp_unanchored_exponent_keeps_its_literal_annotation_requirement() {
     let (edits, version) = action_edits_for_uri(action, &uri);
     assert_eq!(version, Some(2));
     let annotated = apply_lsp_text_edits(&applied, edits);
-    assert_eq!(annotated, applied.replace("1.0e12", "1.0e12(Float)"));
+    assert_eq!(annotated, applied.replace("1.0e12", "1.0e12[Float]"));
     send_full_text_change(&mut lsp, &uri, 3, &annotated);
     assert_eq!(
         wait_for_publish_version(&mut lsp, &uri, 3)["diagnostics"],
@@ -266,7 +266,7 @@ fn lsp_literal_annotation_choices_are_explicit_and_source_current() {
         let (edits, version) = action_edits_for_uri(action, &uri);
         assert_eq!(version, Some(1));
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0]["newText"], format!("({name})"));
+        assert_eq!(edits[0]["newText"], format!("[{name}]"));
     }
     let current = format!("// retained policy comment\n{source}");
     send_full_text_change(&mut lsp, &uri, 2, &current);
@@ -281,7 +281,7 @@ fn lsp_literal_annotation_choices_are_explicit_and_source_current() {
     let (edits, version) = action_edits_for_uri(action, &uri);
     assert_eq!(version, Some(2));
     let applied = apply_lsp_text_edits(&current, edits);
-    assert_eq!(applied, current.replace("42", "42(Int)"));
+    assert_eq!(applied, current.replace("42", "42[Int]"));
     send_full_text_change(&mut lsp, &uri, 3, &applied);
     assert_eq!(
         wait_for_publish_version(&mut lsp, &uri, 3)["diagnostics"],
@@ -307,7 +307,7 @@ fn lsp_shadowed_literal_type_omits_invalid_annotation_fixes() {
         "textDocument/didOpen",
         json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": initial}}),
     );
-    for (ordinal, literal) in ["42", "42( // type policy\n _)", "((42))"]
+    for (ordinal, literal) in ["42", "42[ // type policy\n _]", "((42))"]
         .into_iter()
         .enumerate()
     {
@@ -352,12 +352,12 @@ fn lsp_literal_annotation_fix_uses_an_existing_qualified_import_past_a_type_bind
         json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": initial}}),
     );
     for (ordinal, (literal, fixed)) in [
-        ("42", "42(numbers.Int)"),
+        ("42", "42[numbers.Int]"),
         (
-            "42( // type policy\n _)",
-            "42( // type policy\n numbers.Int)",
+            "42[ // type policy\n _]",
+            "42[ // type policy\n numbers.Int]",
         ),
-        ("((42))", "((42(numbers.Int)))"),
+        ("((42))", "((42[numbers.Int]))"),
     ]
     .into_iter()
     .enumerate()
@@ -419,11 +419,11 @@ fn lsp_annotation_fixes_cover_each_noninteger_literal_category() {
         let (edits, version) = action_edits_for_uri(action, &uri);
         assert_eq!(version, Some(1));
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0]["newText"], format!("({name})"));
+        assert_eq!(edits[0]["newText"], format!("[{name}]"));
         let applied = apply_lsp_text_edits(&source, edits);
         assert_eq!(
             applied,
-            source.replace(literal, &format!("{literal}({name})"))
+            source.replace(literal, &format!("{literal}[{name}]"))
         );
         send_full_text_change(&mut lsp, &uri, 2, &applied);
         assert_eq!(
@@ -466,7 +466,7 @@ fn lsp_annotation_fix_preserves_import_aliases_and_rechecks_changed_providers() 
     let (edits, version) = action_edits_for_uri(action, &uri);
     assert_eq!(version, Some(1));
     let applied = apply_lsp_text_edits(source, edits);
-    assert_eq!(applied, source.replace("42", "42(Local)"));
+    assert_eq!(applied, source.replace("42", "42[Local]"));
 
     let changed = provider.replace("role(i64)", "role(f64)");
     send_full_text_change(&mut lsp, &provider_uri, 2, &changed);
@@ -506,7 +506,7 @@ fn lsp_alias_missing_dot_fix_expands_only_the_selected_use() {
         "module app; import provider(whole);\n",
         "host type Int role(i64); host type Float role(f64);\n",
         "pub fn integer() -> Int { whole }\n",
-        "pub fn floating() -> Float { // use policy\n whole(Float) }\n",
+        "pub fn floating() -> Float { // use policy\n whole[Float] }\n",
     );
     let file = dir.write("app.kio", source);
     let uri = path_to_file_uri(&file);
@@ -545,7 +545,7 @@ fn lsp_alias_missing_dot_fix_expands_only_the_selected_use() {
     assert_eq!(version, Some(1));
     assert_eq!(edits.len(), 1);
     let applied = apply_lsp_text_edits(source, edits);
-    assert_eq!(applied, source.replace("whole(Float)", "4_2.0(Float)"));
+    assert_eq!(applied, source.replace("whole[Float]", "4_2.0[Float]"));
     assert_eq!(fs::read_to_string(provider_file).unwrap(), provider);
     send_full_text_change(&mut lsp, &uri, 2, &applied);
     assert_eq!(
@@ -585,7 +585,7 @@ fn lsp_boolean_intrinsic_uses_its_checked_concrete_type_argument() {
     dir.write("app.pkg.kio", "package app; bridge { app; }");
     let source = concat!(
         "module app; import __intrinsics__; host type Bool role(bool); host type Other role(bool);\n",
-        "pub fn run(flag: Bool) -> . { __if_then_else__(Bool, ., flag, .() { () }, .() { () }) }",
+        "pub fn run(flag: Bool) -> . { __if_then_else__[Bool][.](flag, .() { () }, .() { () }) }",
     );
     let uri = path_to_file_uri(&dir.write("app.kio", source));
     let mut lsp = LspProcess::spawn();
@@ -607,7 +607,7 @@ fn lsp_annotation_fix_uses_an_applied_local_alias() {
     let source = concat!(
         "module app; import provider as numbers;\n",
         "pub type Identity[A] = A;\n",
-        "pub type Selected = Identity(numbers.Int);\n",
+        "pub type Selected = Identity[numbers.Int];\n",
         "pub fn run() -> . { let _value = 42; () }\n",
     );
     let uri = path_to_file_uri(&dir.write("app.kio", source));
@@ -625,7 +625,7 @@ fn lsp_annotation_fix_uses_an_applied_local_alias() {
     let (edits, version) = action_edits_for_uri(action, &uri);
     assert_eq!(version, Some(1));
     let applied = apply_lsp_text_edits(source, edits);
-    assert_eq!(applied, source.replace("42", "42(Selected)"));
+    assert_eq!(applied, source.replace("42", "42[Selected]"));
     send_full_text_change(&mut lsp, &uri, 2, &applied);
     assert_eq!(
         wait_for_publish_version(&mut lsp, &uri, 2)["diagnostics"],

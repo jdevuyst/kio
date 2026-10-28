@@ -27,14 +27,14 @@ rec {
 /// rebalance that drops or duplicates a key shows up here first.
 pub newtype Tree : Node & I32 { constructor mk_tree; projector un_tree }
 
-pub fn leaf_node() -> Node { Node.mk_node({leaf=}.>widen_sum(Node_body)) }
+pub fn leaf_node() -> Node { Node.mk_node(({leaf=}.>widen_sum)[Node_body]) }
 
 pub fn two_node(l: Node, k: I32, v: String, r: Node) -> Node {
-  Node.mk_node({two = (l, k, v, r)}.>widen_sum(Node_body))
+  Node.mk_node(({two = (l, k, v, r)}.>widen_sum)[Node_body])
 }
 
 pub fn three_node(l: Node, k1: I32, v1: String, m: Node, k2: I32, v2: String, r: Node) -> Node {
-  Node.mk_node({three = (l, k1, v1, m, k2, v2, r)}.>widen_sum(Node_body))
+  Node.mk_node(({three = (l, k1, v1, m, k2, v2, r)}.>widen_sum)[Node_body])
 }
 
 pub fn make_tree(root: Node, size: I32) -> Tree { Tree.mk_tree((root, size)) }
@@ -85,9 +85,9 @@ pub rec(loop) fn height(t: Node) -> I32 {
 
 labels Found = { payload: String } | { absent: . };
 
-fn found(v: String) -> Found { {payload = v}.>widen_sum(Found) }
+fn found(v: String) -> Found { ({payload = v}.>widen_sum)[Found] }
 
-fn not_found() -> Found { {absent=}.>widen_sum(Found) }
+fn not_found() -> Found { ({absent=}.>widen_sum)[Found] }
 
 /// Search. The only descent in the package that never rebuilds anything, so
 /// it is the only one that is a plain tail recursion.

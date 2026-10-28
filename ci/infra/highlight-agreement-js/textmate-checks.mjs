@@ -481,16 +481,16 @@ fixture("recursive call word in member path", "module m;\nfn f() -> . { other.re
 ]);
 fixture("newtype missing payload", "module m;\nnewtype N { constructor make; };", [["constructor make", "constructor", identifier]]);
 fixture("newtype empty payload", "module m;\nnewtype N : { projector get; };", [["projector get", "projector", identifier]]);
-fixture("newtype polymorphic payload", "module m;\nnewtype Cell[A]<B> : Pair(A, B) { constructor make; projector get; };", [
+fixture("newtype polymorphic payload", "module m;\nnewtype Cell[A]<B> : Pair[A][B] { constructor make; projector get; };", [
   ["constructor make", "constructor", keyword], ["projector get", "projector", keyword],
 ]);
-for (const payload of ["{field}", "Box({field})", "T | {field}", "T -> {field}", "{\n field\n}"]) {
+for (const payload of ["{field}", "Box[{field}]", "T | {field}", "T -> {field}", "{\n field\n}"]) {
   fixture(`rejected newtype braced payload ${payload}`, `module m;\nnewtype N : ${payload} { constructor make; projector get; };\nfn after(projector: .) -> . { projector }`, [
     ["constructor make", "constructor", identifier], ["projector get", "projector", identifier],
     ["fn after", "after", functionName], ["projector:", "projector", identifier], ["{ projector }", "projector", identifier],
   ]);
 }
-for (const payload of ["Box", "Box(.)", "(T & U)", "[A] A -> A", "T | U", "T -> U", "(\n T\n)", "!"]) {
+for (const payload of ["Box", "Box[.]", "(T & U)", "[A] A -> A", "T | U", "T -> U", "(\n T\n)", "!"]) {
   fixture(`admitted newtype payload ${payload}`, `module m;\nnewtype N : ${payload} { constructor make; projector get; };`, [
     ["constructor make", "constructor", keyword], ["projector get", "projector", keyword],
   ]);
@@ -506,7 +506,7 @@ for (const [sibling, targets] of [
   ["equiv same() { (); () }", [["equiv same", "equiv", keyword], ["same()", "same", functionName]]],
   ["rec(loop) fn again() { recur again() }", [["rec(loop)", "rec", keyword], ["recur again", "recur", keyword]]],
 ]) {
-  fixture(`invalid newtype sibling ${sibling}`, `module m;\nnewtype N : Box({field}) { constructor make; };\n${sibling}`, [
+  fixture(`invalid newtype sibling ${sibling}`, `module m;\nnewtype N : Box[{field}] { constructor make; };\n${sibling}`, [
     ["constructor make", "constructor", identifier], ...targets,
   ]);
   for (const head of ["varop(())", "varop", "varop [+"]) {
@@ -514,7 +514,7 @@ for (const [sibling, targets] of [
   }
 }
 fixture("comment keywords", "// rec again() constructor projector role cache docs target", [["// rec again() constructor projector role cache docs target", "// rec again() constructor projector role cache docs target", "comment.line.double-slash.kio"]]);
-fixture("invalid newtype nested-group recovery", "module m;\nnewtype N : Box({field(} { constructor make; };\ntype Next = .;", [
+fixture("invalid newtype nested-group recovery", "module m;\nnewtype N : Box[{field(} { constructor make; };\ntype Next = .;", [
   ["constructor make", "constructor", identifier], ["type Next", "type", keyword],
 ]);
 fixture("string keywords", '"rec again() constructor projector role cache docs target"', [
@@ -694,12 +694,12 @@ fixture("callable references follow identifier word grammar", "module m;\nfn run
   [" helper2_name", "helper2_name", functionName],
   ["bad1word!", "bad1word", identifier],
 ]);
-fixture("forall argument compact unit body", "module m;\nfn run() -> . { consume([A]., value) }", [
+fixture("forall argument compact unit body", "module m;\nfn run() -> . { consume[[A].](value) }", [
   ["[A]", "[", "punctuation.bracket.kio"], ["[A]", "]", "punctuation.bracket.kio"],
-  ["].,", ".", "punctuation.separator.kio"],
+  ["].]", ".", "punctuation.separator.kio"],
 ]);
-for (const head of ["[_A]", "[,A]", "[ // binder\n A]", "[\n A]", "[* F]", "[ * F]", "[*F,]", "[* F,,G,]", "[ * // kind\n F]"]) {
-  fixture(`forall binder domain ${head}`, `module m;\nfn run() -> . { consume(${head}., value) }`, [
+for (const head of ["[_A]", "[ // binder\n A]", "[\n A]", "[* F]", "[ * F]", "[ * // kind\n F]"]) {
+  fixture(`forall binder domain ${head}`, `module m;\nfn run() -> . { consume[${head}.](value) }`, [
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"],
     [`${head}.`, ".", "punctuation.separator.kio"],
   ]);
@@ -707,33 +707,42 @@ for (const head of ["[_A]", "[,A]", "[ // binder\n A]", "[\n A]", "[* F]", "[ * 
     [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"], ["let item", "let", keyword],
   ]);
 }
-const starPrefix = "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* // shared";
-fixture("star argument later-line forall", `${starPrefix}\n F] F(.), value) }`, [
-  ["consume([* // shared", "[", "punctuation.bracket.kio"], ["consume([* // shared", "*", "keyword.operator.user.kio"], [" F] F", "]", "punctuation.bracket.kio"],
+for (const head of ["[,A]", "[*F,]", "[* F,,G,]"]) {
+  fixture(`rejected forall comma binder recovery ${head}`, `module m;\nfn run() -> . { consume[${head}.](value) }`, [
+    [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"],
+    [`${head}.`, ".", "punctuation.separator.kio"],
+  ]);
+  fixture(`rejected lambda comma binder recovery ${head}`, `module m;\nfn run() -> . { .${head}(x: .) { let item = x; item } }`, [
+    [head, "[", "punctuation.bracket.kio"], [head, "]", "punctuation.bracket.kio"], ["let item", "let", keyword],
+  ]);
+}
+const starPrefix = "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume";
+fixture("star argument later-line forall", `${starPrefix}[[* // shared\n F] F[.]](value) }`, [
+  ["consume[[* // shared", "[", "punctuation.bracket.kio"], ["consume[[* // shared", "*", "keyword.operator.user.kio"], [" F] F", "]", "punctuation.bracket.kio"],
 ]);
-fixture("star argument later-line varop", `${starPrefix}\n F.make() *], value) }`, [
+fixture("star argument later-line varop", `${starPrefix}([* // shared\n F.make() *], value) }`, [
   ["consume([* // shared", "[", "punctuation.bracket.kio"], ["consume([* // shared", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
 ]);
 for (const [partial, binderTail, valueTail] of [
-  [" F", " ] F(.)", " .make() *]"],
-  ["F // shared", " ] F(.)", " .make() *]"],
-  [" _F // shared", " ] _F(.)", " .make() *]"],
-  [" F, G // shared", " ] F(.)", " .make() *]"],
-  [" F, // shared", " G] F(.)", " G.make() *]"],
-  [" F, , G // shared", " ] F(.)", " .make() *]"],
-  [" F, * G // shared", " ] F(.)", " .make() *]"],
-  [" F, ** // shared", " G] F(.)", " G.make() *]"],
+  [" F", " ] F[.]", " .make() *]"],
+  ["F // shared", " ] F[.]", " .make() *]"],
+  [" _F // shared", " ] _F[.]", " .make() *]"],
+  [" F, G // shared", " ] F[.]", " .make() *]"],
+  [" F, // shared", " G] F[.]", " G.make() *]"],
+  [" F, , G // shared", " ] F[.]", " .make() *]"],
+  [" F, * G // shared", " ] F[.]", " .make() *]"],
+  [" F, ** // shared", " G] F[.]", " G.make() *]"],
 ]) {
-  const prefix = `module m;\nvarop [* *] { foldl join empty; };\nop * _ { impl star; };\nop ** _ { impl double_star; };\nfn f() { consume([*${partial}`;
-  fixture(`star partial binder later-line forall ${partial}`, `${prefix}\n${binderTail}, value) }`, [
-    [`consume([*${partial}`, "[", "punctuation.bracket.kio"], [`consume([*${partial}`, "*", "keyword.operator.user.kio"], [`${binderTail}, value`, "]", "punctuation.bracket.kio"],
+  const prefix = `module m;\nvarop [* *] { foldl join empty; };\nop * _ { impl star; };\nop ** _ { impl double_star; };\nfn f() { consume`;
+  fixture(`star partial binder ${partial.includes(",") ? "invalid-comma recovery" : "later-line forall"} ${partial}`, `${prefix}[[*${partial}\n${binderTail}](value) }`, [
+    [`consume[[*${partial}`, "[", "punctuation.bracket.kio"], [`consume[[*${partial}`, "*", "keyword.operator.user.kio"], [`${binderTail}](value`, "]", "punctuation.bracket.kio"],
   ]);
-  fixture(`star partial binder later-line varop ${partial}`, `${prefix}\n${valueTail}, value) }`, [
+  fixture(`star partial binder later-line varop ${partial}`, `${prefix}([*${partial}\n${valueTail}, value) }`, [
     [`consume([*${partial}`, "[", "punctuation.bracket.kio"], [`consume([*${partial}`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "*", "keyword.operator.user.kio"], [`${valueTail}, value`, "]", "punctuation.bracket.kio"],
   ]);
 }
-fixture("star binder spaced commas resolve on the same line", "module m;\nfn f() { consume([* F, , * G, ]., value) }", [
-  ["consume([*", "[", "punctuation.bracket.kio"], ["G, ].", "]", "punctuation.bracket.kio"],
+fixture("rejected star binder spaced commas retain bracket recovery", "module m;\nfn f() { consume[[* F, , * G, ].](value) }", [
+  ["consume[[*", "[", "punctuation.bracket.kio"], ["G, ].", "]", "punctuation.bracket.kio"],
 ]);
 fixture("star literal written callable resolves before later line", "module m;\nvarop [* *] { foldl join empty; };\nfn f() { consume([* F.make() // value\n *], value) }", [
   ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["*], value", "*", "keyword.operator.user.kio"], ["*], value", "]", "punctuation.bracket.kio"],
@@ -747,8 +756,8 @@ for (const name of ["value", "value1", "_value", "_1foo"]) {
   }
 }
 for (const names of ["value", "F, value"]) {
-  fixture(`rejected value shaped star binder ${names}`, `module m;\nfn f() { consume([* ${names}]., value) }`, [
-    ["consume([*", "[", "punctuation.bracket.kio"], ["consume([*", "*", "keyword.operator.user.kio"], ["]., value", "]", "punctuation.bracket.kio"], ["]., value", ".", "punctuation.separator.kio"],
+  fixture(`rejected value shaped star binder ${names}`, `module m;\nfn f() { consume[[* ${names}].](value) }`, [
+    ["consume[[*", "[", "punctuation.bracket.kio"], ["consume[[*", "*", "keyword.operator.user.kio"], ["].](value", "]", "punctuation.bracket.kio"], ["].](value", ".", "punctuation.separator.kio"],
   ]);
 }
 fixture("star binder lambda keeps its unambiguous owner", "module m;\nfn f() { .[* // kind\n F](x: .) { let item = x; item } }", [
@@ -766,11 +775,11 @@ fixture("pending dot star continuation later-line varop", "module m;\nfn run() {
   ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], ["*] }", "*", "keyword.operator.user.kio"], ["*] }", "]", "punctuation.bracket.kio"],
   ["fn after", "fn", keyword],
 ]);
-fixture("pending dot star continuation later-line binder", "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let item = x; item } } }", [
+fixture("pending dot star continuation later-line binder", "module m;\nfn run() { . // dot\n [* // shared\n F] -> F[.] -> F[.] { .(x: F[.]) { let item = x; item } } }", [
   ["[* // shared", "[", "punctuation.bracket.kio"], ["[* // shared", "*", "keyword.operator.user.kio"], [" F] ->", "]", "punctuation.bracket.kio"],
   ["let item", "let", keyword],
 ]);
-fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // dot\n [**F] -> F(., .) -> F(., .) { .(x: F(., .)) { let item = x; item } } }", [
+fixture("pending dot complete higher-kind binder", "module m;\nfn run() { . // dot\n [**F] -> F[.][.] -> F[.][.] { .(x: F[.][.]) { let item = x; item } } }", [
   ["[**F]", "[", "punctuation.bracket.kio"], ["[**F]", "]", "punctuation.bracket.kio"],
   ["let item", "let", keyword],
 ]);

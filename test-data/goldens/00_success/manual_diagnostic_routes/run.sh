@@ -19,7 +19,7 @@ check_route build .
 check_route cache path
 check_route doc check
 check_route doc check .
-printf '%s\n' 'module main;' 'fn misapply[A][B](x: A(B)) -> A(B) { x }' >"$work/main.kio"
+printf '%s\n' 'module main;' 'fn misapply[A][B](x: A[B]) -> A[B] { x }' >"$work/main.kio"
 set +e
 (cd "$work" && "$KIO_BIN" check) >"$work/stdout" 2>"$work/stderr"
 status=$?

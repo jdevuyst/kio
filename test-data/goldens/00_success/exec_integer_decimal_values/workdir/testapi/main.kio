@@ -8,12 +8,12 @@ literal ten = 0010;
 
 type Number = Int;
 
-fn show(value: Int) { print(int_to_string(value)); print("\n"(String)) }
+fn show(value: Int) { print(int_to_string(value)); print("\n"[String]) }
 
 pub fn main() {
-  let decimal = ten(Int);
+  let decimal = ten[Int];
   show(decimal);
-  show(-0(Number));
+  show(-0[Number]);
   show(-2147483648);
   show(2147483647)
 }

@@ -25,11 +25,11 @@ type Boxed[A] = A | I32;
 
 // Polymorphic injection: stores the generic `v: a` in the left sum arm.
 // The generic argument is deliberately instantiated with a function type.
-fn wrap[A](v: A) -> Boxed(A) { widen_sum(v) }
+fn wrap[A](v: A) -> Boxed[A] { widen_sum(v) }
 
-fn box_fn(f: I32 -> I32) -> Boxed(I32 -> I32) { widen_sum(f) }
+fn box_fn(f: I32 -> I32) -> Boxed[I32 -> I32] { widen_sum(f) }
 
-fn run_boxed(b: Boxed(I32 -> I32), x: I32) -> I32 {
+fn run_boxed(b: Boxed[I32 -> I32], x: I32) -> I32 {
   match(b) {
     (.(g: I32 -> I32) { g(x) }, .(n: I32) { n })
   }

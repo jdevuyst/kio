@@ -80,7 +80,7 @@ fn apply(seed: I32, w: I32, h: I32, p: Ledger, d: I32 & I32) -> Ledger {
       let nx = add_i32(px(p), dx);
       let ny = add_i32(py(p), dy);
       if(and(in_bounds(w, h, nx, ny), not_wall(seed, w, h, nx, ny))) {
-        let gained = if(is_item(seed, w, h, nx, ny)) { 1 } else { 0 };
+        let .(gained: I32) = if(is_item(seed, w, h, nx, ny)) { 1 } else { 0 };
         (nx, ny, add_i32(score(p), gained), bumps(p), add_i32(moves(p), 1))
       } else {
         (px(p), py(p), score(p), add_i32(bumps(p), 1), moves(p))

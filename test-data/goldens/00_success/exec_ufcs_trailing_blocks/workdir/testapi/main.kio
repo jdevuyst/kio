@@ -15,9 +15,9 @@ pure fn identity[A](value: A) -> A { value }
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-pure fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+pure fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
 
-fn make_bind() -> [A][B] (Box(A) & (A -> Box(B))) -> Box(B) { line("sequence receiver"); bind }
+fn make_bind() -> [A][B] (Box[A] & (A -> Box[B])) -> Box[B] { line("sequence receiver"); bind }
 
 fn render(values: String & (String & String)) -> String {
   let .(left, rest) = values;
@@ -108,7 +108,7 @@ pub fn main() {
   show_outer(outer ("left") { "body" } after { block_pair ("inner") { "tail" } }.<"outer");
   show_outer(outer("left", "outer") { "body" } after { block_pair { "tail" }.<"inner" });
   show_outer(outer ("left") { "body" } after {
-    last_blocks { "ignored" } after block_pair ("inner") { "tail" }
+    last_blocks { "ignored"[String] } after block_pair ("inner") { "tail" }
   }.<"outer");
   line(mark("discarded-forward").>discard { mark("kept-forward") });
   line(discard { mark("kept-reverse") }.<mark("discarded-reverse"));

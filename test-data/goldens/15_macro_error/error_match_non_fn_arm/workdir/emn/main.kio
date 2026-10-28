@@ -9,7 +9,7 @@ import testapi(I32, String);
 fn bad(v: I32 | String) {
   let .(_r: .) =
     match(v) {
-      (42(I32), .(s: String) { () })
+      (42[I32], .(s: String) { () })
     };
   ()
 }

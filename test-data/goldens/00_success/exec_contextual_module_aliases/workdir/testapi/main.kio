@@ -8,8 +8,8 @@ import testapi/provider as if;
 fn apply(f: String -> String, value: String) -> String { f(value) }
 
 pub fn main() {
-  print(if.identity("qualified call\n"(String)));
+  print(if.identity("qualified call\n"[String]));
   let bound = do.identity;
-  print(bound("bound value\n"(String)));
-  print(apply(if.identity, "call argument\n"(String)))
+  print(bound("bound value\n"[String]));
+  print(apply(if.identity, "call argument\n"[String]))
 }

@@ -1,0 +1,12 @@
+package rec_quote_fills;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

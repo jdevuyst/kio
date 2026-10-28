@@ -69,7 +69,7 @@ pub newtype Existential_unit <U> : U {
 
 pub type Erased_unit[A] = .;
 
-pub newtype Existential_empty <U> : Erased_unit(U) {
+pub newtype Existential_empty <U> : Erased_unit[U] {
   constructor make_existential_empty;
   pub projector read_existential_empty
   }
@@ -147,40 +147,36 @@ pub fn make_projector_pair_value(value: I32 & I32) -> Projector_pair {
   Projector_pair.make_projector_pair(value)
 }
 
-pub fn read_constructor_generic_value[A](value: Constructor_generic(A)) -> A {
-  Constructor_generic.read_constructor_generic(A, value)
+pub fn read_constructor_generic_value[A](value: Constructor_generic[A]) -> A {
+  Constructor_generic.read_constructor_generic[A](value)
 }
 
-pub fn make_projector_generic_value[A](value: A) -> Projector_generic(A) {
-  Projector_generic.make_projector_generic(A, value)
+pub fn make_projector_generic_value[A](value: A) -> Projector_generic[A] {
+  Projector_generic.make_projector_generic[A](value)
 }
 
 pub fn invoke_constructor_spread_i32(value: Constructor_spread, seed: I32) -> I32 {
-  Constructor_spread.read_constructor_spread(value)(I32, __pair__(I32, I32, seed, 7(I32)))
+  Constructor_spread.read_constructor_spread(value)[I32](__pair__[I32][I32](seed, 7[I32]))
 }
 
 pub fn invoke_constructor_spread_unit(value: Constructor_spread, seed: I32) -> I32 {
-  Constructor_spread.read_constructor_spread(value)(., __pair__(I32, ., seed, ()))
+  Constructor_spread.read_constructor_spread(value)[.](__pair__[I32][.](seed, ()))
 }
 
 pub fn make_projector_spread_value() -> Projector_spread {
-  Projector_spread.make_projector_spread(.[A](value: I32 & A) -> I32 { __fst__(I32, A, value) })
+  Projector_spread.make_projector_spread(.[A](value: I32 & A) -> I32 { __fst__[I32][A](value) })
 }
 
 pub fn make_existential_spread_value() -> Existential_spread {
-  Existential_spread.make_existential_spread(
-  , I32
-  , .[A](value: I32 & A) -> I32 { __fst__(I32, A, value) }
-  )
+  Existential_spread.make_existential_spread[I32](.[A](value: I32 & A) -> I32 {
+    __fst__[I32][A](value)
+  })
 }
 
 pub fn make_recursive_existential_function_value() -> Recursive_existential_function {
-  Recursive_existential_function.make_recursive_existential_function(
-  , !
-  , .(value: !) -> Recursive_existential_function {
-      __absurd__(Recursive_existential_function, value)
-    }
-  )
+  Recursive_existential_function.make_recursive_existential_function[!](.(value: !) -> Recursive_existential_function {
+    __absurd__[Recursive_existential_function](value)
+  })
 }
 
 pub fn make_existential_unit_value() -> Existential_unit {
@@ -188,24 +184,21 @@ pub fn make_existential_unit_value() -> Existential_unit {
 }
 
 pub fn make_existential_empty_value() -> Existential_empty {
-  Existential_empty.make_existential_empty(I32, ())
+  Existential_empty.make_existential_empty[I32](())
 }
 
-pub fn recursive_both_base_payload() -> . | Recursive_both { __left__(., Recursive_both, ()) }
+pub fn recursive_both_base_payload() -> . | Recursive_both { __left__[.][Recursive_both](()) }
 
 pub fn recursive_both_payload_is_base(value: . | Recursive_both) -> I32 {
-  __either__(
-  , .
-  , Recursive_both
-  , I32
+  __either__[.][Recursive_both][I32](
   , value
-  , .(done: .) -> I32 { 1(I32) }
-  , .(rest: Recursive_both) -> I32 { 0(I32) }
+  , .(done: .) -> I32 { 1[I32] }
+  , .(rest: Recursive_both) -> I32 { 0[I32] }
   )
 }
 
 pub fn recursive_constructor_base_payload() -> . | Recursive_constructor {
-  __left__(., Recursive_constructor, ())
+  __left__[.][Recursive_constructor](())
 }
 
 pub fn read_recursive_constructor_value(value: Recursive_constructor) -> . | Recursive_constructor {
@@ -213,13 +206,10 @@ pub fn read_recursive_constructor_value(value: Recursive_constructor) -> . | Rec
 }
 
 pub fn recursive_constructor_payload_is_base(value: . | Recursive_constructor) -> I32 {
-  __either__(
-  , .
-  , Recursive_constructor
-  , I32
+  __either__[.][Recursive_constructor][I32](
   , value
-  , .(done: .) -> I32 { 1(I32) }
-  , .(rest: Recursive_constructor) -> I32 { 0(I32) }
+  , .(done: .) -> I32 { 1[I32] }
+  , .(rest: Recursive_constructor) -> I32 { 0[I32] }
   )
 }
 
@@ -228,32 +218,21 @@ pub fn make_recursive_projector_value(value: . | Recursive_projector) -> Recursi
 }
 
 pub fn make_recursive_projector_base() -> Recursive_projector {
-  Recursive_projector.make_recursive_projector(__left__(., Recursive_projector, ()))
+  Recursive_projector.make_recursive_projector(__left__[.][Recursive_projector](()))
 }
 
 pub fn recursive_projector_payload_is_base(value: . | Recursive_projector) -> I32 {
-  __either__(
-  , .
-  , Recursive_projector
-  , I32
+  __either__[.][Recursive_projector][I32](
   , value
-  , .(done: .) -> I32 { 1(I32) }
-  , .(rest: Recursive_projector) -> I32 { 0(I32) }
+  , .(done: .) -> I32 { 1[I32] }
+  , .(rest: Recursive_projector) -> I32 { 0[I32] }
   )
 }
 
 pub fn make_visible_cycle_outer_base() -> Visible_cycle_outer {
-  Visible_cycle_outer.make_visible_cycle_outer(Atomic_cycle_inner.make_atomic_cycle_inner(__left__(
-  , .
-  , Visible_cycle_outer
-  , ()
-  )))
+  Visible_cycle_outer.make_visible_cycle_outer(Atomic_cycle_inner.make_atomic_cycle_inner(__left__[.][Visible_cycle_outer](())))
 }
 
 pub fn make_visible_comptime_outer_base() -> Visible_comptime_outer {
-  Visible_comptime_outer.make_visible_comptime_outer(Comptime_bool.make_atomic_comptime_inner(__right__(
-  , !
-  , .
-  , ()
-  )))
+  Visible_comptime_outer.make_visible_comptime_outer(Comptime_bool.make_atomic_comptime_inner(__right__[!][.](())))
 }

@@ -10,24 +10,24 @@ fn choose[A][B](condition: Bool)(yes: . -> A)(no: . -> A) -> A {
 
 fn run_conditional_local() {
   let saved = choose;
-  saved(., ., .t(Bool))(.() { () })(.() { () })
+  saved[.][.](.t[Bool])(.() { () })(.() { () })
 }
 
 fn choose_either[A][B](decision: . | .)(yes: . -> A)(no: . -> A) -> A {
-  __either__(., ., A, decision, .(_left: .) { yes() }, .(_right: .) { no() })
+  __either__[.][.][A](decision, .(_left: .) { yes() }, .(_right: .) { no() })
 }
 
 fn run_either_direct(decision: . | .) {
-  choose_either(., ., decision)(.() { () })(.() { () })
+  choose_either[.][.](decision)(.() { () })(.() { () })
 }
 
 fn run_either_local(decision: . | .) {
   let saved = choose_either;
-  saved(., ., decision)(.() { () })(.() { () })
+  saved[.][.](decision)(.() { () })(.() { () })
 }
 
 equiv conditional_direct() {
-  choose(., ., .t(Bool))(.() { () })(.() { () });
+  choose[.][.](.t[Bool])(.() { () })(.() { () });
   ()
 }
 
@@ -37,13 +37,13 @@ equiv conditional_local() {
 }
 
 equiv either_direct() {
-  run_either_direct(__left__(., ., ()));
-  run_either_direct(__right__(., ., ()));
+  run_either_direct(__left__[.][.](()));
+  run_either_direct(__right__[.][.](()));
   ()
 }
 
 equiv either_local() {
-  run_either_local(__left__(., ., ()));
-  run_either_local(__right__(., ., ()));
+  run_either_local(__left__[.][.](()));
+  run_either_local(__right__[.][.](()));
   ()
 }

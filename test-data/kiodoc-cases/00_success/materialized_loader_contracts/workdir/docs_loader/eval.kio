@@ -242,56 +242,56 @@ pub fn un_frame(f: Frame) -> Frame_shape { Frame.get(f) }
 // Each injects a frame payload into the right arm of the `Frame` sum.
 // Defined here, before the transition functions that push them, so
 // ordinary order-sensitive visibility is satisfied.
-fn mk_app1(v: Value) -> Frame { {frame = widen_sum({f_app1 = v}, Frame_shape)} }
+fn mk_app1(v: Value) -> Frame { {frame = widen_sum({f_app1 = v})[Frame_shape]} }
 
-fn mk_app2(v: Value) -> Frame { {frame = widen_sum({f_app2 = v}, Frame_shape)} }
+fn mk_app2(v: Value) -> Frame { {frame = widen_sum({f_app2 = v})[Frame_shape]} }
 
-fn mk_arg(t: Term, e: Env) -> Frame { {frame = widen_sum({f_arg = (t, e)}, Frame_shape)} }
+fn mk_arg(t: Term, e: Env) -> Frame { {frame = widen_sum({f_arg = (t, e)})[Frame_shape]} }
 
-fn mk_let(t: Term, e: Env) -> Frame { {frame = widen_sum({f_let = (t, e)}, Frame_shape)} }
+fn mk_let(t: Term, e: Env) -> Frame { {frame = widen_sum({f_let = (t, e)})[Frame_shape]} }
 
-fn mk_psnd(t: Term, e: Env) -> Frame { {frame = widen_sum({f_psnd = (t, e)}, Frame_shape)} }
+fn mk_psnd(t: Term, e: Env) -> Frame { {frame = widen_sum({f_psnd = (t, e)})[Frame_shape]} }
 
-fn mk_pfst(v: Value) -> Frame { {frame = widen_sum({f_pfst = v}, Frame_shape)} }
+fn mk_pfst(v: Value) -> Frame { {frame = widen_sum({f_pfst = v})[Frame_shape]} }
 
-fn mk_fst() -> Frame { {frame = widen_sum({f_fst=}, Frame_shape)} }
+fn mk_fst() -> Frame { {frame = widen_sum({f_fst=})[Frame_shape]} }
 
-fn mk_snd() -> Frame { {frame = widen_sum({f_snd=}, Frame_shape)} }
+fn mk_snd() -> Frame { {frame = widen_sum({f_snd=})[Frame_shape]} }
 
-fn mk_left() -> Frame { {frame = widen_sum({f_left=}, Frame_shape)} }
+fn mk_left() -> Frame { {frame = widen_sum({f_left=})[Frame_shape]} }
 
-fn mk_right() -> Frame { {frame = widen_sum({f_right=}, Frame_shape)} }
+fn mk_right() -> Frame { {frame = widen_sum({f_right=})[Frame_shape]} }
 
 fn mk_eith_f(f: Term, g: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_eith_f = (f, g, e)}, Frame_shape)}
+  {frame = widen_sum({f_eith_f = (f, g, e)})[Frame_shape]}
 }
 
 fn mk_eith_g(s: Value, g: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_eith_g = (s, (g, e))}, Frame_shape)}
+  {frame = widen_sum({f_eith_g = (s, (g, e))})[Frame_shape]}
 }
 
 fn mk_eith_apply(s: Value, f: Value) -> Frame {
-  {frame = widen_sum({f_eith_apply = (s, f)}, Frame_shape)}
+  {frame = widen_sum({f_eith_apply = (s, f)})[Frame_shape]}
 }
 
 fn mk_ite_then(bool_type: Host_type, t: Term, el: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_ite_then = (bool_type, (t, (el, e)))}, Frame_shape)}
+  {frame = widen_sum({f_ite_then = (bool_type, (t, (el, e)))})[Frame_shape]}
 }
 
 fn mk_ite_else(bool_type: Host_type, c: Value, el: Term, e: Env) -> Frame {
-  {frame = widen_sum({f_ite_else = (bool_type, (c, (el, e)))}, Frame_shape)}
+  {frame = widen_sum({f_ite_else = (bool_type, (c, (el, e)))})[Frame_shape]}
 }
 
 fn mk_ite_apply(bool_type: Host_type, c: Value, t: Value) -> Frame {
-  {frame = widen_sum({f_ite_apply = (bool_type, (c, t))}, Frame_shape)}
+  {frame = widen_sum({f_ite_apply = (bool_type, (c, t))})[Frame_shape]}
 }
 
-fn mk_absurd() -> Frame { {frame = widen_sum({f_absurd=}, Frame_shape)} }
+fn mk_absurd() -> Frame { {frame = widen_sum({f_absurd=})[Frame_shape]} }
 
-fn mk_loop(step: Value) -> Frame { {frame = widen_sum({f_loop = step}, Frame_shape)} }
+fn mk_loop(step: Value) -> Frame { {frame = widen_sum({f_loop = step})[Frame_shape]} }
 
 fn mk_hostcont(cont: Host_fn, state: Value) -> Frame {
-  {frame = widen_sum({f_hostcont = (cont, state)}, Frame_shape)}
+  {frame = widen_sum({f_hostcont = (cont, state)})[Frame_shape]}
 }
 
 // =====================================================================
@@ -301,10 +301,10 @@ fn mk_hostcont(cont: Host_fn, state: Value) -> Frame {
 pub rec labels { kont: . | (Frame & Kont) };
 
 /// The empty continuation.
-pub fn kont_nil() -> Kont { {kont = widen_sum((), . | (Frame & Kont))} }
+pub fn kont_nil() -> Kont { {kont = widen_sum(())[. | (Frame & Kont)]} }
 
 /// Pushes one frame onto the continuation.
-pub fn kont_push(f: Frame, k: Kont) -> Kont { {kont = widen_sum((f, k), . | (Frame & Kont))} }
+pub fn kont_push(f: Frame, k: Kont) -> Kont { {kont = widen_sum((f, k))[. | (Frame & Kont)]} }
 
 /// One-step destructor on the continuation.
 pub fn un_kont(k: Kont) -> . | (Frame & Kont) { Kont.get(k) }
@@ -328,10 +328,10 @@ pub labels { ctrl: Cs_eval | Cs_ret };
 pub type Ctrl_shape = Cs_eval | Cs_ret;
 
 /// Builds the evaluate-term control state.
-pub fn c_eval(t: Term, e: Env) -> Ctrl { {ctrl = widen_sum({cs_eval = (t, e)}, Ctrl_shape)} }
+pub fn c_eval(t: Term, e: Env) -> Ctrl { {ctrl = widen_sum({cs_eval = (t, e)})[Ctrl_shape]} }
 
 /// Builds the return-value control state.
-pub fn c_ret(v: Value) -> Ctrl { {ctrl = widen_sum({cs_ret = v}, Ctrl_shape)} }
+pub fn c_ret(v: Value) -> Ctrl { {ctrl = widen_sum({cs_ret = v})[Ctrl_shape]} }
 
 /// One-step destructor on a `Ctrl`.
 pub fn un_ctrl(c: Ctrl) -> Ctrl_shape { Ctrl.get(c) }
@@ -393,30 +393,30 @@ pub fn un_state(s: State) -> Ctrl & Kont & I32 { State.get(s) }
 // `Step` is the per-transition outcome the host `loop` folds: either the
 // next `State`, or the final `Eval_result`.
 /// Builds the continue arm of a machine transition.
-fn go(s: State) -> State | Eval_result { widen_sum(s, State | Eval_result) }
+fn go(s: State) -> State | Eval_result { widen_sum(s)[State | Eval_result] }
 
 /// Builds the halt arm of a machine transition (a final result).
-fn halt(r: Eval_result) -> State | Eval_result { widen_sum(r, State | Eval_result) }
+fn halt(r: Eval_result) -> State | Eval_result { widen_sum(r)[State | Eval_result] }
 
 // --- the stuck reasons the structural eliminators share ---
 
 // The one message every apply-a-non-function shape shares.
-fn apply_stuck() -> Eval_result { ev_stuck("applied a value that is not a function"(String)) }
+fn apply_stuck() -> Eval_result { ev_stuck("applied a value that is not a function"[String]) }
 
-fn proj_stuck() -> Eval_result { ev_stuck("projected a value that is not a product"(String)) }
+fn proj_stuck() -> Eval_result { ev_stuck("projected a value that is not a product"[String]) }
 
-fn either_stuck() -> Eval_result { ev_stuck("eliminated a value that is not a sum"(String)) }
+fn either_stuck() -> Eval_result { ev_stuck("eliminated a value that is not a sum"[String]) }
 
-fn ite_stuck() -> Eval_result { ev_stuck("branched on a value that is not a host boolean"(String)) }
+fn ite_stuck() -> Eval_result { ev_stuck("branched on a value that is not a host boolean"[String]) }
 
 fn loop_stuck() -> Eval_result {
   ev_stuck("an interpreted `loop` step returned a value that is not a continue/exit "
-           "sum"(String))
+           "sum"[String])
 }
 
 fn host_group_stuck() -> Eval_result {
   ev_stuck("a host function application's runtime-stage packet did not match its "
-           "expected arity"(String))
+           "expected arity"[String])
 }
 
 // =====================================================================
@@ -444,12 +444,12 @@ pub fn env_lookup(e: Env, i: Nat) -> . | Value {
             , .(head: Value, rest: Env) {
                 match(un_nat(ci)) {
                   (
-                  , .(pred: Nat) { widen_sum((rest, pred), (Env & Nat) | . | Value) }
-                  , .(_z: .) { widen_sum(widen_sum(head, . | Value), (Env & Nat) | . | Value) }
+                  , .(pred: Nat) { widen_sum((rest, pred))[(Env & Nat) | . | Value] }
+                  , .(_z: .) { widen_sum(widen_sum(head)[. | Value])[(Env & Nat) | . | Value] }
                   )
                 }
               }
-            , .(_empty: .) { widen_sum(widen_sum((), . | Value), (Env & Nat) | . | Value) }
+            , .(_empty: .) { widen_sum(widen_sum(())[. | Value])[(Env & Nat) | . | Value] }
             )
           }
         }
@@ -496,19 +496,19 @@ labels { flat_bad: . };
 
 type Flat_result = Flat_ok | Flat_bad;
 
-fn flat_ok(values: Vals) -> Flat_result { widen_sum({flat_ok = values}, Flat_result) }
+fn flat_ok(values: Vals) -> Flat_result { widen_sum({flat_ok = values})[Flat_result] }
 
-fn flat_bad() -> Flat_result { widen_sum({flat_bad=}, Flat_result) }
+fn flat_bad() -> Flat_result { widen_sum({flat_bad=})[Flat_result] }
 
 fn flat_finish(result: Flat_result) -> Flat_group | Flat_result {
-  widen_sum(result, Flat_group | Flat_result)
+  widen_sum(result)[Flat_group | Flat_result]
 }
 
 fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
   match(Flat_group.get(state)) {
     .(value: Value, slots: I32, acc: Vals) {
-      if(leq_i32(slots, 0(I32))) {
-        if(eq_i32(slots, 0(I32))) {
+      if(leq_i32(slots, 0[I32])) {
+        if(eq_i32(slots, 0[I32])) {
           match(un_value(value)) {
             (
             , .(_unit: V_unit) { flat_finish(flat_ok(acc)) }
@@ -522,17 +522,15 @@ fn flatten_group_step(state: Flat_group) -> Flat_group | Flat_result {
         } else {
           flat_finish(flat_bad())
         }
-      } else if(eq_i32(slots, 1(I32))) {
+      } else if(eq_i32(slots, 1[I32])) {
         flat_finish(flat_ok(vals_push(value, acc)))
       } else match(un_value(value)) {
         (
         , .(product: V_product) {
             match(V_product.get(product)) {
               .(head: Value, tail: Value) {
-                widen_sum(
-                , {flat_group = (tail, (sub_i32(slots, 1(I32)), vals_push(head, acc)))}
-                , Flat_group | Flat_result
-                )
+                widen_sum({flat_group = (tail, (sub_i32(slots, 1[I32]), vals_push(head, acc)))})[| Flat_group
+                | Flat_result]
               }
             }
           }
@@ -562,9 +560,9 @@ fn vals_to_domain(acc: Vals) -> Value {
                 match(un_vals(remaining)) {
                   (
                   , .(value: Value, rest: Vals) {
-                      widen_sum((vproduct(value, built), rest), (Value & Vals) | Value)
+                      widen_sum((vproduct(value, built), rest))[(Value & Vals) | Value]
                     }
-                  , .(_empty: .) { widen_sum(built, (Value & Vals) | Value) }
+                  , .(_empty: .) { widen_sum(built)[(Value & Vals) | Value] }
                   )
                 }
               }
@@ -900,7 +898,7 @@ fn do_ret_frame(
           }
         }
       }
-    , .(_fr: F_absurd) { halt(ev_stuck("reached `__absurd__` — the impossible branch"(String))) }
+    , .(_fr: F_absurd) { halt(ev_stuck("reached `__absurd__` — the impossible branch"[String])) }
     , .(fr: F_loop) { resume_loop(F_loop.get(fr), v, rest, fuel) }
     , .(fr: F_hostcont) {
         match(F_hostcont.get(fr)) {
@@ -945,7 +943,7 @@ fn do_eval(make_lit: (String & Host_type) -> Value, t: Term, e: Env, k: Kont, fu
           (
           , .(v: Value) { go(mk_state(c_ret(v), k, fuel)) }
           , .(_oob: .) {
-              halt(ev_stuck("a variable reference escaped its environment (malformed image)"(String)))
+              halt(ev_stuck("a variable reference escaped its environment (malformed image)"[String]))
             }
           )
         }
@@ -1021,7 +1019,7 @@ fn transition(
   match(un_state(s)) {
     .(c: Ctrl, k: Kont, fuel: I32) {
       if(leq_i32(fuel, 0)) {
-        halt(ev_stuck("evaluation step budget exhausted"(String)))
+        halt(ev_stuck("evaluation step budget exhausted"[String]))
       } else {
         let fuel1 = sub_i32(fuel, 1);
         match(un_ctrl(c)) {
@@ -1054,7 +1052,7 @@ fn transition(
 /// The default step budget — generous enough for any image a test drives,
 /// while still bounding an ill-formed run. A well-typed Kio' image
 /// terminates by strong normalization well within it.
-pub fn default_fuel() -> I32 { 1000000(I32) }
+pub fn default_fuel() -> I32 { 1000000[I32] }
 
 /// Evaluates a closed Kio' term to a universal value under an explicit
 /// step budget and host capabilities, driving the CEK machine with the host `loop`.

@@ -27,35 +27,35 @@ rec {
   pub newtype Expr : Expr_node { pub constructor expr; pub projector un_expr }
 }
 
-pub fn cell_ref(a: Addr) -> Expr { Expr.expr({ref_at = a}.>widen_sum(Expr_node)) }
+pub fn cell_ref(a: Addr) -> Expr { Expr.expr(({ref_at = a}.>widen_sum)[Expr_node]) }
 
-pub fn lit_num(n: I32) -> Expr { Expr.expr({lit = n}.>widen_sum(Expr_node)) }
+pub fn lit_num(n: I32) -> Expr { Expr.expr(({lit = n}.>widen_sum)[Expr_node]) }
 
 pub fn add(left: Expr, right: Expr) -> Expr {
-  Expr.expr({add_l = left, add_r = right}.>widen_sum(Expr_node))
+  Expr.expr(({add_l = left, add_r = right}.>widen_sum)[Expr_node])
 }
 
 pub fn sub(left: Expr, right: Expr) -> Expr {
-  Expr.expr({sub_l = left, sub_r = right}.>widen_sum(Expr_node))
+  Expr.expr(({sub_l = left, sub_r = right}.>widen_sum)[Expr_node])
 }
 
 pub fn mul(left: Expr, right: Expr) -> Expr {
-  Expr.expr({mul_l = left, mul_r = right}.>widen_sum(Expr_node))
+  Expr.expr(({mul_l = left, mul_r = right}.>widen_sum)[Expr_node])
 }
 
 pub fn sum_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr({sum_lo = lo, sum_hi = hi}.>widen_sum(Expr_node))
+  Expr.expr(({sum_lo = lo, sum_hi = hi}.>widen_sum)[Expr_node])
 }
 
 pub fn max_range(lo: Addr, hi: Addr) -> Expr {
-  Expr.expr({max_lo = lo, max_hi = hi}.>widen_sum(Expr_node))
+  Expr.expr(({max_lo = lo, max_hi = hi}.>widen_sum)[Expr_node])
 }
 
 pub fn if_else(cond: Expr, then_arm: Expr, else_arm: Expr) -> Expr {
-  Expr.expr({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum(Expr_node))
+  Expr.expr(({if_c = cond, if_t = then_arm, if_e = else_arm}.>widen_sum)[Expr_node])
 }
 
-rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
+rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List[Addr]) -> List[Addr] {
   if(lt_i32(row, row_of(lo))) {
     acc
   } else if(lt_i32(col, col_of(lo))) {
@@ -66,13 +66,13 @@ rec(loop) fn block_onto(lo: Addr, hi: Addr, row: I32, col: I32, acc: List(Addr))
 }
 
 /// Every address in the rectangle `lo`..`hi`, row-major.
-pub fn range_cells(lo: Addr, hi: Addr) -> List(Addr) {
-  block_onto(lo, hi, row_of(hi), col_of(hi), nil(Addr))
+pub fn range_cells(lo: Addr, hi: Addr) -> List[Addr] {
+  block_onto(lo, hi, row_of(hi), col_of(hi), nil[Addr])
 }
 
 /// The cells this formula reads, in first-mention order. Each address lands
 /// once, so an aggregate overlapping an explicit reference is still one edge.
-pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
+pub rec(loop) fn precedents_onto(e: Expr, acc: List[Addr]) -> List[Addr] {
   match(e.>Expr.un_expr) {
     (
     , .(r: Ref_at) { add_unique(acc, r.?{ref_at}) }
@@ -100,7 +100,7 @@ pub rec(loop) fn precedents_onto(e: Expr, acc: List(Addr)) -> List(Addr) {
   }
 }
 
-pub fn precedents(e: Expr) -> List(Addr) { precedents_onto(e, nil(Addr)) }
+pub fn precedents(e: Expr) -> List[Addr] { precedents_onto(e, nil[Addr]) }
 
 fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat(a, b), c) }
 

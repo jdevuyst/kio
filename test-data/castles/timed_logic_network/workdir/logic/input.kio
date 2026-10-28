@@ -15,7 +15,7 @@ import testapi/text as text;
 
 labels Line = { edge: model.Event } | { end: . } | { invalid: String };
 
-pub labels Parsed = { stimulus: lists.List(model.Event) } | { problem: String };
+pub labels Parsed = { stimulus: lists.List[model.Event] } | { problem: String };
 
 fn parse_bit(at: I32, serial: I32, line: String) -> Line {
   if(text.string_eq(line, "0")) {
@@ -58,7 +58,7 @@ fn read_edge(previous: I32, serial: I32) -> Line {
   }
 }
 
-rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List(model.Event)) -> Parsed {
+rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List[model.Event]) -> Parsed {
   match(read_edge(previous, serial)) {
     .(next: Edge) {
       let event = next.?{edge};
@@ -69,4 +69,4 @@ rec(loop) fn read_all(previous: I32, serial: I32, events: lists.List(model.Event
   }
 }
 
-pub fn read() -> Parsed { read_all(0, 0, lists.nil(_)) }
+pub fn read() -> Parsed { read_all(0, 0, lists.nil[_]) }

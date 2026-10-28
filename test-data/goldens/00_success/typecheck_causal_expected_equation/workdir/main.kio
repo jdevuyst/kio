@@ -6,4 +6,4 @@ host fn make[A][B](value: A) -> B & .;
 
 fn same[T](_left: T, _right: T) { () }
 
-fn witness() { same(make(0(I32)), (1(I32), ())) }
+fn witness() { same(make(0[I32]), (1[I32], ())) }

@@ -12,7 +12,7 @@ pub fn run() {\n\
   let first = implicit;\n\
   let second = explicit;\n\
   let third = staged;\n\
-  first(); second(); third((), .)\n\
+  first(); second(); third()[.]\n\
 }\n";
     let uri = path_to_file_uri(&dir.write("pkg/test.kio", source));
     let mut lsp = LspProcess::spawn();
@@ -40,12 +40,12 @@ pub fn delayed[A]() { () }\n\
 pub fn identity[A] -> A -> A { .(value: A) { value } }\n\
 pub fn run() {\n\
   let saved = mark;\n\
-  let ready = saved(.);\n\
+  let ready = saved[.];\n\
   let anonymous = .[B] { .(value: B) { value } };\n\
-  let wait = delayed(.);\n\
+  let wait = delayed[.];\n\
   ready;\n\
-  anonymous(., ());\n\
-  identity(., ());\n\
+  anonymous[.](());\n\
+  identity[.](());\n\
   wait()\n\
 }\n";
     let broken = source.replacen("mark[A]", "mark[A", 1);
@@ -71,9 +71,9 @@ pub fn run() {\n\
 
     for (use_site, length, expected) in [
         ("mark;", 4, "[A] ."),
-        ("saved(.)", 5, "[A] ."),
-        ("delayed(.)", 7, "[A] . -> ."),
-        ("anonymous(., ())", 9, "[B] B -> B"),
+        ("saved[.]", 5, "[A] ."),
+        ("delayed[.]", 7, "[A] . -> ."),
+        ("anonymous[.](())", 9, "[B] B -> B"),
         ("ready;", 5, "."),
         ("wait()", 4, ". -> ."),
     ] {
@@ -104,7 +104,7 @@ pub fn run() {\n\
         );
     }
 
-    let offset = source.find("saved(.)").unwrap();
+    let offset = source.find("saved[.]").unwrap();
     let (line, character) = source_position(source, offset + 2);
     let completion = send_completion(&mut lsp, &uri, line, character);
     let item = completion["items"]

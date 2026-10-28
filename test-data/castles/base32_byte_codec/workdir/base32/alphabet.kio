@@ -16,10 +16,10 @@ import testapi/iter(loop);
 import testapi/text(string_eq);
 
 /// A payload: one byte value per element, each in `[0, 256)`.
-pub type Bytes = list.List(I32);
+pub type Bytes = list.List[I32];
 
 /// A transmission: one glyph per element, each a single-character string.
-pub type Glyphs = list.List(String);
+pub type Glyphs = list.List[String];
 
 /// One alphabet entry — a five-bit value and the glyph that stands for it.
 type Entry = I32 & String;
@@ -41,7 +41,7 @@ pub fn pad() -> String { "=" }
 
 pub fn is_pad(glyph: String) -> Bool { string_eq(glyph, pad()) }
 
-fn push(rest: list.List(Entry), value: I32, glyph: String) -> list.List(Entry) {
+fn push(rest: list.List[Entry], value: I32, glyph: String) -> list.List[Entry] {
   list.cons((value, glyph), rest)
 }
 
@@ -50,8 +50,8 @@ fn push(rest: list.List(Entry), value: I32, glyph: String) -> list.List(Entry) {
 /// `l`/`I`; only six digits are needed, so `8` and `9` are not part of the
 /// 32-entry alphabet. Each `push` prepends, so the chain is written in
 /// value order and reversed once at the end.
-fn table() -> list.List(Entry) {
-  list.reverse(list.nil(Entry)
+fn table() -> list.List[Entry] {
+  list.reverse(list.nil[Entry]
     .>push(0, "A")
     .>push(1, "B")
     .>push(2, "C")
@@ -95,10 +95,10 @@ rec(loop) {
   /// — so a damaged table would show up in the transmission instead of
   /// quietly encoding as some other valid glyph.
   pub fn glyph_of(value: I32) -> String { recur by_value(table(), value) };
-  fn by_value(entries: list.List(Entry), value: I32) -> String {
+  fn by_value(entries: list.List[Entry], value: I32) -> String {
     match(entries.>list.List.un_list) {
       (
-      , .(head: Entry, rest: list.List(Entry)) {
+      , .(head: Entry, rest: list.List[Entry]) {
           let .(carried: I32, glyph: String) = head;
           if(bits.int_eq(carried, value)) { glyph } else { recur by_value(rest, value) }
         }
@@ -112,10 +112,10 @@ rec(loop) {
   /// The five-bit value a glyph stands for, or `()` when the glyph is not
   /// in the alphabet at all — the corruption the decoder reports.
   pub fn value_of(glyph: String) -> I32 | . { recur by_glyph(table(), glyph) };
-  fn by_glyph(entries: list.List(Entry), glyph: String) -> I32 | . {
+  fn by_glyph(entries: list.List[Entry], glyph: String) -> I32 | . {
     match(entries.>list.List.un_list) {
       (
-      , .(head: Entry, rest: list.List(Entry)) {
+      , .(head: Entry, rest: list.List[Entry]) {
           let .(carried: I32, spelling: String) = head;
           if(string_eq(spelling, glyph)) { widen_sum(carried) } else { recur by_glyph(rest, glyph) }
         }

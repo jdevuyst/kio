@@ -10,18 +10,18 @@ import testapi/array(array_get, array_len, array_make_empty, array_pop_back, arr
 import testapi/iter(loop);
 
 pub labels Queues = {
-, ready: Array(I32)
-, blocked: Array(I32)
-, wake: Array(I32)
-, retired: Array(I32)
+, ready: Array[I32]
+, blocked: Array[I32]
+, wake: Array[I32]
+, retired: Array[I32]
 };
 
 pub fn new_queues() -> Queues {
   {
-  , ready = array_make_empty(I32, ())
-  , blocked = array_make_empty(I32, ())
-  , wake = array_make_empty(I32, ())
-  , retired = array_make_empty(I32, ())
+  , ready = array_make_empty[I32](())
+  , blocked = array_make_empty[I32](())
+  , wake = array_make_empty[I32](())
+  , retired = array_make_empty[I32](())
   }
 }
 
@@ -31,7 +31,7 @@ pub fn ready_at(q: Queues, i: I32) -> I32 { array_get(q.?{ready}, i) }
 
 pub fn enqueue(q: Queues, pid: I32) { array_push(q.?{ready}, pid) }
 
-rec(loop) fn shift_down(r: Array(I32), i: I32, n: I32) {
+rec(loop) fn shift_down(r: Array[I32], i: I32, n: I32) {
   if(leq_i32(n, i)) {
     ()
   } else {
@@ -50,12 +50,12 @@ pub fn dequeue(q: Queues) -> I32 | . {
   let r = q.?{ready};
   let n = array_len(r);
   if(leq_i32(n, 0)) {
-    widen_sum((), I32 | .)
+    widen_sum(())[I32 | .]
   } else {
     let head = array_get(r, 0);
     shift_down(r, 1, n);
     let _duplicate = array_pop_back(r);
-    widen_sum(head, I32 | .)
+    widen_sum(head)[I32 | .]
   }
 }
 
@@ -86,7 +86,7 @@ rec(loop) fn wake_scan(q: Queues, tick: I32, read: I32, write: I32, n: I32) -> I
   }
 }
 
-rec(loop) fn truncate(a: Array(I32), keep: I32) {
+rec(loop) fn truncate(a: Array[I32], keep: I32) {
   if(leq_i32(array_len(a), keep)) {
     ()
   } else {

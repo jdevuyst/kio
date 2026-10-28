@@ -1771,7 +1771,7 @@ mod tests {
                 ("origin.kio", "module origin; pub labels { wrap[A]: A };"),
                 (
                     "main.kio",
-                    "module main; import origin(Wrap); import origin as source; type Wrap[A] = source.Wrap(A);",
+                    "module main; import origin(Wrap); import origin as source; type Wrap[A] = source.Wrap[A];",
                 ),
             ],
             "binding `Wrap` has more than one source",
@@ -1784,7 +1784,7 @@ mod tests {
             "origin.kio",
             "module origin; \
              labels Exact[A][B] = { item[A][B]: A & B }; \
-             type Forward[A][B] = Item(A, B);",
+             type Forward[A][B] = Item[A][ B];",
         )]);
         let projection = project_module(&modules[0].0, &modules[0].1);
         let declarations = &projection.registry.local_named;

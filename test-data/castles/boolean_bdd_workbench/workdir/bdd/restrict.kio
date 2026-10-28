@@ -12,10 +12,10 @@ import testapi/iter(loop);
 
 type Cached = table.Node_id & table.Node_id;
 
-labels State = { store: table.Store, cache: lists.List(Cached), hits: I32 };
+labels State = { store: table.Store, cache: lists.List[Cached], hits: I32 };
 
 fn remember(s: State, from: table.Node_id, to: table.Node_id) -> State & table.Node_id {
-  (s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod(State), to)
+  ((s.!{cache = lists.cons((from, to), s.?{cache})}.>reorder_prod)[State], to)
 }
 
 rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> State & table.Node_id {
@@ -24,7 +24,7 @@ rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> S
   , s.?{cache}
   )) {
     .(_from: table.Node_id, to: table.Node_id) {
-      (s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod(State), to)
+      ((s.!{hits = arith.add_i32(s.?{hits}, 1)}.>reorder_prod)[State], to)
     };
     .() {
       match(table.lookup(s.?{store}, id)) {
@@ -65,7 +65,7 @@ rec(loop) fn visit(s: State, id: table.Node_id, variable: I32, value: Bool) -> S
 pub fn restrict(store: table.Store, id: table.Node_id, variable: I32, value: Bool) ->
   table.Store & table.Node_id & I32
    {
-  let initial = {store, cache = lists.nil(Cached), hits = 0};
+  let initial = {store, cache = lists.nil[Cached], hits = 0};
   let .(final: State, answer: table.Node_id) = visit(initial, id, variable, value);
   (final.?{store}, answer, final.?{hits})
 }

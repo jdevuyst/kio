@@ -11947,7 +11947,7 @@ mod tests {
             "module main;
              host type Actual;
              host type Box[A];
-             type Alias[A] = Box(A);",
+             type Alias[A] = Box[A];",
         )
         .expect("parse projected close alias witness");
         let (modules, _) =
@@ -12648,7 +12648,7 @@ mod tests {
             .unwrap();
         let mut builder = PublicationBuilder::new(&store, &goal_delta);
         builder.record_type_resolution(publication_site, 0, open);
-        builder.mark_value_at_type_slot(publication_site, 0);
+        builder.record_call_split(publication_site, 0);
         let prepared = builder
             .finish()
             .prepare_root(&store, goal_delta, Vec::new(), &context)
@@ -12661,7 +12661,11 @@ mod tests {
                 .type_resolution_for("<test>", publication_site.id, 0)
                 .is_none()
         );
-        assert!(!elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            !elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
         assert_eq!(
             store.owner_state(owner, sp()).unwrap().lifecycle,
             OwnerLifecycle::Open,
@@ -12677,7 +12681,11 @@ mod tests {
             panic!("resolved publication type should remain a nominal path")
         };
         assert_eq!(segments.last().unwrap().as_str(), "I32");
-        assert!(elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -12929,8 +12937,15 @@ mod tests {
         let mut first_elaborations = Elaborations::new();
         let mut first_tcx = TypeCtx::new(&env, &mut first_elaborations);
         first_tcx.push_pending_rec_order("pending".to_owned(), &source, sp());
-        let rec_order =
-            first_tcx.prepare_rec_order_updates(vec![(&source, PendingRecOrderState::TypeOnly)]);
+        let rec_order = first_tcx.prepare_rec_order_updates(vec![(
+            &source,
+            PendingRecOrderState::Runtime {
+                exact_ty: InternedType::fresh(Type::Unit {
+                    meta: Meta::new(sp()),
+                }),
+                source_checked: false,
+            },
+        )]);
 
         let mut second_elaborations = Elaborations::new();
         let mut second_tcx = TypeCtx::new(&env, &mut second_elaborations);
@@ -13000,8 +13015,15 @@ mod tests {
         let mut tcx = TypeCtx::new(&env, &mut elaborations);
         let mark = tcx.save();
         tcx.push_pending_rec_order("pending".to_owned(), &source, sp());
-        let rec_order =
-            tcx.prepare_rec_order_updates(vec![(&source, PendingRecOrderState::TypeOnly)]);
+        let rec_order = tcx.prepare_rec_order_updates(vec![(
+            &source,
+            PendingRecOrderState::Runtime {
+                exact_ty: InternedType::fresh(Type::Unit {
+                    meta: Meta::new(sp()),
+                }),
+                source_checked: false,
+            },
+        )]);
 
         let mut store = GoalStore::new();
         let owner = store
@@ -13489,7 +13511,7 @@ mod tests {
             .unwrap();
 
         let mut builder = PublicationBuilder::new(&store, &first_delta);
-        builder.mark_value_at_type_slot(publication_site, 0);
+        builder.record_call_split(publication_site, 0);
 
         let mut second_delta = store.begin_delta(owner, sp()).unwrap();
         let second_type = store
@@ -13530,7 +13552,11 @@ mod tests {
             .expect("the first speculative delta remains live");
         assert_path(&first_value, &["m", "I32"], 0);
         let elaborations = Elaborations::new();
-        assert!(!elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            !elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -14017,7 +14043,7 @@ mod tests {
             .unwrap();
         let child_delta = store.begin_delta(child, sp()).unwrap();
         let mut child_builder = PublicationBuilder::new(&store, &child_delta);
-        child_builder.mark_value_at_type_slot(publication_site, 0);
+        child_builder.record_call_split(publication_site, 0);
         assert_panics_with(
             || {
                 let _ = child_builder.finish().close_child(
@@ -14051,7 +14077,7 @@ mod tests {
             .unwrap();
         let child_delta = store.begin_delta(child, sp()).unwrap();
         let mut child_builder = PublicationBuilder::new(&store, &child_delta);
-        child_builder.mark_value_at_type_slot(publication_site, 0);
+        child_builder.record_call_split(publication_site, 0);
         let mut elaborations = Elaborations::new();
 
         assert_panics_with(
@@ -14072,7 +14098,11 @@ mod tests {
         );
         assert_eq!(store.owner_state(parent, sp()).unwrap().open_children, 1);
         let elaborations = Elaborations::new();
-        assert!(!elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            !elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -14088,7 +14118,7 @@ mod tests {
         let publication_delta = store.begin_delta(publication_owner, sp()).unwrap();
         let wrong_delta = store.begin_delta(delta_owner, sp()).unwrap();
         let mut builder = PublicationBuilder::new(&store, &publication_delta);
-        builder.mark_value_at_type_slot(publication_site, 0);
+        builder.record_call_split(publication_site, 0);
         let mut elaborations = Elaborations::new();
 
         assert_panics_with(
@@ -14115,7 +14145,11 @@ mod tests {
             OwnerLifecycle::Open
         );
         let elaborations = Elaborations::new();
-        assert!(!elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            !elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -14146,7 +14180,7 @@ mod tests {
         let publication_delta = store.begin_delta(publication_owner, sp()).unwrap();
         let wrong_delta = store.begin_delta(delta_owner, sp()).unwrap();
         let mut builder = PublicationBuilder::new(&store, &publication_delta);
-        builder.mark_value_at_type_slot(publication_site, 0);
+        builder.record_call_split(publication_site, 0);
 
         assert_panics_with(
             || {
@@ -14173,7 +14207,11 @@ mod tests {
         );
         assert_eq!(store.owner_state(parent, sp()).unwrap().open_children, 2);
         let elaborations = Elaborations::new();
-        assert!(!elaborations.is_value_at_type_slot("<test>", publication_site.id, 0));
+        assert!(
+            !elaborations
+                .call_splits_for("<test>", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -14190,7 +14228,7 @@ mod tests {
         );
         let delta = store.begin_delta(owner, sp()).unwrap();
         let mut builder = PublicationBuilder::new(&store, &delta);
-        builder.mark_value_at_type_slot(publication_site, 0);
+        builder.record_call_split(publication_site, 0);
         let mut elaborations = Elaborations::new();
         let outputs = builder
             .finish()
@@ -14198,8 +14236,16 @@ mod tests {
             .unwrap();
         assert!(outputs.is_empty());
 
-        assert!(elaborations.is_value_at_type_slot("authoritative/module", publication_site.id, 0));
-        assert!(!elaborations.is_value_at_type_slot("wrong/module", publication_site.id, 0));
+        assert!(
+            elaborations
+                .call_splits_for("authoritative/module", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
+        assert!(
+            !elaborations
+                .call_splits_for("wrong/module", publication_site.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -15690,7 +15736,7 @@ mod tests {
 
         assert_eq!(
             error.diag().1,
-            "type mismatch: expected `. & F(.) & ([B] B -> Result)`, found `. & F(.) & ([T] T -> T)`"
+            "type mismatch: expected `. & F[.] & ([B] B -> Result)`, found `. & F[.] & ([T] T -> T)`"
         );
     }
 
@@ -15832,8 +15878,8 @@ mod tests {
                  host type Either[E][A];
                  type Alias = Actual;
                  type Id[A] = A;
-                 type Unary[E] = Either(E);
-                 type Twice[*F][A] = F(F(A));
+                 type Unary[E] = Either[E];
+                 type Twice[*F][A] = F[F[A]];
                  type Pair = Actual & .;",
             )
             .expect("parse"),
@@ -15961,8 +16007,8 @@ mod tests {
             (
                 "owner.kio",
                 "module owner;
-                 pub type Pair[A, B] = A & B;
-                 pub type Swap[A, B] = Pair(B, A);",
+                 pub type Pair[A][ B] = A & B;
+                 pub type Swap[A][ B] = Pair[B][ A];",
             ),
             (
                 "consumer.kio",
@@ -16053,7 +16099,7 @@ mod tests {
                 "wrong.kio",
                 "module wrong;
                  pub host type Value;
-                 pub newtype Box[A, B] : A {
+                 pub newtype Box[A][ B] : A {
                      pub constructor box;
                      pub projector unbox;
                  };",
@@ -16062,7 +16108,7 @@ mod tests {
                 "owner.kio",
                 "module owner;
                  import base as base;
-                 pub type Pair = base.Box(base.Value) & base.Value;",
+                 pub type Pair = base.Box[base.Value] & base.Value;",
             ),
             (
                 "consumer.kio",

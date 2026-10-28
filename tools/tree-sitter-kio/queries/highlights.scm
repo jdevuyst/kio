@@ -111,6 +111,7 @@
 (call_expr (call_callee (entity_name_function) @entity.name.function))
 (ufcs_expr (call_callee (entity_name_function) @entity.name.function))
 (grouped_ufcs_callable (call_callee (entity_name_function) @entity.name.function))
+(typed_ufcs_callable (call_callee (entity_name_function) @entity.name.function))
 (block_call (call_callee (entity_name_function) @entity.name.function))
 (ERROR (call_callee (entity_name_function) @identifier))
 (callable_path (entity_name_function) @entity.name.function)

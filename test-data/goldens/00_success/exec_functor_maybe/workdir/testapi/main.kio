@@ -18,7 +18,7 @@ pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe 
 // F(B)`. Every brand crossing is mediated by the concrete brand's
 // constructor / projector at the instance site, which is what makes
 // the dictionary work for non-canonical brands like `Maybe`.
-pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
   pub constructor mk_functor;
   pub projector fmap
   }
@@ -29,20 +29,14 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // (the carrier carries no `B`), and the `A` branch lifts the
 // payload through the user's step function `s` and re-wraps the
 // result.
-fn maybe_functor() -> Functor(Maybe) {
-  Functor.mk_functor(
-  , Maybe
-  , .[A][B](s, m) {
-      __either__(
-      , .
-      , A
-      , Maybe(B)
-      , Maybe.un_maybe(A, m)
-      , .(_unit) { Maybe.mk_maybe(B, __left__(., B, ())) }
-      , .(av) { Maybe.mk_maybe(B, __right__(., B, s(av))) }
-      )
-    }
-  )
+fn maybe_functor() -> Functor[Maybe] {
+  Functor.mk_functor[Maybe](.[A][B](s, m) {
+    __either__[.][A][Maybe[B]](
+    , Maybe.un_maybe[A](m)
+    , .(_unit) { Maybe.mk_maybe[B](__left__[.][B](())) }
+    , .(av) { Maybe.mk_maybe[B](__right__[.][B](s(av))) }
+    )
+  })
 }
 
 // Exercise the dictionary on a present value: brand a String into
@@ -51,14 +45,11 @@ fn maybe_functor() -> Functor(Maybe) {
 // recovered string into the output stream.
 fn use_dictionary() -> String {
   let dict = maybe_functor();
-  let m = Maybe.mk_maybe(String, __right__(., String, "functor on maybe ok\n"(String)));
-  let mapped = Functor.fmap(Maybe, dict)(String, String, .(s) { s }, m);
-  __either__(
-  , .
-  , String
-  , String
-  , Maybe.un_maybe(String, mapped)
-  , .(_unit) { "absent\n"(String) }
+  let m = Maybe.mk_maybe[String](__right__[.][String]("functor on maybe ok\n"[String]));
+  let mapped = Functor.fmap[Maybe](dict)[String][String](.(s) { s }, m);
+  __either__[.][String][String](
+  , Maybe.un_maybe[String](mapped)
+  , .(_unit) { "absent\n"[String] }
   , .(s) { s }
   )
 }

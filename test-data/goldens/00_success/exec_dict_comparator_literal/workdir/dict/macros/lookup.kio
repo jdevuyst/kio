@@ -20,12 +20,12 @@ import dict/macros/macro_util(
 pub type Lookup_bool = . | .;
 
 /// Runtime `true` value captured by `contains`.
-pub fn true() -> Lookup_bool { __left__(., ., ()) }
+pub fn true() -> Lookup_bool { __left__[.][.](()) }
 
 /// Runtime `false` value captured by `contains`.
-pub fn false() -> Lookup_bool { __right__(., ., ()) }
+pub fn false() -> Lookup_bool { __right__[.][.](()) }
 
-pure fn bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, . -> Lookup_bool) }
+pure fn bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[. -> Lookup_bool] }
 
 pure fn call_bool(ct: __Comptime__, fn_type: __Type__, value_fn: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, fn_type, value_fn, __term_unit__(ct))
@@ -60,13 +60,10 @@ pure fn branch_lookup_result(
 , branch_type: __Type__
 , branch_value: __Checked_term__
 ) -> __Checked_term__ {
-  __either__(
-  , Matched_slot
-  , .
-  , __Checked_term__
+  __either__[Matched_slot][.][__Checked_term__](
   , branch_lookup(ct, branch_type, branch_value, needle)
   , .(found: Matched_slot) -> __Checked_term__ {
-      some_lookup(ct, result_type, slot_term(ct, __fst__(Slot, Matched_slot_tail, found)))
+      some_lookup(ct, result_type, slot_term(ct, __fst__[Slot][Matched_slot_tail](found)))
     }
   , .() -> __Checked_term__ { no_lookup(ct, result_type) }
   )
@@ -81,10 +78,7 @@ pure fn contains_branch_result(
 , branch_type: __Type__
 , branch_value: __Checked_term__
 ) -> __Checked_term__ {
-  __either__(
-  , Matched_slot
-  , .
-  , __Checked_term__
+  __either__[Matched_slot][.][__Checked_term__](
   , branch_lookup(ct, branch_type, branch_value, needle)
   , .(_found: Matched_slot) -> __Checked_term__ { call_bool(ct, fn_type, true_fn) }
   , .() -> __Checked_term__ { call_bool(ct, fn_type, false_fn) }
@@ -119,7 +113,7 @@ pub pure fn contains_checked(
 , value: __Checked_term__
 , needle: __Type__
 ) -> __Checked_term__ {
-  let result_type = __reflect_type__(ct, Lookup_bool);
+  let result_type = __reflect_type__(ct)[Lookup_bool];
   let fn_type = bool_fn_type(ct);
   dnf_eliminate(
   , ct

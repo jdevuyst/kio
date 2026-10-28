@@ -213,7 +213,7 @@ impl ValueRenderer<'_> {
             Value::Bool(true) => ".t".to_string(),
             Value::Bool(false) => ".f".to_string(),
             Value::IntAtom(d, ann) | Value::FloatAtom(d, ann) => match ann {
-                Some(t) => format!("{d}({})", t.rsplit('.').next().unwrap_or(t)),
+                Some(t) => format!("{d}[{}]", t.rsplit('.').next().unwrap_or(t)),
                 None => d.clone(),
             },
             Value::StrAtom(s) => format!("{s:?}"),

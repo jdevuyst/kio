@@ -51,15 +51,15 @@ type Del_out = Del & Tally;
 
 labels Successor = { least: I32 & String } | { no_least: . };
 
-fn held(n: Node) -> Shrunk { {held = n}.>widen_sum(Shrunk) }
+fn held(n: Node) -> Shrunk { ({held = n}.>widen_sum)[Shrunk] }
 
-fn deficit(n: Node) -> Shrunk { {deficit = n}.>widen_sum(Shrunk) }
+fn deficit(n: Node) -> Shrunk { ({deficit = n}.>widen_sum)[Shrunk] }
 
-fn missing() -> Del { {missing=}.>widen_sum(Del) }
+fn missing() -> Del { ({missing=}.>widen_sum)[Del] }
 
-fn least(k: I32, v: String) -> Successor { {least = (k, v)}.>widen_sum(Successor) }
+fn least(k: I32, v: String) -> Successor { ({least = (k, v)}.>widen_sum)[Successor] }
 
-fn no_least() -> Successor { {no_least=}.>widen_sum(Successor) }
+fn no_least() -> Successor { ({no_least=}.>widen_sum)[Successor] }
 
 fn del_of_shrunk(s: Shrunk) -> Del {
   match(s) {
@@ -228,11 +228,11 @@ fn lift(dt: Del_out, repair: Shrunk -> (Shrunk & Tally)) -> Del_out {
   match(d) {
     (
     , .(h: Held) {
-        let .(s: Shrunk, ev: Tally) = repair(widen_sum(h, Shrunk));
+        let .(s: Shrunk, ev: Tally) = repair(widen_sum(h)[Shrunk]);
         (del_of_shrunk(s), tally_add(acc, ev))
       }
     , .(x: Deficit) {
-        let .(s: Shrunk, ev: Tally) = repair(widen_sum(x, Shrunk));
+        let .(s: Shrunk, ev: Tally) = repair(widen_sum(x)[Shrunk]);
         (del_of_shrunk(s), tally_add(acc, ev))
       }
     , .(m: Missing) { (widen_sum(m), acc) }

@@ -73,14 +73,12 @@ where
     if tys.is_empty() {
         return String::new();
     }
-    let mut out = String::from("[");
-    for (index, ty) in tys.iter().enumerate() {
-        if index > 0 {
-            out.push_str(", ");
-        }
+    let mut out = String::new();
+    for ty in tys {
+        out.push('[');
         write_type(ty, &mut out);
+        out.push(']');
     }
-    out.push(']');
     out
 }
 
@@ -158,7 +156,7 @@ mod tests {
 
     #[test]
     fn render_type_arg_group() {
-        assert_eq!(render_type_args(&[unit_ty(), unit_ty()]), "[., .]");
+        assert_eq!(render_type_args(&[unit_ty(), unit_ty()]), "[.][.]");
     }
 
     #[test]

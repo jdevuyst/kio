@@ -13,9 +13,9 @@ import testapi/io(print);
 // (sum collapse + sum widening) fire in a single align call.
 fn convert(b: Bool) -> String | I32 {
   align(if(b) {
-    widen_sum("widened-collapsed\n"(String), String | String)
+    widen_sum("widened-collapsed\n"[String])[String | String]
   } else {
-    widen_sum("widened-collapsed\n"(String), String | String)
+    widen_sum("widened-collapsed\n"[String])[String | String]
   })
 }
 

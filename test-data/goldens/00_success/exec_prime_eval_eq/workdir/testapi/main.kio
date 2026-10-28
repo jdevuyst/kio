@@ -13,7 +13,7 @@ import testapi/text(string_concat);
 // checks it agrees with compile-and-run.
 fn classify(label: String, n: I32) {
   let verdict =
-    if(eq_i32(n, 0)) { "zero"(String) } else if(lt_i32(n, 0)) { "negative" } else { "positive" };
+    if(eq_i32(n, 0)) { "zero"[String] } else if(lt_i32(n, 0)) { "negative" } else { "positive" };
   print(string_concat(label, string_concat(verdict, "\n")))
 }
 

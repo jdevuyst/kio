@@ -393,11 +393,11 @@ impl Requalifier {
                 self.expr(value);
                 self.expr(body);
             }
-            // Kio' mandates a `(Type)` annotation on every literal, and
+            // Kio' mandates a `[Type]` annotation on every literal, and
             // the reduction-side reflection qualifier roots that role at
-            // its declaring module (`"\n"(testapi.String)`). Requalify it
+            // its declaring module (`"\n"[testapi.String]`). Requalify it
             // like any other type-path site so it de-qualifies to the
-            // bound spelling (`"\n"(String)`); left qualified, the
+            // bound spelling (`"\n"[String]`); left qualified, the
             // dyn-load-prime interpreter's `make_scalar` rejects the module
             // head as an unknown host type.
             Expr::StrLit { annotation, .. }
@@ -825,14 +825,14 @@ mod tests {
         let out = emit_one(
             "module x/main;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
-             rec newtype Recursive : . | (([*F] F(.) -> F(.)) & Recursive) {
+             rec newtype Recursive : . | (([*F] F[.] -> F[.]) & Recursive) {
                constructor mk_recursive; projector un_recursive;
              };
-             newtype Existential <U> : U & ([*F] F(U) -> F(U)) {
+             newtype Existential <U> : U & ([*F] F[U] -> F[U]) {
                constructor mk_existential; projector un_existential;
              };
-             fn anonymous(value: Box(.)) -> Box(.) {
-               .[*F](item: F(.)) -> F(.) { item }(Box, value)
+             fn anonymous(value: Box[.]) -> Box[.] {
+               .[*F](item: F[.]) -> F[.] { item }[Box]( value)
              }",
         );
         let reparsed = parse(&out).unwrap_or_else(|error| {
@@ -870,43 +870,44 @@ mod tests {
              host fn nil[A]() -> A; \
              fn id[A](value: A) -> A { value } \
              fn later[A](value: A)[B]() -> A { value } \
-             fn selected() -> . -> T { nil(T) } \
-             fn explicit() -> T { nil(T, ()) } \
-             fn selected_via_let() -> . -> T { let f = nil; f(T) } \
-             fn selected_later(value: T) -> . -> T { later(T, value)(T) } \
-             fn explicit_later(value: T) -> T { later(T, value)(T, ()) } \
-             fn residual() -> T -> T { id(T) } \
-             fn selected_unit() -> . -> . { id(.) } \
+             fn selected() -> . -> T { nil[T] } \
+             fn explicit() -> T { nil[T]( ()) } \
+             fn selected_via_let() -> . -> T { let f = nil; f[T] } \
+             fn selected_later(value: T) -> . -> T { later[T]( value)[T] } \
+             fn explicit_later(value: T) -> T { later[T]( value)[T]( ()) } \
+             fn residual() -> T -> T { id[T] } \
+             fn selected_unit() -> . -> . { id[.] } \
              fn empty() -> . { id() }",
         );
         assert_eq!(
-            out.matches("nil(T)").count(),
+            out.matches("nil[T]").count() - out.matches("nil[T](").count(),
             1,
             "type-only Unit-domain calls must remain residual in canonical Kio': {out}"
         );
         assert!(
-            out.contains("nil(T, ())"),
+            out.contains("nil[T](())"),
             "a written Unit value must remain explicit in canonical Kio': {out}"
         );
         assert!(
-            out.contains("let f = nil;\n  let _kg0 = f(T);\n  .(_kg1: .) { _kg0(_kg1) }"),
+            out.contains("let f = nil;\n  let _kg0 = f[T];\n  .(_kg1: .) { _kg0(_kg1) }"),
             "a locally bound type-only Unit-domain function must remain residual: {out}"
         );
         assert!(
-            out.contains("later(T, value)(T)") && out.contains("later(T, value)(T, ())"),
+            out.matches("later[T](value)[T]").count() > out.matches("later[T](value)[T](").count()
+                && out.contains("later[T](value)[T](())"),
             "later type-only and saturated Unit layers must remain distinct: {out}"
         );
         assert!(
-            out.contains("id(T)"),
+            out.matches("id[T]").count() > out.matches("id[T](").count(),
             "a type-only non-Unit call must remain residual: {out}"
         );
         assert_eq!(
-            out.matches("id(.)").count(),
+            out.matches("id[.]").count() - out.matches("id[.](").count(),
             1,
             "a written type-only Unit call must remain residual: {out}"
         );
         assert_eq!(
-            out.matches("id(., ())").count(),
+            out.matches("id[.](())").count(),
             1,
             "a source-empty call must emit its inferred type and Unit value: {out}"
         );
@@ -983,19 +984,19 @@ mod tests {
             .unwrap_or_else(|e| panic!("emitted text is not Kio': {e:?}\n{out}"));
     }
 
-    /// Kio' mandates the `(Type)` annotation on every literal (see
-    /// `specs/grammar.md` § Kio' grammar — `LiteralCall ::= LITERAL '('
-    /// Type ')'`), so a literal value-arg carries its annotation in the
+    /// Kio' mandates the `[Type]` annotation on every literal (see
+    /// `specs/grammar.md` § Kio' grammar — `LiteralCall ::= LITERAL '['
+    /// Type ']'`), so a literal value-arg carries its annotation in the
     /// kio-prime emit regardless of whether a sibling call slot pins
-    /// the same type. A call like `id(String, "hi")` round-trips as
-    /// `id(String, "hi"(String))` — both pieces of type information
+    /// the same type. A call like `id[String]("hi")` round-trips as
+    /// `id[String]("hi"[String])` — both pieces of type information
     /// survive, and the emitted text re-parses as Kio'.
     #[test]
     fn literal_value_arg_carries_annotation_alongside_explicit_type_arg() {
         let src = "module main; \
                    host type String role(str); \
                    fn id[A](x: A) -> A { x } \
-                   fn use_id() -> String { id(String, \"hi\") }";
+                   fn use_id() -> String { id[String](\"hi\") }";
         let parsed = parse(src).expect("parse");
         let file_path = module_file_path(&parsed);
         let (lowered_modules, _) =
@@ -1010,21 +1011,21 @@ mod tests {
         let out = emit_module(module);
         // The explicit `String` type-arg survives.
         assert!(
-            out.contains("id(String,"),
+            out.contains("id[String]("),
             "expected explicit `String` type-arg in: {out}"
         );
-        // The literal value-arg carries its mandatory `(String)`
+        // The literal value-arg carries its mandatory `[String]`
         // annotation — Kio' admits no bare-literal form.
         assert!(
-            out.contains("\"hi\"(String)"),
-            "expected literal `\"hi\"(String)` annotation in: {out}"
+            out.contains("\"hi\"[String]"),
+            "expected literal `\"hi\"[String]` annotation in: {out}"
         );
         // The output re-parses as Kio'.
         parse(&out).unwrap_or_else(|e| panic!("emitted text failed to re-parse: {e:?}\n{out}"));
     }
 
     /// Even when no sibling type-arg pins the literal's type, the
-    /// `(Type)` annotation is present in the emit — the Kio' grammar
+    /// `[Type]` annotation is present in the emit — the Kio' grammar
     /// requires it on every literal.
     #[test]
     fn literal_without_sibling_type_arg_keeps_baked_annotation() {
@@ -1047,8 +1048,8 @@ mod tests {
         // pins the type (the kio-prime backend's standard literal-
         // explicitness behavior).
         assert!(
-            out.contains("\"hello\"(String)"),
-            "expected literal `\"hello\"(String)` annotation in: {out}"
+            out.contains("\"hello\"[String]"),
+            "expected literal `\"hello\"[String]` annotation in: {out}"
         );
     }
 
@@ -1057,7 +1058,7 @@ mod tests {
         let src = "module x/main; \
                    labels { greet: . }; \
                    fn id[A](x: A) -> A { x } \
-                   fn main() -> . { let f = id(Greet -> ., .(_g) { () }); () }";
+                   fn main() -> . { let f = id[Greet -> .]( .(_g) { () }); () }";
         let out = emit_one(src);
         assert!(
             out.contains(".(_g: Greet)"),
@@ -1390,7 +1391,7 @@ mod tests {
              import __intrinsics__; \
              fn widen(value: Alias) -> Alias | . { \
                touch(); \
-               __left__(_, ., value) \
+               __left__[_][ .]( value) \
              }";
         const NOISE_BASELINE: &str = "module noise; pub fn touch() -> . { () }";
         const UNRELATED_DECLARATION: &str = "pub newtype Shared : . { \
@@ -1540,10 +1541,10 @@ mod tests {
         );
     }
 
-    /// A literal's mandatory `(Type)` annotation is a type-path site too:
+    /// A literal's mandatory `[Type]` annotation is a type-path site too:
     /// the reduction-side qualifier roots the role at its declaring module
-    /// (`"hi"(testapi.String)`), so the requalifier must de-qualify it to
-    /// the bound spelling (`"hi"(String)`) like any other type path. Left
+    /// (`"hi"[testapi.String]`), so the requalifier must de-qualify it to
+    /// the bound spelling (`"hi"[String]`) like any other type path. Left
     /// qualified, the dyn-load-prime interpreter's `make_scalar` rejects the
     /// module head with `unknown host type testapi` — the empty-stdout
     /// failure the `exec_prime_eval_*` goldens hit at corpus level.
@@ -1581,8 +1582,8 @@ mod tests {
         );
         let out = pretty::pretty_module(&module);
         assert!(
-            out.contains("\"hi\"(String)") && !out.contains("testapi.String"),
-            "expected `\"hi\"(String)` with no qualified role in: {out}"
+            out.contains("\"hi\"[String]") && !out.contains("testapi.String"),
+            "expected `\"hi\"[String]` with no qualified role in: {out}"
         );
         parse(&out).unwrap_or_else(|e| panic!("emitted text failed to re-parse: {e:?}\n{out}"));
     }

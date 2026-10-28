@@ -29,7 +29,7 @@ rec(loop) fn sizes(table: model.Chart, index: I32, result: String) -> String {
 rec(loop) fn examples(
 , name: String
 , grammar: model.Grammar
-, inputs: Array(fixtures.Example)
+, inputs: Array[fixtures.Example]
 , index: I32
 ) {
   if(arith.leq_i32(arrays.array_len(inputs), index)) {
@@ -58,6 +58,6 @@ rec(loop) fn examples(
   }
 }
 
-pub fn suite(name: String, grammar: model.Grammar, inputs: Array(fixtures.Example)) {
+pub fn suite(name: String, grammar: model.Grammar, inputs: Array[fixtures.Example]) {
   examples(name, grammar, inputs, 0)
 }

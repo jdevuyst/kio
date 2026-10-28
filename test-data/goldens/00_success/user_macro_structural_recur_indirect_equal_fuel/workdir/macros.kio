@@ -15,7 +15,7 @@ pure fn retain_structural(_ct: __Comptime__, structural: Type_structural) -> Typ
 }
 
 pure fn run(ct: __Comptime__, fuel: __Type__, k: __Type__ -> __Checked_term__) -> __Checked_term__ {
-  let structural = retain_structural(ct, __structural_recur__(ct)(__Type__, ., __Checked_term__));
+  let structural = retain_structural(ct, __structural_recur__(ct)[__Type__][.][__Checked_term__]);
   structural(
   , fuel
   , ()

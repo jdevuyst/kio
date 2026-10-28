@@ -744,12 +744,12 @@ v(2) {
              import __intrinsics__; \
              host type Cell; \
              fn specialize_projected(polymorphic: [A] A) -> Cell { \
-               let source = __pair__([A] A, ., polymorphic, ()); \
-               __fst__([A] A, ., source)(Cell) \
+               let source = __pair__[[A] A][ .]( polymorphic, ()); \
+               __fst__[[A] A][ .]( source)[Cell] \
              } \
              fn apply_projected(polymorphic: [A] A -> A, value: Cell) -> Cell { \
-               let source = __pair__([A] A -> A, ., polymorphic, ()); \
-               __fst__([A] A -> A, ., source)(Cell, value) \
+               let source = __pair__[[A] A -> A][ .]( polymorphic, ()); \
+               __fst__[[A] A -> A][ .]( source)[Cell]( value) \
              }",
         );
         let definition = |name: &str| {
@@ -765,16 +765,20 @@ v(2) {
                 })
                 .unwrap_or_else(|| panic!("missing projected-application function `{name}`"))
         };
-        assert!(matches!(
-            &definition("specialize_projected").body,
-            Expr::Let { value, body, .. }
-                if matches!(value.as_ref(), Expr::EnrichedTuple { .. })
-                    && matches!(
-                        body.as_ref(),
-                        Expr::LowTypeApplication { callee, .. }
-                            if matches!(callee.as_ref(), Expr::EnrichedProject { .. })
-                    )
-        ));
+        let specialize_body = &definition("specialize_projected").body;
+        assert!(
+            matches!(
+                specialize_body,
+                Expr::Let { value, body, .. }
+                    if matches!(value.as_ref(), Expr::EnrichedTuple { .. })
+                        && matches!(
+                            body.as_ref(),
+                            Expr::LowTypeApplication { callee, .. }
+                                if matches!(callee.as_ref(), Expr::EnrichedProject { .. })
+                        )
+            ),
+            "unexpected `specialize_projected` body shape: {specialize_body:#?}"
+        );
         assert!(matches!(
             &definition("apply_projected").body,
             Expr::Let { value, body, .. }
@@ -948,7 +952,7 @@ v(2) {
         let emitted = render(
             "module api; \
              host fn choose[A][B](step: . -> (A | B)) -> A | B; \
-             fn roundtrip[A][B](step: . -> (A | B)) -> A | B { choose(A, B, step) } \
+             fn roundtrip[A][B](step: . -> (A | B)) -> A | B { choose[A][ B]( step) } \
              host fn thunks(value: (. -> .) | .) -> (. -> .) | .; \
              fn converted(value: (. -> .) | .) -> (. -> .) | . { thunks(value) }",
         )
@@ -1052,7 +1056,7 @@ v(2) {
             ),
             (
                 "caller.kio",
-                "module caller; import actual as a; import wrong as actual; fn keep[A](x: a.Box(A)) -> a.Box(A) { x }",
+                "module caller; import actual as a; import wrong as actual; fn keep[A](x: a.Box[A]) -> a.Box[A] { x }",
             ),
         ]);
         let caller = &package.module("caller").expect("caller module").module;
@@ -1137,12 +1141,12 @@ v(2) {
         let emitted = render(
             "module api; \
              host fn invoke[A](step: A -> A, value: A) -> A; \
-             host fn keep[*F][A](value: F(A)) -> F(A); \
+             host fn keep[*F][A](value: F[A]) -> F[A]; \
              host fn obtain[A](_value: A) -> [B] B -> B; \
              host fn observe() -> .; \
-             pub fn anonymous() { invoke(., .(value) { value }, observe()) } \
-             pub fn opaque[*G][T](value: G(T)) -> G(T) { keep(G, T, value) } \
-             pub fn returned() -> [B] B -> B { obtain(., ()) }",
+             pub fn anonymous() { invoke[.]( .(value) { value }, observe()) } \
+             pub fn opaque[*G][T](value: G[T]) -> G[T] { keep[G][ T]( value) } \
+             pub fn returned() -> [B] B -> B { obtain[.]( ()) }",
         )
         .expect("generic host-call schemas");
         let equation = |name: &str| {
@@ -1312,19 +1316,19 @@ v(2) {
              host fn produce() -> [A] I32; \
              type Stage = [A] I32; \
              fn left(value: [A] I32) -> ([A] I32) | . { \
-               __left__([A] I32, ., value) \
+               __left__[[A] I32][ .]( value) \
              } \
              fn right(value: [A] I32) -> . | ([A] I32) { \
-               __right__(., [A] I32, value) \
+               __right__[.][ [A] I32]( value) \
              } \
              fn effectful() -> . | ([A] I32) { \
-               __right__(., [A] I32, produce()) \
+               __right__[.][ [A] I32]( produce()) \
              } \
              fn alias(value: Stage) -> . | Stage { \
-               __right__(., Stage, value) \
+               __right__[.][ Stage]( value) \
              } \
              fn nested(value: . & Stage) -> . | (. & Stage) { \
-               __right__(., . & Stage, value) \
+               __right__[.][ . & Stage]( value) \
              }",
         )
         .expect("render native rank-N sum injections");
@@ -1377,7 +1381,7 @@ v(2) {
         let emitted = render(
             "module api; \
              fn staged[A](_left: A)[B][C](_middle: B, right: C) -> C { right } \
-             pub fn run() { staged((), (), ()) }",
+             pub fn run() -> [B][C] (B & C) -> C { staged(()) }",
         )
         .expect("render strict residual argument");
         let caller = module_fn("api", "run");
@@ -1477,13 +1481,13 @@ v(2) {
              pub newtype Const[A] : . { \
                pub constructor make_const; pub projector read_const; \
              }; \
-             pub rec newtype Finite : Const(Finite) { \
+             pub rec newtype Finite : Const[Finite] { \
                pub constructor make_finite; pub projector read_finite; \
              }; \
              pub newtype Id[A] : A { \
                pub constructor make_id; pub projector read_id; \
              }; \
-             pub rec newtype Recursive : Id(.) & Id(Recursive) { \
+             pub rec newtype Recursive : Id[.] & Id[Recursive] { \
                pub constructor make_recursive; pub projector read_recursive; \
              };",
         );
@@ -1740,7 +1744,7 @@ v(2) {
                     "hidden.kio",
                     "module hidden; \
                      pub newtype Secret[A] : A { constructor make_secret; projector read_secret; }; \
-                     pub fn keep_secret[A](value: Secret(A)) -> Secret(A) { value }",
+                     pub fn keep_secret[A](value: Secret[A]) -> Secret[A] { value }",
                 ),
             ],
             "api;",
@@ -1848,8 +1852,8 @@ v(2) {
             "module api; \
              newtype T : . { constructor mk_t; projector un_t; }; \
              pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-             pub fn box_value() -> [T] T -> Box(T) { \
-                 .[T](value) { Box.mk_box(T, value) } \
+             pub fn box_value() -> [T] T -> Box[T] { \
+                 .[T](value) { Box.mk_box[T]( value) } \
              }",
         )
         .expect("render nested polymorphic closure");
@@ -1867,7 +1871,7 @@ v(2) {
         let baseline = routed_package("module api;");
         let extended = routed_package_files(&[
             ("api.kio", "module api;"),
-            ("decoy.kio", "module decoy; pub type Shared[*F][A] = F(A);"),
+            ("decoy.kio", "module decoy; pub type Shared[*F][A] = F[A];"),
         ]);
         let names = HaskellNames::derive("FallbackProbe");
         let span = crate::span::Span::new(0, 0);
@@ -1891,11 +1895,11 @@ v(2) {
     fn opaque_application_arguments_keep_canonical_callable_domains() {
         let output = render(
             "module api; host type N; host type Box[A]; \
-             pub fn boxed(value: Box(. -> N)) -> Box(. -> N) { value } \
-             pub fn abstract_box[*F](value: F(. -> N)) -> F(. -> N) { value } \
+             pub fn boxed(value: Box[. -> N]) -> Box[. -> N] { value } \
+             pub fn abstract_box[*F](value: F[. -> N]) -> F[. -> N] { value } \
              pub fn direct(value: . -> N) -> . -> N { value } \
-             pub fn compound(value: Box((. -> N) & ([A] A -> A))) \
-                 -> Box((. -> N) & ([A] A -> A)) { value } \
+             pub fn compound(value: Box[(. -> N) & ([A] A -> A)]) \
+                 -> Box[(. -> N) & ([A] A -> A)] { value } \
              pub fn visible(value: (. -> N) & ([A] A -> A)) \
                  -> (. -> N) & ([A] A -> A) { value }",
         )
@@ -2093,7 +2097,7 @@ v(2) {
     fn rank_n_patterns_keep_canonical_domains_only_inside_opaque_arguments() {
         let package = routed_package(
             "module api; host type N; host type Box[A]; \
-             host fn nested(value: Box((. -> N) & ([A] A -> A))) -> .;",
+             host fn nested(value: Box[(. -> N) & ([A] A -> A)]) -> .;",
         );
         let names = HaskellNames::derive("FallbackProbe");
         let shapes = crate::backends::haskell::skin::HaskellShapes::new(&package, &names);
@@ -2415,7 +2419,7 @@ v(2) {
                 "api.kio",
                 "module api; \
                  newtype F[A] : A { constructor mk; projector un; }; \
-                 host fn keep[*F][A][B](value: F(A & B)) -> F(A & B);",
+                 host fn keep[*F][A][B](value: F[A & B]) -> F[A & B];",
             ),
             ("decoy.kio", "module decoy; type F[A] = A;"),
         ]);
@@ -2562,7 +2566,7 @@ v(2) {
             pub newtype Never : ! { pub constructor mk; pub projector un; }; \
             pub fn stop_public(value: .) -> ! { stop(value) } \
             pub fn discard_public(value: !) -> . { discard(value) } \
-            pub fn absurd_public(value: !) -> . { __absurd__(., value) }";
+            pub fn absurd_public(value: !) -> . { __absurd__[.]( value) }";
         let native_package =
             routed_package_files_with_bridge(&[("api.kio", native_source)], "api;");
         let native = render_package(&native_package).expect("native Bottom boundary");
@@ -2611,7 +2615,7 @@ v(2) {
                 "module api; \
                  pub newtype Comptime_bool[A] : A { constructor make_bool; projector read_bool; }; \
                  pub newtype Comptime_str : . { pub constructor make_str; pub projector read_str; }; \
-                 pub fn keep_bool[A](value: Comptime_bool(A)) -> Comptime_bool(A) { value } \
+                 pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
                  pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
                  pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
             )],
@@ -2900,7 +2904,7 @@ v(2) {
                 "types.kio",
                 "module types; \
                  pub newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-                 pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { \
+                 pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { \
                    constructor mk_functor; projector fmap; \
                  };",
             ),
@@ -2908,7 +2912,7 @@ v(2) {
                 "api.kio",
                 "module api; \
                  import types(Box, Functor); \
-                 pub fn keep(value: Functor(Box)) -> Functor(Box) { value }",
+                 pub fn keep(value: Functor[Box]) -> Functor[Box] { value }",
             ),
         ])
         .expect("render polymorphic-newtype export");

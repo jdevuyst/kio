@@ -2883,7 +2883,7 @@ v(1) {
         host type Box[A];
         host type Unused[A];
         newtype Token[A] : A { pub constructor make_token; projector read_token; };
-        host fn old(value: Box(Token(.))) -> Box(Token(.));
+        host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
   }
@@ -2911,7 +2911,7 @@ v(1) {
         host type Box[A];
         host type Unused[A];
         newtype Token[A] : A { pub constructor make_token; projector read_token; };
-        host fn old(value: Box(Token(.))) -> Box(Token(.));
+        host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
   }

@@ -7,5 +7,5 @@ fn annotated[A](seed: A) {
 }
 
 fn inferred[A](seed: A) {
-  consume(_, seed, .[A](left, right) { seed })
+  consume[_](seed, .[A](left, right) { seed })
 }

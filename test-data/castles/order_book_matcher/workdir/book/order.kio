@@ -15,9 +15,9 @@ import testapi/arith(leq_i32);
 
 pub labels Side = { buy: . } | { sell: . };
 
-pub fn buy_side() -> Side { {buy=}.>widen_sum(Side) }
+pub fn buy_side() -> Side { ({buy=}.>widen_sum)[Side] }
 
-pub fn sell_side() -> Side { {sell=}.>widen_sum(Side) }
+pub fn sell_side() -> Side { ({sell=}.>widen_sum)[Side] }
 
 pub fn is_buy(side: Side) -> Bool {
   match(side) {
@@ -99,9 +99,9 @@ pub fn trade_qty(t: Trade) -> I32 { t.?{tr_qty} }
 /// market order does not.
 pub labels Cap = { capped: I32 } | { uncapped: . };
 
-pub fn price_cap(limit: I32) -> Cap { {capped = limit}.>widen_sum(Cap) }
+pub fn price_cap(limit: I32) -> Cap { ({capped = limit}.>widen_sum)[Cap] }
 
-pub fn no_cap() -> Cap { {uncapped=}.>widen_sum(Cap) }
+pub fn no_cap() -> Cap { ({uncapped=}.>widen_sum)[Cap] }
 
 /// A buying aggressor crosses a resting ask when it will pay at least
 /// the asking price; a selling aggressor crosses a resting bid when it

@@ -29,7 +29,7 @@ pub labels Col =
   | { c_total: . }
   | { c_count: . };
 
-pub type Col_list = list.List(Col);
+pub type Col_list = list.List[Col];
 
 /// One catalog entry: the column's identity code, the title the report
 /// prints, the width it prints in, and whether it holds numbers - which
@@ -44,39 +44,39 @@ pub labels Col_meta = {
 
 pub labels Table_id = { t_ships: . } | { t_berths: . } | { t_manifests: . };
 
-pub fn ship_id() -> Col { {c_ship_id=}.>widen_sum(Col) }
+pub fn ship_id() -> Col { ({c_ship_id=}.>widen_sum)[Col] }
 
-pub fn ship_name() -> Col { {c_ship_name=}.>widen_sum(Col) }
+pub fn ship_name() -> Col { ({c_ship_name=}.>widen_sum)[Col] }
 
-pub fn ship_flag() -> Col { {c_ship_flag=}.>widen_sum(Col) }
+pub fn ship_flag() -> Col { ({c_ship_flag=}.>widen_sum)[Col] }
 
-pub fn ship_draft() -> Col { {c_ship_draft=}.>widen_sum(Col) }
+pub fn ship_draft() -> Col { ({c_ship_draft=}.>widen_sum)[Col] }
 
-pub fn ship_berth() -> Col { {c_ship_berth=}.>widen_sum(Col) }
+pub fn ship_berth() -> Col { ({c_ship_berth=}.>widen_sum)[Col] }
 
-pub fn berth_id() -> Col { {c_berth_id=}.>widen_sum(Col) }
+pub fn berth_id() -> Col { ({c_berth_id=}.>widen_sum)[Col] }
 
-pub fn berth_depth() -> Col { {c_berth_depth=}.>widen_sum(Col) }
+pub fn berth_depth() -> Col { ({c_berth_depth=}.>widen_sum)[Col] }
 
-pub fn berth_zone() -> Col { {c_berth_zone=}.>widen_sum(Col) }
+pub fn berth_zone() -> Col { ({c_berth_zone=}.>widen_sum)[Col] }
 
-pub fn berth_zone_id() -> Col { {c_berth_zone_id=}.>widen_sum(Col) }
+pub fn berth_zone_id() -> Col { ({c_berth_zone_id=}.>widen_sum)[Col] }
 
-pub fn mf_ship() -> Col { {c_mf_ship=}.>widen_sum(Col) }
+pub fn mf_ship() -> Col { ({c_mf_ship=}.>widen_sum)[Col] }
 
-pub fn mf_cargo() -> Col { {c_mf_cargo=}.>widen_sum(Col) }
+pub fn mf_cargo() -> Col { ({c_mf_cargo=}.>widen_sum)[Col] }
 
-pub fn mf_tons() -> Col { {c_mf_tons=}.>widen_sum(Col) }
+pub fn mf_tons() -> Col { ({c_mf_tons=}.>widen_sum)[Col] }
 
-pub fn total() -> Col { {c_total=}.>widen_sum(Col) }
+pub fn total() -> Col { ({c_total=}.>widen_sum)[Col] }
 
-pub fn count() -> Col { {c_count=}.>widen_sum(Col) }
+pub fn count() -> Col { ({c_count=}.>widen_sum)[Col] }
 
-pub fn ships_table() -> Table_id { {t_ships=}.>widen_sum(Table_id) }
+pub fn ships_table() -> Table_id { ({t_ships=}.>widen_sum)[Table_id] }
 
-pub fn berths_table() -> Table_id { {t_berths=}.>widen_sum(Table_id) }
+pub fn berths_table() -> Table_id { ({t_berths=}.>widen_sum)[Table_id] }
 
-pub fn manifests_table() -> Table_id { {t_manifests=}.>widen_sum(Table_id) }
+pub fn manifests_table() -> Table_id { ({t_manifests=}.>widen_sum)[Table_id] }
 
 fn meta(code: I32, title: String, title_width: I32, width: I32, numeric: Bool) -> Col_meta {
   {

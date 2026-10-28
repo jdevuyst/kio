@@ -20,14 +20,14 @@ pub fn read() -> Read {
       match(io.read_ascii_line()) {
         .(key: String) {
           match(io.read_ascii_line()) {
-            .(argument: String) { widen_sum({parsed = {opcode, key, argument}}, Read) };
-            .() { widen_sum({malformed = "missing argument line"}, Read) }
+            .(argument: String) { widen_sum({parsed = {opcode, key, argument}})[Read] };
+            .() { widen_sum({malformed = "missing argument line"})[Read] }
           }
         };
-        .() { widen_sum({malformed = "missing key line"}, Read) }
+        .() { widen_sum({malformed = "missing key line"})[Read] }
       }
     };
-    .() { widen_sum({end=}, Read) }
+    .() { widen_sum({end=})[Read] }
   }
 }
 

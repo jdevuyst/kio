@@ -19,4 +19,4 @@ host type String role(str);
 /// Feed the consumer's own `String` to the dependency's host fn. The
 /// host-fn signature distinctness rejects this: `dep_id` wants the
 /// dependency's `String`, not the consumer's.
-pub fn mix(s: String) -> String { dep_id(s) }
+pub fn mix(s: String) { let _ = dep_id(s); () }

@@ -6,11 +6,11 @@ import testapi/io(print as again, print as write);
 
 fn first(left: Alias, _right: Alias) -> Text { left }
 
-fn partial[*F](value: F(Text)) -> F(Text) { value }
+fn partial[*F](value: F[Text]) -> F[Text] { value }
 
 pub fn main() {
-  let wrapped = partial(Pair(Text), Pair.mk(Text, Text, "core\n"(Text), ""(Text)));
-  write(say(first(Pair.get(Text, Text, wrapped))));
+  let wrapped = partial[Pair[Text]](Pair.mk[Text][Text]("core\n"[Text], ""[Text]));
+  write(say(first(Pair.get[Text][Text](wrapped))));
   let send = again;
-  send(tell("again\n"(Also_text)))
+  send(tell("again\n"[Also_text]))
 }

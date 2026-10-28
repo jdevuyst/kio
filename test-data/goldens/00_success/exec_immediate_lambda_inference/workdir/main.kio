@@ -6,10 +6,10 @@ fn identity[A](value: A) -> A { value }
 
 fn main() {
   let absent = .(value) { value }(());
-  let packed = .(left, right) { right }(__pair__(., ., (), ()));
-  let explicit_poly = .[A](first: A, second) { second }(., (), ());
+  let packed = .(left, right) { right }(__pair__[.][.]((), ()));
+  let explicit_poly = .[A](first: A, second) { second }[.]((), ());
   let rank_n = .(function) { () }(identity);
-  let rank_n_called = .(function) { function(., ()) }(identity);
-  let partial_mid_binder = .(first)[A](second: A) { second }(())(., ());
+  let rank_n_called = .(function) { function[.](()) }(identity);
+  let partial_mid_binder = .(first)[A](second: A) { second }(())[.](());
   ()
 }

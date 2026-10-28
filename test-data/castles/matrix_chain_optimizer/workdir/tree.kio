@@ -46,14 +46,14 @@ fn combine(left: Evaluation, right: Evaluation) -> Evaluation | String {
       , leaves = math.add_i32(left.?{leaves}, right.?{leaves})
       })
     } else {
-      widen_sum("leaf order is not consecutive")
+      widen_sum("leaf order is not consecutive"[String])
     }
   } else {
-    widen_sum("tree dimensions do not compose")
+    widen_sum("tree dimensions do not compose"[String])
   }
 }
 
-pub rec(loop) fn replay(tree: Tree, matrices: Array(Matrix)) -> Evaluation | String {
+pub rec(loop) fn replay(tree: Tree, matrices: Array[Matrix]) -> Evaluation | String {
   match(tree) {
     .(node: Leaf) {
       let index = node.?{leaf};

@@ -5,13 +5,9 @@ use std::collections::HashMap;
 use lsp_types::{Range, TextEdit};
 
 use crate::ast::{
-    CallArg, ElaboratorCall, Expr, Item, Lowered, Module, OpChainKind, Phase, Surface, UfcsFlavor,
+    CallArg, ElaboratorCall, Expr, Item, Module, OpChainKind, Phase, Surface, UfcsFlavor,
 };
 use crate::cmd::check::LspAnalysis;
-use crate::pass::typecheck_core::apply::{
-    CallArgRef, call_arg_refs, splice_ufcs_arg_refs_interned,
-};
-use crate::pass::typecheck_core::{InternedType, ModuleEnv, call_arg_type_slot_candidate};
 use crate::pass::typecheck_full::{PositionIndex, ResolvedBinder};
 use crate::span::Span;
 
@@ -142,25 +138,8 @@ pub(super) fn edit(
     };
     chain.push((written_calls[current], slot, flavor));
 
-    let entry = analysis.root_package_lowered.module(module_path)?;
-    let lowered_calls = calls(&entry.module);
-    let mut lowered = HashMap::new();
-    for call in lowered_calls {
-        lowered
-            .entry(call.span())
-            .and_modify(|found| *found = None)
-            .or_insert(Some(call));
-    }
-    let env = ModuleEnv::build(
-        &entry.module,
-        None,
-        None,
-        Some(&analysis.root_package_lowered),
-    )
-    .ok()?;
     for (written, slot, flavor) in &chain {
-        let typed = lowered.get(&written.span()).copied().flatten()?;
-        prove(written, typed, *slot, *flavor, index, module_path, &env)?;
+        prove(written, *slot, *flavor, index, module_path)?;
     }
     let (span, new_text) = source::render(source, module, &chain)?;
     let range = lines.to_range(span);
@@ -175,10 +154,32 @@ pub(super) fn edit(
 
 fn parts<P: Phase>(expr: &Expr<P>) -> Option<(&Expr<P>, &[CallArg<P>])> {
     match expr {
-        Expr::Call { callee, args, .. } if matches!(**callee, Expr::Path { .. }) => {
+        Expr::Call { callee, args, .. }
+            if !args.is_empty()
+                && args.iter().all(|arg| matches!(arg, CallArg::Value(_)))
+                && callee_path(callee).is_some() =>
+        {
             Some((callee, args))
         }
         _ => None,
+    }
+}
+
+/// The action joins calls to one authenticated named function. Explicit type
+/// groups preserve that head; a value application selects its result instead.
+fn callee_path<P: Phase>(mut callee: &Expr<P>) -> Option<&Expr<P>> {
+    loop {
+        match callee {
+            Expr::Path { .. } => return Some(callee),
+            Expr::Call {
+                callee: inner,
+                args,
+                ..
+            } if !args.is_empty() && args.iter().all(|arg| matches!(arg, CallArg::Type(_))) => {
+                callee = inner;
+            }
+            _ => return None,
+        }
     }
 }
 
@@ -199,7 +200,8 @@ fn identity<'a>(
     module: &str,
     call: &Expr<Surface>,
 ) -> Option<&'a ResolvedBinder> {
-    let (callee @ Expr::Path { segments, .. }, _) = parts(call)? else {
+    let (callee, _) = parts(call)?;
+    let callee @ Expr::Path { segments, .. } = callee_path(callee)? else {
         return None;
     };
     // Discovery must authenticate boundaries too: a conflicted last writer
@@ -227,61 +229,22 @@ fn same_callable(left: &ResolvedBinder, right: &ResolvedBinder) -> bool {
 
 fn prove(
     source: &Expr<Surface>,
-    lowered: &Expr<Lowered>,
     slot: usize,
     flavor: UfcsFlavor,
     index: &PositionIndex,
     module: &str,
-    env: &ModuleEnv<'_, Lowered>,
 ) -> Option<()> {
-    let (sc, sa) = parts(source)?;
-    let (lc, la) = parts(lowered)?;
-    if sc.span() != lc.span()
-        || sa.len() != la.len()
-        || sa
-            .iter()
-            .zip(la)
-            .any(|(s, l)| call_arg_type_slot_candidate(s) != call_arg_type_slot_candidate(l))
-    {
-        return None;
-    }
-    let Expr::Path { segments, .. } = lc else {
-        return None;
+    let (_, sa) = parts(source)?;
+    identity(index, module, source)?;
+    // The source group, not the callable's type or ABI, fixes placement.
+    // Removing its selected endpoint and inserting at the same endpoint is
+    // an exact inverse; a sole receiver renders the bare UFCS form.
+    let endpoint = if flavor.inserts_first() {
+        0
+    } else {
+        sa.len() - 1
     };
-    let (ty, scope, _) =
-        index.authenticated_callee(module, lc.span(), segments.last()?.span, lowered.span())?;
-    let locals = scope.names();
-    let mut ctx = env.alias_ctx();
-    ctx.binder_locals = Some(&locals);
-    let original = call_arg_refs(la);
-    let CallArg::Value(receiver) = &la[slot] else {
-        return None;
-    };
-    let rest = original
-        .iter()
-        .enumerate()
-        .filter_map(|(i, arg)| (i != slot).then_some(*arg))
-        .collect::<Vec<_>>();
-    let recovered = splice_ufcs_arg_refs_interned(
-        &InternedType::fresh_with_identity(ty.clone(), true),
-        receiver,
-        &rest,
-        &rest,
-        flavor,
-        lowered.span(),
-        &ctx,
-    )
-    .ok()?;
-    (recovered.len() == original.len()
-        && recovered
-            .iter()
-            .zip(&original)
-            .all(|(left, right)| match (left, right) {
-                (CallArgRef::Value(left), CallArgRef::Value(right)) => std::ptr::eq(*left, *right),
-                (CallArgRef::Type(left), CallArgRef::Type(right)) => std::ptr::eq(*left, *right),
-                _ => false,
-            }))
-    .then_some(())
+    (slot == endpoint).then_some(())
 }
 
 fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
@@ -310,15 +273,18 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                     }
                 }));
             }
-            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
-                pending.extend(args.iter().filter_map(|arg| {
-                    if let CallArg::Value(value) = arg {
-                        Some(value)
-                    } else {
-                        None
-                    }
-                }))
-            }
+            Expr::RecCall { stages, .. } | Expr::UserMacro { stages, .. } => pending.extend(
+                stages
+                    .iter()
+                    .flat_map(|stage| &stage.args)
+                    .filter_map(|arg| {
+                        if let CallArg::Value(value) = arg {
+                            Some(value)
+                        } else {
+                            None
+                        }
+                    }),
+            ),
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),
             Expr::Let { value, body, .. }
             | Expr::RowLet { value, body, .. }
@@ -328,7 +294,18 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                 pending.extend(labels.iter().map(|label| &label.value))
             }
             Expr::BlockCall { prefix, blocks, .. } => {
-                pending.extend(prefix);
+                pending.extend(
+                    prefix
+                        .iter()
+                        .flat_map(|stage| &stage.args)
+                        .filter_map(|arg| {
+                            if let CallArg::Value(value) = arg {
+                                Some(value)
+                            } else {
+                                None
+                            }
+                        }),
+                );
                 pending.extend(
                     blocks
                         .iter()
@@ -342,8 +319,14 @@ fn calls<P: Phase<FnBody = Expr<P>>>(module: &Module<P>) -> Vec<&Expr<P>> {
                     pending.extend(updates.iter().map(|update| &update.value));
                 }
             },
-            Expr::Ufcs { receiver, args, .. } => {
+            Expr::Ufcs {
+                receiver,
+                callee,
+                args,
+                ..
+            } => {
                 pending.push(receiver);
+                pending.push(callee);
                 pending.extend(args.iter().filter_map(|arg| {
                     if let CallArg::Value(value) = arg {
                         Some(value)

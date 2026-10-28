@@ -39,9 +39,8 @@ impl Base {
     }
 
     /// Type-name as it appears in Kio' source: `I8`, …, `String`,
-    /// `Bool`. Type-shaped — Kio's parser routes exact type-name
-    /// identifiers to the type position at call sites, so this also
-    /// happens to be the "safe to use as a type argument" form.
+    /// `Bool`. Call renderers place these names inside singleton brackets
+    /// because the written bracket group selects a type application stage.
     pub fn type_name(self) -> &'static str {
         use Base::*;
         match self {
@@ -99,19 +98,19 @@ pub enum Type {
         projector: String,
     },
     /// A single-parameter parametric `newtype` instantiated at
-    /// `payload`: the surface form `Name(payload)`. Same shape as
+    /// `payload`: the surface form `Name[payload]`. Same shape as
     /// `Nominal` but with a polymorphic constructor / projector
     /// reached through wrapper helpers in the generated root module (see
-    /// `pub fn box_any[A](x: A) -> Box(A)` and friends). Equality
+    /// `pub fn box_any[A](x: A) -> Box[A]` and friends). Equality
     /// is structural across all fields.
     Param {
         name: String,
         payload: Box<Type>,
-        /// Polymorphic wrapper that constructs `Name(payload)` from a
-        /// payload value: signature `[A](x: A) -> Name(A)`.
+        /// Polymorphic wrapper that constructs `Name[payload]` from a
+        /// payload value: signature `[A](x: A) -> Name[A]`.
         constructor: String,
-        /// Polymorphic wrapper that projects `Name(payload)` back to
-        /// payload: signature `[A](x: Name(A)) -> A`.
+        /// Polymorphic wrapper that projects `Name[payload]` back to
+        /// payload: signature `[A](x: Name[A]) -> A`.
         projector: String,
     },
     /// A label declared via `labels` — sugar over a generated
@@ -171,8 +170,8 @@ pub enum Term {
     /// Call a built-in polymorphic helper or intrinsic (`id`,
     /// `__if_then_else__`, `__pair__`, `__fst__`, `__snd__`,
     /// `__left__`, `__right__`, `__either__`, `const1`,
-    /// `const2`). Renders as `name(T1, ..., Tk, a1, ..., aN)` — type
-    /// arguments first, then value arguments. Module-level
+    /// `const2`). Renders as `name[T1]...[Tk](a1, ..., aN)` — type
+    /// application followed by one product argument. Module-level
     /// definitions for `id`/`const1`/`const2` are emitted by
     /// `emit::write_case`; the `__name__` intrinsics come into scope
     /// through `import __intrinsics__;`.
@@ -194,7 +193,7 @@ pub enum Term {
     /// result type; the whole expression has that type.
     /// Renders two ways depending on `RenderOpts.surface`:
     /// - surface: an imported `if(<cond>) { <then> } else { <else_> }` call.
-    /// - Kio': `__if_then_else__(Bool, R, cond, .() { then }, .() { else_ })`,
+    /// - Kio': `__if_then_else__[Bool][R](cond, .() { then }, .() { else_ })`,
     ///   matching the ordinary conditional macro's result.
     IfElse {
         cond: Box<Term>,
@@ -213,12 +212,10 @@ pub enum Term {
         constructor: String,
         payload: Box<Term>,
     },
-    /// `match(<scrutinee>, (.(p1: A) { <left_body> }, .(p2: B) { <right_body> }))`
-    /// — surface pattern matching with two clauses against a sum-
-    /// typed scrutinee `(A | B) -> ret_ty`. Both clause bodies have
-    /// the same `ret_ty`. Renders two ways:
-    /// - surface: `match(<scrutinee>, (.(p1: A) { <left> }, .(p2: B) { <right> }))`.
-    /// - Kio': `__either__(A, B, ret_ty, <scrutinee>, .(p1) { <left> }, .(p2) { <right> })`,
+    /// Both clauses produce the same `ret_ty`, making these two renderings
+    /// equivalent for a scrutinee of type `A | B`:
+    /// - surface: `match(<scrutinee>) { (.(p1: A) { <left> }, .(p2: B) { <right> }) }`.
+    /// - Kio': `__either__[A][B][ret_ty](<scrutinee>, .(p1) { <left> }, .(p2) { <right> })`,
     ///   the same shape the typer's match elaboration produces (for
     ///   the simple two-clause case).
     MatchMacro {
@@ -399,7 +396,7 @@ pub enum Term {
         ty: Type,
     },
     /// Reference to a literal alias declared in the generated root module.
-    /// Surface mode renders as an annotated alias use (`name(Type)`);
+    /// Surface mode renders as an annotated alias use (`name[Type]`);
     /// Kio' mode renders as the raw annotated literal.
     LiteralAliasRef {
         name: String,
@@ -432,7 +429,7 @@ pub enum Term {
 /// shape from the underlying term.
 #[derive(Debug, Clone)]
 pub enum UfcsKind {
-    /// `callee_name(type_args, receiver, rest_args...)` — the
+    /// `callee_name[type_args](receiver, rest_args...)` — the
     /// fallback shape for a polymorphic helper or intrinsic.
     PolyCall { type_args: Vec<Type> },
     /// `callee_name(receiver, rest_args...)` — the fallback shape

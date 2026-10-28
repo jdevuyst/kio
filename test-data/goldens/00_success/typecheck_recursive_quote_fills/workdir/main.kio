@@ -1,0 +1,20 @@
+module main;
+
+import __comptime__;
+
+host type Data;
+
+host fn source() -> Data;
+
+host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
+
+pure fn duplicate_impl(ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, value: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (__intrinsic_pair__(ct, value, value), fills) }
+
+macro duplicate : [A] A -> (A & A) { impl(fills) duplicate_impl }
+
+rec(loop) {
+  fn left() -> Data { source() };
+  fn run() -> Data { let pair = duplicate(recur(cont) left()); source() }
+}

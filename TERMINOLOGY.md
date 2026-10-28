@@ -47,8 +47,8 @@ constructors wrap payloads, and its projectors expose them through the declared
 interface. An existential projector passes its hidden payload type to a
 continuation so it cannot escape its scope. A transparent `type` alias names
 an existing type without creating a nominal identity. A *type constructor*
-instead takes type arguments to produce a type: `Box(A)` names a type, while
-`Box.mk_box(A, value)` constructs a value when `mk_box` is the declared member.
+instead takes type arguments to produce a type: `Box[A]` names a type, while
+`Box.mk_box[A](value)` constructs a value when `mk_box` is the declared member.
 Kinds describe the accepted type arguments, including higher-kinded parameters.
 See [declarations](docs/guides/declarations.md),
 [higher-kinded types](docs/guides/higher-kinded-types.md), and
@@ -61,6 +61,18 @@ these shapes when its library contract admits it. The same distinction applies
 to reordering, reassociation, and other isomorphisms: an available conversion
 does not make two types equal. See the
 [structural equality rules](specs/language.md#anonymous-sum-and-product-types).
+
+**Call stage; type application; value application.** A singleton type group `f[A]`
+instantiates one exposed universal binder. `Map[K][V]` supplies types to a
+constructor; `42[I32]` or `count[I32]` annotates a literal or literal alias.
+Each type or binder bracket contains exactly one entry; comma lists and empty
+brackets are rejected. A value group `f(a)` applies one
+function layer; `f(a,b)` and `f((a,b))` supply the same product argument.
+Successive function layers require successive value groups, as in
+`f[A](a)[B](b)`. Omitting a type group retains local type-argument inference.
+See
+[call stages](specs/language.md#bidirectional-elaboration) and the
+[language tutorial](docs/tutorials/language.md#calls-have-stages).
 
 ## Checking and extension
 

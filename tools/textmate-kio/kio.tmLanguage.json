@@ -1027,8 +1027,6 @@
       "begin": "\\(",
       "end": "\\)|(?=\\})|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
       "patterns": [
-        { "include": "#ambiguous-star-argument" },
-        { "include": "#expression-type-binders" },
         { "include": "#expression-tokens" }
       ],
       "beginCaptures": {
@@ -2214,8 +2212,8 @@
       ]
     },
     "call-head": {
-      "comment": "Shield keyword-shaped call names such as `add(...)` from the catch-all keyword rule; TextMate normalization treats function names as identifiers for agreement.",
-      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*\\()",
+      "comment": "Shield keyword-shaped call names before value or explicit type stages from the catch-all keyword rule; TextMate normalization treats function names as identifiers for agreement.",
+      "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b(?=\\s*[\\[(])",
       "name": "entity.name.function.kio"
     },
     "keyword-declaration": {
@@ -2420,15 +2418,6 @@
         { "include": "#identifier" }
       ]
     },
-    "expression-type-binders": {
-      "begin": "\\[(?=[ \\t]*(?:[,A-Za-z_]|//|$)|[ \\t]+\\*|\\*+[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*(?:[ \\t]*(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*)*[ \\t,]*\\])",
-      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-      "end": "\\]|(?=[)};])|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:fn|newtype|host|module|package)\\b(?=[ \\t]+[A-Za-z_]))",
-      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
-      "patterns": [
-        { "include": "#type-tokens" }
-      ]
-    },
     "ambiguous-star-argument": {
       "begin": "(\\[)(\\*+)(?=[ \\t]*(?:_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*(?:(?:,[ \\t]*)+\\**[ \\t]*_?[A-Z][a-z]*[0-9]*(?:_[a-z]+[0-9]*)*_*[ \\t]*)*(?:(?:,[ \\t]*)+\\**[ \\t]*)?)?(?://[^\\r\\n]*)?$)",
       "beginCaptures": {
@@ -2466,11 +2455,12 @@
         },
         { "include": "#newtype-body" },
         { "include": "#newtype-type-group" },
+        { "include": "#newtype-type-arguments" },
         { "include": "#type-tokens" }
       ]
     },
     "block-call": {
-      "begin": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:(?<block_prefix_args>\\((?:[^()\\r\\n]|\\g<block_prefix_args>)*\\))[ \\t]*)?\\{)",
+      "begin": "(?<![A-Za-z0-9_])_*[a-z]+[0-9]*(?:_[a-z]+[0-9]*)*_*(?=[ \\t]*(?:(?<block_prefix_args>\\((?:[^()\\r\\n]|\\g<block_prefix_args>)*\\))[ \\t]*)*\\{)",
       "beginCaptures": {
         "0": {
           "name": "entity.name.function.kio"
@@ -3268,6 +3258,19 @@
       "patterns": [
         { "include": "#invalid-newtype-payload" },
         { "include": "#newtype-type-group" },
+        { "include": "#newtype-type-arguments" },
+        { "include": "#type-tokens" }
+      ]
+    },
+    "newtype-type-arguments": {
+      "begin": "\\[",
+      "end": "\\]|(?=^[ \\t]*(?:(?:pub(?:\\([^\\n)]*\\))?|pure)[ \\t]+)*(?:(?:fn|newtype|host|module|package|type|literal|labels|equiv|macro|import)\\b(?=[ \\t]+(?:[A-Za-z_]|\\{))|(?:varop|op)\\b(?=[ \\t]+[^A-Za-z0-9\\s])|rec\\b(?=[ \\t]*(?:\\(|\\{)|[ \\t]+(?:newtype|labels)\\b)))",
+      "beginCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "endCaptures": { "0": { "name": "punctuation.bracket.kio" } },
+      "patterns": [
+        { "include": "#invalid-newtype-payload" },
+        { "include": "#newtype-type-group" },
+        { "include": "#newtype-type-arguments" },
         { "include": "#type-tokens" }
       ]
     },
@@ -3284,6 +3287,7 @@
         { "include": "#comment" },
         { "include": "#invalid-newtype-payload" },
         { "include": "#newtype-type-group" },
+        { "include": "#newtype-type-arguments" },
         { "include": "#type-binders" },
         { "include": "#operator-builtin" }
       ]

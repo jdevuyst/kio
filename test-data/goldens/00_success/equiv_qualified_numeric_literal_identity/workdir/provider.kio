@@ -4,6 +4,6 @@ host type I32 role(i32);
 
 host type F64 role(f64);
 
-pub pure fn integer() -> I32 { 7(I32) }
+pub pure fn integer() -> I32 { 7[I32] }
 
-pub pure fn float() -> F64 { 7.0(F64) }
+pub pure fn float() -> F64 { 7.0[F64] }

@@ -15,15 +15,8 @@
 //! canonicalization**, checked-lambda parameter annotation, and typed function
 //! materialization of intrinsic values,
 //! recorded in a [`PrimeElaborations`] side-channel and stamped back into the AST by
-//! [`bake_prime_elaborations`]. Per `specs/grammar.md`
-//! (`CallArg ::= Expr | Type`), type-args and value-args share one
-//! comma-separated list at the surface. Identifier casing fixes a
-//! bare path's role before name lookup; the callee's signature does
-//! not reinterpret a lowercase value path as a type. The typer
-//! validates parsed type arguments and any structurally value-shaped
-//! type candidates, then records the resolution
-//! (`record_type_resolution` + `mark_value_at_type_slot`). Newtype
-//! constructors additionally
+//! [`bake_prime_elaborations`]. Written type arguments are explicit AST type
+//! operands. Newtype constructors additionally
 //! infer their existential-witness suffix under Kio's introduction
 //! rule. The bake pass rewrites each affected `Expr::Call`'s args
 //! list into fully-explicit canonical form (every type-arg slot
@@ -162,7 +155,6 @@ impl Typer<Prime> for PrimeTyper {
     // the only spelling is the explicit curried form
     // `foo(T1, v1)(T2, v2)`. Prime declarations preserve that same
     // ordered interleaving of `Forall` and `Function` layers.
-    const ALLOW_MULTI_LAYER_FLAT_CALL: bool = false;
 
     fn synth_call<'m>(
         callee: &'m crate::ast::Expr<Prime>,
@@ -347,39 +339,9 @@ impl Typer<Prime> for PrimeTyper {
         resolved: crate::pass::typecheck_core::InternedType<Prime>,
         tcx: &mut TypeCtx<'m, '_, Prime>,
     ) {
-        // The grammar (`specs/grammar.md`, `CallArg ::= Expr | Type`)
-        // does not distinguish type-args from value-args at parse
-        // time; type-args land here when (a) the typer reclassified
-        // a `CallArg::Value` at a type-arg slot via `expr_to_type_arg`
-        // (see also `mark_value_at_type_slot` below) or (b) the
-        // typer solved an inference-driven existential-witness slot
-        // on a newtype constructor. Either way, the bake pass needs
-        // the resolved type to rewrite the slot into canonical
-        // `CallArg::Type` form.
         let mp = tcx.env.module_path.clone();
         tcx.elaborations
             .record_type_resolution(&mp, call_site.id, slot_index, resolved);
-    }
-
-    fn mark_value_at_type_slot<'m>(
-        call_site: crate::ast::ExpressionSite,
-        slot_index: usize,
-        tcx: &mut TypeCtx<'m, '_, Prime>,
-    ) {
-        // Per `specs/grammar.md`'s call-arg production
-        // (`CallArg ::= Expr | Type`), type-args and value-args
-        // share one comma-separated list. Identifier casing fixes a
-        // bare path's role before name lookup; the callee's signature
-        // never reclassifies a lowercase value path. This hook records
-        // a structurally value-shaped argument accepted as a type by
-        // `expr_to_type_arg`, so the bake pass knows the user *consumed*
-        // a slot at this position
-        // (vs. an omitted existential witness inferred for a
-        // newtype constructor, which inserts a fresh slot without
-        // consuming a user arg).
-        let mp = tcx.env.module_path.clone();
-        tcx.elaborations
-            .mark_value_at_type_slot(&mp, call_site.id, slot_index);
     }
 
     fn record_call_split<'m>(
@@ -399,17 +361,6 @@ impl Typer<Prime> for PrimeTyper {
         let module_path = tcx.env.module_path.clone();
         tcx.elaborations
             .record_call_implicit_unit(&module_path, call_site.id, slot_index);
-    }
-
-    fn record_regular_ufcs_elaboration<'m>(
-        original: &'m crate::ast::Expr<Prime>,
-        _normalized_call: crate::ast::Expr<Prime>,
-        _tcx: &mut TypeCtx<'m, '_, Prime>,
-    ) {
-        let crate::ast::Expr::Ufcs { ext, .. } = original else {
-            unreachable!("regular UFCS recording was requested for a non-UFCS expression");
-        };
-        match *ext {}
     }
 
     fn record_literal_resolution<'m>(
@@ -552,32 +503,12 @@ pub struct PrimeElaborations {
             >,
         >,
     >,
-    /// The typer's resolved type at each call's type-arg slot,
-    /// keyed by `(module_path, call_id, slot_index)`. Populated
-    /// by `apply_polymorphic_function` — every binder it solves at
-    /// canonical slot N records a `(call_id, N) -> resolved`
-    /// entry, regardless of whether the user wrote a value-shaped
-    /// expression at the slot or omitted an inference-driven
-    /// constructor existential witness. The bake pass consults this
-    /// together with `value_at_type_slot` to rebuild the call's args
-    /// list in fully-explicit canonical form.
+    /// Inferred existential witnesses keyed by call occurrence and canonical
+    /// slot. The bake pass inserts them as explicit type operands.
     type_resolutions: std::collections::HashMap<
         (String, crate::ast::ExpressionOccurrenceId, usize),
         crate::pass::typecheck_core::RecordedTypeResolution<Prime>,
     >,
-    /// `(module_path, call_id, slot_index)` triples where the
-    /// user supplied a structurally value-shaped expression that
-    /// `expr_to_type_arg` accepted at a type-arg slot. Bare paths are
-    /// already classified by identifier casing before name lookup;
-    /// this marker does not let a callee signature reinterpret a
-    /// lowercase value path. The bake pass uses it to distinguish
-    /// "user wrote a value here, reclassify it" (replace the user arg
-    /// with the recorded type and advance the user index) from "constructor
-    /// existential witness was omitted" (insert the recorded type
-    /// as a fresh `CallArg::Type` without advancing the user index).
-    /// Mirrors `typecheck_full::Elaborations::value_at_type_slot`.
-    value_at_type_slot:
-        std::collections::HashSet<(String, crate::ast::ExpressionOccurrenceId, usize)>,
     /// Canonical call slots supplied by the Unit value of a syntactically
     /// empty source call. A nonempty type-only packet never records one.
     implicit_unit_slots:
@@ -613,31 +544,6 @@ impl PrimeElaborations {
     ) -> Option<&crate::pass::typecheck_core::RecordedTypeResolution<Prime>> {
         self.type_resolutions
             .get(&(module_path.to_owned(), call_id, slot_index))
-    }
-
-    /// Mark the `(module_path, call_id, slot_index)` triple as a
-    /// value-shaped expression supplied at a type-arg slot.
-    pub fn mark_value_at_type_slot(
-        &mut self,
-        module_path: &str,
-        call_id: crate::ast::ExpressionOccurrenceId,
-        slot_index: usize,
-    ) {
-        self.value_at_type_slot
-            .insert((module_path.to_owned(), call_id, slot_index));
-    }
-
-    /// True when the call at `call_id`'s slot `slot_index` inside
-    /// module `module_path` carries a value-shaped expression the
-    /// typer reclassified as a type.
-    pub fn is_value_at_type_slot(
-        &self,
-        module_path: &str,
-        call_id: crate::ast::ExpressionOccurrenceId,
-        slot_index: usize,
-    ) -> bool {
-        self.value_at_type_slot
-            .contains(&(module_path.to_owned(), call_id, slot_index))
     }
 
     pub fn record_call_implicit_unit(
@@ -696,9 +602,6 @@ impl PrimeElaborations {
         }
         for (key, value) in other.type_resolutions {
             self.type_resolutions.insert(key, value);
-        }
-        for key in other.value_at_type_slot {
-            self.value_at_type_slot.insert(key);
         }
         for key in other.implicit_unit_slots {
             self.implicit_unit_slots.insert(key);
@@ -1265,10 +1168,7 @@ fn canonicalize_call_args(
         let resolution = (!implicit)
             .then(|| elabs.type_resolution_for(module_path, call_site.id, cursor.canonical()))
             .flatten();
-        let value_at_type_slot = resolution.is_some()
-            && matches!(written, Some(WrittenCallArg::Value))
-            && elabs.is_value_at_type_slot(module_path, call_site.id, cursor.canonical());
-        match cursor.advance(written, implicit, resolution.is_some(), value_at_type_slot) {
+        match cursor.advance(written, implicit, resolution.is_some()) {
             Some(CanonicalCallSlot::ImplicitUnit) => {
                 new_args.push(CallArg::Value(crate::ast::Expr::Unit {
                     source_trivia: Default::default(),
@@ -1393,8 +1293,8 @@ mod tests {
             fn f() -> . -> . {
                 ();
                 let .(g: . -> .) = .(x) { (); let .(y: .) = x; y };
-                let .(pair: . & .) = __pair__(., ., (), ());
-                let .(boxed: Box(.)) = Box.make(., pair);
+                let .(pair: . & .) = __pair__[.][.]((), ());
+                let .(boxed: Box[.]) = Box.make[.](pair);
                 let .(first: [A][B] (A & B) -> A) = __fst__;
                 g
             }";
@@ -1481,7 +1381,7 @@ mod tests {
         let package = build_package(
             "module x;
              fn consume[A](_value: A) -> . { () }
-             fn exercise() -> . { consume(. -> ., .(value: .) -> . { value }) }",
+             fn exercise() -> . { consume[. -> .](.(value: .) -> . { value }) }",
         );
         check_package(&package).expect("fully explicit argument fixture checks");
         normalize_package(&package).into_parts().0
@@ -1590,7 +1490,7 @@ mod tests {
             })
         };
         let explicit_first = CallArg::Type(ty("Written", 10));
-        let replaced = value("type_shaped", 20);
+        let replaced = CallArg::Type(ty("Replacement", 60));
         let retained = value("retained", 30);
         let explicit_second = CallArg::Type(ty("Other", 40));
         let sibling = value("sibling", 50);
@@ -1607,7 +1507,6 @@ mod tests {
         ] {
             elabs.record_type_resolution("x", site.id, slot, InternedType::fresh(resolved));
         }
-        elabs.mark_value_at_type_slot("x", site.id, 2);
         let expected = vec![
             CallArg::Value(Expr::Unit {
                 source_trivia: Default::default(),
@@ -1646,7 +1545,7 @@ mod tests {
             "module x;
              fn id[A](value: A) -> A { value }
              fn second(_first: ., value: .) -> . { value }
-             fn exercise() -> . { second(id(., id(., ())), id(., ())) }",
+             fn exercise() -> . { second(id[.](id[.](())), id[.](())) }",
         );
         let checked = check_package(&package).expect("nested value calls check");
         let emitted =
@@ -1661,8 +1560,8 @@ mod tests {
     #[test]
     fn inferred_boolean_specialization_prime_requires_an_explicit_checked_prefix() {
         for body in [
-            "__if_then_else__(Flag, ., flag, .() -> . { () }, .() -> . { () })",
-            "let choose = __if_then_else__(Flag); choose(., flag, .() -> . { () }, .() -> . { () })",
+            "__if_then_else__[Flag][.](flag, .() -> . { () }, .() -> . { () })",
+            "let choose = __if_then_else__[Flag]; choose[.](flag, .() -> . { () }, .() -> . { () })",
         ] {
             let original = build_package(&format!(
                 "module x; import __intrinsics__; host type Flag role(bool); fn run(flag: Flag) -> . {{ {body} }}"
@@ -1681,8 +1580,8 @@ mod tests {
         for declaration in [
             "fn run() -> . { let choose = __if_then_else__; () }",
             "fn choose() -> [A] (Flag & (. -> A) & (. -> A)) -> A { __if_then_else__ }",
-            "fn run() -> . { let choose = __if_then_else__(.); () }",
-            "fn run[B]() -> . { let choose = __if_then_else__(B); () }",
+            "fn run() -> . { let choose = __if_then_else__[.]; () }",
+            "fn run[B]() -> . { let choose = __if_then_else__[B]; () }",
         ] {
             let original = build_package(&format!(
                 "module x; import __intrinsics__; host type Flag role(bool); {declaration}"
@@ -1700,14 +1599,14 @@ mod tests {
     #[test]
     fn numeric_literals_are_independently_checked_and_canonicalized() {
         let package = build_package(
-            "module x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010(I) } fn minimum() -> I { -170141183460469231731687303715884105728(I) } fn maximum() -> U { 340282366920938463463374607431768211455(U) } fn zero() -> U { -0(U) } fn decimal() -> F { 0.1(F) } fn negative_zero() -> F { -1.0e-9999(F) }",
+            "module x; host type I role(i128); host type U role(u128); host type F role(f32); fn integer() -> I { 00010[I] } fn minimum() -> I { -170141183460469231731687303715884105728[I] } fn maximum() -> U { 340282366920938463463374607431768211455[U] } fn zero() -> U { -0[U] } fn decimal() -> F { 0.1[F] } fn negative_zero() -> F { -1.0e-9999[F] }",
         );
         let checked = check_package(&package).expect("valid raw Prime numbers");
         let emitted = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
-        assert!(emitted.contains("10("));
-        assert!(!emitted.contains("00010") && !emitted.contains("-0("));
-        assert!(emitted.contains("0.10000000149011612("));
-        assert!(emitted.contains("-0.0("));
+        assert!(emitted.contains("10["));
+        assert!(!emitted.contains("00010") && !emitted.contains("-0["));
+        assert!(emitted.contains("0.10000000149011612["));
+        assert!(emitted.contains("-0.0["));
         let rechecked = check_package(&build_package(&emitted)).expect("canonical Prime rechecks");
         assert_eq!(
             crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap()),
@@ -1721,7 +1620,7 @@ mod tests {
             ("f64", "1.8e308"),
         ] {
             let package = build_package(&format!(
-                "module x; host type N role({role}); fn value() -> N {{ {value}(N) }}"
+                "module x; host type N role({role}); fn value() -> N {{ {value}[N] }}"
             ));
             assert!(check_package(&package).is_err(), "{role} {value}");
         }
@@ -1738,29 +1637,29 @@ import __comptime__;
 host type A role(bool);
 host type Flag role(bool);
 fn nominal(flag: A) -> A {
-    let choose = __if_then_else__(A);
-    choose(A, flag, .() { flag }, .() { flag })
+    let choose = __if_then_else__[A];
+    choose[A](flag, .() { flag }, .() { flag })
 }
 fn rigid[A](flag: Flag, value: A) -> A {
-    let choose = __if_then_else__(Flag);
-    choose(A, flag, .() { value }, .() { value })
+    let choose = __if_then_else__[Flag];
+    choose[A](flag, .() { value }, .() { value })
 }
 host type Eta role(bool);
 fn nominal_eta(flag: Eta) -> Eta {
-    let choose = __if_then_else__(Eta);
-    choose(Eta, flag, .() { flag }, .() { flag })
+    let choose = __if_then_else__[Eta];
+    choose[Eta](flag, .() { flag }, .() { flag })
 }
 fn rigid_eta[Eta](flag: Flag, value: Eta) -> Eta {
-    let choose = __if_then_else__(Flag);
-    choose(Eta, flag, .() { value }, .() { value })
+    let choose = __if_then_else__[Flag];
+    choose[Eta](flag, .() { value }, .() { value })
 }
 fn pair[B](value: B) -> B & B {
-    let pair = __pair__(B);
-    pair(B, value, value)
+    let pair = __pair__[B];
+    pair[B](value, value)
 }
 fn either[C](choice: . | ., value: C) -> C {
-    let pick = __either__(., .);
-    pick(C, choice, .(left: .) { value }, .(right: .) { value })
+    let pick = __either__[.][.];
+    pick[C](choice, .(left: .) { value }, .(right: .) { value })
 }
 pure fn mirror_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
 macro mirror : [T] T -> T { impl mirror_impl; };
@@ -1768,18 +1667,18 @@ fn keep[T](value: T) -> . -> T { .() { value } }
 fn nested_argument[Eta](value: Eta) -> Eta & Eta {
     let delayed = keep(__pair__);
     let pair = delayed(());
-    pair(Eta, Eta, value, value)
+    pair[Eta][Eta](value, value)
 }
 fn nested_local[Eta](value: Eta) -> Eta & Eta {
     let stored = __pair__;
     let delayed = keep(stored);
     let pair = delayed(());
-    pair(Eta, Eta, value, value)
+    pair[Eta][Eta](value, value)
 }
 fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     let delayed = mirror(keep(__pair__));
     let pair = delayed(());
-    pair(Eta, Eta, value, value)
+    pair[Eta][Eta](value, value)
 }
 "#;
         let parsed = parse(source).expect("surface source parses");
@@ -1805,12 +1704,12 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn intrinsic_values_recheck_without_new_wrappers() {
         for source in [
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p(I32, I32, x, y) }",
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__(I32, I32); p(x, y) }",
+            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; p[I32][I32](x, y) }",
+            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__[I32][I32]; p(x, y) }",
             "module x; import __intrinsics__; fn f() -> [A][B](A & B) -> (A & B) { __pair__ }",
-            "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p(I32, I32, x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
-            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p(I32, I32, x, y); p(I32, I32, __fst__(I32, I32, first), y) }",
-            "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__(First); choose(First, c, .() -> First { .t(First) }, .() -> First { .f(First) }) } host type Later role(bool);",
+            "module x; import __intrinsics__; host type I32; fn use(p: [A][B](A & B) -> (A & B), x: I32, y: I32) -> I32 & I32 { p[I32][I32](x, y) } fn f(x: I32, y: I32) -> I32 & I32 { use(__pair__, x, y) }",
+            "module x; import __intrinsics__; host type I32; fn f(x: I32, y: I32) -> I32 & I32 { let p = __pair__; let first = p[I32][I32](x, y); p[I32][I32](__fst__[I32][I32](first), y) }",
+            "module x; import __intrinsics__; host type First role(bool); fn f(c: First) -> First { let choose = __if_then_else__[First]; choose[First](c, .() -> First { .t[First] }, .() -> First { .f[First] }) } host type Later role(bool);",
         ] {
             let original = build_package(source);
             assert_eq!(intrinsic_value_record_count(&original), 1, "{source}");
@@ -1834,11 +1733,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
     #[test]
     fn intrinsic_values_saturated_calls_do_not_record() {
         let package = build_package(
-            "module x; import __intrinsics__; fn f(x: ., y: .) -> . & . { __pair__(., ., x, y) }",
+            "module x; import __intrinsics__; fn f(x: ., y: .) -> . & . { __pair__[.][.](x, y) }",
         );
         assert_eq!(intrinsic_value_record_count(&package), 0);
         let callable_result = build_package(
-            "module x; import __intrinsics__; host type I32; fn f(value: (I32 -> I32) & I32) -> I32 -> I32 { __fst__(I32 -> I32, I32, value) }",
+            "module x; import __intrinsics__; host type I32; fn f(value: (I32 -> I32) & I32) -> I32 -> I32 { __fst__[I32 -> I32][I32](value) }",
         );
         assert_eq!(intrinsic_value_record_count(&callable_result), 0);
     }
@@ -1868,7 +1767,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             ),
             (
                 "x.kio",
-                "module x; import __intrinsics__; import provider as provider; type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__(Selected); pick(_Intrinsic_t0, c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
+                "module x; import __intrinsics__; import provider as provider; type Selected = provider.Bool; fn choose[_Intrinsic_t0](c: Selected, value: _Intrinsic_t0) -> _Intrinsic_t0 { let pick = __if_then_else__[Selected]; pick[_Intrinsic_t0](c, .() -> _Intrinsic_t0 { value }, .() -> _Intrinsic_t0 { value }) }",
             ),
         ]);
         assert_eq!(intrinsic_value_record_count(&package), 1);
@@ -1897,11 +1796,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              type Alias = I32;
              fn identity[A](value: A) -> A { value }
              fn consume[A](_value: A) -> . { () }
-             fn path(value: I32) -> I32 { identity(I32, value) }
-             fn alias(value: Alias) -> I32 { identity(I32, value) }
-             fn literal() -> I32 { identity(I32, 42(I32)) }
+             fn path(value: I32) -> I32 { identity[I32](value) }
+             fn alias(value: Alias) -> I32 { identity[I32](value) }
+             fn literal() -> I32 { identity[I32](42[I32]) }
              fn lambda() -> . {
-               consume(. -> ., .(value: .) -> . { value })
+               consume[. -> .](.(value: .) -> . { value })
              }",
         );
 
@@ -1919,7 +1818,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
                  host type String;
                  fn identity[A](value: A) -> A { value }
                  fn bad(wrong_value: String) -> I32 {
-                   identity(I32, wrong_value)
+                   identity[I32](wrong_value)
                  }",
                 "wrong_value)",
             ),
@@ -1929,7 +1828,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
                  host type String;
                  fn second[A](_first: A, value: A) -> A { value }
                  fn bad(first: I32, dependent_wrong: String) -> I32 {
-                   second(I32, first, dependent_wrong)
+                   second[I32](first, dependent_wrong)
                  }",
                 "dependent_wrong)",
             ),
@@ -2095,9 +1994,9 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             let pkg = build_package(&format!(
                 "module x; import __intrinsics__; {declarations} \
                  fn pick(c: First) -> First {{ \
-                   __if_then_else__(First, First, c, \
-                     .() -> First {{ .t(First) }}, \
-                     .() -> First {{ .f(First) }}) \
+                   __if_then_else__[First][First](c, \
+                     .() -> First {{ .t[First] }}, \
+                     .() -> First {{ .f[First] }}) \
                  }}"
             ));
             check_package(&pkg)
@@ -2115,7 +2014,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              host fn left() -> Left; \
              host fn right() -> Right; \
              fn pick(c: Bool) -> Left { \
-               __if_then_else__(Bool, Left, c, .() { left() }, .() { right() }) \
+               __if_then_else__[Bool][Left](c, .() { left() }, .() { right() }) \
              }",
         );
         let error = check_package(&package).expect_err("both thunks must return the explicit type");
@@ -2134,9 +2033,9 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             "module x; import __intrinsics__; \
              host type First role(bool); \
              fn pick(c: First) -> First { \
-               __if_then_else__(First, First, c, \
-                 .() -> First { .t(First) }, \
-                 .() -> First { .f(First) }) \
+               __if_then_else__[First][First](c, \
+                 .() -> First { .t[First] }, \
+                 .() -> First { .f[First] }) \
              } \
              host type Later role(bool);",
         );
@@ -2203,7 +2102,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         let message = prime_type_error(
             "module x; \
              fn id[T](value: T) -> T { value } \
-             fn choose[A](poly: [B] B -> B, value: A) -> A { poly(A, value) } \
+             fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } \
              fn bad() -> . { choose(id, ()) }",
         );
         assert!(
@@ -2217,7 +2116,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         let message = prime_type_error(
             "module x; \
              fn id[T](value: T) -> T { value } \
-             fn choose[A](poly: [B] B -> B, value: A) -> A { poly(A, value) } \
+             fn choose[A](poly: [B] B -> B, value: A) -> A { poly[A](value) } \
              fn bad() -> . { let x = choose(id, ()); x }",
         );
         assert!(
@@ -2264,11 +2163,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
                pub constructor mk_pack; pub projector un_pack; \
              }; \
              fn hidden[U](value: U) -> Hidden { Hidden.mk_hidden(value) } \
-             fn direct[A][U](a: A, u: U) -> Pack(A) { \
-               Pack.mk_pack(A, __pair__(A, U, a, u)) \
+             fn direct[A][U](a: A, u: U) -> Pack[A] { \
+               Pack.mk_pack[A](__pair__[A][U](a, u)) \
              } \
-             fn partial[A][U](a: A, u: U) -> Pack(A) { \
-               Pack.mk_pack(A)(__pair__(A, U, a, u)) \
+             fn partial[A][U](a: A, u: U) -> Pack[A] { \
+               Pack.mk_pack[A](__pair__[A][U](a, u)) \
              }",
         );
         check_package(&package).expect("constructor existential suffix remains inferable");
@@ -2281,8 +2180,8 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              newtype Pack[A] <U> : A & U { \
                pub constructor mk_pack; pub projector un_pack; \
              }; \
-             fn bad[A][U](a: A, u: U) -> Pack(A) { \
-               Pack.mk_pack(__pair__(A, U, a, u)) \
+             fn bad[A][U](a: A, u: U) -> Pack[A] { \
+               Pack.mk_pack(__pair__[A][U](a, u)) \
              }",
         );
         assert!(
@@ -2309,18 +2208,18 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         let package = build_package(
             "module x; import __intrinsics__; \
              type Identity[A] = A -> A; \
-             fn empty[A] -> . | A { __left__(., A, ()) } \
+             fn empty[A] -> . | A { __left__[.][A](()) } \
              fn direct[A] -> A -> A { .(value: A) { value } } \
-             fn aliased[A] -> Identity(A) { .(value: A) { value } } \
-             fn higher[*F] -> F(.) -> F(.) { .(value: F(.)) { value } } \
+             fn aliased[A] -> Identity[A] { .(value: A) { value } } \
+             fn higher[*F] -> F[.] -> F[.] { .(value: F[.]) { value } } \
              fn retain() -> [A] . | A { empty } \
              fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } \
-             fn apply(function: [A] A -> A) -> . { function(., ()) } \
+             fn apply(function: [A] A -> A) -> . { function[.](()) } \
              fn main() { \
-               direct(., ()); aliased(., ()); returned()(., ()); \
+               direct[.](()); aliased[.](()); returned()[.](()); \
                apply(direct); apply(aliased); \
                apply(.[A] { .(value: A) { value } }); \
-               let saved = empty; let _ = saved(.); () \
+               let saved = empty; let _ = saved[.]; () \
              }",
         );
         check_package(&package).expect("ordinary type abstractions are shared Kio/Kio' syntax");
@@ -2343,11 +2242,11 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              host fn nil[A]() -> A; \
              fn identity[A](value: A) -> A { value } \
              fn use(value: .) -> . { value } \
-             fn residual_nil() -> . -> N { nil(N) } \
-             fn nested_nil() -> N { nil(N)() } \
-             fn saturated_nil() -> N { nil(N, ()) } \
-             fn residual_identity() -> N -> N { identity(N) } \
-             fn saturated_identity(value: N) -> N { identity(N, value) } \
+             fn residual_nil() -> . -> N { nil[N] } \
+             fn nested_nil() -> N { nil[N]() } \
+             fn saturated_nil() -> N { nil[N](()) } \
+             fn residual_identity() -> N -> N { identity[N] } \
+             fn saturated_identity(value: N) -> N { identity[N](value) } \
              fn monomorphic_empty() -> . { use() }",
         ))
         .expect("fresh Kio' keeps type-only packets residual and bakes empty Unit calls");
@@ -2465,10 +2364,10 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              type Unit_alias = .;
              fn zero[A]() -> . { () }
              fn identity[A](value: A) -> A { value }
-             fn selected() -> . -> . { zero(.) }
-             fn explicit() -> . { zero(., ()) }
-             fn selected_identity() -> . -> . { identity(.) }
-             fn selected_alias() -> Unit_alias -> Unit_alias { identity(Unit_alias) }",
+             fn selected() -> . -> . { zero[.] }
+             fn explicit() -> . { zero[.](()) }
+             fn selected_identity() -> . -> . { identity[.] }
+             fn selected_alias() -> Unit_alias -> Unit_alias { identity[Unit_alias] }",
         );
         let typed = check_package(&package).expect("selected Unit-domain calls typecheck");
         let module = &typed.module("x").expect("module x present").module();
@@ -2521,7 +2420,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             "module x;
              host type N;
              fn consume[A](value: N) -> . { () }
-             fn residual() -> N -> . { consume(.) }",
+             fn residual() -> N -> . { consume[.] }",
         );
         let typed = check_package(&package).expect("a type-only non-Unit call typechecks");
         let definition = typed
@@ -2551,7 +2450,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              newtype Hidden <U> : U { \
                pub constructor mk_hidden; pub projector un_hidden; \
              }; \
-             fn from_bottom[A](never: !) -> A { __absurd__(A, never) } \
+             fn from_bottom[A](never: !) -> A { __absurd__[A](never) } \
              fn bad(never: !) -> Hidden { Hidden.mk_hidden(from_bottom(never)) }",
         );
         assert!(
@@ -2560,16 +2459,6 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
         );
     }
 
-    /// Kio' rejects multi-layer flat calls at type-check, per
-    /// `specs/language.md` § Type parameters. `foo[A](v1: A)[B](v2: B) -> .`
-    /// has type
-    ///   `Forall([A], Function(A, Forall([B], Function(B, Unit))))`;
-    /// the flat spelling `foo(A, A.mk_a(()), B, B.mk_b(()))` is
-    /// Kio-only sugar that Kio surface accepts under `LoweredTyper`
-    /// (`ALLOW_MULTI_LAYER_FLAT_CALL = true`). `PrimeTyper` opts
-    /// out (`ALLOW_MULTI_LAYER_FLAT_CALL = false`); the only
-    /// spelling Kio' accepts is the explicit curried form
-    /// `foo(A, A.mk_a(()))(B, B.mk_b(()))`.
     #[test]
     fn multi_layer_flat_call_rejected_standalone() {
         let pkg = build_package(
@@ -2577,7 +2466,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              newtype A : . { pub constructor mk_a; pub projector un_a; };\n\
              newtype B : . { pub constructor mk_b; pub projector un_b; };\n\
              fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo(A, A.mk_a(()), B, B.mk_b(())) }\n",
+             fn main() -> . { foo[A](A.mk_a(()), B.mk_b(())) }\n",
         );
         let err = check_package(&pkg).expect_err("Kio' rejects multi-layer flat call");
         match err.error {
@@ -2596,36 +2485,17 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
              newtype A : . { pub constructor mk_a; pub projector un_a; };\n\
              newtype B : . { pub constructor mk_b; pub projector un_b; };\n\
              fn foo[A](v1: A)[B](v2: B) -> . { () }\n\
-             fn main() -> . { foo(A, A.mk_a(()))(B, B.mk_b(())) }\n",
+             fn main() -> . { foo[A](A.mk_a(()))[B](B.mk_b(())) }\n",
         );
         check_package(&pkg).expect("Kio' accepts curried call");
     }
 
-    /// A call site of the shape `f(A, x)` — where `f` is a value
-    /// parameter of polymorphic-fn type and `A` is a type binder in
-    /// scope — comes in from the parser as
-    /// `Call(f, [Value(Path(A)), Value(Path(x))])` because the
-    /// grammar (`specs/grammar.md`, `CallArg ::= Expr | Type`) does
-    /// not syntactically distinguish type-args from value-args and
-    /// the parser classifies a bare ident as `CallArg::Value`. The typer
-    /// reclassifies via `expr_to_type_arg` and records the
-    /// resolution; the bake pass rewrites the slot into canonical
-    /// `CallArg::Type(Path(A))` form so downstream emitters drop the
-    /// type-arg at the FFI boundary.
-    ///
-    /// Regression for the kio-prime Church-encoding bug: without the
-    /// bake step, the type binder `A` survived as a runtime
-    /// reference and the emitted JS hit a `ReferenceError`.
     #[test]
     fn polymorphic_local_fn_call_canonicalizes_type_arg_slot() {
         use crate::ast::{CallArg, Expr, Item};
-        // `apply` takes a polymorphic-fn value `f` and applies it
-        // to a value `x` at type `A`. The body's `f(A, x)` is the
-        // shape `n(A, f, x)` in the Church-numeral case — value
-        // parameter as callee, type binder as first arg.
         let pkg = build_package(
             "module x;\n\
-             fn apply[A](f: [B] B -> B, x: A) -> A { f(A, x) }\n",
+             fn apply[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n",
         );
         let typed = check_package(&pkg).expect("check_package");
         let entry = typed.module("x").expect("module x present");
@@ -2758,7 +2628,7 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
             "module x;\n\
              host type N;\n\
              host fn produce(_unit: .) -> [A] A;\n\
-             fn returned() -> N { produce(())(N) }\n",
+             fn returned() -> N { produce(())[N] }\n",
         );
         let typed = check_package(&pkg).expect("check returned polymorphic value call");
         let entry = typed.module("x").expect("module x present");
@@ -2787,8 +2657,8 @@ fn nested_replay[Eta](value: Eta) -> Eta & Eta {
 
         let pkg = build_package(
             "module x;\n\
-             fn apply1[A](f: [B] B -> B, x: A) -> A { f(A, x) }\n\
-             fn apply2[A](f: [B] B -> B, x: A) -> A { f(A, x) }\n",
+             fn apply1[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n\
+             fn apply2[A](f: [B] B -> B, x: A) -> A { f[A](x) }\n",
         );
         let typed = check_package(&pkg).expect("check_package");
         let entry = typed.module("x").expect("module x present");

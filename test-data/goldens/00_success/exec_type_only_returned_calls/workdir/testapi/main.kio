@@ -16,7 +16,7 @@ fn direct[A] -> A -> A {
   .(value: A) { value }
 }
 
-fn aliased[A] -> Identity(A) {
+fn aliased[A] -> Identity[A] {
   observe();
   .(value: A) { value }
 }
@@ -47,20 +47,20 @@ fn interleaved[A](value: A)[B] -> B -> A {
 fn ordinary[A](value: A) -> A { observe(); value }
 
 pub fn main() {
-  direct(., argument());
-  aliased(., argument());
-  many(., ., argument());
-  zero(., argument());
-  let saved = direct(.);
+  direct[.](argument());
+  aliased[.](argument());
+  many[.][.](argument());
+  zero[.](argument());
+  let saved = direct[.];
   consume();
   saved(());
-  factory.qualified(., argument());
+  factory.qualified[.](argument());
   let qualified_value = factory.qualified;
-  qualified_value(., argument());
-  let qualified_selected = factory.qualified(.);
+  qualified_value[.](argument());
+  let qualified_selected = factory.qualified[.];
   qualified_selected(argument());
-  selected(., argument());
-  interleaved(., argument())(., argument());
-  nested(., ., argument());
-  ordinary(., argument())
+  selected[.](argument());
+  interleaved[.](argument())[.](argument());
+  nested[.][.](argument());
+  ordinary[.](argument())
 }

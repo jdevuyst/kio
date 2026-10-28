@@ -2180,8 +2180,8 @@ mod tests {
             parse(
                 "module x/main; host type N; \
              pub newtype Box[A] : A { pub constructor make; pub projector get; }; \
-             pub fn keep[A](value: Box(A)) -> Box(A) { value } \
-             pub fn apply(callback: [A] A -> A, value: N) -> N { callback(N, value) }",
+             pub fn keep[A](value: Box[A]) -> Box[A] { value } \
+             pub fn apply(callback: [A] A -> A, value: N) -> N { callback[N]( value) }",
             )
             .unwrap(),
         )];
@@ -2321,7 +2321,7 @@ mod tests {
     fn typed_stage_serialization_retains_node_indices_and_execution_edges() {
         let package = routed(&full_prime(
             "module x/main; host type N role(i32); \
-             fn keep[*F][A](value: (A & F(N)) | .) -> (A & F(N)) | . { value }",
+             fn keep[*F][A](value: (A & F[N]) | .) -> (A & F[N]) | . { value }",
         ));
         let module = &package.module("x/main").unwrap().module;
         let collected = Rc::default();
@@ -2493,7 +2493,7 @@ mod tests {
                    pub constructor wrap; pub projector unwrap
                  }
                  pub fn make[Param][Hidden](a: lib.Token, b: Token, p: Param, h: Hidden)
-                   -> Wrapped(Param) { Wrapped.wrap((a, b, p, h)) }",
+                   -> Wrapped[Param] { Wrapped.wrap((a, b, p, h)) }",
             ),
         ]));
         let module = &package.module("api").unwrap().module;
@@ -2799,8 +2799,8 @@ mod tests {
              host fn second(_unit: .) -> N; \
              host fn produce(_unit: .) -> [A] A; \
              fn interleaved[A](x: A)[B](y: B) -> B { y } \
-             fn closure(value: N, function: [A] A -> A) -> N { function(N, value) } \
-             fn indirect() -> N { interleaved(N, first(), N, second()) } \
+             fn closure(value: N, function: [A] A -> A) -> N { function[N]( value) } \
+             fn indirect() -> N { interleaved[N]( first())[ N]( second()) } \
              fn returned() -> N { produce() }",
         ));
 
@@ -2884,9 +2884,9 @@ mod tests {
              newtype N : . { constructor make; projector get; }; \
              fn id[A](value: A) -> A { value } \
              fn generic() -> [A] A -> A { id } \
-             fn direct() -> N -> N { id(N) } \
-             fn local(function: [A] A -> A) -> N -> N { function(N) } \
-             fn computed() -> N -> N { generic()(N) }",
+             fn direct() -> N -> N { id[N] } \
+             fn local(function: [A] A -> A) -> N -> N { function[N] } \
+             fn computed() -> N -> N { generic()[N] }",
         );
         let (_, reparsed) = emitted_prime(&prime);
         for package in [routed(&prime), routed(&reparsed)] {
@@ -2997,7 +2997,7 @@ mod tests {
     fn typed_stage_plans_preserve_abstract_slots_and_callable_stages() {
         let package = routed(&full_prime(
             "module x/main; \
-             fn keep[*F][A](value: A & F(A)) -> A & F(A) { value }",
+             fn keep[*F][A](value: A & F[A]) -> A & F[A] { value }",
         ));
         let module = &package.module("x/main").unwrap().module;
         let plans = Rc::default();
@@ -3025,7 +3025,7 @@ mod tests {
             "module x/main; \
              newtype Box[T] : T { constructor make; projector get; }; \
              fn hold[A](value: A) -> . -> A { .(_unit) { value } } \
-             fn apply[A](function: [B] B -> B, value: A) -> A { function(A, value) }",
+             fn apply[A](function: [B] B -> B, value: A) -> A { function[A]( value) }",
         );
         let (_, reparsed) = emitted_prime(&prime);
         for package in [routed(&prime), routed(&reparsed)] {
@@ -3161,7 +3161,7 @@ mod tests {
              newtype A : Str { constructor mk_a; projector un_a; }; \
              newtype Named : A { constructor mk_named; projector un_named; }; \
              newtype Box[T] : T { constructor mk_box; projector un_box; }; \
-             newtype Applied[*F][T] : F(T) { constructor mk_applied; projector un_applied; }; \
+             newtype Applied[*F][T] : F[T] { constructor mk_applied; projector un_applied; }; \
              newtype Ranked : [A] A -> A { constructor mk_ranked; projector un_ranked; }; \
              newtype Shadow[T] : [A] T -> A { constructor mk_shadow; projector un_shadow; }; \
              newtype Same[T] : T & ([T] T -> T) { constructor mk_same; projector un_same; }; \
@@ -3333,7 +3333,7 @@ mod tests {
              type Pair = First & Second; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(row: Pair) -> I32 { \
-               pick_second(row.?{first}, sub_i32(row.?{second}, 1(I32))) \
+               pick_second(row.?{first}, sub_i32(row.?{second}, 1[I32])) \
              }",
         );
         let (emitted, prime) = emitted_prime(&full);
@@ -3356,7 +3356,7 @@ mod tests {
             "module x/main; import __intrinsics__; \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             fn step(_n: I32) -> I32 | . { __right__(I32, ., ()) } \
+             fn step(_n: I32) -> I32 | . { __right__[I32][ .]( ()) } \
              fn t(start: I32) -> . { loop(.(n: I32) { step(n) }, start) }",
         );
         let (_emitted, prime) = emitted_prime(&full);

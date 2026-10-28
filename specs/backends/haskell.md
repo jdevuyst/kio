@@ -24,7 +24,7 @@ module. This page describes the surface a Haskell host calls against.
 Haskell is the first **`native-HKT`** family member: a statically typed
 host whose own type system expresses higher-kinded and rank-N
 polymorphism, so Kio's kind-`*→*` carriers map onto Haskell type
-constructors directly (`F(A)` → `f a`) with no carrier brand and no
+constructors directly (`F[A]` → `f a`) with no carrier brand and no
 carrier-walk (see [`README.md` § Higher-kinded types](README.md#higher-kinded-types)).
 The package does have a host-authored marker type `h`, but that marker
 selects the package's exact `host type` bindings; it does not brand or
@@ -301,7 +301,7 @@ A parameterized, necessarily roleless Kio declaration becomes a higher-kinded as
 family. The marker is the only family argument on the left-hand side;
 the Kio parameters occur in the result kind. For example,
 `host type Array[T];` contributes an associated family shaped like
-`type HostType__…__Array h :: Type -> Type`, and a use `Array(A)` becomes
+`type HostType__…__Array h :: Type -> Type`, and a use `Array[A]` becomes
 `HostType__…__Array h a`. Every Kio host-type parameter has kind `*`, so every
 corresponding Haskell argument has kind `Type`.
 
@@ -382,12 +382,12 @@ and binder kinds. The alias expands through `<Handle>Product` or
 `<Handle>Sum`; substituting a parameter changes only the family arguments,
 never the representation rule. Thus substituting `T := B & C` in `A & T`
 yields the same Haskell type as translating `A & (B & C)` directly. An
-abstract application such as `F(A & B)` is therefore
+abstract application such as `F[A & B]` is therefore
 `f (a, b)` (or its `Host_…` view) on both sides of the call; the backend does not attempt
 to traverse an arbitrary host-supplied `f`.
 
 Arguments of an opaque host or abstract type constructor retain their native
-value representation, including callable domains. For example, `Box(. -> A)`
+value representation, including callable domains. For example, `Box[. -> A]`
 uses `HostType__…__Box h (() -> m a)`, not `HostType__…__Box h (m a)`.
 The Unit argument is omitted only at a direct callable boundary where the
 backend can adapt that callable; it cannot change a function hidden inside
@@ -494,7 +494,7 @@ the Haskell instantiations:
   Haskell type constructor (`f a`); a rank-N payload crosses at its
   `forall` type (`RankNTypes`), with each first-class `forall` stage yielding
   its next stage through `m`. No carrier-walk and no `Any`-erasure of
-  the HKT carrier: the host's own kind system carries `F(A)` directly,
+  the HKT carrier: the host's own kind system carries `F[A]` directly,
   where the erased families (`erased-static`, `dynamic`) instead ride the
   universal erased value. This is the **HKT-carrier** handling the
   native-HKT family does natively, per [`README.md`
@@ -824,7 +824,7 @@ host fn print(output: Output, s: Str);
 module app/main;
 import app(Str);
 import app(print, stdout);
-pub fn main() { print(stdout(), "hello\n"(Str)) }
+pub fn main() { print(stdout(), "hello\n"[Str]) }
 ```
 
 `kio build haskell` writes `out/haskell/Greet.hs` (the

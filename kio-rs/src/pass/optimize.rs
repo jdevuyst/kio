@@ -3089,7 +3089,7 @@ mod tests {
         let m = optimize_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             fn t() -> . { __fst__(., ., __pair__(., ., (), ())) }",
+             fn t() -> . { __fst__[.][ .]( __pair__[.][ .]( (), ())) }",
         );
         let body = fn_body(&m, "t");
         assert!(
@@ -3232,9 +3232,9 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              host type N; host fn first() -> N; host fn second() -> N; \
-             fn direct() -> N { __fst__(N, N, __pair__(N, N, first(), second())) } \
-             fn bound() -> N { let pair = (first(), second()); __fst__(N, N, pair) } \
-             fn closure() -> N { __fst__(N, N, .() -> N & N { (first(), second()) }()) }",
+             fn direct() -> N { __fst__[N][ N]( __pair__[N][ N]( first(), second())) } \
+             fn bound() -> N { let pair = (first(), second()); __fst__[N][ N]( pair) } \
+             fn closure() -> N { __fst__[N][ N]( .() -> N & N { (first(), second()) }()) }",
         );
         for name in ["direct", "bound", "closure"] {
             let body = fn_body(&module, name);
@@ -3270,7 +3270,7 @@ mod tests {
              host type I32 role(i32); \
              labels { hed: I32 }; \
              fn t(x: I32) -> I32 { \
-               Hed.get(__fst__(Hed, ., __pair__(Hed, ., {hed = x}, ()))) \
+               Hed.get(__fst__[Hed][ .]( __pair__[Hed][ .]( {hed = x}, ()))) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -3385,7 +3385,7 @@ mod tests {
              host fn effect(_unit: .) -> .; \
              fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } \
              fn t(value: N) -> N { \
-               let residual = stage()(N); \
+               let residual = stage()[N]; \
                effect(()); \
                residual(value) \
              }",
@@ -3411,7 +3411,7 @@ mod tests {
              fn binding() { let factory = effect; factory(); () } \
              fn closure(factory: . -> .) -> . -> . { .() { factory(); () } } \
              fn branch(s: (. -> .) | .) { \
-               __either__(. -> ., ., ., s, .(factory: . -> .) { factory(); () }, .() { () }) \
+               __either__[. -> .][ .][ .]( s, .(factory: . -> .) { factory(); () }, .() { () }) \
              }",
         );
         assert!(matches!(fn_body(&m, "direct"), Expr::Unit { .. }));
@@ -3475,7 +3475,7 @@ mod tests {
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                pick_second(x, delayed) \
              }",
         );
@@ -3491,8 +3491,8 @@ mod tests {
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
-               pick_second(sub_i32(x, 2(I32)), delayed) \
+               let delayed = sub_i32(x, 1[I32]); \
+               pick_second(sub_i32(x, 2[I32]), delayed) \
              }",
         );
         assert!(!changed, "let crossed an earlier effect: {body:?}");
@@ -3506,14 +3506,14 @@ mod tests {
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn t(cond: Bool, x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                if (cond) { delayed } else { x } \
              }",
             "module x/main; import __intrinsics__; \
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn t(value: I32 | I32, x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                __either__(value, \
                  .(left: I32) -> I32 { delayed }, \
                  .(right: I32) -> I32 { x }) \
@@ -3522,7 +3522,7 @@ mod tests {
              host type I32 role(i32); \
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn t(x: I32) -> (I32 -> I32) { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                .(_arg: I32) -> I32 { delayed } \
              }",
         ];
@@ -3541,7 +3541,7 @@ mod tests {
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                let prefix = x; \
                pick_second(prefix, delayed) \
              }",
@@ -3550,7 +3550,7 @@ mod tests {
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(x: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                (); \
                pick_second(x, delayed) \
              }",
@@ -3570,7 +3570,7 @@ mod tests {
              host fn sub_i32(a: I32, b: I32) -> I32; \
              fn pick_second(a: I32, b: I32) -> I32 { b } \
              fn t(x: I32, replacement: I32) -> I32 { \
-               let delayed = sub_i32(x, 1(I32)); \
+               let delayed = sub_i32(x, 1[I32]); \
                let x = replacement; \
                pick_second(x, delayed) \
              }",
@@ -3765,7 +3765,7 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              fn t[A](b: !) -> A { \
-               let x = __absurd__(A, b); x \
+               let x = __absurd__[A]( b); x \
              }",
         );
         let body = fn_body(&m, "t");
@@ -3793,7 +3793,7 @@ mod tests {
             "module x/main; import __intrinsics__; \
              fn t[A][B](x: A, y: A) -> A { \
                __either__(\
-                 __left__(A, B, x), \
+                 __left__[A][ B]( x), \
                  .(l: A) -> A { l }, \
                  .(r: B) -> A { y }) \
              }",
@@ -3819,7 +3819,7 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              fn t[A][B](x: A, y: B) -> B { \
-               __snd__(A, B, __pair__(A, B, x, y)) \
+               __snd__[A][ B]( __pair__[A][ B]( x, y)) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -3840,7 +3840,7 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              fn t[A][B][C](x: A, y: B, z: C) -> B & C { \
-               __snd__(A, B & C, __pair__(A, B & C, x, __pair__(B, C, y, z))) \
+               __snd__[A][ B & C]( __pair__[A][ B & C]( x, __pair__[B][ C]( y, z))) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -3974,7 +3974,7 @@ mod tests {
             "module x/main; import __intrinsics__; \
              fn t[A](x: A) -> A { \
                __either__(\
-                 __left__(A, A, x), \
+                 __left__[A][ A]( x), \
                  .(l: A) -> A { l }, \
                  .(r: A) -> A { r }) \
              }",
@@ -4004,9 +4004,9 @@ mod tests {
              host fn consume[A](value: A) -> .; \
              fn t() -> . { \
                let green = Green.mk_green(()); \
-               let inner = __left__(Green, Blue, green); \
-               let widened = __right__(Red, Green | Blue, inner); \
-               consume(Red | Green | Blue, widened) \
+               let inner = __left__[Green][ Blue]( green); \
+               let widened = __right__[Red][ Green | Blue]( inner); \
+               consume[Red | Green | Blue](widened) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -4041,11 +4041,11 @@ mod tests {
             "module x/main; import __intrinsics__; \
              fn t[A](s: A | A) -> (A | A) { \
                __either__(\
-                 __either__(A, A, A | A, s, \
-                   .(x: A) -> (A | A) { __left__(A, A, x) }, \
-                   .(y: A) -> (A | A) { __right__(A, A, y) }), \
-                 .(p: A) -> (A | A) { __left__(A, A, p) }, \
-                 .(q: A) -> (A | A) { __right__(A, A, q) }) \
+                 __either__[A][ A][ A | A]( s, \
+                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
+                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
+                 .(p: A) -> (A | A) { __left__[A][ A]( p) }, \
+                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -4075,11 +4075,11 @@ mod tests {
             "module x/main; import __intrinsics__; \
              fn t[A](s: A | A) -> (A | A) { \
                __either__( \
-                 __either__(A, A, A | A, s, \
-                   .(x: A) -> (A | A) { __left__(A, A, x) }, \
-                   .(y: A) -> (A | A) { __right__(A, A, y) }), \
-                 .(p: A) -> (A | A) { __left__(A, A, p) }, \
-                 .(q: A) -> (A | A) { __right__(A, A, q) }) \
+                 __either__[A][ A][ A | A]( s, \
+                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
+                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
+                 .(p: A) -> (A | A) { __left__[A][ A]( p) }, \
+                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
              }",
         );
         let body = optimize_expr_in_mode(
@@ -4106,11 +4106,11 @@ mod tests {
             "module x/main; import __intrinsics__; \
              fn t[A](s: A | A, x: A) -> (A | A) { \
                __either__(\
-                 __either__(A, A, A | A, s, \
-                   .(x: A) -> (A | A) { __left__(A, A, x) }, \
-                   .(y: A) -> (A | A) { __right__(A, A, y) }), \
-                 .(p: A) -> (A | A) { __left__(A, A, x) }, \
-                 .(q: A) -> (A | A) { __right__(A, A, q) }) \
+                 __either__[A][ A][ A | A]( s, \
+                   .(x: A) -> (A | A) { __left__[A][ A]( x) }, \
+                   .(y: A) -> (A | A) { __right__[A][ A]( y) }), \
+                 .(p: A) -> (A | A) { __left__[A][ A]( x) }, \
+                 .(q: A) -> (A | A) { __right__[A][ A]( q) }) \
              }",
         );
         let body = fn_body(&m, "t");
@@ -4203,7 +4203,7 @@ mod tests {
     }
 
     /// `newtype_identity_elision` firing coverage:
-    /// `Foo.un_foo(A, Foo.mk_foo(A, x))` collapses to the bare `x`.
+    /// `Foo.un_foo[A](Foo.mk_foo[A](x))` collapses to the bare `x`.
     /// The optimizer is observationally a no-op (the round-trip is
     /// identity in every backend), so no runtime golden can pin it.
     #[test]
@@ -4212,7 +4212,7 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              newtype Foo[A] : A { pub constructor mk_foo; pub projector un_foo; }; \
-             fn t[A](x: A) -> A { Foo.un_foo(A, Foo.mk_foo(A, x)) }",
+             fn t[A](x: A) -> A { Foo.un_foo[A](Foo.mk_foo[A](x)) }",
         );
         let body = fn_body(&m, "t");
         assert!(

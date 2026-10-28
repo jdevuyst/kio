@@ -30,9 +30,9 @@ import testapi/iter(loop);
 literal heap_factor = 4;
 
 pub labels Tree = {
-, sums: Array(I32)
-, mins: Array(I32)
-, tags: Array(I32)
+, sums: Array[I32]
+, mins: Array[I32]
+, tags: Array[I32]
 , leaves: I32
 , gauge: Meter
 };
@@ -100,7 +100,7 @@ pub fn push_down(t: Tree, node: I32, lo: I32, hi: I32, mid: I32) {
 
 /// Build the aggregates bottom-up. Nothing here bumps the gauge: the build is
 /// setup, not scripted work.
-rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array(I32)) -> Agg {
+rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array[I32]) -> Agg {
   if(is_leaf(lo, hi)) {
     let cell = leaf_agg(array_get(src, lo));
     set_agg(t, node, cell);
@@ -115,7 +115,7 @@ rec(loop) fn build_at(t: Tree, node: I32, lo: I32, hi: I32, src: Array(I32)) -> 
   }
 }
 
-pub fn build(src: Array(I32), n: I32) -> Tree {
+pub fn build(src: Array[I32], n: I32) -> Tree {
   let cells = mul_i32(heap_factor, n);
   let t =
     {

@@ -2,8 +2,8 @@ module area;
 
 import units/scalar(Scaled, scale, unscale);
 
-pub type Boxed[A] = Scaled(A);
+pub type Boxed[A] = Scaled[A];
 
-pub fn box[A](x: A) -> Boxed(A) { scale(x) }
+pub fn box[A](x: A) -> Boxed[A] { scale(x) }
 
-pub fn unbox[A](b: Boxed(A)) -> A { unscale(b) }
+pub fn unbox[A](b: Boxed[A]) -> A { unscale(b) }

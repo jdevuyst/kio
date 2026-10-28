@@ -17,7 +17,7 @@ fn line(value: String) { io.print(text.string_concat(value, "\n")) }
 
 fn field(name: String, value: I32) -> String { text.string_concat(name, fmt.int_to_string(value)) }
 
-fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.Tree) {
+fn replay_report(plan: optimizer.Plan, matrices: Array[Matrix], solution: tree.Tree) {
   match(tree.replay(solution, matrices)) {
     .(result: Evaluation) {
       io.print(field("replay=", result.?{rows}));
@@ -38,14 +38,14 @@ fn replay_report(plan: optimizer.Plan, matrices: Array(Matrix), solution: tree.T
   }
 }
 
-fn baseline_cost(label: String, matrices: Array(Matrix), solution: tree.Tree) {
+fn baseline_cost(label: String, matrices: Array[Matrix], solution: tree.Tree) {
   match(tree.replay(solution, matrices)) {
     .(result: Evaluation) { io.print(field(label, result.?{cost})) };
     .(error: String) { io.print(text.string_concat(label, error)) }
   }
 }
 
-fn run(name: String, matrices: Array(Matrix)) {
+fn run(name: String, matrices: Array[Matrix]) {
   let description =
     if(math.leq_i32(arrays.array_len(matrices), 0)) {
       "(empty)"
@@ -79,7 +79,7 @@ fn run(name: String, matrices: Array(Matrix)) {
 }
 
 pub fn main() {
-  let interior = arrays.array_make_empty(Matrix, ());
+  let interior = arrays.array_make_empty[Matrix](());
   arrays.array_push(interior, chain.matrix(5, 10));
   arrays.array_push(interior, chain.matrix(10, 3));
   arrays.array_push(interior, chain.matrix(3, 12));
@@ -89,12 +89,12 @@ pub fn main() {
   let tie = arrays.array_make_filled(3, chain.matrix(4, 4));
   run("tie", tie);
   run("single", arrays.array_make_filled(1, chain.matrix(7, 9)));
-  let mismatch = arrays.array_make_empty(Matrix, ());
+  let mismatch = arrays.array_make_empty[Matrix](());
   arrays.array_push(mismatch, chain.matrix(4, 6));
   arrays.array_push(mismatch, chain.matrix(5, 3));
   run("mismatch", mismatch);
   run("zero", arrays.array_make_filled(1, chain.matrix(0, 4)));
-  run("empty", arrays.array_make_empty(Matrix, ()));
+  run("empty", arrays.array_make_empty[Matrix](()));
   match(tree.replay(tree.join(tree.leaf(1), tree.leaf(0)), tie)) {
     .(_result: Evaluation) { line("reversed tie replay unexpectedly accepted") };
     .(error: String) { line(text.string_concat("reversed tie replay rejected: ", error)) }

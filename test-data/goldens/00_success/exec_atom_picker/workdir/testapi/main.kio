@@ -32,6 +32,6 @@ fn collapse_uniform(s: String | String | String) -> String { atom(s) }
 pub fn main() {
   print(pick_string(("first\n", 0)));
   print(pick_first_string(("second\n", 0, "later\n")));
-  print(pick_common(into((0(I32), "third\n"(String)))));
-  print(collapse_uniform(into("fourth\n"(String))))
+  print(pick_common(into((0[I32], "third\n"[String]))));
+  print(collapse_uniform(into("fourth\n"[String])))
 }

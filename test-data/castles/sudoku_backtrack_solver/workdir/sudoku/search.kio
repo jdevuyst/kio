@@ -136,16 +136,16 @@ rec(loop) fn drive(
 , deepest: I32
 ) -> Report {
   if(leq_i32(budget, steps_taken)) {
-    report(widen_sum({exhausted=}, Outcome), steps_taken, placed, undone, deepest)
+    report(widen_sum({exhausted=})[Outcome], steps_taken, placed, undone, deepest)
   } else if(descending) {
     let taken = add_i32(steps_taken, 1);
     match(select(work)) {
       (
-      , .(_done: Complete) { report(widen_sum({solved=}, Outcome), taken, placed, undone, deepest) }
+      , .(_done: Complete) { report(widen_sum({solved=})[Outcome], taken, placed, undone, deepest) }
       , .(pick: Pick_cell & Pick_count) {
           if(num.is_zero(pick.?{pick_count})) {
             if(num.is_zero(depth(work))) {
-              report(widen_sum({unsolvable=}, Outcome), taken, placed, undone, deepest)
+              report(widen_sum({unsolvable=})[Outcome], taken, placed, undone, deepest)
             } else {
               recur drive(work, .f, budget, taken, placed, undone, deepest)
             }
@@ -157,7 +157,7 @@ rec(loop) fn drive(
       )
     }
   } else if(num.is_zero(depth(work))) {
-    report(widen_sum({unsolvable=}, Outcome), add_i32(steps_taken, 1), placed, undone, deepest)
+    report(widen_sum({unsolvable=})[Outcome], add_i32(steps_taken, 1), placed, undone, deepest)
   } else {
     let taken = add_i32(steps_taken, 1);
     let cell = top_cell(work);

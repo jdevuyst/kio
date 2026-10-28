@@ -12,5 +12,5 @@ import testapi/io(print);
 // runtime cost.
 pub fn main() {
   print("Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod "
-        "tempor incididunt\n"(Str))
+        "tempor incididunt\n"[Str])
 }

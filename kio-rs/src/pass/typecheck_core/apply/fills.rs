@@ -2247,10 +2247,6 @@ fn finalize_staged_pair<'m>(
             let (store, owner, publication) = pair_frontier.publication_mut();
             direct.stage_type(owner, store, publication, tcx)?;
         }
-        if let Some((node_id, replacement)) = selecting.regular_ufcs.take() {
-            let (store, _owner, publication) = pair_frontier.publication_mut();
-            publication.record_lowered_elaboration(store, node_id, replacement);
-        }
         for operand in operands {
             let state = operand
                 .state
@@ -2269,17 +2265,20 @@ fn finalize_staged_pair<'m>(
             });
         }
         assert!(
-            selecting.direct.is_none()
-                && selecting.regular_ufcs.is_none()
-                && selecting.candidates.len() == selecting.next_candidate,
+            selecting.direct.is_none() && selecting.candidates.len() == selecting.next_candidate,
             "a retained canonical pair wrapper acquired an unsealed continuation"
         );
+        let (prepared_result, pending_expected_result) = match selecting.result_context {
+            None => (None, expected.map(super::PendingExpectedResult::new)),
+            Some((result, pending)) => (Some(result), pending),
+        };
         let mut advancing = super::begin_general_goal_call(
             &mut pair_frontier,
             selecting.call,
             selecting.selected,
             selecting.result_inferred_type_arg_suffix,
-            expected,
+            prepared_result,
+            pending_expected_result,
             tcx,
         )?;
         assert!(
@@ -2306,6 +2305,13 @@ fn finalize_staged_pair<'m>(
         }
         super::CompletedInFrame::Value(result, advancing.result_inferred_type_arg_suffix)
     };
+    if let Some(source) = premise.take_quote_source() {
+        premise.publication_mut().record_rec_quote_source_type(
+            source,
+            completed.scoped().clone(),
+            false,
+        );
+    }
     let completed =
         super::close_completed_ordinary_child(frontier, premise, completed, destination, tcx)?;
     #[cfg(test)]
@@ -4669,6 +4675,20 @@ pub(super) fn stage_projected_descent<'m>(
         return Ok(ProjectedDescentGate::Ordinary(advance));
     };
     let source_span = child.cursor.source.span();
+    let quote_header = match child.cursor.source {
+        crate::ast::Expr::RecQuote { plan, .. } => match plan.as_ref() {
+            crate::ast::RecQuotePlan::Operand {
+                public_ty: Some(public_ty),
+                ..
+            } if !crate::pass::typecheck_core::type_contains_goal(public_ty)
+                && !crate::pass::typecheck_core::type_contains_infer(public_ty) =>
+            {
+                Some(tcx.intern_type(public_ty))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
     let (layer, expanded_start, expanded_width) = projected_source_range(&resume);
     let public_expected = projected_source_expected(&resume).clone();
     let public_header =
@@ -4694,6 +4714,28 @@ pub(super) fn stage_projected_descent<'m>(
     } else {
         stage_projected_source_operand(child, frontier, tcx)?
     };
+    // A quoted recursive operand exposes its declared public result before
+    // its suspended computation is checked. Publish that closed header at
+    // this source boundary; the operand remains staged for validation.
+    if let Some(quote_header) = quote_header {
+        let parent = frontier.owner();
+        let mut gather = frontier.begin_gather(source_span, tcx)?;
+        let store = frontier.store();
+        let actual = store.scoped_type(gather.owner(), quote_header, source_span)?;
+        let expected = super::OwnerBoundType::Retained {
+            owner: parent,
+            ty: public_header.clone(),
+        }
+        .into_expected_equation_operand(gather.owner(), store, source_span)?;
+        let _ = store.try_constrain_gather_equation(
+            gather.delta_mut(),
+            actual,
+            expected,
+            source_span,
+            tcx,
+        )?;
+        frontier.close_gather(gather, tcx)?;
+    }
     let inferred_type_arg_suffix = staged_operand_inferred_type_arg_suffix(&state);
     reserve_projected_source(
         &mut state,
@@ -4823,9 +4865,9 @@ fn certified_path_unit_call_tree_source(
     }
 }
 
-fn certified_one_layer_scalar_literal_source(
-    source: &crate::ast::Expr<crate::ast::Lowered>,
-    tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
+fn certified_one_layer_scalar_literal_source<'m>(
+    source: &'m crate::ast::Expr<crate::ast::Lowered>,
+    tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> bool {
     if tcx.has_pending_rec_order() {
         return false;
@@ -4837,22 +4879,46 @@ fn certified_one_layer_scalar_literal_source(
         return false;
     }
     let mut found_literal = false;
-    for arg in args {
-        let crate::ast::CallArg::Value(value) = arg else {
-            continue;
-        };
+    let mut values = args.iter().filter_map(|argument| match argument {
+        crate::ast::CallArg::Value(value) => Some(value),
+        crate::ast::CallArg::Type(_) => None,
+    });
+    let mut current = values.next();
+    let mut siblings = Vec::new();
+    while let Some(value) = current {
         match value {
             crate::ast::Expr::Path { .. } | crate::ast::Expr::Unit { .. } => {}
             value if super::super::literal_check_parts(value).is_some() => found_literal = true,
+            crate::ast::Expr::Call { callee, args, .. } => {
+                let [
+                    crate::ast::CallArg::Type(_),
+                    crate::ast::CallArg::Type(_),
+                    crate::ast::CallArg::Value(left),
+                    crate::ast::CallArg::Value(right),
+                ] = args.as_slice()
+                else {
+                    return false;
+                };
+                let Ok(Some(direct)) = super::PreparedDirectCallee::path(callee, tcx) else {
+                    return false;
+                };
+                if !canonical_pair_certificate(&direct, tcx) {
+                    return false;
+                }
+                siblings.push(right);
+                current = Some(left);
+                continue;
+            }
             _ => return false,
         }
+        current = siblings.pop().or_else(|| values.next());
     }
     found_literal
 }
 
-fn certified_fresh_unresolved_direct_call_source<'a>(
-    child: &'a super::OrdinaryChildContinuation<'_>,
-) -> Option<&'a crate::ast::Expr<crate::ast::Lowered>> {
+fn certified_fresh_unresolved_direct_call_source<'m>(
+    child: &super::OrdinaryChildContinuation<'m>,
+) -> Option<&'m crate::ast::Expr<crate::ast::Lowered>> {
     if child.next_mode != super::frontier::FrontierMode::ExpectedOnly {
         return None;
     }
@@ -4869,12 +4935,7 @@ fn certified_fresh_unresolved_direct_call_source<'a>(
     {
         return None;
     }
-    Some(
-        selecting
-            .regular_ufcs
-            .as_ref()
-            .map_or(child.cursor.source, |(_, normalized)| normalized),
-    )
+    Some(child.cursor.source)
 }
 
 fn certified_fresh_path_unit_call(
@@ -4886,9 +4947,9 @@ fn certified_fresh_path_unit_call(
     })
 }
 
-fn certified_fresh_scalar_literal_call(
-    child: &super::OrdinaryChildContinuation<'_>,
-    tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
+fn certified_fresh_scalar_literal_call<'m>(
+    child: &super::OrdinaryChildContinuation<'m>,
+    tcx: &mut super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> bool {
     certified_fresh_unresolved_direct_call_source(child)
         .is_some_and(|source| certified_one_layer_scalar_literal_source(source, tcx))
@@ -4968,7 +5029,9 @@ fn certified_fresh_field_source(
                 path_receiver_field_access(child.cursor.source)
             }
             super::PlannedOrdinaryValue::Recursive(
-                super::OrdinaryRecursiveFamily::ComputedCall,
+                super::OrdinaryRecursiveFamily::ComputedCall
+                | super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
+                | super::OrdinaryRecursiveFamily::ComputedBeforeImmediate(_),
             ) => certified_computed_field_root(child.cursor.source),
             _ => false,
         }
@@ -5153,7 +5216,7 @@ fn reserve_observed_cursor_header<'m>(
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
     let span = cursor.source.span();
-    match &mut cursor.planned {
+    match cursor.planned.observed_mut() {
         super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::RecQuote)
         | super::PlannedOrdinaryValue::RecQuote(_) => {
             if matches!(projection, ObservedHeaderProjection::Application { .. }) {
@@ -5354,7 +5417,7 @@ fn install_observed_cursor_header<'m>(
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
     let span = cursor.source.span();
-    match &mut cursor.planned {
+    match cursor.planned.observed_mut() {
         super::PlannedOrdinaryValue::Call(call) => {
             install_observed_call_header(call, span, exports, frontier, tcx)
         }
@@ -5968,6 +6031,44 @@ pub(super) fn projected_call_header_result(
     frontier: &mut super::frontier::ConnectedCallFrontier<'_, '_>,
     tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
 ) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
+    let Some(mut result) = projected_current_call_header_result(call, source_span, frontier, tcx)?
+    else {
+        return Ok(None);
+    };
+    let open = match call {
+        super::OrdinaryCallContinuation::Advancing(advancing)
+        | super::OrdinaryCallContinuation::AdvancingLayer(super::AdvancingOrdinaryLayer {
+            advancing,
+            ..
+        }) => &advancing.call,
+        super::OrdinaryCallContinuation::Selecting(selecting) => &selecting.call,
+        super::OrdinaryCallContinuation::AwaitingExpected(completed)
+        | super::OrdinaryCallContinuation::AwaitingReturnedForall { completed, .. } => {
+            &completed.call
+        }
+        super::OrdinaryCallContinuation::Successor(_) => return Ok(Some(result)),
+    };
+    if let Some(stages) = &open.macro_stages {
+        let mut remaining = stages.remaining;
+        while !remaining.is_empty() {
+            let args = super::take_macro_stage(&mut remaining);
+            let Some(next) =
+                projected_written_type_tail(result, &args, source_span, frontier, tcx)?
+            else {
+                return Ok(None);
+            };
+            result = next;
+        }
+    }
+    Ok(Some(result))
+}
+
+fn projected_current_call_header_result(
+    call: &super::OrdinaryCallContinuation<'_>,
+    source_span: crate::span::Span,
+    frontier: &mut super::frontier::ConnectedCallFrontier<'_, '_>,
+    tcx: &super::TypeCtx<'_, '_, crate::ast::Lowered>,
+) -> Result<Option<crate::pass::typecheck_core::ScopedType>, crate::error::Error> {
     #[cfg(test)]
     PROJECTED_HEADER_OBSERVER_CALLS.with(|calls| calls.set(calls.get() + 1));
     match call {
@@ -5991,7 +6092,12 @@ pub(super) fn projected_call_header_result(
             let Some(result) = untouched_projected_selecting_result(selecting) else {
                 return Ok(None);
             };
-            if crate::pass::typecheck_core::type_contains_infer(result.as_type()) {
+            if crate::pass::typecheck_core::type_contains_infer(result.as_type())
+                || crate::pass::typecheck_core::contains_goal_beneath_forall(
+                    result.as_type(),
+                    false,
+                )
+            {
                 return Ok(None);
             }
             let result = frontier
@@ -7107,9 +7213,12 @@ fn prepare_projected_source_header<'m>(
                 continuation.cursor.planned,
                 super::PlannedOrdinaryValue::Literal
                     | super::PlannedOrdinaryValue::Call(_)
+                    | super::PlannedOrdinaryValue::UserMacro(_)
                     | super::PlannedOrdinaryValue::ComputedCall(_)
                     | super::PlannedOrdinaryValue::Recursive(
                         super::OrdinaryRecursiveFamily::ComputedCall
+                            | super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
+                            | super::OrdinaryRecursiveFamily::ComputedBeforeImmediate(_)
                     )
                     | super::PlannedOrdinaryValue::Field(_)
                     | super::PlannedOrdinaryValue::Recursive(super::OrdinaryRecursiveFamily::Field)
@@ -10669,11 +10778,367 @@ mod tests {
     use crate::pass::typecheck_full::{Elaborations, ResolvedBinder};
     use crate::pipeline::Pipeline;
 
+    #[test]
+    fn projected_unmarked_macro_headers_type_arguments_once_without_finishing_actions() {
+        for stages in [1, 4, 16] {
+            for computed in [false, true] {
+                let mut signature = "[T0] T0".to_owned();
+                let mut implementation =
+                    "ct: __Comptime__, _t0: __Type__, _value: __Checked_term__".to_owned();
+                let mut call = "staged(value())".to_owned();
+                for index in 1..=stages {
+                    let result = if index < stages {
+                        ".".to_owned()
+                    } else if computed {
+                        format!("T{index}")
+                    } else {
+                        "T0".to_owned()
+                    };
+                    signature.push_str(&format!(" -> [T{index}] {result}"));
+                    implementation.push_str(&format!(", _t{index}: __Type__"));
+                    call.push_str(if computed && index == stages {
+                        "[. -> .]"
+                    } else {
+                        "[.]"
+                    });
+                    if index < stages || computed {
+                        call.push_str("(())");
+                    }
+                }
+                let source = format!(
+                    "module p; import __comptime__; host fn value(); \
+                         pure fn implementation({implementation}) -> __Checked_term__ {{ \
+                         __macro_error__(ct, \"macro body entered\"[__Diagnostic_text__]) }} \
+                         macro staged : {signature} {{ impl implementation }} \
+                         fn witness() {{ {call} }}"
+                );
+                let package = fixture(&source, "p");
+                let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+                let scope =
+                    crate::pass::typecheck_core::PackageTypecheckScope::fresh_for_normalized_package(
+                        &normalized,
+                        Arc::new(crate::pass::typecheck_core::TypeInterner::default()),
+                    );
+                let package = normalized.package();
+                let module = &package.module("p").unwrap().module;
+                let env = crate::pass::typecheck_core::ModuleEnv::build_with_typecheck_scope(
+                    module,
+                    None,
+                    None,
+                    Some(package),
+                    scope,
+                )
+                .unwrap();
+                let source = &env.fn_defs["witness"].body;
+                let mut elaborations = Elaborations::new();
+                let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations);
+                let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
+                    source.span(),
+                    &tcx,
+                    |_store, _owner| Ok(()),
+                )
+                .unwrap();
+                let (reservation, ()) = root
+                    .reserve_root_child_with(
+                        crate::pass::typecheck_core::GoalOwnerKind::RetainedValue,
+                        source.span(),
+                        &tcx,
+                        |_store, _owner| Ok(()),
+                    )
+                    .unwrap();
+                let mut premise = root.open_reserved_child(reservation).unwrap();
+                let mut frontier = root.retained_value_frontier(&mut premise);
+                super::super::reset_public_header_work();
+                super::super::reset_ordinary_planning_work();
+                let mut continuation = super::super::OrdinaryValueCursor::begin_child(
+                    source,
+                    None,
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .unwrap();
+                let mut first_planning = None;
+                for mode in [
+                    super::super::frontier::FrontierMode::ExpectedOnly,
+                    super::super::frontier::FrontierMode::FinalPreflight,
+                ] {
+                    continuation =
+                        match super::super::OrdinaryValueCursor::advance_open_child_iterative(
+                            continuation,
+                            mode,
+                            super::super::OrdinaryCompletionDemand::PublicHeader,
+                            false,
+                            &mut frontier,
+                            &mut tcx,
+                        )
+                        .unwrap()
+                        {
+                            super::super::OpenOrdinaryChildAdvance::Pending(pending) => pending,
+                            super::super::OpenOrdinaryChildAdvance::Complete { .. } => {
+                                panic!("header-only preparation completed a macro action")
+                            }
+                        };
+                    assert_eq!(env.memo.user_macro_template_executions(), 0);
+                    assert_eq!(super::super::public_header_work().unmarked_publications, 0);
+                    let planning = super::super::ordinary_planning_work();
+                    assert_eq!(
+                        planning.open_goal_calls,
+                        stages + 2 + usize::from(computed),
+                        "one source call, each macro public stage, and the optional output application"
+                    );
+                    if let Some(first) = first_planning {
+                        assert_eq!(planning.open_goal_calls, first);
+                    } else {
+                        first_planning = Some(planning.open_goal_calls);
+                    }
+                    let mut child_frontier =
+                        frontier.ordinary_child_frontier(&mut continuation.child);
+                    let header = observed_cursor_header_result(
+                        &mut continuation.cursor,
+                        &mut child_frontier,
+                        &tcx,
+                    )
+                    .unwrap()
+                    .expect("ordinary argument typing determines the final macro header");
+                    let (store, _, delta, _) = child_frontier.parts_mut();
+                    let closed = store
+                        .try_zonk_goal_free(delta, header, &tcx)
+                        .unwrap()
+                        .unwrap();
+                    assert!(matches!(
+                        closed.ty().as_type(),
+                        crate::ast::Type::Unit { .. }
+                    ));
+                }
+                let completed = super::super::OrdinaryValueCursor::advance_child_for_test(
+                    continuation,
+                    super::super::frontier::FrontierMode::Final,
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .unwrap();
+                assert!(matches!(
+                    completed,
+                    super::super::OrdinaryChildAdvance::Complete(_)
+                ));
+                assert_eq!(super::super::public_header_work().unmarked_publications, 1);
+                assert_eq!(
+                    super::super::ordinary_planning_work().open_goal_calls,
+                    first_planning.unwrap(),
+                    "normal completion reuses the checked argument and public stages"
+                );
+                root.close_root_child(premise, Vec::new(), &tcx).unwrap();
+                root.close_root_with(Vec::new(), &mut tcx, |_, _| Ok(()))
+                    .unwrap();
+                drop(tcx);
+                let error =
+                    <crate::pass::typecheck_full::LoweredTyper as crate::pass::typecheck_core::Typer<
+                        Lowered,
+                    >>::discharge_module_deferrals(&env, &mut elaborations)
+                    .expect_err("ordinary completion must execute the retained erroring action");
+                assert!(error.diagnostic().message.contains("macro body entered"));
+                assert_eq!(env.memo.user_macro_template_executions(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn projected_macro_source_keeps_all_written_public_stages() {
+        let declarations = r#"module p;
+            import __comptime__;
+            host type N;
+            host type Marker;
+            host fn value() -> N;
+            pure fn producer_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: __Type__) -> __Checked_term__ { value }
+            macro producer : [S] S -> [T] S { impl producer_impl }
+            pure fn retain_impl(ct: __Comptime__, fills: __Fill_ctx__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
+                let result = __if_then_else__(__type_equal__(ct, __reflect_type__(ct)[N], __term_type__(ct, value)),
+                    .() -> __Checked_term__ { value },
+                    .() -> __Checked_term__ { __macro_error__(ct, "wrong reflected source type"[__Diagnostic_text__]) });
+                (result, fills)
+            }
+            macro retain : [A] A -> N { impl(fills) retain_impl }
+            fn ordinary[S](value: S)[T] -> S { value }
+        "#;
+        for body in [
+            "retain(producer(value())[Marker])",
+            "retain(producer[N](value())[Marker])",
+            "let source = producer(value())[Marker]; retain(source)",
+            "retain(ordinary(value())[Marker])",
+        ] {
+            let source = format!("{declarations} fn run() -> N {{ {body} }}");
+            let package = fixture(&source, "p");
+            crate::pass::typecheck_full::check_package_preserving_normalization(&package)
+                .unwrap_or_else(|error| panic!("check `{body}`: {error:?}"))
+                .complete()
+                .unwrap_or_else(|error| panic!("standalone Prime for `{body}`: {error:?}"));
+        }
+        let source = format!("{declarations} fn run() -> N {{ retain(producer[N](value())[_]) }}");
+        let package = fixture(&source, "p");
+        let error =
+            match crate::pass::typecheck_full::check_package_preserving_normalization(&package) {
+                Ok(_) => panic!("the unused required Target must not be invented"),
+                Err(error) => error.error,
+            };
+        assert!(matches!(error, crate::error::Error::Type(_)), "{error:?}");
+        assert!(
+            error
+                .diagnostic()
+                .message
+                .contains("cannot infer type argument"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn projected_macro_stage_observation_preserves_residuals_and_bounds_work() {
+        for stages in [1, 4, 16] {
+            for mode in [
+                "complete",
+                "partial",
+                "unit_residual",
+                "source_infer",
+                "target_infer",
+            ] {
+                let mut call = if mode == "source_infer" {
+                    "staged(())"
+                } else {
+                    "staged[.](())"
+                }
+                .to_owned();
+                for index in 1..=stages {
+                    if mode == "partial" && index == stages {
+                        break;
+                    }
+                    call.push_str(if mode == "target_infer" && index == stages {
+                        "[_]"
+                    } else {
+                        "[.]"
+                    });
+                    if index < stages && !(mode == "unit_residual" && index + 1 == stages) {
+                        call.push_str("(())");
+                    } else if mode == "unit_residual" && index + 1 == stages {
+                        // Keep the selected Unit-domain function unapplied.
+                        break;
+                    }
+                }
+                // The full public declaration is unchanged by a shorter written call.
+                let mut signature = "[T0] T0".to_owned();
+                let mut implementation =
+                    "ct: __Comptime__, _t0: __Type__, value: __Checked_term__".to_owned();
+                for index in 1..=stages {
+                    signature.push_str(&format!(
+                        " -> [T{index}] {}",
+                        if index < stages { "." } else { "T0" }
+                    ));
+                    implementation.push_str(&format!(", _t{index}: __Type__"));
+                }
+                let result_type = match mode {
+                    "partial" => format!("[T{stages}] ."),
+                    "unit_residual" if stages > 1 => format!(". -> [T{stages}] ."),
+                    _ => ".".to_owned(),
+                };
+                let source = format!(
+                    "module p; import __comptime__; pure fn implementation({implementation}) -> __Checked_term__ {{ value }} macro staged : {signature} {{ impl implementation }} fn witness() -> ({result_type}) {{ {call} }}"
+                );
+                let package = fixture(&source, "p");
+                let module = &package.module("p").unwrap().module;
+                let env = crate::pass::typecheck_core::ModuleEnv::build(
+                    module,
+                    None,
+                    None,
+                    Some(&package),
+                )
+                .unwrap();
+                let source = &env.fn_defs["witness"].body;
+                let span = source.span();
+                let mut elaborations = Elaborations::new();
+                let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations);
+                let (mut root, ()) = super::super::frontier::OrdinaryFrontier::begin_root_with(
+                    span,
+                    &tcx,
+                    |_store, _owner| Ok(()),
+                )
+                .unwrap();
+                let (reservation, ()) = root
+                    .reserve_root_child_with(
+                        crate::pass::typecheck_core::GoalOwnerKind::RetainedValue,
+                        span,
+                        &tcx,
+                        |_store, _owner| Ok(()),
+                    )
+                    .unwrap();
+                let mut child = root.open_reserved_child(reservation).unwrap();
+                let mut frontier = root.retained_value_frontier(&mut child);
+                let mut continuation = super::super::OrdinaryValueCursor::begin_child(
+                    source,
+                    None,
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .unwrap();
+                let super::super::PlannedOrdinaryValue::UserMacro(macro_call) =
+                    &continuation.cursor.planned
+                else {
+                    panic!("a direct staged macro retains its public call")
+                };
+                let super::super::PlannedUserMacroCallState::Advancing(call) = &macro_call.state
+                else {
+                    panic!("a fresh late macro retains its selector")
+                };
+                PROJECTED_HEADER_OBSERVER_CALLS.with(|calls| calls.set(0));
+                PROJECTED_PUBLIC_FORALL_BATCH_CALLS.with(|calls| calls.set(0));
+                let mut child_frontier = frontier.ordinary_child_frontier(&mut continuation.child);
+                let result =
+                    projected_call_header_result(call, span, &mut child_frontier, &tcx).unwrap();
+                assert_eq!(
+                    PROJECTED_HEADER_OBSERVER_CALLS.with(std::cell::Cell::get),
+                    1
+                );
+                let batches = PROJECTED_PUBLIC_FORALL_BATCH_CALLS.with(std::cell::Cell::get);
+                assert!(
+                    batches <= stages,
+                    "projection is bounded by written public stages"
+                );
+                match mode {
+                    "source_infer" | "target_infer" => assert!(
+                        result.is_none(),
+                        "unknown headers defer to ordinary inference"
+                    ),
+                    "complete" => {
+                        assert!(matches!(
+                            result.unwrap().ty().as_type(),
+                            crate::ast::Type::Unit { .. }
+                        ));
+                        assert_eq!(batches, stages, "one projection batch per remaining group");
+                    }
+                    "partial" => assert!(matches!(
+                        result.unwrap().ty().as_type(),
+                        crate::ast::Type::Forall { .. }
+                    )),
+                    "unit_residual" if stages > 1 => assert!(matches!(
+                        result.unwrap().ty().as_type(),
+                        crate::ast::Type::Function { .. }
+                    )),
+                    "unit_residual" => assert!(matches!(
+                        result.unwrap().ty().as_type(),
+                        crate::ast::Type::Unit { .. }
+                    )),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
     #[cfg(target_pointer_width = "64")]
     #[test]
     fn boxed_fills_state_and_scheduler_payload_layouts_stay_exact() {
         assert_eq!(std::mem::size_of::<MarkedProjection<'_>>(), 440);
-        assert_eq!(std::mem::size_of::<MarkedCallState<'_>>(), 1264);
+        assert_eq!(
+            std::mem::size_of::<MarkedCallState<'_>>(),
+            1264 + std::mem::size_of::<&[crate::ast::CallStage<Lowered>]>()
+                + std::mem::size_of::<crate::span::Span>()
+        );
         assert_eq!(std::mem::size_of::<FillProducerRequest>(), 128);
         assert_eq!(std::mem::size_of::<FillAdoptionAdvance>(), 128);
     }
@@ -12622,7 +13087,7 @@ mod tests {
                 "consumer.kio",
                 "module consumer; \
                  import dep/core as dep; \
-                 fn witness() -> dep.Box(.) -> dep.Box(.) { .(boxed: dep.Box(.)) { boxed } }",
+                 fn witness() -> dep.Box[.] -> dep.Box[.] { .(boxed: dep.Box[.]) { boxed } }",
             ),
         ]
         .into_iter()
@@ -14019,7 +14484,7 @@ mod tests {
         let package = fixture(
             "module projected_literal_header; \
              host type String role(str); \
-             fn witness() -> String { \"ignored\"(String) }",
+             fn witness() -> String { \"ignored\"[String] }",
             "projected_literal_header",
         );
         let module = &package
@@ -14131,7 +14596,7 @@ mod tests {
              host type String role(str); \
              fn identity[A](value: A) -> A { value } \
              host fn fixed[A](value: A) -> String; \
-             host fn phantom[A, B](value: A) -> B; \
+             host fn phantom[A][B](value: A) -> B; \
              fn completed(value: String) -> String { identity(value) } \
              fn producer_free_open(value: String) -> String { phantom(value) } \
              fn closed(value: String) -> String { fixed(value) }",
@@ -14210,7 +14675,6 @@ mod tests {
                 panic!("the projected Path call must start in Selecting")
             };
             assert!(selecting.direct.is_some());
-            assert!(selecting.regular_ufcs.is_none());
             let raw_result = untouched_projected_selecting_result(selecting)
                 .expect("the projected Path call must start untouched");
             if expected_certified {
@@ -14368,10 +14832,10 @@ mod tests {
              fn path_receiver_last(value: String, known: String) -> String { value.>>same(known) } \
              fn path_argument_first(value: String, known: String) -> String { same(known).<<value } \
              fn path_argument_last(value: String, known: String) -> String { same(known).<value } \
-             fn scalar_receiver_first(known: String) -> String { \"value\"(String).>same(known) } \
-             fn scalar_receiver_last(known: String) -> String { \"value\"(String).>>same(known) } \
-             fn scalar_argument_first(known: String) -> String { same(known).<<\"value\"(String) } \
-             fn scalar_argument_last(known: String) -> String { same(known).<\"value\"(String) }",
+             fn scalar_receiver_first(known: String) -> String { \"value\"[String].>same(known) } \
+             fn scalar_receiver_last(known: String) -> String { \"value\"[String].>>same(known) } \
+             fn scalar_argument_first(known: String) -> String { same(known).<<\"value\"[String] } \
+             fn scalar_argument_last(known: String) -> String { same(known).<\"value\"[String] }",
             "projected_regular_ufcs_header",
         );
         let module = &package
@@ -14401,13 +14865,7 @@ mod tests {
                 })
                 .unwrap_or_else(|| panic!("projected regular UFCS `{name}` witness"));
             let source = &witness.body;
-            assert!(matches!(
-                source,
-                crate::ast::Expr::Ufcs {
-                    macro_call: None,
-                    ..
-                }
-            ));
+            assert!(matches!(source, crate::ast::Expr::Call { .. }));
             let mut elaborations = Elaborations::new();
             let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations).at_item(item_index);
             for parameter in witness.sig.value_params() {
@@ -14455,18 +14913,41 @@ mod tests {
                 panic!("a regular UFCS source must start in Selecting")
             };
             assert!(selecting.direct.is_some());
-            assert!(selecting.regular_ufcs.is_some());
+            assert!(matches!(
+                continuation.cursor.source,
+                crate::ast::Expr::Call { .. }
+            ));
             let normalized = certified_fresh_unresolved_direct_call_source(&continuation)
                 .expect("a fresh regular UFCS call must retain its normalized prefix source");
             let crate::ast::Expr::Call { args, .. } = normalized else {
                 panic!("a normalized regular UFCS must be a prefix call")
             };
+            let [crate::ast::CallArg::Value(packet)] = args.as_slice() else {
+                panic!("a normalized regular UFCS must retain one product packet")
+            };
+            let crate::ast::Expr::Call {
+                callee: pair_callee,
+                args: pair_args,
+                ..
+            } = packet
+            else {
+                panic!("a normalized regular UFCS packet must retain its canonical pair call")
+            };
+            assert!(matches!(
+                pair_callee.as_ref(),
+                crate::ast::Expr::Path { segments, .. }
+                    if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__")
+            ));
             let [
+                crate::ast::CallArg::Type(crate::ast::Type::Infer { .. }),
+                crate::ast::CallArg::Type(crate::ast::Type::Infer { .. }),
                 crate::ast::CallArg::Value(first),
                 crate::ast::CallArg::Value(second),
-            ] = args.as_slice()
+            ] = pair_args.as_slice()
             else {
-                panic!("a normalized regular UFCS must retain two value candidates")
+                panic!(
+                    "a normalized regular UFCS pair must retain two inferred types and two values"
+                )
             };
             let is_value_path = |value: &crate::ast::Expr<crate::ast::Lowered>| {
                 matches!(
@@ -14502,13 +14983,13 @@ mod tests {
                 "unexpected normalized Path/Unit classification for `{name}`"
             );
             assert_eq!(
-                certified_one_layer_scalar_literal_source(normalized, &tcx),
+                certified_one_layer_scalar_literal_source(normalized, &mut tcx),
                 scalar,
                 "unexpected normalized scalar classification for `{name}`"
             );
             assert_eq!(certified_fresh_path_unit_call(&continuation, &tcx), !scalar);
             assert_eq!(
-                certified_fresh_scalar_literal_call(&continuation, &tcx),
+                certified_fresh_scalar_literal_call(&continuation, &mut tcx),
                 scalar
             );
 
@@ -14574,16 +15055,16 @@ mod tests {
              type Drop[A] = .; \
              host fn identity[A](value: A) -> A; \
              host fn fixed[A](value: A) -> String; \
-             host fn lift[*F][A](value: F(A)) -> A; \
-             host fn dropped[A](value: Drop(A)) -> A; \
+             host fn lift[*F][A](value: F[A]) -> A; \
+             host fn dropped[A](value: Drop[A]) -> A; \
              fn closed(value: String) -> String { value.>fixed } \
              fn chained(value: String) -> String { value.>identity.>identity } \
              fn nested(value: String) -> String { identity(value.>identity) } \
-             fn hkt(value: Box(String)) -> String { value.>lift(Box, _) } \
+             fn hkt(value: Box[String]) -> String { value.>lift[Box][_] } \
              fn erased() -> . { ().>dropped } \
-             fn ambient_rec_order(value: Box(String)) -> String { value.>lift(Box, _) } \
-             fn dependent_rec_order(value: Box(String)) -> String { pending.>lift(Box, _) } \
-             fn rec_order(value: Box(String)) -> String { value.>lift(Box, _) }",
+             fn ambient_rec_order(value: Box[String]) -> String { value.>lift[Box][_] } \
+             fn dependent_rec_order(value: Box[String]) -> String { pending.>lift[Box][_] } \
+             fn rec_order(value: Box[String]) -> String { value.>lift[Box][_] }",
             "projected_regular_ufcs_controls",
         );
         let module = &package
@@ -14593,14 +15074,25 @@ mod tests {
         let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
             .expect("projected regular UFCS controls environment");
         let pending_source = match &env.fn_defs["hkt"].body {
-            crate::ast::Expr::Ufcs { receiver, .. } => receiver.as_ref(),
-            _ => panic!("the HKT control must retain its UFCS receiver"),
+            crate::ast::Expr::Call { args, .. } => args
+                .iter()
+                .find_map(|arg| match arg {
+                    crate::ast::CallArg::Value(value) => Some(value),
+                    crate::ast::CallArg::Type(_) => None,
+                })
+                .expect("the projected HKT control must retain its UFCS receiver"),
+            _ => panic!("the projected HKT control must be an ordinary call"),
         };
+        assert!(matches!(
+            pending_source,
+            crate::ast::Expr::Path { segments, .. }
+                if segments.last().is_some_and(|segment| segment.name == "value")
+        ));
 
         for (name, certified, closes_public) in [
             ("closed", false, false),
-            ("chained", false, false),
-            ("nested", false, false),
+            ("chained", true, true),
+            ("nested", true, true),
             ("hkt", true, true),
             ("erased", true, false),
             ("ambient_rec_order", true, true),
@@ -14681,7 +15173,7 @@ mod tests {
                 "unexpected Path/Unit certificate result for `{name}`"
             );
             assert!(
-                !certified_fresh_scalar_literal_call(&continuation, &tcx),
+                !certified_fresh_scalar_literal_call(&continuation, &mut tcx),
                 "`{name}` unexpectedly entered the scalar UFCS family"
             );
 
@@ -14738,6 +15230,50 @@ mod tests {
     }
 
     #[test]
+    fn scalar_packet_certificate_keeps_ordinary_product_helpers_opaque() {
+        let package = fixture(
+            r#"module scalar_packets;
+                host type String role(str);
+                host fn identity[A](value: A) -> A;
+                host fn opaque[A][B](left: A, right: B) -> A & B;
+                fn good(value: String) -> String & String {
+                    identity(("left"[String], value))
+                }
+                fn bad(value: String) -> String & String {
+                    identity(opaque[String][String]("left"[String], value))
+                }"#,
+            "scalar_packets",
+        );
+        let module = &package.module("scalar_packets").expect("module").module;
+        let env = crate::pass::typecheck_core::ModuleEnv::build(module, None, None, Some(&package))
+            .expect("environment");
+        for (index, item) in module.items.iter().enumerate() {
+            let crate::ast::Item::FnDef(def) = item else {
+                continue;
+            };
+            let mut elaborations = Elaborations::new();
+            let mut tcx = super::super::TypeCtx::new(&env, &mut elaborations).at_item(index);
+            for parameter in def.sig.value_params() {
+                tcx.push_value(
+                    parameter.name.clone(),
+                    parameter.ty.clone().expect("annotation"),
+                );
+            }
+            assert_eq!(
+                certified_one_layer_scalar_literal_source(&def.body, &mut tcx),
+                def.name == "good",
+                "{}",
+                def.name
+            );
+            assert_eq!(
+                tcx.elaborations.type_resolution_count(),
+                0,
+                "the source certificate does not publish inferred facts"
+            );
+        }
+    }
+
+    #[test]
     fn projected_scalar_call_closes_only_when_selected_arguments_solve_result() {
         let package = fixture(
             "module projected_scalar_call_header; \
@@ -14747,21 +15283,21 @@ mod tests {
              type Keep[A][B] = A; \
              type F[A] = .; \
              host fn identity[A](value: A) -> A; \
-             host fn boxed[A](value: A) -> Box(A); \
-             host fn alias_boxed[A](value: Identity(A)) -> Box(A); \
-             host fn phantom[A, B](value: A) -> B; \
-             host fn applied[*F][A](value: F(A)) -> A; \
-             host fn dropped[A][B](value: Keep(Box(A), B)) -> B; \
-             host fn shadowed[*F][A][B](value: A) -> F(B); \
-             host fn mixed[A](literal: A, known: A) -> Box(A); \
-             fn identity_case() -> String { identity(\"value\"(String)) } \
-             fn boxed_case() -> Box(String) { boxed(\"value\"(String)) } \
-             fn alias_case() -> Box(String) { alias_boxed(\"value\"(String)) } \
-             fn shadowed_case[*F]() -> . { shadowed(F, \"value\"(String)) } \
-             fn phantom_case() -> . { phantom(\"value\"(String)) } \
-             fn applied_case() -> . { applied(\"value\"(String)) } \
-             fn dropped_case() -> . { dropped(\"value\"(String)) } \
-             fn mixed_case(value: String) -> Box(String) { mixed(\"value\"(String), value) }",
+             host fn boxed[A](value: A) -> Box[A]; \
+             host fn alias_boxed[A](value: Identity[A]) -> Box[A]; \
+             host fn phantom[A][B](value: A) -> B; \
+             host fn applied[*F][A](value: F[A]) -> A; \
+             host fn dropped[A][B](value: Keep[Box[A]][B]) -> B; \
+             host fn shadowed[*F][A][B](value: A) -> F[B]; \
+             host fn mixed[A](literal: A, known: A) -> Box[A]; \
+             fn identity_case() -> String { identity(\"value\"[String]) } \
+             fn boxed_case() -> Box[String] { boxed(\"value\"[String]) } \
+             fn alias_case() -> Box[String] { alias_boxed(\"value\"[String]) } \
+             fn shadowed_case[*F]() -> . { shadowed[F](\"value\"[String]) } \
+             fn phantom_case() -> . { phantom(\"value\"[String]) } \
+             fn applied_case() -> . { applied(\"value\"[String]) } \
+             fn dropped_case() -> . { dropped(\"value\"[String]) } \
+             fn mixed_case(value: String) -> Box[String] { mixed(\"value\"[String], value) }",
             "projected_scalar_call_header",
         );
         let module = &package
@@ -14833,16 +15369,22 @@ mod tests {
                 &mut tcx,
             )
             .unwrap_or_else(|error| panic!("plan projected scalar call `{name}`: {error:?}"));
-            assert!(certified_one_layer_scalar_literal_source(source, &tcx));
-            assert!(certified_fresh_scalar_literal_call(&continuation, &tcx));
+            assert!(
+                certified_one_layer_scalar_literal_source(source, &mut tcx),
+                "unexpected one-layer scalar source for `{name}`"
+            );
+            assert!(
+                certified_fresh_scalar_literal_call(&continuation, &mut tcx),
+                "unexpected fresh scalar call for `{name}`"
+            );
             let staged = match stage_projected_source_operand(continuation, &mut frontier, &mut tcx)
             {
                 Ok(staged) => staged,
                 Err(error) => {
                     let expected = match name {
-                        "applied_case" => "type mismatch: expected `F(A)`, found `String`",
+                        "applied_case" => "type mismatch: expected `F[A]`, found `String`",
                         "dropped_case" => {
-                            "type mismatch: expected `Keep(Box(A), B)`, found `String`"
+                            "type mismatch: expected `Keep[Box[A]][B]`, found `String`"
                         }
                         _ => panic!("scalar header `{name}` unexpectedly failed: {error:?}"),
                     };
@@ -14887,8 +15429,8 @@ mod tests {
              fn empty_value() -> . { make() } \
              fn open_nested_value() -> . { identity(make()) } \
              fn lambda_value() -> . -> . { identity(.(value: .) -> . { value }) } \
-             fn type_only_value() -> [A] A { identity(_) } \
-             fn concrete_type_only_value() -> . -> . { identity(.) }",
+             fn type_only_value() -> [A] A { identity[_] } \
+             fn concrete_type_only_value() -> . -> . { identity[.] }",
             "projected_path_unit_call_controls",
         );
         let module = &package
@@ -15149,11 +15691,10 @@ mod tests {
             meta: meta(),
         };
         let macro_call = Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             form: crate::ast::UserMacroCallForm::Ordinary,
             name: "user".to_owned(),
-            args: Vec::new(),
+            stages: Vec::new(),
             meta: meta(),
             ext: crate::ast::NodeId(13),
         };
@@ -15231,25 +15772,25 @@ mod tests {
              pub labels { unit_in[P]: P }; \
              pub labels { identity: [A] A -> A }; \
              type Surface[P] = \
-               Lookup(P) & Inject(P) & Apply(P) & Unit_in(P) & Identity; \
-             fn known() -> String { \"known\"(String) } \
+               Lookup[P] & Inject[P] & Apply[P] & Unit_in[P] & Identity; \
+             fn known() -> String { \"known\"[String] } \
              fn identity[A](value: A) -> A { value } \
-             fn projection[P](surface: Surface(P)) -> P { surface.?{unit_in} } \
-             fn nonpath[P](surface: Surface(P)) -> P { identity(surface).?{unit_in} } \
-             fn simple[P](surface: Surface(P), name: String) -> P | . { \
+             fn projection[P](surface: Surface[P]) -> P { surface.?{unit_in} } \
+             fn nonpath[P](surface: Surface[P]) -> P { identity(surface).?{unit_in} } \
+             fn simple[P](surface: Surface[P], name: String) -> P | . { \
                surface.?{lookup}(name) \
              } \
-             fn direct[P](surface: Surface(P)) -> P | . { \
+             fn direct[P](surface: Surface[P]) -> P | . { \
                surface.?{lookup}(known()) \
              } \
-             fn nested[P](surface: Surface(P), value: P, name: String) -> P | . { \
+             fn nested[P](surface: Surface[P], value: P, name: String) -> P | . { \
                surface.?{apply}((value, surface.?{inject}(name))) \
              } \
-             fn bare[P](surface: Surface(P), value: P) -> P | . { \
+             fn bare[P](surface: Surface[P], value: P) -> P | . { \
                surface.?{apply}((value, surface.?{unit_in})) \
              } \
-             fn scalar[P](surface: Surface(P)) -> String { \
-               surface.?{identity}(\"value\"(String)) \
+             fn scalar[P](surface: Surface[P]) -> String { \
+               surface.?{identity}(\"value\"[String]) \
              }",
             "projected_computed_field_header",
         );
@@ -15333,7 +15874,7 @@ mod tests {
             assert!(matches!(
                 &continuation.cursor.planned,
                 super::super::PlannedOrdinaryValue::Recursive(
-                    super::super::OrdinaryRecursiveFamily::ComputedCall
+                    super::super::OrdinaryRecursiveFamily::ComputedWithoutImmediate
                         | super::super::OrdinaryRecursiveFamily::Field
                 )
             ));
@@ -15484,7 +16025,7 @@ mod tests {
         let package = fixture(
             "module projected_nested_path_call; \
              host type String role(str); \
-             host fn phantom[A, B](value: A) -> B; \
+             host fn phantom[A][B](value: A) -> B; \
              fn witness(value: String) -> . & . { (value.>phantom, ()) }",
             "projected_nested_path_call",
         );
@@ -15593,7 +16134,7 @@ mod tests {
             "module projected_nested_scalar_call; \
              host type String role(str); \
              host fn identity[A](value: A) -> A; \
-             fn witness() -> . & . { (\"value\"(String).>identity, ()) }",
+             fn witness() -> . & . { (\"value\"[String].>identity, ()) }",
             "projected_nested_scalar_call",
         );
         let module = &package
@@ -15649,7 +16190,7 @@ mod tests {
             super::super::frontier::FrontierMode::ExpectedOnly
         );
         assert!(
-            certified_fresh_scalar_literal_call(continuation, &tcx),
+            certified_fresh_scalar_literal_call(continuation, &mut tcx),
             "the nested scalar call must be a genuine fast-path counterfactual"
         );
 

@@ -399,6 +399,11 @@ impl<'a> Recoverer<'a> {
                 ext: _,
             } => {
                 if let Some(name) = single_segment_callee(callee) {
+                    if let Some(recovered) =
+                        self.recover_opaque_intrinsic_packet(name, args, e.span())
+                    {
+                        return recovered;
+                    }
                     let recovered = match name {
                         "__pair__" => self.recover_mk_pair(e),
                         "__fst__" | "__snd__" => self.recover_projection(e),
@@ -581,6 +586,123 @@ impl<'a> Recoverer<'a> {
             | Expr::LowHostFnValueRef { ext, .. }
             | Expr::LowModuleFnValueRef { ext, .. } => match *ext {},
         }
+    }
+
+    /// An opaque packet is evaluated before dispatch. Its projections read
+    /// one binding, so neither a packet factory nor a handler factory moves
+    /// into the selected branch or runs more than once.
+    fn recover_opaque_intrinsic_packet(
+        &mut self,
+        intrinsic: &str,
+        args: &[CallArg<Prime>],
+        span: Span,
+    ) -> Option<Expr<Enriched>> {
+        let (type_arity, value_arity) = intrinsic_arity(intrinsic)?;
+        if value_arity == 1
+            || args.len() != type_arity + 1
+            || !args[..type_arity]
+                .iter()
+                .all(|arg| matches!(arg, CallArg::Type(_)))
+            || classify_intrinsic(intrinsic, args).is_some()
+        {
+            return None;
+        }
+        let CallArg::Value(packet) = &args[type_arity] else {
+            return None;
+        };
+        if intrinsic == "__pair__" {
+            return Some(self.recover_expr(packet));
+        }
+        let ty = |index| convert_type::<Prime, Enriched>(type_arg_type(&args[index]).as_ref());
+        let (first_ty, left_ty, right_ty, result_ty) = match intrinsic {
+            "__either__" => {
+                let left = ty(0);
+                let right = ty(1);
+                let result = ty(2);
+                (
+                    Type::Sum {
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                        meta: Meta::new(span),
+                    },
+                    Type::synth_function(vec![left], result.clone(), span),
+                    Type::synth_function(vec![right], result.clone(), span),
+                    result,
+                )
+            }
+            "__if_then_else__" => {
+                let result = ty(1);
+                let thunk = Type::synth_function(
+                    vec![Type::Unit {
+                        meta: Meta::new(span),
+                    }],
+                    result.clone(),
+                    span,
+                );
+                (ty(0), thunk.clone(), thunk, result)
+            }
+            _ => return None,
+        };
+        let packet_ty =
+            crate::ast::build_product_right_fold(vec![first_ty.clone(), left_ty, right_ty], span);
+        let name = self.fresh_name();
+        let value = self.recover_expr(packet);
+        let project = |index| Expr::EnrichedProject {
+            occurrence: Default::default(),
+            target: Box::new(enriched_local_path(&name, span)),
+            index,
+            arity: 3,
+            target_ty: packet_ty.clone(),
+            meta: Meta::new(span),
+            ext: (),
+        };
+        let call = |callee, args| Expr::Call {
+            source_trivia: Default::default(),
+            occurrence: Default::default(),
+            diagnostic: Default::default(),
+            callee: Box::new(callee),
+            args,
+            meta: Meta::new(span),
+            ext: (),
+        };
+        let body = if intrinsic == "__if_then_else__" {
+            Expr::EnrichedConditional {
+                occurrence: Default::default(),
+                cond: Box::new(project(0)),
+                then_branch: Box::new(call(project(1), Vec::new())),
+                else_branch: Box::new(call(project(2), Vec::new())),
+                result_ty,
+                meta: Meta::new(span),
+                ext: (),
+            }
+        } else {
+            let arms = (1..=2)
+                .map(|index| {
+                    let param = self.fresh_name();
+                    EnrichedArm {
+                        body: call(
+                            project(index),
+                            vec![CallArg::Value(enriched_local_path(&param, span))],
+                        ),
+                        param,
+                        meta: Meta::new(span),
+                    }
+                })
+                .collect();
+            Expr::EnrichedMatch {
+                occurrence: Default::default(),
+                scrutinee: Box::new(project(0)),
+                arms,
+                scrutinee_ty: first_ty,
+                result_ty,
+                meta: Meta::new(span),
+                ext: (),
+            }
+        };
+        Some(wrap_staged_values(
+            vec![StagedValue { name, span, value }],
+            body,
+        ))
     }
 
     // ---- pattern: product construction ------------------------------
@@ -1722,78 +1844,82 @@ fn intrinsic_arity(name: &str) -> Option<(usize, usize)> {
     })
 }
 
-/// An intrinsic call's argument list split into its leading
-/// type-arg slots and trailing value-arg slots. See
-/// [`classify_intrinsic`].
+/// Validated intrinsic type arguments and its public product components.
 struct IntrinsicCall<'a> {
-    /// The leading type-arg slots — empty when the call is in the
-    /// fully-inferred shape (every `[type-param]` elided).
     type_part: &'a [CallArg<Prime>],
-    /// The trailing value-arg slots; guaranteed all `CallArg::Value`.
-    value_part: &'a [CallArg<Prime>],
+    value_part: [Option<&'a Expr<Prime>>; 3],
 }
 
-/// Classify an intrinsic call's argument list into its type-arg and
-/// value-arg parts, exactly the way `backends::js::emit::emit_intrinsic_call`
-/// does. An intrinsic call carries either every type-arg slot
-/// (`args.len() == type_arity + value_arity`) or none of them
-/// (`args.len() == value_arity`, the fully-inferred shape); any
-/// other count is not a shape this pass recovers.
 fn classify_intrinsic<'a>(name: &str, args: &'a [CallArg<Prime>]) -> Option<IntrinsicCall<'a>> {
     let (type_arity, value_arity) = intrinsic_arity(name)?;
-    let skip = if args.len() == type_arity + value_arity {
-        type_arity
-    } else if args.len() == value_arity {
-        0
-    } else {
+    let type_count = args
+        .iter()
+        .take_while(|arg| matches!(arg, CallArg::Type(_)))
+        .count();
+    if type_count != 0 && type_count != type_arity {
         return None;
-    };
-    let (type_part, value_part) = args.split_at(skip);
-    if value_part.iter().all(|a| matches!(a, CallArg::Value(_))) {
-        Some(IntrinsicCall {
-            type_part,
-            value_part,
-        })
-    } else {
-        None
     }
+    let (type_part, value_args) = args.split_at(type_count);
+    let value_part = if let [CallArg::Value(packet)] = value_args {
+        let mut values = [None; 3];
+        let mut tail = packet;
+        for slot in values.iter_mut().take(value_arity - 1) {
+            let (first, rest) = intrinsic_pair_components(tail)?;
+            *slot = Some(first);
+            tail = rest;
+        }
+        values[value_arity - 1] = Some(tail);
+        values
+    } else {
+        if value_args.len() != value_arity {
+            return None;
+        }
+        let mut values = [None; 3];
+        for (slot, arg) in values.iter_mut().zip(value_args) {
+            let CallArg::Value(value) = arg else {
+                return None;
+            };
+            *slot = Some(value);
+        }
+        values
+    };
+    Some(IntrinsicCall {
+        type_part,
+        value_part,
+    })
 }
 
-/// The type at a type-argument slot of a Prime intrinsic call.
-///
-/// Backend-facing Prime has passed standalone checking, whose bake rewrites
-/// every accepted type slot to `CallArg::Type`. A direct caller can construct a
-/// Prime-shaped value without that validation provenance; the `CallArg::Value`
-/// arm covers such a value-shaped type argument when it satisfies the typer's
-/// interpretation rule. It delegates to
-/// [`crate::pass::typecheck_core::expr_to_type_arg`] rather than defining a
-/// second rule.
-fn type_arg_type(arg: &CallArg<Prime>) -> Cow<'_, Type<Prime>> {
-    match arg {
-        CallArg::Type(t) => Cow::Borrowed(t),
-        CallArg::Value(e) => {
-            let ty = crate::pass::typecheck_core::expr_to_type_arg(e).unwrap_or_else(|_| {
-                unreachable!(
-                    "structural recovery: a value-shaped type-arg slot of a \
-                 typechecked intrinsic call failed to reinterpret as a type. \
-                 The typer reinterprets and validates every type-arg via \
-                 `expr_to_type_arg` before recovery runs — if this fires, an \
-                 upstream pass changed the call's argument shape after typecheck."
-                )
-            });
-            Cow::Owned(ty)
+/// Read only the pair boundary being consumed. A product inside either
+/// component remains a whole component, even when its type is generic.
+fn intrinsic_pair_components(mut packet: &Expr<Prime>) -> Option<(&Expr<Prime>, &Expr<Prime>)> {
+    loop {
+        if single_segment_callee(call_callee(packet)?)? != "__pair__" {
+            return None;
+        }
+        match call_args(packet)? {
+            [
+                CallArg::Type(_),
+                CallArg::Type(_),
+                CallArg::Value(first),
+                CallArg::Value(rest),
+            ] => {
+                return Some((first, rest));
+            }
+            [CallArg::Type(_), CallArg::Type(_), CallArg::Value(inner)] => packet = inner,
+            _ => return None,
         }
     }
 }
 
-/// The expression at value-arg index `i` of a classified intrinsic's
-/// `value_part`. `classify_intrinsic` guarantees every slot there is
-/// a `CallArg::Value`.
-fn value_arg(value_part: &[CallArg<Prime>], i: usize) -> Option<&Expr<Prime>> {
-    match value_part.get(i)? {
-        CallArg::Value(v) => Some(v),
-        CallArg::Type(_) => None,
+fn type_arg_type(arg: &CallArg<Prime>) -> Cow<'_, Type<Prime>> {
+    match arg {
+        CallArg::Type(t) => Cow::Borrowed(t),
+        CallArg::Value(_) => unreachable!("a checked intrinsic type slot contains a value operand"),
     }
+}
+
+fn value_arg(value_part: [Option<&Expr<Prime>>; 3], i: usize) -> Option<&Expr<Prime>> {
+    value_part.get(i).copied().flatten()
 }
 
 /// A literal `.(p) { body }` — exactly one value parameter, no type
@@ -2392,10 +2518,10 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              fn pick[A][B][C](s: (A | (B | C))) -> . { \
-               __either__(A, B | C, ., s, \
+               __either__[A][ B | C][ .]( s, \
                  .(_x: A) { () }, \
                  .(rest: B | C) { \
-                   __either__(B, C, ., rest, .(_y: B) { () }, .(_z: C) { () }) \
+                   __either__[B][ C][ .]( rest, .(_y: B) { () }, .(_z: C) { () }) \
                  }) \
              }",
             None,
@@ -2434,7 +2560,7 @@ mod tests {
                 &format!(
                     "module x/main; import __intrinsics__; \
                      pub fn pick[{name}](value: {name} | {name}) -> {name} {{ \
-                       __either__({name}, {name}, {name}, value, \
+                       __either__[{name}][{name}][{name}](value, \
                          .(left: {name}) {{ left }}, .(right: {name}) {{ right }}) \
                      }}"
                 ),
@@ -2474,7 +2600,7 @@ mod tests {
         ];
         let recovered = spellings.map(|(source, canonical)| {
             let parsed = parse(&format!(
-                "module x; host type Number role(f64); fn f() -> Number {{ {source}(Number) }}"
+                "module x; host type Number role(f64); fn f() -> Number {{ {source}[Number] }}"
             ))
             .expect("parse Prime source");
             let module = crate::prime::lower::lower_module(parsed).expect("Prime syntax");
@@ -2508,10 +2634,10 @@ mod tests {
 
     #[test]
     fn recovery_temporary_names_belong_to_the_named_function() {
-        let subject = "fn target(p: . & . & .) -> . & . { __snd__(., . & ., p) }";
+        let subject = "fn target(p: . & . & .) -> . & . { __snd__[.][. & .](p) }";
         let shapes = [
             "",
-            "fn unrelated(p: . & . & .) -> . & . { __snd__(., . & ., p) }",
+            "fn unrelated(p: . & . & .) -> . & . { __snd__[.][. & .](p) }",
         ]
         .map(|prefix| {
             let module = recover_one(
@@ -2568,10 +2694,10 @@ mod tests {
              host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool) -> . { \
-               __if_then_else__(Bool, ., c, factory(), factory()) \
+               __if_then_else__[Bool][ .]( c, factory(), factory()) \
              } \
              fn either(s: . | .) -> . { \
-               __either__(., ., ., s, factory(), factory()) \
+               __either__[.][ .][ .]( s, factory(), factory()) \
              }",
             None,
         );
@@ -2598,10 +2724,10 @@ mod tests {
              host fn callback() -> .; \
              pure fn factory(f: . -> .) -> . -> . { f(); .() { () } } \
              fn conditional(c: Bool) -> . { \
-               __if_then_else__(Bool, ., c, factory(callback), factory(callback)) \
+               __if_then_else__[Bool][ .]( c, factory(callback), factory(callback)) \
              } \
              fn either(s: . | .) -> . { \
-               __either__(., ., ., s, factory(callback), factory(callback)) \
+               __either__[.][ .][ .]( s, factory(callback), factory(callback)) \
              }",
             None,
         );
@@ -2623,10 +2749,10 @@ mod tests {
              host type Bool role(bool); \
              pure fn factory() -> . -> . { .() { () } } \
              fn conditional(c: Bool, factory: . -> (. -> .)) -> . { \
-               __if_then_else__(Bool, ., c, factory(), factory()) \
+               __if_then_else__[Bool][ .]( c, factory(), factory()) \
              } \
              fn either(s: . | ., factory: . -> (. -> .)) -> . { \
-               __either__(., ., ., s, factory(), factory()) \
+               __either__[.][ .][ .]( s, factory(), factory()) \
              }",
             None,
         );
@@ -2650,7 +2776,7 @@ mod tests {
              host fn left_factory() -> A -> .; \
              host fn right_factory() -> B -> .; \
              fn pick() -> . { \
-               __either__(A, B, ., scrutinee(), left_factory(), right_factory()) \
+               __either__[A][ B][ .]( scrutinee(), left_factory(), right_factory()) \
              }",
             None,
         );
@@ -2687,7 +2813,7 @@ mod tests {
             "module x/main; import __intrinsics__; \
              host type A; host type B; \
              fn pick(s: A | B, left: A -> ., right: B -> .) -> . { \
-               __either__(A, B, ., s, left, right) \
+               __either__[A][ B][ .]( s, left, right) \
              }",
             None,
         );
@@ -2715,7 +2841,7 @@ mod tests {
              host fn scrutinee() -> A | B; \
              host fn left_factory() -> A -> .; \
              fn pick(right: B -> .) -> . { \
-               __either__(A, B, ., scrutinee(), left_factory(), right) \
+               __either__[A][ B][ .]( scrutinee(), left_factory(), right) \
              }",
             None,
         );
@@ -2744,9 +2870,9 @@ mod tests {
              host fn b_factory() -> B -> .; \
              host fn c_factory() -> C -> .; \
              fn pick(s: A | (B | C)) -> . { \
-               __either__(A, B | C, ., s, .(_a: A) { () }, \
+               __either__[A][ B | C][ .]( s, .(_a: A) { () }, \
                  .(rest: B | C) { \
-                   __either__(B, C, ., rest, b_factory(), c_factory()) \
+                   __either__[B][ C][ .]( rest, b_factory(), c_factory()) \
                  }) \
              }",
             None,
@@ -2810,7 +2936,7 @@ mod tests {
         let m = recover_one(
             "x/main",
             "module x/main; import __intrinsics__; \
-             fn w[A][B](x: A) -> (A | B) { __left__(A, B, x) }",
+             fn w[A][B](x: A) -> (A | B) { __left__[A][ B]( x) }",
             None,
         );
         let body = fn_body(&m, "w");
@@ -2861,7 +2987,7 @@ mod tests {
              host fn then_factory() -> . -> .; \
              host fn else_factory() -> . -> .; \
              fn choose() -> . { \
-               __if_then_else__(Bool, ., condition(), then_factory(), else_factory()) \
+               __if_then_else__[Bool][ .]( condition(), then_factory(), else_factory()) \
              }",
             None,
         );
@@ -2903,7 +3029,7 @@ mod tests {
              host fn condition() -> Bool; \
              host fn then_factory() -> . -> .; \
              fn choose(otherwise: . -> .) -> . { \
-               __if_then_else__(Bool, ., condition(), then_factory(), otherwise) \
+               __if_then_else__[Bool][ .]( condition(), then_factory(), otherwise) \
              }",
             None,
         );
@@ -2936,7 +3062,7 @@ mod tests {
             "x/main",
             "module x/main; import __intrinsics__; \
              fn first[A][B](p: (A & B)) -> (A | B) { \
-               __left__(A, B, __fst__(A, B, p)) \
+               __left__[A][ B]( __fst__[A][ B]( p)) \
              }",
             None,
         );
@@ -2958,22 +3084,18 @@ mod tests {
     }
 
     /// `__snd__` whose `R` type argument is a parametric application
-    /// (`Foo(A)`) still recovers after the parser's initial value-shaped call
-    /// is reclassified and baked as `CallArg::Type` by standalone checking.
+    /// (`Foo[A]`) retains its nominal identity through standalone checking.
     #[test]
-    fn snd_with_parametric_type_arg_value_recovers() {
+    fn snd_with_parametric_type_argument_recovers() {
         let m = recover_one(
             "x/main",
-            // The parser initially reads `Box(A)` as a value call; standalone
-            // checking reclassifies and bakes the type-argument slot before
-            // recovery.
             "module x/main; import __intrinsics__; \
              newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-             fn snd_of[A](p: (A & Box(A))) -> Box(A) { __snd__(A, Box(A), p) }",
+             fn snd_of[A](p: (A & Box[A])) -> Box[A] { __snd__[A][ Box[A]]( p) }",
             None,
         );
         let body = fn_body(&m, "snd_of");
-        // `Box(A)` is a nominal (newtype application) — `product_spine_count`
+        // `Box[A]` is a nominal (newtype application) — `product_spine_count`
         // treats nominals as opaque (count 1), so the outer spine is
         // 2 and `__snd__` projects to slot 1 of a 2-spine product.
         assert!(
@@ -3077,7 +3199,7 @@ mod tests {
             // injection chain — recovery must re-tag.
             "module x/main; import __intrinsics__; \
              fn widen[A][B][C](x: (B | C)) -> (A | (B | C)) { \
-               __right__(A, (B | C), x) }",
+               __right__[A][ (B | C)]( x) }",
             None,
         );
         let body = fn_body(&m, "widen");
@@ -3124,7 +3246,7 @@ mod tests {
              import __intrinsics__; \
              host type Bool role(bool); \
              fn pick(c: Bool, t: . -> ., e: . -> .) -> . { \
-               __if_then_else__(Bool, ., c, t, e) \
+               __if_then_else__[Bool][ .]( c, t, e) \
              }",
             None,
         );
@@ -3229,7 +3351,7 @@ mod tests {
         let b = parse(
             "module b; import __intrinsics__; \
              pub newtype Foo : . { pub constructor mk_b; pub projector un_b; }; \
-             pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__(., ., p)) }",
+             pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__[.][ .]( p)) }",
         )
         .expect("parse b");
         let (lowered_modules, _) = FullPipeline::lower_package(
@@ -3521,8 +3643,8 @@ mod tests {
              host fn mark(value: Int) -> Int; \
              labels { a: Int, b: Int, c: Int, d: Int }; \
              fn quad(_kp0: Int) -> (A & B & C & D) { \
-               ({a = mark(10(Int))}, {b = mark(20(Int))}, \
-                {c = mark(30(Int))}, {d = mark(40(Int))}) \
+               ({a = mark(10[Int])}, {b = mark(20[Int])}, \
+                {c = mark(30[Int])}, {d = mark(40[Int])}) \
              }",
             None,
         );
@@ -3627,7 +3749,7 @@ mod tests {
             "x/main",
             "module x/main; \
              fn id[A](x: A) -> A { x } \
-             fn use_id(y: .) -> . { id(., y) }",
+             fn use_id(y: .) -> . { id[.](y) }",
             None,
         );
         assert_eq!(m.path.segments, vec!["x", "main"]);
@@ -3635,5 +3757,104 @@ mod tests {
         for it in &m.items {
             assert!(matches!(it, Item::FnDef(_)), "got {it:?}");
         }
+    }
+    #[test]
+    fn opaque_dispatch_packets_are_evaluated_once_before_projection() {
+        for (types, result, intrinsic, packet_ty) in [
+            (
+                "host type Bool role(bool); host type N;",
+                "N",
+                "__if_then_else__[Bool][N]",
+                "Bool & (. -> N) & (. -> N)",
+            ),
+            (
+                "host type A; host type B; host type N;",
+                "N",
+                "__either__[A][B][N]",
+                "(A | B) & (A -> N) & (B -> N)",
+            ),
+        ] {
+            let module = recover_one(
+                "x/main",
+                &format!(
+                    "module x/main; import __intrinsics__; {types} host fn make_packet() -> {packet_ty}; fn run() -> {result} {{ {intrinsic}(make_packet()) }}"
+                ),
+                None,
+            );
+            let body = fn_body(&module, "run");
+            let (bindings, terminal) = leading_let_spine(body);
+            assert_eq!(bindings.len(), 1, "{body:?}");
+            assert_eq!(direct_call_name(bindings[0].1), Some("make_packet"));
+            assert_eq!(
+                count(body, &|e| direct_call_name(e) == Some("make_packet")),
+                1
+            );
+            assert!(matches!(
+                terminal,
+                Expr::EnrichedMatch { .. } | Expr::EnrichedConditional { .. }
+            ));
+            assert_eq!(
+                count(terminal, &|e| matches!(
+                    e,
+                    Expr::EnrichedProject { arity: 3, .. }
+                )),
+                3
+            );
+            assert_eq!(
+                count(body, &|e| direct_call_name(e).is_some_and(|name| matches!(
+                    name,
+                    "__either__" | "__if_then_else__"
+                ))),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn partially_opaque_dispatch_packet_preserves_both_eager_operands() {
+        let module = recover_one(
+            "x/main",
+            "module x/main; import __intrinsics__; host type Bool role(bool); host type N; host fn condition() -> Bool; host fn handlers() -> (. -> N) & (. -> N); fn run() -> N { __if_then_else__[Bool][N](condition(), handlers()) }",
+            None,
+        );
+        let body = fn_body(&module, "run");
+        let (bindings, terminal) = leading_let_spine(body);
+        assert_eq!(bindings.len(), 1, "{body:?}");
+        let Expr::EnrichedTuple { items, .. } = bindings[0].1 else {
+            panic!("the whole packet is retained before dispatch");
+        };
+        assert_eq!(items.len(), 2);
+        assert_eq!(direct_call_name(&items[0]), Some("condition"));
+        assert_eq!(direct_call_name(&items[1]), Some("handlers"));
+        for name in ["condition", "handlers"] {
+            assert_eq!(count(body, &|e| direct_call_name(e) == Some(name)), 1);
+        }
+        assert!(matches!(terminal, Expr::EnrichedConditional { .. }));
+        assert_eq!(
+            count(terminal, &|e| matches!(
+                e,
+                Expr::EnrichedProject { arity: 3, .. }
+            )),
+            3
+        );
+    }
+
+    #[test]
+    fn opaque_pair_packet_keeps_nested_product_payload_once() {
+        let module = recover_one(
+            "x/main",
+            "module x/main; import __intrinsics__; host type N; host fn make_packet() -> (N & N) & (N & N); fn run() -> (N & N) & (N & N) { __pair__[N & N][N & N](make_packet()) }",
+            None,
+        );
+        let body = fn_body(&module, "run");
+        assert_eq!(direct_call_name(body), Some("make_packet"));
+        assert_eq!(
+            count(body, &|e| direct_call_name(e) == Some("make_packet")),
+            1
+        );
+        assert_eq!(
+            count(body, &|e| matches!(e, Expr::EnrichedProject { .. })),
+            0
+        );
     }
 }

@@ -149,10 +149,6 @@ pub(crate) fn is_type_reference_name(name: &str) -> bool {
     validate_shape(name, NameRole::Type).is_ok()
 }
 
-pub(crate) fn is_value_reference_name(name: &str) -> bool {
-    validate_shape(name, NameRole::Value).is_ok()
-}
-
 /// Whether `name` is one of the reserved compiler-generated spellings that a
 /// phase artifact may reference. Like every name role, the spelling must
 /// contain a letter. Reservation supplies hygiene, not semantic privilege;
@@ -401,19 +397,19 @@ mod tests {
     fn reserved_reference_names_keep_the_ordinary_word_and_case_rules() {
         for name in ["__Type", "___Item_type1__"] {
             assert!(is_type_reference_name(name), "{name}");
-            assert!(!is_value_reference_name(name), "{name}");
+            assert!(validate_shape(name, NameRole::Value).is_err(), "{name}");
             assert!(!is_type_name(name), "{name}");
             assert!(validate_reference_name(name, NameRole::Type, Span::new(0, 0)).is_ok());
         }
         for name in ["__value", "___item_value1__"] {
-            assert!(is_value_reference_name(name), "{name}");
+            assert!(validate_shape(name, NameRole::Value).is_ok(), "{name}");
             assert!(!is_type_reference_name(name), "{name}");
             assert!(!is_value_name(name), "{name}");
             assert!(validate_reference_name(name, NameRole::Value, Span::new(0, 0)).is_ok());
         }
         for name in ["__", "__1__", "__foo_123", "__FooBar", "__Foo__bar"] {
             assert!(!is_type_reference_name(name), "{name}");
-            assert!(!is_value_reference_name(name), "{name}");
+            assert!(validate_shape(name, NameRole::Value).is_err(), "{name}");
         }
     }
 

@@ -1,0 +1,5 @@
+module main;
+
+fn staged[A]()(value: A) -> A { value }
+
+fn rejected() { staged[.](()).<(); () }

@@ -57,7 +57,7 @@ cp -R "$CASE_DIR/workdir/guest/." "$guestwork/"
 # not passed through the compiler, whose semantic rendering can remove `e`.
 cat >> "$guestwork/out/kio-prime/guest.kio" <<'PRIME'
 
-pub fn lexical() -> F64 { add_f64(1.5e-3(F64), 2.5E+2(F64)) }
+pub fn lexical() -> F64 { add_f64(1.5e-3[F64], 2.5E+2[F64]) }
 PRIME
 
 ( cd "$work" && "$KIO_BIN" test && "$KIO_BIN" build "$KIO_TARGET" ) >&2

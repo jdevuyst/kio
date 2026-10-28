@@ -14,7 +14,7 @@ fn after_resolution(
 , first: replica.Replica
 , second: replica.Replica
 , third: replica.Replica
-, delayed: core.List(replica.Message)
+, delayed: core.List[replica.Message]
 , change: replica.Change
 ) {
   let .(resolved, resolution) = change;
@@ -39,9 +39,9 @@ fn after_resolution(
 }
 
 pub fn run() {
-  let alpha = {clock.alpha=}.>widen_sum(clock.Node);
-  let beta = {clock.beta=}.>widen_sum(clock.Node);
-  let gamma = {clock.gamma=}.>widen_sum(clock.Node);
+  let alpha = ({clock.alpha=}.>widen_sum)[clock.Node];
+  let beta = ({clock.beta=}.>widen_sum)[clock.Node];
+  let gamma = ({clock.gamma=}.>widen_sum)[clock.Node];
   let .(a, a1) = replica.write(replica.empty(alpha), 10, 10);
   let .(_a, a2) = replica.write(a, 10, 11);
   let .(b, b1) = replica.write(replica.empty(beta), 10, 20);

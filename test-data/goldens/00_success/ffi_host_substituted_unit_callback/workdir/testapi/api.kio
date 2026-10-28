@@ -4,6 +4,6 @@ import testapi(Text);
 
 pub type Callback[A] = A -> Text;
 
-host fn invoke(callback: Callback(.)) -> Text;
+host fn invoke(callback: Callback[.]) -> Text;
 
-pub fn via_host(callback: Callback(.)) -> Text { invoke(callback) }
+pub fn via_host(callback: Callback[.]) -> Text { invoke(callback) }

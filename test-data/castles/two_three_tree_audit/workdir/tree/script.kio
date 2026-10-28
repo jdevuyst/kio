@@ -34,34 +34,34 @@ labels Op_kind = { put: I32 & String } | { remove: I32 };
 
 newtype Op : Op_kind { constructor mk_op; projector un_op }
 
-rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
+rec newtype List[A] : . | (A & List[A]) { constructor mk_list; projector un_list }
 
-type Ops = List(Op);
+type Ops = List[Op];
 
 /// The tree, the events every operation so far has caused, and the step number.
 pub type Run = Tree & Tally & I32;
 
-fn put_op(k: I32, v: String) -> Op { Op.mk_op({put = (k, v)}.>widen_sum(Op_kind)) }
+fn put_op(k: I32, v: String) -> Op { Op.mk_op(({put = (k, v)}.>widen_sum)[Op_kind]) }
 
-fn remove_op(k: I32) -> Op { Op.mk_op({remove = k}.>widen_sum(Op_kind)) }
+fn remove_op(k: I32) -> Op { Op.mk_op(({remove = k}.>widen_sum)[Op_kind]) }
 
-fn nil[A] -> List(A) { List.mk_list(widen_sum((), . | (A & List(A)))) }
+fn nil[A] -> List[A] { List.mk_list(widen_sum(())[. | (A & List[A])]) }
 
-fn cons[A](x: A, rest: List(A)) -> List(A) { List.mk_list(widen_sum((x, rest), . | (A & List(A)))) }
+fn cons[A](x: A, rest: List[A]) -> List[A] { List.mk_list(widen_sum((x, rest))[. | (A & List[A])]) }
 
 /// Append at the end, so the script below reads top to bottom in the order it
 /// runs rather than inside out.
-rec(loop) fn snoc[A](xs: List(A), x: A) -> List(A) {
+rec(loop) fn snoc[A](xs: List[A], x: A) -> List[A] {
   match(xs.>List.un_list) {
     (
-    , .(head: A, rest: List(A)) { let tail = recur(cont) snoc(rest, x); cons(head, tail) }
-    , .(_e: .) { cons(x, nil(A)) }
+    , .(head: A, rest: List[A]) { let tail = recur(cont) snoc(rest, x); cons(head, tail) }
+    , .(_e: .) { cons(x, nil[A]) }
     )
   }
 }
 
 fn script() -> Ops {
-  let s = nil(Op);
+  let s = nil[Op];
   let s = snoc(s, put_op(50, "curlew"));
   let s = snoc(s, put_op(30, "osprey"));
   let s = snoc(s, put_op(70, "falcon"));
@@ -114,14 +114,14 @@ fn apply_op(r: Run, o: Op) -> Run {
     (
     , .(p: Put) {
         let .(k: I32, v: String) = p.?{put};
-        let note = if(contains(root_of(t), k)) { "replaced" } else { "added" };
+        let .(note: String) = if(contains(root_of(t), k)) { "replaced" } else { "added" };
         let .(next: Tree, ev: Tally) = insert(t, k, v);
         emit(step, "ins", k, next, note, ev);
         (next, tally_add(acc, ev), add_i32(step, 1))
       }
     , .(d: Remove) {
         let k = d.?{remove};
-        let note = if(contains(root_of(t), k)) { "removed" } else { "absent" };
+        let .(note: String) = if(contains(root_of(t), k)) { "removed" } else { "absent" };
         let .(next: Tree, ev: Tally) = delete(t, k);
         emit(step, "del", k, next, note, ev);
         (next, tally_add(acc, ev), add_i32(step, 1))

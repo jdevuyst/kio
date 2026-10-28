@@ -58,10 +58,9 @@
 //! and may occupy any slot whose declared type is that complete scheme. A
 //! genuinely monomorphic slot still rejects a polymorphic value.
 //!
-//! Call-argument parsing is intentionally permissive; type-argument
-//! slots reinterpret value-shaped syntax through shared typecheck_core
-//! helpers so functions, dot-splice calls, macro forms, and user
-//! macros agree on the same boundary behavior.
+//! Calls retain explicit type stages and one value packet per function layer.
+//! The shared application checker completes those public stages from local
+//! constraints before ordinary or macro execution consumes their values.
 
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -83,9 +82,7 @@ use crate::ast::{
     RoleShape, TypeParam, UncheckedPrime,
 };
 use crate::pass::substitute;
-use crate::pass::typecheck_core::apply::{
-    CallArgRef, call_arg_refs, splice_ufcs_arg_refs_interned,
-};
+use crate::pass::typecheck_core::apply::{CallArgRef, call_arg_refs};
 // Phase-polymorphic typer helpers. `display_type` (and its underlying
 // `write_type` walker) plus `right_fold_sum` live in
 // `typecheck_core` so they are usable without pulling in the
@@ -316,7 +313,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
     // `specs/language.md` § Type parameters — `foo(T1, v1, T2, v2)` against
     // `Forall([A], Function(A, Forall([B], Function(B, Unit))))`
     // walks both curry layers in one application.
-    const ALLOW_MULTI_LAYER_FLAT_CALL: bool = true;
 
     fn synth_expr<'m>(
         e: &'m Expr,
@@ -362,19 +358,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
             .record_type_resolution(&mp, call_site.id, slot_index, resolved);
     }
 
-    fn mark_value_at_type_slot<'m>(
-        call_site: crate::ast::ExpressionSite,
-        slot_index: usize,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        let mp = tcx.env.module_path.clone();
-        tcx.elaborations
-            .mark_value_at_type_slot(&mp, call_site.id, slot_index);
-        tcx.elaborations
-            .position_index
-            .record_value_at_type_slot(&mp, call_site.span, slot_index);
-    }
-
     fn record_call_split<'m>(
         call_site: crate::ast::ExpressionSite,
         split_after_slot: usize,
@@ -393,16 +376,6 @@ impl crate::pass::typecheck_core::Typer<Lowered> for LoweredTyper {
         let mp = tcx.env.module_path.clone();
         tcx.elaborations
             .record_call_implicit_unit_slot(&mp, call_site.id, slot_index);
-    }
-
-    fn record_regular_ufcs_elaboration<'m>(
-        original: &'m Expr,
-        normalized_call: Expr,
-        tcx: &mut crate::pass::typecheck_core::TypeCtx<'m, '_, Lowered>,
-    ) {
-        let mp = tcx.env.module_path.clone();
-        tcx.elaborations
-            .record_elaboration(&mp, original, normalized_call);
     }
 
     fn record_literal_resolution<'m>(
@@ -603,9 +576,11 @@ pub(crate) struct PreparedUserMacroAction<'m> {
     macro_module: Option<&'m Module>,
     call_ty: InternedType,
     args: Vec<CallArgRef<'m, Lowered>>,
+    stages: &'m [crate::ast::CallStage<Lowered>],
     layout: UserMacroSignatureLayout,
     type_slot_modes: Vec<UserMacroTypeSlotMode>,
     span: Span,
+    result_span: Span,
 }
 
 pub(crate) enum ProjectedUserMacroSlot {
@@ -752,8 +727,53 @@ impl<'m> PreparedUserMacroAction<'m> {
         &self.call_ty
     }
 
-    pub(crate) fn args(&self) -> &[CallArgRef<'m, Lowered>] {
-        &self.args
+    pub(crate) fn stages(&self) -> &'m [crate::ast::CallStage<Lowered>] {
+        self.stages
+    }
+
+    pub(crate) fn result_span(&self) -> Span {
+        self.result_span
+    }
+
+    pub(crate) fn take_output_stages(&mut self) -> &'m [crate::ast::CallStage<Lowered>] {
+        let mut consumed = 0;
+        for layer in &self.layout.layers {
+            for _ in &layer.type_params {
+                if self.stages.get(consumed).is_some_and(|stage| {
+                    stage.args.iter().all(|arg| matches!(arg, CallArg::Type(_)))
+                }) {
+                    consumed += 1;
+                } else {
+                    break;
+                }
+            }
+            if layer.value_param.is_some() {
+                if self.stages.get(consumed).is_some_and(|stage| {
+                    stage
+                        .args
+                        .iter()
+                        .any(|arg| matches!(arg, CallArg::Value(_)))
+                }) {
+                    consumed += 1;
+                } else {
+                    return &[];
+                }
+            }
+        }
+        let (inputs, output) = self.stages.split_at(consumed);
+        if !output.is_empty() {
+            self.result_span = inputs.last().map_or(self.span, |stage| stage.meta.span);
+            self.stages = inputs;
+            self.args = inputs
+                .iter()
+                .flat_map(|stage| call_arg_refs(&stage.args))
+                .collect();
+        }
+        output
+    }
+
+    pub(crate) fn public_layer_count(&self) -> usize {
+        self.layout.layers.len()
     }
 
     pub(crate) fn schedule(&self) -> crate::ast::MacroSchedule {
@@ -998,6 +1018,7 @@ impl<'m> PreparedUserMacroAction<'m> {
             ));
         }
         Ok(ReadyUserMacroAction {
+            result_span: self.result_span,
             schedule: self.macro_def.schedule,
             node_id: self.node_id,
             name: self.name,
@@ -1064,6 +1085,10 @@ pub(crate) struct ReadyProjectedUserMacroAction<'m> {
 }
 
 impl ReadyProjectedUserMacroAction<'_> {
+    pub(crate) fn result_span(&self) -> Span {
+        self.action.result_span()
+    }
+
     /// Exact declaration-order binders shared by residual input scopes and the
     /// eventual eta plan; recipe closure must not reconstruct them from names.
     pub(crate) fn residual_lexical_binders(&self) -> impl Iterator<Item = &TypeParam> {
@@ -1285,243 +1310,35 @@ fn validate_trailing_declaration(
     let mut bound = aliases.binder_local_names();
     let mut params = Vec::new();
     let mut slots = Vec::new();
-    let mut open_tails = Vec::new();
-    let mut prior_inputs = HashSet::new();
-    let mut final_layer = 0;
     for layer in &layout.layers {
-        for param in &layer.type_params {
-            prior_inputs.remove(&param.name);
-        }
         bound.extend(layer.type_params.iter().map(|param| param.name.clone()));
         params.extend(layer.type_params.iter().cloned());
         let Some(param) = &layer.value_param else {
             continue;
         };
-        final_layer = slots.len();
         let scoped = AliasCtx {
             binder_locals: Some(&bound),
             ..*aliases
         };
-        let (mut tail, _) = crate::pass::typecheck_core::canonicalize_deep_for_comparison(
+        let (domain, _) = crate::pass::typecheck_core::canonicalize_deep_for_comparison(
             param.as_type(),
             &scoped,
             param.identity_is_canonical(),
         );
-        let mut input_params = HashSet::new();
-        collect_free_type_vars(&tail, &mut input_params);
-        loop {
-            let value = match &tail {
-                Type::Product { left, .. } => left.as_ref().clone(),
-                _ => tail.clone(),
-            };
-            slots.push((value, tail.clone(), params.len()));
-            open_tails.push(matches!(&tail, Type::Path { segments, .. }
-                if segments.len() == 1 && prior_inputs.contains(&segments[0].name)
-                    && params.iter().any(|param| param.name == segments[0].name)));
-            match tail {
-                Type::Product { right, .. } => tail = *right,
-                _ => break,
-            }
-        }
-        prior_inputs.extend(input_params);
+        slots.push((domain.clone(), domain, params.len()));
+    }
+    let blocks = &macro_def.trailing_blocks;
+    if let Some(first) = slots.len().checked_sub(blocks.len())
+        && trailing_declaration_candidate(&slots[first..], &params, blocks, tcx)?
+    {
+        return Ok(());
     }
 
-    // Every nonfinal written source takes one ordinary right-spine slot. The
-    // final source can own the remaining product packet of the final layer.
-    // This checks possible complete source layouts, not private ABI grouping.
-    let blocks = &macro_def.trailing_blocks;
-    for last in final_layer.max(blocks.len() - 1)..slots.len() {
-        let first = last + 1 - blocks.len();
-        if trailing_declaration_candidate(&slots[first..=last], &params, blocks, tcx)? {
-            return Ok(());
-        }
-    }
-    if open_tails.iter().any(|open| *open) {
-        for last in final_layer..slots.len() {
-            if trailing_declaration_open_candidate(
-                &slots[..=last],
-                &open_tails[..=last],
-                &params,
-                blocks,
-                tcx,
-            )? {
-                return Ok(());
-            }
-        }
-    }
     Err(Error::type_(
         blocks[0].meta.span,
         "trailing block descriptors are incompatible with the final public value inputs",
     )
     .with_secondary(macro_def.call_ty.span(), "public call type declared here"))
-}
-
-fn trailing_declaration_open_candidate(
-    slots: &[(Type, Type, usize)],
-    open_tails: &[bool],
-    params: &[TypeParam],
-    blocks: &[crate::ast::TrailingBlockDecl<Lowered>],
-    tcx: &TypeCtx<'_, '_>,
-) -> Result<bool, Error> {
-    use crate::pass::typecheck_core::{
-        GoalOrigin, GoalOwnerKind, GoalRole, GoalSolutionPolicy, GoalStore, ScopedType,
-        ScopedTypeEdge,
-    };
-
-    fn abstract_params(params: &[TypeParam], ty: Type, span: Span) -> Type {
-        params.iter().rev().fold(ty, |body, param| Type::Forall {
-            param: param.clone(),
-            body: Box::new(body),
-            meta: Meta::new(span),
-        })
-    }
-
-    fn abstract_goals(ty: &mut Type, captures: &HashMap<crate::ast::TypeGoalRef, String>) {
-        match ty {
-            Type::Goal {
-                goal, args, meta, ..
-            } => {
-                for arg in args.iter_mut() {
-                    abstract_goals(arg, captures);
-                }
-                let name = captures
-                    .get(goal)
-                    .expect("a declaration relation cannot capture an unregistered inference goal");
-                *ty = Type::synth_path(vec![name.clone()], std::mem::take(args), meta.span);
-            }
-            Type::Path { args, .. } => {
-                for arg in args {
-                    abstract_goals(arg, captures);
-                }
-            }
-            Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
-                abstract_goals(left, captures);
-                abstract_goals(right, captures);
-            }
-            Type::Function { param, ret, .. } => {
-                abstract_goals(param, captures);
-                abstract_goals(ret, captures);
-            }
-            Type::Forall { body, .. } => abstract_goals(body, captures),
-            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => {}
-            Type::LabelSugar { ext, .. } => match *ext {},
-        }
-    }
-
-    let span = blocks[0].meta.span;
-    let mut store = GoalStore::new();
-    let owner = store.begin_owner(
-        None,
-        store.scope_from_type_ctx(tcx),
-        GoalOwnerKind::Application,
-        span,
-    )?;
-    let mut formals = params
-        .iter()
-        .enumerate()
-        .map(|(index, param)| param.renamed(format!("\0block-public-{index}")))
-        .collect::<Vec<_>>();
-    for index in 0..blocks.len() {
-        for (role, kind) in [
-            ("result", None),
-            ("carrier", Some(Box::new(crate::ast::Kind::arrow_chain(1)))),
-        ] {
-            formals.push(TypeParam {
-                presentation: Default::default(),
-                name: format!("\0block-descriptor-{index}-{role}"),
-                span,
-                kind,
-            });
-        }
-    }
-    let mut captures = HashMap::new();
-    let mut arguments = Vec::new();
-    for formal in &formals {
-        let goal = store.alloc_goal(
-            owner,
-            formal.effective_kind(),
-            GoalSolutionPolicy::PolytypeAllowed,
-            GoalOrigin::named(span, GoalRole::TypeArgument, &formal.name),
-        )?;
-        captures.insert(goal, formal.name.clone());
-        arguments.push(
-            store
-                .scoped_goal_at(goal, Vec::new(), owner, span)?
-                .canonicalized_for_comparison(tcx),
-        );
-    }
-    let mut pending = Vec::<(ScopedType, bool)>::new();
-    for (index, (value, tail, count)) in slots.iter().enumerate() {
-        let ty = if index + 1 == slots.len() {
-            tail
-        } else {
-            value
-        };
-        let found = store.scoped_type(
-            owner,
-            InternedType::fresh_canonical(abstract_params(&params[..*count], ty.clone(), span)),
-            span,
-        )?;
-        let found = found
-            .projected_public_forall_prefix_application(&arguments[..*count])
-            .expect("declaration source parameters share their exact root scope");
-        pending.push((found, open_tails[index]));
-    }
-    let mut delta = store.begin_delta(owner, span)?;
-    let mut remaining = blocks.len();
-    while remaining != 0 {
-        let Some((found, expand)) = pending.pop() else {
-            return Ok(false);
-        };
-        let mut found = store.zonk_for_progress(&delta, found, tcx)?;
-        if expand {
-            let mut cells = Vec::new();
-            while let Some(left) = found.projected_structural_child(ScopedTypeEdge::ProductLeft) {
-                cells.push((left, false));
-                found = found
-                    .projected_structural_child(ScopedTypeEdge::ProductRight)
-                    .expect("a product has both structural children");
-            }
-            if matches!(found.ty().as_type(), Type::Goal { .. }) {
-                // Its public domain still has unknown source capacity after
-                // all fixed suffix equations. The ordinary call transcript
-                // supplies the concrete layout and validates every exposure.
-                return Ok(true);
-            }
-            cells.push((found, false));
-            pending.extend(cells);
-            continue;
-        }
-        remaining -= 1;
-        let block = &blocks[remaining];
-        if block.exposure == crate::ast::BlockExposure::Product {
-            continue;
-        }
-        // Reconstruct a schema through explicit same-store arguments, never
-        // attach raw goals to a newly invented lexical scope.
-        let mut template = found.ty().clone_type();
-        abstract_goals(&mut template, &captures);
-        let Some((required, _)) =
-            trailing_declaration_slot_schema(&template, block.exposure, remaining, span)
-        else {
-            return Ok(false);
-        };
-        let expected = store.scoped_type(
-            owner,
-            InternedType::fresh_canonical(abstract_params(&formals, required, span)),
-            span,
-        )?;
-        let expected = expected
-            .projected_public_forall_prefix_application(&arguments)
-            .expect("a declaration schema reapplies its exact captured goal arguments");
-        if store
-            .constrain_equation(&mut delta, found, expected.into(), span, tcx)
-            .is_err()
-        {
-            return Ok(false);
-        }
-    }
-    Ok(true)
 }
 
 fn trailing_declaration_candidate(
@@ -3899,6 +3716,7 @@ pub(crate) use rec_quote::QuotedPublicRecipe;
 
 #[derive(Debug, Default)]
 struct RecordedCallPlan {
+    macro_output_stage: Option<usize>,
     splits: Vec<usize>,
     implicit_unit_slots: Vec<usize>,
     residual_eta_type: Option<RecordedTypeResolution>,
@@ -3943,20 +3761,6 @@ pub struct Elaborations {
     /// instances require different substitutions.
     type_resolutions:
         HashMap<(String, crate::ast::ExpressionOccurrenceId, usize), RecordedTypeResolution>,
-    /// `(module_path, call_id, slot_index)` triples where the
-    /// user supplied a value-shaped expression at a type-arg slot
-    /// (e.g. `nil(B)` where `B` is a tparam, or `List(B) & List(A)`
-    /// written without `[…]` brackets). The substitute pass uses
-    /// this marker to distinguish "user wrote a value here,
-    /// reclassify it" from "user fully elided this type-arg,
-    /// insert it" — without the marker, the substitute pass
-    /// treats both as the elided case and leaves the value-shaped
-    /// expression in place at the next value-arg slot, where
-    /// downstream emitters then see an unrecognized callee.
-    value_at_type_slot:
-        std::collections::HashSet<(String, crate::ast::ExpressionOccurrenceId, usize)>,
-    value_at_type_slot_index:
-        HashMap<String, HashMap<crate::ast::ExpressionOccurrenceId, Vec<usize>>>,
     /// Canonical argument boundaries and any residual eta plan for one Full
     /// Kio call. Keeping both in one record makes the Lowered → PrePrime
     /// consumer observe exactly the call plan that committed with inference.
@@ -4073,6 +3877,7 @@ pub(crate) struct ReadyUserMacroAction {
     ambient_type_names: HashSet<String>,
     terminal_result_ty: Option<InternedType>,
     span: Span,
+    result_span: Span,
 }
 
 pub(crate) struct StagedReadyUserMacroEvaluation {
@@ -4099,6 +3904,10 @@ impl StagedReadyUserMacroEvaluation {
 }
 
 impl ReadyUserMacroAction {
+    pub(crate) fn result_span(&self) -> Span {
+        self.result_span
+    }
+
     pub(crate) fn schedule(&self) -> crate::ast::MacroSchedule {
         self.schedule
     }
@@ -4599,9 +4408,6 @@ pub struct PositionIndex {
     /// Inferred type arguments for a call, keyed by a zero-width span
     /// at the callee's end inside its module.
     inlay_type_args: HashMap<(String, Span), Vec<InlayTypeArguments>>,
-    /// Raw call-argument slots that parsed as values but were
-    /// reclassified as type arguments during typechecking.
-    value_at_type_slots: HashSet<(String, Span, usize)>,
     #[cfg(feature = "lsp")]
     refactoring: Option<Box<refactoring_facts::RefactoringFacts>>,
     #[cfg(feature = "lsp")]
@@ -5082,16 +4888,6 @@ impl PositionIndex {
         }
     }
 
-    pub fn record_value_at_type_slot(
-        &mut self,
-        module_path: &str,
-        call_span: Span,
-        slot_index: usize,
-    ) {
-        self.value_at_type_slots
-            .insert((module_path.to_owned(), call_span, slot_index));
-    }
-
     #[cfg(feature = "lsp")]
     pub(crate) fn record_call_presentation(
         &mut self,
@@ -5123,6 +4919,75 @@ impl PositionIndex {
                     .is_some_and(|previous| previous != role);
             }
         }
+    }
+
+    /// Recover written operand boundaries after the checker selects one product packet.
+    #[cfg(feature = "lsp")]
+    pub(crate) fn reconcile_call_presentations(
+        &mut self,
+        module_path: &str,
+        written: impl FnOnce() -> HashMap<Span, Vec<Span>>,
+    ) {
+        let Some(calls) = self
+            .call_presentations
+            .as_mut()
+            .and_then(|all| all.get_mut(module_path))
+        else {
+            return;
+        };
+        let written = written();
+        calls.retain(|span, occurrences| {
+            let Some(values) = written.get(span) else {
+                return false;
+            };
+            let mut original = occurrences.values();
+            if let Some(first) = original.next()
+                && original.any(|other| other != first)
+            {
+                return true;
+            }
+            if values.len() > 1 {
+                for layers in occurrences.values_mut() {
+                    for layer in layers.values_mut() {
+                        let packet = {
+                            let mut selected =
+                                layer
+                                    .arguments
+                                    .iter()
+                                    .filter_map(|(span, role)| match role {
+                                        CallArgumentRole::Value(projection) => {
+                                            Some((*span, *projection))
+                                        }
+                                        CallArgumentRole::Type => None,
+                                    });
+                            match (selected.next(), selected.next()) {
+                                (Some((span, CallValueProjection::Tail { first: 0 })), None) => {
+                                    span
+                                }
+                                _ => continue,
+                            }
+                        };
+                        layer.arguments.remove(&packet);
+                        for (index, value) in values.iter().enumerate() {
+                            let projection = if index + 1 == values.len() {
+                                CallValueProjection::Tail { first: index }
+                            } else {
+                                CallValueProjection::Range {
+                                    first: index,
+                                    width: 1,
+                                }
+                            };
+                            let role = CallArgumentRole::Value(projection);
+                            layer.ambiguous |= layer
+                                .arguments
+                                .insert((value.start, value.end), role)
+                                .is_some_and(|previous| previous != role);
+                        }
+                    }
+                }
+            }
+            true
+        });
     }
 
     /// A lookup visits only occurrences of this source call. Cloned source
@@ -5174,16 +5039,6 @@ impl PositionIndex {
             }
         }
         Some(counts)
-    }
-
-    pub fn is_value_at_type_slot(
-        &self,
-        module_path: &str,
-        call_span: Span,
-        slot_index: usize,
-    ) -> bool {
-        self.value_at_type_slots
-            .contains(&(module_path.to_owned(), call_span, slot_index))
     }
 
     /// Look up the declaration span of the local / type-parameter
@@ -5472,9 +5327,6 @@ impl PositionIndex {
                 );
             }
         }
-        for key in other.value_at_type_slots {
-            self.value_at_type_slots.insert(key);
-        }
     }
 
     pub(crate) fn present_binder_names(
@@ -5648,8 +5500,6 @@ impl Elaborations {
             entries: HashMap::new(),
             rec_order_runtime: HashMap::new(),
             type_resolutions: HashMap::new(),
-            value_at_type_slot: std::collections::HashSet::new(),
-            value_at_type_slot_index: HashMap::new(),
             call_plans: HashMap::new(),
             literal_resolutions: HashMap::new(),
             fn_param_types: HashMap::new(),
@@ -6064,46 +5914,6 @@ impl Elaborations {
             .get(&(module_path.to_owned(), call_id, slot_index))
     }
 
-    /// Mark the `(module_path, call_id, slot_index)` triple as a
-    /// value-shaped expression supplied at a type-arg slot. See
-    /// `value_at_type_slot`'s doc above for the substitute pass's
-    /// use of this marker.
-    pub fn mark_value_at_type_slot(
-        &mut self,
-        module_path: &str,
-        call_id: crate::ast::ExpressionOccurrenceId,
-        slot_index: usize,
-    ) {
-        let module_path = module_path.to_owned();
-        if self
-            .value_at_type_slot
-            .insert((module_path.clone(), call_id, slot_index))
-        {
-            self.value_at_type_slot_index
-                .entry(module_path)
-                .or_default()
-                .entry(call_id)
-                .or_default()
-                .push(slot_index);
-        }
-    }
-
-    /// True when the call at `call_id`'s slot `slot_index` inside
-    /// module `module_path` carries a value-shaped expression the
-    /// typer reclassified as a type. See
-    /// [`Self::mark_value_at_type_slot`].
-    pub fn is_value_at_type_slot(
-        &self,
-        module_path: &str,
-        call_id: crate::ast::ExpressionOccurrenceId,
-        slot_index: usize,
-    ) -> bool {
-        self.value_at_type_slot_index
-            .get(module_path)
-            .and_then(|by_id| by_id.get(&call_id))
-            .is_some_and(|slots| slots.contains(&slot_index))
-    }
-
     pub fn record_call_split(
         &mut self,
         module_path: &str,
@@ -6119,6 +5929,34 @@ impl Elaborations {
             Ok(_) => {}
             Err(index) => splits.insert(index, split_after_slot),
         }
+    }
+
+    pub(crate) fn record_macro_output_stage(
+        &mut self,
+        module_path: &str,
+        call_id: crate::ast::ExpressionOccurrenceId,
+        stage: usize,
+    ) {
+        let previous = self
+            .call_plans
+            .entry((module_path.to_owned(), call_id))
+            .or_default()
+            .macro_output_stage
+            .replace(stage);
+        assert!(
+            previous.is_none_or(|previous| previous == stage),
+            "a macro's public input boundary changed during checking"
+        );
+    }
+
+    pub(crate) fn macro_output_stage_for(
+        &self,
+        module_path: &str,
+        call_id: crate::ast::ExpressionOccurrenceId,
+    ) -> Option<usize> {
+        self.call_plans
+            .get(&(module_path.to_owned(), call_id))?
+            .macro_output_stage
     }
 
     pub fn call_splits_for(
@@ -6366,9 +6204,6 @@ impl Elaborations {
         for (key, value) in other.type_resolutions {
             self.type_resolutions.insert(key, value);
         }
-        for (module_path, span, slot_index) in other.value_at_type_slot {
-            self.mark_value_at_type_slot(&module_path, span, slot_index);
-        }
         for ((module_path, span), plan) in other.call_plans {
             for split_after_slot in plan.splits {
                 self.record_call_split(&module_path, span, split_after_slot);
@@ -6378,6 +6213,9 @@ impl Elaborations {
             }
             if let Some(residual) = plan.residual_eta_type {
                 self.merge_call_residual_eta_type(&module_path, span, residual);
+            }
+            if let Some(stage) = plan.macro_output_stage {
+                self.record_macro_output_stage(&module_path, span, stage);
             }
         }
         for (key, value) in other.literal_resolutions {
@@ -6407,7 +6245,7 @@ fn elaboration_node_id(e: &Expr) -> Option<NodeId> {
         Expr::Elaborator { ext, .. } => Some(*ext),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => Some(*ext),
         Expr::UserMacro { ext, .. } => Some(*ext),
-        Expr::Ufcs { ext, .. } => Some(*ext),
+        Expr::Ufcs { ext, .. } => match *ext {},
         _ => None,
     }
 }
@@ -6546,6 +6384,10 @@ fn synth_rec_order<'m>(
                     source_checked,
                 } => {
                     if !source_checked {
+                        #[cfg(test)]
+                        crate::pass::typecheck_core::apply::record_rec_order_source_span(
+                            plan.value.span(),
+                        );
                         check_value_against(&plan.value, &exact_ty, tcx)?;
                     }
                     Ok(PendingRecOrderState::Runtime {
@@ -6553,7 +6395,6 @@ fn synth_rec_order<'m>(
                         source_checked: true,
                     })
                 }
-                PendingRecOrderState::TypeOnly => Ok(PendingRecOrderState::TypeOnly),
                 PendingRecOrderState::Pending => unreachable!(
                     "recursive ordering binder `{}` was not classified at its generated use site",
                     plan.name
@@ -6601,10 +6442,6 @@ fn synth_rec_order<'m>(
                 replacement,
                 exact_ty,
             );
-        }
-        PendingRecOrderState::TypeOnly => {
-            tcx.elaborations
-                .record_elaboration(&module_path, original, *plan.body.clone())
         }
         PendingRecOrderState::Pending => {
             unreachable!("pending recursive ordering disposition escaped carrier typechecking")
@@ -6734,9 +6571,7 @@ fn synth_expr<'m>(e: &'m Expr, tcx: &mut TypeCtx<'m, '_>) -> Result<Synth, Error
         Expr::UserMacro { .. } => {
             crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
         }
-        Expr::Ufcs { .. } => {
-            crate::pass::typecheck_core::apply::run_general_ordinary_value(e, None, tcx)
-        }
+        Expr::Ufcs { ext, .. } => match *ext {},
         // Statically uninhabited at `Lowered` — the enriched
         // structural variants are produced post-typecheck by the
         // structural-recovery pass at `Enriched` and retained at `Routed`.
@@ -7909,7 +7744,7 @@ fn field_temp_name(kind: &str, span: Span, index: usize) -> String {
 // The synth/check/apply family — `synth_literal`, `synth_path`,
 // `synth_top_fn_def`, `synth_let`, `synth_fn`, `synth_call`,
 // `apply_polymorphic_function`, `apply_mono`, plus the supporting
-// `expr_to_type_arg` and `unify_pattern` — all live in
+// `unify_pattern` — all live in
 // `crate::pass::typecheck_core` so the standalone Kio'-only typer can
 // reuse them at `P = Prime`. The recursive arms route back through
 // the `Typer<P>` dispatch trait (`<P::Typer as Typer<P>>::synth_expr`
@@ -8018,19 +7853,6 @@ fn check_value_against<'m>(
     }
     if matches!(e, Expr::UserMacro { .. } | Expr::RecQuote { .. }) {
         crate::pass::typecheck_core::apply::run_general_ordinary_value(e, Some(expected), tcx)?;
-        return Ok(());
-    }
-    if matches!(e, Expr::Ufcs { .. }) {
-        let synth =
-            crate::pass::typecheck_core::apply::run_general_ordinary_value(e, Some(expected), tcx)?;
-        crate::pass::typecheck_core::require_type_equiv_state(
-            synth.ty.as_type(),
-            expected.as_type(),
-            e.span(),
-            &tcx.env.alias_ctx(),
-            synth.ty.identity_is_canonical(),
-            expected.identity_is_canonical(),
-        )?;
         return Ok(());
     }
     crate::pass::typecheck_core::default_check_value_against(e, expected, tcx)
@@ -8288,29 +8110,14 @@ pub(crate) fn prepare_user_macro_action<'m>(
     tcx: &mut TypeCtx<'m, '_>,
 ) -> Result<PreparedUserMacroAction<'m>, Error> {
     let span = original.span();
-    let (name, source_args, ufcs) = match original {
-        Expr::UserMacro { name, args, .. } => (name.as_str(), call_arg_refs(args), None),
-        Expr::Ufcs {
-            receiver,
-            callee_segments,
-            args,
-            flavor,
-            macro_call: Some(_),
-            ..
-        } => {
-            debug_assert_eq!(
-                callee_segments.len(),
-                1,
-                "macro UFCS must have a single-segment callee"
-            );
-            (
-                callee_segments[0].as_str(),
-                call_arg_refs(args),
-                Some((receiver.as_ref(), *flavor)),
-            )
-        }
+    let (name, stages) = match original {
+        Expr::UserMacro { name, stages, .. } => (name.as_str(), stages),
         _ => unreachable!("user-macro action preparation received another expression"),
     };
+    let source_args: Vec<_> = stages
+        .iter()
+        .flat_map(|stage| call_arg_refs(&stage.args))
+        .collect();
     let (macro_def, macro_module) = resolve_user_macro_for_call(name, span, tcx)?;
     let trailing_call = matches!(
         original,
@@ -8345,22 +8152,9 @@ pub(crate) fn prepare_user_macro_action<'m>(
     };
     let type_slot_modes =
         resolve_user_macro_slot_modes_for_call(macro_def, &layout, tcx, macro_module)?;
-    let args = match ufcs {
-        Some((receiver, flavor)) => {
-            let alias_ctx = tcx.env.alias_ctx();
-            splice_ufcs_arg_refs_interned(
-                &call_ty,
-                receiver,
-                &source_args,
-                &source_args,
-                flavor,
-                span,
-                &alias_ctx,
-            )?
-        }
-        None => source_args,
-    };
+    let args = source_args;
     Ok(PreparedUserMacroAction {
+        result_span: span,
         node_id: elaboration_node_id(original)
             .expect("a user-macro expression carries an elaboration node"),
         name: macro_def.name.clone(),
@@ -8368,6 +8162,7 @@ pub(crate) fn prepare_user_macro_action<'m>(
         macro_module,
         call_ty,
         args,
+        stages,
         layout,
         type_slot_modes,
         span,
@@ -9999,7 +9794,7 @@ fn decode_user_macro_result(
                     }
                 }
             } else {
-                Ok(term.canonicalize_generated_names())
+                Ok(term.canonicalize_template(ctx))
             }
         }
         other => Err(UserMacroDecodeError::Diagnostic(format!(
@@ -10132,7 +9927,7 @@ mod tests {
         for body in [
             "host fn retain(callback: . -> .) -> .; rec(drive) fn again(value: .) -> . { retain(.() { recur(escape) again(value) }) }",
             "rec(drive) fn again(value: .) -> . -> . { .() { (recur(escape) again(value))() } }",
-            "host fn retain(callback: . -> .) -> .; rec(drive) fn again[A](value: A) -> A { let ignored = retain(.() { recur(poly, escape) again(., ()) }); value }",
+            "host fn retain(callback: . -> .) -> .; rec(drive) fn again[A](value: A) -> A { let ignored = retain(.() { recur(poly, escape) again[.](()) }); value }",
         ] {
             let source = format!(
                 "module main; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R; {body}"
@@ -10147,7 +9942,7 @@ mod tests {
             let source = format!("module main; host fn drive[S][R](step: ((S -> R) & S) -> (S | R), state: S) -> R;
                 host fn retain(callback: [T] T -> T) -> .;
                 rec(drive) fn again[A](value: A) -> A {{
-                    let ignored = retain(.[{binder}](inner: {binder}) -> {binder} {{ recur(poly, escape) again({binder}, inner) }});
+                    let ignored = retain(.[{binder}](inner: {binder}) -> {binder} {{ recur(poly, escape) again[{binder}](inner) }});
                     value
                 }}");
             check_package_sources(&[&source]).unwrap_or_else(|error| panic!("{source}\n{error:?}"));
@@ -10184,7 +9979,7 @@ mod tests {
             pure fn invoke_then_impl(ct: __Comptime__, fills: __Fill_ctx__,
                 _s: __Type__, _r: __Type__, callback: __Checked_term__, _later: __Checked_term__
             ) -> (__Checked_term__ & __Fill_ctx__) {
-                let unit = __reflect_type__(ct, .);
+                let unit = __reflect_type__(ct)[.];
                 let zero = __type_arity_zero__(ct);
                 let thunk = __type_arrow__(ct, unit, zero, unit);
                 let callback_type = __type_arrow__(ct, unit, zero, thunk);
@@ -10210,7 +10005,7 @@ mod tests {
             }
             macro ignore : [A] A -> . { impl(fills) ignore_impl; };
             rec(drive) {
-                fn spin(value: .) -> . { ignore(. -> ., .x. { recur // keep\n spin(x1) }) };
+                fn spin(value: .) -> . { ignore[. -> .]( .x. { recur // keep\n spin(x1) }) };
                 fn saved(value: .) -> . { retain(.() { recur(escape) saved(value) }) }
             }";
         let error = check_package_sources(&[source])
@@ -10262,7 +10057,7 @@ mod tests {
         for call in [
             "recur(cont, escape) spin(value)",
             "after(recur(escape) spin(value))",
-            "after(recur(escape) spin(., ()))",
+            "after(recur(escape) spin[.](()))",
             "recur(poly, cont, escape) spin(value)",
         ] {
             let source = format!(
@@ -10513,29 +10308,29 @@ mod tests {
             host type Right;
             type Pair[A] = A & A;
             fn direct(
-              , packet: Pair(Left)
-              , context: Pair(Right)
-              ) -> Pair(Left) {
-              keep(Pair(Left), packet, Pair(Right), context)
+              , packet: Pair[Left]
+              , context: Pair[Right]
+              ) -> Pair[Left] {
+              keep[Pair[Left]](packet)[Pair[Right]](context)
             }
             fn ufcs(
-              , packet: Pair(Left)
-              , context: Pair(Right)
-              ) -> Pair(Left) {
-              packet.>keep(Pair(Left), Pair(Right), context)
+              , packet: Pair[Left]
+              , context: Pair[Right]
+              ) -> Pair[Left] {
+              (packet.>keep[Pair[Left]])[Pair[Right]](context)
             }
             fn inferred(
-              , packet: Pair(Left)
-              , context: Pair(Right)
-              ) -> Pair(Left) {
-              let result = keep(packet, context);
+              , packet: Pair[Left]
+              , context: Pair[Right]
+              ) -> Pair[Left] {
+              let result = keep(packet)(context);
               result
             }
             fn inferred_ufcs(
-              , packet: Pair(Left)
-              , context: Pair(Right)
-              ) -> Pair(Left) {
-              let result = packet.>keep(context);
+              , packet: Pair[Left]
+              , context: Pair[Right]
+              ) -> Pair[Left] {
+              let result = (packet.>keep)(context);
               result
             }
             fn implicit_unit() -> . { keep_unit() }
@@ -10832,7 +10627,7 @@ mod tests {
                  pub macro phantom : [Source] Source -> [A] [B] A {{ {declaration}; }};"
             );
             let main = "module main; import macros(macro phantom); \
-                pub fn residual() -> [B] . { phantom((), .) }";
+                pub fn residual() -> [B] . { phantom(())[.] }";
             let baseline = emit_and_recheck(&[
                 ("macros.kio", &macro_def),
                 ("main.kio", main),
@@ -10851,15 +10646,15 @@ mod tests {
 
             for caller in [
                 "module main; import macros(macro phantom); type B_n2 = .; \
-                 pub fn residual() -> [B] . { phantom((), .) }",
+                 pub fn residual() -> [B] . { phantom(())[.] }",
                 "module main; import macros(macro phantom); import provider(B_n2); \
-                 pub fn residual() -> [B] . { phantom((), .) }",
+                 pub fn residual() -> [B] . { phantom(())[.] }",
                 "module main; import macros(macro phantom); \
-                 pub fn residual[B_n2]() -> [B] . { phantom((), .) }",
+                 pub fn residual[B_n2]() -> [B] . { phantom(())[.] }",
                 "module main; import macros(macro phantom); rec { \
                    type B_n2 = Wrap; \
                    newtype Wrap : B_n2 { constructor mk; projector un; }; \
-                 } pub fn residual() -> [B] . { phantom((), .) }",
+                 } pub fn residual() -> [B] . { phantom(())[.] }",
             ] {
                 let emitted = emit_and_recheck(&[
                     ("macros.kio", &macro_def),
@@ -11108,7 +10903,7 @@ mod tests {
             pure fn select_second(_ct: __Comptime__, _a: __Type__, _b: __Type__, \
                 _first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ { second } \
             pub macro match : [A][B] A -> B -> B { impl select_second; };";
-        for call in ["match(.t(Flag), .f)", "(.t(Flag)).>match(.f)"] {
+        for call in ["match(.t[Flag])(.f)", "((.t[Flag]).>match)(.f)"] {
             let main = format!(
                 "module main; import unrelated(macro match); \
                  host type Flag role(bool); fn run() -> Flag {{ {call} }}"
@@ -11521,14 +11316,14 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn projected_condition_calls_advance_selected_layers_without_replay() {
         let package = lowered_control_package(&[(
             "main.kio",
-            "module main; import control(Bool, macro if); host type I32 role(i32); fn both(left: Bool, right: Bool) -> Bool { if(left) { right } else { .f(Bool) } } fn value(left: Bool, right: Bool) -> I32 { if(both(if(left) { .t(Bool) } else { .f(Bool) }, if(right) { .t(Bool) } else { .f(Bool) })) { 1(I32) } else { 0(I32) } }",
+            "module main; import control(Bool, macro if); host type I32 role(i32); fn both(left: Bool, right: Bool) -> Bool { if(left) { right } else { .f[Bool] } } fn value(left: Bool, right: Bool) -> I32 { if(both(if(left) { .t[Bool] } else { .f[Bool] }, if(right) { .t[Bool] } else { .f[Bool] })) { 1[I32] } else { 0[I32] } }",
         )]);
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let (checked, scope) = check_retained_success(&package);
         let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
         assert_eq!(
-            work.final_selected_layer_continues, 2,
-            "the two nested argument calls each select their public layer once"
+            work.final_selected_layer_continues, 6,
+            "each of the two nested calls selects its three public Function stages once"
         );
         assert_eq!(
             scope.memo().user_macro_template_executions(),
@@ -11537,6 +11332,160 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         );
         validate_substituted_package(checked.substituted())
             .expect("nested projected conditions produce ordinary Prime");
+    }
+
+    #[test]
+    fn call_stages_keep_products_and_propagate_local_context() {
+        check_package_sources(&[r#"module main;
+            host type String role(str);
+            fn packet[A](left: A, _right: A) -> A { left }
+            fn same[A](left: A)(right: A) -> A { left }
+            fn same_three[A](first: A)(second: A)(third: A) -> A { first }
+            fn braid[A][B](first: A)(second: B)(third: A)(fourth: B) -> A & B { (third, fourth) }
+            fn run(known: String) -> String & (String & (String & (String & String))) {
+                (packet(known, known), packet((known, known)),
+                 same("first")(known), same_three("first")("second")(known),
+                 packet(braid("left")("right")(known)(known)))
+            }
+        "#])
+        .expect("fixed stages retain whole-product and finite contextual inference");
+        for body in ["same(known, known)", "same(known)(known, known)"] {
+            let error = check_package_sources(&[&format!(
+                "module main; host type String; fn same[A](left: A)(right: A) -> A {{ left }} fn run(known: String) -> String {{ {body} }}"
+            )]).expect_err("a value packet cannot consume two Function layers");
+            assert!(error.diag().1.contains("type mismatch"), "{error:?}");
+        }
+    }
+
+    #[test]
+    fn call_stages_brackets_unit_and_nearest_ufcs() {
+        check_package_sources(&[r#"module main;
+            host type String role(str);
+            fn staged(prefix: String)[A](value: A) -> A { value }
+            fn two(prefix: String)(left: String, right: String) -> String { right }
+            fn first(left: String, right: String)[A](value: A) -> A { value }
+            fn unit[A]() -> A -> A { .(value: A) { value } }
+            fn run(known: String) -> String {
+                let a = staged(known)[String].<known;
+                let b = staged(known)[String].<<known;
+                let c = two(known)(known).<known;
+                let d = two(known)(known).<<known;
+                let e = known.>first(known)[String](known);
+                let f = known.>>first(known)[String](known);
+                unit[String]()(known)
+            }
+        "#])
+        .expect("written type stages and nearest value groups control placement");
+    }
+
+    #[test]
+    fn call_stages_reflection_helpers_accept_whole_packets() {
+        for fills in [false, true] {
+            let (schedule, extra_param, result, returned) = if fills {
+                (
+                    "impl(fills)",
+                    "fills: __Fill_ctx__,",
+                    "__Checked_term__ & __Fill_ctx__",
+                    "(invoke(ct, body), fills)",
+                )
+            } else {
+                ("impl", "", "__Checked_term__", "invoke(ct, body)")
+            };
+            for expression in [
+                "__term_call__(ct, __term_type__(ct, body), body, __term_unit__(ct))",
+                "__term_call__((ct, __term_type__((ct, body)), body, __term_unit__(ct)))",
+                "let packet = (ct, __term_type__(ct, body), body, __term_unit__(ct)); __term_call__(packet)",
+            ] {
+                let provider = format!(
+                    r#"module helpers; import __comptime__;
+                    pure fn invoke(ct: __Comptime__, body: __Checked_term__) -> __Checked_term__ {{
+                        {expression}
+                    }}
+                    pure fn scope_impl(ct: __Comptime__, {extra_param} _result: __Type__, body: __Checked_term__) -> {result} {{ {returned} }}
+                    pub macro scope : [Result] (. -> Result) -> Result {{
+                        trailing thunk; {schedule} scope_impl;
+                    }};
+                "#
+                );
+                check_package_sources(&[
+                    &provider,
+                    r#"module main; import helpers(macro scope);
+                    equiv local_work[A](value: A) {
+                        scope { let copy = value; copy }; value
+                    }
+                    "#,
+                ])
+                .unwrap_or_else(|error| panic!("{schedule}, {expression}: {error:?}"));
+            }
+        }
+    }
+
+    #[test]
+    fn call_stages_macro_public_inputs_and_ordinary_result_are_distinct() {
+        for fills in [false, true] {
+            let (schedule, extra_param, result, body) = if fills {
+                (
+                    "impl(fills)",
+                    "fills: __Fill_ctx__,",
+                    "__Checked_term__ & __Fill_ctx__",
+                    "(value, fills)",
+                )
+            } else {
+                ("impl", "", "__Checked_term__", "value")
+            };
+            let provider = format!(
+                r#"module macros; import __comptime__;
+                pure fn identity_impl(_ct: __Comptime__, {extra_param} _a: __Type__, value: __Checked_term__) -> {result} {{ {body} }}
+                pub macro identity : [A] A -> A {{ {schedule} identity_impl; }};
+                pure fn first_impl(_ct: __Comptime__, {extra_param} _a: __Type__, value: __Checked_term__, _other: __Checked_term__) -> {result} {{ {body} }}
+                pub macro first : [A] A -> A -> A {{ {schedule} first_impl; }};
+            "#
+            );
+            for call in [
+                "identity(echo)(known)",
+                "identity(poly)[String](known)",
+                "identity(poly)(known)",
+                "first(\"early\")(known)",
+            ] {
+                let main = format!(
+                    r#"module main; import macros(macro identity, macro first);
+                    host type String role(str);
+                    fn echo(value: String) -> String {{ value }}
+                    fn poly[A](value: A) -> A {{ value }}
+                    fn run(known: String) -> String {{ {call} }}
+                "#
+                );
+                let package = lowered_package(&[("macros.kio", &provider), ("main.kio", &main)]);
+                let body_span = package
+                    .module("main")
+                    .unwrap()
+                    .module
+                    .items
+                    .iter()
+                    .find_map(|item| match item {
+                        Item::FnDef(def) if def.name == "run" => Some(def.body.span()),
+                        _ => None,
+                    })
+                    .unwrap();
+                let (checked, scope) = check_retained_success(&package);
+                assert_eq!(
+                    scope.memo().user_macro_template_executions(),
+                    1,
+                    "{schedule}: {call}"
+                );
+                let result_type = checked
+                    .elaborations
+                    .position_index()
+                    .type_at("main", body_span)
+                    .expect("the complete written call has one final position type");
+                assert!(
+                    matches!(result_type, Type::Path { segments, .. } if segments.last().unwrap().name == "String"),
+                    "{call}: {result_type:?}"
+                );
+                validate_substituted_package(checked.substituted())
+                    .unwrap_or_else(|error| panic!("{schedule}: {call}: {error:?}"));
+            }
+        }
     }
 
     #[test]
@@ -11552,7 +11501,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             );
             for value in [
                 literal.to_owned(),
-                format!("{literal}(_)"),
+                format!("{literal}[_]"),
                 format!("identity({literal})"),
                 format!("let .(value: Chosen) = identity({literal}); value"),
             ] {
@@ -11569,7 +11518,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                     .expect("either sibling establishes the shared literal carrier");
             }
             let error = check_package_sources(&[&format!(
-                "{declarations} fn value() -> Chosen {{ {literal}(Other) }}"
+                "{declarations} fn value() -> Chosen {{ {literal}[Other] }}"
             )])
             .expect_err("context cannot override a written literal annotation");
             assert!(error.diag().1.contains("type mismatch"), "{error:?}");
@@ -11620,7 +11569,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 ".[A](value: A) { known }",
                 ".[B](value: B) { identity(\"\") }",
                 "String",
-                "selected()(Number, number)",
+                "selected()[Number](number)",
             ),
         ] {
             for reversed in [false, true] {
@@ -11630,7 +11579,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                     (known, literal)
                 };
                 let main = format!(
-                    "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn identity[A](value: A) -> A {{ value }} host fn get_identity() -> [A] A -> A; fn run(known: String, number: Number) -> {result} {{ let selected = common2(.() {{ {left} }}, .() {{ {right} }}); {use_} }}"
+                    "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn identity[A](value: A) -> A {{ value }} host fn get_identity() -> [A] A -> A; fn run(known: String, number: Number) -> {result} {{ let selected = common2(.() {{ {left} }})(.() {{ {right} }}); {use_} }}"
                 );
                 check_package_sources(&[COMMON_RESULT_FILLS, &main]).unwrap_or_else(|error| {
                     panic!("{known} / {literal}, reversed={reversed}: {error:?}")
@@ -11642,7 +11591,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn inference_only_nested_relation_finishes_input_before_outer_literal() {
         for reversed in [false, true] {
-            let known = "ordinary(common2(.() { 1(Number) }, .() { 2 })(), text)";
+            let known = "ordinary(common2(.() { 1[Number] })(.() { 2 })(), text)";
             let literal = "\"nested\"";
             let (left, right) = if reversed {
                 (literal, known)
@@ -11650,7 +11599,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 (known, literal)
             };
             let main = format!(
-                "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn ordinary[Source](_number: Source, text: String) -> String {{ text }} fn run(text: String) -> String {{ let selected = common2(.() {{ {left} }}, .() {{ {right} }}); selected() }}"
+                "module main; import common(macro common2); host type String role(str); host type Number role(i32); fn ordinary[Source](_number: Source, text: String) -> String {{ text }} fn run(text: String) -> String {{ let selected = common2(.() {{ {left} }})(.() {{ {right} }}); selected() }}"
             );
             let package =
                 lowered_package(&[("common.kio", COMMON_RESULT_FILLS), ("main.kio", &main)]);
@@ -11673,8 +11622,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn inference_only_fills_identity_waits_for_outer_sibling_context() {
         let helper = "module keep; import __comptime__; pure fn keep_impl(_ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (value, fills) } pub macro keep : [A] A -> A { impl(fills) keep_impl; };";
         for arguments in [
-            ".() { ordinary(1(Number), text) }, .() { keep(\"filled\") }",
-            ".() { keep(\"filled\") }, .() { ordinary(1(Number), text) }",
+            ".() { ordinary(1[Number], text)})(.() { keep(\"filled\") }",
+            ".() { keep(\"filled\")})(.() { ordinary(1[Number], text) }",
         ] {
             let main = format!(
                 "module main; import common(macro common2); import keep(macro keep); host type String role(str); host type Number role(i32); fn ordinary[Source](_number: Source, text: String) -> String {{ text }} fn run(text: String) -> String {{ let selected = common2({arguments}); selected() }}"
@@ -11694,7 +11643,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn inference_only_written_callback_context_reaches_retained_pair_literals() {
         check_macro_src(
-            "module main; host type Number role(i32); host type List[A]; host fn empty[A]() -> A | .; fn fold[A][Acc](_xs: List(A), seed: Acc, _step: (Acc & A) -> Acc) -> Acc { seed } fn value[A](xs: List(A)) -> Number & (A | .) { let final = fold(xs, (0, empty(A)()), .(carry: Number & (A | .), x: A) -> Number & (A | .) { (0, widen_sum((), A | .)) }); final }",
+            "module main; host type Number role(i32); host type List[A]; host fn empty[A]() -> A | .; fn fold[A][Acc](_xs: List[A], seed: Acc, _step: (Acc & A) -> Acc) -> Acc { seed } fn value[A](xs: List[A]) -> Number & (A | .) { let final = fold(xs, (0, empty[A]()), .(carry: Number & (A | .), x: A) -> Number & (A | .) { (0, widen_sum(())[A | .]) }); final }",
         )
         .expect("a written callback result types its body and the sibling seed");
     }
@@ -11769,31 +11718,31 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 format!("known, {{item = {literal}}}"),
             ] {
                 let source = format!(
-                    "module main; host type Carrier role({role}); labels {{ item[A]: A }}; fn common[A](left: A, _right: A) -> A {{ left }} fn value(known: Item(Carrier)) {{ let selected = common({arguments}); () }}"
+                    "module main; host type Carrier role({role}); labels {{ item[A]: A }}; fn common[A](left: A, _right: A) -> A {{ left }} fn value(known: Item[Carrier]) {{ let selected = common({arguments}); () }}"
                 );
                 check_package_sources(&[&source])
                     .expect("a later sibling supplies the retained constructor's exact result");
             }
         }
         for source in [
-            "module main; host type Scalar role(i32); host type String role(str); labels { number[A]: A, text[A]: A }; fn value() -> Text(String) & Number(Scalar) { {number = 7, text = \"text\"} }",
-            "module main; host type Number role(i32); host type Token; labels { pack[A] <U>: A & U }; fn value(token: Token) -> Pack(Number) { {pack = (7, token)} }",
-            "module main; host type Number role(i32); labels { poly[A]: [B] B -> A }; fn value() -> Poly(Number) { {poly = .[B](_value: B) { 7 }} }",
+            "module main; host type Scalar role(i32); host type String role(str); labels { number[A]: A, text[A]: A }; fn value() -> Text[String] & Number[Scalar] { {number = 7, text = \"text\"} }",
+            "module main; host type Number role(i32); host type Token; labels { pack[A] <U>: A & U }; fn value(token: Token) -> Pack[Number] { {pack = (7, token)} }",
+            "module main; host type Number role(i32); labels { poly[A]: [B] B -> A }; fn value() -> Poly[Number] { {poly = .[B](_value: B) { 7 }} }",
         ] {
             check_package_sources(&[source])
                 .expect("construction preserves order, existential and higher-rank public schemes");
         }
         for (source, diagnostic) in [
             (
-                "module main; host type Small role(i8); labels { value[A]: A }; fn bad() -> Value(Small) { {value = 128} }",
+                "module main; host type Small role(i8); labels { value[A]: A }; fn bad() -> Value[Small] { {value = 128} }",
                 "range",
             ),
             (
-                "module main; host type Number role(i32); labels { value[A]: A }; fn bad() -> Value(Number) { {value = \"wrong\"} }",
+                "module main; host type Number role(i32); labels { value[A]: A }; fn bad() -> Value[Number] { {value = \"wrong\"} }",
                 "string literal cannot have the expected type",
             ),
             (
-                "module main; host type A role(i32); labels { value[B]: B }; fn bad[A]() -> Value(A) { {value = 7} }",
+                "module main; host type A role(i32); labels { value[B]: B }; fn bad[A]() -> Value[A] { {value = 7} }",
                 "role-bearing",
             ),
         ] {
@@ -11819,7 +11768,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             ),
             (
                 "main.kio",
-                "module main; import origin as o; import other as d; import relay as r; host type Number role(i32); host type String role(str); fn value() -> d.Item(String) & o.Item(Number) { {r.entry = 7, d.item = \"other\"} }",
+                "module main; import origin as o; import other as d; import relay as r; host type Number role(i32); host type String role(str); fn value() -> d.Item[String] & o.Item[Number] { {r.entry = 7, d.item = \"other\"} }",
             ),
         ];
         let parsed = sources
@@ -11859,11 +11808,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         for sources in [
             vec![
                 "module origin; labels { item[A]: A };",
-                "module main; import origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7(Number)}; () }",
+                "module main; import origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7[Number]}; () }",
             ],
             vec![
                 "module scope/origin; pub(scope) labels { item[A]: A };",
-                "module outside; import scope/origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7(Number)}; () }",
+                "module outside; import scope/origin as o; host type Number role(i32); fn bad() { let selected = {o.item = 7[Number]}; () }",
             ],
         ] {
             let error = check_package_sources(&sources)
@@ -11876,19 +11825,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         }
         check_package_sources(&[
             "module scope/origin; pub(scope) labels { item[A]: A };",
-            "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item(Number) { {o.item = 7} }",
+            "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item[Number] { {o.item = 7} }",
         ]).expect("ordinary scoped visibility admits the constructor in its subtree");
 
         for source in [
             "module main; host type Number role(i32); labels { pack<U>: U }; fn bad() -> Pack { {pack = 7} }",
-            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn bad() -> Item(Number) & Item(String) { {first = 7, second = \"second\"} }",
+            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn bad() -> Item[Number] & Item[String] { {first = 7, second = \"second\"} }",
         ] {
             let error = check_package_sources(&[source])
                 .expect_err("no unique carrier follows from the result");
             assert!(error.diag().1.contains("cannot determine"), "{error:?}");
         }
         check_package_sources(&[
-            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn value() -> Item(Number) & Item(String) { {first = 7(Number), second = \"second\"(String)} }",
+            "module main; host type Number role(i32); host type String role(str); labels { item[A]: A }; type {first} = {item}; type {second} = {item}; fn value() -> Item[Number] & Item[String] { {first = 7[Number], second = \"second\"[String]} }",
         ]).expect("explicit carriers keep repeated nominal heads admissible");
         check_package_sources(&[
             "module main; labels { box[A]: A }; fn value[Box](known: Box) { let selected = {box = known}; () }",
@@ -11899,7 +11848,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn label_construction_binds_payloads_before_expected_row_permutation() {
         let package = lowered_package(&[(
             "main.kio",
-            "module main; host type Number role(i32); host fn first_effect() -> Number; host fn second_effect() -> Number; labels { first[A]: A, second[A]: A }; fn value() -> Second(Number) & First(Number) { {first = first_effect(), second = second_effect()} }",
+            "module main; host type Number role(i32); host fn first_effect() -> Number; host fn second_effect() -> Number; labels { first[A]: A, second[A]: A }; fn value() -> Second[Number] & First[Number] { {first = first_effect(), second = second_effect()} }",
         )]);
         let (checked, _) = check_retained_success(&package);
         let module = &checked.package().module("main").expect("module").module;
@@ -11950,7 +11899,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             let [CallArg::Value(Expr::Call { callee, args, .. })] = args.as_slice() else {
                 panic!("one payload call")
             };
-            assert!(args.is_empty());
+            assert!(matches!(
+                args.as_slice(),
+                [CallArg::Value(Expr::Unit { .. })]
+            ));
             let Expr::Path { segments, .. } = callee.as_ref() else {
                 panic!("host effect path")
             };
@@ -11983,11 +11935,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn inference_only_connected_callable_result_types_earlier_literals() {
         check_package_sources(&[
-            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V); host fn insert_entry[K][V](build: Compare(K) -> Dict(K, V), key: K, val: V) -> Compare(K) -> Dict(K, V); fn value(compare: Compare(Number)) -> Dict(Number, Number) { insert_entry(insert_entry(empty_builder(), 1, 10), 2, 20)(compare) }",
+            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare[K] -> Dict[K][ V]; host fn insert_entry[K][V](build: Compare[K] -> Dict[K][ V], key: K, val: V) -> Compare[K] -> Dict[K][ V]; fn value(compare: Compare[Number]) -> Dict[Number][ Number] { insert_entry(insert_entry(empty_builder(), 1, 10), 2, 20)(compare) }",
         ])
         .expect("the connected monomorphic callable retains its public type equations");
         check_package_sources(&[
-            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V); host fn insert_entry[K][V](build: Compare(K) -> Dict(K, V), key: K, val: V) -> Compare(K) -> Dict(K, V); fn value(compare: Compare(Number)) -> Dict(Number, Number) { let built = insert_entry(empty_builder(), 1, 10(Number))(compare); built }",
+            "module main; host type Number role(i32); host type Compare[A]; host type Dict[K][V]; host fn empty_builder[K][V]() -> Compare[K] -> Dict[K][ V]; host fn insert_entry[K][V](build: Compare[K] -> Dict[K][ V], key: K, val: V) -> Compare[K] -> Dict[K][ V]; fn value(compare: Compare[Number]) -> Dict[Number][ Number] { let built = insert_entry(empty_builder(), 1, 10[Number])(compare); built }",
         ])
         .expect("the later ordinary argument supplies the earlier key's type");
     }
@@ -12021,9 +11973,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn inference_only_computed_callable_preserves_literal_validation() {
         for (expression, diagnostic) in [
-            ("keep(128)(1(Number))", "range"),
+            ("keep(128)(1[Number])", "range"),
             (
-                "keep(\"wrong\")(1(Number))",
+                "keep(\"wrong\")(1[Number])",
                 "string literal cannot have the expected type",
             ),
             ("let result = keep(1)(2); ()", "cannot determine"),
@@ -12109,12 +12061,12 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn inferred_boolean_specialization_uses_the_selected_condition() {
         for expression in [
             "__if_then_else__(flag, .() { known }, .() { known })",
-            "__if_then_else__(Flag, String, flag, .() { known }, .() { known })",
-            "__if_then_else__(Flag, String)(flag, .() { known }, .() { known })",
-            "__if_then_else__(_, String)(flag, .() { known }, .() { known })",
-            "__if_then_else__(Flag)(String, flag, .() { known }, .() { known })",
-            "let choose = __if_then_else__(Flag); choose(String, flag, .() { known }, .() { known })",
-            "let .(choose: [A] (Flag & (. -> A) & (. -> A)) -> A) = __if_then_else__; choose(String, flag, .() { known }, .() { known })",
+            "__if_then_else__[Flag][String](flag, .() { known }, .() { known })",
+            "__if_then_else__[Flag](flag, .() { known }, .() { known })",
+            "__if_then_else__[_][String](flag, .() { known }, .() { known })",
+            "__if_then_else__[Flag][String](flag, .() { known }, .() { known })",
+            "let choose = __if_then_else__[Flag]; choose[String](flag, .() { known }, .() { known })",
+            "let .(choose: [A] (Flag & (. -> A) & (. -> A)) -> A) = __if_then_else__; choose[String](flag, .() { known }, .() { known })",
         ] {
             let source = format!(
                 "module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); host type String role(str); fn run(flag: Flag, known: String) -> String {{ {expression} }}"
@@ -12126,8 +12078,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn inferred_boolean_specialization_preserves_exact_alias_and_result_identity() {
-        for carrier in ["Flag", "Alias(.)", "Other"] {
-            check_package_sources(&[&format!("module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); type Alias[A] = Flag; fn run[A](flag: {carrier}, value: A) -> A {{ __if_then_else__({carrier}, A, flag, .() {{ value }}, .() {{ value }}) }}")])
+        for carrier in ["Flag", "Alias[.]", "Other"] {
+            check_package_sources(&[&format!("module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); type Alias[A] = Flag; fn run[A](flag: {carrier}, value: A) -> A {{ __if_then_else__[{carrier}][A](flag, .() {{ value }}, .() {{ value }}) }}")])
                 .expect("only the selected exact Boolean carrier matters; result binders remain ordinary");
         }
     }
@@ -12135,7 +12087,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn inferred_boolean_specialization_preserves_ordinary_type_only_values() {
         check_package_sources(&[
-            "module main; fn value[A] { () } fn run() -> . { let saved = value; saved(.) }",
+            "module main; fn value[A] { () } fn run() -> . { let saved = value; saved[.] }",
         ])
         .expect("an ordinary type-only value has no intrinsic specialization obligation");
         for callee in ["ordinary", "__if_then_else__"] {
@@ -12154,8 +12106,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             "fn run() -> . { let _ = __if_then_else__; () }",
             "fn run() -> . { let pair = (__if_then_else__, ()); () }",
             "fn identity[A](value: A) -> A { value } fn run() -> . { let choose = identity(__if_then_else__); () }",
-            "fn run() -> . { let choose = __if_then_else__(String); () }",
-            "fn run[B]() -> . { let choose = __if_then_else__(B); () }",
+            "fn run() -> . { let choose = __if_then_else__[String]; () }",
+            "fn run[B]() -> . { let choose = __if_then_else__[B]; () }",
             "fn run[B](flag: B) -> . { __if_then_else__(flag, .() { () }, .() { () }) }",
             "fn run() -> [B] [A] (B & (. -> A) & (. -> A)) -> A { __if_then_else__ }",
         ] {
@@ -12179,28 +12131,28 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             } else {
                 "Message"
             };
-            check_package_sources(&[&format!("module main; import __comptime__; {declaration} pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ let text = \"message\"({annotation}); text }}")])
+            check_package_sources(&[&format!("module main; import __comptime__; {declaration} pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ let text = \"message\"[{annotation}]; text }}")])
                 .expect("explicit diagnostic text keeps its existing compiler type");
         }
         check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\" }"])
             .expect("checked diagnostic context admits a string literal");
-        let error = check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"(Comptime_str) }"])
+        let error = check_package_sources(&["module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"[Comptime_str] }"])
             .expect_err("a diagnostic result cannot retarget a string literal");
         assert!(error.diag().1.contains("type mismatch"), "{error:?}");
         check_package_sources(&[
-            "module main; fn message() -> . { let text = \"message\"(__Diagnostic_text__); () }",
+            "module main; fn message() -> . { let text = \"message\"[__Diagnostic_text__]; () }",
         ])
         .expect_err("a reserved spelling does not import the diagnostic type");
-        for literal in ["\"message\"(Message)", "\"message\""] {
+        for literal in ["\"message\"[Message]", "\"message\""] {
             check_package_sources(&[
                 "module provider; import __comptime__; pub type Message = __Diagnostic_text__; pure fn consume_impl(ct: __Comptime__, _value: __Checked_term__) -> __Checked_term__ { __term_unit__(ct) } pub macro consume : Message -> . { impl consume_impl; };",
                 &format!("module main; import provider(Message, macro consume); fn message() -> . {{ consume({literal}) }}"),
             ]).expect("the provider's imported diagnostic identity is consumed before runtime");
         }
         for literal in [
-            "17(__Diagnostic_text__)",
-            ".t(__Diagnostic_text__)",
-            "1.5(__Diagnostic_text__)",
+            "17[__Diagnostic_text__]",
+            ".t[__Diagnostic_text__]",
+            "1.5[__Diagnostic_text__]",
         ] {
             let source = format!(
                 "module main; import __comptime__; pure fn message(ct: __Comptime__) -> __Diagnostic_text__ {{ {literal} }}"
@@ -12212,7 +12164,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 "{error:?}"
             );
         }
-        let error = check_package_sources(&["module main; import __comptime__; host type String role(str); pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"(String) }"])
+        let error = check_package_sources(&["module main; import __comptime__; host type String role(str); pure fn message(ct: __Comptime__) -> __Diagnostic_text__ { \"message\"[String] }"])
             .expect_err("a diagnostic expectation cannot override an explicit ordinary carrier");
         assert!(error.diag().1.contains("type mismatch"), "{error:?}");
     }
@@ -12248,7 +12200,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         );
         let provider = "module provider; pub host type Int role(i64);";
         let other = "module other; pub host type Int role(i64);";
-        for literal in ["42", "42(_)", "(42)"] {
+        for literal in ["42", "42[_]", "(42)"] {
             let source = format!(
                 "module main; import provider(Int); import provider as numbers; import other as provider; fn value[Int](x: Int) -> Int {{ let number = {literal}; x }}"
             );
@@ -12267,7 +12219,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                     &edit.replacement,
                 );
             }
-            assert!(repaired.contains("42(numbers.Int)"), "{repaired}");
+            assert!(repaired.contains("42[numbers.Int]"), "{repaired}");
             assert!(!repaired.contains("default "), "{repaired}");
             checked(&[provider, other, &repaired])
                 .expect("qualified annotation cannot capture the source binder");
@@ -12276,8 +12228,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn explicit_literals_resolve_applied_aliases_without_binder_capture() {
-        check_package_sources(&["module main; host type Int role(i64); type Ignore[A] = Int; type Selected = Ignore(.); type Again = Ignore(.); fn value[Selected](x: Selected) -> Int { let n = 42(Again); n }"]).expect("equivalent applied aliases select one terminal host identity");
-        check_package_sources(&["module main; import __intrinsics__; host type Flag role(bool); type Concrete = Flag; fn choose[Flag](x: Flag) -> Flag { __if_then_else__(Concrete, Flag, .t, .() { x }, .() { x }) }"]).expect("the intrinsic Boolean slot is not the source binder");
+        check_package_sources(&["module main; host type Int role(i64); type Ignore[A] = Int; type Selected = Ignore[.]; type Again = Ignore[.]; fn value[Selected](x: Selected) -> Int { let n = 42[Again]; n }"]).expect("equivalent applied aliases select one terminal host identity");
+        check_package_sources(&["module main; import __intrinsics__; host type Flag role(bool); type Concrete = Flag; fn choose[Flag](x: Flag) -> Flag { __if_then_else__[Concrete][Flag](.t, .() { x }, .() { x }) }"]).expect("the intrinsic Boolean slot is not the source binder");
     }
 
     #[test]
@@ -12290,22 +12242,22 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .contains("requires an admitting role-bearing host type"),
             "{error:?}"
         );
-        check_package_sources(&["module main; import __comptime__; type Flag = Comptime_bool; fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x }"]).expect("an explicit alias retains its owner under a same-spelled source binder");
+        check_package_sources(&["module main; import __comptime__; type Flag = Comptime_bool; fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x }"]).expect("an explicit alias retains its owner under a same-spelled source binder");
     }
 
     #[test]
     fn imported_builtin_literal_annotations_retain_owner_identity_and_erase_without_capture() {
-        let provider = "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity(Comptime_bool);";
-        let keep = "module main; import provider(Flag); fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x }";
+        let provider = "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity[Comptime_bool];";
+        let keep = "module main; import provider(Flag); fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x }";
         check_package_sources(&[provider, keep])
             .expect("imported builtin aliases preserve their owner identity");
         let wrong = "module main; import provider(Flag); fn wrong[Comptime_bool](x: Comptime_bool) -> Comptime_bool { .t }";
         check_package_sources(&[provider, wrong])
             .expect_err("alias expansion cannot capture a consumer binder");
-        let expected = "module main; import provider(Flag); fn expected() -> Flag { .t(Flag) } fn explicit() -> Flag { .t(Flag) }";
+        let expected = "module main; import provider(Flag); fn expected() -> Flag { .t } fn explicit() -> Flag { .t[Flag] }";
         check_package_sources(&[provider, expected])
             .expect("explicit imported builtin aliases need no default");
-        let colliding = "module main; import provider(Flag); host type Comptime_bool[A]; pure fn value() -> Flag { let flag = .t(Flag); flag } equiv selected_boolean() { value(); .t(Flag) }";
+        let colliding = "module main; import provider(Flag); host type Comptime_bool[A]; pure fn value() -> Flag { let flag = .t[Flag]; flag } equiv selected_boolean() { value(); .t[Flag] }";
         check_package_sources(&[provider, colliding])
             .expect("a canonical builtin keeps its kind under a same-leaf nominal declaration");
     }
@@ -12315,8 +12267,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let types = "module types; pub host type Bool role(bool);";
         let other = "module other; pub host type Bool role(bool);";
         for body in [
-            "__if_then_else__(Bool, ., condition, .() { () }, .() { () })",
-            "let choose = __if_then_else__(Bool, .); choose(condition, .() { () }, .() { () })",
+            "__if_then_else__[Bool][.](condition, .() { () }, .() { () })",
+            "let choose = __if_then_else__[Bool][.]; choose(condition, .() { () }, .() { () })",
         ] {
             let consumer = format!(
                 "module main; import __intrinsics__; import control(macro if); import other as types; import types as real; type Bool = real.Bool; fn choose(condition: Bool) -> . {{ {body} }}"
@@ -12335,7 +12287,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
         for (provider, erases) in [
             (
-                "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity(Comptime_bool);",
+                "module provider; import __comptime__; pub type Identity[A] = A; pub type Flag = Identity[Comptime_bool];",
                 true,
             ),
             (
@@ -12347,7 +12299,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 ("provider.kio", provider),
                 (
                     "main.kio",
-                    "module main; import provider(Flag); pure fn value() -> Flag { let flag = .t(Flag); flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t(Flag); x } equiv selected_boolean() { value(); .t(Flag) }",
+                    "module main; import provider(Flag); pure fn value() -> Flag { let flag = .t[Flag]; flag } fn keep[Comptime_bool](x: Comptime_bool) -> Comptime_bool { let separate = .t[Flag]; x } equiv selected_boolean() { value(); .t[Flag] }",
                 ),
             ]);
             let completed = check_package_preserving_normalization(&package)
@@ -12356,7 +12308,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 .expect("validate runtime erasure");
             let runtime = completed.runtime();
             let emitted = emit_module(runtime.module("main").expect("runtime consumer"));
-            assert_eq!(emitted.contains(".t("), !erases, "{emitted}");
+            assert_eq!(emitted.contains(".t["), !erases, "{emitted}");
             let reparsed = runtime
                 .modules()
                 .map(|(path, entry)| {
@@ -12436,7 +12388,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn literal_admission_respects_shadowing_type_binders() {
-        for body in ["42", "42(Int)"] {
+        for body in ["42", "42[Int]"] {
             let source = format!(
                 "module main; host type Int role(i64); fn wrong[Int]() -> Int {{ {body} }}"
             );
@@ -12525,7 +12477,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             ] {
                 for body in [
                     value.to_owned(),
-                    format!("{value}(Alias(.))"),
+                    format!("{value}[Alias[.]]"),
                     format!("let .(x: Number) = {value}; x"),
                     format!("id({value})"),
                 ] {
@@ -12553,7 +12505,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let prefix = "module main; host type Small role(i8); literal enormous = 340282366920938463463374607431768211456;";
         check_package_sources(&[prefix]).expect("unused literal aliases have no role");
         let error = check_package_sources(&[&format!(
-            "{prefix} fn value() -> Small {{ enormous(Small) }}"
+            "{prefix} fn value() -> Small {{ enormous[Small] }}"
         )])
         .expect_err("alias is checked at use");
         assert!(error.diag().1.contains("outside the range"));
@@ -12563,14 +12515,14 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         );
         for declaration in ["", "host type Provider role(i64);"] {
             let provider = format!("module provider; {declaration} pub literal amount = 42;");
-            let consumer = "module main; import provider(amount); host type Local role(i32); host type Other role(i64); fn selected() -> Local { amount } fn annotated() -> Other { amount(Other) }";
+            let consumer = "module main; import provider(amount); host type Local role(i32); host type Other role(i64); fn selected() -> Local { amount } fn annotated() -> Other { amount[Other] }";
             check_package_sources(&[&provider, consumer]).expect(
                 "literal aliases use the consumer's policy, independent of provider growth",
             );
         }
         for role in ["f32", "f64"] {
             let source = format!(
-                "module main; host type Number role({role}); fn value() -> Number {{ 1.0e9999(Number) }}"
+                "module main; host type Number role({role}); fn value() -> Number {{ 1.0e9999[Number] }}"
             );
             assert!(
                 check_package_sources(&[&source])
@@ -12585,11 +12537,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn numeric_literal_range_uses_expected_or_annotated_role() {
         let declarations = "module main; host type Small role(i8); host type Wide role(i16);";
-        for body in ["128", "128(Wide)"] {
+        for body in ["128", "128[Wide]"] {
             check_package_sources(&[&format!("{declarations} fn value() -> Wide {{ {body} }}")])
                 .expect("the expected or explicit wide carrier admits 128");
         }
-        for body in ["128", "128(Small)"] {
+        for body in ["128", "128[Small]"] {
             let error = check_package_sources(&[&format!(
                 "{declarations} fn value() -> Small {{ {body} }}"
             )])
@@ -12627,7 +12579,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn integer_spelling_fixes_preserve_tokens_and_annotations() {
         for literal in ["-4_2", "42", "4_200"] {
-            let body = format!("{literal}(Float)");
+            let body = format!("{literal}[Float]");
             let source =
                 format!("module main; host type Float role(f64); fn value() -> Float {{ {body} }}");
             let error = check_package_sources(&[&source])
@@ -12645,7 +12597,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn integer_alias_fixes_replace_only_the_use_and_preserve_definition_spelling() {
-        let source = "module main; host type Float role(f64); literal low = -4_2; fn value() -> Float { low(Float) }";
+        let source = "module main; host type Float role(f64); literal low = -4_2; fn value() -> Float { low[Float] }";
         let error = check_package_sources(&[source])
             .expect_err("integer alias does not acquire a floating role");
         let fix = error
@@ -12688,9 +12640,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             ok(&format!(
                 "module main;
                  newtype Box[A] : . {{ pub constructor make; pub projector unpack }}
-                 fn empty[A]() -> Box(A) {{ Box.make(()) }}
+                 fn empty[A]() -> Box[A] {{ Box.make(()) }}
                  fn identity[A](value: A) -> A {{ value }}
-                 labels {{ first: Box(.) }};
+                 labels {{ first: Box[.] }};
                  fn run() -> First {{ {body} }}"
             ));
         }
@@ -12704,8 +12656,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         check_package_sources(&[
             "module payload;
              pub newtype Box[A] : . { pub constructor make; pub projector unpack }
-             pub fn empty[A]() -> Box(A) { Box.make(()) }
-             pub labels State = { first: Box(.), second: Box(. -> .) };",
+             pub fn empty[A]() -> Box[A] { Box.make(()) }
+             pub labels State = { first: Box[.], second: Box[. -> .] };",
             "module main;
              import payload as p;
              newtype Box[A] : A { pub constructor make; pub projector unpack }
@@ -12718,7 +12670,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn label_payload_context_preserves_generic_and_existential_inference() {
         ok("module main;
             labels { generic[A]: A, hidden <A>: A };
-            fn generic[A](value: A) -> Generic(A) { {generic = value} }
+            fn generic[A](value: A) -> Generic[A] { {generic = value} }
             fn hidden[A](value: A) -> Hidden { {hidden = value} }");
         let message = err("module main;
             labels { callback: . -> . };
@@ -12895,11 +12847,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_accepts_nominal_and_identity_receivers() {
         ok("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
-            fn run() -> Box(.) { do (bind) { let x <- Box.box(()); Box.box(x) } }");
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            fn run() -> Box[.] { do (bind) { let x <- Box.box(()); Box.box(x) } }");
         ok("module main; import sequence(macro do);
             type Identity[A] = A;
-            fn bind[A][B](value: Identity(A), next: A -> Identity(B)) -> Identity(B) { next(value) }
+            fn bind[A][B](value: Identity[A], next: A -> Identity[B]) -> Identity[B] { next(value) }
             fn run() -> . { do (bind) { let x <- (); x } }");
     }
 
@@ -12908,10 +12860,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let declarations = "module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box(A), next: A -> Other(B)) -> Other(B) { next(Box.unbox(value)) }";
+            fn bind[A][B](value: Box[A], next: A -> Other[B]) -> Other[B] { next(Box.unbox(value)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Other(.) {{ do(bind) {{ let x <- Box.box(()); Other.other(x) }} }}"
+            fn run() -> Other[.] {{ do(bind) {{ let x <- Box.box(()); Other.other(x) }} }}"
         ));
         assert_eq!(
             message,
@@ -12919,7 +12871,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         );
         ok(&format!(
             "{declarations}
-            fn run() -> Other(.) {{ bind(Box.box(()), .(x) {{ Other.other(x) }}) }}"
+            fn run() -> Other[.] {{ bind(Box.box(()), .(x) {{ Other.other(x) }}) }}"
         ));
     }
 
@@ -12928,19 +12880,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let declarations = "module main; import sequence(macro do);
             newtype Value : . { constructor value; projector unvalue; };
             newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(input)) }";
+            fn bind[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(input)) }";
         let message = err(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do(bind) {{ Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ Box.box(Value.value(())); Box.box(()) }} }}"
         ));
         assert!(message.contains("type mismatch"), "{message}");
         ok(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do(bind) {{ let _ <- Box.box(Value.value(())); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ let _ <- Box.box(Value.value(())); Box.box(()) }} }}"
         ));
         ok(&format!(
             "{declarations}
-            fn run() -> Box(.) {{ do(bind) {{ Box.box(()); Box.box(()) }} }}"
+            fn run() -> Box[.] {{ do(bind) {{ Box.box(()); Box.box(()) }} }}"
         ));
     }
 
@@ -12948,10 +12900,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_sequence_accepts_identity_alias_and_abstract_constructor() {
         ok("module main; import sequence(macro do);
             type Identity[A] = A;
-            fn bind[A][B](input: Identity(A), next: A -> Identity(B)) -> Identity(B) { next(input) }
+            fn bind[A][B](input: Identity[A], next: A -> Identity[B]) -> Identity[B] { next(input) }
             fn run() -> . { do (bind) { (); () } }");
         ok("module main; import sequence(macro do);
-            fn run[*F](bind: [A][B](F(A) & (A -> F(B))) -> F(B), unit: F(.)) -> F(.) {
+            fn run[*F](bind: [A][B](F[A] & (A -> F[B])) -> F[B], unit: F[.]) -> F[.] {
                 do (bind) { unit; unit }
             }");
     }
@@ -12961,9 +12913,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
-            host fn make_bind[*M][*N]() -> [A][B](M(A) & (A -> N(B))) -> N(B);
-            fn run() -> Other(.) {
-                do (make_bind(Box, Other, ())) {
+            host fn make_bind[*M][*N]() -> [A][B](M[A] & (A -> N[B])) -> N[B];
+            fn run() -> Other[.] {
+                do (make_bind[Box][Other]()) {
                     let first <- Box.box(());
                     let second <- Other.other(());
                     Other.other(second)
@@ -12971,7 +12923,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             }");
         assert_eq!(
             message,
-            "type mismatch: expected `Box(A)`, found `Other(.)`"
+            "type mismatch: expected `Box[A]`, found `Other[.]`"
         );
     }
 
@@ -12986,8 +12938,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn do_contract_final_only_factory_obeys_ordinary_argument_purity() {
         let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
-            host fn make_bind[*M]() -> [A][B](M(A) & (A -> M(B))) -> M(B);
-            pure fn run() -> Box(.) { do (make_bind(Box, ())) { Box.box(()) } }");
+            host fn make_bind[*M]() -> [A][B](M[A] & (A -> M[B])) -> M[B];
+            pure fn run() -> Box[.] { do (make_bind[Box]()) { Box.box(()) } }");
         assert_eq!(
             message,
             "pure function cannot reference host fn `make_bind`; `pure` means that its call graph contains no host-function calls"
@@ -12999,8 +12951,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let message = err("module main; import sequence(macro do);
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
-            fn run() -> Other(.) { do (bind) { Other.other(()) } }");
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            fn run() -> Other[.] { do (bind) { Other.other(()) } }");
         assert_eq!(
             message,
             "a sequence block requires an ordinary `Bind(F) -> F(R)` value slot"
@@ -13012,13 +12964,51 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
                 Box.unbox(do (bind) {
                     let next = recur(cont) go(value);
                     Box.box(next)
                 })
             }");
+    }
+
+    #[test]
+    fn fills_recursive_quotation_infers_its_public_operand_type() {
+        let provider = "module macros; import __comptime__; \
+            pure fn impl_dup(ct: __Comptime__, fills: __Fill_ctx__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
+                (__intrinsic_pair__(ct, value, value), fills) \
+            } \
+            pub macro duplicate : [A] A -> (A & A) { impl(fills) impl_dup }";
+        let main = "module main; import macros(macro duplicate); \
+            host type Data; host fn source() -> Data; \
+            host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
+            rec(loop) { fn left() -> Data { source() }; \
+                fn run() -> Data { let pair = duplicate(recur(cont) left()); source() } }";
+        let package = lowered_package(&[("macros.kio", provider), ("main.kio", main)]);
+        let (checked, scope) = check_retained_success(&package);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
+        validate_substituted_package(checked.substituted()).expect("ordinary recursive Prime");
+        let mismatch = main.replace(
+            "duplicate(recur(cont) left())",
+            "duplicate[.](recur(cont) left())",
+        );
+        let package = lowered_package(&[("macros.kio", provider), ("main.kio", &mismatch)]);
+        let error = check_retained_error(&package);
+        assert!(matches!(error, Error::Type(_)), "{error:?}");
+        assert!(
+            error.diagnostic().message.contains("type mismatch"),
+            "{error:?}"
+        );
+        let generic = "module main; import macros(macro duplicate); \
+            host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
+            rec(loop) fn go[A](value: A) -> A { \
+                let pair = duplicate(recur(cont) go(value)); value \
+            }";
+        let package = lowered_package(&[("macros.kio", provider), ("main.kio", generic)]);
+        let (checked, scope) = check_retained_success(&package);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
+        validate_substituted_package(checked.substituted()).expect("generic recursive Prime");
     }
 
     #[test]
@@ -13035,18 +13025,18 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             newtype Box[A] : A { constructor box; projector unbox; }; \
             newtype Other[A] : A { constructor other; projector unother; }; \
             rec(loop) fn go(value: .) -> . { \
-                Box.unbox(invoke(.(unit: .) -> Box(.) { \
+                Box.unbox(invoke(.(unit: .) -> Box[.] { \
                     let next = recur(cont) go(value); Box.box(next) \
                 })) \
             }";
-        for annotation in ["Box(.)", "Box(_)", "_", "Other(.)"] {
-            let main = main.replace("-> Box(.) {", &format!("-> {annotation} {{"));
+        for annotation in ["Box[.]", "Box[_]", "_", "Other[.]"] {
+            let main = main.replace("-> Box[.] {", &format!("-> {annotation} {{"));
             let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
-            if matches!(annotation, "Other(.)" | "Box(_)") {
+            if matches!(annotation, "Other[.]" | "Box[_]") {
                 let error = check_retained_error(&package);
                 assert!(matches!(error, Error::Type(_)), "{error:?}");
-                let expected = if annotation == "Other(.)" {
+                let expected = if annotation == "Other[.]" {
                     "type mismatch"
                 } else {
                     "cannot infer type annotation from the available type information"
@@ -13263,9 +13253,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(condition: Bool) -> . { \
-                Box.unbox(select(condition, .() { \
+                Box.unbox(select(condition)(.() { \
                     let next = recur(cont) go(condition); Box.box(next) \
-                }, Box.box(()))) \
+                })(Box.box(()))) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let (checked, scope) = check_retained_success(&package);
@@ -13288,7 +13278,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             host fn finish(value: .) -> c.Wrap; \
             newtype Box[A] : A { constructor box; projector unbox; }; \
             rec(loop) fn go(value: .) -> c.Wrap { \
-                finish(Box.unbox(invoke(.(unit: .) -> Box(.) { \
+                finish(Box.unbox(invoke(.(unit: .) -> Box[.] { \
                     let next = recur(cont) go(value); Box.box(()) \
                 }))) \
             }";
@@ -13308,7 +13298,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
             newtype Other[A] : A { constructor other; projector unother; };
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
             rec(loop) fn go(value: .) -> . {
                 Other.unother(do (bind) {
                     let next = recur(cont) go(value);
@@ -13350,12 +13340,12 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 
     #[test]
     fn do_contract_unused_generic_recursive_receiver_invokes_public_unit_layer() {
-        for arguments in ["", "T"] {
+        for arguments in ["()", "[T]()"] {
             ok(&format!(
                 "module main; import sequence(macro do);
                 host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
                 rec(loop) fn factory[T]() -> [A][B](A & (A -> B)) -> B {{
-                    do(recur(cont) factory({arguments})) {{
+                    do(recur(cont) factory{arguments}) {{
                         .[A][B](value: A, next: A -> B) {{ next(value) }}
                     }}
                 }}"
@@ -13380,8 +13370,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         ok("module main; import sequence(macro do);
             host fn loop[S][R](step: S -> (S | R), initial: S) -> R;
             newtype Box[A] : A { constructor box; projector unbox; };
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
-            rec(loop) fn go(value: Box(.)) -> Box(.) {
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
+            rec(loop) fn go(value: Box[.]) -> Box[.] {
                 Box.box(Box.unbox(do (bind) { recur(cont) go(value) }))
             }");
     }
@@ -13416,8 +13406,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     #[test]
     fn do_contract_deferred_tail_marks_preserve_partial_headers_and_expected_input() {
         for continuation in [
-            ".(x: . -> .) { recur go(__left__(., . -> ., x(()))) }",
-            ".(x: . -> .) -> _ { recur go(__left__(., . -> ., x(()))) }",
+            ".(x: . -> .) { recur go(__left__[.][. -> .](x(()))) }",
+            ".(x: . -> .) -> _ { recur go(__left__[.][. -> .](x(()))) }",
         ] {
             ok(&format!(
                 "module main; import sequence(macro do);
@@ -13438,9 +13428,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 import sequence(macro do);
                 newtype Box[A] : A {{ constructor box; projector unbox; }};
                 newtype Other[A] : A {{ constructor box; projector unbox; }};
-                fn good[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) {{ next(Box.unbox(input)) }}
-                fn second[A][B](input: Box(A), next: A -> {output}(B)) -> {output}(B) {{ next(Box.unbox(input)) }}
-                fn collect(_first: Box(.), _second: {output}(.)) -> . {{ () }}
+                fn good[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ next(Box.unbox(input)) }}
+                fn second[A][B](input: Box[A], next: A -> {output}[B]) -> {output}[B] {{ next(Box.unbox(input)) }}
+                fn collect(_first: Box[.], _second: {output}[.]) -> . {{ () }}
                 fn run() -> . {{ collect(
                     do (good) {{ let x <- Box.box(()); Box.box(x) }},
                     do(second) {{ let x <- Box.box(()); {output}.box(x) }}
@@ -13478,7 +13468,6 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 );
                 assert!(elabs.entries.is_empty());
                 assert!(elabs.type_resolutions.is_empty());
-                assert!(elabs.value_at_type_slot.is_empty());
                 assert!(elabs.call_plans.is_empty());
                 assert!(elabs.literal_resolutions.is_empty());
                 assert!(elabs.fn_param_types.is_empty());
@@ -13501,15 +13490,23 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 let Expr::Call { args, .. } = &run.body else {
                     panic!("collect")
                 };
-                let CallArg::Value(scope) = &args[0] else {
-                    panic!("scope")
+                let [CallArg::Value(Expr::Call { callee, args, .. })] = args.as_slice() else {
+                    panic!("collect receives one product packet")
+                };
+                assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == "__pair__")));
+                let [
+                    CallArg::Type(_),
+                    CallArg::Type(_),
+                    CallArg::Value(scope),
+                    CallArg::Value(other_scope),
+                ] = args.as_slice()
+                else {
+                    panic!("the one packet contains the two written sequence recipes")
                 };
                 let retained = scope.clone();
                 assert_eq!(scope.site().id, retained.site().id);
                 assert!(elabs.elaboration_for("main", &retained).is_some());
-                let CallArg::Value(other_scope) = &args[1] else {
-                    panic!("second scope")
-                };
                 assert_ne!(elaboration_node_id(scope), elaboration_node_id(other_scope));
                 assert!(elabs.elaboration_for("main", other_scope).is_some());
                 assert!(elabs.elaboration_for("other_module", &retained).is_none());
@@ -13633,11 +13630,10 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         let span = test_span();
         let node_id = NodeId(42);
         let original = Expr::UserMacro {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
+            occurrence: crate::ast::ExpressionOccurrence::fresh(),
             form: crate::ast::UserMacroCallForm::Ordinary,
             name: "demo".to_owned(),
-            args: Vec::new(),
+            stages: Vec::new(),
             meta: Meta::new(span),
             ext: node_id,
         };
@@ -13685,24 +13681,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     }
 
     #[test]
-    fn value_at_type_slot_lookup_survives_merge() {
+    fn macro_output_stage_lookup_survives_merge() {
         let id = crate::ast::ExpressionOccurrence::fresh().key();
         let mut source = Elaborations::new();
-        source.mark_value_at_type_slot("pkg/mod", id, 1);
-        source.mark_value_at_type_slot("pkg/mod", id, 3);
-
+        source.record_macro_output_stage("pkg/mod", id, 2);
         let mut target = Elaborations::new();
         target.merge(source);
-
-        assert!(target.is_value_at_type_slot("pkg/mod", id, 1));
-        assert!(target.is_value_at_type_slot("pkg/mod", id, 3));
-        assert!(!target.is_value_at_type_slot("pkg/mod", id, 2));
-        assert!(!target.is_value_at_type_slot("pkg/other", id, 1));
-        assert!(!target.is_value_at_type_slot(
-            "pkg/mod",
-            crate::ast::ExpressionOccurrence::fresh().key(),
-            1
-        ));
+        assert_eq!(target.macro_output_stage_for("pkg/mod", id), Some(2));
+        assert_eq!(target.macro_output_stage_for("pkg/other", id), None);
+        assert_eq!(
+            target
+                .macro_output_stage_for("pkg/mod", crate::ast::ExpressionOccurrence::fresh().key()),
+            None
+        );
     }
 
     #[test]
@@ -13853,9 +13844,9 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
 newtype Left : . { constructor left; projector unleft; };
 newtype Right : . { constructor right; projector unright; };
 newtype Box[A] : A { constructor box; projector unbox; };
-fn pure[A](value: A) -> Box(A) { Box.box(value) }
-fn run[A](first: Left, second: Right) -> Box(Right) {
-  do (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+fn pure[A](value: A) -> Box[A] { Box.box(value) }
+fn run[A](first: Left, second: Right) -> Box[Right] {
+  do (.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
     next(Box.unbox(value))
   }) {
     let first_value <- pure(first);
@@ -13891,7 +13882,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                             crate::ast::CallArg::Value(_) => None,
                         })
                         .collect::<Vec<_>>();
-                    if types.len() == 2 {
+                    if types.len() == 2
+                        && !segments
+                            .last()
+                            .is_some_and(|segment| segment.as_str() == "__pair__")
+                    {
                         self.0.push((segments.clone(), types));
                     }
                 }
@@ -13963,11 +13958,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             newtype Left : . { constructor left; projector unleft; };
             newtype Right : . { constructor right; projector unright; };
             newtype Box[A] : A { constructor box; projector unbox; };
-            fn pure[A](value: A) -> Box(A) { Box.box(value) }
-            fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+            fn pure[A](value: A) -> Box[A] { Box.box(value) }
+            fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
                 next(Box.unbox(value))
             }
-            fn run(first: Left, second: Right) -> Box(Right) { BODY }"
+            fn run(first: Left, second: Right) -> Box[Right] { BODY }"
                 .replace("BODY", body);
             let package = lowered_package(&[("main.kio", &source)]);
             let checked = check_package_preserving_normalization(&package)
@@ -13981,11 +13976,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn monadic_polymorphic_receiver_and_ordinary_lambda_calls() {
         for (receiver, first, second, final_expr, result, typed_continuations) in [
             (
-                ".[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }",
+                ".[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }",
                 "pure(first)",
                 "pure(second)",
                 "pure(second_value)",
-                "Box(Right)",
+                "Box[Right]",
                 false,
             ),
             (
@@ -14018,7 +14013,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             let mut bodies = vec![format!(
                 "({receiver})({first}, .({first_param}) {{ ({receiver})({second}, .({second_param}) {{ {final_expr} }}) }})"
             )];
-            if result == "Box(Right)" {
+            if result == "Box[Right]" {
                 bodies.push(format!("do ({receiver}) {{ let {first_let} <- {first}; let {second_let} <- {second}; {final_expr} }}"));
             }
             for body in bodies {
@@ -14026,7 +14021,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                     newtype Left : . { constructor left; projector unleft; };
                     newtype Right : . { constructor right; projector unright; };
                     newtype Box[A] : A { constructor box; projector unbox; };
-                    fn pure[A](value: A) -> Box(A) { Box.box(value) }
+                    fn pure[A](value: A) -> Box[A] { Box.box(value) }
                     fn run(first: Left, second: Right) -> RESULT { BODY }"
                     .replace("RESULT", result)
                     .replace("BODY", &body);
@@ -14061,7 +14056,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             type Pair = Token & Token;\n\
             type Choice = Token | .;\n\
             type Applied[A] = A;\n\
-            type Nested = Applied(Token);\n\
+            type Nested = Applied[Token];\n\
             type Transform = Token -> Token;\n\
             type Scheme = [A] A -> Token;\n\
             type Shadow = [Token] Token -> Token;\n\
@@ -14070,7 +14065,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             fn generic[Token](value: Token) -> Token { value }\n\
             fn make() -> Token { Token.mk(()) }\n\
             fn project(value: Token) -> . { Token.get(value) }\n\
-            fn explicit(value: Token) -> Token { generic(Token, value) }\n";
+            fn explicit(value: Token) -> Token { generic[Token](value) }\n";
         let (modules, package_file) =
             FullPipeline::lower_package(vec![parse_package_entry(source)], None)
                 .expect("lower the ordinary nominal application");
@@ -14101,7 +14096,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                 "module x;
                  newtype Token : . {{ constructor mk; projector get; }};
                  fn generic[{callee}](value: {callee}) -> {callee} {{ value }}
-                 fn caller[Token](value: Token) -> Token {{ generic(Token, value) }}"
+                 fn caller[Token](value: Token) -> Token {{ generic[Token](value) }}"
             );
             let package = lowered_package(&[("x.kio", &source)]);
             let checked = check_package_preserving_normalization(&package)
@@ -14113,7 +14108,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             newtype Token : . { constructor mk; projector get; };
             newtype Other : . { constructor mk_other; projector get_other; };
             fn generic[Token](value: Token) -> Token { value }
-            fn mismatch(value: Other) -> Token { generic(Token, value) }";
+            fn mismatch(value: Other) -> Token { generic[Token](value) }";
         let diagnostic = type_diag(source);
         assert!(diagnostic.message.contains("type mismatch"));
         assert!(diagnostic.message.contains("Token"));
@@ -14193,7 +14188,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn polymorphic_identity_used_in_call() {
         ok("module x; \
             fn id[A](x: A) -> A { x } \
-            fn caller(y: .) -> . { id(., y) }");
+            fn caller(y: .) -> . { id[.]( y) }");
     }
 
     #[test]
@@ -14215,7 +14210,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         // available through `f`.
         ok("module x; \
             fn id[A](x: A) -> A { x } \
-            fn caller(y: .) -> . { let f = id; let _ = f(., y); () }");
+            fn caller(y: .) -> . { let f = id; let _ = f[.](y); () }");
     }
 
     #[test]
@@ -14262,10 +14257,6 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
     #[test]
     fn call_kind_mismatch_value_for_type() {
-        // `id` expects a type-arg first. Lowercase Path values may be
-        // reinterpreted as types via `expr_to_type_arg`; a call-arg whose
-        // syntactic shape can't be re-read as a type (a lambda expression in
-        // a value arg slot) is rejected at the call site.
         let msg = err("module x; \
                        fn need_type[A]() -> . { () } \
                        fn caller() -> . { need_type(.(z) { z }) }");
@@ -14292,7 +14283,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn parametric_type_alias_unfolds() {
         ok("module x; \
             type Same[A] = A; \
-            fn id[A](x: Same(A)) -> A { x }");
+            fn id[A](x: Same[A]) -> A { x }");
     }
 
     #[test]
@@ -14300,19 +14291,19 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         ok("module x; \
             host type N; \
             type Id[A] = A; \
-            fn coerce(x: Id(Id(N))) -> N { x }");
+            fn coerce(x: Id[Id[N]]) -> N { x }");
     }
 
     #[test]
     fn finite_repeated_aliases_preserve_complete_scheme_classification() {
         ok("module x; \
             type Id[A] = A; \
-            type Scheme = [*F] Id(Id(F(.) -> F(.))); \
+            type Scheme = [*F] Id[Id[F[.] -> F[.]]]; \
             fn keep(value: Scheme) -> Scheme { value }");
 
         let incomplete = err("module x; \
             type Id[A] = A; \
-            type Bad = [*F] Id(Id(F(.))); \
+            type Bad = [*F] Id[Id[F[.]]]; \
             fn reject(value: Bad) -> Bad { value }");
         assert!(
             incomplete.contains("must bind a complete function scheme"),
@@ -14326,17 +14317,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             host type String; \
             host type N; \
             host type Either[E][A]; \
-            type Unary[E] = Either(E); \
-            type Twice[*F][A] = F(F(A)); \
-            fn coerce(x: Twice(Unary(String), N)) \
-              -> Either(String, Either(String, N)) { x }");
+            type Unary[E] = Either[E]; \
+            type Twice[*F][A] = F[F[A]]; \
+            fn coerce(x: Twice[Unary[String]][ N]) \
+              -> Either[String][ Either[String][ N]] { x }");
     }
 
     #[test]
     fn alias_materialization_avoids_capturing_a_caller_forall_binder() {
         ok("module x; \
             type Wrap[A] = [X] A -> X; \
-            fn coerce[X](value: Wrap(X)) -> [Y] X -> Y { value }");
+            fn coerce[X](value: Wrap[X]) -> [Y] X -> Y { value }");
     }
 
     #[test]
@@ -14358,7 +14349,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         let local = err("module x; \
              host type String role(str); \
              type Pair[A][B] = A & B; \
-             fn bad(value: Pair(String)) -> . { let _ = value; () }");
+             fn bad(value: Pair[String]) -> . { let _ = value; () }");
         assert!(
             local.contains("type alias `Pair` requires 2 type arguments, but 1 was supplied"),
             "got: {local}"
@@ -14374,7 +14365,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
         let nested = err("module x; \
              type Pair[A][B] = A & B; \
-             type Bad[A] = Pair(A);");
+             type Bad[A] = Pair[A];");
         assert!(
             nested.contains("type alias `Pair` requires 2 type arguments, but 1 was supplied"),
             "got: {nested}"
@@ -14382,7 +14373,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
 
         let overapplied = err("module x; \
              type Identity[*F] = F; \
-             fn bad[*F](value: Identity(F, .)) -> . { let _ = value; () }");
+             fn bad[*F](value: Identity[F][ .]) -> . { let _ = value; () }");
         assert!(
             overapplied
                 .contains("type alias `Identity` requires 1 type argument, but 2 were supplied"),
@@ -14392,8 +14383,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         let appended_lookalike = err("module x; \
              host type String; \
              host type Either[E][A]; \
-             type Unary[E] = Either(E); \
-             fn bad(value: Unary(String, String)) -> . { let _ = value; () }");
+             type Unary[E] = Either[E]; \
+             fn bad(value: Unary[String][ String]) -> . { let _ = value; () }");
         assert!(
             appended_lookalike
                 .contains("type alias `Unary` requires 1 type argument, but 2 were supplied"),
@@ -14405,13 +14396,13 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (main, dependencies) in [
             (
                 "module main; import dep(Pair); host type String role(str); \
-                 fn bad(value: Pair(String)) -> . { let _ = value; () }",
+                 fn bad(value: Pair[String]) -> . { let _ = value; () }",
                 vec![dependency],
             ),
             (
                 "module main; import decoy(Pair); import dep as d; \
                  host type String role(str); \
-                 fn bad(value: d.Pair(String)) -> . { let _ = value; () }",
+                 fn bad(value: d.Pair[String]) -> . { let _ = value; () }",
                 vec![dependency, decoy],
             ),
         ] {
@@ -14543,12 +14534,12 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         ok("module x; \
             host type String role(str); \
             type Pair[A][B] = A & B; \
-            fn keep(value: Pair(String, String)) -> Pair(String, String) { value }");
+            fn keep(value: Pair[String][ String]) -> Pair[String][ String] { value }");
 
         ok("module x; \
             newtype Either[E][A] : E | A { constructor mk_either; projector un_either; }; \
             newtype Carrier[*F] : . { constructor mk_carrier; projector un_carrier; }; \
-            fn keep(value: Carrier(Either(.))) -> Carrier(Either(.)) { value }");
+            fn keep(value: Carrier[Either[.]]) -> Carrier[Either[.]] { value }");
     }
 
     #[test]
@@ -14557,13 +14548,13 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             host type Scalar; \
             host type Box[T]; \
             newtype Carrier[*F] : . { constructor mk; projector un; }; \
-            fn keep_partial(value: Carrier(Box)) -> Carrier(Box) { value } \
-            fn keep_saturated(value: Box(Scalar)) -> Box(Scalar) { value }");
+            fn keep_partial(value: Carrier[Box]) -> Carrier[Box] { value } \
+            fn keep_saturated(value: Box[Scalar]) -> Box[Scalar] { value }");
 
         let message = err("module x; \
             host type Scalar; \
             host type Box[T]; \
-            fn bad(value: Box(Scalar, Scalar)) -> . { () }");
+            fn bad(value: Box[Scalar][ Scalar]) -> . { () }");
         assert!(
             message.contains("`Box` has kind `*` and cannot be applied to a type argument"),
             "got: {message}"
@@ -14574,7 +14565,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn nullary_host_type_rejects_type_arguments() {
         let message = err("module x; \
             host type Scalar; \
-            fn bad(value: Scalar(Scalar)) -> . { () }");
+            fn bad(value: Scalar[Scalar]) -> . { () }");
         assert!(
             message.contains("`Scalar` has kind `*` and cannot be applied to a type argument"),
             "got: {message}"
@@ -14587,7 +14578,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "module provider; host type Scalar; host type Box[T];",
             "module decoy; host type Box[A][B];",
             "module main; import provider(Scalar, Box); import decoy as d; \
-             fn bad(value: Box(Scalar, Scalar)) -> . { () }",
+             fn bad(value: Box[Scalar][ Scalar]) -> . { () }",
         ]);
         assert!(
             message.contains("`Box` has kind `*` and cannot be applied to a type argument"),
@@ -14601,9 +14592,9 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             "module provider; host type Scalar; host type Box[T];",
             "module decoy; host type Box[A][B];",
             "module main; import provider as p; import decoy as d; \
-             fn keep(value: d.Box(p.Scalar, p.Scalar)) \
-               -> d.Box(p.Scalar, p.Scalar) { value } \
-             fn bad(value: p.Box(p.Scalar, p.Scalar)) -> . { () }",
+             fn keep(value: d.Box[p.Scalar][ p.Scalar]) \
+               -> d.Box[p.Scalar][ p.Scalar] { value } \
+             fn bad(value: p.Box[p.Scalar][ p.Scalar]) -> . { () }",
         ]);
         assert!(
             message.contains("`p.Box` has kind `*` and cannot be applied to a type argument"),
@@ -14615,15 +14606,15 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn direct_transparent_host_alias_uses_its_exact_declared_arity() {
         let message = package_type_err(&[
             "module origin; host type Scalar; host type Box[T];",
-            "module relay; import origin as p; pub type Box[A] = p.Box(A);",
+            "module relay; import origin as p; pub type Box[A] = p.Box[A];",
             "module decoy; host type Box[A][B];",
             "module main; import origin(Scalar); import relay as r; \
              import decoy as d; \
-             fn keep(value: d.Box(Scalar, Scalar)) \
-               -> d.Box(Scalar, Scalar) { value } \
-             fn keep_alias(value: r.Box(Scalar)) \
-               -> r.Box(Scalar) { value } \
-             fn bad(value: r.Box(Scalar, Scalar)) -> . { () }",
+             fn keep(value: d.Box[Scalar][ Scalar]) \
+               -> d.Box[Scalar][ Scalar] { value } \
+             fn keep_alias(value: r.Box[Scalar]) \
+               -> r.Box[Scalar] { value } \
+             fn bad(value: r.Box[Scalar][ Scalar]) -> . { () }",
         ]);
         assert!(
             message.contains("type alias `Box` requires 1 type argument, but 2 were supplied"),
@@ -14648,8 +14639,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                pub(scope) constructor mk; pub(scope) projector un; \
              };";
         for (member, signature, body) in [
-            ("mk", "(value: .) -> Box(.)", "Box.mk(value)"),
-            ("un", "(value: Box(.)) -> .", "Box.un(value)"),
+            ("mk", "(value: .) -> Box[.]", "Box.mk(value)"),
+            ("un", "(value: Box[.]) -> .", "Box.un(value)"),
         ] {
             let consumer =
                 format!("module outside; import scope/box(Box); fn bad{signature} {{ {body} }}");
@@ -14755,17 +14746,17 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
              pub newtype Box[A] : A { pub constructor make; pub projector open; };",
             "module relay; \
              import origin as source; \
-             pub type Box[A] = source.Box(A); \
-             pub fn local[A](value: A) -> Box(A) { Box.make(A, value) }",
+             pub type Box[A] = source.Box[A]; \
+             pub fn local[A](value: A) -> Box[A] { Box.make[A](value) }",
             "module facade; \
              import relay as source; \
-             pub type Box[A] = source.Box(A);",
+             pub type Box[A] = source.Box[A];",
             "module consumer; \
              import facade(Box); \
              import relay as qualified; \
-             fn selective[A](value: A) -> Box(A) { Box.make(A, value) } \
-             fn qualified[A](value: A) -> qualified.Box(A) { \
-               qualified.Box.make(A, value) \
+             fn selective[A](value: A) -> Box[A] { Box.make[A](value) } \
+             fn qualified[A](value: A) -> qualified.Box[A] { \
+               qualified.Box.make[A](value) \
              }",
         ])
         .expect("identity aliases expose the terminal newtype member surface");
@@ -14811,7 +14802,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     fn flat_call_can_continue_into_returned_forall() {
         ok("module x; \
             import __comptime__; \
-            fn reflected(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, .) }");
+            fn reflected(ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[.] }");
     }
 
     // ---- Function-type values -----------------------------------------
@@ -14895,7 +14886,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         let m = module(
             "module main; \
              host type I32 role(i32); \
-             fn use_lit() -> I32 { 3.14(I32) }",
+             fn use_lit() -> I32 { 3.14[I32] }",
         );
         let res = check_module(&m);
         match res {
@@ -14916,7 +14907,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
              import __intrinsics__; \
              host type Bool role(bool); \
              fn pick(c: Bool) -> . { \
-               __if_then_else__(Bool, ., c, .() { () }, .() { () }) \
+               __if_then_else__[Bool][.](c, .() { () }, .() { () }) \
              }",
         );
         check_module(&m).unwrap();
@@ -15289,11 +15280,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "field update first",
-                "if (condition) { state.!{second = replacement} } else { finish(state, _) }",
+                "if (condition) { state.!{second = replacement} } else { finish(state)[_] }",
             ),
             (
                 "action first",
-                "if (condition) { finish(state, _) } else { state.!{second = replacement} }",
+                "if (condition) { finish(state)[_] } else { state.!{second = replacement} }",
             ),
         ] {
             let main = format!(
@@ -15388,11 +15379,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
         for (label, body) in [
             (
                 "generic first",
-                "if (condition) { make() } else { finish((), _) }",
+                "if (condition) { make() } else { finish(())[_] }",
             ),
             (
                 "action first",
-                "if (condition) { finish((), _) } else { make() }",
+                "if (condition) { finish(())[_] } else { make() }",
             ),
         ] {
             let main = format!(
@@ -15424,12 +15415,12 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             (
                 "required source first",
                 "if (condition) { identity_target(.(value) { value }) } else { \
-                   finish(.(value: .) -> . { value }, _) \
+                   finish(.(value: .) -> . { value })[_] \
                  }",
             ),
             (
                 "independent action first",
-                "if (condition) { finish(.(value: .) -> . { value }, _) } else { \
+                "if (condition) { finish(.(value: .) -> . { value })[_] } else { \
                    identity_target(.(value) { value }) \
                  }",
             ),
@@ -15558,15 +15549,15 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
              host fn make[A]() -> A; \
              host fn concrete() -> Output; \
              fn concrete_first() -> . { \
-               let _selected = common3(.() { concrete() }, .() { make() }, .() { make() }); \
+               let _selected = common3(.() { concrete() })(.() { make() })(.() { make() }); \
                () \
              } \
              fn concrete_middle() -> . { \
-               let _selected = common3(.() { make() }, .() { concrete() }, .() { make() }); \
+               let _selected = common3(.() { make() })(.() { concrete() })(.() { make() }); \
                () \
              } \
              fn concrete_last() -> . { \
-               let _selected = common3(.() { make() }, .() { make() }, .() { concrete() }); \
+               let _selected = common3(.() { make() })(.() { make() })(.() { concrete() }); \
                () \
              }",
         ])
@@ -15620,11 +15611,11 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             (
                 "field update first",
                 "state.!{second = replacement}",
-                "finish(state, _)",
+                "finish(state)[_]",
             ),
             (
                 "action first",
-                "finish(state, _)",
+                "finish(state)[_]",
                 "state.!{second = replacement}",
             ),
         ] {
@@ -15636,7 +15627,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                  host type Second_payload; \
                  labels State = {{ first: First_payload, second: Second_payload }}; \
                  fn reject(state: State, replacement: Second_payload) -> . {{ \
-                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }})(.() {{ {right} }}); \
                    () \
                  }}"
             );
@@ -15724,8 +15715,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     #[test]
     fn fills_relation_probe_executes_an_optional_target_once_in_both_producer_orders() {
         for (label, left, right) in [
-            ("generic first", "make()", "finish((), _)"),
-            ("action first", "finish((), _)", "make()"),
+            ("generic first", "make()", "finish(())[_]"),
+            ("action first", "finish(())[_]", "make()"),
         ] {
             let main = format!(
                 "module main; \
@@ -15733,7 +15724,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                  import macros(macro finish); \
                  host fn make[A]() -> A; \
                  fn run() -> . {{ \
-                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }})(.() {{ {right} }}); \
                    () \
                  }}"
             );
@@ -15754,12 +15745,12 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
     }
 
     #[test]
-    fn fills_relation_probe_migrates_a_multilayer_action_in_both_producer_orders() {
+    fn fills_relation_probes_fixed_stages_in_both_producer_orders() {
         for (label, left, right) in [
-            ("generic first", "make()", "relay(finish((), _), (), _)"),
+            ("generic first", "make()", "relay(finish(())[_])(())[_]"),
             (
-                "migrated action first",
-                "relay(finish((), _), (), _)",
+                "staged action first",
+                "relay(finish(())[_])(())[_]",
                 "make()",
             ),
         ] {
@@ -15769,7 +15760,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                  import macros(macro finish, macro relay); \
                  host fn make[A]() -> A; \
                  fn run() -> . {{ \
-                   let _selected = common2(.() {{ {left} }}, .() {{ {right} }}); \
+                   let _selected = common2(.() {{ {left} }})(.() {{ {right} }}); \
                    () \
                  }}"
             );
@@ -15787,8 +15778,12 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             );
             let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
             assert_eq!(
-                work.migrated_descents, 1,
-                "the {label} relation must migrate relay's nonterminal successor exactly once: {work:?}"
+                work.migrated_descents, 0,
+                "the {label} fixed stages do not create a legacy successor descent: {work:?}"
+            );
+            assert_eq!(
+                work.fixed_stage_continues, 3,
+                "ordinary resume crosses finish once and relay twice; common2 uses marked progression: {work:?}"
             );
             validate_substituted_package(checked.substituted())
                 .expect("the relation-probed multilayer fill survives Prime validation");
@@ -15803,7 +15798,7 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             host fn make[A]() -> A; \
             fn run() -> . { \
               let _selected = common3( \
-                .() { make() }, .() { make() }, .() { finish((), _) } \
+                .() { make() })(.() { make() })(.() { finish(())[_] } \
               ); \
               () \
             }";
@@ -15888,10 +15883,10 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             host type Second_payload; \
             labels { first[A]: A, second[A]: A }; \
             fn consume[A][B]( \
-              _row: First(A) & Second(B), _first: A, _second: B \
+              _row: First[A] & Second[B], _first: A, _second: B \
             ) -> . { () } \
             fn run( \
-              state: First(First_payload) & Second(Second_payload), \
+              state: First[First_payload] & Second[Second_payload], \
               first: First_payload, \
               second: Second_payload \
             ) -> . { \
@@ -15906,8 +15901,8 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
             host type Replacement_payload; \
             labels { first[A]: A, second[A]: A }; \
             fn consume[A]( \
-              _update: (First(A) & Second(Replacement_payload)) \
-                -> (First(Item_payload) & Second(Replacement_payload)) \
+              _update: (First[A] & Second[Replacement_payload]) \
+                -> (First[Item_payload] & Second[Replacement_payload]) \
             ) -> . { () } \
             fn run(replacement: Replacement_payload) -> . { \
               consume(.(state) { state.!{second = replacement} }) \
@@ -15992,14 +15987,14 @@ fn run[A](first: Left, second: Right) -> Box(Right) {
                let selected = if (condition) { \
                  make() \
                } else { \
-                 common2(.() { concrete() }, .() { concrete() }) \
+                 common2(.() { concrete() })(.() { concrete() }) \
                }; \
                let _value = selected(); \
                () \
              } \
              fn fills_first(condition: Bool) -> . { \
                let selected = if (condition) { \
-                 common2(.() { concrete() }, .() { concrete() }) \
+                 common2(.() { concrete() })(.() { concrete() }) \
                } else { \
                  make() \
                }; \
@@ -16022,12 +16017,12 @@ fn identity[A](value: A) -> A { value }
 fn concrete(value: Output) -> Output { value }
 
 fn generic_first() -> . {
-  let _selected = common2(.() { identity(_) }, .() { concrete });
+  let _selected = common2(.() { identity[_] })(.() { concrete });
   ()
 }
 
 fn generic_last() -> . {
-  let _selected = common2(.() { concrete }, .() { identity(_) });
+  let _selected = common2(.() { concrete })(.() { identity[_] });
   ()
 }
 "#;
@@ -16046,7 +16041,7 @@ fn generic_last() -> . {
         let checked = check_package_preserving_normalization(&package)
             .expect("both partial-call orders typecheck and retain their publication plans");
         let call_spans = main
-            .match_indices("identity(_)")
+            .match_indices("identity[_]")
             .map(|(start, call)| {
                 Span::new(
                     u32::try_from(start).expect("test source fits in a span"),
@@ -16080,7 +16075,7 @@ fn generic_last() -> . {
              host fn make[A]() -> A; \
              type Output_fn = . -> Output; \
              fn run() -> . { \
-               let _selected = common2(.() { make() }, .() { make() }, Output_fn); \
+               let _selected = common2(.() { make() })(.() { make() })[Output_fn]; \
                () \
              }",
         ])
@@ -16096,7 +16091,7 @@ fn generic_last() -> . {
              host type Output; \
              host fn make[A]() -> A; \
              type Output_fn = . -> Output; \
-             fn run() -> Output_fn { common2(.() { make() }, .() { make() }) }",
+             fn run() -> Output_fn { common2(.() { make() })(.() { make() }) }",
         ])
         .expect("an enclosing expected type closes every open retained producer");
     }
@@ -16109,7 +16104,7 @@ fn generic_last() -> . {
              import common(macro common3); \
              host fn make[A]() -> A; \
              fn reject() -> . { \
-               let _selected = common3(.() { make() }, .() { make() }, .() { make() }); \
+               let _selected = common3(.() { make() })(.() { make() })(.() { make() }); \
                () \
              }",
         ])
@@ -16127,7 +16122,7 @@ fn generic_last() -> . {
             host type Output; \
             host fn source() -> Input; \
             fn reject() -> Output { \
-              match(source(), .(value) { value }, Output) \
+              match(source())(.(value) { value })[Output] \
             }");
     }
 
@@ -16137,7 +16132,7 @@ fn generic_last() -> . {
             import __comptime__; \
             pub newtype Rep : . { pub constructor mk_rep; pub projector un_rep; }; \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
+                __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -16152,7 +16147,7 @@ fn generic_last() -> . {
               pub type Rep_payload = Rep; \
             } \
             pure fn capture_demo_impl(ct: __Comptime__, _rep_type: __Type__, _rep_ctor: __Checked_term__, _source: __Type__) -> __Checked_term__ { \
-                __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
+                __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
               } \
             pub macro capture_demo : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl capture_demo_impl; }; \
             fn keep() -> . { () }");
@@ -16413,11 +16408,12 @@ fn generic_last() -> . {
             );
             let package = lowered_package(&[("main.kio", &source)]);
             let original = retained_call_at(&package, "main", source_span(&source, call));
-            let Expr::UserMacro { args, .. } = &original else {
+            let Expr::UserMacro { stages, .. } = &original else {
                 panic!("the same-shape call lost its retained macro form")
             };
-            let value_span = args
+            let value_span = stages
                 .iter()
+                .flat_map(|stage| &stage.args)
                 .find_map(|arg| match arg {
                     crate::ast::CallArg::Value(value) => Some(value.span()),
                     crate::ast::CallArg::Type(_) => None,
@@ -16564,7 +16560,7 @@ fn generic_last() -> . {
               ct: __Comptime__, fills: __Fill_ctx__, \
               _s: __Type__, callback: __Checked_term__, _later: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { \
-              let unit_type = __reflect_type__(ct, .); \
+              let unit_type = __reflect_type__(ct)[.]; \
               let zero = __type_arity_zero__(ct); \
               let callback_type = __type_arrow__(ct, unit_type, zero, unit_type); \
               (__term_call__(ct, callback_type, callback, __term_unit__(ct)), fills) \
@@ -16627,7 +16623,7 @@ fn generic_last() -> . {
               _b_type: __Type__, second: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (second, fills) } \
             macro relay : [A] A -> [B] B -> B { impl(fills) relay_impl; }; \
-            fn run() -> . & . { relay((), ((), ())) }"])
+            fn run() -> . & . { relay(())(((), ())) }"])
         .expect("a closed successor-layer source must cross the marked projection gate");
     }
 
@@ -16777,11 +16773,11 @@ fn generic_last() -> . {
             pub macro ignore : [A] A -> . { impl(fills) ignore_impl; };";
         for (literal, diagnostic) in [
             ("128", Some("outside the range")),
-            ("\"bad\"(Number)", Some("string literal cannot be typed")),
+            ("\"bad\"[Number]", Some("string literal cannot be typed")),
             ("127", None),
         ] {
             for argument in [literal.to_owned(), format!("identity({literal})")] {
-                let call = format!("ignore(Number, {argument})");
+                let call = format!("ignore[Number]({argument})");
                 let main = format!(
                     "module main; import macros(macro ignore); host type Number role(i8); fn identity[A](value: A) -> A {{ value }} fn run() -> . {{ {call} }}"
                 );
@@ -16859,12 +16855,12 @@ fn generic_last() -> . {
             macro sparse : . -> I32 -> . -> I32 -> . -> I32 { \
               impl(fills) sparse_impl; \
             }; \
-            fn run() -> I32 { sparse(probe(), 0, probe(), 1, probe()) }";
+            fn run() -> I32 { sparse(probe())(0)(probe())(1)(probe()) }";
         let package = lowered_package(&[("main.kio", source)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(source, "sparse(probe(), 0, probe(), 1, probe())"),
+            source_span(source, "sparse(probe())(0)(probe())(1)(probe())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -16927,35 +16923,35 @@ fn generic_last() -> . {
             type Specialize_tail = . | __Diagnostic_text__; \
             pure fn some_forall_view( \
               _ct: __Comptime__, view: Forall_view \
-            ) -> Maybe_forall_view { __left__(Forall_view, ., view) } \
+            ) -> Maybe_forall_view { __left__[Forall_view][.](view) } \
             pure fn no_forall_view(_ct: __Comptime__) -> Maybe_forall_view { \
-              __right__(Forall_view, ., ()) \
+              __right__[Forall_view][.](()) \
             } \
             pure fn forall_view(ct: __Comptime__, typ: __Type__) -> Maybe_forall_view { \
-              __either__( \
-                ., Type_view_tail1, Maybe_forall_view, __type_view__(ct, typ), \
+              __either__[.][Type_view_tail1][Maybe_forall_view]( \
+                __type_view__(ct, typ), \
                 .(_unit: .) -> Maybe_forall_view { no_forall_view(ct) }, \
                 .(tail1: Type_view_tail1) -> Maybe_forall_view { \
-                  __either__( \
-                    ., Type_view_tail2, Maybe_forall_view, tail1, \
+                  __either__[.][Type_view_tail2][Maybe_forall_view]( \
+                    tail1, \
                     .(_bottom: .) -> Maybe_forall_view { no_forall_view(ct) }, \
                     .(tail2: Type_view_tail2) -> Maybe_forall_view { \
-                      __either__( \
-                        Type_pair, Type_view_tail3, Maybe_forall_view, tail2, \
+                      __either__[Type_pair][Type_view_tail3][Maybe_forall_view]( \
+                        tail2, \
                         .(_product: Type_pair) -> Maybe_forall_view { no_forall_view(ct) }, \
                         .(tail3: Type_view_tail3) -> Maybe_forall_view { \
-                          __either__( \
-                            Type_pair, Type_view_tail4, Maybe_forall_view, tail3, \
+                          __either__[Type_pair][Type_view_tail4][Maybe_forall_view]( \
+                            tail3, \
                             .(_sum: Type_pair) -> Maybe_forall_view { no_forall_view(ct) }, \
                             .(tail4: Type_view_tail4) -> Maybe_forall_view { \
-                              __either__( \
-                                Function_view, Type_view_tail5, Maybe_forall_view, tail4, \
+                              __either__[Function_view][Type_view_tail5][Maybe_forall_view]( \
+                                tail4, \
                                 .(_function: Function_view) -> Maybe_forall_view { \
                                   no_forall_view(ct) \
                                 }, \
                                 .(tail5: Type_view_tail5) -> Maybe_forall_view { \
-                                  __either__( \
-                                    Forall_view, Type_view_tail6, Maybe_forall_view, tail5, \
+                                  __either__[Forall_view][Type_view_tail6][Maybe_forall_view]( \
+                                    tail5, \
                                     .(view: Forall_view) -> Maybe_forall_view { \
                                       some_forall_view(ct, view) \
                                     }, \
@@ -16980,13 +16976,11 @@ fn generic_last() -> . {
               target: __Type__, \
               clause: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { \
-              __either__( \
-                Forall_view, ., __Checked_term__ & __Fill_ctx__, \
+              __either__[Forall_view][.][__Checked_term__ & __Fill_ctx__]( \
                 forall_view(ct, __term_type__(ct, clause)), \
                 .(view: Forall_view) -> (__Checked_term__ & __Fill_ctx__) { \
-                  let var = __fst__(__Type_var__, __Type_arity__ & __Type__, view); \
-                  __either__( \
-                    __Checked_term__, Specialize_tail, __Checked_term__ & __Fill_ctx__, \
+                  let var = __fst__[__Type_var__][__Type_arity__ & __Type__](view); \
+                  __either__[__Checked_term__][Specialize_tail][__Checked_term__ & __Fill_ctx__]( \
                     __term_specialize__(ct, clause, __type_var__(ct, var), target), \
                     .(specialized: __Checked_term__) -> (__Checked_term__ & __Fill_ctx__) { \
                       ( \
@@ -17000,12 +16994,12 @@ fn generic_last() -> . {
                       ) \
                     }, \
                     .(_failed: Specialize_tail) -> (__Checked_term__ & __Fill_ctx__) { \
-                      (__macro_error__(ct, \"specialization failed\"(__Diagnostic_text__)), fills) \
+                      (__macro_error__(ct, \"specialization failed\"[__Diagnostic_text__]), fills) \
                     } \
                   ) \
                 }, \
                 .() -> (__Checked_term__ & __Fill_ctx__) { \
-                  (__macro_error__(ct, \"expected forall\"(__Diagnostic_text__)), fills) \
+                  (__macro_error__(ct, \"expected forall\"[__Diagnostic_text__]), fills) \
                 } \
               ) \
             } \
@@ -17040,7 +17034,7 @@ fn generic_last() -> . {
               _ct: __Comptime__, \
               packet: __Type__ & __Checked_term__ \
             ) -> __Checked_term__ { \
-              __snd__(__Type__, __Checked_term__, packet) \
+              __snd__[__Type__][__Checked_term__](packet) \
             } \
             macro identity : [Source] Source -> Source { impl identity_impl; };");
 
@@ -17094,7 +17088,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  type Unit_alias = .; \
                  pure fn identity_impl(packet: {domain}) -> __Checked_term__ {{ \
-                     __term_unit__(__fst__(__Comptime__, {tail}, packet)) \
+                     __term_unit__(__fst__[__Comptime__][{tail}](packet)) \
                    }} \
                  macro identity : [Source] Source -> Source {{ impl identity_impl; }};"
             );
@@ -17601,7 +17595,7 @@ fn generic_last() -> . {
                      import label_dep(Slot); import label_shadow as label_dep; \
                      import shadow as dep; import other as types; \
                      pure fn local_impl(ct: __Comptime__, _source: __Type__) -> __Checked_term__ { \
-                         __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
+                         __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
                        } \
                      macro local : [A] . -> A { impl local_impl; };",
                 ),
@@ -17681,11 +17675,18 @@ fn generic_last() -> . {
             }),
         ];
         let call = Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: crate::ast::ExpressionOccurrence::fresh(),
             form: crate::ast::UserMacroCallForm::Ordinary,
             name: "local".to_owned(),
-            args: explicit_args,
+            stages: explicit_args
+                .into_iter()
+                .map(|arg| crate::ast::CallStage {
+                    occurrence: crate::ast::ExpressionOccurrence::fresh(),
+                    args: vec![arg],
+                    source_trivia: Default::default(),
+                    meta: Meta::new(test_span()),
+                })
+                .collect(),
             meta: Meta::new(test_span()),
             ext: NodeId(41),
         };
@@ -17867,7 +17868,7 @@ fn generic_last() -> . {
              import __comptime__; \
              import pkg/helper as h; \
              pure fn capture_demo_impl(ct: __Comptime__, _helper: __Checked_term__, _source: __Type__, _target: __Type__ | .) -> __Checked_term__ { \
-                 __macro_error__(ct, \"not evaluated\"(__Diagnostic_text__)) \
+                 __macro_error__(ct, \"not evaluated\"[__Diagnostic_text__]) \
                } \
              pub macro capture_demo : [T] . -> . { captures h.helper; impl capture_demo_impl; };",
         );
@@ -18032,7 +18033,7 @@ fn generic_last() -> . {
                 "module pkg/main; \
                  import _q0/types(Rep); \
                  import pkg/macros(macro make_rep); \
-                 fn run() -> Rep { make_rep(., ()) }",
+                 fn run() -> Rep { make_rep[.](()) }",
             ),
         ]);
 
@@ -18357,7 +18358,7 @@ fn generic_last() -> . {
                  import __comptime__; \
                  pure fn package_content_probe_impl( \
                    ct: __Comptime__, _source: __Type__, _value: __Checked_term__ \
-                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\"(__Diagnostic_text__)) }} \
+                 ) -> __Checked_term__ {{ __macro_error__(ct, \"{message}\"[__Diagnostic_text__]) }} \
                  pub macro package_content_probe : [Source] Source -> Source {{ \
                    impl package_content_probe_impl; \
                  }};"
@@ -19063,7 +19064,7 @@ fn generic_last() -> . {
         let consumer = lowered_module(
             "module pkg/consumer; \
              import pkg/producer(emit, Text); \
-             pub fn run() -> . { emit(\"hi\"(Text)) }",
+             pub fn run() -> . { emit(\"hi\"[Text]) }",
         );
         let package = Package::build(
             Path::new(""),
@@ -19083,7 +19084,7 @@ fn generic_last() -> . {
             "module pkg/main; \
              import __intrinsics__; \
              fn pick() -> . { \
-               __if_then_else__(., (), .() { () }, .() { () }) \
+               __if_then_else__[.]((), .() { () }, .() { () }) \
              }",
         );
         let res = check_module_with_package_file(&m, None, None);
@@ -19104,7 +19105,7 @@ fn generic_last() -> . {
     fn mk_pair_and_fst_typecheck() {
         ok("module x; \
             import __intrinsics__; \
-            fn first(x: .) -> . { __fst__(., ., __pair__(., ., x, x)) }");
+            fn first(x: .) -> . { __fst__[.][.](__pair__[.][.](x, x)) }");
     }
 
     #[test]
@@ -19112,7 +19113,7 @@ fn generic_last() -> . {
         ok("module x; \
             import __intrinsics__; \
             fn left_first(s: (. | .)) -> . { \
-              __either__(., ., ., s, .(a) { a }, .(b) { b }) \
+              __either__[.][.][.](s, .(a) { a }, .(b) { b }) \
             }");
     }
 
@@ -19159,8 +19160,8 @@ fn generic_last() -> . {
     fn parametric_newtype_member_instantiates() {
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn wrap[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn unwrap[A](b: Box(A)) -> A { Box.un_box(A, b) }");
+            fn wrap[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn unwrap[A](b: Box[A]) -> A { Box.un_box[A](b) }");
     }
 
     // ---- Existential type binders --------------------------------------
@@ -19174,22 +19175,22 @@ fn generic_last() -> . {
         ok("module x; \
             import __intrinsics__; \
             newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn make_pack[A][U](x: A, y: U) -> Pack(A) { Pack.mk_pack(A, U, __pair__(A, U, x, y)) }");
+            fn make_pack[A][U](x: A, y: U) -> Pack[A] { Pack.mk_pack[A][U](__pair__[A][U](x, y)) }");
     }
 
     #[test]
     fn existential_projector_is_curried_cps_form() {
         // Existential-bearing newtypes get a curried CPS projector
         // `[A](v: Pack(A)) -> [R](k: [U](A & U) -> R) -> R`.
-        // Calling `Pack.un_pack(A, p)` returns the inner CPS function;
+        // Calling `Pack.un_pack[A](p)` returns the inner CPS function;
         // applying that function to `((), .[U](pair) { … })` runs
         // the continuation under the existential's witness.
         ok("module x; \
             import __intrinsics__; \
             fn discard[A][B](_p: A & B) -> . { () } \
             newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn open[A](p: Pack(A)) -> . { \
-              Pack.un_pack(A, p)(., .[U](pair) { discard(A, U, pair) }) \
+            fn open[A](p: Pack[A]) -> . { \
+              Pack.un_pack[A](p)[.](.[U](pair) { discard[A][U](pair) }) \
             }");
     }
 
@@ -19201,8 +19202,8 @@ fn generic_last() -> . {
         let msg = err("module x; \
             import __intrinsics__; \
             newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn open[A](p: Pack(A)) -> . { \
-              Pack.un_pack(A, p)(., .[U](pair: A & U) -> U { __snd__(A, U, pair) }) \
+            fn open[A](p: Pack[A]) -> . { \
+              Pack.un_pack[A](p)[.](.[U](pair: A & U) -> U { __snd__[A][U](pair) }) \
             }");
         assert!(
             !msg.is_empty(),
@@ -19212,12 +19213,12 @@ fn generic_last() -> . {
 
     #[test]
     fn existential_projector_inner_under_arity_is_error() {
-        // The outer call `Pack.un_pack(A, p)` returns a polymorphic
+        // The outer call `Pack.un_pack[A](p)` returns a polymorphic
         // CPS function; the inner call requires both `[R]` and the
         // continuation.
         let msg = err("module x; \
             newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack; }; \
-            fn open[A](p: Pack(A)) -> . { let _ = Pack.un_pack(A, p)(()); () }");
+            fn open[A](p: Pack[A]) -> . { let _ = Pack.un_pack[A](p)(()); () }");
         assert!(
             !msg.is_empty(),
             "expected an error from missing CPS continuation"
@@ -19236,7 +19237,7 @@ fn generic_last() -> . {
             newtype Pack <U> : U & . { pub constructor mk_pack; pub projector un_pack; }; \
             fn open(p: Pack) -> . { \
               let .(<U> pair) = Pack.un_pack(p); \
-              __snd__(U, ., pair) \
+              __snd__[U][.](pair) \
             }");
     }
 
@@ -19251,7 +19252,7 @@ fn generic_last() -> . {
             fn discard[A][B](_p: A & B) -> . { () } \
             fn open(p: Pair_pack) -> . { \
               let .(<L> <R2> pair) = Pair_pack.un_pair_pack(p); \
-              discard(L, R2, pair) \
+              discard[L][R2](pair) \
             }");
     }
 
@@ -19264,11 +19265,11 @@ fn generic_last() -> . {
         // matches a `fn` whose declared return spells out the
         // unfolded sum directly.
         ok("module x; \
-            rec newtype List[A] : (. | (A & (List(A)))) { \
+            rec newtype List[A] : (. | (A & (List[A]))) { \
               pub constructor cons; pub projector un_list; \
             }; \
-            fn destruct[A](l: List(A)) -> (. | (A & List(A))) { \
-              List.un_list(A, l) \
+            fn destruct[A](l: List[A]) -> (. | (A & List[A])) { \
+              List.un_list[A](l) \
             }");
     }
 
@@ -19276,13 +19277,13 @@ fn generic_last() -> . {
     fn rec_tree_constructor_unfolds_at_boundary() {
         // Nullary recursive newtype: the constructor accepts a value
         // of `. | Tree` after unfold.
-        // `__left__(., Tree, ())` builds such a value.
+        // `__left__[.][Tree](())` builds such a value.
         ok("module x; \
             import __intrinsics__; \
             rec newtype Tree : (. | (Tree)) { \
               pub constructor mk_tree; pub projector un_tree; \
             }; \
-            fn empty() -> Tree { Tree.mk_tree(__left__(., Tree, ())) }");
+            fn empty() -> Tree { Tree.mk_tree(__left__[.][Tree](())) }");
     }
 
     #[test]
@@ -19378,7 +19379,7 @@ fn generic_last() -> . {
         let msg = err_totality(
             "module x; \
                        type Negate[A] = (A -> .); \
-                       rec newtype Bad : Negate(Bad) { \
+                       rec newtype Bad : Negate[Bad] { \
                          pub constructor mk_bad; pub projector un_bad; \
                        };",
         );
@@ -19412,8 +19413,8 @@ fn generic_last() -> . {
               pub constructor box; pub projector unbox; \
             }; \
             rec { \
-              type Family = Node(Box); \
-              newtype Node[*Family] : Family(.) & Tail { \
+              type Family = Node[Box]; \
+              newtype Node[*Family] : Family[.] & Tail { \
                 pub constructor mk_node; pub projector un_node; \
               }; \
               type Tail = Family; \
@@ -19447,8 +19448,8 @@ fn generic_last() -> . {
         let msg = err_totality(
             "module x; \
             newtype Bar[A] : (A -> A) { pub constructor mk_b; pub projector un_b; }; \
-            newtype Foo[B] : Bar(B) { pub constructor mk_f; pub projector un_f; }; \
-            rec newtype Loop : Foo(Loop) { pub constructor mk_l; pub projector un_l; };",
+            newtype Foo[B] : Bar[B] { pub constructor mk_f; pub projector un_f; }; \
+            rec newtype Loop : Foo[Loop] { pub constructor mk_l; pub projector un_l; };",
         );
         assert!(msg.contains("strictly positive"), "got: {msg}");
     }
@@ -19463,7 +19464,7 @@ fn generic_last() -> . {
         let m = module(
             "module main; \
              host type Stream[A]; \
-             rec newtype Bad : Stream(Bad) { pub constructor mk_b; pub projector un_b; };",
+             rec newtype Bad : Stream[Bad] { pub constructor mk_b; pub projector un_b; };",
         );
         let res = check_module(&m);
         match res {
@@ -19490,8 +19491,8 @@ fn generic_last() -> . {
         let m = module(
             "module main; \
              host type First role(bool); host type Second role(bool); \
-             fn first() -> First { .t(First) } \
-             fn second() -> Second { .f(Second) }",
+             fn first() -> First { .t[First] } \
+             fn second() -> Second { .f[Second] }",
         );
         check_module(&m).unwrap();
 
@@ -19513,7 +19514,7 @@ fn generic_last() -> . {
         ] {
             let source = format!(
                 "module main; import control(Bool, macro if); {declarations} \
-                 fn pick(c: Bool) -> First {{ if(c) {{ .t(First) }} else {{ .f(First) }} }}"
+                 fn pick(c: Bool) -> First {{ if(c) {{ .t[First] }} else {{ .f[First] }} }}"
             );
             check_package_sources(&[&source])
                 .expect("unrelated role declarations do not choose the condition carrier");
@@ -19524,7 +19525,7 @@ fn generic_last() -> . {
     fn if_else_ignores_bool_role_declared_later() {
         ok("module main; import control(Bool, macro if); \
              host type First role(bool); \
-             fn pick(c: Bool) -> First { if (c) { .t(First) } else { .f(First) } } \
+             fn pick(c: Bool) -> First { if (c) { .t[First] } else { .f[First] } } \
              host type Later role(bool);");
     }
 
@@ -19538,7 +19539,7 @@ fn generic_last() -> . {
              import first as first; \
              import second as second; \
              type First = first.Bool; \
-             fn pick(c: Bool) -> First { if (c) { .t(First) } else { .f(First) } } \
+             fn pick(c: Bool) -> First { if (c) { .t[First] } else { .f[First] } } \
              type Later = second.Bool;",
         ])
         .expect("an ordinary later alias does not change the known condition type");
@@ -19550,7 +19551,7 @@ fn generic_last() -> . {
             "module provider; import control(Bool); pub type Truth = Bool;",
             "module consumer; import control(macro if); \
              import provider(Truth as Bool); \
-             fn pick(c: Bool) -> Bool { if (c) { .t(Bool) } else { .f(Bool) } } \
+             fn pick(c: Bool) -> Bool { if (c) { .t[Bool] } else { .f[Bool] } } \
              host type Later role(bool);",
         ])
         .expect("an imported Boolean identity remains stable after a later local declaration");
@@ -19569,7 +19570,7 @@ fn generic_last() -> . {
                 "module consumer; import control(macro if); \
              import provider(Flag); \
              import base as base; \
-             fn pick(c: Flag) -> Flag { if (c) { .t(Flag) } else { .f(Flag) } } \
+             fn pick(c: Flag) -> Flag { if (c) { .t[Flag] } else { .f[Flag] } } \
              type Flag = base.Bool;",
             ),
         ]);
@@ -19595,8 +19596,8 @@ fn generic_last() -> . {
              import provider(Box); \
              import provider as p; \
              newtype Takes[*F] : . { constructor mk; projector un; }; \
-             fn before(value: Takes(Box)) -> . { let _ = value; () } \
-             type Box[A] = p.Box(A);",
+             fn before(value: Takes[Box]) -> . { let _ = value; () } \
+             type Box[A] = p.Box[A];",
             ),
         ]);
         let error = package
@@ -19612,8 +19613,8 @@ fn generic_last() -> . {
             "module consumer; \
              import provider as p; \
              newtype Takes[*F] : . { constructor mk; projector un; }; \
-             type Box[A] = p.Box(A); \
-             fn bad(value: Takes(Box)) -> . { let _ = value; () }",
+             type Box[A] = p.Box[A]; \
+             fn bad(value: Takes[Box]) -> . { let _ = value; () }",
         ]);
         assert!(
             local_alias.contains("type alias `Box` requires 1 type argument, but 0 were supplied"),
@@ -19625,7 +19626,7 @@ fn generic_last() -> . {
     fn role_source_order_ignores_later_host_for_bare_literal() {
         ok("module main; \
             host type First role(bool); \
-            fn value() -> . { let value = .t(First); () } \
+            fn value() -> . { let value = .t[First]; () } \
             host type Later role(bool);");
     }
 
@@ -19634,8 +19635,8 @@ fn generic_last() -> . {
         ok("module main; import control(Bool, macro if); \
             host type First role(bool); \
             equiv choose(c: Bool) { \
-              if (c) { .t(First) } else { .f(First) }; \
-              if (c) { .t(First) } else { .f(First) } \
+              if (c) { .t[First] } else { .f[First] }; \
+              if (c) { .t[First] } else { .f[First] } \
             } \
             host type Later role(bool);");
     }
@@ -19645,7 +19646,7 @@ fn generic_last() -> . {
         ok("module main; import __intrinsics__; \
             import __comptime__; \
             pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                __if_then_else__(Comptime_bool, __Checked_term__, .t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
+                __if_then_else__[Comptime_bool][__Checked_term__](.t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
               } \
             macro choose : . -> . { impl choose_impl; }; \
             host type Later role(bool);");
@@ -19657,7 +19658,7 @@ fn generic_last() -> . {
             "module provider; import __intrinsics__; \
              import __comptime__; \
              pure fn choose_impl(ct: __Comptime__) -> __Checked_term__ { \
-                 __if_then_else__(Comptime_bool, __Checked_term__, .t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
+                 __if_then_else__[Comptime_bool][__Checked_term__](.t, .() { __term_unit__(ct) }, .() { __term_unit__(ct) }) \
                } \
              pub macro choose : . -> . { impl choose_impl; }; \
              host type Later role(bool);",
@@ -19677,7 +19678,7 @@ fn generic_last() -> . {
             let source = format!(
                 "module main; import __intrinsics__; {declarations} \
                  fn pick(c: First) -> First {{ \
-                   __if_then_else__(First, c, .() {{ .t(First) }}, .() {{ .f(First) }}) \
+                   __if_then_else__[First](c, .() {{ .t[First] }}, .() {{ .f[First] }}) \
                  }}"
             );
             check_package_sources(&[&source])
@@ -19701,19 +19702,19 @@ fn generic_last() -> . {
         ok(
             "module main; import __intrinsics__; host type Bool role(bool); \
             fn direct(c: Bool) -> Bool { \
-              __if_then_else__(Bool, c, .() { .t(Bool) }, .() { .f(Bool) }) \
+              __if_then_else__[Bool](c, .() { .t[Bool] }, .() { .f[Bool] }) \
             } \
             fn type_applied(packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { \
-              let choose = __if_then_else__(Bool); choose(packet) \
+              let choose = __if_then_else__[Bool]; choose(packet) \
             } \
             fn packed(packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { \
-              __if_then_else__(Bool, packet) \
+              __if_then_else__[Bool](packet) \
             } \
             fn branches_packed(c: Bool, branches: (. -> Bool) & (. -> Bool)) -> Bool { \
-              __if_then_else__(Bool, c, branches) \
+              __if_then_else__[Bool](c, branches) \
             } \
             fn ufcs(packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { \
-              packet.>>__if_then_else__(Bool) \
+              packet.>>__if_then_else__[Bool] \
             }",
         );
     }
@@ -19757,7 +19758,7 @@ fn generic_last() -> . {
         // against `id`'s parameter pattern `A` binds `A := .`.
         ok("module pkg/main; \
             fn id[A](x: A) -> A { x } \
-            fn use_id() -> . { id(_, ()) }");
+            fn use_id() -> . { id[_]( ()) }");
     }
 
     #[test]
@@ -19765,7 +19766,7 @@ fn generic_last() -> . {
         // `pair(_, _, x, y)` — both type args inferred from value args.
         ok("module pkg/main; \
             import __intrinsics__; \
-            fn use_pair() -> (. & .) { __pair__(_, _, (), ()) }");
+            fn use_pair() -> (. & .) { __pair__[_][_]((), ()) }");
     }
 
     #[test]
@@ -19773,7 +19774,7 @@ fn generic_last() -> . {
         // `f(I32, _, x, y)` — first type arg explicit, second inferred.
         ok("module pkg/main; \
             import __intrinsics__; \
-            fn use_pair() -> (. & .) { __pair__(., _, (), ()) }");
+            fn use_pair() -> (. & .) { __pair__[.][_]((), ()) }");
     }
 
     #[test]
@@ -19782,7 +19783,7 @@ fn generic_last() -> . {
             fn identity[A](value: A) -> A { value } \
             fn consume[Left][Right](_left: Left, _right: Right) -> . { () } \
             fn run() -> . { \
-              consume([A] A -> A, _, identity, identity) \
+              consume[[A] A -> A][ _]( identity, identity) \
             }");
     }
 
@@ -19800,7 +19801,7 @@ fn generic_last() -> . {
         let m = module(
             "module pkg/main; \
              import __intrinsics__; \
-             fn use_left() -> . { let _x = __left__(_, _, ()); () }",
+             fn use_left() -> . { let _x = __left__[_][_](()); () }",
         );
         let res = check_module(&m);
         match res {
@@ -19825,7 +19826,7 @@ fn generic_last() -> . {
         // position.
         ok("module pkg/main; \
             import __intrinsics__; \
-            fn use_left() -> (. | .) { __left__(_, _, ()) }");
+            fn use_left() -> (. | .) { __left__[_][_](()) }");
     }
 
     #[test]
@@ -19847,7 +19848,7 @@ fn generic_last() -> . {
         ok("module pkg/main; \
             host fn make[A]() -> A; \
             fn omitted() -> [A] A -> A { make() } \
-            fn placeholder() -> . -> [A] A -> A { make(_) }");
+            fn placeholder() -> . -> [A] A -> A { make[_] }");
     }
 
     #[test]
@@ -19868,20 +19869,20 @@ fn generic_last() -> . {
         ok("module pkg/main; \
             import __intrinsics__; \
             type Identity[A] = A -> A; \
-            fn empty[A] -> . | A { __left__(., A, ()) } \
+            fn empty[A] -> . | A { __left__[.][A](()) } \
             fn ordinary[A](value: A) -> A { value } \
             fn direct[A] -> A -> A { .(value: A) { value } } \
-            fn aliased[A] -> Identity(A) { .(value: A) { value } } \
+            fn aliased[A] -> Identity[A] { .(value: A) { value } } \
             fn returned() -> [A] A -> A { .[A] { .(value: A) { value } } } \
             fn retain() -> [A] . | A { empty } \
-            fn infer() -> . | . { empty(_) } \
+            fn infer() -> . | . { empty[_] } \
             fn apply(function: [A] A -> A) -> . { function(()) } \
             fn main() { \
               ordinary(()); direct(()); aliased(()); returned()(()); \
               apply(ordinary); apply(direct); apply(aliased); \
               apply(.[A] { .(value: A) { value } }); \
               let saved = empty; \
-              let .(result: . | .) = saved(_); \
+              let .(result: . | .) = saved[_]; \
               let _ = result; \
               () \
             }");
@@ -19897,10 +19898,10 @@ fn generic_last() -> . {
             "returned()",
         ] {
             for (passing, use_saved) in [
-                (format!("keep({value})"), "saved(., ())"),
-                (format!(".(value) {{ value }}({value})"), "saved(., ())"),
+                (format!("keep({value})"), "saved[.](())"),
+                (format!(".(value) {{ value }}({value})"), "saved[.](())"),
                 (
-                    format!(".(function) {{ function(., ()) }}({value})"),
+                    format!(".(function) {{ function[.](()) }}({value})"),
                     "saved",
                 ),
                 (format!(".[X](value: X) {{ () }}({value})"), "saved"),
@@ -19910,7 +19911,7 @@ fn generic_last() -> . {
                      type Identity[A] = A -> A; \
                      fn ordinary[A](value: A) -> A {{ value }} \
                      fn direct[A] -> A -> A {{ .(value: A) {{ value }} }} \
-                     fn aliased[A] -> Identity(A) {{ .(value: A) {{ value }} }} \
+                     fn aliased[A] -> Identity[A] {{ .(value: A) {{ value }} }} \
                      fn returned() -> [A] A -> A {{ .[A] {{ .(value: A) {{ value }} }} }} \
                      fn keep[X](value: X) -> X {{ value }} \
                      fn run() {{ let saved = {passing}; {use_saved} }}"
@@ -19924,7 +19925,7 @@ fn generic_last() -> . {
                  type Identity[A] = A -> A; \
                  fn ordinary[A](value: A) -> A {{ value }} \
                  fn direct[A] -> A -> A {{ .(value: A) {{ value }} }} \
-                 fn aliased[A] -> Identity(A) {{ .(value: A) {{ value }} }} \
+                 fn aliased[A] -> Identity[A] {{ .(value: A) {{ value }} }} \
                  fn returned() -> [A] A -> A {{ .[A] {{ .(value: A) {{ value }} }} }} \
                  fn consume(value: .) {{ value }} \
                  fn run() {{ consume({value}) }}"
@@ -19936,9 +19937,9 @@ fn generic_last() -> . {
     #[test]
     fn type_only_construction_checks_complete_scheme_kinds() {
         ok("module pkg/main; \
-            fn direct[*F] -> F(.) -> F(.) { .(value: F(.)) { value } } \
-            fn anonymous() -> [*F] F(.) -> F(.) { \
-              .[*F] { .(value: F(.)) { value } } \
+            fn direct[*F] -> F[.] -> F[.] { .(value: F[.]) { value } } \
+            fn anonymous() -> [*F] F[.] -> F[.] { \
+              .[*F] { .(value: F[.]) { value } } \
             }");
         for source in [
             "module pkg/main; fn bad[*F] -> . { () }",
@@ -19960,24 +19961,24 @@ fn generic_last() -> . {
         ] {
             ok(&format!(
                 "module pkg/main; {declaration} \
-                 fn run() {{ let inner = nested(.); inner(.) }}"
+                 fn run() {{ let inner = nested[.]; inner[.] }}"
             ));
         }
         ok("module pkg/main; \
             fn producer()[A][B] { () } \
-            fn from_parameter(poly: [A][B] .) { let inner = poly(.); inner(.) } \
-            fn run() { let poly = producer(); let inner = poly(.); inner(.) }");
+            fn from_parameter(poly: [A][B] .) { let inner = poly[.]; inner[.] } \
+            fn run() { let poly = producer(); let inner = poly[.]; inner[.] }");
         ok("module pkg/main; \
             fn explicit[A][B]() { () } \
-            fn run() { let inner = explicit(.); let thunk = inner(.); thunk() }");
+            fn run() { let inner = explicit[.]; let thunk = inner[.]; thunk() }");
     }
 
     #[test]
     fn type_only_construction_preserves_written_applications_and_purity() {
         for source in [
             "module pkg/main; fn marker[A] { () } fn bad() { marker }",
-            "module pkg/main; fn marker[A] { () } fn bad() { marker(.)() }",
-            "module pkg/main; fn marker[A] { () } fn bad() { marker(., ()) }",
+            "module pkg/main; fn marker[A] { () } fn bad() { marker[.]() }",
+            "module pkg/main; fn marker[A] { () } fn bad() { marker[.](()) }",
             "module pkg/main; host fn effect() -> .; pure fn bad[A] { effect() }",
         ] {
             let _ = type_diag(source);
@@ -19985,7 +19986,7 @@ fn generic_last() -> . {
         ok("module pkg/main; host fn effect() -> .; \
             fn marker[A] { effect() } \
             fn old[A]() { effect() } \
-            fn run() { marker(.); old(.)(); old(., ()) }");
+            fn run() { marker[.]; old[.](); old[.](()) }");
     }
 
     #[test]
@@ -19997,13 +19998,13 @@ fn generic_last() -> . {
             fn accept_nil(_value: . -> N) -> . { () } \
             fn accept_identity(_value: N -> N) -> . { () } \
             fn inferred_nil() -> N { nil() } \
-            fn inferred_nil_explicit_unit() -> N { nil(_, ()) } \
-            fn nested_nil() -> N { nil(N)() } \
-            fn explicit_nil() -> N { nil(N, ()) } \
-            fn ufcs_nil() -> N { ().>nil(N) } \
-            fn residual_nil() -> . { accept_nil(nil(N)) } \
-            fn residual_identity() -> . { accept_identity(identity(_)) } \
-            fn explicit_identity(value: N) -> N { identity(N, value) }");
+            fn inferred_nil_explicit_unit() -> N { nil[_](()) } \
+            fn nested_nil() -> N { nil[N]() } \
+            fn explicit_nil() -> N { nil[N](()) } \
+            fn ufcs_nil() -> N { ().>nil[N] } \
+            fn residual_nil() -> . { accept_nil(nil[N]) } \
+            fn residual_identity() -> . { accept_identity(identity[_]) } \
+            fn explicit_identity(value: N) -> N { identity[N](value) }");
     }
 
     #[test]
@@ -20037,58 +20038,58 @@ fn generic_last() -> . {
             fn consume_n_function(_function: N -> N) -> . { () } \
             fn consume_unit_to_n_function(_function: . -> N) -> . { () } \
             fn consume_unit_function(_function: . -> .) -> . { () } \
-            fn consume_unit_box_constructor(_function: . -> Box(.)) -> . { () } \
+            fn consume_unit_box_constructor(_function: . -> Box[.]) -> . { () } \
             fn consume_staged_unit_function(_function: . -> . -> .) -> . { () } \
             fn consume_unit_product_function(_function: (. & .) -> .) -> . { () } \
             fn exercise_poly_value(function: [A] A -> A) -> . { \
-              consume_unit_function(function(.)); \
-              function(., ()); \
-              ().>function(.); \
-              ().>>function(.); \
-              function(.).<(); \
-              function(.).<<() \
+              consume_unit_function(function[.]); \
+              function[.](()); \
+              ().>function[.]; \
+              ().>>function[.]; \
+              function[.].<(); \
+              function[.].<<() \
             } \
             fn exercise_nil_value(function: [A] . -> A) -> . { \
-              consume_unit_to_n_function(function(N)); \
-              consume_n(function(N)()); \
-              consume_n(function(N, ())); \
-              consume_n(().>function(N)) \
+              consume_unit_to_n_function(function[N]); \
+              consume_n(function[N]()); \
+              consume_n(function[N](())); \
+              consume_n(().>function[N]) \
             } \
             fn parity() -> . { \
-              consume_unit_function(identity(.)); \
-              consume_unit_function(identity(Unit_alias)); \
-              identity(., ()); \
-              ().>identity(.); \
-              consume_unit_function(host_identity(.)); \
-              consume_unit_box_constructor(Box.mk_box(.)); \
-              host_identity(., ()); \
-              ().>host_identity(.); \
-              consume_unit_to_n_function(host_nil(N)); \
-              consume_n(host_nil(N, ())); \
-              consume_n(().>host_nil(N)); \
-              consume_unit_function(unit_nullary(N)); \
-              unit_nullary(N, ()); \
-              ().>unit_nullary(N); \
-              consume_unit_function(macro_identity(.)); \
-              consume_unit_function(macro_identity(Unit_alias)); \
-              macro_identity(., ()); \
-              ().>macro_identity(.); \
-              ().>>macro_identity(.); \
-              macro_identity(.).<(); \
-              macro_identity(.).<<(); \
-              ().>macro_identity(Unit_alias); \
-              consume_unit_function(macro_unit(N)); \
-              macro_unit(N, ()); \
-              ().>macro_unit(N); \
+              consume_unit_function(identity[.]); \
+              consume_unit_function(identity[Unit_alias]); \
+              identity[.](()); \
+              ().>identity[.]; \
+              consume_unit_function(host_identity[.]); \
+              consume_unit_box_constructor(Box.mk_box[.]); \
+              host_identity[.](()); \
+              ().>host_identity[.]; \
+              consume_unit_to_n_function(host_nil[N]); \
+              consume_n(host_nil[N](())); \
+              consume_n(().>host_nil[N]); \
+              consume_unit_function(unit_nullary[N]); \
+              unit_nullary[N](()); \
+              ().>unit_nullary[N]; \
+              consume_unit_function(macro_identity[.]); \
+              consume_unit_function(macro_identity[Unit_alias]); \
+              macro_identity[.](()); \
+              ().>macro_identity[.]; \
+              ().>>macro_identity[.]; \
+              macro_identity[.].<(); \
+              macro_identity[.].<<(); \
+              ().>macro_identity[Unit_alias]; \
+              consume_unit_function(macro_unit[N]); \
+              macro_unit[N](()); \
+              ().>macro_unit[N]; \
               exercise_poly_value(identity); \
               exercise_poly_value(host_identity); \
               exercise_nil_value(host_nil); \
-              consume_n_function(identity(N)); \
-              consume_n_function(host_identity(N)); \
-              consume_n_function(macro_identity(N)); \
-              consume_staged_unit_function(staged(.)); \
-              consume_unit_function(().>staged(.)); \
-              consume_unit_product_function(product(.)) \
+              consume_n_function(identity[N]); \
+              consume_n_function(host_identity[N]); \
+              consume_n_function(macro_identity[N]); \
+              consume_staged_unit_function(staged[.]); \
+              consume_unit_function(().>staged[.]); \
+              consume_unit_product_function(product[.]) \
             }";
         check_package_sources(&[macro_def, main])
             .expect("application must depend on the instantiated function type alone");
@@ -20099,7 +20100,7 @@ fn generic_last() -> . {
         ok("module main; \
              host type T; \
              host fn nil[A]() -> A; \
-             fn valid() -> T { ().>nil(T) }");
+             fn valid() -> T { ().>nil[T] }");
     }
 
     #[test]
@@ -20131,8 +20132,8 @@ fn generic_last() -> . {
     #[test]
     fn bare_leading_forall_requires_a_written_type_argument() {
         ok("module pkg/main; \
-            fn explicit(value: [A] A) -> . { value(.) } \
-            fn inferred(value: [A] A) -> . { value(_) }");
+            fn explicit(value: [A] A) -> . { value[.] } \
+            fn inferred(value: [A] A) -> . { value[_] }");
 
         let macro_def = "module macros; \
             import __comptime__; \
@@ -20140,7 +20141,7 @@ fn generic_last() -> . {
                 __macro_error__(ct, __type_display__(ct, a)) \
               } \
             pub macro probe : [A] A { impl probe_impl; };";
-        for call in ["probe(.)", "probe(_)"] {
+        for call in ["probe[.]", "probe[_]"] {
             let main =
                 format!("module main; import macros(macro probe); fn run() -> . {{ {call} }}");
             match check_package_sources(&[macro_def, &main]) {
@@ -20164,7 +20165,7 @@ fn generic_last() -> . {
              fn explicit_empty() -> . { produce()() }",
         );
         assert!(
-            diagnostic.message.contains("[A] A"),
+            diagnostic.message == "expected a type argument here, got a value argument",
             "got: {}",
             diagnostic.message
         );
@@ -20268,7 +20269,7 @@ fn generic_last() -> . {
         let diagnostic = type_diag(
             "module pkg/main; \
             fn id[T](value: T) -> T { value } \
-            fn choose_result[A](poly: [B] B -> A) -> A { poly(., ()) } \
+            fn choose_result[A](poly: [B] B -> A) -> A { poly[.]( ()) } \
             fn run() -> . { let x = choose_result(id); () }",
         );
         assert_eq!(
@@ -20313,7 +20314,7 @@ fn generic_last() -> . {
         // only target source).
         ok("module x; host type Bool; \
             fn drop_middle(x: (. & Bool & .)) -> (. & .) { \
-                let y = narrow_prod(x, (. & .)); y \
+                let y = narrow_prod(x)[(. & .)]; y \
             }");
     }
 
@@ -20331,7 +20332,7 @@ fn generic_last() -> . {
         // `fit` with the trailing type-arg as the only target source.
         ok("module x; host type Bool; \
             fn lift(x: .) -> (. | Bool) { \
-                let y = fit(x, (. | Bool)); y \
+                let y = fit(x)[(. | Bool)]; y \
             }");
     }
 
@@ -20407,15 +20408,19 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), seed: S) -> R; \
             rec(loop) { \
               pub fn keep(value: .) -> I32 { recur walk(value) }; \
-              fn walk(_value: .) -> I32 { nil(I32)() } \
+              fn walk(_value: .) -> I32 { let saved = nil[I32]; saved() } \
             }";
         let package = lowered_package(&[("x.kio", source)]);
         let checked = check_package_preserving_normalization(&package)
             .expect("recursive clones merge one final residual plan per source call");
-        let spelling = "nil(I32)";
+        let spelling = "nil[I32]";
         let start = source.find(spelling).expect("type-only call spelling") as u32;
         let span = Span::new(start, start + spelling.len() as u32);
         let sites = call_sites_at(checked.normalized().package(), "x", span);
+        assert!(
+            !sites.is_empty(),
+            "type-only source occurrence keeps a call-site fact"
+        );
         for site in sites {
             let residual = checked
                 .elaborations()
@@ -20470,7 +20475,7 @@ fn generic_last() -> . {
         // type-arg supplies the target.
         ok("module x; host type Bool; \
             fn flat(x: ((. | Bool) | Bool)) -> (. | (Bool | Bool)) { \
-                let y = flatten_sum(x, (. | (Bool | Bool))); y \
+                let y = flatten_sum(x)[(. | (Bool | Bool))]; y \
             }");
     }
 
@@ -20486,7 +20491,7 @@ fn generic_last() -> . {
     fn flatten_prod_synth_with_explicit_target_works() {
         ok("module x; host type Bool; \
             fn flat(x: ((. & Bool) & Bool)) -> (. & (Bool & Bool)) { \
-                let y = flatten_prod(x, (. & (Bool & Bool))); y \
+                let y = flatten_prod(x)[(. & (Bool & Bool))]; y \
             }");
     }
 
@@ -20546,7 +20551,7 @@ fn generic_last() -> . {
         // its result through fit with a concrete target.
         ok("module x; \
             fn diverge() -> ! { diverge() } \
-            fn use_diverge() -> . { fit(diverge(), .) }");
+            fn use_diverge() -> . { fit(diverge())[.] }");
     }
 
     #[test]
@@ -20567,7 +20572,7 @@ fn generic_last() -> . {
         // the unifier solves the same substitution.
         ok("module pkg/main; \
             import __intrinsics__; \
-            fn use_pair() -> (. & .) { __pair__(_, _, (), ()) }");
+            fn use_pair() -> (. & .) { __pair__[_][_]((), ()) }");
     }
 
     #[test]
@@ -20581,8 +20586,8 @@ fn generic_last() -> . {
         // inferred-binder shape against the concrete one.
         ok("module pkg/main; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn lift[A](x: A) -> Box(A) { Box.mk_box(x) } \
-            fn peel[A](x: Box(A)) -> A { Box.un_box(x) } \
+            fn lift[A](x: A) -> Box[A] { Box.mk_box(x) } \
+            fn peel[A](x: Box[A]) -> A { Box.un_box(x) } \
             fn round_trip() -> . { peel(lift(())) }");
     }
 
@@ -20590,8 +20595,8 @@ fn generic_last() -> . {
     fn type_arg_inference_directly_solves_applied_hkt_head() {
         ok("module pkg/main; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn keep[*F][A](value: F(A)) -> F(A) { value } \
-            fn round_trip(value: Box(.)) -> Box(.) { keep(value) }");
+            fn keep[*F][A](value: F[A]) -> F[A] { value } \
+            fn round_trip(value: Box[.]) -> Box[.] { keep(value) }");
     }
 
     // ---- arbitrary annotations on `fn` signatures ----------------------------
@@ -20603,7 +20608,7 @@ fn generic_last() -> . {
         // bare `x` path at that concrete type.
         ok("module pkg/main; \
             fn id[A](x: A) -> A { x } \
-            fn use_id() -> . { id(_, (.(x: .) { x })(())) }");
+            fn use_id() -> . { id[_]((.(x: .) { x })(())) }");
     }
 
     #[test]
@@ -20614,7 +20619,7 @@ fn generic_last() -> . {
         // the no-annotation form.
         ok("module pkg/main; \
             fn apply[A](f: A -> ., x: A) -> . { f(x) } \
-            fn use_apply() -> . { apply(., .(x: _) { () }, ()) }");
+            fn use_apply() -> . { apply[.](.(x: _) { () }, ()) }");
     }
 
     #[test]
@@ -20625,7 +20630,7 @@ fn generic_last() -> . {
         // expected return type pulled from the call's signature.
         ok("module pkg/main; \
             fn apply[A](f: A -> ., x: A) -> . { f(x) } \
-            fn use_apply() -> . { apply(., .(x) -> . { () }, ()) }");
+            fn use_apply() -> . { apply[.](.(x) -> . { () }, ()) }");
     }
 
     #[test]
@@ -20635,7 +20640,7 @@ fn generic_last() -> . {
         // return type.
         ok("module pkg/main; \
             fn apply[A](f: A -> ., x: A) -> . { f(x) } \
-            fn use_apply() -> . { apply(., .(x) -> _ { () }, ()) }");
+            fn use_apply() -> . { apply[.](.(x) -> _ { () }, ()) }");
     }
 
     #[test]
@@ -20648,7 +20653,7 @@ fn generic_last() -> . {
         let m = module(
             "module pkg/main; \
              fn apply[A](f: A -> ., x: A) -> . { f(x) } \
-             fn use_apply() -> . { apply(., .(x: (. & .)) { () }, ()) }",
+             fn use_apply() -> . { apply[.]( .(x: (. & .)) { () }, ()) }",
         );
         match check_module(&m) {
             Err(Error::Type(_)) => {}
@@ -20666,7 +20671,7 @@ fn generic_last() -> . {
         let m = module(
             "module pkg/main; \
              fn apply[A](f: A -> ., x: A) -> . { f(x) } \
-             fn use_apply() -> . { apply(., .(x) -> (. & .) { () }, ()) }",
+             fn use_apply() -> . { apply[.]( .(x) -> (. & .) { () }, ()) }",
         );
         match check_module(&m) {
             Err(Error::Type(_)) => {}
@@ -20769,7 +20774,7 @@ fn generic_last() -> . {
         // call is unreachable (no inhabited `!` value exists).
         ok("module x; \
             import __intrinsics__; \
-            fn forever(b: !)[A] -> A { __absurd__(A, b) }");
+            fn forever(b: !)[A] -> A { __absurd__[A](b) }");
     }
 
     #[test]
@@ -21879,7 +21884,7 @@ fn generic_last() -> . {
     }
 
     #[test]
-    fn immediate_lambda_does_not_use_body_or_later_application() {
+    fn immediate_lambda_uses_written_stages_but_not_body_only() {
         let bound = err("module x; \
             fn run() -> . { let f = .(value) { value }; f(()) }");
         assert!(
@@ -21888,12 +21893,8 @@ fn generic_last() -> . {
             "got: {bound}"
         );
 
-        let later = err("module x; \
+        ok("module x; \
             fn run() -> . { .(first)(second) { second }(())(()) }");
-        assert!(
-            later.contains("cannot infer the type of `fn` parameter `second`"),
-            "got: {later}"
-        );
     }
 
     #[test]
@@ -21936,24 +21937,24 @@ fn generic_last() -> . {
     fn immediate_lambda_type_arg_modes() {
         ok("module x; \
             newtype N : . { pub constructor mk_n; pub projector un_n; }; \
-            fn explicit_dot() -> . { .[A](value: A) { value }(., ()) } \
-            fn placeholder() -> . { .[A](value: A) { value }(_, ()) } \
+            fn explicit_dot() -> . { .[A](value: A) { value }[.]( ()) } \
+            fn placeholder() -> . { .[A](value: A) { value }[_]( ()) } \
             fn elided() -> N { .[A](value: A) { value }(N.mk_n(())) } \
-            fn explicit_unit_type() -> . { .[A](value: A) { value }(., ()) }");
+            fn explicit_unit_type() -> . { .[A](value: A) { value }[.]( ()) }");
     }
 
     #[test]
     fn immediate_lambda_unit_values_infer_across_layers() {
         ok("module x; \
-            fn inferred() -> . { .[A](first: A)(second) { second }((), ()) } \
-            fn run() -> . { .[A](first: A)(second) { second }(_, (), ()) }");
+            fn inferred() -> . { .[A](first: A)(second) { second }(())(()) } \
+            fn run() -> . { .[A](first: A)(second) { second }[_](())(()) }");
     }
 
     #[test]
     fn immediate_lambda_mixed_layer_type_args_follow_layer_boundaries() {
         ok("module x; \
-            fn explicit_placeholder() -> . { .[A](first: A)[B](second: B) { second }(_, (), ., ()) } \
-            fn inferred_first_type() -> . { .[A](first: A)[B](second: B) { second }((), ., ()) }");
+            fn explicit_placeholder() -> . { .[A](first: A)[B](second: B) { second }[_](())[.](()) } \
+            fn inferred_first_type() -> . { .[A](first: A)[B](second: B) { second }(())[.](()) }");
     }
 
     #[test]
@@ -21961,7 +21962,7 @@ fn generic_last() -> . {
         ok("module x; \
             fn make_pair() -> (. & .) { ((), ()) } \
             fn run() -> . { \
-              .[A](left: A, right)(tail) { tail }((), make_pair(), ()) \
+              .[A](left: A, right)(tail) { tail }((), make_pair())(()) \
             }");
     }
 
@@ -21970,10 +21971,10 @@ fn generic_last() -> . {
         ok("module x; \
             fn make_pair() -> (. & .) { ((), ()) } \
             fn final_product_fills_suffix() -> . { \
-              .(left, right)(tail) { tail }(make_pair(), ()) \
+              .(left, right)(tail) { tail }(make_pair())(()) \
             } \
             fn earlier_product_counts_once() -> . { \
-              .(first, second, third)(tail) { tail }(make_pair(), (), (), ()) \
+              .(first, second, third)(tail) { tail }(make_pair(), (), ())(()) \
             }");
     }
 
@@ -22072,13 +22073,13 @@ fn generic_last() -> . {
         assert!(
             mismatch.contains("type mismatch")
                 && mismatch.contains("expected `I32`")
-                && mismatch.contains("found `I32 & String`"),
+                && mismatch.contains("found `a & b`"),
             "got: {mismatch}"
         );
     }
 
     #[test]
-    fn flat_call_packs_only_the_final_written_source_at_an_explicit_layer_boundary() {
+    fn one_value_packet_does_not_cross_an_explicit_layer_boundary() {
         let mismatch = err("module x; \
             host type I32; \
             host type String; \
@@ -22089,9 +22090,9 @@ fn generic_last() -> . {
             }");
         assert!(
             mismatch.contains("type mismatch")
-                && mismatch.contains("expected `I32`")
-                && mismatch.contains("found `I32 & String & N`"),
-            "the non-final `packet` source must occupy only the first lexical slot: {mismatch}"
+                && mismatch.contains("expected `N`")
+                && mismatch.contains("found `N -> N`"),
+            "one written value group leaves the returned Function unapplied: {mismatch}"
         );
 
         ok("module x; \
@@ -22112,10 +22113,10 @@ fn generic_last() -> . {
             host type N; \
             fn staged[A](left: A, right: A)[B](tail: B) -> B { tail } \
             fn tuple_form(left: I32, right: I32, tail: N) -> N { \
-              staged(I32, (left, right), N, tail) \
+              staged[I32]((left, right))[N](tail) \
             } \
             fn intrinsic_form(left: I32, right: I32, tail: N) -> N { \
-              staged(I32, __pair__(I32, I32, left, right), N, tail) \
+              staged[I32](__pair__[I32][I32](left, right))[N](tail) \
             }");
     }
 
@@ -22137,22 +22138,22 @@ fn generic_last() -> . {
             host type I32; \
             host type N; \
             fn ordinary_direct(left: I32, right: I32, tail: N) -> N { \
-              ordinary(I32, (left, right), N, tail) \
+              ordinary[I32]((left, right))[N](tail) \
             } \
             fn macro_direct(left: I32, right: I32, tail: N) -> N { \
-              staged(I32, (left, right), N, tail) \
+              staged[I32]((left, right))[N](tail) \
             } \
             fn ordinary_receiver_first(left: I32, right: I32, tail: N) -> N { \
-              (left, right).>ordinary(I32, N, tail) \
+              ((left, right).>ordinary[I32])[N](tail) \
             } \
             fn macro_receiver_first(left: I32, right: I32, tail: N) -> N { \
-              (left, right).>staged(I32, N, tail) \
+              ((left, right).>staged[I32])[N](tail) \
             } \
             fn ordinary_receiver_last(left: I32, right: I32, tail: N) -> N { \
-              tail.>>ordinary(I32, (left, right), N) \
+              ordinary[I32]((left, right))[N].<tail \
             } \
             fn macro_receiver_last(left: I32, right: I32, tail: N) -> N { \
-              tail.>>staged(I32, (left, right), N) \
+              staged[I32]((left, right))[N].<tail \
             }";
         check_package_sources(&[provider, main])
             .expect("ordinary, macro, and UFCS calls use the same lexical packet boundary");
@@ -22165,10 +22166,10 @@ fn generic_last() -> . {
             host type N; \
             fn staged[A](left: A, right: A)[B][C](tail: C) -> C { tail } \
             fn complete(left: I32, right: I32, tail: N) -> N { \
-              staged(I32, (left, right), N, tail) \
+              staged[I32]((left, right))[N](tail) \
             } \
             fn partial(left: I32, right: I32) -> [C] C -> C { \
-              staged(I32, (left, right), N) \
+              staged[I32]((left, right))[N] \
             }");
 
         let diagnostic = err("module x; \
@@ -22176,7 +22177,7 @@ fn generic_last() -> . {
             host type N; \
             fn staged[A](left: A, right: A)[B][C](tail: C) -> C { tail } \
             fn invalid(left: I32, right: I32) -> [C] C -> C { \
-              staged(I32, (left, right), _) \
+              staged[I32]((left, right))[_] \
             }");
         assert!(
             diagnostic.contains("type mismatch")
@@ -22195,16 +22196,16 @@ fn generic_last() -> . {
             fn identity[A](value: A) -> A { value } \
             fn pass[T](result: T, left: I32, right: I32) -> T { result } \
             fn explicit_flat(left: I32, right: I32, value: N) -> N { \
-              produce([A] A -> A, (left, right), N, value) \
+              produce[[A] A -> A]((left, right))[N](value) \
             } \
             fn explicit_nested(left: I32, right: I32, value: N) -> N { \
-              produce([A] A -> A, (left, right))(N, value) \
+              produce[[A] A -> A]((left, right))[N](value) \
             } \
             fn inferred_flat(left: I32, right: I32, value: N) -> N { \
-              pass(identity, (left, right), N, value) \
+              pass(identity, (left, right))[N](value) \
             } \
             fn inferred_nested(left: I32, right: I32, value: N) -> N { \
-              pass(identity, (left, right))(N, value) \
+              pass(identity, (left, right))[N](value) \
             }");
     }
 
@@ -22213,7 +22214,7 @@ fn generic_last() -> . {
         ok("module x; \
             newtype N : . { pub constructor mk_n; pub projector un_n; }; \
             fn run(value: N) -> . { \
-              .(first: N)[N](second) { () }(value, ., ()) \
+              .(first: N)[N](second) { () }(value)[.](()) \
             }");
     }
 
@@ -22224,7 +22225,7 @@ fn generic_last() -> . {
             "module x; \
              newtype N : . { pub constructor mk_n; pub projector un_n; }; \
              fn run() -> N { \
-               .[T](first: T)[T](second: T) { second }(_, (), N, N.mk_n(())) \
+               .[T](first: T)[T](second: T) { second }[_](())[N](N.mk_n(())) \
              }",
         )]);
         let prime = check_package(&package).expect("the repeated binders solve independently");
@@ -22289,7 +22290,7 @@ fn generic_last() -> . {
         let mismatch = err("module x; \
             fn consume_unit(value: .) -> . { () } \
             fn invalid[A](value: A) -> . { \
-              consume_unit(.[A](inner) { inner }(., value)) \
+              consume_unit(.[A](inner) { inner }[.]( value)) \
             }");
         assert!(
             mismatch.contains("type mismatch")
@@ -22302,14 +22303,14 @@ fn generic_last() -> . {
     #[test]
     fn immediate_lambda_partial_layer_preserves_future_binder() {
         ok("module x; \
-            fn run() -> . { .(first)[A](second: A) { second }(())(., ()) }");
+            fn run() -> . { .(first)[A](second: A) { second }(())[.]( ()) }");
     }
 
     #[test]
     fn immediate_lambda_prior_solution_constrains_later_layer() {
         ok("module x; \
             fn run() -> . { \
-              .[A](first: A)(second: A, tail) { tail }(., (), (), ()) \
+              .[A](first: A)(second: A, tail) { tail }[.](())((), ()) \
             }");
     }
 
@@ -22317,7 +22318,7 @@ fn generic_last() -> . {
     fn immediate_lambda_accepts_exact_rank_n_parameter_inference() {
         ok("module x; \
             fn identity[A](value: A) -> A { value } \
-            fn inferred_parameter() -> . { .(function) { function(., ()) }(identity) } \
+            fn inferred_parameter() -> . { .(function) { function[.](()) }(identity) } \
             fn inferred_type_argument() -> . { \
               .[A](value: A) { () }(identity) \
             }");
@@ -22345,25 +22346,25 @@ fn generic_last() -> . {
     fn immediate_lambda_selected_and_annotated_scalar_roles() {
         ok("module x; \
             host type I32 role(i32); \
-            fn unique() -> I32 { .(value) { value }(42(I32)) }");
+            fn unique() -> I32 { .(value) { value }(42[I32]) }");
 
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
             fn sibling_pin() -> I32 { \
-              .[A](first: A, second: A) { second }(_, 42(I32), 42(I32)) \
+              .[A](first: A, second: A) { second }[_](42[I32], 42[I32]) \
             }");
 
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn explicit_type() -> I32 { .[A](value: A) { value }(I32, 42(I32)) }");
+            fn explicit_type() -> I32 { .[A](value: A) { value }[I32](42[I32]) }");
 
         check_package_sources(&[
             "module provider; pub host type Other role(i32);",
             "module main; import provider as p; \
              host type I32 role(i32); \
-             fn qualified_does_not_perturb() -> I32 { .(value) { value }(42(I32)) }",
+             fn qualified_does_not_perturb() -> I32 { .(value) { value }(42[I32]) }",
         ])
         .expect("a qualified role provider must not perturb the contextual carrier");
     }
@@ -22373,7 +22374,7 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](value: A) { value }(42(I32)) }");
+            fn run() -> I32 { .[A](value: A) { value }(42[I32]) }");
     }
 
     #[test]
@@ -22381,7 +22382,7 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](seed, value: A) { value }((), 42(I32)) }");
+            fn run() -> I32 { .[A](seed, value: A) { value }((), 42[I32]) }");
     }
 
     #[test]
@@ -22389,7 +22390,7 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             host type Other role(i32); \
-            fn run() -> I32 { .[A](first)(second)(value: A) { value }((), (), 42(I32)) }");
+            fn run() -> I32 { .[A](first)(second)(value: A) { value }(())(())(42[I32]) }");
 
         ok("module x; \
             host type I32 role(i32); \
@@ -22399,8 +22400,8 @@ fn generic_last() -> . {
             host fn accept(_value: Expected) -> .; \
             fn run() -> . { \
               accept(.[T](token, value: T) -> [A] A -> T { \
-                delayed(T, token) \
-              }((), 42(I32))) \
+                delayed[T](token) \
+              }((), 42[I32])) \
             }");
 
         ok("module x; \
@@ -22410,8 +22411,8 @@ fn generic_last() -> . {
             host fn accept(_value: I32 -> I32) -> .; \
             fn run() -> . { \
               accept(.[T](token, value: T) -> [A] A -> T { \
-                delayed(T, token) \
-              }((), 42(I32))) \
+                delayed[T](token) \
+              }((), 42[I32])) \
             }");
     }
 
@@ -22423,8 +22424,8 @@ fn generic_last() -> . {
             host fn accept(_value: I32 -> I32) -> .; \
             fn run() -> . { \
               accept(.(token)[A] -> A -> I32 { \
-                delayed(I32, token) \
-              }((), I32)) \
+                delayed[I32](token) \
+              }(())[I32]) \
             }");
 
         ok("module x; \
@@ -22433,8 +22434,8 @@ fn generic_last() -> . {
             host fn accept(_value: I32 -> I32) -> .; \
             fn run() -> . { \
               accept(.(token) -> [A] A -> I32 { \
-                delayed(I32, token) \
-              }((), I32)) \
+                delayed[I32](token) \
+              }(())[I32]) \
             }");
     }
 
@@ -22443,13 +22444,13 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32; \
             host fn make_i32() -> I32; \
-            fn run() -> I32 { .(first)(value: I32) { value }((), make_i32()) }");
+            fn run() -> I32 { .(first)(value: I32) { value }(())(make_i32()) }");
 
         let mismatch = err("module x; \
             host type I32; \
             host type String; \
             host fn make_i32() -> I32; \
-            fn run() -> String { .(first)(value: I32) { value }((), make_i32()) }");
+            fn run() -> String { .(first)(value: I32) { value }(())(make_i32()) }");
         assert!(mismatch.contains("type mismatch"), "got: {mismatch}");
     }
 
@@ -22483,38 +22484,38 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
-            fn run() -> I32 { identity(42(I32)) }");
+            fn run() -> I32 { identity(42[I32]) }");
     }
 
     #[test]
     fn immediate_lambda_unit_value_layer_consumes_one_packet() {
         ok("module x; \
-            fn run() -> . { .[A]()(value) { value }(., (), ()) }");
+            fn run() -> . { .[A]()(value) { value }[.](())(()) }");
 
         ok("module x; \
-            fn run() -> . { .[A]()(value: A) { value }(., (), ()) }");
+            fn run() -> . { .[A]()(value: A) { value }[.](())(()) }");
 
         let missing = err("module x; \
-            fn run() -> . { .[A]()(value) { value }(., ())(()) }");
+            fn run() -> . { let _partial = .[A]()(value) { value }[.](()); () }");
         assert!(
             missing.contains("cannot infer the type of `fn` parameter `value`"),
             "got: {missing}"
         );
 
         ok("module x; \
-            fn run() -> . { .[A]()(value: A) { value }(., ())(()) }");
+            fn run() -> . { .[A]()(value: A) { value }[.](())(()) }");
     }
 
     #[test]
     fn immediate_lambda_partial_future_layer_requires_concrete_parameters() {
         ok("module x; \
             fn run() -> [B] B -> . { \
-              .(first: .)[A][B](second: B) -> . { () }((), .) \
+              .(first: .)[A][B](second: B) -> . { () }(())[.] \
             }");
 
         let missing = err("module x; \
             fn run() -> [B] B -> . { \
-              .(first: .)[A][B](second) -> . { () }((), .) \
+              .(first: .)[A][B](second) -> . { () }(())[.] \
             }");
         assert!(
             missing.contains("cannot infer the type of `fn` parameter `second`"),
@@ -22526,8 +22527,8 @@ fn generic_last() -> . {
     fn immediate_lambda_completion_modes_accept_deferred_lambda_values() {
         ok("module x; \
             fn apply[A](function: A -> A, value: A) -> A { function(value) } \
-            fn explicit() -> . { apply(., .(value) { value }, ()) } \
-            fn inferred() -> . { apply(_, .(value) { value }, ()) }");
+            fn explicit() -> . { apply[.]( .(value) { value }, ()) } \
+            fn inferred() -> . { apply[_]( .(value) { value }, ()) }");
     }
 
     #[test]
@@ -22535,13 +22536,13 @@ fn generic_last() -> . {
         ok("module x; \
             newtype Expected : . { pub constructor mk_expected; pub projector un_expected; }; \
             fn consume[A](value: A) -> . { () } \
-            fn run(value: Expected) -> . { consume(Expected, value) }");
+            fn run(value: Expected) -> . { consume[Expected](value) }");
 
         let mismatch = err("module x; \
             newtype Expected : . { pub constructor mk_expected; pub projector un_expected; }; \
             newtype Actual : . { pub constructor mk_actual; pub projector un_actual; }; \
             fn consume[A](value: A) -> . { () } \
-            fn run(actual: Actual) -> . { consume(Expected, actual) }");
+            fn run(actual: Actual) -> . { consume[Expected](actual) }");
         assert!(
             mismatch.contains("type mismatch")
                 && (mismatch.contains("expected `Expected`, found `Actual`")
@@ -22581,12 +22582,12 @@ fn generic_last() -> . {
         // expected return, pin `[B]`.
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { \
-              k(Box.un_box(A, m)) \
+            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { \
+              k(Box.un_box[A](m)) \
             } \
-            fn run() -> Box(.) { \
-              bind(, pure(., ()), .(a) { pure(., a) }) \
+            fn run() -> Box[.] { \
+              bind(, pure[.](()), .(a) { pure[.](a) }) \
             }");
     }
 
@@ -22594,8 +22595,8 @@ fn generic_last() -> . {
     fn deferred_annotated_lambda_body_receives_elided_expected_result() {
         ok("module x; \
             newtype Tag[E] : . { pub constructor mk; pub projector un; }; \
-            type Out = . & Tag(.); \
-            fn make[T][E](value: T) -> T & Tag(E) { (value, Tag.mk(E, ())) } \
+            type Out = . & Tag[.]; \
+            fn make[T][E](value: T) -> T & Tag[E] { (value, Tag.mk[E](())) } \
             fn apply[A][B](f: A -> B, value: A) -> B { f(value) } \
             fn run() -> Out { apply(.(value: .) { make(value) }, ()) }");
     }
@@ -22604,10 +22605,10 @@ fn generic_last() -> . {
     fn deferred_annotated_lambda_body_receives_placeholder_expected_result() {
         ok("module x; \
             newtype Tag[E] : . { pub constructor mk; pub projector un; }; \
-            type Out = . & Tag(.); \
-            fn make[T][E](value: T) -> T & Tag(E) { (value, Tag.mk(E, ())) } \
+            type Out = . & Tag[.]; \
+            fn make[T][E](value: T) -> T & Tag[E] { (value, Tag.mk[E](())) } \
             fn apply[A][B](f: A -> B, value: A) -> B { f(value) } \
-            fn run() -> Out { apply(_, _, .(value: .) { make(_, _, value) }, ()) }");
+            fn run() -> Out { apply[_][_](.(value: .) { make[_][_](value) }, ()) }");
     }
 
     #[test]
@@ -22615,7 +22616,7 @@ fn generic_last() -> . {
         ok("module x; \
             fn consume[A](f: A -> .) -> . { () } \
             fn run_elided() -> . { consume(.(value: .) { value }) } \
-            fn run_placeholder() -> . { consume(_, .(value: .) { value }) }");
+            fn run_placeholder() -> . { consume[_]( .(value: .) { value }) }");
     }
 
     #[test]
@@ -22624,7 +22625,7 @@ fn generic_last() -> . {
             fn same[A](first: A, second: A) -> . { () } \
             fn run_elided() -> . { same(.(value) { value }, .(value: .) { value }) } \
             fn run_placeholder() -> . { \
-              same(_, .(value) { value }, .(value: .) { value }) \
+              same[_]( .(value) { value }, .(value: .) { value }) \
             }");
     }
 
@@ -22643,7 +22644,7 @@ fn generic_last() -> . {
         let msg = err("module x; \
                        fn same[A](first: A, second: A) -> . { () } \
                        fn run() -> . { \
-                         same(_, .(left, right) { left }, .(value: .) { value }) \
+                         same[_]( .(left, right) { left }, .(value: .) { value }) \
                        }");
         assert!(msg.contains("param") || msg.contains("arity"), "got: {msg}");
     }
@@ -22659,7 +22660,7 @@ fn generic_last() -> . {
     fn deferred_annotated_lambda_distinguishes_same_named_ambient_binder_placeholder() {
         ok("module x; \
             fn use[A](value: A, next: A -> .) -> . { next(value) } \
-            fn outer[A](f: A -> .) -> . { use(_, f, .(g: A -> .) { () }) }");
+            fn outer[A](f: A -> .) -> . { use[_]( f, .(g: A -> .) { () }) }");
     }
 
     #[test]
@@ -22677,7 +22678,7 @@ fn generic_last() -> . {
         ok("module x; \
             fn use[A][B](value: A, next: A -> B) -> B { next(value) } \
             fn outer[A][B][C](a: A, f: A -> B, g: B -> C) -> C { \
-              let result = use(_, _, f, .(h: A -> B) -> C { g(h(a)) }); \
+              let result = use[_][ _]( f, .(h: A -> B) -> C { g(h(a)) }); \
               result \
             }");
     }
@@ -22687,14 +22688,14 @@ fn generic_last() -> . {
         ok("module x; \
             fn consume[B](f: [A] A -> B) -> . { () } \
             fn run_elided() -> . { consume(.[A](value: A) -> . { () }) } \
-            fn run_placeholder() -> . { consume(_, .[A](value: A) -> . { () }) }");
+            fn run_placeholder() -> . { consume[_](.[A](value: A) -> . { () }) }");
     }
 
     #[test]
     fn deferred_polymorphic_lambda_fills_inferred_polytype_binder() {
         for call in [
             "consume(.[A](value: A) { value })",
-            "consume(_, .[A](value: A) { value })",
+            "consume[_](.[A](value: A) { value })",
         ] {
             ok(&format!(
                 "module x; \
@@ -22714,12 +22715,12 @@ fn generic_last() -> . {
         let msg = err("module x; \
                        newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
                        newtype Foo : . { pub constructor mk_foo; pub projector un_foo; }; \
-                       fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-                       fn bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { \
-                         k(Box.un_box(A, m)) \
+                       fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+                       fn bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { \
+                         k(Box.un_box[A](m)) \
                        } \
-                       fn run() -> Box(.) { \
-                         bind(, pure(., ()), .(a) { Foo.mk_foo(()) }) \
+                       fn run() -> Box[.] { \
+                         bind(, pure[.](()), .(a) { Foo.mk_foo(()) }) \
                        }");
         // The diagnostic from this path may surface as a type
         // mismatch or as an unsolved binder; both are valid failures
@@ -22734,15 +22735,15 @@ fn generic_last() -> . {
     fn explicit_product_type_argument_accepts_positional_value_slots() {
         ok("module x; \
             fn consume[A](value: A) -> . { () } \
-            fn tuple_form() -> . { consume(. & ., ((), ())) } \
-            fn positional_form() -> . { consume(. & ., (), ()) }");
+            fn tuple_form() -> . { consume[. & .]( ((), ())) } \
+            fn positional_form() -> . { consume[. & .]( (), ()) }");
     }
 
     #[test]
     fn explicit_product_substitution_preserves_ambient_binder() {
         ok("module x; \
             fn consume[A][B](left: A, right: B) -> . { () } \
-            fn outer[B](value: B) -> . { consume(B, ., value, ()) }");
+            fn outer[B](value: B) -> . { consume[B][.](value, ()) }");
     }
 
     #[test]
@@ -22766,7 +22767,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn consume[A](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              consume(Identity(I32), recur(cont) value(0)) \
+              consume[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("the retained source spelling must keep the direct type slot");
     }
@@ -22779,7 +22780,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn layered[A](first: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              layered(I32, n, Identity(I32), recur(cont) value(0)) \
+              layered[I32](n)[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("the retained source spelling must end the preceding value packet");
     }
@@ -22792,7 +22793,7 @@ fn generic_last() -> . {
             type Identity[A] = A; \
             fn layered[A](receiver: I32)[B](tail: I32) -> I32 { tail } \
             rec(loop) fn value(n: I32) -> I32 { \
-              n.>layered(I32, Identity(I32), recur(cont) value(0)) \
+              (n.>layered[I32])[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("UFCS must splice from retained type-slot spellings");
     }
@@ -22804,9 +22805,7 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
-              .[A](tail) -> I32 { tail }( \
-                Identity(I32), recur(cont) value(0) \
-              ) \
+              .[A](tail) -> I32 { tail }[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("the retained immediate-lambda route must classify its initial type slot");
     }
@@ -22818,9 +22817,7 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
-              .[A](first: A)[B](tail) -> I32 { tail }( \
-                I32, n, Identity(I32), recur(cont) value(0) \
-              ) \
+              .[A](first: A)[B](tail) -> I32 { tail }[I32](n)[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("the retained immediate-lambda route must classify successor type slots");
     }
@@ -22832,9 +22829,7 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             type Identity[A] = A; \
             rec(loop) fn value(n: I32) -> I32 { \
-              .[A](tail: I32) -> I32 { tail }( \
-                Identity(I32), recur(cont) value(0) \
-              ) \
+              .[A](tail: I32) -> I32 { tail }[Identity[I32]](recur(cont) value(0)) \
             }"])
         .expect("the concrete immediate-lambda route must retain its type-slot classification");
     }
@@ -22853,7 +22848,7 @@ fn generic_last() -> . {
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              type Identity[A] = A; \
              rec(loop) fn value(n: I32) -> I32 { \
-               same(Identity(I32), recur(cont) value(0)) \
+               same[Identity[I32]](recur(cont) value(0)) \
              }",
         ])
         .expect("macro calls retain the uniform named-callable type-slot contract");
@@ -22892,9 +22887,9 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
-            rec(loop) fn value(n: I32) -> Box(I32) { \
-              let .(box: Box(_)) = choose_box(0, recur(cont) value(0)); \
+            fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
+            rec(loop) fn value(n: I32) -> Box[I32] { \
+              let .(box: Box[_]) = choose_box(0, recur(cont) value(0)); \
               box \
             }"])
         .expect("a recursive partial let must synthesize its RHS before checking the annotation");
@@ -22906,9 +22901,9 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
-            rec(loop) fn value(n: I32) -> Box(I32) { scope { \
-              let .(box: Box(_)) = choose_box(0, recur(cont) value(0)); \
+            fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
+            rec(loop) fn value(n: I32) -> Box[I32] { scope { \
+              let .(box: Box[_]) = choose_box(0, recur(cont) value(0)); \
               box \
             } }"])
         .expect("plain `do` must preserve ordinary partial-let type flow");
@@ -22921,9 +22916,9 @@ fn generic_last() -> . {
             host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             newtype Other[A] : A { pub constructor mk_other; pub projector un_other; }; \
-            fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
-            rec(loop) fn value(n: I32) -> Box(I32) { \
-              let .(box: Other(_)) = choose_box(0, recur(cont) value(0)); \
+            fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
+            rec(loop) fn value(n: I32) -> Box[I32] { \
+              let .(box: Other[_]) = choose_box(0, recur(cont) value(0)); \
               box \
             }"]);
         assert!(
@@ -23028,8 +23023,8 @@ fn generic_last() -> . {
         // mode arm).
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn caller() -> Box(.) { let _ = (); pure(()) }");
+            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn caller() -> Box[.] { let _ = (); pure(()) }");
     }
 
     #[test]
@@ -23064,8 +23059,8 @@ fn generic_last() -> . {
         // let; just no binder.
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn caller() -> Box(.) { (); pure(()) }");
+            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn caller() -> Box[.] { (); pure(()) }");
     }
 
     #[test]
@@ -23100,8 +23095,8 @@ fn generic_last() -> . {
         // inference engine, exercising the threaded path.
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn make_box() -> Box(.) { pure(()) }");
+            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn make_box() -> Box[.] { pure(()) }");
     }
 
     #[test]
@@ -23115,7 +23110,7 @@ fn generic_last() -> . {
         ok("module x; \
             import __intrinsics__; \
             fn make_pair_left[B](x: B) -> (B & .) { \
-              __pair__(B, ., x, ()) \
+              __pair__[B][.](x, ()) \
             }");
     }
 
@@ -23128,8 +23123,8 @@ fn generic_last() -> . {
         // loses `Box(.)` and surfaces "cannot infer".
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn pure[A](x: A) -> Box(A) { Box.mk_box(A, x) } \
-            fn caller() -> Box(.) { let _ = (); pure(()) }");
+            fn pure[A](x: A) -> Box[A] { Box.mk_box[A](x) } \
+            fn caller() -> Box[.] { let _ = (); pure(()) }");
     }
 
     // ---- Mutation-killing regression tests -----------------------------
@@ -23157,7 +23152,7 @@ fn generic_last() -> . {
         // would compose the slot to `*` and wrongly reject.
         ok("module x; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            rec newtype Rec : Box(Rec) { pub constructor mk_rec; pub projector un_rec; };");
+            rec newtype Rec : Box[Rec] { pub constructor mk_rec; pub projector un_rec; };");
     }
 
     #[test]
@@ -23170,7 +23165,7 @@ fn generic_last() -> . {
         ok("module x; \
             newtype Other : . { pub constructor mk_o; pub projector un_o; }; \
             newtype Phantom[A] : Other { pub constructor mk_ph; pub projector un_ph; }; \
-            rec newtype R : Phantom(R -> .) { pub constructor mk_r; pub projector un_r; };");
+            rec newtype R : Phantom[R -> .] { pub constructor mk_r; pub projector un_r; };");
     }
 
     #[test]
@@ -23211,11 +23206,11 @@ fn generic_last() -> . {
             (
                 "main.kio",
                 "module main; import provider as p; import dep as d; \
-                 fn direct_expected() -> p.Int { 42(p.Int) } \
-                 fn direct_annotated() -> . { let value = 42(p.Int); () } \
+                 fn direct_expected() -> p.Int { 42[p.Int] } \
+                 fn direct_annotated() -> . { let value = 42[p.Int]; () } \
                  fn take(value: d.Count) -> . { () } \
-                 fn alias_expected() -> . { take(42(d.Count)) } \
-                 fn alias_annotated() -> . { let value = 42(d.Count); () }",
+                 fn alias_expected() -> . { take(42[d.Count]) } \
+                 fn alias_annotated() -> . { let value = 42[d.Count]; () }",
             ),
         ]);
         check_package_collect_elaborations(&package)
@@ -23255,7 +23250,7 @@ fn generic_last() -> . {
             (
                 "main.kio",
                 "module main; import dep as d; \
-                 pure fn bad() -> . { let value = 42(d.Count); () }",
+                 pure fn bad() -> . { let value = 42[d.Count]; () }",
             ),
         ]);
         check_package_collect_elaborations(&package)
@@ -23282,7 +23277,7 @@ fn generic_last() -> . {
             (
                 "main.kio",
                 "module main; import dep as d; \
-                 fn bad() -> . { let value = 42(d.Text); () }",
+                 fn bad() -> . { let value = 42[d.Text]; () }",
             ),
         ]);
         let error = check_package_collect_elaborations(&package)
@@ -23307,7 +23302,7 @@ fn generic_last() -> . {
             (
                 "main.kio",
                 "module main; import proxy as p; \
-                 fn bad() -> . { let value = 42(p.Int); () }",
+                 fn bad() -> . { let value = 42[p.Int]; () }",
             ),
         ]);
         let error = check_package_collect_elaborations(&package)
@@ -23325,9 +23320,9 @@ fn generic_last() -> . {
     fn literal_roles_reject_unapplied_parametric_aliases() {
         for main_source in [
             "module main; import dep as d; \
-             fn bad() -> . { let value = 42(d.Phantom); () }",
+             fn bad() -> . { let value = 42[d.Phantom]; () }",
             "module main; import dep(Phantom); \
-             fn bad() -> . { let value = 42(Phantom); () }",
+             fn bad() -> . { let value = 42[Phantom]; () }",
         ] {
             let package = lowered_package(&[
                 (
@@ -23365,7 +23360,7 @@ fn generic_last() -> . {
             (
                 "scope/main.kio",
                 "module scope/main; import scope/dep as d; \
-                 fn bad() -> . { let value = 42(d.Hidden); () }",
+                 fn bad() -> . { let value = 42[d.Hidden]; () }",
             ),
         ]);
         let private_error = check_package_collect_elaborations(&private_package)
@@ -23392,7 +23387,7 @@ fn generic_last() -> . {
             (
                 "scope/main.kio",
                 "module scope/main; import scope/dep as d; \
-                 fn good() -> . { let value = 42(d.Count); () }",
+                 fn good() -> . { let value = 42[d.Count]; () }",
             ),
         ]);
         check_package_collect_elaborations(&inside_package)
@@ -23404,7 +23399,7 @@ fn generic_last() -> . {
             (
                 "outside.kio",
                 "module outside; import scope/dep as d; \
-                 fn bad() -> . { let value = 42(d.Count); () }",
+                 fn bad() -> . { let value = 42[d.Count]; () }",
             ),
         ]);
         let outside_error = check_package_collect_elaborations(&outside_package)
@@ -23446,8 +23441,8 @@ fn generic_last() -> . {
         ok("module x; \
             newtype Foo : . { pub constructor mk_foo; pub projector foo; }; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn apply(k: (Box(Foo) -> .)) -> . { () } \
-            fn run() -> . { apply(.(x: Box(_)) { () }) }");
+            fn apply(k: (Box[Foo] -> .)) -> . { () } \
+            fn run() -> . { apply(.(x: Box[_]) { () }) }");
     }
 
     #[test]
@@ -23470,7 +23465,7 @@ fn generic_last() -> . {
         ok("module x; \
             import __intrinsics__; \
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-            fn f[A](y: A) -> . { let .(x: Box(_)) = Box.mk_box(A, y); () }");
+            fn f[A](y: A) -> . { let .(x: Box[_]) = Box.mk_box[A](y); () }");
     }
 
     #[test]
@@ -23478,8 +23473,8 @@ fn generic_last() -> . {
         ok("module main; \
             host type I32 role(i32); \
             fn mk[A]() -> . { () } \
-            fn residual() -> . -> . { mk(I32) } \
-            fn saturated() -> . { mk(I32, ()) }");
+            fn residual() -> . -> . { mk[I32] } \
+            fn saturated() -> . { mk[I32](()) }");
     }
 
     #[test]
@@ -23491,23 +23486,23 @@ fn generic_last() -> . {
             fn accept_nil(_value: . -> N) -> . { () } \
             fn accept_identity(_value: N -> N) -> . { () } \
             fn inferred_nil() -> N { nil() } \
-            fn inferred_nil_explicit_unit() -> N { nil(_, ()) } \
-            fn nested_nil() -> N { nil(N)() } \
-            fn explicit_nil() -> N { nil(N, ()) } \
-            fn ufcs_nil() -> N { ().>nil(N) } \
-            fn residual_nil() -> . { accept_nil(nil(N)) } \
-            fn residual_identity() -> . { accept_identity(identity(N)) } \
+            fn inferred_nil_explicit_unit() -> N { nil[_](()) } \
+            fn nested_nil() -> N { nil[N]() } \
+            fn explicit_nil() -> N { nil[N](()) } \
+            fn ufcs_nil() -> N { ().>nil[N] } \
+            fn residual_nil() -> . { accept_nil(nil[N]) } \
+            fn residual_identity() -> . { accept_identity(identity[N]) } \
             fn direct_identity() -> . { identity() } \
-            fn explicit_identity(value: N) -> N { identity(N, value) }");
+            fn explicit_identity(value: N) -> N { identity[N](value) }");
     }
 
     #[test]
     fn over_application_reports_solved_non_function_result() {
-        // Two value args to a one-slot fn solve the first application to
-        // Unit, then report that the solved result cannot be called.
+        // The first value stage returns Unit; the second reports that
+        // the solved result cannot be called.
         let msg = err("module x; \
             fn f(x: .) -> . { () } \
-            fn run() -> . { f((), ()) }");
+            fn run() -> . { f(())(()) }");
         assert_eq!(msg, "this is applied like a function, but its type is `.`");
     }
 
@@ -23521,8 +23516,8 @@ fn generic_last() -> . {
         ok("module x; \
             import __intrinsics__; \
             fn view[S][A](get: (S -> A), x: S) -> A { get(x) } \
-            fn pair_fst[A][B]() -> ((A & B) -> A) { .(p: A & B) -> A { __fst__(A, B, p) } } \
-            fn run[C][D](c: C, d: D) -> C { view(pair_fst(), __pair__(C, D, c, d)) }");
+            fn pair_fst[A][B]() -> ((A & B) -> A) { .(p: A & B) -> A { __fst__[A][B](p) } } \
+            fn run[C][D](c: C, d: D) -> C { view(pair_fst(), __pair__[C][D](c, d)) }");
     }
 
     #[test]
@@ -23541,18 +23536,18 @@ fn generic_last() -> . {
              import types(String, I32); \
              import __intrinsics__; \
              type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn view[S][A](lens: Lens(S, A), value: S) -> A { \
-               __fst__(S -> A, (A & S) -> S, lens)(value) \
+             fn view[S][A](lens: Lens[S][ A], value: S) -> A { \
+               __fst__[S -> A][(A & S) -> S](lens)(value) \
              } \
-             fn fst_lens[A][B]() -> Lens(A & B, A) { \
-               let get = .(pair: A & B) -> A { __fst__(A, B, pair) }; \
+             fn fst_lens[A][B]() -> Lens[A & B][ A] { \
+               let get = .(pair: A & B) -> A { __fst__[A][B](pair) }; \
                let put = .(value: A, pair: A & B) -> A & B { \
-                 __pair__(A, B, value, __snd__(A, B, pair)) \
+                 __pair__[A][B](value, __snd__[A][B](pair)) \
                }; \
-               __pair__((A & B) -> A, (A & (A & B)) -> (A & B), get, put) \
+               __pair__[(A & B) -> A][(A & (A & B)) -> (A & B)](get, put) \
              } \
              fn run() -> String { \
-               let viewed = view(fst_lens(), (\"one\"(String), 2(I32))); \
+               let viewed = view(fst_lens(), (\"one\"[String], 2[I32])); \
                viewed \
              }",
         ])
@@ -23576,7 +23571,7 @@ fn generic_last() -> . {
         ok("module x; \
             host fn stage[A](value: A) -> [B] A -> B; \
             fn keep[T](value: T) -> T { value } \
-            fn run[T](seed: T) -> T { keep(stage(seed, seed)) }");
+            fn run[T](seed: T) -> T { keep(stage(seed)(seed)) }");
     }
 
     #[test]
@@ -23585,7 +23580,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type Other role(i32); \
             fn keep[T](value: T) -> T { value } \
-            fn run() -> I32 { keep(.[A](value: A) { value }(42(I32))) }");
+            fn run() -> I32 { keep(.[A](value: A) { value }(42[I32])) }");
     }
 
     #[test]
@@ -23594,7 +23589,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type Other role(i32); \
             fn same[T](_left: T, right: T) -> T { right } \
-            fn run() -> I32 { same(.[A](value: A) { value }(42(I32)), 43(I32)) }");
+            fn run() -> I32 { same(.[A](value: A) { value }(42[I32]), 43[I32]) }");
     }
 
     #[test]
@@ -23604,7 +23599,7 @@ fn generic_last() -> . {
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
             fn keep[T](value: T) -> T { value } \
-            fn run() -> I32 { keep(identity(42(I32))) }");
+            fn run() -> I32 { keep(identity(42[I32])) }");
     }
 
     #[test]
@@ -23614,7 +23609,7 @@ fn generic_last() -> . {
             host type Other role(i32); \
             fn identity[A](value: A) -> A { value } \
             fn same[T](_left: T, right: T) -> T { right } \
-            fn run() -> I32 { same(identity(42(I32)), 43(I32)) }");
+            fn run() -> I32 { same(identity(42[I32]), 43[I32]) }");
     }
 
     #[test]
@@ -23626,7 +23621,7 @@ fn generic_last() -> . {
              host type Local role(i32); \
              fn identity[A](value: A) -> A { value } \
              fn keep[T](value: T) -> T { value } \
-             fn run() -> r.Remote { keep(identity(42(r.Remote))) }",
+             fn run() -> r.Remote { keep(identity(42[r.Remote])) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23641,7 +23636,7 @@ fn generic_last() -> . {
              fn identity[A](value: A) -> A { value } \
              fn same[T](_left: T, right: T) -> T { right } \
              fn discard[T](_value: T) -> . { () } \
-             fn run() -> . { discard(same(identity(42(r.Remote)), identity(43(r.Remote)))) }",
+             fn run() -> . { discard(same(identity(42[r.Remote]), identity(43[r.Remote]))) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23656,7 +23651,7 @@ fn generic_last() -> . {
              fn identity[A](value: A) -> A { value } \
              host fn pair_same[A]() -> A & A; \
              fn constrain[T](_value: T, _pair: r.Remote & T) -> . { () } \
-             fn run() -> . { constrain(identity(42(r.Remote)), pair_same()) }",
+             fn run() -> . { constrain(identity(42[r.Remote]), pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23672,7 +23667,7 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(from_fn(.(x: r.Remote) -> r.Remote { x }), identity(42(r.Remote))) \
+               constrain(from_fn(.(x: r.Remote) -> r.Remote { x }), identity(42[r.Remote])) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
@@ -23689,7 +23684,7 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(identity(42(r.Remote)), from_fn(.(x: r.Remote) -> r.Remote { x })) \
+               constrain(identity(42[r.Remote]), from_fn(.(x: r.Remote) -> r.Remote { x })) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
@@ -23706,7 +23701,7 @@ fn generic_last() -> . {
              host fn from_fn[A](f: A -> A) -> A; \
              fn constrain[T](_left: T, _right: T) -> . { () } \
              fn run() -> . { \
-               constrain(identity(42(r.Remote)), from_fn(.(x: r.Remote) { x })) \
+               constrain(identity(42[r.Remote]), from_fn(.(x: r.Remote) { x })) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
@@ -23722,7 +23717,7 @@ fn generic_last() -> . {
              host fn pair_same[A]() -> A & A; \
              fn identity[A](value: A) -> A { value } \
              fn outer[X][Y](_seed: r.Remote & X, _early: Y, _late: X & Y) -> . { () } \
-             fn run() -> . { outer(pair_same(), identity(42(r.Remote)), pair_same()) }",
+             fn run() -> . { outer(pair_same(), identity(42[r.Remote]), pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23736,7 +23731,7 @@ fn generic_last() -> . {
              host type Local role(i32); \
              host fn pair_same[A]() -> A & A; \
              fn outer[T](_early: T, _late: r.Remote & T) -> . { () } \
-             fn run() -> . { outer(42(r.Remote), pair_same()) }",
+             fn run() -> . { outer(42[r.Remote], pair_same()) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23750,7 +23745,7 @@ fn generic_last() -> . {
              host type Local role(i32); \
              host fn pair_same[A]() -> A & A; \
              fn run() -> . { \
-               .[T](_seed, _early: T, _late: r.Remote & T) { () }((), 42(r.Remote), pair_same()) \
+               .[T](_seed, _early: T, _late: r.Remote & T) { () }((), 42[r.Remote], pair_same()) \
              }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
@@ -23766,7 +23761,7 @@ fn generic_last() -> . {
              host fn pair_same[A]() -> A & A; \
              fn identity[A](value: A) -> A { value } \
              fn outer[T](_early: T, _late: . -> (r.Remote & T)) -> . { () } \
-             fn run() -> . { outer(identity(42(r.Remote)), .() { pair_same() }) }",
+             fn run() -> . { outer(identity(42[r.Remote]), .() { pair_same() }) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23779,7 +23774,7 @@ fn generic_last() -> . {
              import roles as r; \
              host type Local role(i32); \
              fn consume[T](_make: . -> T, _value: T) -> . { () } \
-             fn run() -> . { consume(.() { 42(r.Remote) }, 43(r.Remote)) }",
+             fn run() -> . { consume(.() { 42[r.Remote] }, 43[r.Remote]) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -23891,10 +23886,10 @@ fn generic_last() -> . {
             host type Witness; \
             pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
             host fn witness() -> Witness; \
-            host fn make_box[A]() -> Box(A); \
-            fn consume[*F][T](_make: . -> F(T), _value: F(T)) -> . { () } \
+            host fn make_box[A]() -> Box[A]; \
+            fn consume[*F][T](_make: . -> F[T], _value: F[T]) -> . { () } \
             fn run() -> . { \
-              consume(.() { make_box() }, Box.mk_box(Witness, witness())) \
+              consume(.() { make_box() }, Box.mk_box[Witness](witness())) \
             }");
     }
 
@@ -24008,7 +24003,7 @@ fn generic_last() -> . {
             fn choose[A](left: A, _right: A) -> A { left } \
             fn consume[K][V](_key: K, _pair: K & V) -> . { () } \
             fn run() -> . { \
-              consume(0(I32), choose((1, \"left\"(String)), (2, \"right\"))) \
+              consume(0[I32], choose((1, \"left\"[String]), (2, \"right\"))) \
             }");
     }
 
@@ -24259,6 +24254,70 @@ fn generic_last() -> . {
             finder.found
         );
         finder.found.pop().expect("one retained call")
+    }
+
+    fn retained_staged_literal_call_within(
+        package: &Package,
+        written: Span,
+        expected_name: &str,
+    ) -> Expr {
+        struct Finder {
+            written: Span,
+            found: Vec<Expr>,
+        }
+        impl crate::pass::visit_mut::TypecheckVisitMut<Lowered> for Finder {
+            fn visit_expr(&mut self, expr: &mut Expr) {
+                if matches!(expr, Expr::UserMacro { .. })
+                    && self.written.start <= expr.span().start
+                    && expr.span().end <= self.written.end
+                {
+                    self.found.push(expr.clone());
+                }
+                crate::pass::visit_mut::walk_expr(self, expr);
+            }
+        }
+        let mut finder = Finder {
+            written,
+            found: Vec::new(),
+        };
+        crate::pass::visit_mut::TypecheckVisitMut::visit_module(
+            &mut finder,
+            &mut package
+                .module("main")
+                .expect("caller module")
+                .module
+                .clone(),
+        );
+        assert_eq!(finder.found.len(), 1, "one macro in the written call");
+        let original = finder.found.pop().expect("one retained call");
+        let Expr::UserMacro { name, stages, .. } = &original else {
+            unreachable!("the finder selected only UserMacro expressions")
+        };
+        assert_eq!(name, expected_name);
+        let [value_stage, type_stage] = stages.as_slice() else {
+            panic!("one value stage followed by one explicit type stage")
+        };
+        let [
+            CallArg::Value(Expr::IntLit {
+                digits,
+                annotation: Some(Type::Path { segments, args, .. }),
+                ..
+            }),
+        ] = value_stage.args.as_slice()
+        else {
+            panic!("the single literal operand retains its written annotation")
+        };
+        assert_eq!(digits, "0");
+        assert!(args.is_empty());
+        let [carrier] = segments.as_slice() else {
+            panic!("the literal carrier is one local type name")
+        };
+        assert_eq!(carrier.as_str(), "I32");
+        assert!(matches!(
+            type_stage.args.as_slice(),
+            [CallArg::Type(Type::Infer { .. })]
+        ));
+        original
     }
 
     fn retained_field_access_at(package: &Package, module_path: &str, span: Span) -> Expr {
@@ -24606,7 +24665,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type String role(str); \
             fn run() -> I32 & String { \
-              let pair = infer_pair((0(I32), \"closed\"(String))); \
+              let pair = infer_pair((0[I32], \"closed\"[String])); \
               pair \
             }";
         let package =
@@ -24614,7 +24673,7 @@ fn generic_last() -> . {
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
+            source_span(main, "infer_pair((0[I32], \"closed\"[String]))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -24695,9 +24754,9 @@ fn generic_last() -> . {
             pub macro infer_unit : [Phantom][Result] . -> Result { impl infer_unit_impl; };";
         let main = "module main; \
             import macros(macro infer_unit); \
-            fn run() -> . { let _inferred = infer_unit(_, _); () }";
+            fn run() -> . { let _inferred = infer_unit[_][_]; () }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_unit(_, _)"));
+        let original = retained_call_at(&package, "main", source_span(main, "infer_unit[_][_]"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert!(
@@ -24728,9 +24787,10 @@ fn generic_last() -> . {
             pub macro infer_unit : [Shadowed] . -> [Shadowed] Shadowed { impl infer_unit_impl; };";
         let main = "module main; \
             import macros(macro infer_unit); \
-            fn run() -> . { let _inferred = infer_unit(_)(_); () }";
+            fn run() -> . { let _inferred = infer_unit[_](())[ _]; () }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer_unit(_)"));
+        let original =
+            retained_call_at(&package, "main", source_span(main, "infer_unit[_](())[ _]"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
         assert_eq!(
@@ -24755,8 +24815,8 @@ fn generic_last() -> . {
         for (form, ordinary_call, macro_call) in [
             (
                 "prefix",
-                "ordinary_phantom(_, _, _, 0, \"right\")",
-                "MACRO(_, _, _, 0, \"right\")",
+                "ordinary_phantom[_][_][_](0, \"right\")",
+                "MACRO[_][_][_](0, \"right\")",
             ),
             (
                 "fully-elided prefix",
@@ -24765,8 +24825,8 @@ fn generic_last() -> . {
             ),
             (
                 "receiver-first UFCS",
-                "0.>ordinary_phantom(_, _, _, \"right\")",
-                "0.>MACRO(_, _, _, \"right\")",
+                "0.>ordinary_phantom[_][_][_](\"right\")",
+                "0.>MACRO[_][_][_](\"right\")",
             ),
             (
                 "fully-elided receiver-first UFCS",
@@ -24775,8 +24835,8 @@ fn generic_last() -> . {
             ),
             (
                 "receiver-last UFCS",
-                "\"right\".>>ordinary_phantom(_, _, _, 0)",
-                "\"right\".>>MACRO(_, _, _, 0)",
+                "\"right\".>>ordinary_phantom[_][_][_](0)",
+                "\"right\".>>MACRO[_][_][_](0)",
             ),
             (
                 "fully-elided receiver-last UFCS",
@@ -24785,8 +24845,8 @@ fn generic_last() -> . {
             ),
             (
                 "argument-first UFCS",
-                "ordinary_phantom(_, _, _, \"right\").<<0",
-                "MACRO(_, _, _, \"right\").<<0",
+                "ordinary_phantom[_][_][_](\"right\").<<0",
+                "MACRO[_][_][_](\"right\").<<0",
             ),
             (
                 "fully-elided argument-first UFCS",
@@ -24795,8 +24855,8 @@ fn generic_last() -> . {
             ),
             (
                 "argument-last UFCS",
-                "ordinary_phantom(_, _, _, 0).<\"right\"",
-                "MACRO(_, _, _, 0).<\"right\"",
+                "ordinary_phantom[_][_][_](0).<\"right\"",
+                "MACRO[_][_][_](0).<\"right\"",
             ),
             (
                 "fully-elided argument-last UFCS",
@@ -24856,12 +24916,12 @@ fn generic_last() -> . {
     #[test]
     fn optional_macro_abi_cannot_generalize_an_unsolved_public_call() {
         for (case, call, retained) in [
-            ("ordinary prefix", "ordinary(0(I32), _)", false),
-            ("Required prefix", "required(0(I32), _)", true),
-            ("Optional prefix", "optional(0(I32), _)", true),
-            ("ordinary UFCS", "0(I32).>ordinary(_)", false),
-            ("Required UFCS", "0(I32).>required(_)", true),
-            ("Optional UFCS", "0(I32).>optional(_)", true),
+            ("ordinary prefix", "ordinary(0[I32])[_]", false),
+            ("Required prefix", "required(0[I32])[_]", true),
+            ("Optional prefix", "optional(0[I32])[_]", true),
+            ("ordinary UFCS", "(0[I32].>ordinary)[_]", false),
+            ("Required UFCS", "(0[I32].>required)[_]", true),
+            ("Optional UFCS", "(0[I32].>optional)[_]", true),
         ] {
             let main = format!(
                 "module main; \
@@ -24873,8 +24933,17 @@ fn generic_last() -> . {
                 ("provider.kio", CALL_SHAPE_PARITY_PROVIDER),
                 ("main.kio", main.as_str()),
             ]);
-            let original = retained
-                .then(|| retained_call_at(&package, "main", source_span(main.as_str(), call)));
+            let original = retained.then(|| {
+                retained_staged_literal_call_within(
+                    &package,
+                    source_span(main.as_str(), call),
+                    if case.starts_with("Required") {
+                        "required"
+                    } else {
+                        "optional"
+                    },
+                )
+            });
             let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
             assert!(
@@ -24898,12 +24967,12 @@ fn generic_last() -> . {
     #[test]
     fn macro_abi_waits_for_public_residual_constraints() {
         for (case, call, retained) in [
-            ("ordinary prefix", "ordinary(0(I32), _)", false),
-            ("Required prefix", "required(0(I32), _)", true),
-            ("Optional prefix", "optional(0(I32), _)", true),
-            ("ordinary UFCS", "0(I32).>ordinary(_)", false),
-            ("Required UFCS", "0(I32).>required(_)", true),
-            ("Optional UFCS", "0(I32).>optional(_)", true),
+            ("ordinary prefix", "ordinary(0[I32])[_]", false),
+            ("Required prefix", "required(0[I32])[_]", true),
+            ("Optional prefix", "optional(0[I32])[_]", true),
+            ("ordinary UFCS", "(0[I32].>ordinary)[_]", false),
+            ("Required UFCS", "(0[I32].>required)[_]", true),
+            ("Optional UFCS", "(0[I32].>optional)[_]", true),
         ] {
             let main = format!(
                 "module main; \
@@ -24916,8 +24985,17 @@ fn generic_last() -> . {
                 ("provider.kio", CALL_SHAPE_PARITY_PROVIDER),
                 ("main.kio", main.as_str()),
             ]);
-            let original = retained
-                .then(|| retained_call_at(&package, "main", source_span(main.as_str(), call)));
+            let original = retained.then(|| {
+                retained_staged_literal_call_within(
+                    &package,
+                    source_span(main.as_str(), call),
+                    if case.starts_with("Required") {
+                        "required"
+                    } else {
+                        "optional"
+                    },
+                )
+            });
             let (checked, scope) = check_retained_success(&package);
 
             if let Some(original) = original {
@@ -25053,9 +25131,9 @@ fn generic_last() -> . {
             fn identity[A](value: A) -> A { value } \
             fn consume[T](_function: T -> T, _value: T) -> . { () } \
             fn consume_alias(_function: Unit_alias -> Unit_alias) -> . { () } \
-            fn run() -> . { consume(identity(_), ()) } \
-            fn run_alias() -> . { consume_alias(identity(_)) } \
-            fn run_retained() -> [B] . -> . { retained(.) }"])
+            fn run() -> . { consume(identity[_], ()) } \
+            fn run_alias() -> . { consume_alias(identity[_]) } \
+            fn run_retained() -> [B] . -> . { retained[.] }"])
         .expect("a solved `_` remains a residual function in standalone Prime");
     }
 
@@ -25069,11 +25147,11 @@ fn generic_last() -> . {
                 _a: __Type__, \
                 value: __Checked_term__ \
               ) -> __Checked_term__ { value } \
-            pub macro hkt_identity : [*F][A] F(A) -> F(A) { impl hkt_identity_impl; };";
+            pub macro hkt_identity : [*F][A] F[A] -> F[A] { impl hkt_identity_impl; };";
         let main = "module main; \
             import macros(macro hkt_identity); \
             newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-            fn run(value: Box(.)) -> Box(.) { hkt_identity(Box, ., value) }";
+            fn run(value: Box[.]) -> Box[.] { hkt_identity[Box][.](value) }";
         check_package_sources(&[macro_def, main])
             .expect("a named macro callable spine admits a higher-kinded binder");
     }
@@ -25231,15 +25309,15 @@ fn generic_last() -> . {
               ct: __Comptime__, fills: __Fill_ctx__, \
               _result: __Type__, _value: __Checked_term__ \
             ) -> (__Checked_term__ & __Fill_ctx__) { (__term_unit__(ct), fills) } \
-            pub macro accept : [Result] ([*F] F(.) -> [A] A -> Result) -> . { \
+            pub macro accept : [Result] ([*F] F[.] -> [A] A -> Result) -> . { \
               impl(fills) accept_impl; \
             };";
         let main = "module main; \
             import macros(macro accept); \
             fn run() -> . { \
-              accept(.[*F](first: F(.))[A](second: A) { () }) \
+              accept(.[*F](first: F[.])[A](second: A) { () }) \
             }";
-        let call = "accept(.[*F](first: F(.))[A](second: A) { () })";
+        let call = "accept(.[*F](first: F[.])[A](second: A) { () })";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
         let (checked, scope) = check_retained_success(&package);
@@ -25494,11 +25572,12 @@ fn generic_last() -> . {
         }
 
         fn retained_value_arg_span(call: &Expr) -> Span {
-            let Expr::UserMacro { args, .. } = call else {
+            let Expr::UserMacro { stages, .. } = call else {
                 panic!("the inspected call lost its retained macro form")
             };
-            let spans = args
+            let spans = stages
                 .iter()
+                .flat_map(|stage| &stage.args)
                 .filter_map(|arg| match arg {
                     crate::ast::CallArg::Value(value) => Some(value.span()),
                     crate::ast::CallArg::Type(_) => None,
@@ -25529,9 +25608,7 @@ fn generic_last() -> . {
             },
             Case {
                 label: "inline generic result with an explicit outer result",
-                body: "inspect(drive(_, Done, \
-                    .(current: State) { advance(current) }, seed \
-                ))",
+                body: "inspect(drive[_][Done](.(current: State) { advance(current) }, seed))",
                 call: None,
                 step: ".(current: State) { advance(current) }",
                 producer: Some(0),
@@ -25663,12 +25740,12 @@ fn generic_last() -> . {
             import macros(macro check); \
             host fn known() -> .; \
             host fn make[A](callback: . -> .) -> A; \
-            fn run() -> . { check(known(), make(.() { () })) }";
+            fn run() -> . { check(known())(make(.() { () })) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "check(known(), make(.() { () }))"),
+            source_span(main, "check(known())(make(.() { () }))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
         assert_eq!(
@@ -25709,7 +25786,7 @@ fn generic_last() -> . {
             let producer_free_main = format!(
                 "module main; \
                  import macros(macro fill_result); \
-                 host fn phantom[A, B](value: A) -> B; \
+                 host fn phantom[A][B](value: A) -> B; \
                  fn identity[A](value: A) -> A {{ value }} \
                  fn run() -> . {{ let _result = {call}; () }}"
             );
@@ -25744,7 +25821,7 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_empty_prefix_sources_share_explicit_unit_eligibility() {
-        for shape in ["A", "Box(A)", "A & .", ". -> A"] {
+        for shape in ["A", "Box[A]", "A & .", ". -> A"] {
             let macro_def = format!(
                 "module macros; import __comptime__; \
                  pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
@@ -25754,14 +25831,14 @@ fn generic_last() -> . {
                    -> __Checked_term__ & __Fill_ctx__ {{ \
                    (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
                  }} \
-                 pub macro fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
+                 pub macro fill : [A] Shape[A] -> A {{ impl(fills) fill_impl }}"
             );
             for source in ["make()", "make(())"] {
                 let call = format!("fill({source})");
                 for binding in ["result", ".(result: .)"] {
                     let main = format!(
                         "module main; import macros(Shape, macro fill); \
-                         host fn make[A]() -> Shape(A); \
+                         host fn make[A]() -> Shape[A]; \
                          fn run() -> . {{ let {binding} = {call}; result }}"
                     );
                     let package =
@@ -25784,7 +25861,7 @@ fn generic_last() -> . {
 
     #[test]
     fn fills_nested_empty_prefix_sources_preserve_explicit_unit_eligibility() {
-        for shape in ["A", "Box(A)"] {
+        for shape in ["A", "Box[A]"] {
             let macro_def = format!(
                 "module macros; import __comptime__; \
                  pub newtype Box[A] : A {{ constructor box; projector unbox; }}; \
@@ -25794,13 +25871,13 @@ fn generic_last() -> . {
                    -> __Checked_term__ & __Fill_ctx__ {{ \
                    (__term_unit__(ct), __fill__(ct, fills, target, __type_unit__(ct))) \
                  }} \
-                 pub macro fill : [A] Shape(A) -> A {{ impl(fills) fill_impl }}"
+                 pub macro fill : [A] Shape[A] -> A {{ impl(fills) fill_impl }}"
             );
             for source in ["identity(make())", "identity(make(()))"] {
                 let call = format!("fill({source})");
                 let main = format!(
                     "module main; import macros(Shape, macro fill); \
-                     host fn make[A]() -> Shape(A); \
+                     host fn make[A]() -> Shape[A]; \
                      fn identity[A](value: A) -> A {{ value }} \
                      fn run() -> . {{ let result = {call}; result }}"
                 );
@@ -25891,10 +25968,10 @@ fn generic_last() -> . {
             ) -> (__Checked_term__ & __Fill_ctx__) { \
               (__term_unit__(ct), __fill__(ct, fills, a, __type_unit__(ct))) \
             } \
-            pub macro ignore : [A] Box(A) -> A { impl(fills) ignore_impl; };";
+            pub macro ignore : [A] Box[A] -> A { impl(fills) ignore_impl; };";
         let main = "module main; \
             import macros(Box, macro ignore); \
-            host fn boxed[A](callback: . -> .) -> Box(A); \
+            host fn boxed[A](callback: . -> .) -> Box[A]; \
             fn run() -> . { let _result = ignore(boxed(.() { () })); () }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
@@ -25964,8 +26041,8 @@ fn generic_last() -> . {
             import macros(macro inspect); \
             host type String role(str); \
             labels { lookup[P]: String -> (P | .) }; \
-            type Surface[P] = Lookup(P); \
-            fn run[P](surface: Surface(P), name: String) -> . { \
+            type Surface[P] = Lookup[P]; \
+            fn run[P](surface: Surface[P], name: String) -> . { \
               inspect(surface.?{lookup}(name)) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
@@ -26146,9 +26223,9 @@ fn generic_last() -> . {
             import macros(macro inspect_two); \
             host type String role(str); \
             labels { lookup[P]: String -> (P | .) }; \
-            type Surface[P] = Lookup(P); \
-            fn run[P](surface: Surface(P), name: String) -> . { \
-              inspect_two(surface.?{lookup}(name), \"wrong\"(String)) \
+            type Surface[P] = Lookup[P]; \
+            fn run[P](surface: Surface[P], name: String) -> . { \
+              inspect_two(surface.?{lookup}(name))(\"wrong\"[String]) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
@@ -26156,7 +26233,7 @@ fn generic_last() -> . {
             "main",
             source_span(
                 main,
-                "inspect_two(surface.?{lookup}(name), \"wrong\"(String))",
+                "inspect_two(surface.?{lookup}(name))(\"wrong\"[String])",
             ),
         );
         let field =
@@ -26184,9 +26261,9 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         let main = "module main; \
             import macros(macro infer); \
-            fn run() -> . { infer((), .) }";
+            fn run() -> . { infer(())[.] }";
         let package = lowered_package(&[("macros.kio", TERMINAL_FILLS_MACRO), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "infer((), .)"));
+        let original = retained_call_at(&package, "main", source_span(main, "infer(())[.]"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26202,6 +26279,62 @@ fn generic_last() -> . {
     }
 
     #[test]
+    fn returned_macro_type_binders_keep_polymorphic_expectations() {
+        for fills in [false, true] {
+            let (context, result, implementation, schedule) = if fills {
+                (
+                    "fills: __Fill_ctx__,",
+                    "(__Checked_term__ & __Fill_ctx__)",
+                    "(value, fills)",
+                    "impl(fills)",
+                )
+            } else {
+                ("", "__Checked_term__", "value", "impl")
+            };
+            for expected in ["([Marker] .)", "Residual"] {
+                let source = format!(
+                    "module p; import __comptime__; \
+                     pure fn implementation(_ct: __Comptime__, {context} \
+                       _source: __Type__, value: __Checked_term__, _marker: __Type__) \
+                       -> {result} {{ {implementation} }} \
+                     macro staged : [Source] Source -> [Marker] Source {{ {schedule} implementation }} \
+                     fn ordinary[Source](value: Source)[Marker] -> Source {{ value }} \
+                     type Residual = [Marker] .; \
+                     fn explicit() -> {expected} {{ staged[.](()) }} \
+                     fn inferred() -> {expected} {{ staged(()) }} \
+                     fn ordinary_explicit() -> {expected} {{ ordinary[.](()) }} \
+                     fn ordinary_inferred() -> {expected} {{ ordinary(()) }}"
+                );
+                let package = lowered_package(&[("p.kio", &source)]);
+                crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
+                let (checked, _scope) = check_retained_success(&package);
+                for call in [
+                    "staged[.](())",
+                    "staged(())",
+                    "ordinary[.](())",
+                    "ordinary(())",
+                ] {
+                    let start = source.find(call).unwrap() as u32;
+                    let span = crate::span::Span::new(start, start + call.len() as u32);
+                    let Some(crate::ast::Type::Forall { body, .. }) =
+                        checked.elaborations().position_index().type_at("p", span)
+                    else {
+                        panic!("the written call `{call}` must retain its returned binder")
+                    };
+                    assert!(matches!(body.as_ref(), crate::ast::Type::Unit { .. }));
+                }
+                let work = crate::pass::typecheck_core::apply::terminal_public_layer_work();
+                assert_eq!(work.reserved_slots, 0);
+                assert_eq!(work.parent_goal_growth, 0);
+                assert_eq!(work.child_opens, 0);
+                checked
+                    .complete()
+                    .expect("residual macro type abstraction validates as ordinary Prime");
+            }
+        }
+    }
+
+    #[test]
     fn fills_partial_terminal_type_prefix_reuses_the_residual_eta_plan() {
         let macro_def = "module macros; \
             import __comptime__; \
@@ -26212,8 +26345,8 @@ fn generic_last() -> . {
               ) -> (__Checked_term__ & __Fill_ctx__) { (value, fills) } \
             pub macro phantom : [Source] Source -> [A] [B] A { impl(fills) phantom_impl; };";
         for (call, residual_type, returns_function) in [
-            ("phantom((), .)", "[B] .", false),
-            ("phantom(.(_unit: .) { () }, . -> .)", "[B] . -> .", true),
+            ("phantom(())[.]", "[B] .", false),
+            ("phantom(.(_unit: .) { () })[. -> .]", "[B] . -> .", true),
         ] {
             crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
             let main = format!(
@@ -26368,12 +26501,12 @@ fn generic_last() -> . {
             import macros(macro mixed_pair); \
             host type I32 role(i32); \
             host type String role(str); \
-            fn run() -> I32 & String { mixed_pair((0(I32), \"closed\"(String)), I32, _) }";
+            fn run() -> I32 & String { mixed_pair((0[I32], \"closed\"[String]))[I32][_] }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0(I32), \"closed\"(String)), I32, _)"),
+            source_span(main, "mixed_pair((0[I32], \"closed\"[String]))[I32][_]"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26407,14 +26540,14 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair((0(I32), \"closed\"(String)), _, _); \
+              let _pair = mixed_pair((0[I32], \"closed\"[String]))[_][_]; \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0(I32), \"closed\"(String)), _, _)"),
+            source_span(main, "mixed_pair((0[I32], \"closed\"[String]))[_][_]"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26448,14 +26581,14 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type String role(str); \
             fn run() -> . { \
-              let _pair = mixed_pair((0(I32), \"closed\"(String))); \
+              let _pair = mixed_pair((0[I32], \"closed\"[String])); \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "mixed_pair((0(I32), \"closed\"(String)))"),
+            source_span(main, "mixed_pair((0[I32], \"closed\"[String]))"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26487,9 +26620,9 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro shadow); \
             host type I32 role(i32); \
-            fn run() -> . { shadow(0(I32)) }";
+            fn run() -> . { shadow(0[I32]) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "shadow(0(I32))"));
+        let original = retained_call_at(&package, "main", source_span(main, "shadow(0[I32])"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26515,12 +26648,12 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro finish); \
             fn run() -> . { \
-              let selected = finish((), _); \
+              let selected = finish(())[_]; \
               selected \
             }";
         let package =
             lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish((), _)"));
+        let original = retained_call_at(&package, "main", source_span(main, "finish(())[_]"));
         let (checked, scope) = check_retained_success(&package);
 
         assert!(
@@ -26539,14 +26672,20 @@ fn generic_last() -> . {
             "the optional target must remain open until the Late action executes"
         );
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_macro_successor_work(0, 0, 0, 1);
+        assert_final_macro_successor_work(0, 0, 0, 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::final_macro_successor_work().fixed_stage_continues,
+            1,
+            "the explicit target follows one value stage under the same action owner"
+        );
         validate_substituted_package(checked.substituted())
             .expect("the action-inferred terminal result survives standalone Prime validation");
     }
 
     #[test]
-    fn retained_terminal_successor_crosses_nested_source_closes_once() {
+    fn retained_terminal_result_closes_nested_sources_once() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
+        crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let macro_def = "module macros; \
             import __comptime__; \
             type Optional_type = __Type__ | .; \
@@ -26564,12 +26703,12 @@ fn generic_last() -> . {
             host fn make[A]() -> A; \
             fn settle(_value: .) -> . { () } \
             fn consume[T](_first: T, _second: T) -> . { () } \
-            fn run() -> . { consume(nested_target(settle(make()), ()), ()) }";
+            fn run() -> . { consume(nested_target(settle(make()))(()), ()) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "nested_target(settle(make()), ())"),
+            source_span(main, "nested_target(settle(make()))(())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26591,21 +26730,28 @@ fn generic_last() -> . {
             "the nested terminal successor publishes its concrete result type"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
-        assert_terminal_public_layer_work(1, 1, 1, 0, 1, 0);
+        // The first packet component still has consume's open T expectation;
+        // the following Unit component has not selected that goal yet.
+        assert_terminal_public_layer_work(1, 1, 0, 1, 1, 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::final_macro_successor_work().fixed_stage_continues,
+            1,
+            "the two written value stages share one action owner"
+        );
         validate_substituted_package(checked.substituted())
             .expect("the transferred terminal successor survives standalone Prime validation");
     }
 
     #[test]
-    fn final_terminal_macro_successor_continues_without_yielding_pending() {
+    fn final_macro_type_stage_completes_without_yielding_pending() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
             import macros(macro finish); \
-            fn run() -> . { finish((), .) }";
+            fn run() -> . { finish(())[.] }";
         let package =
             lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish((), .)"));
+        let original = retained_call_at(&package, "main", source_span(main, "finish(())[.]"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
         result.expect("the terminal successor must finish in its forced Final turn");
@@ -26616,45 +26762,55 @@ fn generic_last() -> . {
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_macro_successor_work(1, 0, 0, 0);
+        assert_final_macro_successor_work(0, 0, 0, 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::final_macro_successor_work().fixed_stage_continues,
+            1,
+            "each nonfinal written stage continues once at the retained action owner"
+        );
         let (checked, _) = check_retained_success(&package);
         validate_substituted_package(checked.substituted())
             .expect("the Final terminal successor survives standalone Prime validation");
     }
 
     #[test]
-    fn final_nonterminal_macro_successor_migrates_before_descent() {
+    fn final_macro_value_stages_complete_before_one_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
             import macros(macro relay); \
-            fn run() -> . { relay((), (), .) }";
+            fn run() -> . { relay(())(())[.] }";
         let package =
             lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "relay((), (), .)"));
+        let original = retained_call_at(&package, "main", source_span(main, "relay(())(())[.]"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
-        result.expect("the nonterminal successor must migrate in its forced Final turn");
+        result.expect("the fixed public stages must complete in their forced Final turn");
 
         assert!(
             elaborations.elaboration_for("main", &original).is_some(),
-            "the migrated Final successor must publish once after every child closes"
+            "the fixed-stage call must publish once after every packet closes"
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_macro_successor_work(0, 1, 1, 0);
+        assert_final_macro_successor_work(0, 0, 0, 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::final_macro_successor_work().fixed_stage_continues,
+            2,
+            "each nonfinal written stage continues once at the retained action owner"
+        );
         let (checked, _) = check_retained_success(&package);
         validate_substituted_package(checked.substituted())
-            .expect("the migrated Final successor survives standalone Prime validation");
+            .expect("the fixed-stage call survives standalone Prime validation");
     }
 
     #[test]
-    fn earlier_macro_successor_modes_keep_the_existing_yield_boundary() {
+    fn earlier_macro_fixed_stages_keep_one_action_per_call() {
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
             import macros(macro finish, macro relay); \
-            fn terminal() -> . { finish((), .) } \
-            fn nonterminal() -> . { relay((), (), .) }";
+            fn terminal() -> . { finish(())[.] } \
+            fn nonterminal() -> . { relay(())(())[.] }";
         let package =
             lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
         let (checked, scope) = check_retained_success(&package);
@@ -26663,23 +26819,27 @@ fn generic_last() -> . {
         let work = crate::pass::typecheck_core::apply::final_macro_successor_work();
         assert_eq!(work.terminal_continues, 0);
         assert_eq!(work.migrated_descents, 0);
-        assert_eq!(work.earlier_terminal_yields, 2);
-        assert_eq!(work.earlier_nonterminal_yields, 1);
+        assert_eq!(work.earlier_terminal_yields, 0);
+        assert_eq!(work.earlier_nonterminal_yields, 0);
+        assert_eq!(
+            work.fixed_stage_continues, 3,
+            "finish crosses one fixed stage boundary and relay crosses two: {work:?}"
+        );
         validate_substituted_package(checked.substituted())
-            .expect("earlier-mode successor yields survive standalone Prime validation");
+            .expect("earlier-mode fixed stages survive standalone Prime validation");
     }
 
     #[test]
-    fn failed_final_terminal_successor_does_not_publish_after_one_action() {
+    fn failed_final_fixed_type_stage_does_not_publish_after_one_action() {
         crate::pass::typecheck_core::apply::reset_terminal_public_layer_work();
         crate::pass::typecheck_core::apply::reset_final_macro_successor_work();
         let main = "module main; \
             import macros(macro finish); \
             host type String role(str); \
-            fn run() -> String { finish((), String) }";
+            fn run() -> String { finish(())[String] }";
         let package =
             lowered_package(&[("macros.kio", FINAL_SUCCESSOR_MACROS), ("main.kio", main)]);
-        let original = retained_call_at(&package, "main", source_span(main, "finish((), String)"));
+        let original = retained_call_at(&package, "main", source_span(main, "finish(())[String]"));
         let (elaborations, scope, result) =
             check_retained_function_at_final(&package, "main", "run");
         let error = result.expect_err("the Unit action result must reject the String target");
@@ -26702,7 +26862,12 @@ fn generic_last() -> . {
         );
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
         assert_terminal_public_layer_work(0, 0, 0, 0, 1, 0);
-        assert_final_macro_successor_work(1, 0, 0, 0);
+        assert_final_macro_successor_work(0, 0, 0, 0);
+        assert_eq!(
+            crate::pass::typecheck_core::apply::final_macro_successor_work().fixed_stage_continues,
+            1,
+            "each nonfinal written stage continues once at the retained action owner"
+        );
 
         let (errored, error_scope, errors) = check_retained_module_error(&package, "main");
         let [Error::Macro(diagnostic)] = errors.as_slice() else {
@@ -26754,12 +26919,12 @@ fn generic_last() -> . {
             host fn make[A]() -> A; \
             fn settle(_value: .) -> . { () } \
             fn consume[T](_first: T, _second: T) -> . { () } \
-            fn run() -> . { consume(missing_terminal(settle(make()), ()), ()) }";
+            fn run() -> . { consume(missing_terminal(settle(make()))(()), ()) }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "missing_terminal(settle(make()), ())"),
+            source_span(main, "missing_terminal(settle(make()))(())"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -26783,7 +26948,7 @@ fn generic_last() -> . {
         use crate::pass::typecheck_core::apply::fills::{
             ProjectedHeaderPhase as Phase, ProjectedHeaderWorkEvent as Event,
         };
-        for (nested, ancestor) in [(false, false), (true, false), (false, true)] {
+        for (nested, callback_first) in [(false, false), (true, false), (false, true)] {
             let (slot, projection, argument) = if nested {
                 (
                     "((Receiver -> Result) & .)",
@@ -26793,20 +26958,20 @@ fn generic_last() -> . {
             } else {
                 ("(Receiver -> Result)", "", ".(identity) { identity(()) }")
             };
-            let parameters = if ancestor {
+            let parameters = if callback_first {
                 "body: __Checked_term__, receiver: __Checked_term__"
             } else {
                 "receiver: __Checked_term__, body: __Checked_term__"
             };
-            let slots = if ancestor {
+            let slots = if callback_first {
                 format!("{slot} -> Receiver")
             } else {
                 format!("Receiver -> {slot}")
             };
-            let arguments = if ancestor {
-                format!("{argument}, factory()")
+            let arguments = if callback_first {
+                format!("({argument})(factory())")
             } else {
-                format!("factory(), {argument}")
+                format!("(factory())({argument})")
             };
             let macro_def = format!(
                 "module macros; import __comptime__; \
@@ -26822,7 +26987,7 @@ fn generic_last() -> . {
             let main = format!(
                 "module main; import macros(macro relay); \
                  host fn factory() -> [A] A -> A; \
-                 fn run() -> . {{ let result = relay({arguments}); result }}"
+                 fn run() -> . {{ let result = relay{arguments}; result }}"
             );
             let package = lowered_package(&[("macros.kio", &macro_def), ("main.kio", &main)]);
             crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
@@ -26837,13 +27002,13 @@ fn generic_last() -> . {
                 }],
             );
             let events = crate::pass::typecheck_core::apply::fills::projected_header_work();
-            if ancestor {
+            if callback_first {
                 assert!(
-                    events.iter().any(|event| matches!(
+                    !events.iter().any(|event| matches!(
                         event,
                         Event::AtAncestor(Phase::SelectLinkedHeaders, _)
                     )),
-                    "{events:?}"
+                    "fixed value stages keep linked headers at their action owner: {events:?}"
                 );
             }
             let selections: Vec<_> = events
@@ -26913,13 +27078,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         let main = "module main; \
             import macros(macro relay); \
-            fn run() -> . { relay(.(value: .) { value }, ()) }";
+            fn run() -> . { relay(.(value: .) { value })(()) }";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay(.(value: .) { value }, ())"),
+            source_span(main, "relay(.(value: .) { value })(())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -26944,13 +27109,10 @@ fn generic_last() -> . {
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::projected_header_work(),
             vec![
-                Event::AtAncestor(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 1),
-                Event::AtAncestor(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 1),
-                Event::AtAncestor(Phase::Install, 0),
                 Event::Work(Phase::Install, 0),
                 Event::Work(Phase::Install, 1),
                 Event::Link(0),
@@ -26975,8 +27137,8 @@ fn generic_last() -> . {
             "(value, identity(value))",
             "(value, (identity(value), value))",
             "(identity(identity(value)), value)",
-            "(identity(\"value\"(String)), value)",
-            "(value, (\"value\"(String).>identity, ()))",
+            "(identity(\"value\"[String]), value)",
+            "(value, (\"value\"[String].>identity, ()))",
         ] {
             let call = format!("observe({source})");
             let main = format!(
@@ -26995,6 +27157,150 @@ fn generic_last() -> . {
             validate_substituted_package(checked.substituted())
                 .expect("computed tuple components retain ordinary Prime validity");
         }
+    }
+
+    #[test]
+    fn generated_rec_order_sources_are_checked_once() {
+        use crate::pass::visit_mut::TypecheckVisitMut;
+
+        struct CarrierFinder {
+            target: Span,
+            matches: usize,
+        }
+        impl TypecheckVisitMut<Lowered> for CarrierFinder {
+            fn visit_expr(&mut self, expr: &mut Expr) {
+                if let Expr::RecOrder { plan, .. } = expr
+                    && plan.annotation.is_none()
+                    && plan.value.span() == self.target
+                    && matches!(
+                        plan.disposition,
+                        RecOrderDisposition::Ordered(RecOrderTypeFlow::ExpectedFromBody)
+                            | RecOrderDisposition::DeferredTail {
+                                lifted_flow: RecOrderTypeFlow::ExpectedFromBody,
+                                ..
+                            }
+                    )
+                {
+                    self.matches += 1;
+                }
+                crate::pass::visit_mut::walk_expr(self, expr);
+            }
+        }
+        fn assert_carrier(package: &Package, target: Span) {
+            let mut module = package.module("main").expect("main").module.clone();
+            let mut finder = CarrierFinder { target, matches: 0 };
+            finder.visit_module(&mut module);
+            assert_eq!(
+                finder.matches, 1,
+                "the written expression must be one generated pending carrier"
+            );
+        }
+        fn assert_entered_once(target: Span, lambda: Span, macro_executions: usize) {
+            let source_entries = crate::pass::typecheck_core::apply::take_rec_order_source_spans();
+            assert_eq!(
+                source_entries
+                    .iter()
+                    .filter(|&&span| span == target)
+                    .count(),
+                1,
+                "the actual pending source must be entered once: {source_entries:?}"
+            );
+            let entries = crate::pass::typecheck_core::apply::take_lambda_body_entries();
+            let selected: Vec<_> = entries
+                .iter()
+                .filter(|entry| entry.span == lambda)
+                .collect();
+            assert_eq!(
+                selected.len(),
+                1,
+                "the generated carrier's actual lambda body must be entered once: {entries:?}"
+            );
+            assert_eq!(
+                selected[0].macro_executions, macro_executions,
+                "source body entry follows its macro action"
+            );
+        }
+
+        for (body, take_header) in [
+            (
+                "known_string()",
+                "fn take[A](_first: . -> A, _second: .) -> .",
+            ),
+            (
+                "identity(known_string())",
+                "fn take[A](_first: . -> A, _second: .) -> .",
+            ),
+            ("supply()", "fn take(_first: . -> String, _second: .) -> ."),
+        ] {
+            let lambda = format!(".() {{ {body} }}");
+            let source = format!("identity({lambda})");
+            let main = format!(
+                "module main; host type String; \
+                host fn known_string() -> String; host fn supply[A]() -> A; \
+                host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+                fn identity[A](value: A) -> A {{ value }} \
+                {take_header} {{ () }} \
+                rec(loop) fn run(value: .) -> . {{ take({source}, recur(cont) run(value)) }}"
+            );
+            let package = lowered_package(&[("main.kio", &main)]);
+            let span = source_span(&main, &source);
+            let lambda_span = source_span(&main, &lambda);
+            assert_carrier(&package, span);
+            crate::pass::typecheck_core::apply::reset_rec_order_source_spans();
+            crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+            let (checked, _) = check_retained_success(&package);
+            assert_entered_once(span, lambda_span, 0);
+            validate_substituted_package(checked.substituted())
+                .expect("generated source remains valid Prime");
+        }
+
+        let lambda = ".() { let value = supply(); value }";
+        let source = format!("identity({lambda})");
+        let main = format!(
+            "module main; host type String; \
+            host fn known_string() -> String; host fn supply[A]() -> A; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+            fn identity[A](value: A) -> A {{ value }} \
+\
+            fn take(_first: . -> String, _second: .) -> . {{ () }} \
+            rec(loop) fn run(value: .) -> . {{ take({source}, recur(cont) run(value)) }}"
+        );
+        let package = lowered_package(&[("main.kio", &main)]);
+        let span = source_span(&main, &source);
+        let lambda_span = source_span(&main, lambda);
+        assert_carrier(&package, span);
+        crate::pass::typecheck_core::apply::reset_rec_order_source_spans();
+        crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+        let (error, _) = check_retained_error_with_scope(&package);
+        assert!(error.diagnostic().message.contains("infer"), "{error:?}");
+        assert_entered_once(span, lambda_span, 0);
+
+        let macro_def = "module macros; import __comptime__; \
+            pure fn probe_impl(ct: __Comptime__, fills: __Fill_ctx__, \
+              selected: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { \
+              (__term_call__(ct, __term_type__(ct, selected), selected, __term_unit__(ct)), fills) } \
+            pub macro probe : (. -> .) -> . { impl(fills) probe_impl }";
+        let lambda = ".() { known_string() }";
+        let source = format!("identity({lambda})");
+        let main = format!(
+            "module main; import macros(macro probe); host type String; \
+            host fn known_string() -> String; \
+            host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+            fn identity[A](value: A) -> A {{ value }} \
+            fn take[A](_first: . -> A, _second: .) -> . {{ () }} \
+            rec(loop) fn run(value: .) -> . {{ probe(.() {{ take({source}, recur(cont) run(value)) }}) }}"
+        );
+        let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", &main)]);
+        let span = source_span(&main, &source);
+        let lambda_span = source_span(&main, lambda);
+        assert_carrier(&package, span);
+        crate::pass::typecheck_core::apply::reset_rec_order_source_spans();
+        crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
+        let (checked, scope) = check_retained_success(&package);
+        assert_entered_once(span, lambda_span, 1);
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
+        validate_substituted_package(checked.substituted())
+            .expect("filled generated source remains valid Prime");
     }
 
     #[test]
@@ -27118,8 +27424,8 @@ fn generic_last() -> . {
             ),
             (
                 "host fn dispatch[S][R](step: S -> (S | R), seed: S) -> R;",
-                "fn run[*F][A](seed: F(A), advance: F(A) -> (F(A) | Done)) -> .",
-                ".(state: F(A)) -> F(A) | Done { advance(state) }",
+                "fn run[*F][A](seed: F[A], advance: F[A] -> (F[A] | Done)) -> .",
+                ".(state: F[A]) -> F[A] | Done { advance(state) }",
                 "dispatch(LAMBDA, seed)",
             ),
             (
@@ -27473,13 +27779,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::reset_lambda_body_entries("main");
         let main = "module main; \
             import macros(macro relay); \
-            fn run() -> . { relay(.[A](value: A) { value }, ()) }";
+            fn run() -> . { relay(.[A](value: A) { value })(()) }";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay(.[A](value: A) { value }, ())"),
+            source_span(main, "relay(.[A](value: A) { value })(())"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -27500,13 +27806,10 @@ fn generic_last() -> . {
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::projected_header_work(),
             vec![
-                Event::AtAncestor(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 1),
-                Event::AtAncestor(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 1),
-                Event::AtAncestor(Phase::Install, 0),
                 Event::Work(Phase::Install, 0),
                 Event::Work(Phase::Install, 1),
                 Event::Link(0),
@@ -27525,9 +27828,9 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro relay); \
             fn run() -> . { \
-              relay(.[*F](first: F(.))[A](second: A) -> _ { second }, ()) \
+              relay(.[*F](first: F[.])[A](second: A) -> _ { second })(()) \
             }";
-        let call = "relay(.[*F](first: F(.))[A](second: A) -> _ { second }, ())";
+        let call = "relay(.[*F](first: F[.])[A](second: A) -> _ { second })(())";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
@@ -27535,7 +27838,7 @@ fn generic_last() -> . {
 
         assert_marked_polymorphic_return_error(
             &errors,
-            source_span(main, ".[*F](first: F(.))[A](second: A) -> _ { second }"),
+            source_span(main, ".[*F](first: F[.])[A](second: A) -> _ { second }"),
         );
         assert_retained_call_unpublished(&elaborations, "main", &original);
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
@@ -27546,13 +27849,10 @@ fn generic_last() -> . {
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::projected_header_work(),
             vec![
-                Event::AtAncestor(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 1),
-                Event::AtAncestor(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 1),
-                Event::AtAncestor(Phase::Install, 0),
                 Event::Work(Phase::Install, 0),
                 Event::Work(Phase::Install, 1),
                 Event::Link(0),
@@ -27568,9 +27868,9 @@ fn generic_last() -> . {
         let main = "module main; \
             import macros(macro relay); \
             fn run() -> . { \
-              relay([A] A -> A, .[A](value) { value }, ()) \
+              relay[[A] A -> A]( .[A](value) { value })(()) \
             }";
-        let call = "relay([A] A -> A, .[A](value) { value }, ())";
+        let call = "relay[[A] A -> A]( .[A](value) { value })(())";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(&package, "main", source_span(main, call));
@@ -27597,7 +27897,7 @@ fn generic_last() -> . {
                 ".[A](value: A) { outer }",
             ),
             (
-                "fn run[*F](outer: F(.)) -> [B] B -> F(.)",
+                "fn run[*F](outer: F[.]) -> [B] B -> F[.]",
                 ".[F](value: F) { outer }",
             ),
         ] {
@@ -27819,13 +28119,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_projected_header_work();
         let main = "module main; \
             import macros(macro relay); \
-            fn run() -> . { relay(.[A](value: A) -> A { value }, ()) }";
+            fn run() -> . { relay(.[A](value: A) -> A { value })(()) }";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay(.[A](value: A) -> A { value }, ())"),
+            source_span(main, "relay(.[A](value: A) -> A { value })(())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -27850,13 +28150,10 @@ fn generic_last() -> . {
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::projected_header_work(),
             vec![
-                Event::AtAncestor(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 1),
-                Event::AtAncestor(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 1),
-                Event::AtAncestor(Phase::Install, 0),
                 Event::Work(Phase::Install, 0),
                 Event::Work(Phase::Install, 1),
                 Event::Link(0),
@@ -27875,13 +28172,13 @@ fn generic_last() -> . {
         crate::pass::typecheck_core::apply::fills::reset_pair_wrapper_finalizations();
         let main = "module main; \
             import macros(macro relay); \
-            fn run() -> . { relay(((), ((), ())), ()) }";
+            fn run() -> . { relay(((), ((), ())))(()) }";
         let package =
             lowered_package(&[("macros.kio", CROSS_LAYER_FILLS_MACRO), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "relay(((), ((), ())), ())"),
+            source_span(main, "relay(((), ((), ())))(())"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -27907,20 +28204,16 @@ fn generic_last() -> . {
         assert_eq!(
             crate::pass::typecheck_core::apply::fills::projected_header_work(),
             vec![
-                Event::AtAncestor(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 0),
                 Event::Work(Phase::Prepare, 1),
-                Event::AtAncestor(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 0),
                 Event::Work(Phase::Reserve, 1),
-                Event::AtAncestor(Phase::Install, 0),
                 Event::Work(Phase::Install, 0),
                 Event::Work(Phase::Install, 1),
                 Event::Link(0),
                 Event::Link(1),
                 Event::Seal(0),
                 Event::Seal(1),
-                Event::AtAncestor(Phase::CloseProducerlessPairs, 0),
                 Event::Work(Phase::CloseProducerlessPairs, 0),
             ],
             "the pair must close at its retained parent only after every header link and seal"
@@ -27980,10 +28273,12 @@ fn generic_last() -> . {
         }
 
         fn retained_value_arg_span(call: &Expr, value_index: usize) -> Span {
-            let Expr::UserMacro { args, .. } = call else {
+            let Expr::UserMacro { stages, .. } = call else {
                 panic!("the causal match call lost its retained macro form")
             };
-            args.iter()
+            stages
+                .iter()
+                .flat_map(|stage| &stage.args)
                 .filter_map(|arg| match arg {
                     crate::ast::CallArg::Value(value) => Some(value.span()),
                     crate::ast::CallArg::Type(_) => None,
@@ -28384,9 +28679,9 @@ fn generic_last() -> . {
 
         let success_call = r#"match(source) {
               (
-                .(_boxed_i32: Box(I32)) -> String { make_string() },
+                .(_boxed_i32: Box[I32]) -> String { make_string() },
                 .(_other: Other) -> String { make_string() },
-                .[A](_boxed: Box(A)) -> String { make_string() }
+                .[A](_boxed: Box[A]) -> String { make_string() }
               )
             }"#;
         let success_source = format!(
@@ -28397,7 +28692,7 @@ fn generic_last() -> . {
             host fn make_string() -> String;
             newtype Box[A] : A {{ constructor mk_box; projector un_box; }};
             fn consume(_value: String) -> . {{ () }}
-            fn run(source: Box(I32) | Other | Box(String)) -> . {{
+            fn run(source: Box[I32] | Other | Box[String]) -> . {{
               let selected = {success_call};
               consume(selected)
             }}"#
@@ -28420,9 +28715,9 @@ fn generic_last() -> . {
 
         let error_call = r#"match(source) {
               (
-                .(_boxed_i32: Box(I32)) -> String { make_string() },
+                .(_boxed_i32: Box[I32]) -> String { make_string() },
                 .(_other: Other) -> String { make_string() },
-                .[A](boxed: Box(A)) -> A { Box.un_box(A, boxed) }
+                .[A](boxed: Box[A]) -> A { Box.un_box[A](boxed) }
               )
             }"#;
         let error_source = format!(
@@ -28432,7 +28727,7 @@ fn generic_last() -> . {
             host type String;
             host fn make_string() -> String;
             newtype Box[A] : A {{ constructor mk_box; projector un_box; }};
-            fn run(source: Box(I32) | Other | Box(String)) -> . {{
+            fn run(source: Box[I32] | Other | Box[String]) -> . {{
               let .(_selected: String) = {error_call};
               ()
             }}"#
@@ -28476,14 +28771,14 @@ fn generic_last() -> . {
             import macros(I32, macro wrong_shape); \
             host type String role(str); \
             fn run() -> . { \
-              let _wrong = wrong_shape(\"not a product\"(String)); \
+              let _wrong = wrong_shape(\"not a product\"[String]); \
               () \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "wrong_shape(\"not a product\"(String))"),
+            source_span(main, "wrong_shape(\"not a product\"[String])"),
         );
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
 
@@ -28504,13 +28799,13 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             host type String role(str); \
             host fn take[H](pair: I32 & H) -> H; \
-            fn run() -> String { take(infer_pair((0(I32), \"closed\"(String)))) }";
+            fn run() -> String { take(infer_pair((0[I32], \"closed\"[String]))) }";
         let package =
             lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", main)]);
         let original = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
+            source_span(main, "infer_pair((0[I32], \"closed\"[String]))"),
         );
         let (checked, scope) = check_retained_success(&package);
 
@@ -28560,8 +28855,8 @@ fn generic_last() -> . {
     #[test]
     fn retained_macro_ufcs_places_each_receiver_once() {
         for (case, call, return_ty) in [
-            ("receiver_first", "receiver.>first(other)", "I32"),
-            ("receiver_last", "receiver.>>first(other)", "I32"),
+            ("receiver_first", "(receiver.>first)(other)", "I32"),
+            ("receiver_last", "first(other)[_].<receiver", "I32"),
         ] {
             let (receiver_ty, other_ty) = if case == "receiver_first" {
                 ("I32", "String")
@@ -28577,7 +28872,44 @@ fn generic_last() -> . {
             );
             let package =
                 lowered_package(&[("macros.kio", RETAINED_ACTION_MACROS), ("main.kio", &main)]);
-            let original = retained_call_at(&package, "main", source_span(&main, call));
+            let original = package
+                .module("main")
+                .expect("caller module")
+                .module
+                .items
+                .iter()
+                .find_map(|item| match item {
+                    Item::FnDef(def) if def.name == "run" => Some(def.body.clone()),
+                    _ => None,
+                })
+                .expect("the caller body is the one staged macro invocation");
+            let Expr::UserMacro { name, stages, .. } = &original else {
+                panic!("UFCS lowers to one ordinary staged macro invocation")
+            };
+            assert_eq!(name, "first");
+            let values = stages
+                .iter()
+                .flat_map(|stage| stage.args.iter())
+                .filter_map(|argument| match argument {
+                    CallArg::Value(Expr::Path { segments, .. }) => {
+                        let [segment] = segments.as_slice() else {
+                            panic!("each written operand is one lexical parameter")
+                        };
+                        Some(segment.as_str())
+                    }
+                    CallArg::Value(_) => panic!("the receiver or other operand changed shape"),
+                    CallArg::Type(_) => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                values,
+                if case == "receiver_first" {
+                    vec!["receiver", "other"]
+                } else {
+                    vec!["other", "receiver"]
+                },
+                "the two public value stages retain each written parameter exactly once"
+            );
             let (checked, scope) = check_retained_success(&package);
 
             assert!(
@@ -28600,9 +28932,9 @@ fn generic_last() -> . {
     #[test]
     fn failed_later_sibling_rolls_back_macro_actions_without_evaluation() {
         let cases = [
-            ("ordinary", "infer_pair((0(I32), \"closed\"(String)))"),
-            ("receiver_first", "(0(I32), \"closed\"(String)).>infer_pair"),
-            ("receiver_last", "(0(I32), \"closed\"(String)).>>infer_pair"),
+            ("ordinary", "infer_pair((0[I32], \"closed\"[String]))"),
+            ("receiver_first", "(0[I32], \"closed\"[String]).>infer_pair"),
+            ("receiver_last", "(0[I32], \"closed\"[String]).>>infer_pair"),
         ];
         let mut premature_evaluations = Vec::new();
 
@@ -28694,13 +29026,13 @@ fn generic_last() -> . {
             host type String role(str); \
             fn consume[T](_first: T, _second: .) -> . { () } \
             fn run() -> . { \
-              consume(infer_pair((0(I32), \"closed\"(String))), require_type()) \
+              consume(infer_pair((0[I32], \"closed\"[String])), require_type()) \
             }";
         let package = lowered_package(&[("macros.kio", macro_def), ("main.kio", main)]);
         let first = retained_call_at(
             &package,
             "main",
-            source_span(main, "infer_pair((0(I32), \"closed\"(String)))"),
+            source_span(main, "infer_pair((0[I32], \"closed\"[String]))"),
         );
         let second = retained_call_at(&package, "main", source_span(main, "require_type()"));
         let (elaborations, scope, errors) = check_retained_module_error(&package, "main");
@@ -28918,7 +29250,7 @@ fn generic_last() -> . {
             fn identity[A](value: A) -> A { value } \
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn consume[T](_value: T) -> . { () } \
-            fn run() -> . { consume(make_poly(identity(42(Local)))) }");
+            fn run() -> . { consume(make_poly(identity(42[Local]))) }");
     }
 
     #[test]
@@ -28929,7 +29261,7 @@ fn generic_last() -> . {
             fn identity[A](value: A) -> A { value } \
             host fn make_poly[A](value: A) -> Poly; \
             fn consume[T](_value: T) -> . { () } \
-            fn run() -> . { consume(make_poly(identity(42(Local)))) }");
+            fn run() -> . { consume(make_poly(identity(42[Local]))) }");
     }
 
     #[test]
@@ -28939,7 +29271,7 @@ fn generic_last() -> . {
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn consume[T](_left: T, _right: T) -> . { () } \
             fn run() -> . { \
-              consume(make_poly(42(Local)), .(_value: Local) { 42(Local) }) \
+              consume(make_poly(42[Local]), .(_value: Local) { 42[Local] }) \
             }");
     }
 
@@ -28950,7 +29282,7 @@ fn generic_last() -> . {
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity(make_poly(42(Local)))) }");
+            fn run() -> . { consume(identity(make_poly(42[Local]))) }");
     }
 
     #[test]
@@ -28961,7 +29293,7 @@ fn generic_last() -> . {
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: Poly) -> . { () } \
-            fn run() -> . { consume(identity(make_poly(42(Local)))) }");
+            fn run() -> . { consume(identity(make_poly(42[Local]))) }");
     }
 
     #[test]
@@ -28971,7 +29303,7 @@ fn generic_last() -> . {
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity([B] B -> Local, make_poly(42(Local)))) }");
+            fn run() -> . { consume(identity[[B] B -> Local](make_poly(42[Local]))) }");
     }
 
     #[test]
@@ -28981,7 +29313,7 @@ fn generic_last() -> . {
             host fn make_poly[A](value: A) -> [B] B -> A; \
             fn identity[A](value: A) -> A { value } \
             fn consume(_value: [B] B -> Local) -> . { () } \
-            fn run() -> . { consume(identity(_, make_poly(42(Local)))) }");
+            fn run() -> . { consume(identity[_](make_poly(42[Local]))) }");
     }
 
     #[test]
@@ -29023,7 +29355,7 @@ fn generic_last() -> . {
              host fn mirrored[X][Y]() -> (X & Y) & Y; \
              fn identity[A](value: A) -> A { value } \
              fn outer[T](_early: T, _late: [A] A -> ((A & r.Remote) & T)) -> . { () } \
-             fn run() -> . { outer(identity(42(r.Remote)), .[A](value: A) { mirrored() }) }",
+             fn run() -> . { outer(identity(42[r.Remote]), .[A](value: A) { mirrored() }) }",
         ])
         .unwrap_or_else(|error| panic!("expected ok, got {error:?}"));
     }
@@ -29034,7 +29366,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[K][V](_key: K, _pair: K & V) -> . { () } \
-            fn run() -> . { take(0(I32), choose((1, 1(I32)), (2, 2))) }");
+            fn run() -> . { take(0[I32], choose((1, 1[I32]), (2, 2))) }");
     }
 
     #[test]
@@ -29054,7 +29386,7 @@ fn generic_last() -> . {
             host type String role(str); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[V](_pair: I32 & V) -> . { () } \
-            fn run() -> . { take(choose((1, \"a\"(String)), (2, \"b\"))) }");
+            fn run() -> . { take(choose((1, \"a\"[String]), (2, \"b\"))) }");
     }
 
     #[test]
@@ -29063,7 +29395,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             fn build[P][Q](p: P, q: Q) -> P & Q { (p, q) } \
             fn take[A][B](_b: B, _pair: B & A) -> . { () } \
-            fn run[A](x: A) -> . { take(x, build(x, 1(I32))) }");
+            fn run[A](x: A) -> . { take(x, build(x, 1[I32])) }");
     }
 
     #[test]
@@ -29071,9 +29403,9 @@ fn generic_last() -> . {
         ok("module x; \
             host type I32 role(i32); \
             newtype Box[T] : T { pub constructor mk_box; pub projector un_box; }; \
-            fn identity_app[*F][A](value: F(A)) -> F(A) { value } \
-            fn take[*G][V](_value: V, _wrapped: G(V)) -> . { () } \
-            fn run() -> . { take(1(I32), identity_app(Box.mk_box(2))) }");
+            fn identity_app[*F][A](value: F[A]) -> F[A] { value } \
+            fn take[*G][V](_value: V, _wrapped: G[V]) -> . { () } \
+            fn run() -> . { take(1[I32], identity_app(Box.mk_box(2))) }");
     }
 
     #[test]
@@ -29083,7 +29415,7 @@ fn generic_last() -> . {
             host type String role(str); \
             fn choose[A](left: A, _right: A) -> A { left } \
             fn take[V](_pair: I32 & V) -> . { () } \
-            fn run() -> . { take(choose((\"a\"(String), \"b\"(String)), (\"c\", \"d\"))) }");
+            fn run() -> . { take(choose((\"a\"[String], \"b\"[String]), (\"c\", \"d\"))) }");
         assert!(msg.contains("type mismatch"), "got: {msg}");
     }
 
@@ -29102,7 +29434,7 @@ fn generic_last() -> . {
             host type I32 role(i32); \
             fn choose[T](left: T, _right: T) -> T { left } \
             fn take[A][B](_b: B, _pair: B & A) -> . { () } \
-            fn run[A](x: A) -> . { take(x, choose((1(I32), 1(I32)), (2, 2))) }"]);
+            fn run[A](x: A) -> . { take(x, choose((1[I32], 1[I32]), (2, 2))) }"]);
         assert!(msg.contains("type mismatch"), "got: {msg}");
         assert!(
             msg.contains('A'),
@@ -29481,14 +29813,14 @@ fn generic_last() -> . {
         ok("module main; \
             type Identity[T] = T; \
             newtype A[*F] : . { constructor mk; projector un; }; \
-            type Poly = Identity([A] A);");
+            type Poly = Identity[[A] A];");
     }
 
     #[test]
     fn incomplete_higher_kinded_scheme_reports_dedicated_error_inside_application() {
         let msg = err("module main; \
             type Identity[T] = T; \
-            type Bad = Identity([*A] A);");
+            type Bad = Identity[[*A] A];");
         assert!(
             msg.contains("higher-kinded `Forall` binder `A` must bind a complete function scheme"),
             "got: {msg}"

@@ -6,8 +6,8 @@ newtype Value : . { constructor value; projector unvalue }
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn bind[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(input)) }
+fn bind[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(input)) }
 
-fn run() -> Box(.) {
+fn run() -> Box[.] {
   do(bind) { Box.box(Value.value(())); Box.box(()) }
 }

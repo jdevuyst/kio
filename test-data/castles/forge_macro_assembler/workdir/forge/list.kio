@@ -15,37 +15,37 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/iter(loop);
 
-pub rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list }
+pub rec newtype List[A] : . | (A & List[A]) { constructor mk_list; projector un_list }
 
 /// The empty list.
-pub fn nil[A] -> List(A) { List.mk_list(A, widen_sum((), . | (A & List(A)))) }
+pub fn nil[A] -> List[A] { List.mk_list[A](widen_sum(())[. | (A & List[A])]) }
 
 /// Prepend `x`.
-pub fn cons[A](x: A, xs: List(A)) -> List(A) {
-  List.mk_list(A, widen_sum((x, xs), . | (A & List(A))))
+pub fn cons[A](x: A, xs: List[A]) -> List[A] {
+  List.mk_list[A](widen_sum((x, xs))[. | (A & List[A])])
 }
 
 /// Open one layer: either the list is empty, or it is a head and a tail.
 /// Every walk below starts here, and so does the VM's instruction fetch.
-pub fn un_cons[A](xs: List(A)) -> . | (A & List(A)) { List.un_list(A, xs) }
+pub fn un_cons[A](xs: List[A]) -> . | (A & List[A]) { List.un_list[A](xs) }
 
 /// Push every element of `xs` onto `acc`, reversing `xs` on the way. This
 /// is the module's one traversal primitive.
-rec(loop) fn rev_append[A](xs: List(A), acc: List(A)) -> List(A) {
+rec(loop) fn rev_append[A](xs: List[A], acc: List[A]) -> List[A] {
   match(un_cons(xs)) {
-    (.(x: A, rest: List(A)) { recur rev_append(rest, cons(x, acc)) }, .(_empty: .) { acc })
+    (.(x: A, rest: List[A]) { recur rev_append(rest, cons(x, acc)) }, .(_empty: .) { acc })
   }
 }
 
 /// `xs` in reverse order.
-pub fn reverse[A](xs: List(A)) -> List(A) { rev_append(xs, nil(A)) }
+pub fn reverse[A](xs: List[A]) -> List[A] { rev_append(xs, nil[A]) }
 
 rec(loop) {
   /// How many elements `xs` holds.
-  pub fn len[A](xs: List(A)) -> I32 { recur count(xs, 0) };
-  fn count[A](xs: List(A), acc: I32) -> I32 {
+  pub fn len[A](xs: List[A]) -> I32 { recur count(xs, 0) };
+  fn count[A](xs: List[A], acc: I32) -> I32 {
     match(un_cons(xs)) {
-      (.(_x: A, rest: List(A)) { recur count(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
+      (.(_x: A, rest: List[A]) { recur count(rest, add_i32(acc, 1)) }, .(_empty: .) { acc })
     }
   }
 }
@@ -53,10 +53,10 @@ rec(loop) {
 /// `xs` without its first `n` elements. Dropping past the end yields the
 /// empty list, which is what lets the VM fetch by program counter without a
 /// separate bounds check: a counter past the last instruction finds nothing.
-pub rec(loop) fn drop[A](xs: List(A), n: I32) -> List(A) {
+pub rec(loop) fn drop[A](xs: List[A], n: I32) -> List[A] {
   if(leq_i32(n, 0)) {
     xs
   } else match(un_cons(xs)) {
-    (.(_x: A, rest: List(A)) { recur drop(rest, sub_i32(n, 1)) }, .(_empty: .) { xs })
+    (.(_x: A, rest: List[A]) { recur drop(rest, sub_i32(n, 1)) }, .(_empty: .) { xs })
   }
 }

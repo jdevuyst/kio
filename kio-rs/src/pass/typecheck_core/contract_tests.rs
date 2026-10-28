@@ -128,7 +128,7 @@ fn bodyless_ordinary_pure_generic_uses_the_shared_nominal_and_header_checks() {
 fn bodyless_validation_preserves_private_nominal_and_kind_error_ownership() {
     for consumer in [
         "module consumer; import provider as p; pub pure fn bad(x: p.Hidden) -> . { () }",
-        "module consumer; import provider as p; pub pure fn bad[A](x: A(.)) -> . { () }",
+        "module consumer; import provider as p; pub pure fn bad[A](x: A[.]) -> . { () }",
     ] {
         let (ordinary, contract) = packages(&[
             (
@@ -184,8 +184,8 @@ fn bodyless_projection_does_not_turn_a_body_into_a_signature_obligation() {
 
 #[test]
 fn bodyless_signature_errors_are_stable_under_provider_input_order() {
-    let first = ("a.kio", "module a; pub pure fn bad[A](x: A(.)) -> . { () }");
-    let second = ("z.kio", "module z; pub pure fn bad[B](x: B(.)) -> . { () }");
+    let first = ("a.kio", "module a; pub pure fn bad[A](x: A[.]) -> . { () }");
+    let second = ("z.kio", "module z; pub pure fn bad[B](x: B[.]) -> . { () }");
     let mut expected = None;
     for sources in [[first, second], [second, first], [first, second]] {
         let (_, contract) = packages(&sources);

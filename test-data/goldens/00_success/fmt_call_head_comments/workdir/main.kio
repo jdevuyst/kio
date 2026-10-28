@@ -2,8 +2,8 @@ module main;
 
 fn right(input: .) {
   input.>staged // before arguments
-  ( // first argument
-  String, "value" // closing
+  [String]( // first argument
+  "value" // closing
   )
 }
 

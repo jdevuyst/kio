@@ -6,4 +6,4 @@ host type Witness;
 
 fn consume[T](_value: T & Witness) { () }
 
-fn reject() { consume(42(Local)) }
+fn reject() { consume(42[Local]) }

@@ -3,11 +3,11 @@ module lit/m;
 import lit(F64, Str);
 
 equiv float_lit() {
-  1.5(F64);
-  2.5(F64)
+  1.5[F64];
+  2.5[F64]
 }
 
 equiv string_lit() {
-  "first"(Str);
-  "second"(Str)
+  "first"[Str];
+  "second"[Str]
 }

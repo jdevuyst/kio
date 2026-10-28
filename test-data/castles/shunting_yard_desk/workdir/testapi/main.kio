@@ -34,9 +34,9 @@ import testapi/text(string_eq);
 /// Expressions seen, expressions that produced a value, and the kind of every
 /// fault raised — the summary counts kinds off that log rather than carrying
 /// one counter per arm.
-labels Tally = { seen: I32, ok_count: I32, faults: List(Fault_kind) };
+labels Tally = { seen: I32, ok_count: I32, faults: List[Fault_kind] };
 
-fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil(Fault_kind)} }
+fn start_tally() -> Tally { {seen = 0, ok_count = 0, faults = nil[Fault_kind]} }
 
 fn note_ok(t: Tally) -> Tally {
   {seen = add_i32(t.?{seen}, 1), ok_count = add_i32(t.?{ok_count}, 1), faults = t.?{faults}}
@@ -46,15 +46,15 @@ fn note_fault(t: Tally, kind: Fault_kind) -> Tally {
   {seen = add_i32(t.?{seen}, 1), ok_count = t.?{ok_count}, faults = cons(kind, t.?{faults})}
 }
 
-fn some_expr(toks: List(Placed)) -> List(Placed) | . { widen_sum(toks, List(Placed) | .) }
+fn some_expr(toks: List[Placed]) -> List[Placed] | . { widen_sum(toks)[List[Placed] | .] }
 
-fn no_expr() -> List(Placed) | . { widen_sum((), List(Placed) | .) }
+fn no_expr() -> List[Placed] | . { widen_sum(())[List[Placed] | .] }
 
 /// Read one expression's worth of tokens. A blank line ends the expression; a
 /// blank line before any token is just separator noise and is skipped, so an
 /// empty expression is never handed on. EOF ends the stream, but a pending
 /// expression at EOF is still an expression.
-rec(loop) fn gather(acc: List(Placed), n: I32) -> List(Placed) | . {
+rec(loop) fn gather(acc: List[Placed], n: I32) -> List[Placed] | . {
   match(read_ascii_line()) {
     (
     , .(line: String) {
@@ -72,7 +72,7 @@ rec(loop) fn gather(acc: List(Placed), n: I32) -> List(Placed) | . {
   }
 }
 
-fn read_expr() -> List(Placed) | . { gather(nil(Placed), 0) }
+fn read_expr() -> List[Placed] | . { gather(nil[Placed], 0) }
 
 fn say(text: String) { print(cat(text, "\n")) }
 
@@ -92,7 +92,7 @@ fn report_answer(a: Answer, t: Tally) -> Tally {
 /// One expression, start to finish. The RPN line appears exactly when a queue
 /// was built: a parenthesis fault stops the conversion, and there is then no
 /// queue to echo.
-fn report_expr(index: I32, toks: List(Placed), t: Tally) -> Tally {
+fn report_expr(index: I32, toks: List[Placed], t: Tally) -> Tally {
   say(cat("expr ", cat(show_int(index), cat(": ", show_infix(toks)))));
   match(to_rpn(toks)) {
     (
@@ -113,7 +113,7 @@ fn report_expr(index: I32, toks: List(Placed), t: Tally) -> Tally {
 rec(loop) fn drive(index: I32, t: Tally) -> Tally {
   match(read_expr()) {
     (
-    , .(toks: List(Placed)) {
+    , .(toks: List[Placed]) {
         let next = report_expr(index, toks, t);
         recur drive(add_i32(index, 1), next)
       }
@@ -122,7 +122,7 @@ rec(loop) fn drive(index: I32, t: Tally) -> Tally {
   }
 }
 
-fn report_kind(log: List(Fault_kind), kind: Fault_kind) {
+fn report_kind(log: List[Fault_kind], kind: Fault_kind) {
   say(cat("  ", cat(kind_name(kind), cat(": ", show_int(count_kind(log, kind))))))
 }
 

@@ -26,13 +26,13 @@ newtype Point : I32 & I32 { constructor mk; projector un }
 
 fn warmer(c: Celsius) -> Celsius { Celsius.mk(add_i32(Celsius.un(c), 1)) }
 
-fn box_i32(n: I32) -> Box(I32) { Box.mk(n) }
+fn box_i32(n: I32) -> Box[I32] { Box.mk(n) }
 
-fn unbox(b: Box(I32)) -> I32 { Box.un(b) }
+fn unbox(b: Box[I32]) -> I32 { Box.un(b) }
 
-fn point_x(p: Point) -> I32 { __fst__(I32, I32, Point.un(p)) }
+fn point_x(p: Point) -> I32 { __fst__[I32][I32](Point.un(p)) }
 
-fn point_y(p: Point) -> I32 { __snd__(I32, I32, Point.un(p)) }
+fn point_y(p: Point) -> I32 { __snd__[I32][I32](Point.un(p)) }
 
 fn line(label: String, n: I32) {
   print(string_concat(label, string_concat(int_to_string(n), "\n")))

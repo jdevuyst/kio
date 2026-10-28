@@ -2,4 +2,4 @@ module store;
 
 pub type Ignore[*F][A] = A;
 
-pub newtype Node[A] : Ignore(A, .) { pub constructor mk_node; pub projector get_node }
+pub newtype Node[A] : Ignore[A][.] { pub constructor mk_node; pub projector get_node }

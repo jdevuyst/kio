@@ -52,6 +52,20 @@ fn after() { choose(()) }
     finally { restored.delete(); }
   } finally { edited.delete(); tree.delete(); }
 
+  for (const body of [
+    "choose[A](value)[B](other)",
+    "choose [A] (value) [B] (other)",
+    "receiver.>choose[A](value)(other)",
+    "choose(value)(other) { value } otherwise { other }",
+  ]) {
+    const stagedSource = `module staged; import library(macro choose); fn run() { ${body} }`;
+    const staged = parser.parse(stagedSource);
+    try {
+      assert.ok(!staged.rootNode.hasError, `staged macro: ${body}: ${staged.rootNode}`);
+      assert.ok(macroHeads(staged.rootNode).has(stagedSource.indexOf("choose", stagedSource.indexOf("fn run"))), body);
+    } finally { staged.delete(); }
+  }
+
   for (const fragment of ["fn run() { choose(()) }", "module other; fn run() { choose(()) }"]) {
     const isolated = parser.parse(fragment);
     try { assert.equal(macroHeads(isolated.rootNode).size, 0, "isolated contexts have no ambient macros"); }
@@ -86,7 +100,7 @@ fn after() { choose(()) }
     "a.f(()) + ((m))(value) { () }",
     "a.f(()) + r.>m (value) { () }",
     "a.f(()) + r.>((m))(value) { () }",
-    "a.f(I32, // argument\n ()) + m { () }",
+    "a.f[I32]( // argument\n ()) + m { () }",
     "a.f.other(()) + m { () }",
     "a.f(m(())) + m { () }",
     "a.f(()) + m (left + (right)) { () }",

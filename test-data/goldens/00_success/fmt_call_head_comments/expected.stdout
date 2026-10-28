@@ -2,11 +2,11 @@ module main;
 
 fn right(input: .) {
   input
-    .>staged(
-    // before arguments
-
+    .>staged[
+      // before arguments
+      String
+    ](
     // first argument
-    , String
     , "value"
     // closing
     )
@@ -42,10 +42,10 @@ fn recursive() {
 }
 
 fn left() {
-  e(
-  // before written arguments
-  , argument
-  ).<(
+  (
+    e
+    // before written arguments
+    )(argument).<(
     // before splice
 
     // before inserted argument

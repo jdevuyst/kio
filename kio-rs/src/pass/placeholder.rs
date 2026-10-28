@@ -295,8 +295,8 @@ impl<'a> Classifier<'_, 'a> {
                 ..
             } => {
                 self.path(std::slice::from_mut(head))?;
-                for value in prefix {
-                    self.expr(value)?;
+                for stage in prefix {
+                    self.args(&mut stage.args)?;
                 }
                 for block in blocks {
                     self.items(&mut block.items)?;
@@ -307,7 +307,11 @@ impl<'a> Classifier<'_, 'a> {
                 self.expr(callee)?;
                 self.args(args)?;
             }
-            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => self.args(args)?,
+            Expr::RecCall { stages, .. } | Expr::UserMacro { stages, .. } => {
+                for stage in stages {
+                    self.args(&mut stage.args)?;
+                }
+            }
             Expr::FnExpr { sig, body, .. } => {
                 let mut introduced = Vec::new();
                 for param in &sig.params {
@@ -376,15 +380,12 @@ impl<'a> Classifier<'_, 'a> {
             },
             Expr::Ufcs {
                 receiver,
-                callee_segments,
+                callee,
                 args,
-                macro_call,
                 ..
             } => {
                 self.expr(receiver)?;
-                if macro_call.is_none() {
-                    self.path(callee_segments)?;
-                }
+                self.expr(callee)?;
                 self.args(args)?;
             }
             Expr::OpChain { kind, .. } => match kind {
@@ -612,10 +613,20 @@ mod tests {
 
     #[test]
     fn ufcs_placeholder_callee_uses_the_generated_parameter() {
-        let module = desugar::desugar_module(
-            parser::parse("module m; fn run() { .x. { p1.>x1 } }").unwrap(),
-        )
+        let parsed = parser::parse("module m; fn run() { .x. { p1.>x1 } }").unwrap();
+        let scope = crate::pass::surface_registry::PackageBlockScope::from_modules(&[(
+            "m.kio".into(),
+            parsed.clone(),
+        )])
         .unwrap();
+        let macro_calls = crate::scope_walk::macro_calls(&parsed);
+        let (_, mut projected) = op_fold::fold_package(vec![("m.kio".into(), parsed)])
+            .unwrap()
+            .pop()
+            .unwrap();
+        crate::pass::block_projection::project_module(&mut projected, &scope, &macro_calls)
+            .unwrap();
+        let module = desugar::desugar_module(projected).unwrap();
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
         };
@@ -625,18 +636,16 @@ mod tests {
         let SignatureParam::Value(param) = &sig.params[0] else {
             panic!("value parameter")
         };
-        let Expr::Ufcs {
-            receiver,
-            callee_segments,
-            ..
-        } = body.as_ref()
-        else {
-            panic!("ufcs")
+        let Expr::Call { callee, args, .. } = body.as_ref() else {
+            panic!("projected UFCS call")
+        };
+        let [CallArg::Value(receiver)] = args.as_slice() else {
+            panic!("the receiver is the sole value packet")
         };
         assert_ne!(param.name, "p1");
-        assert_eq!(callee_segments[0].name, param.name);
         assert!(
-            matches!(receiver.as_ref(), Expr::Path { segments, .. } if segments[0].name == "p1")
+            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments[0].name == param.name)
         );
+        assert!(matches!(receiver, Expr::Path { segments, .. } if segments[0].name == "p1"));
     }
 }

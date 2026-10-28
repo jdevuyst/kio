@@ -46,10 +46,10 @@ fn int_eq(a: I32, b: I32) -> Bool {
   if(leq_i32(a, b)) { leq_i32(b, a) } else { .f }
 }
 
-rec(loop) fn words_onto(ws: List(String), first: Bool, acc: String) -> String {
+rec(loop) fn words_onto(ws: List[String], first: Bool, acc: String) -> String {
   match(ws.>List.un_list) {
     (
-    , .(w: String, more: List(String)) {
+    , .(w: String, more: List[String]) {
         let next = if(first) { w } else { acc.>cat(" ").>cat(w) };
         recur words_onto(more, .f, next)
       }
@@ -58,12 +58,12 @@ rec(loop) fn words_onto(ws: List(String), first: Bool, acc: String) -> String {
   }
 }
 
-fn words_text(ws: List(String)) -> String { words_onto(ws, .t, "") }
+fn words_text(ws: List[String]) -> String { words_onto(ws, .t, "") }
 
-rec(loop) fn states_onto(ns: List(I32), first: Bool, acc: String) -> String {
+rec(loop) fn states_onto(ns: List[I32], first: Bool, acc: String) -> String {
   match(ns.>List.un_list) {
     (
-    , .(n: I32, more: List(I32)) {
+    , .(n: I32, more: List[I32]) {
         let next = if(first) { num(n) } else { acc.>cat(" ").>cat(num(n)) };
         recur states_onto(more, .f, next)
       }
@@ -72,10 +72,10 @@ rec(loop) fn states_onto(ns: List(I32), first: Bool, acc: String) -> String {
   }
 }
 
-rec(loop) fn tallies_onto(ts: List(Tally), first: Bool, acc: String) -> String {
+rec(loop) fn tallies_onto(ts: List[Tally], first: Bool, acc: String) -> String {
   match(ts.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) {
+    , .(t: Tally, more: List[Tally]) {
         let piece = t.?{word}.>cat("*").>cat(num(t.?{count}));
         let next = if(first) { piece } else { acc.>cat(" ").>cat(piece) };
         recur tallies_onto(more, .f, next)
@@ -86,17 +86,17 @@ rec(loop) fn tallies_onto(ts: List(Tally), first: Bool, acc: String) -> String {
 }
 
 /// A weighted word list, plus the total a draw against it rolls modulo.
-fn tallies_text(ts: List(Tally)) -> String {
+fn tallies_text(ts: List[Tally]) -> String {
   tallies_onto(ts, .t, "").>cat(" (total ").>cat(num(total_weight(ts))).>cat(")")
 }
 
 /// The same list as the half-open cumulative bands a draw actually walks:
 /// `moon[0,2) river[2,3)` says a roll of 0 or 1 lands on `moon` and a roll of
 /// 2 lands on `river`. This is the line that makes the weighting checkable.
-rec(loop) fn bands_onto(ts: List(Tally), lo: I32, first: Bool, acc: String) -> String {
+rec(loop) fn bands_onto(ts: List[Tally], lo: I32, first: Bool, acc: String) -> String {
   match(ts.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) {
+    , .(t: Tally, more: List[Tally]) {
         let hi = add_i32(lo, t.?{count});
         let piece = t.?{word}.>cat("[").>cat(num(lo)).>cat(",").>cat(num(hi)).>cat(")");
         let next = if(first) { piece } else { acc.>cat(" ").>cat(piece) };
@@ -107,7 +107,7 @@ rec(loop) fn bands_onto(ts: List(Tally), lo: I32, first: Bool, acc: String) -> S
   }
 }
 
-fn bands_text(ts: List(Tally)) -> String { bands_onto(ts, 0, .t, "") }
+fn bands_text(ts: List[Tally]) -> String { bands_onto(ts, 0, .t, "") }
 
 fn stop_text(s: Stop) -> String {
   match(s) {
@@ -138,10 +138,10 @@ pub fn print_header(seed: I32, verses: I32, per_verse: I32, cap: I32) {
   field("word cap", num(cap))
 }
 
-rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) {
+rec(loop) fn print_phrases(phrases: List[List[String]], i: I32) {
   match(phrases.>List.un_list) {
     (
-    , .(p: List(String), more: List(List(String))) {
+    , .(p: List[String], more: List[List[String]]) {
         say(num(i).>cat(": ").>cat(words_text(p)));
         recur print_phrases(more, add_i32(i, 1))
       }
@@ -150,10 +150,10 @@ rec(loop) fn print_phrases(phrases: List(List(String)), i: I32) {
   }
 }
 
-rec(loop) fn count_tokens(phrases: List(List(String)), acc: I32) -> I32 {
+rec(loop) fn count_tokens(phrases: List[List[String]], acc: I32) -> I32 {
   match(phrases.>List.un_list) {
     (
-    , .(p: List(String), more: List(List(String))) {
+    , .(p: List[String], more: List[List[String]]) {
         recur count_tokens(more, add_i32(acc, len(p)))
       }
     , .(_empty: .) { acc }
@@ -161,10 +161,10 @@ rec(loop) fn count_tokens(phrases: List(List(String)), acc: I32) -> I32 {
   }
 }
 
-rec(loop) fn rows_hold(rows: List(Row), w: String) -> Bool {
+rec(loop) fn rows_hold(rows: List[Row], w: String) -> Bool {
   match(rows.>List.un_list) {
     (
-    , .(r: Row, more: List(Row)) {
+    , .(r: Row, more: List[Row]) {
         if(string_eq(r.?{row_word}, w)) { .t } else { recur rows_hold(more, w) }
       }
     , .(_empty: .) { .f }
@@ -172,10 +172,10 @@ rec(loop) fn rows_hold(rows: List(Row), w: String) -> Bool {
   }
 }
 
-rec(loop) fn count_end_only(ends: List(Tally), rows: List(Row), acc: I32) -> I32 {
+rec(loop) fn count_end_only(ends: List[Tally], rows: List[Row], acc: I32) -> I32 {
   match(ends.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) {
+    , .(t: Tally, more: List[Tally]) {
         let next = if(rows_hold(rows, t.?{word})) { acc } else { add_i32(acc, 1) };
         recur count_end_only(more, rows, next)
       }
@@ -190,7 +190,7 @@ fn vocabulary(m: Model) -> I32 {
   add_i32(len(rows_of(m)), count_end_only(ends_of(m), rows_of(m), 0))
 }
 
-pub fn print_corpus(phrases: List(List(String)), m: Model) {
+pub fn print_corpus(phrases: List[List[String]], m: Model) {
   say("");
   say("-- corpus --");
   field("phrases", num(len(phrases)));
@@ -199,10 +199,10 @@ pub fn print_corpus(phrases: List(List(String)), m: Model) {
   print_phrases(phrases, 1)
 }
 
-rec(loop) fn print_rows(rows: List(Row)) {
+rec(loop) fn print_rows(rows: List[Row]) {
   match(rows.>List.un_list) {
     (
-    , .(r: Row, more: List(Row)) {
+    , .(r: Row, more: List[Row]) {
         say(r.?{row_word}.>cat(" -> ").>cat(tallies_text(r.?{row_succs})));
         recur print_rows(more)
       }
@@ -219,10 +219,10 @@ pub fn print_model(m: Model) {
   print_rows(rows_of(m))
 }
 
-rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) {
+rec(loop) fn print_lines(lines: List[Line], i: I32, per_verse: I32) {
   match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) {
+    , .(l: Line, more: List[Line]) {
         if(int_eq(mod_i32(i, per_verse), 0)) {
           say("verse ".>cat(num(add_i32(div_i32(i, per_verse), 1))))
         } else {
@@ -236,16 +236,16 @@ rec(loop) fn print_lines(lines: List(Line), i: I32, per_verse: I32) {
   }
 }
 
-pub fn print_verses(lines: List(Line), per_verse: I32) {
+pub fn print_verses(lines: List[Line], per_verse: I32) {
   say("");
   say("-- verses --");
   print_lines(lines, 0, per_verse)
 }
 
-rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
+rec(loop) fn print_draws(draws: List[Step], n: I32) -> I32 {
   match(draws.>List.un_list) {
     (
-    , .(d: Step, more: List(Step)) {
+    , .(d: Step, more: List[Step]) {
         say("  draw "
           .>cat(num(n))
           .>cat(": state ")
@@ -267,12 +267,12 @@ rec(loop) fn print_draws(draws: List(Step), n: I32) -> I32 {
   }
 }
 
-rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) {
+rec(loop) fn print_trace(lines: List[Line], i: I32, per_verse: I32, n: I32) {
   if(leq_i32(per_verse, i)) {
     ()
   } else match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) {
+    , .(l: Line, more: List[Line]) {
         say("line ".>cat(num(add_i32(i, 1))));
         let next = print_draws(l.?{line_draws}, n);
         say("  stop: ".>cat(stop_text(l.?{line_stop})));
@@ -286,13 +286,13 @@ rec(loop) fn print_trace(lines: List(Line), i: I32, per_verse: I32, n: I32) {
 /// Only the first verse is traced. One verse is enough to check the generator
 /// by hand, and tracing all of them would bury the verses under their own
 /// arithmetic.
-pub fn print_first_verse_draws(lines: List(Line), per_verse: I32) {
+pub fn print_first_verse_draws(lines: List[Line], per_verse: I32) {
   say("");
   say("-- draws (verse 1) --");
   print_trace(lines, 0, per_verse, 1)
 }
 
-pub fn print_stats(lines: List(Line)) {
+pub fn print_stats(lines: List[Line]) {
   say("");
   say("-- stats --");
   field("words generated", num(words_generated(lines)));

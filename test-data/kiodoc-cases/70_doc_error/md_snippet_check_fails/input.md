@@ -20,5 +20,5 @@ __INSERT_CODE_HERE__
 ```
 
 ```kio {@main}
-pub fn greet() -> S { 42(I) }
+pub fn greet() -> S { 42[I] }
 ```

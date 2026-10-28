@@ -453,7 +453,7 @@ retained source grouping still come from the same prepared plan.
 ## Higher-kinded types
 
 The public index of every application is unary:
-`F(A)` is `Shapes.Apply1<F, A>`, and `F(A, B)` is
+`F[A]` is `Shapes.Apply1<F, A>`, and `F[A][ B]` is
 `Shapes.Apply1<Shapes.Apply1<F, A>, B>`. A partial and a saturated nominal
 application use this same rule. The exact constructor marker is the
 declaration-owned interface, such as `Shapes.KioModule_api.Box`.
@@ -465,7 +465,7 @@ newtype members provide precisely the operations their visibility permits.
 A host declaration's own nested `Storage` helper can store and
 retrieve host-owned storage at its exact application index; it cannot rebrand
 another declaration or project a newtype. Passing a value through abstract
-`T` or `F(A)` preserves that value without structural traversal.
+`T` or `F[A]` preserves that value without structural traversal.
 
 First-class polymorphic values retain one `advance()` per binder even under
 an opaque constructor. Generated interfaces factor the binder-dependent

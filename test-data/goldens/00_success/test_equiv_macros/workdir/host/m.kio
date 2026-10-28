@@ -10,10 +10,10 @@ equiv if_else_same_shape() {
 }
 
 equiv match_same_shape() {
-  match(.t(Bool)) {
+  match(.t[Bool]) {
     .(x: Bool) { () }
   };
-  match(.t(Bool)) {
+  match(.t[Bool]) {
     .(y: Bool) { () }
   }
 }

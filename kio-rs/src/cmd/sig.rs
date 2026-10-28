@@ -2596,10 +2596,10 @@ mod tests {
                        pub projector take\n\
                      }};\n\
                      type Pair[A] = A & A;\n\
-                     type Twice = Pair(\n\
+                     type Twice = Pair[\n\
                        // {note} argument\n\
                        Token\n\
-                     );\n\
+                     ];\n\
                      // {note} function\n\
                      host fn consume(value: Token) -> {result}\n\
                      // {note} closer\n\
@@ -3500,7 +3500,7 @@ signature app v(3);
 v(1) {
   with {
     module api {
-      pub rec newtype List[A] : . | (A & List(A)) {
+      pub rec newtype List[A] : . | (A & List[A]) {
         pub constructor mk_list;
         pub projector un_list;
       };
@@ -3511,7 +3511,7 @@ v(1) {
 
 v(2) {
   nonbreaking {
-    add { module api { pub fn empty[A]() -> List(A); } }
+    add { module api { pub fn empty[A]() -> List[A]; } }
   }
 }
 ",

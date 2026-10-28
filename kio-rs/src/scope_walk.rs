@@ -707,8 +707,8 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
     }
     match expr {
         Expr::BlockCall { prefix, blocks, .. } => {
-            for value in prefix {
-                expr_scope(value, offset, ns, out);
+            for stage in prefix {
+                args_scope(&stage.args, offset, ns, out);
             }
             for block in blocks {
                 if !contains(Span::new(block.open.end, block.close.end), offset) {
@@ -833,8 +833,10 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 args_scope(args, offset, ns, out);
             }
         }
-        Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
-            args_scope(args, offset, ns, out)
+        Expr::RecCall { stages, .. } | Expr::UserMacro { stages, .. } => {
+            for stage in stages {
+                args_scope(&stage.args, offset, ns, out);
+            }
         }
         Expr::Tuple { items, .. } => {
             for child in items {
@@ -867,8 +869,14 @@ fn expr_scope(expr: &Expr<Surface>, offset: u32, ns: Namespace, out: &mut impl C
                 }
             }
         },
-        Expr::Ufcs { receiver, args, .. } => {
+        Expr::Ufcs {
+            receiver,
+            callee,
+            args,
+            ..
+        } => {
             expr_scope(receiver, offset, ns, out);
+            expr_scope(callee, offset, ns, out);
             args_scope(args, offset, ns, out);
         }
         Expr::OpChain { kind, .. } => match kind {
@@ -1169,7 +1177,7 @@ type Later = .;\n";
     #[test]
     fn type_candidates_include_only_explicit_recursive_singleton_scope() {
         let src = "module pkg/main;\n\
-rec newtype Tree[A] : A & Tree(A) { constructor mk; projector un; };\n";
+rec newtype Tree[A] : A & Tree[A] { constructor mk; projector un; };\n";
         let candidates = type_candidates(&parse(src), offset_after(src, "Tree[A] : "));
         let names = labels(&candidates);
         assert!(names.contains(&"Tree"), "got: {names:?}");
@@ -1197,7 +1205,7 @@ rec {\n\
     #[test]
     fn type_candidates_include_recursive_label_alias_and_generated_heads() {
         let src = "module pkg/main;\n\
-rec labels Tree[A] = { leaf: A } | { branch: Tree(A) & Tree(A) };\n";
+rec labels Tree[A] = { leaf: A } | { branch: Tree[A] & Tree[A] };\n";
         let candidates = type_candidates(&parse(src), offset_after(src, "branch: "));
         let names = labels(&candidates);
         for expected in ["A", "Tree", "Leaf", "Branch"] {
@@ -1255,17 +1263,17 @@ type After = Leaf;\n";
     fn lexical_type_candidates_recover_complete_recursive_label_scope_without_payload_leaks() {
         for (source, expected, excluded) in [
             (
-                "module pkg/main; import pkg/dep(Imported); rec labels { list[A] <U> : Pair(A, bogus[B]: ",
+                "module pkg/main; import pkg/dep(Imported); rec labels { list[A] <U> : Pair[A][bogus[B]: ",
                 vec!["A", "U", "List", "Imported"],
                 vec!["B", "Bogus"],
             ),
             (
-                "module pkg/main; import pkg/dep(Imported); import pkg/other as other; rec labels Tree[A] = { list[B] <U> : Pair(B, bogus[C]: ",
+                "module pkg/main; import pkg/dep(Imported); import pkg/other as other; rec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: ",
                 vec!["A", "B", "U", "Tree", "List", "Imported"],
                 vec!["C", "Bogus", "other"],
             ),
             (
-                "module pkg/main; rec labels { list[*F,A][B]: ",
+                "module pkg/main; rec labels { list[*F][A][B]: ",
                 vec!["F", "A", "B", "List"],
                 vec![],
             ),

@@ -18,6 +18,6 @@ fn classify(source: String | .) -> String {
 }
 
 pub fn main() {
-  print(classify(widen_sum("text\n"(String), String | .)));
-  print(classify(widen_sum((), String | .)))
+  print(classify(widen_sum("text\n"[String])[String | .]));
+  print(classify(widen_sum(())[String | .]))
 }

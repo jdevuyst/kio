@@ -11,9 +11,9 @@ import vec/macros/control(macro if);
 import vec/macros/match(macro match);
 import vec/macros/spine_macros(macro widen_sum);
 
-fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
 
-fn absent[A]() -> A | . { widen_sum((), A | .) }
+fn absent[A]() -> A | . { widen_sum(())[A | .] }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match(result) {
@@ -25,7 +25,7 @@ fn value_or[A](default: A, result: A | .) -> A {
   fold_result(default, .(value: A) { value }, result)
 }
 
-labels Patch_vec = { count: I32, root: Tree(I32) };
+labels Patch_vec = { count: I32, root: Tree[I32] };
 
 labels Journal_state = {
 , data: Patch_vec
@@ -42,20 +42,20 @@ fn line_i32(label: String, value: I32) { line(label, int_to_string(value)) }
 
 fn line_bool(label: String, value: Bool) { line(label, bool_to_string(value)) }
 
-fn mk_vec(count: I32, root: Tree(I32)) -> Patch_vec { {count, root} }
+fn mk_vec(count: I32, root: Tree[I32]) -> Patch_vec { {count, root} }
 
-fn empty_root() -> Tree(I32) {
-  let empty_leaf = leaf(absent(I32, ()));
+fn empty_root() -> Tree[I32] {
+  let empty_leaf = leaf(absent[I32](()));
   branch(branch(empty_leaf, empty_leaf), branch(empty_leaf, empty_leaf))
 }
 
 fn empty_vec() -> Patch_vec { mk_vec(0, empty_root()) }
 
-fn left(t: Tree(I32)) -> Tree(I32) { descend_step(dir_left(), t) }
+fn left(t: Tree[I32]) -> Tree[I32] { descend_step(dir_left(), t) }
 
-fn right(t: Tree(I32)) -> Tree(I32) { descend_step(dir_right(), t) }
+fn right(t: Tree[I32]) -> Tree[I32] { descend_step(dir_right(), t) }
 
-fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
+fn leaf_at(root: Tree[I32], index: I32) -> I32 | . {
   if(eq_i32(index, 0)) {
     leaf_value(left(left(root)))
   } else if(eq_i32(index, 1)) {
@@ -65,7 +65,7 @@ fn leaf_at(root: Tree(I32), index: I32) -> I32 | . {
   } else if(eq_i32(index, 3)) {
     leaf_value(right(right(root)))
   } else {
-    absent(I32, ())
+    absent[I32](())
   }
 }
 
@@ -74,10 +74,10 @@ fn in_bounds(index: I32, count: I32) -> Bool {
 }
 
 fn at_vec(v: Patch_vec, index: I32) -> I32 | . {
-  if(in_bounds(index, v.?{count})) { leaf_at(v.?{root}, index) } else { absent(I32, ()) }
+  if(in_bounds(index, v.?{count})) { leaf_at(v.?{root}, index) } else { absent[I32](()) }
 }
 
-fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
+fn set_leaf(root: Tree[I32], index: I32, value: I32) -> Tree[I32] {
   let fresh = leaf(present(value));
   if(eq_i32(index, 0)) {
     branch(branch(fresh, right(left(root))), right(root))
@@ -94,7 +94,7 @@ fn set_leaf(root: Tree(I32), index: I32, value: I32) -> Tree(I32) {
 
 fn set_vec(v: Patch_vec, index: I32, value: I32) -> Patch_vec | . {
   fold_result(
-  , absent(Patch_vec, ())
+  , absent[Patch_vec](())
   , .(_old: I32) { present(mk_vec(v.?{count}, set_leaf(v.?{root}, index, value))) }
   , at_vec(v, index)
   )
@@ -105,7 +105,7 @@ fn push_vec(v: Patch_vec, value: I32) -> Patch_vec | . {
   if(lt_i32(count, 4)) {
     present(mk_vec(add_i32(count, 1), set_leaf(v.?{root}, count, value)))
   } else {
-    absent(Patch_vec, ())
+    absent[Patch_vec](())
   }
 }
 

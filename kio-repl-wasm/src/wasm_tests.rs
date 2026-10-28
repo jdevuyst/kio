@@ -9,23 +9,23 @@ export function exerciseLiteralInference(repl) {
     check(turn(':load app').includes('loaded app'), 'load literal types');
     const ordinary = repl.complete('def', 3).candidates.find(item => item.label === 'default');
     check(ordinary !== undefined && ordinary.kind === 'fn', 'ordinary default completion');
-    const queries = ['42(Int)', '42.0e0(Float)', '42.0E+3(Float)', '42.0(Float)', '42.0e-3(Float)', '.t(Bool)', 'default()',
+    const queries = ['42[Int]', '42.0e0[Float]', '42.0E+3[Float]', '42.0[Float]', '42.0e-3[Float]', '.t[Bool]', 'default()',
       'same(42, default())', 'same(42.0, floating())', 'choose(.t)'];
     for (const query of queries) {
       const output = turn(':type ' + query);
       check(output.startsWith(query + ' : '), `${query}: ${output}`);
     }
-    for (const query of ['42', '42.0', '.t', 'same(42.0, 42)', 'same(42, 42.0)', '42(Float)']) {
+    for (const query of ['42', '42.0', '.t', 'same(42.0, 42)', 'same(42, 42.0)', '42[Float]']) {
       const output = turn(':type ' + query);
       check(output.includes('the expression does not type-check'), `${query}: ${output}`);
     }
     for (const literal of ['1e12', '42e0', '42E+3', '-4_2E-0']) {
       check(turn(':type ' + literal).includes('exponent notation is not supported for integer literals'), `integer exponent: ${literal}`);
     }
-    check(turn(':normalize same(42, default())') === '42(Int)', 'integer literal category');
+    check(turn(':normalize same(42, default())') === '42[Int]', 'integer literal category');
     check(turn(':normalize same(42.0, floating())').startsWith('42.0'), 'floating literal point');
-    check(/^42(?:\(|$)/.test(turn(':normalize choose(.t)')), 'inferred Boolean true branch');
-    check(/^0(?:\(|$)/.test(turn(':normalize choose(.f)')), 'inferred Boolean false branch');
+    check(/^42(?:\[|$)/.test(turn(':normalize choose(.t)')), 'inferred Boolean true branch');
+    check(/^0(?:\[|$)/.test(turn(':normalize choose(.f)')), 'inferred Boolean false branch');
     check(turn(':sig default').startsWith('pub fn default() -> Int'), 'ordinary default value name');
     turn(':reset');
     check(!repl.complete('def', 3).candidates.some(item => item.label === 'default'), 'reset ordinary default name');
@@ -231,15 +231,15 @@ export function exerciseTypeOnlyValues(repl) {
     for (const [input, expected] of [
       [':type mark', 'mark : [A] .'],
       [':type .[B] { () }', '.[B] { () } : [B] .'],
-      [':normalize mark(.)', '()'],
-      [':normalize .[B] { () }(.)', '()'],
-      [':type delayed(.)', 'delayed(.) : . -> .'],
-      [':normalize delayed(., ())', '()'],
+      [':normalize mark[.]', '()'],
+      [':normalize .[B] { () }[.]', '()'],
+      [':type delayed[.]', 'delayed[.] : . -> .'],
+      [':normalize delayed[.](())', '()'],
     ]) {
       const actual = turn(input);
       check(actual === expected, `${input}: ${actual}`);
     }
-    for (const input of [':normalize mark', ':normalize delayed(.)']) {
+    for (const input of [':normalize mark', ':normalize delayed[.]']) {
       const actual = turn(input);
       check(actual.startsWith('<closure ') && actual.endsWith('>') && actual.length > '<closure >'.length, `${input}: ${actual}`);
     }
@@ -255,7 +255,7 @@ export function exerciseTypeOnlyValues(repl) {
       check(selected.label === binder && selected.kind === 'type-param', `${binder}: selected binding`);
       const outside = `:normalize .(value: ${prefix}`;
       check(repl.complete(outside, outside.length).candidates.length === 0, `${binder}: binder scope exit`);
-      const inserted = input.slice(0, result.replaceStart) + selected.label + input.slice(result.replaceEnd) + ') { value } }(., ())';
+      const inserted = input.slice(0, result.replaceStart) + selected.label + input.slice(result.replaceEnd) + ') { value } }[.](())';
       check(turn(inserted) === '()', `${binder}: accepted insertion`);
     }
     return 2;

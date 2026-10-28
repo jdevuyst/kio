@@ -16,10 +16,10 @@ newtype Pair[A][B] <U> : A & B & U { pub constructor mk_pair; pub projector un_p
 // per specs/formal/elaboration.md § 7.5 + § 9 — without it, the
 // continuation closure references the newtype's declaration-level
 // binders.
-fn extract_first[A][B](p: Pair(A, B)) -> A {
-  Pair.un_pair(A, B, p)(A, .[U](trip) { __fst__(A, B & U, trip) })
+fn extract_first[A][B](p: Pair[A][B]) -> A {
+  Pair.un_pair[A][B](p)[A](.[U](trip) { __fst__[A][B & U](trip) })
 }
 
-fn extract_second[A][B](p: Pair(A, B)) -> B {
-  Pair.un_pair(A, B, p)(B, .[U](trip) { __fst__(B, U, __snd__(A, B & U, trip)) })
+fn extract_second[A][B](p: Pair[A][B]) -> B {
+  Pair.un_pair[A][B](p)[B](.[U](trip) { __fst__[B][U](__snd__[A][B & U](trip)) })
 }

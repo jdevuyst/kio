@@ -91,7 +91,7 @@ rec(loop) fn join_onto(xs: Words, cursor: I32, from: I32, to: I32, acc: String) 
         if(lt_i32(cursor, from)) {
           recur join_onto(rest, add_i32(cursor, 1), from, to, acc)
         } else {
-          let sep = if(leq_i32(cursor, from)) { "" } else { " " };
+          let .(sep: String) = if(leq_i32(cursor, from)) { "" } else { " " };
           recur join_onto(rest, add_i32(cursor, 1), from, to, cat3(acc, sep, word_text(w)))
         }
       }
@@ -117,10 +117,10 @@ fn line_row(xs: Words, l: Line) -> String {
   )
 }
 
-rec(loop) fn layout_onto(xs: Words, ls: List(Line), acc: String) -> String {
+rec(loop) fn layout_onto(xs: Words, ls: List[Line], acc: String) -> String {
   match(ls.>List.unpack) {
     (
-    , .(l: Line, rest: List(Line)) { recur layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
+    , .(l: Line, rest: List[Line]) { recur layout_onto(xs, rest, cat(acc, line_row(xs, l))) }
     , .(_empty: .) { acc }
     )
   }
@@ -128,29 +128,29 @@ rec(loop) fn layout_onto(xs: Words, ls: List(Line), acc: String) -> String {
 
 /// The paragraph as it would be set, between two rules drawn at the column. The
 /// gap between a line's last glyph and the right rule is its slack.
-pub fn layout(xs: Words, column: I32, ls: List(Line)) -> String {
+pub fn layout(xs: Words, column: I32, ls: List[Line]) -> String {
   cat3(rule(column), layout_onto(xs, ls, ""), rule(column))
 }
 
-rec(loop) fn breaks_onto(bs: List(I32), sep: String, acc: String) -> String {
+rec(loop) fn breaks_onto(bs: List[I32], sep: String, acc: String) -> String {
   match(bs.>List.unpack) {
     (
-    , .(b: I32, rest: List(I32)) { recur breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
+    , .(b: I32, rest: List[I32]) { recur breaks_onto(rest, " ", cat3(acc, sep, int_to_string(b))) }
     , .(_empty: .) { acc }
     )
   }
 }
 
-pub fn breaks(bs: List(I32)) -> String { breaks_onto(bs, "", "") }
+pub fn breaks(bs: List[I32]) -> String { breaks_onto(bs, "", "") }
 
 fn table_row(j: I32, best: I32, back: I32, fits: I32) -> String {
   cat3(cat(pad_num(j, 4), pad_num(best, 9)), cat(pad_dash(back, 9), pad_dash(fits, 7)), "\n")
 }
 
-rec(loop) fn rows_onto(j: I32, best: List(I32), back: List(I32), fits: List(I32), acc: String) -> String {
+rec(loop) fn rows_onto(j: I32, best: List[I32], back: List[I32], fits: List[I32], acc: String) -> String {
   match(best.>List.unpack) {
     (
-    , .(b: I32, rest: List(I32)) {
+    , .(b: I32, rest: List[I32]) {
         let row = table_row(j, b, list.head_or(back, -1), list.head_or(fits, -1));
         recur rows_onto(add_i32(j, 1), rest, list.tail_of(back), list.tail_of(fits), cat(acc, row))
       }

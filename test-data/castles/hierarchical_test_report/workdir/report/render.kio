@@ -27,7 +27,7 @@ fn count_text(c: model.Counts) -> String {
   )
 }
 
-fn failure_lines(path: String, failures: cells.List(model.Case)) {
+fn failure_lines(path: String, failures: cells.List[model.Case]) {
   lists.foldl(
   , .(_unit: ., test: model.Case) {
       io.print(text.string_concat(
@@ -55,9 +55,9 @@ fn failure_lines(path: String, failures: cells.List(model.Case)) {
   )
 }
 
-rec(loop) fn walk(pending: cells.List(model.Suite & String)) {
+rec(loop) fn walk(pending: cells.List[model.Suite & String]) {
   match(cells.uncons(pending)) {
-    .(entry: model.Suite & String, rest: cells.List(model.Suite & String)) {
+    .(entry: model.Suite & String, rest: cells.List[model.Suite & String]) {
       let .(suite, prefix) = entry;
       let .(name, counts, children, failures) = suite.>model.Suite.unpack;
       let path =
@@ -74,7 +74,7 @@ rec(loop) fn walk(pending: cells.List(model.Suite & String)) {
       failure_lines(path, failures);
       let next =
         lists.foldl(
-        , .(tail: cells.List(model.Suite & String), child: model.Suite) {
+        , .(tail: cells.List[model.Suite & String], child: model.Suite) {
             cells.cons((child, path), tail)
           }
         , rest

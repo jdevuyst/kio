@@ -488,7 +488,7 @@ ABI arity, or another producer-side side channel.
   § Semantic slots and native parameter grouping; a host-specific arity-limit
   shell is a documented realization, not permission to change Kio typing.
 - **Polymorphic-newtype payloads** (§ Polymorphic newtype payloads) — a
-  `newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)` payload is
+  `newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]` payload is
   the unary chain `Forall(A, Forall(B, Function(…)))`. Preserve its semantic
   binder/application order and keep constructor/projector identities around
   the complete payload. Determine each internal and boundary realization from

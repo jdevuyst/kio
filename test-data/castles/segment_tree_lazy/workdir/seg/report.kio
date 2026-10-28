@@ -57,7 +57,7 @@ pub fn cost(visits: I32, pushes: I32, touched: I32) -> String {
   )
 }
 
-rec(loop) fn row_text(cells: Array(I32), i: I32, stop: I32, acc: String) -> String {
+rec(loop) fn row_text(cells: Array[I32], i: I32, stop: I32, acc: String) -> String {
   if(leq_i32(stop, i)) {
     acc
   } else {
@@ -65,7 +65,7 @@ rec(loop) fn row_text(cells: Array(I32), i: I32, stop: I32, acc: String) -> Stri
   }
 }
 
-rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) {
+rec(loop) fn dump_from(cells: Array[I32], i: I32, n: I32) {
   if(leq_i32(n, i)) {
     ()
   } else {
@@ -77,4 +77,4 @@ rec(loop) fn dump_from(cells: Array(I32), i: I32, n: I32) {
 }
 
 /// Print `cells[0 .. n)` under a heading, sixteen values to a line.
-pub fn dump(heading: String, cells: Array(I32), n: I32) { line(heading); dump_from(cells, 0, n) }
+pub fn dump(heading: String, cells: Array[I32], n: I32) { line(heading); dump_from(cells, 0, n) }

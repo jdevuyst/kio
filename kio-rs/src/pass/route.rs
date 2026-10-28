@@ -4253,14 +4253,16 @@ impl<'a> Lowerer<'a> {
         for source_slot in source_slots {
             let (value, actual_ty) =
                 build_value_for_abi_slot(&flat, &mut cursor, source_slot, span)?;
-            args.push(self.adapt_projected_function_slot(
-                value,
-                &actual_ty,
+            let adapted = self.adapt_routed_value_to_expected(
+                value.clone(),
+                Some(actual_ty),
                 source_slot,
                 span,
-                depth,
-                changed,
-            ));
+            );
+            if adapted != value {
+                *changed = true;
+            }
+            args.push(adapted);
         }
         if cursor == flat.len() {
             Some(args)
@@ -6441,21 +6443,25 @@ fn build_value_for_abi_slot(
         if expected_slots.len() > 1 {
             let mut nested_cursor = *cursor;
             let mut items = Vec::with_capacity(expected_slots.len());
+            let mut actual_slots = Vec::with_capacity(expected_slots.len());
             for slot in &expected_slots {
-                let (item, _) = build_value_for_abi_slot(flat, &mut nested_cursor, slot, span)?;
+                let (item, actual) =
+                    build_value_for_abi_slot(flat, &mut nested_cursor, slot, span)?;
                 items.push(item);
+                actual_slots.push(actual);
             }
             if nested_cursor > *cursor {
                 *cursor = nested_cursor;
+                let actual_ty = right_fold_product_types(actual_slots, span);
                 return Some((
                     Expr::EnrichedTuple {
                         occurrence: Default::default(),
                         items,
-                        synth_ty: expected.clone(),
+                        synth_ty: actual_ty.clone(),
                         meta: Meta::new(span),
                         ext: (),
                     },
-                    expected.clone(),
+                    actual_ty,
                 ));
             }
         }
@@ -7760,27 +7766,61 @@ mod tests {
              host type N; \
              host fn value(_unit: .) -> N; \
              fn stage(_unit: .)[A] -> A -> A { .(item: A) -> A { item } } \
-             fn caller() -> N { stage()(N)(value()) }",
+             fn caller() -> N { stage()[N](value()) }",
         )]);
-        let Expr::Let {
-            value: type_stage,
-            body: value_stage,
+        let Expr::LowIndirectCall {
+            callee,
+            type_args,
+            args,
             ..
         } = &routed_fn(&routed, "test", "caller").body
         else {
-            panic!(
-                "the type stage must be sequenced before the adapted value layer: {:#?}",
-                routed_fn(&routed, "test", "caller").body
-            )
+            panic!("the returned function retains its type and value application")
         };
+        let Expr::LowModuleCall {
+            mangled,
+            type_args: producer_types,
+            args: producer_args,
+            ret_ty,
+            ..
+        } = callee.as_ref()
+        else {
+            panic!("the preceding value-stage producer must remain the callee")
+        };
+        assert_eq!(mangled, "stage");
+        assert!(producer_types.is_empty());
         assert!(
-            matches!(type_stage.as_ref(), Expr::LowTypeApplication { .. }),
-            "the staging let must evaluate the type application first: {type_stage:?}"
+            producer_args.is_empty(),
+            "the producer's Unit ABI is erased"
         );
         assert!(
-            first_low_host_call(value_stage).is_some_and(|name| name == "value"),
-            "the effectful value argument must remain in the later value stage: {value_stage:?}"
+            matches!(ret_ty, Some(Type::Forall { .. })),
+            "the producer returns the binder applied by the outer call"
         );
+        let [
+            Type::Path {
+                segments,
+                args: type_args,
+                ..
+            },
+        ] = type_args.as_slice()
+        else {
+            panic!("the returned binder receives exactly one explicit type")
+        };
+        assert!(segments.last().is_some_and(|segment| segment == "N"));
+        assert!(type_args.is_empty());
+        let [
+            Expr::LowHostCall {
+                name,
+                args: value_args,
+                ..
+            },
+        ] = args.as_slice()
+        else {
+            panic!("one effectful value operand follows the callee")
+        };
+        assert_eq!(name, "value");
+        assert!(value_args.is_empty());
     }
 
     #[test]
@@ -7792,7 +7832,7 @@ mod tests {
              host fn effect(_unit: .) -> .; \
              fn stage(_unit: .)[A] -> A -> A { .(value: A) -> A { value } } \
              fn caller(value: N) -> N { \
-               let residual = stage()(N); \
+               let residual = stage()[N]; \
                effect(()); \
                residual(value) \
              }",
@@ -7828,9 +7868,9 @@ mod tests {
              } \
              fn caller(value: N) -> N { \
                let base = stage(()); \
-               let after_a = base(N); \
+               let after_a = base[N]; \
                effect(()); \
-               let after_b = after_a(N); \
+               let after_b = after_a[N]; \
                effect(()); \
                after_b(value) \
              }",
@@ -7903,8 +7943,8 @@ mod tests {
              host fn unit_effect() -> .; \
              fn make[A] -> A -> A { .(value: A) { value } } \
              fn make_unit[A] -> . -> . { .() { () } } \
-             fn caller() -> N { make(N, effect()) } \
-             fn unit_caller() { make_unit(., unit_effect()) }",
+             fn caller() -> N { make[N](effect()) } \
+             fn unit_caller() { make_unit[.](unit_effect()) }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
         else {
@@ -7940,7 +7980,7 @@ mod tests {
             "module test; \
              host fn effect() -> .; \
              fn staged[A] -> [B] . -> . { .[B] { .() { () } } } \
-             fn caller() { staged(., ., effect()) }",
+             fn caller() { staged[.][.](effect()) }",
         )]);
         let Expr::Let { value, body, .. } = &routed_fn(&routed, "test", "caller").body else {
             panic!("the fully specialized callee must precede argument wrappers")
@@ -7993,7 +8033,7 @@ mod tests {
              host fn first(_unit: .) -> N; \
              host fn second(_unit: .) -> N; \
              fn interleaved[A](x: A)[B](y: B) -> B { y } \
-             fn caller() -> N { interleaved(N, first(), N, second()) }",
+             fn caller() -> N { interleaved[N](first())[N](second()) }",
         )]);
         let Expr::LowIndirectCall {
             callee: first_value_stage,
@@ -8039,7 +8079,7 @@ mod tests {
              host fn first(_unit: .) -> N; \
              host fn second(_unit: .) -> N; \
              host fn staged[A](first: N)[B](second: N) -> N; \
-             fn caller() -> N { staged(., first(), ., second()) }",
+             fn caller() -> N { staged[.](first())[.](second()) }",
         )]);
         let Expr::LowIndirectCall {
             callee: first_value_stage,
@@ -8227,7 +8267,7 @@ mod tests {
              labels { text: . -> ., invoke[A]: A -> A }; \
              fn unit_call(value: Text) -> . { value.?{text}(()) } \
              fn effect_call(value: Text) -> . { value.?{text}(tick(())) } \
-             fn generic_call(value: Invoke(.)) -> . { value.?{invoke}(()) }",
+             fn generic_call(value: Invoke[.]) -> . { value.?{invoke}(()) }",
         )]);
 
         let unit_body = &routed_fn(&routed, "test", "unit_call").body;
@@ -8600,30 +8640,30 @@ mod tests {
                  pub newtype Const[A] : . { pub constructor make; pub projector open; }; \
                  pub newtype Hidden[A] <E> : E { pub constructor make; pub projector open; }; \
                  fn plain() -> Plain { .() { Plain.make(()) }(()) } \
-                 fn local[A]() -> Const(A) { .() { Const.make(A, ()) }(()) } \
-                 fn hidden[A][E](value: E) -> Hidden(A) { \
-                   .() { Hidden.make(A, E, value) }(()) \
+                 fn local[A]() -> Const[A] { .() { Const.make[A](()) }(()) } \
+                 fn hidden[A][E](value: E) -> Hidden[A] { \
+                   .() { Hidden.make[A][E](value) }(()) \
                  }",
             ),
             (
                 "relay.kio",
                 "module relay; import origin as source; \
-                 pub type Forward[A] = source.Const(A);",
+                 pub type Forward[A] = source.Const[A];",
             ),
             (
                 "consumer.kio",
                 "module consumer; import origin as source; import origin(Plain); \
                  import relay(Forward); import relay as relay; \
                  newtype Const[A] : . { constructor make; projector open; }; \
-                 fn local[A]() -> Const(A) { .() { Const.make(A, ()) }(()) } \
+                 fn local[A]() -> Const[A] { .() { Const.make[A](()) }(()) } \
                  fn selected() -> Plain { .() { Plain.make(()) }(()) } \
-                 fn qualified[A]() -> source.Const(A) { .() { source.Const.make(A, ()) }(()) } \
-                 fn forwarded[A]() -> Forward(A) { .() { Forward.make(A, ()) }(()) } \
-                 fn qualified_forwarded[A]() -> Forward(A) { \
-                   .() { relay.Forward.make(A, ()) }(()) \
+                 fn qualified[A]() -> source.Const[A] { .() { source.Const.make[A](()) }(()) } \
+                 fn forwarded[A]() -> Forward[A] { .() { Forward.make[A](()) }(()) } \
+                 fn qualified_forwarded[A]() -> Forward[A] { \
+                   .() { relay.Forward.make[A](()) }(()) \
                  } \
-                 fn hidden[A][E](value: E) -> source.Hidden(A) { \
-                   .() { source.Hidden.make(A, E, value) }(()) \
+                 fn hidden[A][E](value: E) -> source.Hidden[A] { \
+                   .() { source.Hidden.make[A][E](value) }(()) \
                  }",
             ),
         ]);
@@ -8742,30 +8782,30 @@ mod tests {
                  pub newtype Hidden[A] <B> : A & (B -> A) & B { \
                    pub constructor make; pub projector open; \
                  }; \
-                 fn local[A][B](left: A, right: B) -> Packet(A, B) { \
-                   Packet.make(A, B, left, right) \
+                 fn local[A][B](left: A, right: B) -> Packet[A][ B] { \
+                   Packet.make[A][B](left, right) \
                  } \
-                 fn existential[A][B](left: A, show: B -> A, right: B) -> Hidden(A) { \
-                   Hidden.make(A, B, left, show, right) \
+                 fn existential[A][B](left: A, show: B -> A, right: B) -> Hidden[A] { \
+                   Hidden.make[A][B](left, show, right) \
                  }",
             ),
             (
                 "relay.kio",
                 "module relay; import origin as source; \
-                 pub type Parcel[A][B] = source.Packet(A, B);",
+                 pub type Parcel[A][B] = source.Packet[A][ B];",
             ),
             (
                 "consumer.kio",
                 "module consumer; import origin as source; \
                  import relay(Parcel); import relay as relay; \
-                 fn qualified[A][B](left: A, right: B) -> source.Packet(A, B) { \
-                   source.Packet.make(A, B, left, right) \
+                 fn qualified[A][B](left: A, right: B) -> source.Packet[A][ B] { \
+                   source.Packet.make[A][B](left, right) \
                  } \
-                 fn forwarded[A][B](left: A, right: B) -> Parcel(A, B) { \
-                   Parcel.make(A, B, left, right) \
+                 fn forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { \
+                   Parcel.make[A][B](left, right) \
                  } \
-                 fn qualified_forwarded[A][B](left: A, right: B) -> Parcel(A, B) { \
-                   relay.Parcel.make(A, B, left, right) \
+                 fn qualified_forwarded[A][B](left: A, right: B) -> Parcel[A][ B] { \
+                   relay.Parcel.make[A][B](left, right) \
                  }",
             ),
         ]);
@@ -8819,14 +8859,14 @@ mod tests {
              newtype Packet[A][B] : A & B { constructor make; projector open; }; \
              newtype Empty : . { constructor make; projector open; }; \
              newtype Function[A] : A -> A { constructor make; projector open; }; \
-             fn grouped[A][B](payload: A & B) -> Packet(A, B) { \
-               Packet.make(A, B, payload) \
+             fn grouped[A][B](payload: A & B) -> Packet[A][ B] { \
+               Packet.make[A][B](payload) \
              } \
              fn unit() -> Empty { Empty.make() } \
-             fn first_class[A][B]() -> (A & B) -> Packet(A, B) { Packet.make(A, B) } \
-             fn residual[A]() -> [B] (A & B) -> Packet(A, B) { Packet.make(A) } \
-             fn projector_call[A](wrapped: Function(A), value: A) -> A { \
-               Function.open(A, wrapped, value) \
+             fn first_class[A][B]() -> (A & B) -> Packet[A][ B] { Packet.make[A][B] } \
+             fn residual[A]() -> [B] (A & B) -> Packet[A][ B] { Packet.make[A] } \
+             fn projector_call[A](wrapped: Function[A], value: A) -> A { \
+               Function.open[A](wrapped)(value) \
              }",
         )]);
         assert!(matches!(
@@ -8873,7 +8913,7 @@ mod tests {
              fn packed() -> Packed { Packed.mk_packed(.[A](_pair: . & .) { () }) } \
              fn unit() -> Thunk { Thunk.mk_thunk(.[A]() { () }) } \
              fn existential() -> Exists { \
-               Exists.mk_exists(., .[A](_left: ., _right: A) { _left }) \
+               Exists.mk_exists[.](.[A](_left: ., _right: A) { _left }) \
              }",
         )]);
 
@@ -8918,7 +8958,7 @@ mod tests {
                  pub newtype Identity[A] : A { \
                    pub constructor mk_id; pub projector un_id; \
                  }; \
-                 pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { \
+                 pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { \
                    pub constructor mk_functor; pub projector fmap; \
                  };",
             ),
@@ -8934,9 +8974,9 @@ mod tests {
                  } \
                  fn unit() -> alias.Thunk { alias.Thunk.mk_thunk(.[A]() { () }) } \
                  fn existential() -> alias.Exists { \
-                   alias.Exists.mk_exists(., .[A](_left: ., _right: A) { _left }) \
+                   alias.Exists.mk_exists[.](.[A](_left: ., _right: A) { _left }) \
                  } \
-                 fn nominal_result() -> alias.Functor(alias.Identity) { \
+                 fn nominal_result() -> alias.Functor[alias.Identity] { \
                    alias.Functor.mk_functor(.[A][B](step, value) { \
                      alias.Identity.mk_id(step(alias.Identity.un_id(value))) \
                    }) \
@@ -8987,16 +9027,19 @@ mod tests {
             "module test; \
              import __intrinsics__; \
              fn caller[A][B][C](value: A | B | C) -> A | B | C { \
-               __either__(A, B | C, A | B | C, value, \
-                 .(left: A) { __left__(A, B | C, .() { left }(())) }, \
-                 .(tail: B | C) { __right__(A, B | C, .() { tail }(())) }) \
+               __either__[A][ B | C][ A | B | C]( value, \
+                 .(left: A) { __left__[A][ B | C]( .() { left }(())) }, \
+                 .(tail: B | C) { __right__[A][ B | C]( .() { tail }(())) }) \
              }",
         )]);
         let Expr::EnrichedMatch {
             arms, scrutinee_ty, ..
         } = &routed_fn(&routed, "test", "caller").body
         else {
-            panic!("the opaque sum must retain its two-arm match")
+            panic!(
+                "the opaque sum must retain its two-arm match: {:#?}",
+                routed_fn(&routed, "test", "caller").body
+            )
         };
         assert_eq!(arms.len(), 2);
         let Type::Sum { left, right, .. } = scrutinee_ty else {
@@ -9265,8 +9308,8 @@ mod tests {
             "test.kio",
             "module test; \
              labels { boxed[A] <U> : A & U }; \
-             fn consume[U](boxed: Boxed(U), fallback: U) -> U { \
-               Boxed.get(U, boxed)(.[Hidden](_payload: U & Hidden) -> U { fallback }) \
+             fn consume[U](boxed: Boxed[U], fallback: U) -> U { \
+               Boxed.get[U](boxed)(.[Hidden](_payload: U & Hidden) -> U { fallback }) \
              }",
         )]);
         let Expr::LowCpsProjectorApply {
@@ -9309,7 +9352,7 @@ mod tests {
              host type I32 role(i32); \
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
-             fn caller() -> I32 { Pack.unpack(pack())(.[U](_payload: U) { 42(I32) }) }",
+             fn caller() -> I32 { Pack.unpack(pack())(.[U](_payload: U) { 42[I32] }) }",
         )]);
         let Expr::LowCpsProjectorApply {
             continuation_ty, ..
@@ -9336,7 +9379,7 @@ mod tests {
              host type I32 role(i32); \
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
-             fn caller() -> I32 { Pack.unpack(pack())(.[U](_payload) { 42(I32) }) }",
+             fn caller() -> I32 { Pack.unpack(pack())(.[U](_payload) { 42[I32] }) }",
         )]);
         let Expr::LowCpsProjectorApply {
             continuation_ty, ..
@@ -9365,8 +9408,8 @@ mod tests {
                let continuation = \
                  .[U](_payload: U) { .(left: I32, _right: I32) { left } }; \
                let _first = \
-                 Pack.unpack(pack())((I32 & I32) -> I32, continuation)((value(), value())); \
-               Pack.unpack(pack())((I32 & I32) -> I32, continuation)((value(), value())) \
+                 Pack.unpack(pack())[(I32 & I32) -> I32](continuation)((value(), value())); \
+               Pack.unpack(pack())[(I32 & I32) -> I32](continuation)((value(), value())) \
              }",
         )]);
         let Expr::Let {
@@ -9432,7 +9475,7 @@ mod tests {
                let f = .(left: I32, _right: I32) { left }; \
                let continuation = .[U](_payload: U) { f }; \
                let f = .(_pair: I32 & I32) { value() }; \
-               Pack.unpack(pack())((I32 & I32) -> I32, continuation) \
+               Pack.unpack(pack())[(I32 & I32) -> I32](continuation) \
              }",
         )]);
 
@@ -9543,8 +9586,8 @@ mod tests {
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
              fn caller() -> (I32 & I32) -> I32 { \
-               Pack.unpack(pack())( \
-                 (I32 & I32) -> I32, \
+               Pack.unpack(pack())[ \
+                 (I32 & I32) -> I32]( \
                  .[U](_payload: U) { .(left: I32, _right: I32) { left } } \
                ) \
              }",
@@ -9622,7 +9665,7 @@ mod tests {
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
              fn caller() -> N { \
-               Pack.unpack(pack())(. -> N, .[U](_value: U) { .() { value() } })() \
+               Pack.unpack(pack())[. -> N](.[U](_value: U) { .() { value() } })() \
              }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
@@ -9655,7 +9698,7 @@ mod tests {
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
              fn caller() -> N { \
-               Pack.unpack(pack())(. -> N, .[U](_value: U) { observe(); .() { value() } })() \
+               Pack.unpack(pack())[. -> N](.[U](_value: U) { observe(); .() { value() } })() \
              }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
@@ -9690,7 +9733,7 @@ mod tests {
              fn pack() -> Pack { Pack.mk_pack(()) } \
              fn resume(_unit: .) -> N { value() } \
              fn caller() -> N { \
-               Pack.unpack(pack())(. -> N, .[U](_value: U) { resume })() \
+               Pack.unpack(pack())[. -> N](.[U](_value: U) { resume })() \
              }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
@@ -9725,7 +9768,7 @@ mod tests {
              newtype Pack <U> : U { constructor mk_pack; projector unpack; }; \
              fn pack() -> Pack { Pack.mk_pack(()) } \
              fn caller() -> N { \
-               Pack.unpack(pack())(. -> N, .[U](_value: U) { resume })() \
+               Pack.unpack(pack())[. -> N](.[U](_value: U) { resume })() \
              }",
         )]);
         let Expr::LowIndirectCall { callee, args, .. } = &routed_fn(&routed, "test", "caller").body
@@ -9766,7 +9809,7 @@ mod tests {
                  host type N; \
                  host fn value(_unit: .) -> N; \
                  fn caller() -> N { \
-                   alias.Pack.unpack(alias.pack())(. -> N, .[U](_value: U) { .() { value() } })() \
+                   alias.Pack.unpack(alias.pack())[. -> N](.[U](_value: U) { .() { value() } })() \
                  }",
             ),
         ]);
@@ -9861,7 +9904,7 @@ mod tests {
             "test.kio",
             "module test; \
              type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A]() -> Lens(A, A) { \
+             fn target[A]() -> Lens[A][ A] { \
                (
                  , .(value: A) -> A { value }
                  , .(new_value: A, _old_value: A) -> A { new_value }
@@ -9920,7 +9963,7 @@ mod tests {
             "test.kio",
             "module test; \
              type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn target[A](_unit: .) -> Lens(A, A) { \
+             fn target[A](_unit: .) -> Lens[A][ A] { \
                let get = .(value: A) -> A { value }; \
                let put = .(new_value: A, _old_value: A) -> A { new_value }; \
                (get, put) \
@@ -9930,12 +9973,12 @@ mod tests {
             "test.kio",
             "module test; \
              type Lens[S][A] = (S -> A) & ((A & S) -> S); \
-             fn unrelated[A](_unit: .) -> Lens(A, A) { \
+             fn unrelated[A](_unit: .) -> Lens[A][ A] { \
                let get = .(value: A) -> A { value }; \
                let put = .(new_value: A, _old_value: A) -> A { new_value }; \
                (get, put) \
              } \
-             fn target[A](_unit: .) -> Lens(A, A) { \
+             fn target[A](_unit: .) -> Lens[A][ A] { \
                let get = .(value: A) -> A { value }; \
                let put = .(new_value: A, _old_value: A) -> A { new_value }; \
                (get, put) \
@@ -10472,13 +10515,13 @@ pub fn keep_right(value: Shared) -> Shared { value }
             (
                 "relay.kio",
                 "module relay; import origin as source; \
-                 pub type Box[A] = source.Box(A);",
+                 pub type Box[A] = source.Box[A];",
             ),
             (
                 "consumer.kio",
                 "module consumer; import relay as source; \
-                 fn make[A](value: A) -> source.Box(A) { \
-                   source.Box.make(A, value) \
+                 fn make[A](value: A) -> source.Box[A] { \
+                   source.Box.make[A](value) \
                  }",
             ),
         ]);
@@ -10504,17 +10547,17 @@ pub fn keep_right(value: Shared) -> Shared { value }
             (
                 "relay.kio",
                 "module relay; import origin as source; \
-                 pub type Alias[A] = source.Terminal(A);",
+                 pub type Alias[A] = source.Terminal[A];",
             ),
             (
                 "consumer.kio",
                 "module consumer; import relay(Alias); import relay as forwarded; \
-                 fn direct[A](value: A) -> Alias(A) { Alias.make(A, value) } \
-                 fn qualified[A](value: A) -> forwarded.Alias(A) { \
-                   forwarded.Alias.make(A, value) \
+                 fn direct[A](value: A) -> Alias[A] { Alias.make[A](value) } \
+                 fn qualified[A](value: A) -> forwarded.Alias[A] { \
+                   forwarded.Alias.make[A](value) \
                  } \
-                 fn constructor[A]() -> A -> Alias(A) { Alias.make(A) } \
-                 fn projector[A]() -> Alias(A) -> A { forwarded.Alias.open(A) }",
+                 fn constructor[A]() -> A -> Alias[A] { Alias.make[A] } \
+                 fn projector[A]() -> Alias[A] -> A { forwarded.Alias.open[A] }",
             ),
         ]);
 
@@ -10657,16 +10700,16 @@ pub fn keep_right(value: Shared) -> Shared { value }
             (
                 "relay.kio",
                 "module relay; import origin as source; \
-                 pub type Envelope[A] = source.Packed(A);",
+                 pub type Envelope[A] = source.Packed[A];",
             ),
             (
                 "consumer.kio",
                 "module consumer; import relay(Envelope); \
-                 fn construct[A](value: A) -> Envelope(A) { \
-                   Envelope.pack(A, ((), value)) \
+                 fn construct[A](value: A) -> Envelope[A] { \
+                   Envelope.pack[A](((), value)) \
                  } \
-                 fn project[A](value: Envelope(A)) -> . { \
-                   Envelope.visit(A, value)(.[U](_payload: U & A) { () }) \
+                 fn project[A](value: Envelope[A]) -> . { \
+                   Envelope.visit[A](value)(.[U](_payload: U & A) { () }) \
                  }",
             ),
         ]);
@@ -11071,7 +11114,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             "module model; \
              import list/core as list; \
              newtype A : . { constructor mk_a; projector un_a; }; \
-             pub type Row = list.List(.); \
+             pub type Row = list.List[.]; \
              pub type Identity[A] = A;",
         );
         let (_, entry) = package.modules().next().expect("one module");
@@ -11108,7 +11151,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             let next = (index + 1) % member_count;
             write!(
                 source,
-                "newtype N{index}[T{index}] : Id(N{next}(T{index})) {{ \
+                "newtype N{index}[T{index}] : Id[N{next}[T{index}]] {{ \
                    constructor make_n{index}; projector get_n{index}; \
                  }};"
             )
@@ -11670,7 +11713,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
             "module test; \
              host type N; \
              pub newtype Pack[A] <U> : A & U { constructor pack; projector unpack } \
-             host fn receiver() -> Pack(N); \
+             host fn receiver() -> Pack[N]; \
              host fn observe(value: N) -> .; \
              fn stored() -> N { \
                let unpack = Pack.unpack(receiver()); \
@@ -12754,7 +12797,7 @@ pub fn keep_right(value: Shared) -> Shared { value }
         let enriched = pipeline_to_enriched(
             "module x;\n\
              fn id[A](x: A) -> A { x }\n\
-             fn caller(y: .) -> . { id(., y) }",
+             fn caller(y: .) -> . { id[.](y) }",
         );
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;
@@ -12777,6 +12820,41 @@ pub fn keep_right(value: Shared) -> Shared { value }
                 .count(),
             1,
             "same-module lookup must preserve the callee signature"
+        );
+    }
+
+    #[test]
+    fn repacked_product_retains_actual_callback_abi() {
+        let span = Span::new(0, 0);
+        let unit = Type::Unit { meta: test_meta() };
+        let unary = fn_ty(unit.clone(), path_ty("Result"), 1);
+        let nullary = fn_ty(unit.clone(), path_ty("Result"), 0);
+        let expected = product_ty(product_ty(nullary, unit.clone()), unit.clone());
+        let actual = product_ty(product_ty(unary.clone(), unit.clone()), unit.clone());
+        let mut flat = Vec::new();
+        flatten_abi_value_slot(low_bound_ref("packet", span), &actual, span, &mut flat);
+        let mut cursor = 0;
+        let (value, recovered) = build_value_for_abi_slot(&flat, &mut cursor, &expected, span)
+            .expect("the product slots must reassemble");
+        assert_eq!(cursor, flat.len());
+        assert!(abi_type_shape_eq(&recovered, &actual));
+        assert!(!abi_type_shape_eq(&recovered, &expected));
+        assert!(
+            matches!(value, Expr::EnrichedTuple { synth_ty, .. } if abi_type_shape_eq(&synth_ty, &actual))
+        );
+        let mut missing_cursor = 0;
+        assert!(
+            build_value_for_abi_slot(
+                &flat[..flat.len() - 1],
+                &mut missing_cursor,
+                &expected,
+                span
+            )
+            .is_none()
+        );
+        assert_eq!(
+            missing_cursor, 0,
+            "failed reconstruction must not consume input"
         );
     }
 
@@ -12909,14 +12987,15 @@ pub fn keep_right(value: Shared) -> Shared { value }
 
     #[test]
     fn callback_body_generic_module_call_keeps_single_product_arg_grouped() {
-        let enriched = pipeline_to_enriched(
+        let enriched = full_pipeline_to_enriched(&[(
+            "x.kio",
             "module x;\n\
              fn pair_id[A](state: A & A) -> A & A { state }\n\
              fn consume[S][R](step: S -> R, state: S) -> R { step(state) }\n\
              fn caller[A](state: A & A) -> A & A {\n\
                consume(.(state: A & A) { pair_id(state) }, state)\n\
              }",
-        );
+        )]);
         let routed = route_package(&enriched);
         let m = routed.modules().next().expect("one module").1;
         let fn_def = m

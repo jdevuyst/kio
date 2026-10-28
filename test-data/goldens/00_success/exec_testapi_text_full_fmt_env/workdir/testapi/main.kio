@@ -6,7 +6,7 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 pub fn main() {
-  print(string_concat("text tier score: "(String), ""(String)));
-  print_i32(27(I32));
-  print("\n"(String))
+  print(string_concat("text tier score: "[String], ""[String]));
+  print_i32(27[I32]);
+  print("\n"[String])
 }

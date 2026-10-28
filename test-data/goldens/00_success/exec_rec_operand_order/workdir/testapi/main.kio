@@ -40,7 +40,7 @@ fn apply_i32(f: I32 -> I32, value: I32) -> I32 { f(value) }
 
 fn consume[A](f: A -> A, witness: A, tail: I32) -> I32 { let _ = f(witness); tail }
 
-fn consume_rank_n(f: [T] T -> T, tail: I32) -> I32 { let _ = f(., ()); tail }
+fn consume_rank_n(f: [T] T -> T, tail: I32) -> I32 { let _ = f[.](()); tail }
 
 fn consume_typed[A](tail: I32) -> I32 { tail }
 
@@ -140,7 +140,7 @@ rec(loop) fn deferred_call_order(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     mark("B", 28)
   } else {
-    consume(effectful_identity("A"), 0(I32), recur(cont) deferred_call_order(0))
+    consume(effectful_identity("A"), 0[I32], recur(cont) deferred_call_order(0))
   }
 }
 
@@ -161,7 +161,7 @@ rec(loop) fn value_shaped_type_arg_order(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     mark("D", 30)
   } else {
-    consume_typed(Identity(I32), recur(cont) value_shaped_type_arg_order(0))
+    consume_typed[Identity[I32]](recur(cont) value_shaped_type_arg_order(0))
   }
 }
 

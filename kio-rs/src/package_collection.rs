@@ -4933,7 +4933,7 @@ mod tests {
         let module = parsed_module(
             "module store; \
              newtype Plain : . { constructor mk; projector get; }; \
-             pub labels { box[*F][A]<X>: F(A) & X }; \
+             pub labels { box[*F][A]<X>: F[A] & X }; \
              labels Later[*G][B] = { box[*G][B]: _, flag: . }; \
              type {forwarded} = {box}; \
              rec { \
@@ -5528,7 +5528,7 @@ mod tests {
             "module dep/store; \
              fn _rehost_gdgphcgfcphdhegphcgf() -> . { () } \
              pub newtype Box[A] <X> : A & X { pub constructor make; pub projector open; }; \
-             pub fn keep[A](value: Box(A)) -> Box(A) { value } \
+             pub fn keep[A](value: Box[A]) -> Box[A] { value } \
              newtype Hidden : . { constructor make; projector open; }; \
              fn keep_hidden(value: Hidden) -> Hidden { value }",
         );
@@ -5890,12 +5890,12 @@ mod tests {
     fn retype_congruence_rejects_header_binder_kind_mismatch() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Token[*F] : [*G] G(.) -> G(.) { pub constructor mk; pub projector get; };",
+             pub newtype Token[*F] : [*G] G[.] -> G[.] { pub constructor mk; pub projector get; };",
         );
 
         let header_mismatch = parsed_module(
             "module core/store; \
-             pub newtype Token[A] : [*H] H(.) -> H(.) { pub constructor mk; pub projector get; };",
+             pub newtype Token[A] : [*H] H[.] -> H[.] { pub constructor mk; pub projector get; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, header_mismatch, &["Token"]);
         let error = validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -5925,12 +5925,12 @@ mod tests {
     fn retype_congruence_matches_same_kind_binders_alpha_equivalently() {
         let source = parsed_module(
             "module dep/store; \
-             pub newtype Token[*F] : [*G] G(.) -> G(.) { pub constructor mk; pub projector get; };",
+             pub newtype Token[*F] : [*G] G[.] -> G[.] { pub constructor mk; pub projector get; };",
         );
 
         let alpha_renamed = parsed_module(
             "module core/store; \
-             pub newtype Token[*A] : [*H] H(.) -> H(.) { pub constructor mk; pub projector get; };",
+             pub newtype Token[*A] : [*H] H[.] -> H[.] { pub constructor mk; pub projector get; };",
         );
         let (check, semantics) = canonical_retype_fixture(source, alpha_renamed, &["Token"]);
         validate_retype_congruence(&check, &semantics.pairs[0], &semantics.package)
@@ -6765,7 +6765,7 @@ mod tests {
         let source = parsed_module(
             "module dep/store; \
              pub type Payload[A] = [B] A -> B -> A; \
-             pub newtype Holder[B] : Payload(B) { pub constructor mk; pub projector get; };",
+             pub newtype Holder[B] : Payload[B] { pub constructor mk; pub projector get; };",
         );
         let alpha_renamed = parsed_module(
             "module core/store; \

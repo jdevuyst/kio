@@ -35,7 +35,8 @@ least one fixture per kind:
 - `macro_ufcs_receiver_scope` — macro callees beside grouped and tuple UFCS
   receivers in both directions, with ordinary parameter shadows
 - `04_operators_and_brackets` — reserved (`builtin`) ops vs. user ops,
-  brackets vs. separators
+  brackets vs. separators. This deliberately invalid token stream compares
+  lexical kinds and spans across tokenizers, without equating recovered entity roles.
 - `05_literals` — strings, ints, floats, bools
 - `06_comments` — line comments at file start, between tokens, and
   same-line trailing
@@ -75,6 +76,14 @@ least one fixture per kind:
   `#1` / `#42` placeholders, and `.#` / `.$$$$` placeholder-lambda
   intros
 - `08_module_smoke` — a tiny end-to-end module mixing several kinds
+- `47_call_stages` — singleton type supply in calls, literals, aliases and
+  higher-kinded types; successive value packets, UFCS boundaries, variadic
+  frames and multiple macro block prefixes
+- `48_call_stage_recovery` — malformed comma/empty/type brackets and an excluded
+  typed block-call prefix beside a following ordinary declaration. Native roles
+  stay snapshot-pinned; cross-tokenizer checks conserve lexical kinds and spans
+  through the malformed region, then require exact following-declaration roles.
+  Its completed module/import prefix is also checked independently.
 
 When the canonical vocabulary grows, add a fixture exercising the new
 kind here in the same change.

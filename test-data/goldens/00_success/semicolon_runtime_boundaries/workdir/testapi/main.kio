@@ -15,7 +15,7 @@ varop [* *] { foldr1 first keep }
 
 equiv first_message() {
   [* "boundaries", "discarded" *] <+> "ignored";
-  "boundaries"(String)
+  "boundaries"[String]
 }
 
 pub fn main() {

@@ -223,7 +223,7 @@ export function checkIncrementalHighlighting(parser, querySource) {
     ["module probe; fn run() { fn neighbor() { [* value }","module probe; fn run() { fn neighbor() { [* value } }"],
     ["module probe; fn run() { .x. { x1 } fn neighbor() { () } fn last() { () }","module probe; fn run() { .x. { x1 } fn neighbor() { () } fn last() { () } }"],
     ["module probe; fn run() { fn(value); pub(value); pure(value)","module probe; fn run() { fn(value); pub(value); pure(value) }"],
-    [body("[*F] F(.) -> F(.)"), body("[* F *]")],
+    ["module source; fn run() { id[[*F] F[.] -> F[.]] }", body("[* F *]")],
     [body("[[ x, [[ y ]] ]]"), body("[[ x, [[ let(y) ]] ]]")],
     ["module source; fn run() { id([* let(x),", body("[* let(x) *]")],
     ["module source; fn run() { id([[ let(x),", body("[[ let(x) ]]")],

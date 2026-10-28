@@ -3196,7 +3196,7 @@ mod tests {
         let pkg = build_package(
             &["module main; \
                pub fn relay(f: . -> .) -> . -> . { f } \
-               host fn stages(f: [A, B] A -> B -> A) -> .;"],
+               host fn stages(f: [A][ B] A -> B -> A) -> .;"],
             "bridge { main; }",
         );
         let artifact = render_stub_artifact(&pkg, "facade", None).expect("render");
@@ -3256,7 +3256,7 @@ mod tests {
         );
         let second = build_package(
             &[
-                "module beta; host type Token; host fn extra(f: [A, B] A -> B -> A) -> .; host fn use(f: [A] A -> A) -> .;",
+                "module beta; host type Token; host fn extra(f: [A][ B] A -> B -> A) -> .; host fn use(f: [A] A -> A) -> .;",
             ],
             "bridge { beta; }",
         );
@@ -3313,7 +3313,7 @@ mod tests {
     fn readable_declaration_views_alias_exact_classes_and_constructor_indices() {
         let pkg = build_package(
             &["module api; host type Token; host type Box[A]; \
-               pub fn keep[A](value: Box(A)) -> Box(A) { value } \
+               pub fn keep[A](value: Box[A]) -> Box[A] { value } \
                pub newtype Wrapper[A] : Token & A { pub constructor wrap; pub projector unwrap }"],
             "bridge { api; }",
         );
@@ -3360,7 +3360,7 @@ mod tests {
         let pkg = build_package(&[source], "bridge { api; }");
         let expanded = build_package(
             &[&format!(
-                "{source} host fn earlier(f: [A, B] A -> B -> A) -> .;"
+                "{source} host fn earlier(f: [A][B] A -> B -> A) -> .;"
             )],
             "bridge { api; }",
         );
@@ -3447,7 +3447,7 @@ mod tests {
                pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector un_shadow; }; \
                pub newtype Pack <T> : T { pub constructor make_pack; pub projector un_pack; }; \
                host fn apply_poly(f: [T] T -> T) -> Str; \
-               host fn round_shadow(value: Shadow(Box(Str))) -> Shadow(Box(Str)); \
+               host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; \
                host fn round_pack(value: Pack) -> Pack; \
                pub fn ordered(value: T)[T](later: T) -> T { later }"],
             "bridge { main; }",
@@ -3691,7 +3691,7 @@ mod tests {
                import __intrinsics__; \
                host type I32 role(i32); host type Str role(str); \
                pub fn split(p: (I32 & Str)) -> (I32 | Str) { \
-                 __left__(I32, Str, __fst__(I32, Str, p)) }"],
+                 __left__[I32][ Str]( __fst__[I32][ Str]( p)) }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4264,10 +4264,10 @@ mod tests {
                host type Box[A]; \
                host fn round_count(value: Count) -> Count; \
                host fn round_token(value: Token) -> Token; \
-               host fn round_box[A](value: Box(A)) -> Box(A); \
+               host fn round_box[A](value: Box[A]) -> Box[A]; \
                pub fn keep_count(value: Count) -> Count { value } \
                pub fn keep_token(value: Token) -> Token { value } \
-               pub fn keep_box[A](value: Box(A)) -> Box(A) { value }"],
+               pub fn keep_box[A](value: Box[A]) -> Box[A] { value }"],
             "bridge { api; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4310,10 +4310,10 @@ mod tests {
                pub newtype Box[A] : A { \
                  pub constructor make_box; pub projector read_box; \
                }; \
-               pub newtype Functor[*F] : F(String) { \
+               pub newtype Functor[*F] : F[String] { \
                  pub constructor make_functor; pub projector read_functor; \
                }; \
-               host fn round(value: Functor(Box)) -> Functor(Box);"],
+               host fn round(value: Functor[Box]) -> Functor[Box];"],
             "bridge { api; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4354,7 +4354,7 @@ mod tests {
                  pub constructor make_recursive; \
                  pub projector read_recursive; \
                }; \
-               pub fn base() -> . | Recursive { __left__(., Recursive, ()) }"],
+               pub fn base() -> . | Recursive { __left__[.][ Recursive]( ()) }"],
             "bridge { main; }",
         );
         let stub = lower_package_to_stub(&pkg, "greeter").expect("render");
@@ -4402,7 +4402,7 @@ mod tests {
                  pub constructor make_live_token; \
                  projector read_live_token; \
                }; \
-               host fn current(value: Live & Live_box(Live_token(.))) -> Live; \
+               host fn current(value: Live & Live_box[Live_token[.]]) -> Live; \
                pub fn echo(value: Live) -> Live { value }"],
             "bridge { api; }",
         );
@@ -4418,7 +4418,7 @@ v(1) {
           pub constructor make_retired_token;
           projector read_retired_token;
         };
-        host fn old(value: Retired & Retired_box(Retired_token(.))) -> Retired;
+        host fn old(value: Retired & Retired_box[Retired_token[.]]) -> Retired;
       }
     }
   }

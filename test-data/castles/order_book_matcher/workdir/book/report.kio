@@ -185,7 +185,7 @@ fn level_line(price: I32, qty: I32, orders: I32) -> String {
 /// One past the last order of the level that starts before `i`. The queue
 /// is sorted by price, so a level is a run of equal prices and nothing
 /// else can be one.
-rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
+rec(loop) fn level_end(i: I32, price: I32, orders: Array[Order]) -> I32 {
   if(leq_i32(depth(orders), i)) {
     i
   } else if(int_eq(price_of(at(orders, i)), price)) {
@@ -195,7 +195,7 @@ rec(loop) fn level_end(i: I32, price: I32, orders: Array(Order)) -> I32 {
   }
 }
 
-rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I32 {
+rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array[Order]) -> I32 {
   if(leq_i32(end, i)) {
     total
   } else {
@@ -203,7 +203,7 @@ rec(loop) fn level_qty(i: I32, end: I32, total: I32, orders: Array(Order)) -> I3
   }
 }
 
-rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
+rec(loop) fn print_orders(i: I32, end: I32, orders: Array[Order]) {
   if(leq_i32(end, i)) {
     ()
   } else {
@@ -212,7 +212,7 @@ rec(loop) fn print_orders(i: I32, end: I32, orders: Array(Order)) {
   }
 }
 
-rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
+rec(loop) fn print_levels(i: I32, orders: Array[Order]) {
   if(leq_i32(depth(orders), i)) {
     ()
   } else {
@@ -224,7 +224,7 @@ rec(loop) fn print_levels(i: I32, orders: Array(Order)) {
   }
 }
 
-fn print_side(orders: Array(Order)) {
+fn print_side(orders: Array[Order]) {
   if(is_empty(orders)) { print("    (empty)\n") } else { print_levels(0, orders) }
 }
 

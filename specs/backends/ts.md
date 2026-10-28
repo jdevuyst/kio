@@ -359,7 +359,7 @@ those host-supplied value ranges. Kio source literals are checked before emissio
 
 A `host type Foo;` without a `role(...)` annotation is the direct slot
 `B["<module>"]["Foo"]`. A declaration `host type Array[T];` is a positive-arity
-slot constrained to `<Handle>TypeLambda<readonly [unknown]>`; `Array(A)` renders
+slot constrained to `<Handle>TypeLambda<readonly [unknown]>`; `Array[A]` renders
 as `<Handle>Apply<B["<module>"]["Array"], readonly [A]>`. Higher arities use
 longer tuples, and a non-saturating prefix uses `<Handle>Bind`. These are
 compile-time relations only: the JavaScript still carries the host's values by
@@ -425,7 +425,7 @@ projector reveals it only to its generic CPS continuation.
 
 An already atomic boundary carrier, such as a public opaque or one-member
 newtype, cuts that recursion walk. Therefore an enclosing payload-visible
-wrapper such as `Root : Hidden(Root)` remains the structural
+wrapper such as `Root : Hidden[Root]` remains the structural
 `{ Root: Hidden<Root> }` JS shape rather than becoming nominal. The `.d.ts`
 uses a private structural interface only as a finite name for the recursive
 reference; the interface has no brand and does not remove the host's ability
@@ -485,7 +485,7 @@ TypeScript is in the `typed-dynamic` family, whose HKT strategy is the
 **natural-exact skin**
 ([`README.md` § Higher-kinded types](README.md#higher-kinded-types)). The
 runtime remains the JS backend's byte-identical, type-erased `.js`: an
-application `F(A)` adds no runtime representation or type witness
+application `F[A]` adds no runtime representation or type witness
 ([`js.md` § Higher-kinded types](js.md#higher-kinded-types)). The `.d.ts`
 preserves the constructor relation structurally; values still use the JS
 backend's documented structural and nominal boundary representations:
@@ -534,7 +534,7 @@ types, selected host types, and public Kio newtype constructors available by
 their readable declaration paths for generic host-side composition.
 
 **Polymorphic newtype payloads.** The dictionary pattern
-(`pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)`) needs no special
+(`pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]`) needs no special
 HKT representation in the `.js`: bound types erase at runtime, but the stored
 callable retains the application stages described in
 [`README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads).
@@ -608,7 +608,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() { print("hello from kio\n"(String)) }
+pub fn main() { print("hello from kio\n"[String]) }
 ```
 
 `kio build ts` writes `out/ts/greeter.js` (byte-identical to `target=js`) and
@@ -669,7 +669,7 @@ import __intrinsics__;
 import pair_swap(I32, String);
 
 pub fn pair_swap(p: (I32 & String)) -> (String & I32) {
-  __pair__(String, I32, __snd__(I32, String, p), __fst__(I32, String, p))
+  __pair__[String][I32](__snd__[I32][String](p), __fst__[I32][String](p))
 }
 ```
 

@@ -22,13 +22,15 @@ pub labels Value = { v_int: I32 } | { v_text: String, v_width: I32 };
 /// for data the host cannot compare.
 pub labels Maybe_int = { some_int: I32 } | { no_int: . };
 
-pub fn int_val(n: I32) -> Value { {v_int = n}.>widen_sum(Value) }
+pub fn int_val(n: I32) -> Value { ({v_int = n}.>widen_sum)[Value] }
 
-pub fn text_val(s: String, width: I32) -> Value { {v_text = s, v_width = width}.>widen_sum(Value) }
+pub fn text_val(s: String, width: I32) -> Value {
+  ({v_text = s, v_width = width}.>widen_sum)[Value]
+}
 
-pub fn some_int(n: I32) -> Maybe_int { {some_int = n}.>widen_sum(Maybe_int) }
+pub fn some_int(n: I32) -> Maybe_int { ({some_int = n}.>widen_sum)[Maybe_int] }
 
-pub fn no_int() -> Maybe_int { {no_int=}.>widen_sum(Maybe_int) }
+pub fn no_int() -> Maybe_int { ({no_int=}.>widen_sum)[Maybe_int] }
 
 pub fn some_int_of(n: Some_int) -> I32 { n.?{some_int} }
 

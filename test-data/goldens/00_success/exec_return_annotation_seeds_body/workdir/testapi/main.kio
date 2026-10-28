@@ -30,4 +30,4 @@ fn show_or(x: String | I32) {
   }
 }
 
-pub fn main() { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum(7(I32)))); print("\n") }
+pub fn main() { show_opt(widen(42)); print("\n"); show_or(flip(widen_sum(7[I32]))); print("\n") }

@@ -17,8 +17,8 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat, string_eq);
 
-fn initial_yard() -> Array(String) {
-  let yard = array_make_empty(String, ());
+fn initial_yard() -> Array[String] {
+  let yard = array_make_empty[String](());
   array_push(yard, "A1");
   array_push(yard, "B7");
   array_push(yard, "empty");
@@ -29,7 +29,7 @@ fn initial_yard() -> Array(String) {
 
 fn is_empty(slot: String) -> Bool { string_eq(slot, "empty") }
 
-rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I32) -> I32 {
+rec(loop) fn occupied_count(yard: Array[String], index: I32, last: I32, count: I32) -> I32 {
   if(leq_i32(index, last)) {
     if(is_empty(array_get(yard, index))) {
       recur occupied_count(yard, add_i32(index, 1), last, count)
@@ -41,7 +41,7 @@ rec(loop) fn occupied_count(yard: Array(String), index: I32, last: I32, count: I
   }
 }
 
-fn render(yard: Array(String)) -> String {
+fn render(yard: Array[String]) -> String {
   string_concat(
   , array_get(yard, 0)
   , string_concat(
@@ -63,7 +63,7 @@ fn render(yard: Array(String)) -> String {
   )
 }
 
-fn safe(yard: Array(String)) -> Bool { is_empty(array_get(yard, 0)) }
+fn safe(yard: Array[String]) -> Bool { is_empty(array_get(yard, 0)) }
 
 pub fn main() {
   let before = initial_yard();

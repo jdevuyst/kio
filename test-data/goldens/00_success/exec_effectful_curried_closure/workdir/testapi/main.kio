@@ -18,8 +18,8 @@ fn make_logger() -> String -> String -> . {
 pub fn main() {
   let log = make_logger();
   // Full per-group application of the effectful curried closure value.
-  log("alpha\n"(String))("beta\n"(String));
+  log("alpha\n"[String])("beta\n"[String]);
   // Partial application: bind the first group, then apply the second.
-  let log_gamma = make_logger()("gamma\n"(String));
-  log_gamma("delta\n"(String))
+  let log_gamma = make_logger()("gamma\n"[String]);
+  log_gamma("delta\n"[String])
 }

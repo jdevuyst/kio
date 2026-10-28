@@ -10,6 +10,6 @@ import testapi/io(print);
 fn pick_string(p: String & I32 & Bool) -> String { one_prod(p) }
 
 pub fn main() {
-  let triple = ("one_prod: picked\n"(String), 1(I32), .t(Bool));
+  let triple = ("one_prod: picked\n"[String], 1[I32], .t[Bool]);
   print(pick_string(triple))
 }

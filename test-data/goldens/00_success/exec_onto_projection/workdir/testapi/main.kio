@@ -14,6 +14,6 @@ import testapi/io(print);
 fn project_string(p: String & I32 & I32) -> String { onto(p) }
 
 pub fn main() {
-  let triple = ("from triple\n"(String), 1(I32), 2(I32));
+  let triple = ("from triple\n"[String], 1[I32], 2[I32]);
   print(project_string(triple))
 }

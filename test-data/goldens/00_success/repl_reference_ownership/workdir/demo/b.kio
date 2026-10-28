@@ -19,7 +19,7 @@ pure fn build_impl(ct: __Comptime__) -> __Checked_term__ { __term_unit__(ct) }
 
 pub macro build : . -> . { impl build_impl }
 
-fn local() -> Num { truth(Num) }
+fn local() -> Num { truth[Num] }
 
 fn bang() { build(()) }
 

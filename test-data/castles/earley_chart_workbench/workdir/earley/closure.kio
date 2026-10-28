@@ -30,7 +30,7 @@ rec(loop) fn predict(
   }
 }
 
-fn scan(tokens: Array(I32), columns: model.Chart, position: I32, token: I32, state: model.Item) {
+fn scan(tokens: Array[I32], columns: model.Chart, position: I32, token: I32, state: model.Item) {
   if(arith.leq_i32(arrays.array_len(tokens), position)) {
     ()
   } else if(numbers.equal(arrays.array_get(tokens, position), token)) {
@@ -83,7 +83,7 @@ fn complete(grammar: model.Grammar, columns: model.Chart, position: I32, state: 
 
 fn process(
 , grammar: model.Grammar
-, tokens: Array(I32)
+, tokens: Array[I32]
 , columns: model.Chart
 , position: I32
 , state: model.Item
@@ -100,7 +100,7 @@ fn process(
 
 rec(loop) fn sweep(
 , grammar: model.Grammar
-, tokens: Array(I32)
+, tokens: Array[I32]
 , columns: model.Chart
 , position: I32
 , index: I32
@@ -122,7 +122,7 @@ rec(loop) fn sweep(
 
 pub rec(loop) fn close(
 , grammar: model.Grammar
-, tokens: Array(I32)
+, tokens: Array[I32]
 , columns: model.Chart
 , position: I32
 ) {

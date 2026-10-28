@@ -14,13 +14,13 @@ import testapi/text as text;
 
 newtype Snapshot : String & tree.Node { constructor make; projector open }
 
-pub newtype Session : zipper.Cursor & lists.List(zipper.Cursor) & lists.List(Snapshot) {
+pub newtype Session : zipper.Cursor & lists.List[zipper.Cursor] & lists.List[Snapshot] {
   constructor make;
   projector open
   }
 
 pub fn start() -> Session {
-  Session.make((zipper.start(tree.leaf("document")), lists.nil(_), lists.nil(_)))
+  Session.make((zipper.start(tree.leaf("document")), lists.nil[_], lists.nil[_]))
 }
 
 pub fn error(state: Session, message: String) -> Session {
@@ -53,7 +53,7 @@ pub fn apply(state: Session, operation: zipper.Cursor -> (zipper.Cursor | String
 pub fn undo(state: Session) -> Session {
   let .(_cursor, history, snapshots) = Session.open(state);
   match(lists.uncons(history)) {
-    .(previous: zipper.Cursor, rest: lists.List(zipper.Cursor)) {
+    .(previous: zipper.Cursor, rest: lists.List[zipper.Cursor]) {
       describe_cursor(previous);
       Session.make((previous, rest, snapshots))
     };
@@ -96,9 +96,9 @@ pub fn show(state: Session) -> Session {
   state
 }
 
-rec(loop) fn render_snapshots(snapshots: lists.List(Snapshot)) {
+rec(loop) fn render_snapshots(snapshots: lists.List[Snapshot]) {
   match(lists.uncons(snapshots)) {
-    .(saved: Snapshot, rest: lists.List(Snapshot)) {
+    .(saved: Snapshot, rest: lists.List[Snapshot]) {
       let .(title, root) = Snapshot.open(saved);
       io.print(title.>text.string_concat("\n").>>text.string_concat("snapshot "));
       tree.render(root);

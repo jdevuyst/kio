@@ -126,7 +126,7 @@ Use `recur(poly)` when the recursive call supplies a different type argument:
 
 ```kio {@module}
 pub rec(loop) fn steps[A](n: I32, marker: A) -> I32 {
-  if(leq_i32(n, 0)) { n } else { recur(poly) steps(String, sub_i32(n, 1), "next") }
+  if(leq_i32(n, 0)) { n } else { recur(poly) steps[String](sub_i32(n, 1), "next") }
 }
 ```
 
@@ -193,7 +193,7 @@ the general interface can supply an ordinary adapter for such groups:
 
 ```kio {@module}
 fn ordinary_loop[S][R](step: S -> (S | R), state: S) -> R {
-  loop_reentry(S, R, .(_reenter: S -> R, current: S) -> S | R { step(current) }, state)
+  loop_reentry[S][R](.(_reenter: S -> R, current: S) -> S | R { step(current) }, state)
 }
 ```
 
@@ -213,15 +213,15 @@ Recursive types use the same contextual word but different, capability-free
 forms. A singleton nominal marks its own recursive scope:
 
 ```kio {@module}
-rec newtype Chain[A] : . | (A & Chain(A)) { constructor chain; projector un_chain }
+rec newtype Chain[A] : . | (A & Chain[A]) { constructor chain; projector un_chain }
 ```
 
 Genuinely mutual declarations use bare braces, with no loop name:
 
 ```kio {@module}
 rec {
-  type Tree[A] = Branch(A);
-  newtype Branch[A] : . | (A & Tree(A) & Tree(A)) { constructor branch; projector un_branch }
+  type Tree[A] = Branch[A];
+  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) { constructor branch; projector un_branch }
 }
 ```
 

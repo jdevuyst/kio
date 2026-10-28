@@ -33,24 +33,24 @@ fn cell_back(c: Cell) -> I32 { c.?{back} }
 fn cell_fits(c: Cell) -> I32 { c.?{fits} }
 
 /// The three columns, one entry per break point `0 .. n`.
-pub newtype Table : List(I32) & List(I32) & List(I32) { pub constructor pack; pub projector unpack }
+pub newtype Table : List[I32] & List[I32] & List[I32] { pub constructor pack; pub projector unpack }
 
-fn make_table(best: List(I32), back: List(I32), fits: List(I32)) -> Table {
+fn make_table(best: List[I32], back: List[I32], fits: List[I32]) -> Table {
   Table.pack((best, back, fits))
 }
 
-pub fn table_best(t: Table) -> List(I32) {
-  let .(best: List(I32), _back: List(I32), _fits: List(I32)) = t.>Table.unpack;
+pub fn table_best(t: Table) -> List[I32] {
+  let .(best: List[I32], _back: List[I32], _fits: List[I32]) = t.>Table.unpack;
   best
 }
 
-pub fn table_back(t: Table) -> List(I32) {
-  let .(_best: List(I32), back: List(I32), _fits: List(I32)) = t.>Table.unpack;
+pub fn table_back(t: Table) -> List[I32] {
+  let .(_best: List[I32], back: List[I32], _fits: List[I32]) = t.>Table.unpack;
   back
 }
 
-pub fn table_fits(t: Table) -> List(I32) {
-  let .(_best: List(I32), _back: List(I32), fits: List(I32)) = t.>Table.unpack;
+pub fn table_fits(t: Table) -> List[I32] {
+  let .(_best: List[I32], _back: List[I32], fits: List[I32]) = t.>Table.unpack;
   fits
 }
 
@@ -93,7 +93,7 @@ rec(loop) fn scan(
 , last: Bool
 , used: I32
 , rev_words: Words
-, rev_best: List(I32)
+, rev_best: List[I32]
 , acc: Cell
 ) -> Cell {
   match(rev_words.>List.unpack) {
@@ -131,5 +131,5 @@ rec(loop) fn fill(j: I32, n: I32, column: I32, rest: Words, rev_words: Words, ac
 /// predecessor and no candidate starts, and both `-1`s print as `-`.
 pub fn solve(xs: Words, column: I32) -> Table {
   let seed = make_table(list.one(0), list.one(-1), list.one(-1));
-  fill(1, list.len(xs), column, list.tail_of(xs), list.push_head(xs, list.nil(Word)), seed)
+  fill(1, list.len(xs), column, list.tail_of(xs), list.push_head(xs, list.nil[Word]), seed)
 }

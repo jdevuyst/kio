@@ -41,8 +41,8 @@ pub fn in_bounds(row: I32, col: I32) -> Bool {
 
 pub fn cell_index(row: I32, col: I32) -> I32 { arith.add_i32(arith.mul_i32(row, width()), col) }
 
-pub fn build_mines() -> Array(Bool) {
-  let mines = array.array_make_filled(cell_count(), .f);
+pub fn build_mines() -> Array[Bool] {
+  let .(mines: Array[Bool]) = array.array_make_filled(cell_count(), .f);
   array.array_set(mines, 1, .t);
   array.array_set(mines, 5, .t);
   array.array_set(mines, 11, .t);
@@ -52,8 +52,8 @@ pub fn build_mines() -> Array(Bool) {
   mines
 }
 
-pub fn build_revealed() -> Array(Bool) {
-  let revealed = array.array_make_filled(cell_count(), .f);
+pub fn build_revealed() -> Array[Bool] {
+  let .(revealed: Array[Bool]) = array.array_make_filled(cell_count(), .f);
   array.array_set(revealed, 0, .t);
   array.array_set(revealed, 6, .t);
   array.array_set(revealed, 7, .t);
@@ -65,10 +65,10 @@ pub fn build_revealed() -> Array(Bool) {
   revealed
 }
 
-pub fn mine_at(mines: Array(Bool), row: I32, col: I32) -> Bool {
+pub fn mine_at(mines: Array[Bool], row: I32, col: I32) -> Bool {
   if(in_bounds(row, col)) { array.array_get(mines, cell_index(row, col)) } else { .f }
 }
 
-pub fn revealed_at(revealed: Array(Bool), row: I32, col: I32) -> Bool {
+pub fn revealed_at(revealed: Array[Bool], row: I32, col: I32) -> Bool {
   if(in_bounds(row, col)) { array.array_get(revealed, cell_index(row, col)) } else { .f }
 }

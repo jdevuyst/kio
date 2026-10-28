@@ -88,7 +88,7 @@ __INSERT_CODE_HERE__
 -->
 
 ```kio {@inject}
-fn inject[A][B](value: A) -> A | B { widen_sum(value, A | B) }
+fn inject[A][B](value: A) -> A | B { widen_sum(value)[A | B] }
 ```
 
 Importing a dependency does not automatically expose it through the consumer's
@@ -109,13 +109,13 @@ is strongly normalizing.
 - [`list`](../../test-data/poc/list/) is a generic cons list with O(1)
   constructors and accessors plus loop-driven folds and transformations.
 - [`option`](../../test-data/poc/option/) represents optional values as the
-  structural sum `Present(A) | .`, with constructors, folds, mapping, binding,
+  structural sum `Present[A] | .`, with constructors, folds, mapping, binding,
   and collection helpers.
 - [`queue`](../../test-data/poc/queue/) is a persistent FIFO queue using the
   two-list representation, with amortized O(1) enqueue/dequeue behavior and
   explicit invariant helpers.
 - [`result`](../../test-data/poc/result/) is a right-biased structural
-  `Result(T, E) = T | E` with construction, folding, mapping, binding,
+  `Result[T][ E] = T | E` with construction, folding, mapping, binding,
   recovery, and operator vocabulary.
 - [`vec`](../../test-data/poc/vec/) is a persistent indexed vector backed by a
   binary digit trie, with logarithmic lookup, update, and append paths.
@@ -230,7 +230,7 @@ import list/core as lists;
 import list/list as traversal;
 
 pub fn subtotal(first: traversal.I32, second: traversal.I32) -> traversal.I32 {
-  let prices = lists.cons(first, lists.cons(second, lists.nil(_)));
+  let prices = lists.cons(first, lists.cons(second, lists.nil[_]));
   traversal.foldl(traversal.add_i32, 0, prices)
 }
 ```

@@ -2,7 +2,7 @@ module main;
 
 import macros(Box, macro ignore);
 
-host fn boxed[A](callback: . -> .) -> Box(A);
+host fn boxed[A](callback: . -> .) -> Box[A];
 
 fn run() {
   let _result = ignore(boxed(.() { () }));

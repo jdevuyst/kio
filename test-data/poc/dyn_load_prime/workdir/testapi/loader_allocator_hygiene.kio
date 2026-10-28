@@ -15,7 +15,7 @@ fn probe_image() -> String {
   "mk_outer;\n  pub projector un_outer;\n  };\n\npub newtype Free <U> : Zzcps_r "
   "& U {\n  constructor mk_free;\n  pub projector un_free;\n  };\n\npackage "
   "allocator_probe_pkg;\n\nbridge { allocator_probe; hostapi; }\n\nmodule "
-  "hostapi;\n\nhost type Zzcps_r;\n"(String)
+  "hostapi;\n\nhost type Zzcps_r;\n"[String]
 }
 
 // An unused private alias whose target cannot be resolved is outside the
@@ -25,14 +25,14 @@ fn unused_malformed_alias_image() -> String {
   "module alias_probe;\n\nimport provider as p;\n\ntype Bad = missing.Missing;\n"
   "type Good = p.Good;\n\npub fn ok() -> . { () }\n\npackage alias_probe_pkg;\n\n"
   "bridge { alias_probe; provider; }\n\nmodule provider;\n\npub newtype Good : "
-  ". { pub constructor make; pub projector open; };\n"(String)
+  ". { pub constructor make; pub projector open; };\n"[String]
 }
 
 // Selecting the malformed alias as a callable member head is different: body
 // parsing needs a concrete terminal nominal and must reject the image.
 fn used_malformed_alias_image() -> String {
   "module alias_probe;\n\ntype Bad = missing.Missing;\n\npub fn broken() -> . { "
-  "Bad.make(()) }\n\npackage alias_probe_pkg;\n\nbridge { alias_probe; }\n"(String)
+  "Bad.make(()) }\n\npackage alias_probe_pkg;\n\nbridge { alias_probe; }\n"[String]
 }
 
 // The declarations are written in legal lexical order. Resolving the final
@@ -66,26 +66,26 @@ fn long_identity_alias_chain_image() -> String {
   "Forward60;\ntype Forward62 = Forward61;\ntype Forward63 = Forward62;\n\npub "
   "fn run() -> . { Forward63.make(()) }\n\npackage alias_chain_pkg;\n\nbridge { "
   "alias_chain; provider; }\n\nmodule provider;\n\npub newtype Terminal : . { "
-  "pub constructor make; pub projector open; };\n"(String)
+  "pub constructor make; pub projector open; };\n"[String]
 }
 
 fn unused_identity_alias_cycle_image() -> String {
   "module alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub "
-  "fn ok() -> . { () }\n\npackage alias_cycle_pkg;\n\nbridge { alias_cycle; }\n"(String)
+  "fn ok() -> . { () }\n\npackage alias_cycle_pkg;\n\nbridge { alias_cycle; }\n"[String]
 }
 
 fn used_identity_alias_cycle_image() -> String {
   "module alias_cycle;\n\nrec { type Left = Right; type Right = Left; }\n\npub "
   "fn broken() -> . { Left.make(()) }\n\npackage alias_cycle_pkg;\n\nbridge { "
-  "alias_cycle; }\n"(String)
+  "alias_cycle; }\n"[String]
 }
 
 fn parenthesized_identity_alias_image() -> String {
   "module alias_grouped;\n\nimport provider as p;\n\ntype Wrapped[A] = "
-  "((p.Terminal((A))));\n\npub fn run() -> . { Wrapped.open(., "
-  "Wrapped.make(., ())) }\n\npackage alias_grouped_pkg;\n\nbridge { "
-  "alias_grouped; provider; }\n\nmodule provider;\n\npub newtype Terminal[A] : "
-  "A { pub constructor make; pub projector open; };\n"(String)
+  "((p.Terminal[((A))]));\n\npub fn run() -> . { "
+  "Wrapped.open[.](Wrapped.make[.](())) }\n\npackage alias_grouped_pkg;\n\n"
+  "bridge { alias_grouped; provider; }\n\nmodule provider;\n\npub newtype "
+  "Terminal[A] : A { pub constructor make; pub projector open; };\n"[String]
 }
 
 fn grouped_structural_alias_image() -> String {
@@ -93,23 +93,61 @@ fn grouped_structural_alias_image() -> String {
   "((p.Terminal & .));\n\npub fn broken() -> . { Wrapped.make(()) }\n\npackage "
   "alias_grouped_bad_pkg;\n\nbridge { alias_grouped_bad; provider; }\n\nmodule "
   "provider;\n\npub newtype Terminal : . { pub constructor make; pub "
-  "projector open; };\n"(String)
+  "projector open; };\n"[String]
 }
 
 fn grouped_partial_alias_image() -> String {
   "module alias_grouped_partial;\n\nimport provider as p;\n\ntype Wrapped[A][B] "
-  "= ((p.Terminal(A)));\n\npub fn broken() -> . { Wrapped.make(., ., ()) }\n\n"
+  "= ((p.Terminal[A]));\n\npub fn broken() -> . { Wrapped.make[.][.](()) }\n\n"
   "package alias_grouped_partial_pkg;\n\nbridge { alias_grouped_partial; "
   "provider; }\n\nmodule provider;\n\npub newtype Terminal[A][B] : . { pub "
-  "constructor make; pub projector open; };\n"(String)
+  "constructor make; pub projector open; };\n"[String]
 }
 
 fn grouped_reordered_alias_image() -> String {
   "module alias_grouped_reordered;\n\nimport provider as p;\n\ntype "
-  "Wrapped[A][B] = ((p.Terminal(B, A)));\n\npub fn broken() -> . { "
-  "Wrapped.make(., ., ()) }\n\npackage alias_grouped_reordered_pkg;\n\nbridge { "
+  "Wrapped[A][B] = ((p.Terminal[B][A]));\n\npub fn broken() -> . { "
+  "Wrapped.make[.][.](()) }\n\npackage alias_grouped_reordered_pkg;\n\nbridge { "
   "alias_grouped_reordered; provider; }\n\nmodule provider;\n\npub newtype "
-  "Terminal[A][B] : . { pub constructor make; pub projector open; };\n"(String)
+  "Terminal[A][B] : . { pub constructor make; pub projector open; };\n"[String]
+}
+
+fn higher_kind_identity_alias_image() -> String {
+  "module alias_higher; import provider as p; type Wrapped[*F] = "
+  "p.Terminal[F]; fn run[*G]() -> . { Wrapped.open[G](Wrapped.make[G](())) "
+  "} package alias_higher_pkg; bridge { alias_higher; provider; } module "
+  "provider; pub newtype Terminal[*F] : . { pub constructor make; pub "
+  "projector open; };"[String]
+}
+
+fn mismatched_kind_identity_alias_image() -> String {
+  "module alias_wrong_kind; import provider as p; type Wrapped[F] = "
+  "p.Terminal[F]; fn run() -> . { Wrapped.make[.](()) } package "
+  "alias_wrong_kind_pkg; bridge { alias_wrong_kind; provider; } module "
+  "provider; pub newtype Terminal[*F] : . { pub constructor make; pub "
+  "projector open; };"[String]
+}
+
+fn extra_identity_alias_argument_image() -> String {
+  "module alias_extra; import provider as p; type Wrapped[A] = "
+  "p.Terminal[A][A]; fn run() -> . { Wrapped.make[.](()) } package "
+  "alias_extra_pkg; bridge { alias_extra; provider; } module provider; pub "
+  "newtype Terminal[A] : . { pub constructor make; pub projector open; };"[String]
+}
+
+fn empty_identity_alias_argument_image() -> String {
+  "module alias_empty; import provider as p; type Wrapped[A] = "
+  "p.Terminal[]; fn run() -> . { Wrapped.make[.](()) } package "
+  "alias_empty_pkg; bridge { alias_empty; provider; } module provider; pub "
+  "newtype Terminal[A] : . { pub constructor make; pub projector open; };"[String]
+}
+
+fn multiple_identity_alias_arguments_image() -> String {
+  "module alias_multiple; import provider as p; type Wrapped[A][B] = "
+  "p.Terminal[A, B]; fn run() -> . { Wrapped.make[.][.](()) } package "
+  "alias_multiple_pkg; bridge { alias_multiple; provider; } module "
+  "provider; pub newtype Terminal[A][B] : . { pub constructor make; pub "
+  "projector open; };"[String]
 }
 
 fn private_source_alias_image() -> String {
@@ -117,7 +155,7 @@ fn private_source_alias_image() -> String {
   ". { p.Wrapped.make(()) }\n\npackage alias_private_source_pkg;\n\nbridge { "
   "alias_private_source; provider; }\n\nmodule provider;\n\npub newtype "
   "Terminal : . { pub constructor make; pub projector open; };\ntype Wrapped "
-  "= Terminal;\n"(String)
+  "= Terminal;\n"[String]
 }
 
 fn private_terminal_constructor_image() -> String {
@@ -125,7 +163,7 @@ fn private_terminal_constructor_image() -> String {
   "broken() -> . { p.Wrapped.make(()) }\n\npackage "
   "alias_private_constructor_pkg;\n\nbridge { alias_private_constructor; "
   "provider; }\n\nmodule provider;\n\npub newtype Terminal : . { constructor "
-  "make; pub projector open; };\npub type Wrapped = Terminal;\n"(String)
+  "make; pub projector open; };\npub type Wrapped = Terminal;\n"[String]
 }
 
 fn public_terminal_projector_image() -> String {
@@ -133,7 +171,7 @@ fn public_terminal_projector_image() -> String {
   "{ p.Wrapped.open(p.seed()) }\n\npackage alias_public_projector_pkg;\n\n"
   "bridge { alias_public_projector; provider; }\n\nmodule provider;\n\npub "
   "newtype Terminal : . { constructor make; pub projector open; };\npub type "
-  "Wrapped = Terminal;\npub fn seed() -> Terminal { Terminal.make(()) }\n"(String)
+  "Wrapped = Terminal;\npub fn seed() -> Terminal { Terminal.make(()) }\n"[String]
 }
 
 fn structural_alias_collision_image() -> String {
@@ -141,34 +179,34 @@ fn structural_alias_collision_image() -> String {
   "pub fn broken() -> . { T.make(()) }\n\npackage "
   "structural_alias_collision_pkg;\n\nbridge { structural_alias_collision; "
   "provider; }\n\nmodule provider;\n\npub newtype Remote : . { pub constructor "
-  "make; pub projector open; };\npub type T = Remote;\n"(String)
+  "make; pub projector open; };\npub type T = Remote;\n"[String]
 }
 
 fn partial_alias_collision_image() -> String {
   "module partial_alias_collision;\n\nimport provider(T);\nimport local as l;\n\n"
-  "type T[A][B] = l.Local(A);\n\npub fn broken() -> . { T.make(., ., ()) }\n\n"
+  "type T[A][B] = l.Local[A];\n\npub fn broken() -> . { T.make[.][.](()) }\n\n"
   "package partial_alias_collision_pkg;\n\nbridge { partial_alias_collision; "
   "provider; local; }\n\nmodule provider;\n\npub newtype Remote[A][B] : . { pub "
-  "constructor make; pub projector open; };\npub type T[A][B] = Remote(A, "
-  "B);\n\nmodule local;\n\npub newtype Local[A][B] : . { pub constructor make; "
-  "pub projector open; };\n"(String)
+  "constructor make; pub projector open; };\npub type T[A][B] = "
+  "Remote[A][B];\n\nmodule local;\n\npub newtype Local[A][B] : . { pub "
+  "constructor make; pub projector open; };\n"[String]
 }
 
 fn reordered_alias_collision_image() -> String {
   "module reordered_alias_collision;\n\nimport provider(T);\nimport local as "
-  "l;\n\ntype T[A][B] = l.Local(B, A);\n\npub fn broken() -> . { T.make(., ., "
-  "()) }\n\npackage reordered_alias_collision_pkg;\n\nbridge { "
+  "l;\n\ntype T[A][B] = l.Local[B][A];\n\npub fn broken() -> . { "
+  "T.make[.][.](()) }\n\npackage reordered_alias_collision_pkg;\n\nbridge { "
   "reordered_alias_collision; provider; local; }\n\nmodule provider;\n\npub "
   "newtype Remote[A][B] : . { pub constructor make; pub projector open; };\n"
-  "pub type T[A][B] = Remote(A, B);\n\nmodule local;\n\npub newtype Local[A][B] "
-  ": . { pub constructor make; pub projector open; };\n"(String)
+  "pub type T[A][B] = Remote[A][B];\n\nmodule local;\n\npub newtype Local[A][B] "
+  ": . { pub constructor make; pub projector open; };\n"[String]
 }
 
 fn host_type_collision_image() -> String {
   "module host_type_collision;\n\nimport provider(T);\n\nhost type T;\n\npub fn "
   "broken() -> . { T.make(()) }\n\npackage host_type_collision_pkg;\n\nbridge { "
   "host_type_collision; provider; }\n\nmodule provider;\n\npub newtype Remote : "
-  ". { pub constructor make; pub projector open; };\npub type T = Remote;\n"(String)
+  ". { pub constructor make; pub projector open; };\npub type T = Remote;\n"[String]
 }
 
 fn selective_literal_newtype_conflict_image() -> String {
@@ -176,14 +214,14 @@ fn selective_literal_newtype_conflict_image() -> String {
   "-> . { T.make(()) }\n\npackage literal_conflict_pkg;\n\nbridge { "
   "literal_conflict; p1; p2; }\n\nmodule p1;\n\npub newtype T : . { pub "
   "constructor make; pub projector open; };\n\nmodule p2;\n\npub newtype T : . "
-  "{ pub constructor make; pub projector open; };\n"(String)
+  "{ pub constructor make; pub projector open; };\n"[String]
 }
 
 fn repeated_literal_newtype_origin_image() -> String {
   "module repeated_literal;\n\nimport provider(T);\nimport provider(T);\n\npub "
   "fn run() -> . { T.open(T.make(())) }\n\npackage repeated_literal_pkg;\n\n"
   "bridge { repeated_literal; provider; }\n\nmodule provider;\n\npub newtype T "
-  ": . { pub constructor make; pub projector open; };\n"(String)
+  ": . { pub constructor make; pub projector open; };\n"[String]
 }
 
 fn local_import_literal_newtype_conflict_image() -> String {
@@ -191,14 +229,14 @@ fn local_import_literal_newtype_conflict_image() -> String {
   "constructor make; projector open; };\n\npub fn broken() -> . { T.make(()) "
   "}\n\npackage local_literal_conflict_pkg;\n\nbridge { local_literal_conflict; "
   "provider; }\n\nmodule provider;\n\npub newtype T : . { pub constructor make; "
-  "pub projector open; };\n"(String)
+  "pub projector open; };\n"[String]
 }
 
 fn duplicate_local_literal_newtype_image() -> String {
   "module duplicate_local_literal;\n\nnewtype T : . { constructor make; "
   "projector open; };\nnewtype T : . { constructor make; projector open; };\n\n"
   "pub fn broken() -> . { T.make(()) }\n\npackage "
-  "duplicate_local_literal_pkg;\n\nbridge { duplicate_local_literal; }\n"(String)
+  "duplicate_local_literal_pkg;\n\nbridge { duplicate_local_literal; }\n"[String]
 }
 
 fn distinct_local_literal_newtypes_image() -> String {
@@ -206,7 +244,7 @@ fn distinct_local_literal_newtypes_image() -> String {
   "projector open; };\nnewtype Right : . { constructor make; projector open; "
   "};\n\npub fn run() -> . { Left.open(Left.make(())); "
   "Right.open(Right.make(())); () }\n\npackage distinct_local_literals_pkg;\n\n"
-  "bridge { distinct_local_literals; }\n"(String)
+  "bridge { distinct_local_literals; }\n"[String]
 }
 
 fn structural_local_import_literal_collision_image() -> String {
@@ -214,7 +252,7 @@ fn structural_local_import_literal_collision_image() -> String {
   "& .;\n\npub fn broken() -> . { T.make(()) }\n\npackage "
   "structural_local_literal_import_pkg;\n\nbridge { "
   "structural_local_literal_import; provider; }\n\nmodule provider;\n\npub "
-  "newtype T : . { pub constructor make; pub projector open; };\n"(String)
+  "newtype T : . { pub constructor make; pub projector open; };\n"[String]
 }
 
 fn literal_local_import_structural_collision_image() -> String {
@@ -222,7 +260,7 @@ fn literal_local_import_structural_collision_image() -> String {
   ": . { constructor make; projector open; };\n\npub fn broken() -> . { "
   "T.make(()) }\n\npackage literal_local_structural_import_pkg;\n\nbridge { "
   "literal_local_structural_import; provider; }\n\nmodule provider;\n\npub type "
-  "T = . & .;\n"(String)
+  "T = . & .;\n"[String]
 }
 
 fn host_local_import_literal_collision_image() -> String {
@@ -230,7 +268,7 @@ fn host_local_import_literal_collision_image() -> String {
   "pub fn broken() -> . { T.make(()) }\n\npackage "
   "host_local_literal_import_pkg;\n\nbridge { host_local_literal_import; "
   "provider; }\n\nmodule provider;\n\npub newtype T : . { pub constructor make; "
-  "pub projector open; };\n"(String)
+  "pub projector open; };\n"[String]
 }
 
 fn literal_local_import_host_collision_image() -> String {
@@ -238,7 +276,7 @@ fn literal_local_import_host_collision_image() -> String {
   "constructor make; projector open; };\n\npub fn broken() -> . { T.make(()) "
   "}\n\npackage literal_local_host_import_pkg;\n\nbridge { "
   "literal_local_host_import; provider; }\n\nmodule provider;\n\npub host type "
-  "T;\n"(String)
+  "T;\n"[String]
 }
 
 fn imported_literal_host_collision_image() -> String {
@@ -247,7 +285,7 @@ fn imported_literal_host_collision_image() -> String {
   "imported_literal_host_pkg;\n\nbridge { imported_literal_host; "
   "host_provider; }\n\nmodule literal_provider;\n\npub newtype T : . { pub "
   "constructor make; pub projector open; };\n\nmodule host_provider;\n\npub "
-  "host type T;\n"(String)
+  "host type T;\n"[String]
 }
 
 fn imported_literal_structural_collision_image() -> String {
@@ -255,7 +293,7 @@ fn imported_literal_structural_collision_image() -> String {
   "structural_provider(T);\n\npub fn broken() -> . { T.make(()) }\n\npackage "
   "imported_literal_structural_pkg;\n\nbridge { imported_literal_structural; "
   "}\n\nmodule literal_provider;\n\npub newtype T : . { pub constructor make; "
-  "pub projector open; };\n\nmodule structural_provider;\n\npub type T = . & .;\n"(String)
+  "pub projector open; };\n\nmodule structural_provider;\n\npub type T = . & .;\n"[String]
 }
 
 fn nonconflicting_structural_and_host_imports_image() -> String {
@@ -263,7 +301,7 @@ fn nonconflicting_structural_and_host_imports_image() -> String {
   "import host_provider(Hosted);\n\ntype Local = . | .;\n\npub fn run() -> . { "
   "() }\n\npackage nonconflicting_types_pkg;\n\nbridge { nonconflicting_types; "
   "host_provider; }\n\nmodule structural_provider;\n\npub type Structural = . & "
-  ".;\n\nmodule host_provider;\n\npub host type Hosted;\n"(String)
+  ".;\n\nmodule host_provider;\n\npub host type Hosted;\n"[String]
 }
 
 fn selective_alias_conflict_image() -> String {
@@ -271,7 +309,7 @@ fn selective_alias_conflict_image() -> String {
   ". { T.make(()) }\n\npackage alias_conflict_pkg;\n\nbridge { alias_conflict; "
   "p1; p2; }\n\nmodule p1;\n\npub newtype Base1 : . { pub constructor make; pub "
   "projector open; };\npub type T = Base1;\n\nmodule p2;\n\npub newtype Base2 : "
-  ". { pub constructor make; pub projector open; };\npub type T = Base2;\n"(String)
+  ". { pub constructor make; pub projector open; };\npub type T = Base2;\n"[String]
 }
 
 fn selective_alias_literal_conflict_image() -> String {
@@ -280,7 +318,7 @@ fn selective_alias_literal_conflict_image() -> String {
   "bridge { alias_literal_conflict; p1; p2; }\n\nmodule p1;\n\npub newtype "
   "Base1 : . { pub constructor make; pub projector open; };\npub type T = "
   "Base1;\n\nmodule p2;\n\npub newtype T : . { pub constructor make; pub "
-  "projector open; };\n"(String)
+  "projector open; };\n"[String]
 }
 
 fn three_way_alias_literal_conflict_image() -> String {
@@ -290,7 +328,7 @@ fn three_way_alias_literal_conflict_image() -> String {
   "three_way_alias_literal_conflict; p1; p2; p3; }\n\nmodule p1;\n\npub newtype "
   "T : . { pub constructor make; pub projector open; };\n\nmodule p2;\n\npub "
   "newtype T : . { pub constructor make; pub projector open; };\n\nmodule p3;\n\n"
-  "import p2 as origin;\npub type T = origin.T;\n"(String)
+  "import p2 as origin;\npub type T = origin.T;\n"[String]
 }
 
 fn three_way_alias_literal_conflict_reversed_image() -> String {
@@ -300,7 +338,7 @@ fn three_way_alias_literal_conflict_reversed_image() -> String {
   "three_way_alias_literal_conflict_reversed; p1; p2; p3; }\n\nmodule p1;\n\n"
   "pub newtype T : . { pub constructor make; pub projector open; };\n\nmodule "
   "p2;\n\npub newtype T : . { pub constructor make; pub projector open; };\n\n"
-  "module p3;\n\nimport p2 as origin;\npub type T = origin.T;\n"(String)
+  "module p3;\n\nimport p2 as origin;\npub type T = origin.T;\n"[String]
 }
 
 fn qualified_alias_conflict_image() -> String {
@@ -309,7 +347,7 @@ fn qualified_alias_conflict_image() -> String {
   "bridge { qualified_alias_conflict; p1; p2; shared; }\n\nmodule p1;\n\nimport "
   "shared as origin;\npub type T = origin.Base;\n\nmodule p2;\n\nimport shared "
   "as origin;\npub type T = origin.Base;\n\nmodule shared;\n\npub newtype Base : "
-  ". { pub constructor make; pub projector open; };\n"(String)
+  ". { pub constructor make; pub projector open; };\n"[String]
 }
 
 fn repeated_alias_origin_image() -> String {
@@ -317,7 +355,7 @@ fn repeated_alias_origin_image() -> String {
   "-> . { T.open(T.make(())) }\n\npackage repeated_alias_origin_pkg;\n\nbridge "
   "{ repeated_alias_origin; p1; p2; }\n\nmodule p1;\n\npub newtype Base : . { "
   "pub constructor make; pub projector open; };\npub type T = Base;\n\nmodule "
-  "p2;\n\nimport p1 as source;\npub type T = source.Base;\n"(String)
+  "p2;\n\nimport p1 as source;\npub type T = source.Base;\n"[String]
 }
 
 fn repeated_alias_literal_origin_image() -> String {
@@ -325,7 +363,7 @@ fn repeated_alias_literal_origin_image() -> String {
   "run() -> . { T.open(T.make(())) }\n\npackage repeated_alias_literal_pkg;\n\n"
   "bridge { repeated_alias_literal; p1; p2; }\n\nmodule p1;\n\nimport p2 as "
   "source;\npub type T = source.T;\n\nmodule p2;\n\npub newtype T : . { pub "
-  "constructor make; pub projector open; };\n"(String)
+  "constructor make; pub projector open; };\n"[String]
 }
 
 fn repeated_qualified_alias_image() -> String {
@@ -333,7 +371,7 @@ fn repeated_qualified_alias_image() -> String {
   "fn run() -> . { q.T.open(q.T.make(())) }\n\npackage "
   "repeated_qualified_alias_pkg;\n\nbridge { repeated_qualified_alias; p1; }\n\n"
   "module p1;\n\npub newtype Base : . { pub constructor make; pub projector "
-  "open; };\npub type T = Base;\n"(String)
+  "open; };\npub type T = Base;\n"[String]
 }
 
 fn local_import_alias_conflict_image() -> String {
@@ -342,7 +380,7 @@ fn local_import_alias_conflict_image() -> String {
   "local_import_alias_conflict_pkg;\n\nbridge { local_import_alias_conflict; "
   "p1; p2; }\n\nmodule p1;\n\npub newtype Base1 : . { pub constructor make; pub "
   "projector open; };\n\nmodule p2;\n\npub newtype Base2 : . { pub constructor "
-  "make; pub projector open; };\npub type T = Base2;\n"(String)
+  "make; pub projector open; };\npub type T = Base2;\n"[String]
 }
 
 fn repeated_local_import_alias_origin_image() -> String {
@@ -350,7 +388,7 @@ fn repeated_local_import_alias_origin_image() -> String {
   "type T = source.Base;\n\npub fn run() -> . { T.open(T.make(())) }\n\npackage "
   "repeated_local_import_alias_pkg;\n\nbridge { repeated_local_import_alias; "
   "p1; }\n\nmodule p1;\n\npub newtype Base : . { pub constructor make; pub "
-  "projector open; };\npub type T = Base;\n"(String)
+  "projector open; };\npub type T = Base;\n"[String]
 }
 
 fn local_literal_import_alias_conflict_image() -> String {
@@ -359,67 +397,67 @@ fn local_literal_import_alias_conflict_image() -> String {
   "T.make(()) }\n\npackage local_literal_import_alias_conflict_pkg;\n\nbridge { "
   "local_literal_import_alias_conflict; p2; }\n\nmodule p2;\n\npub newtype "
   "Base2 : . { pub constructor make; pub projector open; };\npub type T = "
-  "Base2;\n"(String)
+  "Base2;\n"[String]
 }
 
 fn distinct_ordinary_import_origins_image() -> String {
   "module value_import_conflict;\n\nimport p1(f);\nimport p2(f);\n\npub fn "
   "broken() -> . { missing() }\n\npackage value_import_conflict_pkg;\n\nbridge "
   "{ value_import_conflict; }\n\nmodule p1;\n\npub fn f() -> . { () }\n\nmodule "
-  "p2;\n\npub fn f() -> . { () }\n"(String)
+  "p2;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn repeated_ordinary_import_origin_image() -> String {
   "module repeated_value_import;\n\nimport provider(f);\nimport provider(f);\n\n"
   "pub fn ok() -> . { () }\n\npackage repeated_value_import_pkg;\n\nbridge { "
-  "repeated_value_import; }\n\nmodule provider;\n\npub fn f() -> . { () }\n"(String)
+  "repeated_value_import; }\n\nmodule provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn local_ordinary_import_conflict_image() -> String {
   "module local_value_import_conflict;\n\nimport provider(f);\n\nfn f() -> . { "
   "() }\n\npub fn broken() -> . { missing() }\n\npackage "
   "local_value_import_conflict_pkg;\n\nbridge { local_value_import_conflict; "
-  "}\n\nmodule provider;\n\npub fn f() -> . { () }\n"(String)
+  "}\n\nmodule provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn distinct_host_import_origins_image() -> String {
   "module host_import_conflict;\n\nimport p1(f);\nimport p2(f);\n\npub fn "
   "broken() -> . { missing() }\n\npackage host_import_conflict_pkg;\n\nbridge { "
   "host_import_conflict; p1; p2; }\n\nmodule p1;\n\nhost fn f() -> .;\n\nmodule "
-  "p2;\n\nhost fn f() -> .;\n"(String)
+  "p2;\n\nhost fn f() -> .;\n"[String]
 }
 
 fn repeated_host_import_origin_image() -> String {
   "module repeated_host_import;\n\nimport provider(f);\nimport provider(f);\n\n"
   "pub fn ok() -> . { () }\n\npackage repeated_host_import_pkg;\n\nbridge { "
-  "repeated_host_import; provider; }\n\nmodule provider;\n\nhost fn f() -> .;\n"(String)
+  "repeated_host_import; provider; }\n\nmodule provider;\n\nhost fn f() -> .;\n"[String]
 }
 
 fn local_host_import_conflict_image() -> String {
   "module local_host_import_conflict;\n\nimport provider(f);\n\nhost fn f() -> "
   ".;\n\npub fn broken() -> . { missing() }\n\npackage "
   "local_host_import_conflict_pkg;\n\nbridge { local_host_import_conflict; }\n\n"
-  "module provider;\n\npub fn f() -> . { () }\n"(String)
+  "module provider;\n\npub fn f() -> . { () }\n"[String]
 }
 
 fn distinct_module_alias_origins_image() -> String {
   "module module_alias_conflict;\n\nimport p1 as q;\nimport p2 as q;\n\npub fn "
   "broken() -> . { missing() }\n\npackage module_alias_conflict_pkg;\n\nbridge "
   "{ module_alias_conflict; }\n\nmodule p1;\n\npub fn first() -> . { () }\n\n"
-  "module p2;\n\npub fn second() -> . { () }\n"(String)
+  "module p2;\n\npub fn second() -> . { () }\n"[String]
 }
 
 fn repeated_module_alias_origin_image() -> String {
   "module repeated_module_alias;\n\nimport provider as q;\nimport provider as "
   "q;\n\npub fn ok() -> . { () }\n\npackage repeated_module_alias_pkg;\n\nbridge "
-  "{ repeated_module_alias; }\n\nmodule provider;\n\npub fn value() -> . { () }\n"(String)
+  "{ repeated_module_alias; }\n\nmodule provider;\n\npub fn value() -> . { () }\n"[String]
 }
 
 fn local_ordinary_module_alias_conflict_image() -> String {
   "module local_value_alias_conflict;\n\nimport provider as f;\n\nfn f() -> . { "
   "() }\n\npub fn broken() -> . { missing() }\n\npackage "
   "local_value_alias_conflict_pkg;\n\nbridge { local_value_alias_conflict; }\n\n"
-  "module provider;\n\npub fn value() -> . { () }\n"(String)
+  "module provider;\n\npub fn value() -> . { () }\n"[String]
 }
 
 fn separate_value_type_namespaces_image() -> String {
@@ -427,19 +465,19 @@ fn separate_value_type_namespaces_image() -> String {
   "types(F);\n\npub fn ok() -> . { () }\n\npackage "
   "separate_value_type_namespaces_pkg;\n\nbridge { "
   "separate_value_type_namespaces; }\n\nmodule values;\n\npub fn f() -> . { () "
-  "}\n\nmodule types;\n\npub type F = .;\n"(String)
+  "}\n\nmodule types;\n\npub type F = .;\n"[String]
 }
 
 fn expect_loaded(image: String, failure: String) -> String {
   match(un_load_outcome(load_package(image))) {
     (
-    , .(_loaded: Lr_image) { ""(String) }
+    , .(_loaded: Lr_image) { ""[String] }
     , .(diagnostic: Lr_diag) {
         string_concat(
         , failure
         , string_concat(
-          , ": "(String)
-          , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String))
+          , ": "[String]
+          , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"[String])
           )
         )
       }
@@ -450,8 +488,8 @@ fn expect_loaded(image: String, failure: String) -> String {
 fn expect_rejected(image: String, failure: String) -> String {
   match(un_load_outcome(load_package(image))) {
     (
-    , .(_loaded: Lr_image) { string_concat(failure, "\n"(String)) }
-    , .(_diagnostic: Lr_diag) { ""(String) }
+    , .(_loaded: Lr_image) { string_concat(failure, "\n"[String]) }
+    , .(_diagnostic: Lr_diag) { ""[String] }
     )
   }
 }
@@ -459,26 +497,26 @@ fn expect_rejected(image: String, failure: String) -> String {
 fn expect_type_binding_rejected(image: String, consumer: String, name: String, failure: String) -> String {
   match(un_load_outcome(load_package(image))) {
     (
-    , .(_loaded: Lr_image) { string_concat(failure, "\n"(String)) }
+    , .(_loaded: Lr_image) { string_concat(failure, "\n"[String]) }
     , .(diagnostic: Lr_diag) {
         let actual = diag_bare_message(Lr_diag.get(diagnostic));
         let expected =
           string_concat(
-          , "dyn_load_prime: malformed image — module `"(String)
+          , "dyn_load_prime: malformed image — module `"[String]
           , string_concat(
             , consumer
             , string_concat(
-              , "` introduces visible type binding `"(String)
-              , string_concat(name, "` more than once"(String))
+              , "` introduces visible type binding `"[String]
+              , string_concat(name, "` more than once"[String])
               )
             )
           );
         if(string_eq(actual, expected)) {
-          ""(String)
+          ""[String]
         } else {
           string_concat(
           , failure
-          , string_concat(": unexpected diagnostic: "(String), string_concat(actual, "\n"(String)))
+          , string_concat(": unexpected diagnostic: "[String], string_concat(actual, "\n"[String]))
           )
         }
       }
@@ -488,12 +526,12 @@ fn expect_type_binding_rejected(image: String, consumer: String, name: String, f
 
 fn value_binding_origin_message(consumer: String, name: String) -> String {
   string_concat(
-  , "dyn_load_prime: malformed image — module `"(String)
+  , "dyn_load_prime: malformed image — module `"[String]
   , string_concat(
     , consumer
     , string_concat(
-      , "` introduces visible value/module-alias binding `"(String)
-      , string_concat(name, "` more than once"(String))
+      , "` introduces visible value/module-alias binding `"[String]
+      , string_concat(name, "` more than once"[String])
       )
     )
   )
@@ -502,15 +540,15 @@ fn value_binding_origin_message(consumer: String, name: String) -> String {
 fn expect_value_origin_rejected(image: String, consumer: String, name: String, failure: String) -> String {
   match(un_load_outcome(load_package(image))) {
     (
-    , .(_loaded: Lr_image) { string_concat(failure, "\n"(String)) }
+    , .(_loaded: Lr_image) { string_concat(failure, "\n"[String]) }
     , .(diagnostic: Lr_diag) {
         let actual = diag_bare_message(Lr_diag.get(diagnostic));
         if(string_eq(actual, value_binding_origin_message(consumer, name))) {
-          ""(String)
+          ""[String]
         } else {
           string_concat(
           , failure
-          , string_concat(": got `"(String), string_concat(actual, "`\n"(String)))
+          , string_concat(": got `"[String], string_concat(actual, "`\n"[String]))
           )
         }
       }
@@ -522,30 +560,30 @@ fn repeated_identity_alias_introduction_report() -> String {
   let repeated_alias =
     expect_type_binding_rejected(
     , repeated_alias_origin_image()
-    , "repeated_alias_origin"(String)
-    , "T"(String)
-    , "loader accepted repeated aliases to one terminal nominal"(String)
+    , "repeated_alias_origin"[String]
+    , "T"[String]
+    , "loader accepted repeated aliases to one terminal nominal"[String]
     );
-  if(string_eq(repeated_alias, ""(String))) {
+  if(string_eq(repeated_alias, ""[String])) {
     let alias_literal = expect_type_binding_rejected(
     , repeated_alias_literal_origin_image()
-    , "repeated_alias_literal"(String)
-    , "T"(String)
-    , "loader accepted an alias and literal under one name"(String)
+    , "repeated_alias_literal"[String]
+    , "T"[String]
+    , "loader accepted an alias and literal under one name"[String]
     );
-    if(string_eq(alias_literal, ""(String))) {
+    if(string_eq(alias_literal, ""[String])) {
       let qualified = expect_value_origin_rejected(
       , repeated_qualified_alias_image()
-      , "repeated_qualified_alias"(String)
-      , "q"(String)
-      , "loader accepted a repeated qualified import of one module"(String)
+      , "repeated_qualified_alias"[String]
+      , "q"[String]
+      , "loader accepted a repeated qualified import of one module"[String]
       );
-      if(string_eq(qualified, ""(String))) {
+      if(string_eq(qualified, ""[String])) {
         expect_type_binding_rejected(
         , repeated_local_import_alias_origin_image()
-        , "repeated_local_import_alias"(String)
-        , "T"(String)
-        , "loader accepted matching local and imported aliases under one name"(String)
+        , "repeated_local_import_alias"[String]
+        , "T"[String]
+        , "loader accepted matching local and imported aliases under one name"[String]
         )
       } else {
         qualified
@@ -562,71 +600,71 @@ fn value_binding_origin_report() -> String {
   let ordinary_conflict =
     expect_value_origin_rejected(
     , distinct_ordinary_import_origins_image()
-    , "value_import_conflict"(String)
-    , "f"(String)
-    , "loader accepted distinct ordinary-function imports under one value name"(String)
+    , "value_import_conflict"[String]
+    , "f"[String]
+    , "loader accepted distinct ordinary-function imports under one value name"[String]
     );
   let ordinary_repeat =
     expect_value_origin_rejected(
     , repeated_ordinary_import_origin_image()
-    , "repeated_value_import"(String)
-    , "f"(String)
-    , "loader accepted a repeated import of one ordinary-function origin"(String)
+    , "repeated_value_import"[String]
+    , "f"[String]
+    , "loader accepted a repeated import of one ordinary-function origin"[String]
     );
   let local_ordinary =
     expect_value_origin_rejected(
     , local_ordinary_import_conflict_image()
-    , "local_value_import_conflict"(String)
-    , "f"(String)
-    , "loader accepted distinct local and imported ordinary-function origins"(String)
+    , "local_value_import_conflict"[String]
+    , "f"[String]
+    , "loader accepted distinct local and imported ordinary-function origins"[String]
     );
   let host_conflict =
     expect_value_origin_rejected(
     , distinct_host_import_origins_image()
-    , "host_import_conflict"(String)
-    , "f"(String)
-    , "loader accepted distinct host-function imports under one value name"(String)
+    , "host_import_conflict"[String]
+    , "f"[String]
+    , "loader accepted distinct host-function imports under one value name"[String]
     );
   let host_repeat =
     expect_value_origin_rejected(
     , repeated_host_import_origin_image()
-    , "repeated_host_import"(String)
-    , "f"(String)
-    , "loader accepted a repeated import of one host-function origin"(String)
+    , "repeated_host_import"[String]
+    , "f"[String]
+    , "loader accepted a repeated import of one host-function origin"[String]
     );
   let local_host =
     expect_value_origin_rejected(
     , local_host_import_conflict_image()
-    , "local_host_import_conflict"(String)
-    , "f"(String)
+    , "local_host_import_conflict"[String]
+    , "f"[String]
     , "loader accepted distinct local host-function and imported function "
-      "origins"(String)
+      "origins"[String]
     );
   let alias_conflict =
     expect_value_origin_rejected(
     , distinct_module_alias_origins_image()
-    , "module_alias_conflict"(String)
-    , "q"(String)
-    , "loader accepted one module alias naming two provider modules"(String)
+    , "module_alias_conflict"[String]
+    , "q"[String]
+    , "loader accepted one module alias naming two provider modules"[String]
     );
   let alias_repeat =
     expect_value_origin_rejected(
     , repeated_module_alias_origin_image()
-    , "repeated_module_alias"(String)
-    , "q"(String)
-    , "loader accepted a repeated qualified alias of one module"(String)
+    , "repeated_module_alias"[String]
+    , "q"[String]
+    , "loader accepted a repeated qualified alias of one module"[String]
     );
   let local_alias =
     expect_value_origin_rejected(
     , local_ordinary_module_alias_conflict_image()
-    , "local_value_alias_conflict"(String)
-    , "f"(String)
-    , "loader accepted a local function and module alias under one value name"(String)
+    , "local_value_alias_conflict"[String]
+    , "f"[String]
+    , "loader accepted a local function and module alias under one value name"[String]
     );
   let separate_namespaces =
     expect_loaded(
     , separate_value_type_namespaces_image()
-    , "loader mixed the value and type identifier namespaces"(String)
+    , "loader mixed the value and type identifier namespaces"[String]
     );
   string_concat(
   , ordinary_conflict
@@ -656,67 +694,67 @@ fn remaining_type_binding_origin_report() -> String {
   let duplicate_local =
     expect_rejected(
     , duplicate_local_literal_newtype_image()
-    , "loader accepted duplicate local literal-newtype declarations"(String)
+    , "loader accepted duplicate local literal-newtype declarations"[String]
     );
-  if(string_eq(duplicate_local, ""(String))) {
+  if(string_eq(duplicate_local, ""[String])) {
     let distinct_local = expect_loaded(
     , distinct_local_literal_newtypes_image()
-    , "loader rejected distinct local literal-newtype declarations"(String)
+    , "loader rejected distinct local literal-newtype declarations"[String]
     );
-    if(string_eq(distinct_local, ""(String))) {
+    if(string_eq(distinct_local, ""[String])) {
       let structural_local = expect_rejected(
       , structural_local_import_literal_collision_image()
       , "loader accepted a local structural type and imported literal newtype "
-        "under one name"(String)
+        "under one name"[String]
       );
-      if(string_eq(structural_local, ""(String))) {
+      if(string_eq(structural_local, ""[String])) {
         let structural_import = expect_rejected(
         , literal_local_import_structural_collision_image()
         , "loader accepted a local literal newtype and imported structural type "
-          "under one name"(String)
+          "under one name"[String]
         );
-        if(string_eq(structural_import, ""(String))) {
+        if(string_eq(structural_import, ""[String])) {
           let host_local = expect_rejected(
           , host_local_import_literal_collision_image()
           , "loader accepted a local host type and imported literal newtype under one "
-            "name"(String)
+            "name"[String]
           );
-          if(string_eq(host_local, ""(String))) {
+          if(string_eq(host_local, ""[String])) {
             let host_import = expect_type_binding_rejected(
             , literal_local_import_host_collision_image()
-            , "literal_local_host_import"(String)
-            , "T"(String)
+            , "literal_local_host_import"[String]
+            , "T"[String]
             , "loader accepted a local literal newtype and imported host type under one "
-              "name"(String)
+              "name"[String]
             );
-            if(string_eq(host_import, ""(String))) {
+            if(string_eq(host_import, ""[String])) {
               let imported_host = expect_type_binding_rejected(
               , imported_literal_host_collision_image()
-              , "imported_literal_host"(String)
-              , "T"(String)
-              , "loader accepted imported literal and host types under one name"(String)
+              , "imported_literal_host"[String]
+              , "T"[String]
+              , "loader accepted imported literal and host types under one name"[String]
               );
-              if(string_eq(imported_host, ""(String))) {
+              if(string_eq(imported_host, ""[String])) {
                 let imported_structural = expect_rejected(
                 , imported_literal_structural_collision_image()
-                , "loader accepted imported literal and structural types under one name"(String)
+                , "loader accepted imported literal and structural types under one name"[String]
                 );
-                if(string_eq(imported_structural, ""(String))) {
+                if(string_eq(imported_structural, ""[String])) {
                   let conflict = expect_rejected(
                   , selective_literal_newtype_conflict_image()
-                  , "loader accepted distinct literal-newtype origins under one imported name"(String)
+                  , "loader accepted distinct literal-newtype origins under one imported name"[String]
                   );
-                  if(string_eq(conflict, ""(String))) {
+                  if(string_eq(conflict, ""[String])) {
                     let local_conflict = expect_rejected(
                     , local_import_literal_newtype_conflict_image()
-                    , "loader accepted distinct local and imported literal-newtype origins"(String)
+                    , "loader accepted distinct local and imported literal-newtype origins"[String]
                     );
-                    if(string_eq(local_conflict, ""(String))) {
+                    if(string_eq(local_conflict, ""[String])) {
                       expect_type_binding_rejected(
                       , repeated_literal_newtype_origin_image()
-                      , "repeated_literal"(String)
-                      , "T"(String)
-                      , "loader accepted a repeated import of one literal-newtype origin"(String)
+                      , "repeated_literal"[String]
+                      , "T"[String]
+                      , "loader accepted a repeated import of one literal-newtype origin"[String]
                       )
                     } else {
                       local_conflict
@@ -754,9 +792,9 @@ fn type_binding_origin_report() -> String {
   let nonconflicting =
     expect_loaded(
     , nonconflicting_structural_and_host_imports_image()
-    , "loader rejected nonconflicting structural and host type imports"(String)
+    , "loader rejected nonconflicting structural and host type imports"[String]
     );
-  if(string_eq(nonconflicting, ""(String))) {
+  if(string_eq(nonconflicting, ""[String])) {
     remaining_type_binding_origin_report()
   } else {
     nonconflicting
@@ -767,26 +805,26 @@ fn identity_alias_nonmember_collision_report() -> String {
   let structural =
     expect_rejected(
     , structural_alias_collision_image()
-    , "loader let an imported alias mask a local structural type alias"(String)
+    , "loader let an imported alias mask a local structural type alias"[String]
     );
-  if(string_eq(structural, ""(String))) {
+  if(string_eq(structural, ""[String])) {
     let partial = expect_rejected(
     , partial_alias_collision_image()
-    , "loader let an imported alias mask a local partial type alias"(String)
+    , "loader let an imported alias mask a local partial type alias"[String]
     );
-    if(string_eq(partial, ""(String))) {
+    if(string_eq(partial, ""[String])) {
       let reordered = expect_rejected(
       , reordered_alias_collision_image()
-      , "loader let an imported alias mask a local reordered type alias"(String)
+      , "loader let an imported alias mask a local reordered type alias"[String]
       );
-      if(string_eq(reordered, ""(String))) {
+      if(string_eq(reordered, ""[String])) {
         let host = expect_rejected(
         , host_type_collision_image()
-        , "loader let an imported alias mask a local host type"(String)
+        , "loader let an imported alias mask a local host type"[String]
         );
-        if(string_eq(host, ""(String))) {
+        if(string_eq(host, ""[String])) {
           let type_origins = type_binding_origin_report();
-          if(string_eq(type_origins, ""(String))) {
+          if(string_eq(type_origins, ""[String])) {
             repeated_identity_alias_introduction_report()
           } else {
             type_origins
@@ -809,39 +847,39 @@ fn identity_alias_collision_report() -> String {
   let selective =
     expect_rejected(
     , selective_alias_conflict_image()
-    , "loader accepted conflicting selective identity aliases"(String)
+    , "loader accepted conflicting selective identity aliases"[String]
     );
-  if(string_eq(selective, ""(String))) {
+  if(string_eq(selective, ""[String])) {
     let alias_literal = expect_rejected(
     , selective_alias_literal_conflict_image()
-    , "loader accepted a conflicting identity alias and literal newtype"(String)
+    , "loader accepted a conflicting identity alias and literal newtype"[String]
     );
-    if(string_eq(alias_literal, ""(String))) {
+    if(string_eq(alias_literal, ""[String])) {
       let three_way = expect_rejected(
       , three_way_alias_literal_conflict_image()
-      , "loader ignored one of three conflicting visible origins"(String)
+      , "loader ignored one of three conflicting visible origins"[String]
       );
-      if(string_eq(three_way, ""(String))) {
+      if(string_eq(three_way, ""[String])) {
         let three_way_reversed = expect_rejected(
         , three_way_alias_literal_conflict_reversed_image()
-        , "loader made a three-way origin conflict depend on import order"(String)
+        , "loader made a three-way origin conflict depend on import order"[String]
         );
-        if(string_eq(three_way_reversed, ""(String))) {
+        if(string_eq(three_way_reversed, ""[String])) {
           let qualified = expect_rejected(
           , qualified_alias_conflict_image()
-          , "loader accepted conflicting qualified identity aliases"(String)
+          , "loader accepted conflicting qualified identity aliases"[String]
           );
-          if(string_eq(qualified, ""(String))) {
+          if(string_eq(qualified, ""[String])) {
             let local_import = expect_rejected(
             , local_import_alias_conflict_image()
-            , "loader accepted conflicting local and imported identity aliases"(String)
+            , "loader accepted conflicting local and imported identity aliases"[String]
             );
-            if(string_eq(local_import, ""(String))) {
+            if(string_eq(local_import, ""[String])) {
               let local_literal = expect_rejected(
               , local_literal_import_alias_conflict_image()
-              , "loader accepted a conflicting local literal and imported identity alias"(String)
+              , "loader accepted a conflicting local literal and imported identity alias"[String]
               );
-              if(string_eq(local_literal, ""(String))) {
+              if(string_eq(local_literal, ""[String])) {
                 identity_alias_nonmember_collision_report()
               } else {
                 local_literal
@@ -870,19 +908,19 @@ fn identity_alias_visibility_report() -> String {
   let private_alias =
     expect_rejected(
     , private_source_alias_image()
-    , "loader exposed a private source identity alias"(String)
+    , "loader exposed a private source identity alias"[String]
     );
-  if(string_eq(private_alias, ""(String))) {
+  if(string_eq(private_alias, ""[String])) {
     let private_constructor = expect_rejected(
     , private_terminal_constructor_image()
-    , "loader exposed a private terminal constructor through an alias"(String)
+    , "loader exposed a private terminal constructor through an alias"[String]
     );
-    if(string_eq(private_constructor, ""(String))) {
+    if(string_eq(private_constructor, ""[String])) {
       let public_projector = expect_loaded(
       , public_terminal_projector_image()
-      , "loader hid a public terminal projector behind an identity alias"(String)
+      , "loader hid a public terminal projector behind an identity alias"[String]
       );
-      if(string_eq(public_projector, ""(String))) {
+      if(string_eq(public_projector, ""[String])) {
         identity_alias_collision_report()
       } else {
         public_projector
@@ -899,19 +937,19 @@ fn grouped_alias_shape_report() -> String {
   let structural =
     expect_rejected(
     , grouped_structural_alias_image()
-    , "loader accepted a grouped structural alias member use"(String)
+    , "loader accepted a grouped structural alias member use"[String]
     );
-  if(string_eq(structural, ""(String))) {
+  if(string_eq(structural, ""[String])) {
     let partial = expect_rejected(
     , grouped_partial_alias_image()
-    , "loader accepted a grouped partial alias member use"(String)
+    , "loader accepted a grouped partial alias member use"[String]
     );
-    if(string_eq(partial, ""(String))) {
+    if(string_eq(partial, ""[String])) {
       let reordered = expect_rejected(
       , grouped_reordered_alias_image()
-      , "loader accepted a grouped reordered alias member use"(String)
+      , "loader accepted a grouped reordered alias member use"[String]
       );
-      if(string_eq(reordered, ""(String))) { identity_alias_visibility_report() } else { reordered }
+      if(string_eq(reordered, ""[String])) { identity_alias_visibility_report() } else { reordered }
     } else {
       partial
     }
@@ -920,30 +958,71 @@ fn grouped_alias_shape_report() -> String {
   }
 }
 
-fn identity_alias_projection_report() -> String { grouped_alias_shape_report() }
+fn identity_alias_projection_report() -> String {
+  let higher =
+    expect_loaded(
+    , higher_kind_identity_alias_image()
+    , "loader rejected a higher-kinded positional identity alias"[String]
+    );
+  if(string_eq(higher, ""[String])) {
+    let wrong_kind = expect_rejected(
+    , mismatched_kind_identity_alias_image()
+    , "loader accepted a member through an identity alias with mismatched "
+      "parameter kind"[String]
+    );
+    if(string_eq(wrong_kind, ""[String])) {
+      let extra = expect_rejected(
+      , extra_identity_alias_argument_image()
+      , "loader accepted a member through an alias with an extra type argument"[String]
+      );
+      if(string_eq(extra, ""[String])) {
+        let empty = expect_rejected(
+        , empty_identity_alias_argument_image()
+        , "loader exposed a member through an empty alias type-argument bracket"[String]
+        );
+        if(string_eq(empty, ""[String])) {
+          let multiple = expect_rejected(
+          , multiple_identity_alias_arguments_image()
+          , "loader exposed a member through multiple alias type arguments in one "
+            "bracket"[String]
+          );
+          if(string_eq(multiple, ""[String])) { grouped_alias_shape_report() } else { multiple }
+        } else {
+          empty
+        }
+      } else {
+        extra
+      }
+    } else {
+      wrong_kind
+    }
+  } else {
+    higher
+  }
+}
 
 fn identity_alias_catalog_report() -> String {
   let long_chain =
     expect_loaded(
     , long_identity_alias_chain_image()
-    , "loader rejected a valid long identity-alias chain"(String)
+    , "loader rejected a valid long identity-alias chain"[String]
     );
-  if(string_eq(long_chain, ""(String))) {
+  if(string_eq(long_chain, ""[String])) {
     let unused_cycle = expect_loaded(
     , unused_identity_alias_cycle_image()
-    , "loader rejected an unused identity-alias cycle"(String)
+    , "loader rejected an unused identity-alias cycle"[String]
     );
-    if(string_eq(unused_cycle, ""(String))) {
+    if(string_eq(unused_cycle, ""[String])) {
       let used_cycle = expect_rejected(
       , used_identity_alias_cycle_image()
-      , "loader accepted a member use through an identity-alias cycle"(String)
+      , "loader accepted a member use through an identity-alias cycle"[String]
       );
-      if(string_eq(used_cycle, ""(String))) {
+      if(string_eq(used_cycle, ""[String])) {
         let parenthesized = expect_loaded(
         , parenthesized_identity_alias_image()
-        , "loader rejected a parenthesized identity alias"(String)
+        , "loader rejected a parenthesized identity alias"[String]
         );
-        if(string_eq(parenthesized, ""(String))) {
+        if(string_eq(parenthesized, ""[String])) {
           identity_alias_projection_report()
         } else {
           parenthesized
@@ -962,7 +1041,7 @@ fn identity_alias_catalog_report() -> String {
 fn export_line(entry: Export_info) -> String {
   string_concat(
   , export_info_name(entry)
-  , string_concat(" : "(String), string_concat(export_info_sig(entry), "\n"(String)))
+  , string_concat(" : "[String], string_concat(export_info_sig(entry), "\n"[String]))
   )
 }
 
@@ -970,11 +1049,11 @@ fn expected_exports() -> String {
   "allocator_probe.Outer.un_outer : [#0] [#1] (n{allocator_probe.Outer}(#0, "
   "#1)) -> [#2] ([#3] (((#0 & #1) & #3) -> #2)) -> #2\n"
   "allocator_probe.Free.un_free : (n{allocator_probe.Free}) -> [#0] ([#1] "
-  "((h{hostapi.Zzcps_r} & #1) -> #0)) -> #0\n"(String)
+  "((h{hostapi.Zzcps_r} & #1) -> #0)) -> #0\n"[String]
 }
 
 fn mismatch(actual: String) -> String {
-  string_concat("loader export signature mismatch:\n"(String), actual)
+  string_concat("loader export signature mismatch:\n"[String], actual)
 }
 
 fn inspect_exports(exports: Export_infos) -> String {
@@ -995,7 +1074,7 @@ fn inspect_exports(exports: Export_infos) -> String {
                 , .(_empty: .) {
                     let actual = string_concat(export_line(outer), export_line(free));
                     if(string_eq(actual, expected_exports())) {
-                      ""(String)
+                      ""[String]
                     } else {
                       mismatch(actual)
                     }
@@ -1007,19 +1086,19 @@ fn inspect_exports(exports: Export_infos) -> String {
           )
         }
       }
-    , .(_empty: .) { mismatch("no exports\n"(String)) }
+    , .(_empty: .) { mismatch("no exports\n"[String]) }
     )
   }
 }
 
 fn macro_import_image(selector: String) -> String {
   string_concat(
-  , "module macro_import_probe;\n\nimport provider("(String)
+  , "module macro_import_probe;\n\nimport provider("[String]
   , string_concat(
     , selector
     , ");\n\npub fn run() -> . { call() }\n\npackage macro_import_probe_pkg;\n\n"
       "bridge { macro_import_probe; provider; }\n\nmodule provider;\n\npub fn "
-      "macro() -> . { () }\npub fn choose() -> . { () }\n"(String)
+      "macro() -> . { () }\npub fn choose() -> . { () }\n"[String]
     )
   )
 }
@@ -1027,25 +1106,25 @@ fn macro_import_image(selector: String) -> String {
 fn macro_import_boundary_report() -> String {
   let ordinary =
     expect_loaded(
-    , macro_import_image("macro as call"(String))
-    , "loader rejected an ordinary import whose name is macro"(String)
+    , macro_import_image("macro as call"[String])
+    , "loader rejected an ordinary import whose name is macro"[String]
     );
-  if(string_eq(ordinary, ""(String))) {
-    match(un_load_outcome(load_package(macro_import_image("macro choose as call"(String))))) {
+  if(string_eq(ordinary, ""[String])) {
+    match(un_load_outcome(load_package(macro_import_image("macro choose as call"[String])))) {
       (
-      , .(_loaded: Lr_image) { "loader accepted a surface macro import tag\n"(String) }
+      , .(_loaded: Lr_image) { "loader accepted a surface macro import tag\n"[String] }
       , .(diagnostic: Lr_diag) {
           let actual = diag_bare_message(Lr_diag.get(diagnostic));
           if(string_eq(
           , actual
           , "dyn_load_prime: malformed image — expected comma or closing parenthesis "
-            "in import list at line 3, column 23"(String)
+            "in import list at line 3, column 23"[String]
           )) {
-            ""(String)
+            ""[String]
           } else {
             string_concat(
-            , "loader macro import rejection: "(String)
-            , string_concat(actual, "\n"(String))
+            , "loader macro import rejection: "[String]
+            , string_concat(actual, "\n"[String])
             )
           }
         }
@@ -1061,20 +1140,20 @@ pub(testapi) fn loader_allocator_hygiene_report() -> String {
     (
     , .(image: Lr_image) {
         let allocator_report = inspect_exports(image_exports(Lr_image.get(image)));
-        if(string_eq(allocator_report, ""(String))) {
+        if(string_eq(allocator_report, ""[String])) {
           match(un_load_outcome(load_package(unused_malformed_alias_image()))) {
             (
             , .(_unused_ok: Lr_image) {
                 match(un_load_outcome(load_package(used_malformed_alias_image()))) {
                   (
                   , .(_used_wrongly_loaded: Lr_image) {
-                      "loader accepted a member use through an unresolved alias\n"(String)
+                      "loader accepted a member use through an unresolved alias\n"[String]
                     }
                   , .(_used_rejected: Lr_diag) {
                       let value_origins = value_binding_origin_report();
-                      if(string_eq(value_origins, ""(String))) {
+                      if(string_eq(value_origins, ""[String])) {
                         let macro_imports = macro_import_boundary_report();
-                        if(string_eq(macro_imports, ""(String))) {
+                        if(string_eq(macro_imports, ""[String])) {
                           identity_alias_catalog_report()
                         } else {
                           macro_imports
@@ -1088,8 +1167,8 @@ pub(testapi) fn loader_allocator_hygiene_report() -> String {
               }
             , .(diagnostic: Lr_diag) {
                 string_concat(
-                , "loader rejected an unused private malformed alias: "(String)
-                , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String))
+                , "loader rejected an unused private malformed alias: "[String]
+                , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"[String])
                 )
               }
             )
@@ -1100,8 +1179,8 @@ pub(testapi) fn loader_allocator_hygiene_report() -> String {
       }
     , .(diagnostic: Lr_diag) {
         string_concat(
-        , "loader allocator probe failed to load: "(String)
-        , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"(String))
+        , "loader allocator probe failed to load: "[String]
+        , string_concat(diag_message(Lr_diag.get(diagnostic)), "\n"[String])
         )
       }
     )

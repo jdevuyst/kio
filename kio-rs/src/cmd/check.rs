@@ -1798,6 +1798,26 @@ fn lsp_record_block_positions(
 }
 
 #[cfg(all(feature = "surface", feature = "lsp"))]
+fn lsp_reconcile_call_presentations(
+    surface_modules: &BTreeMap<PackageKey, Vec<(PathBuf, Module<Surface>)>>,
+    file_to_module: &BTreeMap<PathBuf, String>,
+    position_index: &mut crate::pass::typecheck_full::PositionIndex,
+    cancel_token: &crate::lsp::cancel::CancellationToken,
+) -> Option<()> {
+    for modules in surface_modules.values() {
+        for (file, module) in modules {
+            if cancel_token.is_cancelled() {
+                return None;
+            }
+            position_index.reconcile_call_presentations(file_to_module.get(file)?, || {
+                crate::lsp::signature_help::written_call_arguments(module)
+            });
+        }
+    }
+    Some(())
+}
+
+#[cfg(all(feature = "surface", feature = "lsp"))]
 fn lsp_record_callable_declaration_positions(
     _parsed: &package_collection::ParsedPackageCollection,
     callable_declarations: &BTreeMap<PackageKey, crate::pass::full::LspSourceDeclarations>,
@@ -2419,6 +2439,12 @@ pub(crate) fn analyze_workspace_at_with_overlay_lsp_with_declarations(
         &mut merged_index,
         cancel_token,
     )?;
+    lsp_reconcile_call_presentations(
+        &surface_modules,
+        &file_to_module,
+        &mut merged_index,
+        cancel_token,
+    )?;
     lsp_record_callable_declaration_positions(
         &parsed_ws,
         &callable_declarations,
@@ -2805,6 +2831,12 @@ pub(crate) fn analyze_module_at_with_overlay_lsp_cancellable_with_memos(
         &mut position_index,
         cancel_token,
     )?;
+    lsp_reconcile_call_presentations(
+        &surface_modules,
+        &file_to_module,
+        &mut position_index,
+        cancel_token,
+    )?;
     lsp_record_missing_declaration_sites(
         &parsed_ws,
         &lowered_workspace,
@@ -3132,13 +3164,18 @@ fn collect_unused_expr_decls(
             collect_unused_expr_decls(source, file_path, module_path, &plan.value, declarations);
             collect_unused_expr_decls(source, file_path, module_path, &plan.body, declarations);
         }
-        Expr::UserMacro { args, .. } => {
-            collect_unused_call_arg_decls(source, file_path, module_path, args, declarations);
+        Expr::UserMacro { stages, .. } => {
+            for stage in stages {
+                collect_unused_call_arg_decls(
+                    source,
+                    file_path,
+                    module_path,
+                    &stage.args,
+                    declarations,
+                );
+            }
         }
-        Expr::Ufcs { receiver, args, .. } => {
-            collect_unused_expr_decls(source, file_path, module_path, receiver, declarations);
-            collect_unused_call_arg_decls(source, file_path, module_path, args, declarations);
-        }
+        Expr::Ufcs { ext, .. } => match *ext {},
         Expr::Path { .. }
         | Expr::Unit { .. }
         | Expr::StrLit { .. }
@@ -4016,7 +4053,7 @@ mod tests {
             "module pkg/main; \
              import pkg/refl(Rep); \
              import pkg/refl(macro make_rep); \
-             fn main() -> Rep { make_rep(., ()) }",
+             fn main() -> Rep { make_rep[.](()) }",
         )
         .expect("write consumer module");
 
@@ -4193,9 +4230,9 @@ mod tests {
         "newtype Left : . { constructor left; projector unleft; };\n",
         "newtype Right : . { constructor right; projector unright; };\n",
         "newtype Box[A] : A { constructor box; projector unbox; };\n",
-        "fn pure[A](value: A) -> Box(A) { Box.box(value) }\n",
-        "fn choose_second[A](first: A, second: Right) -> Box(Right) {\n",
-        "  do (.[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {\n",
+        "fn pure[A](value: A) -> Box[A] { Box.box(value) }\n",
+        "fn choose_second[A](first: A, second: Right) -> Box[Right] {\n",
+        "  do (.[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {\n",
         "    next(Box.unbox(value))\n",
         "  }) {\n",
         "    let first_value <- pure(first);\n",
@@ -4226,7 +4263,7 @@ mod tests {
         let lsp_types::HoverContents::Markup(contents) = hover.contents else {
             panic!("hover is markup");
         };
-        assert_eq!(contents.value, "```kio\nBox(A)\n```");
+        assert_eq!(contents.value, "```kio\nBox[A]\n```");
         let hints = crate::lsp::inlay_hints::handle_inlay_hints(
             &uri,
             &Range::new(Position::new(0, 0), Position::new(u32::MAX, 0)),
@@ -4331,7 +4368,7 @@ mod tests {
         .expect("typed hints");
         let lines = LineIndex::new(source);
         for (marker, offset, expected) in [
-            ("pair(value", 4, "[A, A]"),
+            ("pair(value", 4, "[A][A]"),
             ("value.>id", 9, "[A]"),
             ("{ x })(value)", 5, "[A]"),
             ("() + ()", 7, "[.]"),
@@ -4358,11 +4395,11 @@ mod tests {
         let source = concat!(
             "module pkg/main; import sequence(macro do);\n",
             "newtype Box[A]: A { constructor box; projector unbox; };\n",
-            "fn pure[A](value: A) -> Box(A) { Box.box(value) }\n",
-            "fn factory[X](value: X) -> [A][B](Box(A) & (A -> Box(B))) -> Box(B) {\n",
-            "  .[A][B](boxed: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(boxed)) }\n",
+            "fn pure[A](value: A) -> Box[A] { Box.box(value) }\n",
+            "fn factory[X](value: X) -> [A][B](Box[A] & (A -> Box[B])) -> Box[B] {\n",
+            "  .[A][B](boxed: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(boxed)) }\n",
             "}\n",
-            "fn run() -> Box(.) {\n",
+            "fn run() -> Box[.] {\n",
             "  do(factory(())) {\n",
             "    let first <- pure(());\n",
             "    do(factory(())) {\n",
@@ -6149,7 +6186,7 @@ mod tests {
 
         let source = concat!(
             "module pkg/main;\n",
-            "fn apply[A][*F](f: F(A), value: A) -> A { value }\n",
+            "fn apply[A][*F](f: F[A], value: A) -> A { value }\n",
             "newtype Pack[A] <E> : A & E { constructor mk_pack; projector un_pack; };\n",
         );
         let (dir, analysis, source_path) = analyze_lsp_fixture(source);
@@ -6192,7 +6229,7 @@ mod tests {
         };
 
         let a_decl = source.find("[A]").expect("A declaration") + 1;
-        let a_use = source.find("F(A)").expect("A use") + 2;
+        let a_use = source.find("F[A]").expect("A use") + 2;
         let a_decl_range = range(a_decl, "A");
         assert!(references_at(a_decl, true).contains(&a_decl_range));
         let a_without_decl = references_at(a_decl, false);
@@ -6204,7 +6241,7 @@ mod tests {
         assert!(a_without_use_cursor.contains(&range(a_use, "A")));
 
         let f_decl = source.find("[*F]").expect("F declaration") + 2;
-        let f_use = source.find("F(A)").expect("F use");
+        let f_use = source.find("F[A]").expect("F use");
         let f_decl_range = range(f_decl, "F");
         assert!(references_at(f_decl, true).contains(&f_decl_range));
         assert!(!references_at(f_decl, false).contains(&f_decl_range));
@@ -6851,12 +6888,12 @@ mod tests {
              import __comptime__;\n\n\
              pub type Optional_type = __Type__ | .;\n\n\
              pub pure fn id_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Optional_type) -> __Checked_term__ {\n\
-               __either__(__Type__, ., __Checked_term__, target, .(_target: __Type__) -> __Checked_term__ {\n\
+               __either__[__Type__][.][__Checked_term__](target, .(_target: __Type__) -> __Checked_term__ {\n\
                  value\n\
-               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\"(__Diagnostic_text__)) })\n\
+               }, .() -> __Checked_term__ { __macro_error__(ct, \"macro needs a target\"[__Diagnostic_text__]) })\n\
              }\n\n\
              pub pure fn fail_impl(ct: __Comptime__, _source: __Type__, _value: __Checked_term__, _target: Optional_type) -> __Checked_term__ {\n\
-               __macro_error__(ct, \"bad macro ran\"(__Diagnostic_text__))\n\
+               __macro_error__(ct, \"bad macro ran\"[__Diagnostic_text__])\n\
              }\n\n\
              pub macro id_user : [Source] Source -> [Target] Target { impl id_impl; };\n\n\
              pub macro fail_user : [Source] Source -> [Target] Target { impl fail_impl; };\n",
@@ -6867,14 +6904,14 @@ mod tests {
             &main_path,
             "module main;\n\n\
              import macros(macro id_user);\n\n\
-             pub fn run() -> . { id_user(., ()) }\n",
+             pub fn run() -> . { id_user[.](()) }\n",
         )
         .expect("write main");
         std::fs::write(
             dir.join("bad.kio"),
             "module bad;\n\n\
              import macros(macro fail_user);\n\n\
-             pub fn bad() -> . { fail_user(., ()) }\n",
+             pub fn bad() -> . { fail_user[.](()) }\n",
         )
         .expect("write bad");
         main_path
@@ -7250,7 +7287,7 @@ mod tests {
         let provider = std::fs::read_to_string(&provider_path).expect("read macro provider");
         let edited = provider.replace(
             "\nvalue\n",
-            "\n__macro_error__(ct, \"edited macro ran\"(__Diagnostic_text__))\n",
+            "\n__macro_error__(ct, \"edited macro ran\"[__Diagnostic_text__])\n",
         );
         assert_ne!(
             edited, provider,
@@ -9211,7 +9248,7 @@ mod typed_cache_dependency_fingerprint_tests {
         let changed_helper = same_package_macro_impl_surfaces(&package(
             macro_source,
             "module macro_util;\n\
-             pub pure fn helper[A](value: A)[B] -> B { helper(A, value, B) }\n",
+             pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }\n",
         ));
         let changed_declaration = same_package_macro_impl_surfaces(&package(
             "module macros;\n\
@@ -9232,7 +9269,7 @@ mod typed_cache_dependency_fingerprint_tests {
         let qualified_changed_helper = same_package_macro_impl_surfaces(&package(
             qualified_macro_source,
             "module macro_util;\n\
-             pub pure fn helper[A](value: A)[B] -> B { helper(A, value, B) }\n",
+             pub pure fn helper[A](value: A)[B] -> B { helper[A](value)[B] }\n",
         ));
         assert_ne!(
             qualified_baseline.get(&macros),
@@ -10490,7 +10527,7 @@ mod contract_surface_tests {
         check::<PrimePipeline>("pub fn expose(value: _) -> . { () }");
         let malformed_rec = "rec(loop) { \
             pub fn first[A](value: A) -> A { value }; \
-            pub fn second[A, B](value: A) -> A { value } }";
+            pub fn second[A][B](value: A) -> A { value } }";
         check::<FullPipeline>(malformed_rec);
         check::<PrimePipeline>(malformed_rec);
     }
@@ -10599,7 +10636,7 @@ mod contract_surface_tests {
         let error = projected_contract_error(
             "module api;\n\
              pub type Box[A] = A;\n\
-             pub fn bad(value: Box(., .)) -> . { () }\n",
+             pub fn bad(value: Box[.][ .]) -> . { () }\n",
         );
         assert!(
             matches!(error, Error::Type(_)),
@@ -10831,8 +10868,8 @@ mod contract_surface_tests {
         let error = projected_contract_error(
             "module api;\n\
              rec(loop) {\n\
-               pub fn left[A](value: A) -> A { recur right(A, value) };\n\
-               pub fn right[A, B](value: A) -> A { recur left(A, value) }\n\
+               pub fn left[A](value: A) -> A { recur right[A](value) };\n\
+               pub fn right[A][ B](value: A) -> A { recur left[A](value) }\n\
              }\n",
         );
         assert!(
@@ -10846,7 +10883,7 @@ mod contract_surface_tests {
         let source = "module api;\n\
              rec(loop) {\n\
                pub fn same[*F](value: .) -> . { value };\n\
-               pub fn same[A, B](value: .) -> . { value }\n\
+               pub fn same[A][ B](value: .) -> . { value }\n\
              }\n";
         let first = projected_contract_error(source);
         assert!(
@@ -11006,7 +11043,7 @@ mod contract_surface_tests {
         let error = projected_contract_error(
             "module api;\n\
              type Box[A] = A;\n\
-             pub fn expose(value: Box(., .)) { () }\n",
+             pub fn expose(value: Box[.][ .]) { () }\n",
         );
         assert!(
             matches!(error, Error::Type(_)),

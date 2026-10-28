@@ -26,7 +26,7 @@ fn run(value: .) {
   one_sum(value);
   one_prod(value);
   fit(value);
-  match(value, .(item: .) { () });
+  match(value)(.(item: .) { () });
   foo(value)
 }
 

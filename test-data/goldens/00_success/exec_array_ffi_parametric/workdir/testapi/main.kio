@@ -22,19 +22,17 @@ fn i32_eq(a: I32, b: I32) -> Bool {
 // instantiation path — `main` calls it at `A = I32` and
 // `A = String`, two distinct monomorphizations of one polymorphic
 // fn operating on a host array.
-pub fn first[A](xs: Array(A)) -> A | . {
+pub fn first[A](xs: Array[A]) -> A | . {
   if(leq_i32(1, array_len(xs))) { widen_sum(array_get(xs, 0)) } else { widen_sum(()) }
 }
 
 // Generic reverse: read the host array right-to-left and push each
 // element into a fresh host array. The fresh array is host-produced
 // here from Kio's perspective on the way back out.
-fn reverse[A](xs: Array(A)) -> Array(A) {
-  let out = array_make_empty(A, ());
+fn reverse[A](xs: Array[A]) -> Array[A] {
+  let out = array_make_empty[A](());
   let _ =
-    loop(
-    , I32
-    , .
+    loop[I32][.](
     , .(i: I32) -> I32 | . {
         if(leq_i32(0, i)) {
           array_push(out, array_get(xs, i));
@@ -53,7 +51,7 @@ fn reverse[A](xs: Array(A)) -> Array(A) {
 // `i >= len`, which is true exactly when the walk ran off the end
 // (every pair matched) and false when it stopped early on a mismatch
 // (still in range).
-fn arrays_equal_step[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A), i: I32) -> I32 | Bool {
+fn arrays_equal_step[A](eq: (A & A) -> Bool, p: Array[A], q: Array[A], i: I32) -> I32 | Bool {
   let keep_going =
     if(leq_i32(i, sub_i32(array_len(p), 1))) {
       eq(array_get(p, i), array_get(q, i))
@@ -66,9 +64,9 @@ fn arrays_equal_step[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A), i: I32) -
 // Element-wise structural equality of two host arrays, parametric
 // over the payload `A` via a supplied `eq`. Used to assert the
 // round-trip `reverse(reverse(xs))` reproduces `xs`.
-fn arrays_equal[A](eq: (A & A) -> Bool, p: Array(A), q: Array(A)) -> Bool {
+fn arrays_equal[A](eq: (A & A) -> Bool, p: Array[A], q: Array[A]) -> Bool {
   if(i32_eq(array_len(p), array_len(q))) {
-    loop(I32, Bool, .(i: I32) -> I32 | Bool { arrays_equal_step(eq, p, q, i) }, 0)
+    loop[I32][Bool](.(i: I32) -> I32 | Bool { arrays_equal_step(eq, p, q, i) }, 0)
   } else {
     leq_i32(1, 0)
   }
@@ -86,7 +84,7 @@ fn show_first_str(r: String | .) -> String {
   }
 }
 
-fn fill_i32(xs: Array(I32), a: I32, b: I32, c: I32) {
+fn fill_i32(xs: Array[I32], a: I32, b: I32, c: I32) {
   array_push(xs, a);
   array_push(xs, b);
   array_push(xs, c)
@@ -94,18 +92,18 @@ fn fill_i32(xs: Array(I32), a: I32, b: I32, c: I32) {
 
 pub fn main() {
   // `first` at a = I32.
-  let ints = array_make_empty(I32, ());
+  let ints = array_make_empty[I32](());
   fill_i32(ints, 10, 20, 30);
   print(show_first_i32(first(ints)));
   print("\n");
   // `first` at a = String — the second monomorphization.
-  let words = array_make_empty(String, ());
+  let words = array_make_empty[String](());
   array_push(words, "alpha");
   array_push(words, "beta");
   print(show_first_str(first(words)));
   print("\n");
   // `first` on an empty array yields the `()` arm.
-  let empty = array_make_empty(I32, ());
+  let empty = array_make_empty[I32](());
   print(show_first_i32(first(empty)));
   print("\n");
   // Round-trip: reverse(reverse(ints)) must reproduce `ints`

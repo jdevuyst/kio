@@ -9,7 +9,7 @@ v(1) {
         pub newtype Token[A] : A { pub constructor make_token; pub projector read_token };
         host type Unused[A];
         pub fn echo(value: Str) -> Str;
-        host fn old(head: Str, value: Str & Box(Token(.))) -> Box(Token(.));
+        host fn old(head: Str, value: Str & Box[Token[.]]) -> Box[Token[.]];
         host fn open() -> Str
       };
       module legacy {

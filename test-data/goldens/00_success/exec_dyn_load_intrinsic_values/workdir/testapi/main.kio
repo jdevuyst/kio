@@ -1,0 +1,83 @@
+module testapi/main;
+
+import defaults(instantiate_default);
+import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
+import loader(diag_message, un_load_outcome, {apply}, {i32_out}, {lookup}, {unit_in});
+import loader/scan(load_package);
+import macros/match(macro match);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn call_value[P](surface: Surface[P]) -> String {
+  match(surface.?{lookup}("value"[String])) {
+    (
+    , .(callee: P) {
+        match(surface.?{apply}((callee, surface.?{unit_in}))) {
+          (
+          , .(answer: P) {
+              match(surface.?{i32_out}(answer)) {
+                (.(value: I32) { int_to_string(value) }, .(diag: Diag) { diag_message(diag) })
+              }
+            }
+          , .(diag: Diag) { diag_message(diag) }
+          )
+        }
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
+  }
+}
+
+// The image is authored independently of compiler output: bare and partial
+// intrinsic values must be loadable, and each whole packet executes once.
+fn image_source() -> String {
+  "module hostapi;\nhost type I32 role(i32);\nhost type Bool role(bool);\nhost "
+  "type String role(str);\nmodule hostapi/fmt;\nimport hostapi(I32);\nhost fn "
+  "print_i32(value: I32);\nmodule hostapi/io;\nimport hostapi(String);\nhost "
+  "fn print(p0: String);\nmodule guest;\nimport __intrinsics__;\nimport "
+  "hostapi(I32, Bool, String);\nimport hostapi/fmt(print_i32);\nimport "
+  "hostapi/io(print);\nfn print_i32_line(value: I32) { print_i32(value); "
+  "print(\"\\n\"[String]) }\ntype Carrier[A][B] = A;\nfn mark(value: I32) -> I32 "
+  "{ print_i32_line(value); value }\nfn packet() -> I32 & I32 {\n  "
+  "print_i32_line(10[I32]);\n  __pair__[I32][I32](mark(11[I32]), "
+  "mark(12[I32]))\n}\nfn handler(tag: I32) -> I32 -> I32 {\n  "
+  "print_i32_line(tag);\n  .(value: I32) { print_i32_line(25[I32]); value }\n"
+  "}\nfn branch_packet(value: I32) -> (I32 | I32) & (I32 -> I32) & (I32 -> "
+  "I32) {\n  print_i32_line(20[I32]);\n  __pair__[(I32 | I32)][((I32 -> I32) "
+  "& (I32 -> I32))](\n    __left__[I32][I32](value),\n    __pair__[(I32 -> "
+  "I32)][(I32 -> I32)](handler(21[I32]), handler(22[I32]))\n  )\n}\nfn "
+  "yes(value: I32) -> . -> I32 {\n  print_i32_line(31[I32]);\n  .() { "
+  "print_i32_line(41[I32]); value }\n}\nfn no(value: I32) -> . -> I32 {\n  "
+  "print_i32_line(32[I32]);\n  .() { print_i32_line(42[I32]); value }\n}\nfn "
+  "conditional_packet(value: I32) -> Bool & (. -> I32) & (. -> I32) {\n  "
+  "print_i32_line(30[I32]);\n  __pair__[Bool][((. -> I32) & (. -> I32))](\n    "
+  ".t[Bool], __pair__[(. -> I32)][(. -> I32)](yes(value), no(value))\n  )\n}\n"
+  "pub fn value() -> I32 {\n  let pairing = __pair__;\n  let partial = "
+  "pairing[I32];\n  let complete = partial[I32];\n  let product = "
+  "complete(packet());\n  let project = __fst__[I32][I32];\n  let choice = "
+  "__either__[I32][I32][I32];\n  let selected = "
+  "choice(branch_packet(project(product)));\n  let conditional = "
+  "__if_then_else__[Carrier[Bool][I32]];\n  "
+  "conditional[I32](conditional_packet(selected))\n}\npackage guest;\nbridge { "
+  "guest; hostapi; hostapi/fmt; hostapi/io; }\n"[String]
+}
+
+pub fn main() {
+  match(un_load_outcome(load_package(image_source()))) {
+    (
+    , .(image: Lr_image) {
+        match(instantiate_default(Lr_image.get(image))) {
+          (
+          , .(loaded: Loaded) {
+              Loaded.get(loaded)(.[P](surface: Surface[P]) { print(call_value(surface)) })
+            }
+          , .(diag: Diag) { print(diag_message(diag)) }
+          )
+        }
+      }
+    , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
+    )
+  };
+  print("\n"[String])
+}

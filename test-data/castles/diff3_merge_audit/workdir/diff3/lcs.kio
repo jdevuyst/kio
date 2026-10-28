@@ -41,9 +41,9 @@ pub fn other_at(pair: Match) -> I32 {
 
 /// A solved alignment: both documents, the table, and the two lengths.
 pub labels Dp = {
-, left: list.List(String)
-, right: list.List(String)
-, table: list.List(list.List(I32))
+, left: list.List[String]
+, right: list.List[String]
+, table: list.List[list.List[I32]]
 , left_len: I32
 , right_len: I32
 };
@@ -51,10 +51,10 @@ pub labels Dp = {
 /// Row `i` of the table, given row `i + 1` (`below`) as a suffix starting
 /// at the current column. Recursing to the right first means `rest` is the
 /// part of row `i` this cell depends on.
-rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(I32)) -> list.List(I32) {
+rec(loop) fn build_row(line: String, right: list.List[String], below: list.List[I32]) -> list.List[I32] {
   match(list.List.unpack(right)) {
     (
-    , .(other: String, right_rest: list.List(String)) {
+    , .(other: String, right_rest: list.List[String]) {
         let below_rest = list.tail(below);
         let rest = recur(cont) build_row(line, right_rest, below_rest);
         let skip_left = list.head_or(below, 0);
@@ -71,10 +71,10 @@ rec(loop) fn build_row(line: String, right: list.List(String), below: list.List(
   }
 }
 
-rec(loop) fn build_rows(left: list.List(String), right: list.List(String), floor: list.List(I32)) -> list.List(list.List(I32)) {
+rec(loop) fn build_rows(left: list.List[String], right: list.List[String], floor: list.List[I32]) -> list.List[list.List[I32]] {
   match(list.List.unpack(left)) {
     (
-    , .(line: String, left_rest: list.List(String)) {
+    , .(line: String, left_rest: list.List[String]) {
         let below = recur(cont) build_rows(left_rest, right, floor);
         list.cons(build_row(line, right, list.head_or(below, floor)), below)
       }
@@ -83,7 +83,7 @@ rec(loop) fn build_rows(left: list.List(String), right: list.List(String), floor
   }
 }
 
-pub fn align(left: list.List(String), right: list.List(String)) -> Dp {
+pub fn align(left: list.List[String], right: list.List[String]) -> Dp {
   let cols = list.len(right);
   {
   , left
@@ -95,7 +95,7 @@ pub fn align(left: list.List(String), right: list.List(String)) -> Dp {
 }
 
 fn cell(dp: Dp, row: I32, col: I32) -> I32 {
-  list.nth_or(list.nth_or(dp.?{table}, row, list.nil(I32)), col, 0)
+  list.nth_or(list.nth_or(dp.?{table}, row, list.nil[I32]), col, 0)
 }
 
 pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
@@ -104,7 +104,7 @@ pub fn lcs_len(dp: Dp) -> I32 { cell(dp, 0, 0) }
 /// for every aligned line. When the two lines agree the LCS always has an
 /// optimal solution that takes the match, so the traceback never needs to
 /// look back.
-rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List(Match)) -> list.List(Match) {
+rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List[Match]) -> list.List[Match] {
   if(prim.or(leq_i32(dp.?{left_len}, row), leq_i32(dp.?{right_len}, col))) {
     list.reverse(acc)
   } else if(string_eq(list.nth_or(dp.?{left}, row, ""), list.nth_or(dp.?{right}, col, ""))) {
@@ -116,4 +116,4 @@ rec(loop) fn trace(dp: Dp, row: I32, col: I32, acc: list.List(Match)) -> list.Li
   }
 }
 
-pub fn matches(dp: Dp) -> list.List(Match) { trace(dp, 0, 0, list.nil(Match)) }
+pub fn matches(dp: Dp) -> list.List[Match] { trace(dp, 0, 0, list.nil[Match]) }

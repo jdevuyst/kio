@@ -41,9 +41,9 @@ import testapi/iter(loop);
 /// than at an empty event.
 pub type Event = String | .;
 
-pub fn quiet() -> Event { widen_sum((), Event) }
+pub fn quiet() -> Event { widen_sum(())[Event] }
 
-pub fn noted(text: String) -> Event { widen_sum(text, Event) }
+pub fn noted(text: String) -> Event { widen_sum(text)[Event] }
 
 fn num(value: I32) -> String { int_to_string(value) }
 
@@ -81,7 +81,7 @@ pub fn pipeline_row(m: Machine, event: Event) {
   }
 }
 
-rec(loop) fn listing_walk(code: Array(Instr), index: I32) {
+rec(loop) fn listing_walk(code: Array[Instr], index: I32) {
   if(int_lt(index, array_len(code))) {
     line(cat(
     , left(slot_text(index), add_i32(1, digits(index)), 6)
@@ -93,7 +93,7 @@ rec(loop) fn listing_walk(code: Array(Instr), index: I32) {
   }
 }
 
-pub fn program_listing(code: Array(Instr)) { listing_walk(code, 0) }
+pub fn program_listing(code: Array[Instr]) { listing_walk(code, 0) }
 
 /// Instructions per cycle, scaled to permille and truncated -- there are
 /// no floats in this host env, and a ratio printed as a whole number of
@@ -128,9 +128,9 @@ pub fn counters(m: Machine) {
   labeled("audit (cycles - retired == bubbles)", audit_text(m))
 }
 
-rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
+rec(loop) fn reg_walk(regs: Array[I32], index: I32, text: String) -> String {
   if(int_lt(index, array_len(regs))) {
-    let separator = if(int_eq(index, 0)) { "" } else { " " };
+    let .(separator: String) = if(int_eq(index, 0)) { "" } else { " " };
     let entry = cat3(reg_text(index), "=", num(array_get(regs, index)));
     recur reg_walk(regs, add_i32(index, 1), cat3(text, separator, entry))
   } else {
@@ -138,9 +138,9 @@ rec(loop) fn reg_walk(regs: Array(I32), index: I32, text: String) -> String {
   }
 }
 
-rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
+rec(loop) fn mem_walk(mem: Array[I32], index: I32, text: String) -> String {
   if(int_lt(index, array_len(mem))) {
-    let separator = if(int_eq(index, 0)) { "" } else { " " };
+    let .(separator: String) = if(int_eq(index, 0)) { "" } else { " " };
     let entry = cat(cat3("[", num(index), "]="), num(array_get(mem, index)));
     recur mem_walk(mem, add_i32(index, 1), cat3(text, separator, entry))
   } else {
@@ -148,9 +148,9 @@ rec(loop) fn mem_walk(mem: Array(I32), index: I32, text: String) -> String {
   }
 }
 
-pub fn dump_registers(caption: String, regs: Array(I32)) { labeled(caption, reg_walk(regs, 0, "")) }
+pub fn dump_registers(caption: String, regs: Array[I32]) { labeled(caption, reg_walk(regs, 0, "")) }
 
-pub fn dump_memory(caption: String, mem: Array(I32)) { labeled(caption, mem_walk(mem, 0, "")) }
+pub fn dump_memory(caption: String, mem: Array[I32]) { labeled(caption, mem_walk(mem, 0, "")) }
 
 fn arrow(from_value: I32, to_value: I32) -> String { cat3(num(from_value), " -> ", num(to_value)) }
 

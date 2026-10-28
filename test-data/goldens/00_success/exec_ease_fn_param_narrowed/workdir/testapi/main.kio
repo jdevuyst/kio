@@ -19,6 +19,6 @@ newtype B : String { pub constructor mk_b; pub projector un_b }
 fn source(x: A) { print(A.un_a(x)) }
 
 pub fn main() {
-  let wider_arg = ease(source, (A & B) -> .);
+  let wider_arg = ease(source)[(A & B) -> .];
   wider_arg((A.mk_a("ease! param narrowed ok\n"), B.mk_b("unused")))
 }

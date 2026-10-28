@@ -42,7 +42,7 @@ pub fn cross(a: Point, b: Point, c: Point) -> I32 {
   )
 }
 
-rec(loop) fn area_walk(points: Array(Point), i: I32, total: I32) -> I32 {
+rec(loop) fn area_walk(points: Array[Point], i: I32, total: I32) -> I32 {
   let n = arr.array_len(points);
   if(equal(i, n)) {
     total
@@ -57,9 +57,9 @@ rec(loop) fn area_walk(points: Array(Point), i: I32, total: I32) -> I32 {
   }
 }
 
-pub fn area2(points: Array(Point)) -> I32 { area_walk(points, 0, 0) }
+pub fn area2(points: Array[Point]) -> I32 { area_walk(points, 0, 0) }
 
-rec(loop) fn reverse_walk(points: Array(Point), i: I32, j: I32) {
+rec(loop) fn reverse_walk(points: Array[Point], i: I32, j: I32) {
   if(less(i, j)) {
     arr.array_swap(points, i, j);
     recur reverse_walk(points, num.add_i32(i, 1), num.sub_i32(j, 1))
@@ -68,7 +68,7 @@ rec(loop) fn reverse_walk(points: Array(Point), i: I32, j: I32) {
   }
 }
 
-pub fn normalized(points: Array(Point)) -> Array(Point) {
+pub fn normalized(points: Array[Point]) -> Array[Point] {
   let result = arr.array_clone(points);
   if(less(area2(result), 0)) {
     reverse_walk(result, 0, num.sub_i32(arr.array_len(result), 1))
@@ -106,7 +106,7 @@ fn intersects(a: Point, b: Point, c: Point, d: Point) -> Bool {
   )
 }
 
-rec(loop) fn coordinate_check(points: Array(Point), i: I32) -> Bool {
+rec(loop) fn coordinate_check(points: Array[Point], i: I32) -> Bool {
   if(equal(i, arr.array_len(points))) {
     .t
   } else {
@@ -122,7 +122,7 @@ rec(loop) fn coordinate_check(points: Array(Point), i: I32) -> Bool {
   }
 }
 
-rec(loop) fn duplicate_check(points: Array(Point), i: I32, j: I32) -> Bool {
+rec(loop) fn duplicate_check(points: Array[Point], i: I32, j: I32) -> Bool {
   let n = arr.array_len(points);
   if(equal(i, n)) {
     .f
@@ -139,7 +139,7 @@ rec(loop) fn duplicate_check(points: Array(Point), i: I32, j: I32) -> Bool {
   }
 }
 
-rec(loop) fn collinear_check(points: Array(Point), i: I32) -> Bool {
+rec(loop) fn collinear_check(points: Array[Point], i: I32) -> Bool {
   let n = arr.array_len(points);
   if(equal(i, n)) {
     .f
@@ -157,7 +157,7 @@ rec(loop) fn collinear_check(points: Array(Point), i: I32) -> Bool {
   }
 }
 
-rec(loop) fn crossing_check(points: Array(Point), i: I32, j: I32) -> Bool {
+rec(loop) fn crossing_check(points: Array[Point], i: I32, j: I32) -> Bool {
   let n = arr.array_len(points);
   if(equal(i, n)) {
     .f
@@ -177,7 +177,7 @@ rec(loop) fn crossing_check(points: Array(Point), i: I32, j: I32) -> Bool {
   }
 }
 
-pub fn validate(points: Array(Point)) -> String {
+pub fn validate(points: Array[Point]) -> String {
   let n = arr.array_len(points);
   if(either(less(n, 3), less(12, n))) {
     "vertex count outside 3..12"

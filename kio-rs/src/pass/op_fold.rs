@@ -1998,8 +1998,13 @@ fn fold_type(ty: &mut Type<Surface>, scope: &OpScope) -> Result<(), Error> {
 fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
     match expr {
         Expr::BlockCall { prefix, blocks, .. } => {
-            for value in prefix {
-                fold_expr(value, scope)?;
+            for stage in prefix {
+                for arg in &mut stage.args {
+                    match arg {
+                        CallArg::Value(v) => fold_expr(v, scope)?,
+                        CallArg::Type(t) => fold_type(t, scope)?,
+                    }
+                }
             }
             for block in blocks {
                 crate::pass::placeholder::prepare_items(&mut block.items)?;
@@ -2028,10 +2033,13 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
                 }
             }
         }
-        Expr::RecCall { args, .. } => {
-            for arg in args.iter_mut() {
-                if let CallArg::Value(v) = arg {
-                    fold_expr(v, scope)?;
+        Expr::RecCall { stages, .. } => {
+            for stage in stages {
+                for arg in &mut stage.args {
+                    match arg {
+                        CallArg::Value(v) => fold_expr(v, scope)?,
+                        CallArg::Type(t) => fold_type(t, scope)?,
+                    }
                 }
             }
         }
@@ -2098,16 +2106,24 @@ fn fold_expr(expr: &mut Expr<Surface>, scope: &OpScope) -> Result<(), Error> {
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { args, .. } => {
-            for arg in args {
-                match arg {
-                    CallArg::Value(value) => fold_expr(value, scope)?,
-                    CallArg::Type(ty) => fold_type(ty, scope)?,
+        Expr::UserMacro { stages, .. } => {
+            for stage in stages {
+                for arg in &mut stage.args {
+                    match arg {
+                        CallArg::Value(value) => fold_expr(value, scope)?,
+                        CallArg::Type(ty) => fold_type(ty, scope)?,
+                    }
                 }
             }
         }
-        Expr::Ufcs { receiver, args, .. } => {
+        Expr::Ufcs {
+            receiver,
+            callee,
+            args,
+            ..
+        } => {
             fold_expr(receiver, scope)?;
+            fold_expr(callee, scope)?;
             for arg in args.iter_mut() {
                 if let CallArg::Value(v) = arg {
                     fold_expr(v, scope)?;
@@ -3526,8 +3542,8 @@ mod tests {
 
         let grouped = p("module grouped; \
              rec { \
-               labels Reordered[A][B] = { swapped[B][A]: Peer(B, A) }; \
-               newtype Peer[A][B] : Reordered(A, B) { constructor make; projector open; }; \
+               labels Reordered[A][B] = { swapped[B][A]: Peer[B][ A] }; \
+               newtype Peer[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
              } \
              varop [* *] { foldr Reordered.get Reordered.mk; };");
         let message = expect_name_error(validate_against_modules(&grouped, &[]));
@@ -3575,7 +3591,7 @@ mod tests {
              pub newtype Box[A] : A { pub constructor make; pub projector open; };");
         let relay = p("module relay; \
              import origin as imported; \
-             pub type Box[A] = imported.Box(A);");
+             pub type Box[A] = imported.Box[A];");
         let consumer = p("module x; \
              import relay(Box); \
              op + _ { impl Box.make; }; \
@@ -3586,7 +3602,7 @@ mod tests {
         let local = p("module local; \
              import origin as imported; \
              import local as self_module; \
-             type Box[A] = imported.Box(A); \
+             type Box[A] = imported.Box[A]; \
              op + _ { impl Box.make; }; \
              op - _ { impl self_module.Box.make; }; \
              macro demo : . -> . { impl self_module.Box.make; };");
@@ -3619,7 +3635,7 @@ mod tests {
         let later = p("module x; \
              import origin as imported; \
              op + _ { impl Later.make; }; \
-             type Later[A][B] = imported.Pair(A, B);");
+             type Later[A][B] = imported.Pair[A][ B];");
         let message = expect_name_error(validate_against_modules(
             &later,
             std::slice::from_ref(&origin),
@@ -3632,7 +3648,7 @@ mod tests {
              import origin as imported; \
              import x as self_module; \
              op + _ { impl self_module.Later.make; }; \
-             type Later[A][B] = imported.Pair(A, B);");
+             type Later[A][B] = imported.Pair[A][ B];");
         let message = expect_name_error(validate_against_modules(
             &later_qualified,
             std::slice::from_ref(&origin),
@@ -3673,9 +3689,9 @@ mod tests {
             .expect("a self-qualified alias body retains an earlier local target");
 
         for (name, body) in [
-            ("structural", "A & imported.Pair(A, B)"),
-            ("reordered", "imported.Pair(B, A)"),
-            ("partial", "imported.Pair(A)"),
+            ("structural", "A & imported.Pair[A][B]"),
+            ("reordered", "imported.Pair[B][A]"),
+            ("partial", "imported.Pair[A]"),
         ] {
             let consumer = p(&format!(
                 "module x; import origin as imported; \

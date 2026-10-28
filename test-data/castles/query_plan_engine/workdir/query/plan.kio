@@ -42,19 +42,19 @@ rec {
   pub newtype Plan : Plan_node { pub constructor mk_plan; pub projector un_plan }
 }
 
-pub fn eq_op() -> Cmp_op { {op_eq=}.>widen_sum(Cmp_op) }
+pub fn eq_op() -> Cmp_op { ({op_eq=}.>widen_sum)[Cmp_op] }
 
-pub fn lt_op() -> Cmp_op { {op_lt=}.>widen_sum(Cmp_op) }
+pub fn lt_op() -> Cmp_op { ({op_lt=}.>widen_sum)[Cmp_op] }
 
-pub fn leq_op() -> Cmp_op { {op_leq=}.>widen_sum(Cmp_op) }
+pub fn leq_op() -> Cmp_op { ({op_leq=}.>widen_sum)[Cmp_op] }
 
-pub fn gt_op() -> Cmp_op { {op_gt=}.>widen_sum(Cmp_op) }
+pub fn gt_op() -> Cmp_op { ({op_gt=}.>widen_sum)[Cmp_op] }
 
-pub fn geq_op() -> Cmp_op { {op_geq=}.>widen_sum(Cmp_op) }
+pub fn geq_op() -> Cmp_op { ({op_geq=}.>widen_sum)[Cmp_op] }
 
-pub fn asc() -> Dir { {dir_asc=}.>widen_sum(Dir) }
+pub fn asc() -> Dir { ({dir_asc=}.>widen_sum)[Dir] }
 
-pub fn desc() -> Dir { {dir_desc=}.>widen_sum(Dir) }
+pub fn desc() -> Dir { ({dir_desc=}.>widen_sum)[Dir] }
 
 pub fn op_text(o: Cmp_op) -> String {
   match(o) {
@@ -75,22 +75,22 @@ pub fn dir_text(d: Dir) -> String {
 }
 
 pub fn cmp(c: schema.Col, o: Cmp_op, n: I32) -> Pred {
-  Pred.mk_pred({lit_col = c, lit_op = o, lit_num = n}.>widen_sum(Pred_node))
+  Pred.mk_pred(({lit_col = c, lit_op = o, lit_num = n}.>widen_sum)[Pred_node])
 }
 
 pub fn cmp_cols(left: schema.Col, o: Cmp_op, right: schema.Col) -> Pred {
-  Pred.mk_pred({pair_left = left, pair_op = o, pair_right = right}.>widen_sum(Pred_node))
+  Pred.mk_pred(({pair_left = left, pair_op = o, pair_right = right}.>widen_sum)[Pred_node])
 }
 
 pub fn all_of(left: Pred, right: Pred) -> Pred {
-  Pred.mk_pred({and_left = left, and_right = right}.>widen_sum(Pred_node))
+  Pred.mk_pred(({and_left = left, and_right = right}.>widen_sum)[Pred_node])
 }
 
 pub fn any_of(left: Pred, right: Pred) -> Pred {
-  Pred.mk_pred({or_left = left, or_right = right}.>widen_sum(Pred_node))
+  Pred.mk_pred(({or_left = left, or_right = right}.>widen_sum)[Pred_node])
 }
 
-pub fn none_of(arg: Pred) -> Pred { Pred.mk_pred({not_arg = arg}.>widen_sum(Pred_node)) }
+pub fn none_of(arg: Pred) -> Pred { Pred.mk_pred(({not_arg = arg}.>widen_sum)[Pred_node]) }
 
 pub fn lit_col_of(n: Lit_col) -> schema.Col { n.?{lit_col} }
 
@@ -114,35 +114,35 @@ pub fn or_right_of(n: Or_right) -> Pred { n.?{or_right} }
 
 pub fn not_arg_of(n: Not_arg) -> Pred { n.?{not_arg} }
 
-pub fn scan(t: schema.Table_id) -> Plan { Plan.mk_plan({scan_table = t}.>widen_sum(Plan_node)) }
+pub fn scan(t: schema.Table_id) -> Plan { Plan.mk_plan(({scan_table = t}.>widen_sum)[Plan_node]) }
 
 pub fn filter(p: Pred, src: Plan) -> Plan {
-  Plan.mk_plan({filter_pred = p, filter_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({filter_pred = p, filter_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn join(left: Plan, right: Plan, lkey: schema.Col, rkey: schema.Col) -> Plan {
-  Plan.mk_plan({join_left = left, join_right = right, join_lkey = lkey, join_rkey = rkey}
-    .>widen_sum(Plan_node))
+  Plan.mk_plan(({join_left = left, join_right = right, join_lkey = lkey, join_rkey = rkey}
+    .>widen_sum)[Plan_node])
 }
 
 pub fn project(cols: schema.Col_list, src: Plan) -> Plan {
-  Plan.mk_plan({project_cols = cols, project_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({project_cols = cols, project_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn group_sum(key: schema.Col, val: schema.Col, src: Plan) -> Plan {
-  Plan.mk_plan({sum_key = key, sum_val = val, sum_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({sum_key = key, sum_val = val, sum_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn group_count(key: schema.Col, src: Plan) -> Plan {
-  Plan.mk_plan({count_key = key, count_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({count_key = key, count_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn order_by(key: schema.Col, d: Dir, src: Plan) -> Plan {
-  Plan.mk_plan({order_key = key, order_dir = d, order_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({order_key = key, order_dir = d, order_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn limit(n: I32, src: Plan) -> Plan {
-  Plan.mk_plan({limit_n = n, limit_src = src}.>widen_sum(Plan_node))
+  Plan.mk_plan(({limit_n = n, limit_src = src}.>widen_sum)[Plan_node])
 }
 
 pub fn scan_table_of(n: Scan_table) -> schema.Table_id { n.?{scan_table} }

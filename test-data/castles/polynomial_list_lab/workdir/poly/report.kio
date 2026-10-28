@@ -97,11 +97,11 @@ fn law_line(c: Check) {
 
 // A fold over a unit accumulator is the traversal this needs: every element is
 // visited for its printing, and nothing is carried between them.
-fn law_lines(checks: lc.List(Check)) {
+fn law_lines(checks: lc.List[Check]) {
   ll.foldl(.(_carry: ., c: Check) -> . { law_line(c) }, (), checks)
 }
 
-fn tally(checks: lc.List(Check)) {
+fn tally(checks: lc.List[Check]) {
   let total = ll.length(checks);
   let held = passes(checks);
   say(render.join([*

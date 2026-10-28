@@ -3,4 +3,4 @@ module user_macro_target_placeholder_needs_context/main;
 import macros(macro id_user);
 import user_macro_target_placeholder_needs_context(String);
 
-fn unresolved(s: String) -> String { let selected = id_user(s, _); selected }
+fn unresolved(s: String) -> String { let selected = id_user(s)[_]; selected }

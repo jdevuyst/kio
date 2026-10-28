@@ -59,7 +59,7 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
         };
         .() { () }
       };
-      recur replay(state, signature.>widen_sum(String | .))
+      recur replay(state, (signature.>widen_sum)[String | .])
     };
     .() { () }
   }
@@ -67,5 +67,5 @@ rec(loop) fn replay(state: m.State, previous: String | .) {
 
 pub fn main() {
   io.print("Temporal join: equal keys, right time in [left-2,left+3]\n");
-  replay(engine.empty(), ().>widen_sum(String | .))
+  replay(engine.empty(), (().>widen_sum)[String | .])
 }

@@ -778,7 +778,7 @@ a skipped package-file fragment.
 
 ````markdown
 ```kio {ignore}
-List(Int)     // type fragment, not a complete module
+List[Int]     // type fragment, not a complete module
 ```
 ````
 
@@ -1021,7 +1021,7 @@ host fn add(a: I32, b: I32) -> I32;
 ```
 
 ```kio {ignore}
-List(Int)                      // skip entirely
+List[Int]                      // skip entirely
 ```
 ````
 

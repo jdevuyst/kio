@@ -27,9 +27,9 @@ fn product_first(input: . | (Version & Tail)) {
 }
 
 pub fn main() {
-  let empty = widen_sum((), . | (Version & Tail));
+  let empty = widen_sum(())[. | (Version & Tail)];
   let packet =
-    widen_sum(({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"}), . | (Version & Tail));
+    widen_sum(({value = "value\n", stamp = "stamp\n"}, {tail = "tail\n"}))[. | (Version & Tail)];
   catchall(empty);
   catchall(packet);
   product_first(empty);

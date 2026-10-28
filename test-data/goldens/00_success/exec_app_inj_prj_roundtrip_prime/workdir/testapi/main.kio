@@ -10,6 +10,6 @@ import testapi/io(print);
 // `Wrap.un_wrap` — survives the Kio' boundary intact.
 pub newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
 
-fn roundtrip[A](x: A) -> A { Wrap.un_wrap(A, Wrap.mk_wrap(A, x)) }
+fn roundtrip[A](x: A) -> A { Wrap.un_wrap[A](Wrap.mk_wrap[A](x)) }
 
-pub fn main() { print(roundtrip(String, "brand prime round-trip ok\n"(String))) }
+pub fn main() { print(roundtrip[String]("brand prime round-trip ok\n"[String])) }

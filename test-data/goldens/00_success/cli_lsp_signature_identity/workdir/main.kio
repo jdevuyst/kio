@@ -12,6 +12,6 @@ pub fn distinct() { other.choose((), ()) }
 
 pub fn host() { provider.supply((), ()) }
 
-pub fn typed() { provider.choose(., (), ()) }
+pub fn typed() { provider.choose[.]((), ()) }
 
 pub fn local(f: . -> .) { f(()) }

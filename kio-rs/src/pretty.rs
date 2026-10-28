@@ -35,12 +35,13 @@
 
 use crate::ast::FnPurityExt;
 use crate::ast::{
-    BridgeBlock, BridgeGlobSegment, BuildBlock, BuildBlockCache, CallArg, DependencyFile,
-    DocComment, ElaboratorCall, Equiv, Expr, FieldAccessLabel, FieldUpdateLabel, FnDef, HostFn,
-    HostFnParam, HostType, Import, ImportItem, ImportKind, Item, LabelForward, LabelSugarLabel,
-    Labels, LiteralAlias, LiteralAliasValue, LockFile, Module, ModulePath, Newtype, Op, OpBody,
-    OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef, SignatureParam, SourceBlock,
-    SourceOrigin, Surface, TargetBlock, Type, TypeAlias, TypeParam, VariadicOperator,
+    BridgeBlock, BridgeGlobSegment, BuildBlock, BuildBlockCache, CallArg, CallStage,
+    DependencyFile, DocComment, ElaboratorCall, Equiv, Expr, FieldAccessLabel, FieldUpdateLabel,
+    FnDef, HostFn, HostFnParam, HostType, Import, ImportItem, ImportKind, Item, LabelForward,
+    LabelSugarLabel, Labels, LiteralAlias, LiteralAliasValue, LockFile, Module, ModulePath,
+    Newtype, Op, OpBody, OpPart, PackageFile, RowLetEntry, Signature, SignatureGroupRef,
+    SignatureParam, SourceBlock, SourceOrigin, Surface, TargetBlock, Type, TypeAlias, TypeParam,
+    VariadicOperator,
 };
 use crate::ast::{DelimitedTrivia, SignatureTriviaPosition, append_relocated_trivia};
 use crate::doc::{
@@ -1853,37 +1854,10 @@ fn doc_type_with_boundary_trivia(t: &Type, leading: &[Trivia], trailing: &[Trivi
 
 fn doc_type_core(t: &Type) -> Doc {
     match t {
-        Type::Path { segments, args, .. } => {
-            let head = text(type_path_surface_str(segments));
-            if args.is_empty() {
-                head
-            } else {
-                let inner = args.iter().map(doc_type_core).collect::<Vec<_>>();
-                let args_trivia: Vec<Vec<crate::pass::lexer::Trivia>> = args
-                    .iter()
-                    .map(|a| a.meta().leading_trivia.clone())
-                    .collect();
-                let args_trailing = args
-                    .iter()
-                    .map(|a| a.meta().trailing_trivia.clone())
-                    .collect::<Vec<_>>();
-                // Expression-shape (use-site) type-application
-                // argument list: stays single-line if it fits within
-                // the 100-column budget, otherwise breaks into A1.
-                concat(
-                    head,
-                    doc_comma_list_with_boundaries(
-                        text("("),
-                        inner,
-                        &args_trivia,
-                        &args_trailing,
-                        &[],
-                        text(")"),
-                        false,
-                    ),
-                )
-            }
-        }
+        Type::Path { segments, args, .. } => concat_all(
+            std::iter::once(text(type_path_surface_str(segments)))
+                .chain(args.iter().map(doc_type_argument)),
+        ),
         Type::Unit { .. } => text("."),
         Type::Bottom { .. } => text("!"),
         Type::Function { param, ret, .. } => concat(
@@ -1961,8 +1935,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
         Expr::RecCall {
             modes,
             callee,
-            args,
-            source_trivia,
+            stages,
             ..
         } => {
             let head = if modes.is_empty() {
@@ -1975,7 +1948,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                     .join(", ");
                 format!("recur({names}) {}", callee.name)
             };
-            doc_call(text(head), args, delimited_closing(source_trivia))
+            doc_call_stages(text(head), stages)
         }
         Expr::FnExpr {
             sig, ret_ty, body, ..
@@ -2130,12 +2103,7 @@ fn doc_expr_layout(e: &Expr) -> Doc {
             },
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro {
-            name,
-            args,
-            source_trivia,
-            ..
-        } => doc_call(text(name.clone()), args, delimited_closing(source_trivia)),
+        Expr::UserMacro { name, stages, .. } => doc_call_stages(text(name.clone()), stages),
         Expr::BlockCall {
             head,
             prefix,
@@ -2154,40 +2122,11 @@ fn doc_expr_layout(e: &Expr) -> Doc {
                 ]);
             }
             parts.push(text(head.name.clone()));
-            if let [
-                Expr::Unit {
-                    meta,
-                    source_trivia,
-                    ..
-                },
-            ] = prefix
-                && splice.is_none()
-            {
-                let mut trivia = meta.leading_trivia.clone();
-                append_relocated_trivia(&mut trivia, delimited_closing(source_trivia).to_vec());
-                append_relocated_trivia(&mut trivia, meta.trailing_trivia.clone());
-                parts.push(doc_comma_list_with_trivia(
-                    text("("),
-                    Vec::new(),
-                    &[],
-                    &trivia,
-                    text(")"),
-                ));
-            } else if !prefix.is_empty() {
-                parts.push(doc_comma_list_with_boundaries(
-                    text("("),
-                    prefix.iter().map(doc_expr_no_own_trivia).collect(),
-                    &prefix
-                        .iter()
-                        .map(|value| value.meta().leading_trivia.clone())
-                        .collect::<Vec<_>>(),
-                    &prefix
-                        .iter()
-                        .map(|value| value.meta().trailing_trivia.clone())
-                        .collect::<Vec<_>>(),
-                    &[],
-                    text(")"),
-                    false,
+            for (stage, args) in prefix {
+                parts.push(doc_call(
+                    text(""),
+                    args,
+                    delimited_closing(&stage.source_trivia),
                 ));
             }
             for (block_index, block) in blocks.iter().enumerate() {
@@ -2357,20 +2296,58 @@ fn doc_expr_layout(e: &Expr) -> Doc {
     }
 }
 
-fn block_splice_parts(
-    prefix: &[Expr],
-    splice: Option<crate::ast::UfcsFlavor>,
-) -> (&[Expr], Option<(&Expr, crate::ast::UfcsFlavor)>) {
-    let Some(flavor) = splice else {
-        return (prefix, None);
-    };
-    let (receiver, written) = if flavor.inserts_first() {
-        prefix.split_first()
-    } else {
-        prefix.split_last()
+fn doc_call_stages(mut head: Doc, stages: &[CallStage]) -> Doc {
+    for stage in stages {
+        head = doc_call(head, &stage.args, delimited_closing(&stage.source_trivia));
     }
-    .expect("a spliced block prefix contains its receiver");
-    (written, Some((receiver, flavor)))
+    head
+}
+
+type BlockSpliceParts<'a> = (
+    Vec<(&'a CallStage, &'a [CallArg])>,
+    Option<(&'a Expr, crate::ast::UfcsFlavor)>,
+);
+
+fn block_splice_parts(
+    prefix: &[CallStage],
+    splice: Option<crate::ast::UfcsFlavor>,
+) -> BlockSpliceParts<'_> {
+    let Some(flavor) = splice else {
+        return (
+            prefix
+                .iter()
+                .map(|stage| (stage, stage.args.as_slice()))
+                .collect(),
+            None,
+        );
+    };
+    let target = if flavor.callee_on_right() {
+        0
+    } else {
+        prefix.len() - 1
+    };
+    let mut receiver = None;
+    let written = prefix
+        .iter()
+        .enumerate()
+        .filter_map(|(index, stage)| {
+            if index != target {
+                return Some((stage, stage.args.as_slice()));
+            }
+            let (arg, args) = if flavor.inserts_first() {
+                stage.args.split_first()
+            } else {
+                stage.args.split_last()
+            }
+            .expect("a spliced block prefix contains its receiver");
+            let CallArg::Value(value) = arg else {
+                unreachable!("UFCS inserts a value")
+            };
+            receiver = Some((value, flavor));
+            (!args.is_empty()).then_some((stage, args))
+        })
+        .collect();
+    (written, receiver)
 }
 
 fn doc_source_existential_let(expr: &Expr) -> Option<Doc> {
@@ -2472,9 +2449,12 @@ fn call_callee_needs_parens(callee: &Expr) -> bool {
             ..
         }
     );
-    let splice = matches!(callee, Expr::Ufcs { .. } | Expr::BlockCall { .. });
+    let owns_written_suffixes = matches!(
+        callee,
+        Expr::Ufcs { .. } | Expr::BlockCall { .. } | Expr::RecCall { .. }
+    );
     let normal_operator = operator_expr_needs_grouping(callee);
-    bare_literal || splice || normal_operator
+    bare_literal || owns_written_suffixes || normal_operator
 }
 
 /// Render an expression that owns a following postfix receiver suffix.
@@ -3045,7 +3025,7 @@ fn doc_call_arg(arg: &CallArg) -> Doc {
 /// leading-comma break — no new rule here.
 fn doc_ufcs_chain(top: &Expr) -> Doc {
     struct Segment<'a> {
-        callee_segments: &'a [crate::ast::PathSegment],
+        callee: &'a Expr,
         args: &'a [CallArg],
         closing: &'a [Trivia],
         flavor: crate::ast::UfcsFlavor,
@@ -3062,7 +3042,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
     let mut cur = top;
     while let Expr::Ufcs {
         receiver,
-        callee_segments,
+        callee,
         args,
         flavor,
         source_trivia,
@@ -3073,7 +3053,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
             break;
         }
         segments.push(Segment {
-            callee_segments,
+            callee,
             args,
             closing: delimited_closing(source_trivia),
             flavor: *flavor,
@@ -3084,7 +3064,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
     segments.reverse();
     let innermost = cur;
     let seg_doc = |seg: &Segment| -> Doc {
-        let callee = text(seg.callee_segments.join("."));
+        let callee = doc_expr_for_call_callee(seg.callee);
         let head = concat(text(seg.flavor.token()), callee);
         if seg.args.is_empty() && !has_comments(seg.closing) {
             head
@@ -3127,7 +3107,7 @@ fn doc_ufcs_chain(top: &Expr) -> Doc {
 fn doc_left_call_splice(top: &Expr) -> Doc {
     let Expr::Ufcs {
         receiver,
-        callee_segments,
+        callee,
         args,
         flavor,
         source_trivia,
@@ -3136,7 +3116,7 @@ fn doc_left_call_splice(top: &Expr) -> Doc {
     else {
         unreachable!("doc_left_call_splice called on non-UFCS expression")
     };
-    let callee = text(callee_segments.join("."));
+    let callee = doc_expr_for_call_callee(callee);
     let lhs = if args.is_empty() && !has_comments(delimited_closing(source_trivia)) {
         callee
     } else {
@@ -3622,15 +3602,30 @@ fn doc_expr_with_outer_trivia(e: &Expr, outer: &[Trivia]) -> Doc {
 
 /// Render argument boundaries separately from the call's own closer.
 fn doc_call(callee: Doc, args: &[CallArg], closing: &[Trivia]) -> Doc {
-    let docs = args.iter().map(doc_call_arg).collect();
-    let leading = call_arg_trivia(args);
-    let trailing: Vec<_> = args
+    let type_count = args
         .iter()
-        .map(|arg| arg.meta().trailing_trivia.clone())
-        .collect();
-    concat(
-        callee,
-        doc_comma_list_with_boundaries(
+        .take_while(|arg| matches!(arg, CallArg::Type(_)))
+        .count();
+    let mut parts = vec![callee];
+    for arg in &args[..type_count] {
+        let CallArg::Type(ty) = arg else {
+            unreachable!()
+        };
+        parts.push(doc_type_argument(ty));
+    }
+    if type_count < args.len() || args.is_empty() {
+        let values = &args[type_count..];
+        assert!(
+            values.iter().all(|arg| matches!(arg, CallArg::Value(_))),
+            "a call stage cannot interleave type and value arguments"
+        );
+        let docs = values.iter().map(doc_call_arg).collect();
+        let leading = call_arg_trivia(values);
+        let trailing = values
+            .iter()
+            .map(|arg| arg.meta().trailing_trivia.clone())
+            .collect::<Vec<_>>();
+        parts.push(doc_comma_list_with_boundaries(
             text("("),
             docs,
             &leading,
@@ -3638,8 +3633,27 @@ fn doc_call(callee: Doc, args: &[CallArg], closing: &[Trivia]) -> Doc {
             closing,
             text(")"),
             false,
-        ),
-    )
+        ));
+    }
+    concat_all(parts)
+}
+
+/// One type per bracket, with comments owned by that exact type argument.
+fn doc_type_argument(ty: &Type) -> Doc {
+    let leading = &ty.meta().leading_trivia;
+    let trailing = &ty.meta().trailing_trivia;
+    if !has_comments(leading) && !has_comments(trailing) {
+        return concat_all([text("["), doc_type_core(ty), text("]")]);
+    }
+    let mut inner = vec![
+        hardline(),
+        doc_inline_leading_trivia(leading),
+        doc_type_core(ty),
+    ];
+    if has_comments(trailing) {
+        inner.extend([hardline(), doc_trailing_comments(trailing)]);
+    }
+    concat_all([text("["), nest(2, concat_all(inner)), hardline(), text("]")])
 }
 
 fn delimited_closing(trivia: &Option<Box<DelimitedTrivia>>) -> &[Trivia] {
@@ -3834,19 +3848,9 @@ fn doc_comment_run(trivia: &[Trivia], context: CommentRunContext) -> Doc {
 /// ≤ 72 characters of value (not line position).
 const STRING_CHUNK_TARGET: usize = 72;
 
-/// The optional trailing `(Type)` of a `LiteralCall`. Empty for a
-/// bare literal; `(Type)` — no inner padding — when annotated.
+/// A literal's optional explicit carrier type.
 fn doc_literal_annotation(annotation: &Option<Type>) -> Doc {
-    match annotation {
-        Some(ty)
-            if has_comments(&ty.meta().leading_trivia)
-                || has_comments(&ty.meta().trailing_trivia) =>
-        {
-            doc_type(ty)
-        }
-        Some(ty) => concat(concat(text("("), doc_type(ty)), text(")")),
-        None => text(""),
-    }
+    annotation.as_ref().map_or_else(empty, doc_type_argument)
 }
 
 fn doc_string_literal(value: &str) -> Doc {
@@ -5292,16 +5296,16 @@ import p( // opening selection
             "{printed}"
         );
         for source in [
-            "module main; fn explicit() -> . { rhs(_, .[Hidden](payload) { payload }) }",
-            "module main; fn explicit() -> . { (rhs)(_, .[Hidden](payload) { payload }) }",
+            "module main; fn explicit() -> . { rhs[_](.[Hidden](payload) { payload }) }",
+            "module main; fn explicit() -> . { (rhs)[_](.[Hidden](payload) { payload }) }",
             "module main; fn explicit() -> . {
                 // authored call
-                rhs(_, .[Hidden](payload) { let local = payload; local })
+                rhs[_](.[Hidden](payload) { let local = payload; local })
             }",
         ] {
             let printed = roundtrip(source);
             assert!(!printed.contains("let .(<"), "{printed}");
-            assert!(printed.contains("rhs("), "{printed}");
+            assert!(printed.contains("rhs[_]("), "{printed}");
             assert!(printed.contains(".[Hidden](payload)"), "{printed}");
             if source.contains("// authored call") {
                 assert_eq!(printed.matches("// authored call").count(), 1, "{printed}");
@@ -5350,12 +5354,12 @@ import p( // opening selection
             );
         }
         for source in [
-            "module main; fn explicit() -> . { rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left }) }",
-            "module main; fn explicit() -> . { (rhs)(_, .[Hidden]((left: _, right: _)) { left }) }",
+            "module main; fn explicit() -> . { rhs[_](.[Hidden]((left: Hidden, right: Hidden)) { left }) }",
+            "module main; fn explicit() -> . { (rhs)[_](.[Hidden]((left: _, right: _)) { left }) }",
         ] {
             let printed = roundtrip(source);
             assert!(!printed.contains("let .(<"), "{printed}");
-            assert!(printed.contains("rhs("), "{printed}");
+            assert!(printed.contains("rhs[_]("), "{printed}");
         }
         assert!(
             parse("module main; fn open() -> . { let .(<Hidden> (left, right)) = rhs; left }")
@@ -5561,8 +5565,8 @@ import p( // opening selection
              // inner first\na: _, b: . // inner close\n), \
              (// bare first\nc: ., _: . // bare close\n) // outer close\n)",
             "(// singleton first\nx // singleton colon\n: \
-             // singleton type\nBox(// type argument\n. \
-             // type close\n) // singleton close\n)",
+             // singleton type\nBox[// type argument\n. \
+             // type close\n] // singleton close\n)",
             "(// inferred first\nx // inferred close\n)",
             "(// explicit first\nx: _ // explicit close\n)",
             "(// leading comma\n, // repeated comma\n, x: . \
@@ -5898,10 +5902,10 @@ macro demo : . -> . {
         let source = r#"module x;
 
 /// declaration docs
-macro demo : Box(
+macro demo : Box[
   // nested call type
   A
-) -> . {
+] -> . {
   impl
   /// interstitial implementation
   helpers.demo_impl;
@@ -6102,12 +6106,8 @@ macro demo : Box(
     }
 
     #[test]
-    fn fn_def_comma_binder_group_canonicalizes() {
-        let pp = roundtrip("module x; pub fn pair[A, B](x: A, y: B) -> A { x }");
-        assert!(
-            pp.contains("pub fn pair[A][B](x: A, y: B) -> A { x }"),
-            "got:\n{pp}"
-        );
+    fn fn_def_rejects_comma_binder_group() {
+        assert!(parse("module x; pub fn pair[A, B](x: A, y: B) -> A { x }").is_err());
     }
 
     #[test]
@@ -6417,9 +6417,8 @@ macro demo : Box(
     }
 
     #[test]
-    fn type_alias_comma_binder_group_canonicalizes() {
-        let pp = roundtrip("module x; type F[A, B] = [A, B] A -> B;");
-        assert!(pp.contains("type F[A][B] = [A][B] A -> B;"), "got:\n{pp}");
+    fn type_alias_rejects_comma_binder_group() {
+        assert!(parse("module x; type F[A, B] = [A, B] A -> B;").is_err());
     }
 
     // ---- newtype -------------------------------------------------------
@@ -6434,7 +6433,7 @@ macro demo : Box(
     #[test]
     fn newtype_recursive() {
         roundtrip(
-            "module x; rec newtype List[A] : (. | (A & List(A))) { \
+            "module x; rec newtype List[A] : (. | (A & List[A])) { \
              pub constructor cons; pub projector un_list; };",
         );
     }
@@ -6574,7 +6573,7 @@ macro demo : Box(
     #[test]
     fn labels_reuse_marker_round_trip() {
         roundtrip(
-            "module x; labels { value[*F][A] : F(A) }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
+            "module x; labels { value[*F][A] : F[A] }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
         );
     }
 
@@ -6597,7 +6596,7 @@ macro demo : Box(
         for declaration in [
             "labels // 1\n{ field // 2\n: // 3\n. } // 4\n;",
             "pub labels // 1\nChoice // 2\n[// 3\nA // 4\n] // 5\n= // 6\n{ first // 7\n[// 8\nB // 9\n] // 10\n< // 11\nHidden // 12\n> // 13\n: // 14\n(B & Hidden) // 15\n} // 16\n| // 17\n{ second: // 18\n_ // 19\n} // 20\n;",
-            "rec labels // 1\n{ list[A] // 2\n: // 3\n(. | (A & List(A))) };",
+            "rec labels // 1\n{ list[A] // 2\n: // 3\n(. | (A & List[A])) };",
             "rec { /// Labels documentation.\npub labels // 1\nChoice = // 2\n{ field // 3\n: // 4\n. }; }",
         ] {
             let source = format!("module m; {declaration}");
@@ -6795,7 +6794,7 @@ macro demo : Box(
 
     #[test]
     fn labels_recursive_round_trip() {
-        roundtrip("module x; rec labels { list[A] : (. | (A & List(A))) };");
+        roundtrip("module x; rec labels { list[A] : (. | (A & List[A])) };");
     }
 
     #[test]
@@ -6824,7 +6823,7 @@ macro demo : Box(
             "module m; /// Recursive docs.\npub // visibility\nrec(loop) fn // name\nf() { () }".to_owned(),
             "module m; equiv // name\ne[ // binder\nA](x: A) // body\n{ x; x }".to_owned(),
             "module m; equiv e() // body\n{ (); () }".to_owned(),
-            "module m; /// Host docs.\nhost pub // modifier\nfn f[ // leading comma\n, A // first binder\n, // repeated comma\n, B, // trailing comma\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
+            "module m; /// Host docs.\nhost pub // modifier\nfn f[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty group\n( // inside empty\n) // next group\n[C](value: C) -> C;".to_owned(),
             "module m; host fn f( // leading\n, value // colon\n: // type\n. // first comma\n, // repeated\n, next: . , // trailing\n);".to_owned(),
             "module m; host fn f[ // opening\n* // kind\nF // closing\n]( // empty\n);".to_owned(),
             "module m; /// Labels docs.\npub // modifier\nrec labels List = {nil: .} | {cons: List};".to_owned(),
@@ -6856,8 +6855,8 @@ macro demo : Box(
     #[test]
     fn bodyless_signature_comments_leave_contract_digest_unchanged() {
         for declaration in [
-            "/// Export docs.\npub // visibility\npure // purity\nfn // name\nf[ // first\n,A // separator\n,,B, // close\n] // empty\n( // inside\n)[C](value // colon\n: // type\nC // close value\n) -> C;",
-            "/// Host docs.\nhost // modifier\nfn // name\nf[ // first\n,A // separator\n,,B, // close\n] // empty\n( // inside\n)[C](value // colon\n: // type\nC // close value\n) -> C;",
+            "/// Export docs.\npub // visibility\npure // purity\nfn // name\nf[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty value args\n( // inside empty\n) // type application\n[C](value // colon\n: // type\nC // close value\n) -> C;",
+            "/// Host docs.\nhost // modifier\nfn // name\nf[ // first binder\nA // first\n][ // second binder\nB // second\n] // empty value args\n( // inside empty\n) // type application\n[C](value // colon\n: // type\nC // close value\n) -> C;",
             "pub // modifier\nfn f[ // binder\nA];",
         ] {
             let source = format!(
@@ -7022,13 +7021,13 @@ macro demo : Box(
              newtype Box[B] : B { constructor mk_box; projector un_box; }; \
              newtype _Box[_B] : _B { constructor mk_marked; projector un_marked; }; \
              fn id[T](x: T) -> T { x } \
-             fn marked[_A](x: _A) -> _A { id(_A, x) }",
+             fn marked[_A](x: _A) -> _A { id[_A](x) }",
         );
         for retained in [
             "type _Alias[_A] = _A;",
             "newtype _Box[_B] : _B",
             "fn marked[_A](x: _A) -> _A",
-            "id(_A, x)",
+            "id[_A](x)",
         ] {
             assert!(
                 output.contains(retained),
@@ -7050,11 +7049,11 @@ macro demo : Box(
     #[test]
     fn compact_forall_runs_remain_compact_after_formatting() {
         let output = roundtrip(
-            "module x; type Poly = [A][*F] F(A) -> A; \
-             fn make() -> . { .[*F](x: F(.)) -> F(.) { x } }",
+            "module x; type Poly = [A][*F] F[A] -> A; \
+             fn make() -> . { .[*F](x: F[.]) -> F[.] { x } }",
         );
-        assert!(output.contains("[A][*F] F(A) -> A"));
-        assert!(output.contains(".[*F](x: F(.)) -> F(.)"));
+        assert!(output.contains("[A][*F] F[A] -> A"));
+        assert!(output.contains(".[*F](x: F[.]) -> F[.]"));
     }
 
     #[test]
@@ -7211,10 +7210,10 @@ macro demo : Box(
                 format!("type T = {ty};"),
                 format!("type T = {ty} -> .;"),
                 format!("type T = . -> {ty};"),
-                format!("type T = Pair({ty}, .);"),
-                format!("type T = Pair(., {ty});"),
+                format!("type T = Pair[{ty}][.];"),
+                format!("type T = Pair[.][{ty}];"),
                 format!("fn f(value: {ty}) {{ () }}"),
-                format!("fn f() {{ g({ty}) }}"),
+                format!("fn f() {{ g[{ty}] }}"),
                 format!("type T = ({ty} & .);"),
                 format!("type T = (. & {ty});"),
                 format!("newtype T : {ty} {{ constructor make; projector take }}"),
@@ -7268,8 +7267,8 @@ macro demo : Box(
                         format!("type T = {ty};"),
                         format!("host fn f() -> {ty};"),
                         format!("fn f(value: {ty}) {{ () }}"),
-                        format!("type T = Pair({ty}, .);"),
-                        format!("type T = Pair(., {ty});"),
+                        format!("type T = Pair[{ty}][.];"),
+                        format!("type T = Pair[.][{ty}];"),
                     ] {
                         let source = format!("module x; {declaration}");
                         let printed = roundtrip(&source);
@@ -7296,23 +7295,25 @@ macro demo : Box(
                 })
                 .collect::<Vec<_>>()
         };
+        assert!(parse("module x; type T = Box(// first\n, // last\n);").is_err());
         for ty in [
             "[// first\nA // second\n] // last\nA",
             "[A] // first\n[B] // last\nA -> B",
-            "[* // first\nF, // second\nA // third\n] // last\nF(A)",
+            "[* // first\nF // second\n][A // third\n] // last\nF[A]",
             "[A] (// first\n[B] B // last\n)",
             "A // first\n-> // last\nB",
             "(A) // first\n-> // last\nB",
             "(A & B) // first\n-> // last\nC",
             "A -> [// first\nB] // last\nB",
-            "Box // first\n(// second\nA // last\n)",
-            "Box(// first\n, // last\n)",
+            "Box // first\n[// second\nA // last\n]",
             "module_path // first\n/nested // last\n.Type",
-            "Box([A] // first\nA -> // last\nA)",
+            "module_path // path\n/nested.Type[// first\nA // last\n]",
+            "Map[A] // between\n[B]",
+            "Box[[A] // first\nA -> // last\nA]",
         ] {
             for declaration in [
                 format!("type T = {ty};"),
-                format!("type T = Box({ty});"),
+                format!("type T = Box[{ty}];"),
                 format!("fn f(value: {ty}) {{ () }}"),
                 format!("host fn f(value: {ty});"),
                 format!("host fn f() -> {ty};"),
@@ -7328,12 +7329,10 @@ macro demo : Box(
                 );
             }
         }
+        assert!(parse("module x; type T = Box();").is_err());
+        assert!(parse("module x; type T = [A,B] ((A)) -> B;").is_err());
         assert_eq!(
-            roundtrip("module x; type T = Box();"),
-            roundtrip("module x; type T = Box;")
-        );
-        assert_eq!(
-            roundtrip("module x; type T = [A,B] ((A)) -> B;"),
+            roundtrip("module x; type T = [A][B] ((A)) -> B;"),
             roundtrip("module x; type T = [A][B] A -> B;")
         );
     }
@@ -7512,7 +7511,7 @@ macro demo : Box(
             "type T = // first\n|;",
             "type T = // first\n(// second\nA // last\n);",
             "type T // first\n[A] // last\n= A;",
-            "type T[// first\n* // second\nF, // third\nA // last\n] = F(A);",
+            "type T[// first\n* // second\nF // third\n][A // last\n] = F[A];",
             "pub // first\ntype // second\nT // third\n[A] // fourth\n= // fifth\nA // last\n;",
             "type T = // first\n[A] A -> A;",
             "type T = // first\nmodule_path.A;",
@@ -7530,9 +7529,10 @@ macro demo : Box(
                 );
             }
         }
+        assert!(parse("module x; type T[,,*F,, A,,] = F[A];").is_err());
         assert_eq!(
-            roundtrip("module x; type T[,,*F,, A,,] = (F(A));"),
-            roundtrip("module x; type T[*F][A] = F(A);")
+            roundtrip("module x; type T[*F][A] = (F[A]);"),
+            roundtrip("module x; type T[*F][A] = F[A];")
         );
     }
 
@@ -7639,14 +7639,14 @@ macro demo : Box(
                 for chain in [
                     format!("{leading}A // first\n{op} B // second\n{op} C"),
                     format!(
-                        "{leading}A // first\n{op} Box( // second\n, B // third\n) // fourth\n{op} C"
+                        "{leading}A // first\n{op} Box[ // second\nB // third\n] // fourth\n{op} C"
                     ),
                     format!("{leading}A // first\n{op} (B // second\n{op} C)"),
                 ] {
                     for source in [
                         format!("module x; type T = {chain};"),
                         format!("module x; fn f() -> ({chain}) -> D {{ () }}"),
-                        format!("module x; fn f(x: Container(({chain}) -> D)) {{ () }}"),
+                        format!("module x; fn f(x: Container[({chain}) -> D]) {{ () }}"),
                     ] {
                         let printed = roundtrip(&source);
                         let comments = |text: &str| {
@@ -7836,7 +7836,7 @@ macro demo : Box(
 
     #[test]
     fn call_with_mixed_args() {
-        roundtrip(r#"module x; fn f() -> . { id(String, "hi") }"#);
+        roundtrip(r#"module x; fn f() -> . { id[String]("hi") }"#);
     }
 
     #[test]
@@ -7967,6 +7967,24 @@ macro demo : Box(
     }
 
     #[test]
+    fn recursive_callee_keeps_ordinary_result_stages() {
+        for expression in [
+            "(recur(cont) step(value))(other)",
+            "(recur(poly, cont) step[A](value))[B](other)",
+            "(recur(escape) step())(())",
+        ] {
+            let source = format!("module x; fn subject() {{ {expression} }}");
+            let output = roundtrip(&source);
+            assert_eq!(
+                parsed_structure(&source),
+                parsed_structure(&output),
+                "recursive header and ordinary result stages must stay separate: {output}"
+            );
+            assert!(output.contains(expression), "{output}");
+        }
+    }
+
+    #[test]
     fn left_splice_boolean_argument_keeps_required_grouping() {
         let output = roundtrip("module x; fn f() -> . { context_callee.<(.t) }");
         assert!(
@@ -7979,8 +7997,8 @@ macro demo : Box(
     fn literal_annotation_comments_keep_order_and_structure() {
         for literal in ["915", "9.15", "\"value\"", ".t", ".f"] {
             for annotation in [
-                "// 1\n( // 2\nTarget // 3\n)",
-                "// 1\n(( // 2\nTarget // 3\n) // 4\n)",
+                "// 1\n[ // 2\nTarget // 3\n]",
+                "// 1\n[ // 2\n(( // 3\nTarget // 4\n) // 5\n) // 6\n]",
             ] {
                 let source = format!("module x; fn f() {{ ({literal} {annotation}).>>id }}");
                 let printed = roundtrip(&source);
@@ -7999,15 +8017,15 @@ macro demo : Box(
                 );
             }
         }
-        let source = "module x; fn f() { 915 // before\n(I16) }";
+        let source = "module x; fn f() { 915 // before\n[I16] }";
         assert_eq!(
             roundtrip(source),
-            "module x;\n\nfn f() {\n  915(\n    // before\n    I16\n    )\n}\n"
+            "module x;\n\nfn f() {\n  915[\n    // before\n    I16\n  ]\n}\n"
         );
-        let source = "module x; fn f() { 915 // before\n( // inside\nI16) }";
+        let source = "module x; fn f() { 915 // before\n[ // inside\nI16] }";
         assert_eq!(
             roundtrip(source),
-            "module x;\n\nfn f() {\n  915(\n    // before\n\n    // inside\n    I16\n    )\n}\n"
+            "module x;\n\nfn f() {\n  915[\n    // before\n\n    // inside\n    I16\n  ]\n}\n"
         );
     }
 
@@ -8016,9 +8034,9 @@ macro demo : Box(
         for splice in [".<", ".<<"] {
             for argument in [
                 ".() { () }()",
-                ".[A](x: A) { x }(., ())",
+                ".[A](x: A) { x }((), ())",
                 ".x. { x1 }(())",
-                ".t(Bool)(())",
+                ".t[Bool](())",
                 ".() { .() { () } }()()",
                 "(.() { () } // callee\n)()",
                 "(.() { () }.?{field})(())",
@@ -8266,16 +8284,16 @@ macro demo : Box(
                 "fn f(\n// first\n)(\n// second\n, x: .\n) { x }",
             ),
             (
-                "fn f(x // A\n: Pair( // B\n.)) { x }",
-                "fn f(\n// A\n, x: Pair(\n  // B\n  , .\n  )\n) { x }",
+                "fn f(x // A\n: Pair[ // B\n.]) { x }",
+                "fn f(\n// A\n, x: Pair[\n    // B\n    .\n  ]\n) { x }",
             ),
             (
                 "fn f( // leading\nx // colon\n: // type\n. // trailing\n) { x }",
                 "fn f(\n// leading\n\n// colon\n\n// type\n, x: .\n// trailing\n) { x }",
             ),
             (
-                "fn f() // arrow\n-> // return type\nPair( // first type\n., // second type\n.) // body opener\n{ // body note\n() }",
-                "fn f() -> (\n  // arrow\n\n  // return type\n  Pair(\n  // first type\n  , .\n  // second type\n  , .\n  )\n  ) {\n  // body opener\n\n  // body note\n  ()\n}",
+                "fn f() // arrow\n-> // return type\nPair[ // first type\n.][ // second type\n.] // body opener\n{ // body note\n() }",
+                "fn f() -> (\n  // arrow\n\n  // return type\n  Pair[\n    // first type\n    .\n  ][\n    // second type\n    .\n  ]\n  ) {\n  // body opener\n\n  // body note\n  ()\n}",
             ),
             (
                 "fn f() { .() // arrow\n-> // return type\n. // body opener\n{ // body note\n() } }",
@@ -8482,7 +8500,7 @@ macro demo : Box(
     #[test]
     fn call_head_comments_preserve_arguments_and_recursive_modes() {
         for source in [
-            "fn f(){ x.>g // 1\n(A, y) }",
+            "fn f(){ x.>g[A] // 1\n(y) }",
             "fn f(){ x.>>g // 1\n( // 2\ny // 3\n) }",
             "fn f(){ x.>g // 1\n(y) }",
             "fn f(){ x.>>g // 1\n( // 2\ny // 3\n) }",
@@ -8549,7 +8567,7 @@ macro demo : Box(
             "fn f() { e(y // 1\n).<x }",
             "fn f() { e( // 1\n) { () } }",
             "fn f() { e((x // 1\n), y // 2\n) { () } }",
-            "fn f[ // 1\nA, // 2\nB // 3\n]() { () }",
+            "fn f[ // 1\nA // 2\n][ // 3\nB // 4\n]() { () }",
             "fn f() // 1\n[A] // 2\n( // 3\nx: A) { x }",
             "fn f() { .( // 1\nx // 2\n: // 3\n. // 4\n) { x } }",
             "fn f(){ ( // 1\ng() // 2\n)() }",
@@ -8637,10 +8655,10 @@ pub fn main() -> . { print("Hello, world") }"#,
     #[test]
     fn host_type_and_fn_roundtrip() {
         let pp =
-            roundtrip("module x; host type Map[K][V]; host fn get[K][V](m: Map(K, V), k: K) -> V;");
+            roundtrip("module x; host type Map[K][V]; host fn get[K][V](m: Map[K][V], k: K) -> V;");
         assert!(pp.contains("host type Map[K][V];"), "got:\n{pp}");
         assert!(
-            pp.contains("host fn get[K][V](m: Map(K, V), k: K) -> V;"),
+            pp.contains("host fn get[K][V](m: Map[K][V], k: K) -> V;"),
             "got:\n{pp}"
         );
     }
@@ -9261,8 +9279,8 @@ pub fn main() -> . { print("Hello, world") }"#,
     /// `comma_list` Doc helper picks the flat layout.
     #[test]
     fn call_args_fit_on_one_line() {
-        let pp = roundtrip(r#"module x; fn f() -> . { id(String, "hi") }"#);
-        assert!(pp.contains("id(String, \"hi\")"), "got:\n{pp}");
+        let pp = roundtrip(r#"module x; fn f() -> . { id[String]("hi") }"#);
+        assert!(pp.contains("id[String](\"hi\")"), "got:\n{pp}");
     }
 
     /// A call argument list whose flat width exceeds the 100-column
@@ -9288,17 +9306,15 @@ fn f() -> . {
         );
     }
 
-    /// A type-application argument list at a use site honours the
-    /// same width-driven rule.
+    /// Successive type-argument brackets retain their singleton stages.
     #[test]
-    fn type_app_args_overflow_breaks_to_a1() {
+    fn type_app_args_use_separate_bracket_stages() {
         let src = "module x;\n\
-                   type Result = Outer(\
-                   Inner_one, Inner_two, Inner_three, Inner_four, Inner_five, Inner_six, Inner_seven);";
+                   type Result = Outer[Inner_one][Inner_two][Inner_three][Inner_four][Inner_five][Inner_six][Inner_seven];";
         let pp = roundtrip(src);
         assert!(
-            pp.contains("\n, Inner_one"),
-            "expected leading-comma break for Inner_one; got:\n{pp}"
+            pp.contains("Outer[Inner_one][Inner_two][Inner_three][Inner_four][Inner_five][Inner_six][Inner_seven]"),
+            "type arguments stay in their individual bracket stages; got:\n{pp}"
         );
     }
 
@@ -9378,19 +9394,14 @@ fn f() -> . {
     #[test]
     fn labels_wide_arm_breaks_to_leading_comma_at_content_column() {
         let src = "module x;\n\
-                   labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname(Aaaaaaaa, Bbbbbbbb, Gggggggg, Hhhhhhhh), second_label: I32 };\n";
+                   labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh], second_label: I32 };\n";
         let pp = roundtrip(src);
         assert_eq!(
             pp,
             "module x;\n\
              \n\
              labels Wide = {\n\
-             , first_long_label_name: Someextremelylongtypeconstructorname(\n\
-             \x20 , Aaaaaaaa\n\
-             \x20 , Bbbbbbbb\n\
-             \x20 , Gggggggg\n\
-             \x20 , Hhhhhhhh\n\
-             \x20 )\n\
+             , first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]\n\
              , second_label: I32\n\
              };\n"
         );
@@ -9402,11 +9413,11 @@ fn f() -> . {
     #[test]
     fn labels_width_and_comment_paths_agree() {
         let plain = "module x;\n\
-                     labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname(Aaaaaaaa, Bbbbbbbb, Gggggggg, Hhhhhhhh), second_label: I32 };\n";
+                     labels Wide = { first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh], second_label: I32 };\n";
         let commented = "module x;\n\
                          labels Wide = {\n\
                          \x20 // keep me\n\
-                         \x20 , first_long_label_name: Someextremelylongtypeconstructorname(Aaaaaaaa, Bbbbbbbb, Gggggggg, Hhhhhhhh)\n\
+                         \x20 , first_long_label_name: Someextremelylongtypeconstructorname[Aaaaaaaa][Bbbbbbbb][Gggggggg][Hhhhhhhh]\n\
                          \x20 , second_label: I32\n\
                          \x20 };\n";
         let plain_pp = roundtrip(plain);
@@ -9616,7 +9627,7 @@ fn f() -> . {
                    import match(macro match);\n\
                    fn apply[A](x: A, f: A -> A) -> A { f(x) }\n\
                    fn g[A](p: A & A) -> A & A {\n\
-                     apply(A & A, p, .(q) {\n\
+                     apply[A & A](p, .(q) {\n\
                        // keep q\n\
                        let kept = match(q, .(l: A, r: A) { (l, r) });\n\
                        kept\n\
@@ -9967,10 +9978,10 @@ fn f() -> . {
     #[test]
     fn macro_left_call_splice_preserves_selected_import() {
         let pp = roundtrip(
-            "module x; import palette(macro iso); fn f() -> . { let r = iso(T).<<value; () }",
+            "module x; import palette(macro iso); fn f() -> . { let r = iso[T].<<value; () }",
         );
         assert!(
-            pp.contains("iso(T).<<value"),
+            pp.contains("iso[T].<<value"),
             "macro left-call splice should preserve its call spelling; got:\n{pp}"
         );
     }

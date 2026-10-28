@@ -22,7 +22,7 @@ case "$result" in
 esac
 [ "${#result}" -le 7 ] && [ "$result" -le 1000000 ] || exit 1
 sed '$d' runtime.stdout
-printf '\nequiv kio_gen_runtime_observation { kio_gen_observed(); %s(I32) }\n' "$result" >>prog.kio
+printf '\nequiv kio_gen_runtime_observation { kio_gen_observed(); %s[I32] }\n' "$result" >>prog.kio
 if "$KIO_BIN" test >equiv.stdout 2>equiv.stderr; then
   :
 else

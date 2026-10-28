@@ -27,25 +27,25 @@ fn cat3(a: String, b: String, c: String) -> String { string_concat(string_concat
 
 fn line(label: String, value: String) -> String { cat3(label, value, "\n") }
 
-fn lit(value: I32) -> Expr { Expr.expr({lit = value}.>widen_sum(Expr_node)) }
+fn lit(value: I32) -> Expr { Expr.expr(({lit = value}.>widen_sum)[Expr_node]) }
 
-fn var_x() -> Expr { Expr.expr({var_x=}.>widen_sum(Expr_node)) }
+fn var_x() -> Expr { Expr.expr(({var_x=}.>widen_sum)[Expr_node]) }
 
-fn var_y() -> Expr { Expr.expr({var_y=}.>widen_sum(Expr_node)) }
+fn var_y() -> Expr { Expr.expr(({var_y=}.>widen_sum)[Expr_node]) }
 
-fn var_z() -> Expr { Expr.expr({var_z=}.>widen_sum(Expr_node)) }
+fn var_z() -> Expr { Expr.expr(({var_z=}.>widen_sum)[Expr_node]) }
 
 fn add(left: Expr, right: Expr) -> Expr {
-  Expr.expr({add_left = left, add_right = right}.>widen_sum(Expr_node))
+  Expr.expr(({add_left = left, add_right = right}.>widen_sum)[Expr_node])
 }
 
 fn mul(left: Expr, right: Expr) -> Expr {
-  Expr.expr({mul_left = left, mul_right = right}.>widen_sum(Expr_node))
+  Expr.expr(({mul_left = left, mul_right = right}.>widen_sum)[Expr_node])
 }
 
-fn some_i32(value: I32) -> Maybe_i32 { {some_i32 = value}.>widen_sum(Maybe_i32) }
+fn some_i32(value: I32) -> Maybe_i32 { ({some_i32 = value}.>widen_sum)[Maybe_i32] }
 
-fn no_i32() -> Maybe_i32 { {no_i32=}.>widen_sum(Maybe_i32) }
+fn no_i32() -> Maybe_i32 { ({no_i32=}.>widen_sum)[Maybe_i32] }
 
 fn as_const(e: Expr) -> Maybe_i32 {
   match(e.>Expr.un_expr) {

@@ -63,10 +63,10 @@ import testapi(I32, String);
 pub rec labels { nat: . | Nat };
 
 /// The index `0` — names the nearest enclosing binder.
-pub fn nz() -> Nat { {nat = widen_sum((), . | Nat)} }
+pub fn nz() -> Nat { {nat = widen_sum(())[. | Nat]} }
 
 /// The successor index — names one binder further out than `n`.
-pub fn ns(n: Nat) -> Nat { {nat = widen_sum(n, . | Nat)} }
+pub fn ns(n: Nat) -> Nat { {nat = widen_sum(n)[. | Nat]} }
 
 /// One-step destructor on a `Nat`: `()` at zero, or the predecessor.
 pub fn un_nat(n: Nat) -> . | Nat { Nat.get(n) }
@@ -82,11 +82,11 @@ pub fn un_nat(n: Nat) -> . | Nat { Nat.get(n) }
 pub rec labels { group_slots: . | (I32 & Group_slots) };
 
 /// No remaining application stages.
-pub fn group_slots_nil() -> Group_slots { {group_slots = widen_sum((), . | (I32 & Group_slots))} }
+pub fn group_slots_nil() -> Group_slots { {group_slots = widen_sum(())[. | (I32 & Group_slots)]} }
 
 /// Prepends one application stage's resolved slot count.
 pub fn group_slots_cons(slots: I32, rest: Group_slots) -> Group_slots {
-  {group_slots = widen_sum((slots, rest), . | (I32 & Group_slots))}
+  {group_slots = widen_sum((slots, rest))[. | (I32 & Group_slots)]}
 }
 
 /// Splits the next application-stage slot count from the remaining stages.
@@ -233,10 +233,10 @@ pub type Term_node =
 pub fn un_term(t: Term) -> Term_node { Term.get(t) }
 
 /// A cons-list of `Term`s — the argument vector a host-call term applies.
-pub labels { terms: List(Term) };
+pub labels { terms: List[Term] };
 
 /// The empty term vector.
-pub fn tnil() -> Terms { {terms = nil(Term)} }
+pub fn tnil() -> Terms { {terms = nil[Term]} }
 
 /// Prepends one term to a term vector.
 pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(tail))} }
@@ -245,8 +245,8 @@ pub fn tcons(head: Term, tail: Terms) -> Terms { {terms = cons(head, Terms.get(t
 pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
   match(uncons(Terms.get(ts))) {
     (
-    , .(h: Term, t: List(Term)) { widen_sum((h, {terms = t}), . | (Term & Terms)) }
-    , .(_e: .) { widen_sum((), . | (Term & Terms)) }
+    , .(h: Term, t: List[Term]) { widen_sum((h, {terms = t}))[. | (Term & Terms)] }
+    , .(_e: .) { widen_sum(())[. | (Term & Terms)] }
     )
   }
 }
@@ -259,58 +259,58 @@ pub fn un_terms(ts: Terms) -> . | (Term & Terms) {
 // construction site reads
 // `app(lam(var(nz())), unit())` rather than the raw `widen_sum` tower.
 /// Builds a variable-reference term from a de Bruijn index.
-pub fn var(i: Nat) -> Term { {term = widen_sum({t_var = i}, Term_node)} }
+pub fn var(i: Nat) -> Term { {term = widen_sum({t_var = i})[Term_node]} }
 
 /// Builds a lambda term from its body.
-pub fn lam(body: Term) -> Term { {term = widen_sum({t_lam = body}, Term_node)} }
+pub fn lam(body: Term) -> Term { {term = widen_sum({t_lam = body})[Term_node]} }
 
 /// Builds an application term from a function and an argument.
-pub fn app(f: Term, a: Term) -> Term { {term = widen_sum({t_app = (f, a)}, Term_node)} }
+pub fn app(f: Term, a: Term) -> Term { {term = widen_sum({t_app = (f, a)})[Term_node]} }
 
 /// Builds a let-binding term from a right-hand side and a body.
-pub fn let_(rhs: Term, body: Term) -> Term { {term = widen_sum({t_let = (rhs, body)}, Term_node)} }
+pub fn let_(rhs: Term, body: Term) -> Term { {term = widen_sum({t_let = (rhs, body)})[Term_node]} }
 
 /// Builds a pair-construction term.
-pub fn pair(a: Term, b: Term) -> Term { {term = widen_sum({t_pair = (a, b)}, Term_node)} }
+pub fn pair(a: Term, b: Term) -> Term { {term = widen_sum({t_pair = (a, b)})[Term_node]} }
 
 /// Builds a first-projection term.
-pub fn fst(p: Term) -> Term { {term = widen_sum({t_fst = p}, Term_node)} }
+pub fn fst(p: Term) -> Term { {term = widen_sum({t_fst = p})[Term_node]} }
 
 /// Builds a second-projection term.
-pub fn snd(p: Term) -> Term { {term = widen_sum({t_snd = p}, Term_node)} }
+pub fn snd(p: Term) -> Term { {term = widen_sum({t_snd = p})[Term_node]} }
 
 /// Builds a left-injection term.
-pub fn left(a: Term) -> Term { {term = widen_sum({t_left = a}, Term_node)} }
+pub fn left(a: Term) -> Term { {term = widen_sum({t_left = a})[Term_node]} }
 
 /// Builds a right-injection term.
-pub fn right(b: Term) -> Term { {term = widen_sum({t_right = b}, Term_node)} }
+pub fn right(b: Term) -> Term { {term = widen_sum({t_right = b})[Term_node]} }
 
 /// Builds a sum-elimination term from a scrutinee and the two handlers.
 pub fn either(s: Term, f: Term, g: Term) -> Term {
-  {term = widen_sum({t_either = (s, f, g)}, Term_node)}
+  {term = widen_sum({t_either = (s, f, g)})[Term_node]}
 }
 
 /// Builds a branching term from its exact Boolean `Host_type`, condition, and
 /// two thunk expressions retained as ordinary terms.
 pub fn ite(bool_type: Host_type, c: Term, t: Term, e: Term) -> Term {
-  {term = widen_sum({t_ite = (bool_type, (c, (t, e)))}, Term_node)}
+  {term = widen_sum({t_ite = (bool_type, (c, (t, e)))})[Term_node]}
 }
 
 /// Builds a bottom-elimination term.
-pub fn absurd(x: Term) -> Term { {term = widen_sum({t_absurd = x}, Term_node)} }
+pub fn absurd(x: Term) -> Term { {term = widen_sum({t_absurd = x})[Term_node]} }
 
 /// The unit-value term.
-pub fn unit() -> Term { {term = widen_sum({t_unit=}, Term_node)} }
+pub fn unit() -> Term { {term = widen_sum({t_unit=})[Term_node]} }
 
 /// Builds a literal term from its raw text and exact host-type descriptor.
 pub fn lit(text: String, host_type: Host_type) -> Term {
-  {term = widen_sum({t_lit = mk_lit(text, host_type)}, Term_node)}
+  {term = widen_sum({t_lit = mk_lit(text, host_type)})[Term_node]}
 }
 
 /// Builds a host-fn-reference term from its exact declaration descriptor and
 /// remaining `Group_slots`.
 pub fn hostfn_ref(descriptor: Host_fn, groups: Group_slots) -> Term {
-  {term = widen_sum({t_hostfn = (descriptor, groups)}, Term_node)}
+  {term = widen_sum({t_hostfn = (descriptor, groups)})[Term_node]}
 }
 
 // =====================================================================
@@ -331,13 +331,13 @@ pub fn hostfn_ref(descriptor: Host_fn, groups: Group_slots) -> Term {
 // `un_nat(nz()) ≡ ()` (the zero arm).
 equiv un_nat_zero() {
   un_nat(nz());
-  widen_sum((), . | Nat)
+  widen_sum(())[. | Nat]
 }
 
 // `un_nat(ns(n)) ≡ n` (the successor arm).
 equiv un_nat_succ(n: Nat) {
   un_nat(ns(n));
-  widen_sum(n, . | Nat)
+  widen_sum(n)[. | Nat]
 }
 
 // --- Lit accessors ---
@@ -367,52 +367,52 @@ equiv lit_type_round(t: String, ty: Host_type) {
 // (`lit`), and the exact `Host_fn` host-fn-reference arm.
 equiv un_var(i: Nat) {
   un_term(var(i));
-  widen_sum({t_var = i}, Term_node)
+  widen_sum({t_var = i})[Term_node]
 }
 
 equiv un_lam(b: Term) {
   un_term(lam(b));
-  widen_sum({t_lam = b}, Term_node)
+  widen_sum({t_lam = b})[Term_node]
 }
 
 equiv un_app(f: Term, a: Term) {
   un_term(app(f, a));
-  widen_sum({t_app = (f, a)}, Term_node)
+  widen_sum({t_app = (f, a)})[Term_node]
 }
 
 equiv un_either(s: Term, f: Term, g: Term) {
   un_term(either(s, f, g));
-  widen_sum({t_either = (s, f, g)}, Term_node)
+  widen_sum({t_either = (s, f, g)})[Term_node]
 }
 
 equiv un_ite(ty: Host_type, c: Term, t: Term, e: Term) {
   un_term(ite(ty, c, t, e));
-  widen_sum({t_ite = (ty, (c, (t, e)))}, Term_node)
+  widen_sum({t_ite = (ty, (c, (t, e)))})[Term_node]
 }
 
 equiv un_unit_term() {
   un_term(unit());
-  widen_sum({t_unit=}, Term_node)
+  widen_sum({t_unit=})[Term_node]
 }
 
 equiv un_lit(t: String, ty: Host_type) {
   un_term(lit(t, ty));
-  widen_sum({t_lit = mk_lit(t, ty)}, Term_node)
+  widen_sum({t_lit = mk_lit(t, ty)})[Term_node]
 }
 
 equiv un_hostfn_ref(descriptor: Host_fn, groups: Group_slots) {
   un_term(hostfn_ref(descriptor, groups));
-  widen_sum({t_hostfn = (descriptor, groups)}, Term_node)
+  widen_sum({t_hostfn = (descriptor, groups)})[Term_node]
 }
 
 equiv un_group_slots_cons(slots: I32, rest: Group_slots) {
   un_group_slots(group_slots_cons(slots, rest));
-  widen_sum((slots, rest), . | (I32 & Group_slots))
+  widen_sum((slots, rest))[. | (I32 & Group_slots)]
 }
 
 equiv un_group_slots_nil() {
   un_group_slots(group_slots_nil());
-  widen_sum((), . | (I32 & Group_slots))
+  widen_sum(())[. | (I32 & Group_slots)]
 }
 
 // --- Terms (argument vector) ---
@@ -425,12 +425,12 @@ equiv un_terms_cons_head(h: Term, t: Terms) {
 
 equiv un_terms_cons_tail(h: Term, t: Terms) {
   match(un_terms(tcons(h, t))) {
-    (.(_h2: Term, t2: Terms) { Terms.get(t2) }, .(_e: .) { nil(Term) })
+    (.(_h2: Term, t2: Terms) { Terms.get(t2) }, .(_e: .) { nil[Term] })
   };
   Terms.get(t)
 }
 
 equiv un_terms_nil() {
   un_terms(tnil());
-  widen_sum((), . | (Term & Terms))
+  widen_sum(())[. | (Term & Terms)]
 }

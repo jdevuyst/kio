@@ -2,9 +2,9 @@ module testapi/api;
 
 import testapi as t;
 
-host fn pack[T](value: T) -> t.Box(T);
+host fn pack[T](value: T) -> t.Box[T];
 
-host fn unpack[T](value: t.Box(T)) -> T;
+host fn unpack[T](value: t.Box[T]) -> T;
 
 host fn mark(value: t.Number);
 
@@ -18,20 +18,20 @@ pub fn later(value: Hidden) -> . -> t.Number {
   .() { mark(1); value.>Hidden.reveal }
 }
 
-pub fn boxed(value: Hidden) -> t.Box(Hidden) { pack(value) }
+pub fn boxed(value: Hidden) -> t.Box[Hidden] { pack(value) }
 
-pub fn read_box(value: t.Box(Hidden)) -> t.Number { read_hidden(unpack(value)) }
+pub fn read_box(value: t.Box[Hidden]) -> t.Number { read_hidden(unpack(value)) }
 
-pub fn boxed_later(value: Hidden) -> t.Box(. -> t.Number) { pack(later(value)) }
+pub fn boxed_later(value: Hidden) -> t.Box[. -> t.Number] { pack(later(value)) }
 
-pub fn run_box(value: t.Box(. -> t.Number)) -> t.Number { mark(2); unpack(value)() }
+pub fn run_box(value: t.Box[. -> t.Number]) -> t.Number { mark(2); unpack(value)() }
 
 pub newtype Packed <U> : U & (U -> t.Number) { constructor seal; projector open }
 
 fn read_payload[U](value: U, reader: U -> t.Number) -> t.Number { reader(value) }
 
 pub fn make_packed(value: t.Number) -> Packed {
-  Packed.seal(t.Number, value, .(n: t.Number) { n })
+  Packed.seal[t.Number](value, .(n: t.Number) { n })
 }
 
-pub fn read_packed(value: Packed) -> t.Number { Packed.open(value, t.Number, read_payload) }
+pub fn read_packed(value: Packed) -> t.Number { Packed.open(value)[t.Number](read_payload) }

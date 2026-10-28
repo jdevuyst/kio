@@ -11,13 +11,13 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub newtype Selection : Array(I32) & Array(I32) { constructor selection; projector fields }
+pub newtype Selection : Array[I32] & Array[I32] { constructor selection; projector fields }
 
 literal infinity = 100000;
 
-fn costs(s: Selection) -> Array(I32) { let .(values, _) = Selection.fields(s); values }
+fn costs(s: Selection) -> Array[I32] { let .(values, _) = Selection.fields(s); values }
 
-fn choices(s: Selection) -> Array(I32) { let .(_, nodes) = Selection.fields(s); nodes }
+fn choices(s: Selection) -> Array[I32] { let .(_, nodes) = Selection.fields(s); nodes }
 
 pub fn cost(g: graph.Graph, s: Selection, root: I32) -> I32 {
   arr.array_get(costs(s), graph.find(g, root))

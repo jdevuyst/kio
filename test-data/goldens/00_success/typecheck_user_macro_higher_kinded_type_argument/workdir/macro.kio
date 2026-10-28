@@ -6,4 +6,4 @@ pure fn hkt_identity_impl(_ct: __Comptime__, _f: __Type__, _a: __Type__, value: 
   value
 }
 
-pub macro hkt_identity : [*F][A] F(A) -> F(A) { impl hkt_identity_impl }
+pub macro hkt_identity : [*F][A] F[A] -> F[A] { impl hkt_identity_impl }

@@ -9,6 +9,6 @@ import testapi/io(print);
 // retaining the exact testapi.Int carrier.
 type Reint = t.Int;
 
-fn as_reint() -> Reint { 42(Reint) }
+fn as_reint() -> Reint { 42[Reint] }
 
-pub fn main() { let _ = print(int_to_string(as_reint())); print("\n"(t.String)) }
+pub fn main() { let _ = print(int_to_string(as_reint())); print("\n"[t.String]) }

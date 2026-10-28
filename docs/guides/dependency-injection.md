@@ -42,9 +42,9 @@ host fn string_concat(p0: String, p1: String) -> String;
 
 type Raw_deps = (String -> .) & (. -> String);
 
-fn raw_log(deps: Raw_deps) -> String -> . { deps.>one_prod(String -> .) }
+fn raw_log(deps: Raw_deps) -> String -> . { (deps.>one_prod)[String -> .] }
 
-fn raw_config(deps: Raw_deps) -> . -> String { deps.>one_prod(. -> String) }
+fn raw_config(deps: Raw_deps) -> . -> String { (deps.>one_prod)[. -> String] }
 
 fn start_raw(deps: Raw_deps) { raw_log(deps)(raw_config(deps)()) }
 ```

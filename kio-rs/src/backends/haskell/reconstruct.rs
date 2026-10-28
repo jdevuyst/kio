@@ -503,20 +503,20 @@ mod tests {
                 "module consumer; \
                  import owner as selected; \
                  import decoy as other; \
-                 fn qualified_wrap[A](value: A) -> selected.Box(A) { \
-                     selected.Box.mk_box(A, value) \
+                 fn qualified_wrap[A](value: A) -> selected.Box[A] { \
+                     selected.Box.mk_box[A]( value) \
                  } \
-                 fn qualified_unwrap[A](value: selected.Box(A)) -> A { \
-                     selected.Box.un_box(A, value) \
+                 fn qualified_unwrap[A](value: selected.Box[A]) -> A { \
+                     selected.Box.un_box[A]( value) \
                  } \
-                 fn preserve_decoy[A](value: other.Box(A)) -> other.Box(A) { value }",
+                 fn preserve_decoy[A](value: other.Box[A]) -> other.Box[A] { value }",
             ),
             (
                 "local.kio",
                 "module local; \
                  newtype Box[A] : A { constructor mk_box; projector un_box; }; \
-                 fn local_wrap[A](value: A) -> Box(A) { Box.mk_box(A, value) } \
-                 fn local_unwrap[A](value: Box(A)) -> A { Box.un_box(A, value) }",
+                 fn local_wrap[A](value: A) -> Box[A] { Box.mk_box[A]( value) } \
+                 fn local_unwrap[A](value: Box[A]) -> A { Box.un_box[A]( value) }",
             ),
         ]);
         let resolution = NewtypeResolution::build(&package);
@@ -564,8 +564,8 @@ mod tests {
                 "module consumer; \
                  import selected as actual; \
                  import actual as selected; \
-                 fn wrap[A](value: A) -> actual.Box(A) { \
-                     actual.Box.mk_box(A, value) \
+                 fn wrap[A](value: A) -> actual.Box[A] { \
+                     actual.Box.mk_box[A]( value) \
                  }",
             ),
         ]);
@@ -679,7 +679,7 @@ mod tests {
             "module test; \
              host type N; \
              host fn produce(_unit: .) -> [A] A; \
-             fn caller() -> N { produce()(N) }",
+             fn caller() -> N { produce()[N] }",
         )]);
         let definition = function(&package, "test", "caller");
         assert!(matches!(definition.body, Expr::LowTypeApplication { .. }));

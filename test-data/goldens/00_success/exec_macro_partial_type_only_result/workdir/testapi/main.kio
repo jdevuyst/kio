@@ -3,17 +3,17 @@ module testapi/main;
 import macros(macro phantom);
 import testapi/io as io;
 
-fn residual() -> [B] . { phantom((), .) }
+fn residual() -> [B] . { phantom(())[.] }
 
 fn explicit_unit() -> [B] . -> . {
-  phantom(.(_unit: .) { () }, . -> .)
+  phantom(.(_unit: .) { () })[. -> .]
 }
 
 pub fn main() {
   let saved = residual();
-  saved(.);
+  saved[.];
   io.print("type-only\n");
   let saved_unit = explicit_unit();
-  saved_unit(.)(());
+  saved_unit[.](());
   io.print("explicit-unit\n")
 }

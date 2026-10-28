@@ -9,7 +9,7 @@ import testapi/iter(loop);
 
 // Certificates scan the original ordered lists, independently of the
 // proposal engine's inverse rank table and rejection history.
-rec(loop) fn rank_from(row: Array(I32), partner: I32, position: I32) -> I32 {
+rec(loop) fn rank_from(row: Array[I32], partner: I32, position: I32) -> I32 {
   if(market.less(position, array.array_len(row))) {
     if(market.equal(array.array_get(row, position), partner)) {
       position
@@ -25,7 +25,7 @@ fn rank(preferences: market.Preferences, person: I32, partner: I32) -> I32 {
   rank_from(array.array_get(preferences, person), partner, 0)
 }
 
-rec(loop) fn valid_from(partner: Array(I32), holder: Array(I32), person: I32) -> Bool {
+rec(loop) fn valid_from(partner: Array[I32], holder: Array[I32], person: I32) -> Bool {
   if(market.less(person, array.array_len(partner))) {
     let recipient = array.array_get(partner, person);
     if(market.less(recipient, 0)) {
@@ -44,7 +44,7 @@ rec(loop) fn valid_from(partner: Array(I32), holder: Array(I32), person: I32) ->
   }
 }
 
-pub fn valid(partner: Array(I32), holder: Array(I32)) -> Bool {
+pub fn valid(partner: Array[I32], holder: Array[I32]) -> Bool {
   if(market.equal(array.array_len(partner), array.array_len(holder))) {
     valid_from(partner, holder, 0)
   } else {
@@ -55,8 +55,8 @@ pub fn valid(partner: Array(I32), holder: Array(I32)) -> Bool {
 rec(loop) fn count_pairs(
 , left: market.Preferences
 , right: market.Preferences
-, partner: Array(I32)
-, holder: Array(I32)
+, partner: Array[I32]
+, holder: Array[I32]
 , person: I32
 , recipient: I32
 , count: I32
@@ -88,13 +88,13 @@ rec(loop) fn count_pairs(
 pub fn blocking_pairs(
 , left: market.Preferences
 , right: market.Preferences
-, partner: Array(I32)
-, holder: Array(I32)
+, partner: Array[I32]
+, holder: Array[I32]
 ) -> I32 { count_pairs(left, right, partner, holder, 0, 0, 0) }
 
 rec(loop) fn total_from(
 , preferences: market.Preferences
-, partners: Array(I32)
+, partners: Array[I32]
 , person: I32
 , total: I32
 ) -> I32 {
@@ -106,6 +106,6 @@ rec(loop) fn total_from(
   }
 }
 
-pub fn rank_total(preferences: market.Preferences, partners: Array(I32)) -> I32 {
+pub fn rank_total(preferences: market.Preferences, partners: Array[I32]) -> I32 {
   total_from(preferences, partners, 0, 0)
 }

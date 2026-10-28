@@ -2,8 +2,8 @@ module api;
 
 pub labels { some[A]: A };
 
-pub type Maybe[A] = Some(A) | .;
+pub type Maybe[A] = Some[A] | .;
 
-pub fn direct[A](value: Some(A)) -> Some(A) { value }
+pub fn direct[A](value: Some[A]) -> Some[A] { value }
 
-pub fn nested[A](value: Maybe(A)) -> Maybe(A) { value }
+pub fn nested[A](value: Maybe[A]) -> Maybe[A] { value }

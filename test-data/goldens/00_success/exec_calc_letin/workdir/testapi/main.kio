@@ -14,19 +14,19 @@ import testapi/text(string_concat, string_eq);
 // stack of pending worklist frames, as the value stack of
 // intermediate `I32` results, and as the carrier of the
 // environment's assoc-list (`(String & I32)` pairs).
-rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
+fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
 
 // Environment: an assoc list of `(name, value)` pairs with
 // first-match-wins lookup (the standard cons-as-shadowing
 // convention). The separate newtype keeps the carrier type
 // readable in frame signatures and lookup state below.
-newtype Env : List(String & I32) { pub constructor mk_env; pub projector un_env }
+newtype Env : List[String & I32] { pub constructor mk_env; pub projector un_env }
 
-fn empty_env() -> Env { Env.mk_env(nil(String & I32, ())) }
+fn empty_env() -> Env { Env.mk_env(nil[String & I32](())) }
 
 fn extend(name: String, value: I32, env: Env) -> Env {
   Env.mk_env(push((name, value), env.>Env.un_env))
@@ -35,11 +35,11 @@ fn extend(name: String, value: I32, env: Env) -> Env {
 // Compare the head pair `(k, v)` against the target `name`:
 // return `v` on a hit, or continue the loop with the tail.
 // Single one-level `if`/`else` plus the head-pair projection.
-fn lookup_head(name: String, k: String, v: I32, rest: List(String & I32)) -> (String & Env) | I32 {
+fn lookup_head(name: String, k: String, v: I32, rest: List[String & I32]) -> (String & Env) | I32 {
   narrow_sum(if(string_eq(k, name)) {
-    widen_sum(v, I32 | (String & Env))
+    widen_sum(v)[I32 | (String & Env)]
   } else {
-    widen_sum((name, Env.mk_env(rest)), I32 | (String & Env))
+    widen_sum((name, Env.mk_env(rest)))[I32 | (String & Env)]
   })
 }
 
@@ -48,17 +48,17 @@ fn lookup_head(name: String, k: String, v: I32, rest: List(String & I32)) -> (St
 // on the list cell. The cell is the result of the
 // `List(String & I32)` projector — its non-empty arm is the
 // pair `((String & I32) & List(String & I32))`, head and tail.
-fn lookup_dispatch(name: String, cell: . | ((String & I32) & List(String & I32))) ->
+fn lookup_dispatch(name: String, cell: . | ((String & I32) & List[String & I32])) ->
   (String & Env) | I32
    {
   match(cell) {
     (
-    , .(head: String & I32, rest: List(String & I32)) {
+    , .(head: String & I32, rest: List[String & I32]) {
         match(head) {
           .(k: String, v: I32) { lookup_head(name, k, v, rest) }
         }
       }
-    , .(_empty: .) { widen_sum(0(I32), (String & Env) | I32) }
+    , .(_empty: .) { widen_sum(0[I32])[(String & Env) | I32] }
     )
   }
 }
@@ -99,9 +99,9 @@ rec newtype Expr : I32 | (I32 & Expr & Expr) | (String & Expr & Expr) | String {
 
 fn lit(n: I32) -> Expr { Expr.mk_expr(widen_sum(n)) }
 
-fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((0(I32), l, r))) }
+fn add(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((0[I32], l, r))) }
 
-fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1(I32), l, r))) }
+fn mul(l: Expr, r: Expr) -> Expr { Expr.mk_expr(widen_sum((1[I32], l, r))) }
 
 fn let_(name: String, value: Expr, body: Expr) -> Expr {
   Expr.mk_expr(widen_sum((name, value, body)))
@@ -135,9 +135,9 @@ newtype Frame : (Expr & Env) | I32 | (String & Expr & Env) {
 // emitted union exceeds its line-wrap threshold and splits
 // across lines with a leading `|`, which the regular Kio
 // parser rejects in argument position.
-newtype State : List(Frame) & List(I32) { pub constructor mk_state; pub projector un_state }
+newtype State : List[Frame] & List[I32] { pub constructor mk_state; pub projector un_state }
 
-fn state(nodes: List(Frame), values: List(I32)) -> State { State.mk_state((nodes, values)) }
+fn state(nodes: List[Frame], values: List[I32]) -> State { State.mk_state((nodes, values)) }
 
 fn frame_expr(e: Expr, env: Env) -> Frame { Frame.mk_frame(widen_sum((e, env))) }
 
@@ -156,11 +156,11 @@ fn apply_op(op: I32, left: I32, right: I32) -> I32 {
 // stack, pops one more value (`left`), and pushes
 // `apply_op(op, left, right)`. Split out so `combine` itself
 // carries a single one-level `match`.
-fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
+fn combine_with_right(op: I32, right: I32, rest1: List[I32]) -> List[I32] {
   match(rest1.>List.un_list) {
     (
-    , .(left: I32, rest2: List(I32)) { push(apply_op(op, left, right), rest2) }
-    , .(_empty: .) { push(0, nil(I32, ())) }
+    , .(left: I32, rest2: List[I32]) { push(apply_op(op, left, right), rest2) }
+    , .(_empty: .) { push(0, nil[I32](())) }
     )
   }
 }
@@ -171,11 +171,11 @@ fn combine_with_right(op: I32, right: I32, rest1: List(I32)) -> List(I32) {
 // `right`'s value on top and `left`'s next-to-top. Pops them
 // in that order and computes `left OP right`. Same shape as
 // `exec_expr_eval`'s `combine`.
-fn combine(op: I32, values: List(I32)) -> List(I32) {
+fn combine(op: I32, values: List[I32]) -> List[I32] {
   match(values.>List.un_list) {
     (
-    , .(right: I32, rest1: List(I32)) { combine_with_right(op, right, rest1) }
-    , .(_empty: .) { push(0, nil(I32, ())) }
+    , .(right: I32, rest1: List[I32]) { combine_with_right(op, right, rest1) }
+    , .(_empty: .) { push(0, nil[I32](())) }
     )
   }
 }
@@ -188,7 +188,7 @@ fn combine(op: I32, values: List(I32)) -> List(I32) {
 // would also match the wider 3-tuple branches by projecting one
 // component, and the 3-tuple clauses would be rejected as
 // unreachable if placed after them.
-fn handle_expr(e: Expr, env: Env, rest_nodes: List(Frame), values: List(I32)) -> State {
+fn handle_expr(e: Expr, env: Env, rest_nodes: List[Frame], values: List[I32]) -> State {
   match(e.>Expr.un_expr) {
     (
     , .(op: I32, l: Expr, r: Expr) {
@@ -213,10 +213,10 @@ fn handle_expr(e: Expr, env: Env, rest_nodes: List(Frame), values: List(I32)) ->
 // the body-walking frame. Returns the bare `State` shape; the
 // caller widens — same shape-preservation reason as
 // `handle_expr`.
-fn handle_let_marker(name: String, body: Expr, env: Env, rest_nodes: List(Frame), values: List(I32)) -> State {
+fn handle_let_marker(name: String, body: Expr, env: Env, rest_nodes: List[Frame], values: List[I32]) -> State {
   match(values.>List.un_list) {
     (
-    , .(v: I32, rest_values: List(I32)) {
+    , .(v: I32, rest_values: List[I32]) {
         let new_env = extend(name, v, env);
         let with_body = push(frame_expr(body, new_env), rest_nodes);
         state(with_body, rest_values)
@@ -231,7 +231,7 @@ fn handle_let_marker(name: String, body: Expr, env: Env, rest_nodes: List(Frame)
 // already return `State`; the op-marker clause wraps the
 // combine result). Single one-level `match` on the `Frame`
 // projector.
-fn handle_frame(top: Frame, rest_nodes: List(Frame), values: List(I32)) -> State {
+fn handle_frame(top: Frame, rest_nodes: List[Frame], values: List[I32]) -> State {
   match(top.>Frame.un_frame) {
     (
     , .(name: String, body: Expr, env: Env) {
@@ -247,22 +247,22 @@ fn handle_frame(top: Frame, rest_nodes: List(Frame), values: List(I32)) -> State
 // the evaluator's result. For a well-formed AST the value
 // stack has exactly one element at this point; the empty arm
 // returns a sentinel.
-fn exit_top(values: List(I32)) -> I32 {
+fn exit_top(values: List[I32]) -> I32 {
   match(values.>List.un_list) {
-    (.(top: I32, _rest: List(I32)) { top }, .(_empty: .) { 0 })
+    (.(top: I32, _rest: List[I32]) { top }, .(_empty: .) { 0 })
   }
 }
 
 // Dispatch on whether the node stack is non-empty (continue
 // with the new state) or empty (exit with the value-stack
 // top). Single one-level `match` on the node-stack list cell.
-fn step_inner(nodes: List(Frame), values: List(I32)) -> State | I32 {
+fn step_inner(nodes: List[Frame], values: List[I32]) -> State | I32 {
   match(nodes.>List.un_list) {
     (
-    , .(top: Frame, rest_nodes: List(Frame)) {
-        widen_sum(handle_frame(top, rest_nodes, values), State | I32)
+    , .(top: Frame, rest_nodes: List[Frame]) {
+        widen_sum(handle_frame(top, rest_nodes, values))[State | I32]
       }
-    , .(_empty: .) { widen_sum(exit_top(values), State | I32) }
+    , .(_empty: .) { widen_sum(exit_top(values))[State | I32] }
     )
   }
 }
@@ -275,14 +275,14 @@ fn step_inner(nodes: List(Frame), values: List(I32)) -> State | I32 {
 // empty.
 fn step(st: State) -> State | I32 {
   match(st.>State.un_state) {
-    .(nodes: List(Frame), values: List(I32)) { step_inner(nodes, values) }
+    .(nodes: List[Frame], values: List[I32]) { step_inner(nodes, values) }
   }
 }
 
 fn eval(e: Expr) -> I32 {
   loop(
   , .(st: State) { step(st) }
-  , state(push(frame_expr(e, empty_env()), nil(Frame, ())), nil(I32, ()))
+  , state(push(frame_expr(e, empty_env()), nil[Frame](())), nil[I32](()))
   )
 }
 

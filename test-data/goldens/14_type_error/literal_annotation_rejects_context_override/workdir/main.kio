@@ -6,4 +6,4 @@ host type Other role(i64);
 
 fn consume(value: Other) -> Other { value }
 
-fn value() -> Other { consume(17(Selected)) }
+fn value() -> Other { consume(17[Selected]) }

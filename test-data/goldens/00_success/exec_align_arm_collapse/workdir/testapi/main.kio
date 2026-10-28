@@ -11,9 +11,9 @@ import testapi/io(print);
 // dropped).
 fn pick(b: Bool) -> String {
   align(if(b) {
-    widen_sum("collapsed\n"(String), String | String)
+    widen_sum("collapsed\n"[String])[String | String]
   } else {
-    widen_sum("collapsed\n"(String), String | String)
+    widen_sum("collapsed\n"[String])[String | String]
   })
 }
 

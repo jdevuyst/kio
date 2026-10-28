@@ -30,7 +30,7 @@ fn event() -> m.Event | . {
   let key = io.read_ascii_line();
   let time = number();
   match((id, key, time)) {
-    .(id: I32, key: String, time: I32) { {m.id, m.key, m.time}.>widen_sum(m.Event | .) };
+    .(id: I32, key: String, time: I32) { ({m.id, m.key, m.time}.>widen_sum)[m.Event | .] };
     .() { ().>widen_sum }
   }
 }
@@ -46,17 +46,17 @@ pub fn next() -> . | Command {
   match(io.read_ascii_line()) {
     .(command: String) {
       if(text.string_eq(command, "begin")) {
-        field(io.read_ascii_line(), .(name: String) { {begin = name}.>widen_sum(Command) })
+        field(io.read_ascii_line(), .(name: String) { ({begin = name}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "left")) {
-        field(event(), .(value: m.Event) { {left_event = value}.>widen_sum(Command) })
+        field(event(), .(value: m.Event) { ({left_event = value}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "right")) {
-        field(event(), .(value: m.Event) { {right_event = value}.>widen_sum(Command) })
+        field(event(), .(value: m.Event) { ({right_event = value}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "watermark-left")) {
-        field(number(), .(value: I32) { {left_watermark = value}.>widen_sum(Command) })
+        field(number(), .(value: I32) { ({left_watermark = value}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "watermark-right")) {
-        field(number(), .(value: I32) { {right_watermark = value}.>widen_sum(Command) })
+        field(number(), .(value: I32) { ({right_watermark = value}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "checkpoint")) {
-        field(io.read_ascii_line(), .(name: String) { {checkpoint = name}.>widen_sum(Command) })
+        field(io.read_ascii_line(), .(name: String) { ({checkpoint = name}.>widen_sum)[Command] })
       } else if(text.string_eq(command, "end")) {
         {end=}.>widen_sum
       } else {

@@ -30,29 +30,29 @@ import library/macros/spine_macros(macro widen_sum);
 pub labels { leafopt[A]: A | . };
 
 /// Defines the recursive vector tree payload as a leaf or branch pair.
-pub rec labels { tree[A]: Leafopt(A) | (Tree(A) & Tree(A)) };
+pub rec labels { tree[A]: Leafopt[A] | (Tree[A] & Tree[A]) };
 
 /// `leaf(m)` builds a leaf carrying the result `m`; `branch(l, r)` pairs
 /// two subtrees. Both are O(1) and pure.
-pub fn leaf[A](m: A | .) -> Tree(A) {
-  {tree = widen_sum({leafopt = m}, Leafopt(A) | (Tree(A) & Tree(A)))}
+pub fn leaf[A](m: A | .) -> Tree[A] {
+  {tree = widen_sum({leafopt = m})[Leafopt[A] | (Tree[A] & Tree[A])]}
 }
 
 /// Builds an internal vector tree branch from two subtrees.
-pub fn branch[A](l: Tree(A), r: Tree(A)) -> Tree(A) {
-  {tree = widen_sum((l, r), Leafopt(A) | (Tree(A) & Tree(A)))}
+pub fn branch[A](l: Tree[A], r: Tree[A]) -> Tree[A] {
+  {tree = widen_sum((l, r))[Leafopt[A] | (Tree[A] & Tree[A])]}
 }
 
 /// `untree(t)` is the pure one-step destructor: the labeled leaf, or the
 /// branch's child pair. Every descent/rebuild step matches on this.
-pub fn untree[A](t: Tree(A)) -> Leafopt(A) | (Tree(A) & Tree(A)) { Tree.get(t) }
+pub fn untree[A](t: Tree[A]) -> Leafopt[A] | (Tree[A] & Tree[A]) { Tree.get(t) }
 
 /// `leaf_value(t)` reads a leaf's result, treating a branch as absent
 /// (a branch is never the terminal of an in-bounds path, so this is the
 /// out-of-bounds fallback rather than a reachable case).
-pub fn leaf_value[A](t: Tree(A)) -> A | . {
+pub fn leaf_value[A](t: Tree[A]) -> A | . {
   match(untree(t)) {
-    (.(_pair: Tree(A) & Tree(A)) { widen_sum((), A | .) }, .(lo: Leafopt(A)) { Leafopt.get(lo) })
+    (.(_pair: Tree[A] & Tree[A]) { widen_sum(())[A | .] }, .(lo: Leafopt[A]) { Leafopt.get(lo) })
   }
 }
 
@@ -102,10 +102,10 @@ pub fn no_bnd() -> Out_bnd { {out_bnd=} }
 /// `bnd_in` / `bnd_out` are the `Bounds`-typed verdicts (the unit labels
 /// widened) - for callers holding a `Bounds`-typed slot rather than the
 /// `if`/`else` bridge's distinct-typed arms.
-pub fn bnd_in() -> Bounds { widen_sum({in_bnd=}, In_bnd | Out_bnd) }
+pub fn bnd_in() -> Bounds { widen_sum({in_bnd=})[In_bnd | Out_bnd] }
 
 /// Injects the out-of-bounds marker into the `Bounds` sum.
-pub fn bnd_out() -> Bounds { widen_sum({out_bnd=}, In_bnd | Out_bnd) }
+pub fn bnd_out() -> Bounds { widen_sum({out_bnd=})[In_bnd | Out_bnd] }
 
 /// `select(b, in_val, out_val)` is the `Bounds` eliminator: `in_val` when
 /// the verdict is in-range, `out_val` otherwise. Both arguments are
@@ -135,15 +135,15 @@ pub fn go_right() -> Goright { {goright=} }
 /// `go_right` widened into the full two-arm `Dir`. The singleton forms are
 /// for the `if`/`else` bridge (where two distinct-typed arms *form* the
 /// `Dir`); these are for callers that already hold a `Dir`-typed slot.
-pub fn dir_left() -> Dir { widen_sum({goleft=}, Goleft | Goright) }
+pub fn dir_left() -> Dir { widen_sum({goleft=})[Goleft | Goright] }
 
 /// Injects the right direction into the `Dir` sum.
-pub fn dir_right() -> Dir { widen_sum({goright=}, Goleft | Goright) }
+pub fn dir_right() -> Dir { widen_sum({goright=})[Goleft | Goright] }
 
 /// `flip_dir(dir)` is the opposite direction - the path's sibling side.
 pub fn flip_dir(dir: Dir) -> Dir {
   match(dir) {
-    (.(_l: Goleft) { widen_sum(go_right(), Dir) }, .(_r: Goright) { widen_sum(go_left(), Dir) })
+    (.(_l: Goleft) { widen_sum(go_right())[Dir] }, .(_r: Goright) { widen_sum(go_left())[Dir] })
   }
 }
 
@@ -151,19 +151,19 @@ pub fn flip_dir(dir: Dir) -> Dir {
 /// selects the `dir`-side child; on a leaf the path is already at bottom,
 /// so it returns the leaf untouched (the driver matches `untree` itself to
 /// detect the leaf and stops, so this leaf arm is the safe fallback).
-pub fn descend_step[A](dir: Dir, t: Tree(A)) -> Tree(A) {
+pub fn descend_step[A](dir: Dir, t: Tree[A]) -> Tree[A] {
   match(untree(t)) {
     (
-    , .(pair: Tree(A) & Tree(A)) {
+    , .(pair: Tree[A] & Tree[A]) {
         match(pair) {
-          .(l: Tree(A), r: Tree(A)) {
+          .(l: Tree[A], r: Tree[A]) {
             match(dir) {
               (.(_lft: Goleft) { l }, .(_rgt: Goright) { r })
             }
           }
         }
       }
-    , .(_lo: Leafopt(A)) { t }
+    , .(_lo: Leafopt[A]) { t }
     )
   }
 }
@@ -172,7 +172,7 @@ pub fn descend_step[A](dir: Dir, t: Tree(A)) -> Tree(A) {
 /// `dir`-side child paired with the other one. On a leaf (never reached
 /// mid-path) it returns the leaf as both - `descend_step` is the identity
 /// on a leaf, so both projections coincide there.
-pub fn split_branch[A](dir: Dir, t: Tree(A)) -> Tree(A) & Tree(A) {
+pub fn split_branch[A](dir: Dir, t: Tree[A]) -> Tree[A] & Tree[A] {
   (descend_step(dir, t), descend_step(flip_dir(dir), t))
 }
 
@@ -187,18 +187,18 @@ pub fn split_branch[A](dir: Dir, t: Tree(A)) -> Tree(A) & Tree(A) {
 /// A frame records the off-path sibling and the `Dir` the path took at
 /// this level. The sibling is the child the path did *not* descend into,
 /// preserved untouched so the rebuild can share it.
-pub labels { frame[A]: Dir & Tree(A) };
+pub labels { frame[A]: Dir & Tree[A] };
 
 /// Builds a zipper frame from a direction and sibling subtree.
-pub fn build_frame[A](dir: Dir, sibling: Tree(A)) -> Frame(A) { {frame = (dir, sibling)} }
+pub fn build_frame[A](dir: Dir, sibling: Tree[A]) -> Frame[A] { {frame = (dir, sibling)} }
 
 /// `rebuild_step(built, fr)` reattaches one level: the `built` subtree (the
 /// already-rebuilt lower portion of the path) becomes the path-side child,
 /// and the frame's preserved sibling becomes the other child, in the order
 /// the frame's `Dir` recorded (left means built is the left child).
-pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
+pub fn rebuild_step[A](built: Tree[A], fr: Frame[A]) -> Tree[A] {
   match(Frame.get(fr)) {
-    .(dir: Dir, sibling: Tree(A)) {
+    .(dir: Dir, sibling: Tree[A]) {
       match(dir) {
         (.(_l: Goleft) { branch(built, sibling) }, .(_r: Goright) { branch(sibling, built) })
       }
@@ -209,18 +209,18 @@ pub fn rebuild_step[A](built: Tree(A), fr: Frame(A)) -> Tree(A) {
 /// A cons-list of frames is the descent stack: pushing a frame as the
 /// driver descends, the head is the *deepest* frame, so a head-first fold
 /// rebuilds bottom-up - exactly the order `rebuild_step` wants.
-pub rec labels { frames[A]: . | (Frame(A) & Frames(A)) };
+pub rec labels { frames[A]: . | (Frame[A] & Frames[A]) };
 
 /// Builds the empty frame stack.
-pub fn frames_nil[A] -> Frames(A) { {frames = widen_sum((), . | (Frame(A) & Frames(A)))} }
+pub fn frames_nil[A] -> Frames[A] { {frames = widen_sum(())[. | (Frame[A] & Frames[A])]} }
 
 /// Pushes one zipper frame onto a frame stack.
-pub fn frames_push[A](fr: Frame(A), rest: Frames(A)) -> Frames(A) {
-  {frames = widen_sum((fr, rest), . | (Frame(A) & Frames(A)))}
+pub fn frames_push[A](fr: Frame[A], rest: Frames[A]) -> Frames[A] {
+  {frames = widen_sum((fr, rest))[. | (Frame[A] & Frames[A])]}
 }
 
 /// Projects one frame-stack step as empty or head-tail.
-pub fn unframes[A](fs: Frames(A)) -> . | (Frame(A) & Frames(A)) { Frames.get(fs) }
+pub fn unframes[A](fs: Frames[A]) -> . | (Frame[A] & Frames[A]) { Frames.get(fs) }
 
 // =====================================================================
 // equiv-law battery - the pure trie algebra
@@ -238,12 +238,12 @@ fn fold_result[A][B](default: B, present: A -> B, result: A | .) -> B {
 }
 
 equiv leaf_present_eliminates[A][B](default: B, present: A -> B, value: A) {
-  fold_result(default, present, leaf_value(leaf(widen_sum(value, A | .))));
+  fold_result(default, present, leaf_value(leaf(widen_sum(value)[A | .])));
   present(value)
 }
 
 equiv leaf_absent_eliminates[A][B](default: B, present: A -> B) {
-  fold_result(default, present, leaf_value(leaf(widen_sum((), A | .))));
+  fold_result(default, present, leaf_value(leaf(widen_sum(())[A | .])));
   default
 }
 
@@ -270,13 +270,13 @@ equiv flip_right() {
 
 // `descend_step(go_left, branch(l, r)) ≡ l` - going left selects the left
 // child.
-equiv descend_left[A](l: Tree(A), r: Tree(A)) {
+equiv descend_left[A](l: Tree[A], r: Tree[A]) {
   descend_step(dir_left(), branch(l, r));
   l
 }
 
 // `descend_step(go_right, branch(l, r)) ≡ r`.
-equiv descend_right[A](l: Tree(A), r: Tree(A)) {
+equiv descend_right[A](l: Tree[A], r: Tree[A]) {
   descend_step(dir_right(), branch(l, r));
   r
 }
@@ -289,13 +289,13 @@ equiv descend_leaf[A](d: Dir, m: A | .) {
 }
 
 // `split_branch(go_left, branch(l, r)) ≡ (l, r)` - chosen-then-sibling.
-equiv split_left[A](l: Tree(A), r: Tree(A)) {
+equiv split_left[A](l: Tree[A], r: Tree[A]) {
   split_branch(dir_left(), branch(l, r));
   (l, r)
 }
 
 // `split_branch(go_right, branch(l, r)) ≡ (r, l)`.
-equiv split_right[A](l: Tree(A), r: Tree(A)) {
+equiv split_right[A](l: Tree[A], r: Tree[A]) {
   split_branch(dir_right(), branch(l, r));
   (r, l)
 }
@@ -304,13 +304,13 @@ equiv split_right[A](l: Tree(A), r: Tree(A)) {
 
 // `rebuild_step(t, Frame.get(s)) ≡ branch(t, s)` - a left frame
 // re-attaches the rebuilt subtree as the left child.
-equiv rebuild_left[A](t: Tree(A), s: Tree(A)) {
+equiv rebuild_left[A](t: Tree[A], s: Tree[A]) {
   rebuild_step(t, build_frame(dir_left(), s));
   branch(t, s)
 }
 
 // `rebuild_step(t, Frame.get(s)) ≡ branch(s, t)`.
-equiv rebuild_right[A](t: Tree(A), s: Tree(A)) {
+equiv rebuild_right[A](t: Tree[A], s: Tree[A]) {
   rebuild_step(t, build_frame(dir_right(), s));
   branch(s, t)
 }
@@ -319,11 +319,11 @@ equiv rebuild_right[A](t: Tree(A), s: Tree(A)) {
 // child against its preserved sibling rebuilds the original branch. This
 // is the round-trip the persistent update relies on - descend (split),
 // then rebuild - proven one level deep on opaque subtrees.
-equiv split_rebuild_left[A](l: Tree(A), r: Tree(A)) {
+equiv split_rebuild_left[A](l: Tree[A], r: Tree[A]) {
   scope {
     let split_result = split_branch(dir_left(), branch(l, r));
     match(split_result) {
-      .(chosen: Tree(A), sibling: Tree(A)) {
+      .(chosen: Tree[A], sibling: Tree[A]) {
         rebuild_step(chosen, build_frame(dir_left(), sibling))
       }
     }
@@ -331,11 +331,11 @@ equiv split_rebuild_left[A](l: Tree(A), r: Tree(A)) {
   branch(l, r)
 }
 
-equiv split_rebuild_right[A](l: Tree(A), r: Tree(A)) {
+equiv split_rebuild_right[A](l: Tree[A], r: Tree[A]) {
   scope {
     let split_result = split_branch(dir_right(), branch(l, r));
     match(split_result) {
-      .(chosen: Tree(A), sibling: Tree(A)) {
+      .(chosen: Tree[A], sibling: Tree[A]) {
         rebuild_step(chosen, build_frame(dir_right(), sibling))
       }
     }
@@ -353,9 +353,9 @@ equiv leaf_value_leaf[A](m: A | .) {
 
 // `leaf_value(branch(l, r)) ≡ ()` - a branch is never an in-bounds
 // terminal, so it reads as absent.
-equiv leaf_value_branch[A](l: Tree(A), r: Tree(A)) {
+equiv leaf_value_branch[A](l: Tree[A], r: Tree[A]) {
   leaf_value(branch(l, r));
-  widen_sum((), A | .)
+  widen_sum(())[A | .]
 }
 
 // ---- bounds verdict ----

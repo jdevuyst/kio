@@ -7,4 +7,4 @@ rec {
   pub newtype Node : Payload { pub constructor mk; pub projector get }
 }
 
-pub fn make() -> Node { Node.mk(__left__(., Node, ())) }
+pub fn make() -> Node { Node.mk(__left__[.][Node]( ())) }

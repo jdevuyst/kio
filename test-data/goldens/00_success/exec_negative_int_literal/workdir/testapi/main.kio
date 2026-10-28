@@ -16,12 +16,12 @@ op _ - _ { impl sub_i32 }
 // needing a non-trivial body that would dilute the test's focus.
 fn id_i32(x: I32) -> I32 { x }
 
-fn print_i32(n: I32) { print(i32_to_string(n)); print("\n"(String)) }
+fn print_i32(n: I32) { print(i32_to_string(n)); print("\n"[String]) }
 
 pub fn main() {
   // Shape 1: negative literal on the RHS of `let`, at an
   // expression-starting position (after `=`).
-  let a = -40(I32);
+  let a = -40[I32];
   print_i32(a);
   // Shape 2: negative literal as a call argument, after `(`. The
   // lexer's carve-out fires because `(` does not end an

@@ -18,5 +18,5 @@ fn five_sum() -> Five {
 
 pub fn main() {
   let f = five_sum();
-  print(int_to_string(Five.un_five(f)(1(I32), 2(I32), 3(I32), 4(I32), 5(I32))))
+  print(int_to_string(Five.un_five(f)(1[I32], 2[I32], 3[I32], 4[I32], 5[I32])))
 }

@@ -30,7 +30,7 @@ The corpus intentionally keeps both `option` and `result`.
 - `result` models a computation that either succeeds or carries a typed error.
   Its surface is right-biased and error-aware: `ok` / `err`, `map_err`,
   `bimap`, `swap`, recovery helpers, and applicative / monadic operators over
-  `Result(T, E)`.
+  `Result[T][E]`.
 
 Those two APIs overlap at `map` / `bind`, but they exercise different adopter
 contracts: absence versus recoverable typed failure. Keeping both makes that
@@ -86,7 +86,7 @@ declarations and `rehost` express the same boundary.
 
 ## Module documentation
 
-Every root-package POC library `*.kio` file is copyable library source. It must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: `pub fn`, `pub type`, `pub literal`, `pub newtype`, `pub labels`, `pub op`, `pub varop`, and `pub elab`.
+Every root-package POC library `*.kio` file is copyable library source. It must have module-level `///` docs immediately above the `module` directive, and every exported top-level declaration must have attached `///` docs: `pub fn`, `pub type`, `pub literal`, `pub newtype`, `pub labels`, `pub op`, `pub varop`, and `pub macro`.
 
 Demo modules, host adapters, materialized dependency roots, and `testapi` modules are not part of the root library documentation requirement. A demo may still document its public entry points, but the required adopter-grade `///` surface is the root package's own library surface.
 
@@ -99,7 +99,7 @@ The orchestrator at `ci/checks/orchestrators/poc-tests.sh` walks `test-data/poc/
 ```sh
 sh ci/checks/orchestrators/poc-tests.sh
 sh ci/checks/orchestrators/poc-tests.sh --impls=kio@js
-sh ci/checks/orchestrators/poc-tests.sh --impls=kio@js -- elab
+sh ci/checks/orchestrators/poc-tests.sh --impls=kio@js -- macros
 sh ci/checks/orchestrators/poc-tests.sh -- optics
 ```
 

@@ -118,7 +118,7 @@
         ]
       },
       "prefix": {
-        "multiple": false,
+        "multiple": true,
         "required": false,
         "types": [
           {
@@ -193,6 +193,10 @@
           },
           {
             "type": "label_value_expr",
+            "named": true
+          },
+          {
+            "type": "literal_annotation",
             "named": true
           },
           {
@@ -299,6 +303,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -559,6 +567,10 @@
           "named": true
         },
         {
+          "type": "call_type_arguments",
+          "named": true
+        },
+        {
           "type": "expression_arguments",
           "named": true
         },
@@ -572,6 +584,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -595,11 +611,70 @@
           "named": true
         },
         {
+          "type": "ufcs_expr",
+          "named": true
+        },
+        {
           "type": "unit_expression",
           "named": true
         },
         {
           "type": "variadic_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "call_type_arguments",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bracket_lbracket",
+          "named": true
+        },
+        {
+          "type": "bracket_rbracket",
+          "named": true
+        },
+        {
+          "type": "forall_type",
+          "named": true
+        },
+        {
+          "type": "incomplete_forall_type",
+          "named": true
+        },
+        {
+          "type": "operator_builtin",
+          "named": true
+        },
+        {
+          "type": "separator_dot",
+          "named": true
+        },
+        {
+          "type": "slot",
+          "named": true
+        },
+        {
+          "type": "type_arrow",
+          "named": true
+        },
+        {
+          "type": "type_group",
+          "named": true
+        },
+        {
+          "type": "type_path",
+          "named": true
+        },
+        {
+          "type": "type_product",
           "named": true
         }
       ]
@@ -971,15 +1046,7 @@
           "named": true
         },
         {
-          "type": "forall_type",
-          "named": true
-        },
-        {
           "type": "grouped_expression",
-          "named": true
-        },
-        {
-          "type": "incomplete_forall_type",
           "named": true
         },
         {
@@ -995,11 +1062,11 @@
           "named": true
         },
         {
-          "type": "number_literal",
+          "type": "literal_annotation",
           "named": true
         },
         {
-          "type": "operator_builtin",
+          "type": "number_literal",
           "named": true
         },
         {
@@ -1019,31 +1086,7 @@
           "named": true
         },
         {
-          "type": "separator_dot",
-          "named": true
-        },
-        {
-          "type": "slot",
-          "named": true
-        },
-        {
           "type": "string_literal",
-          "named": true
-        },
-        {
-          "type": "type_arrow",
-          "named": true
-        },
-        {
-          "type": "type_group",
-          "named": true
-        },
-        {
-          "type": "type_path",
-          "named": true
-        },
-        {
-          "type": "type_product",
           "named": true
         },
         {
@@ -1131,6 +1174,10 @@
         },
         {
           "type": "let_statement",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -1249,6 +1296,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -1767,6 +1818,10 @@
           "named": true
         },
         {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
           "type": "number_literal",
           "named": true
         },
@@ -1858,6 +1913,10 @@
         },
         {
           "type": "grouped_ufcs_callable",
+          "named": true
+        },
+        {
+          "type": "typed_ufcs_callable",
           "named": true
         }
       ]
@@ -2322,6 +2381,10 @@
           "named": true
         },
         {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
           "type": "number_literal",
           "named": true
         },
@@ -2468,6 +2531,10 @@
         },
         {
           "type": "let_statement",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -2654,7 +2721,7 @@
       "required": true,
       "types": [
         {
-          "type": "bracket_lparen",
+          "type": "bracket_lbracket",
           "named": true
         },
         {
@@ -2663,10 +2730,6 @@
         },
         {
           "type": "operator_builtin",
-          "named": true
-        },
-        {
-          "type": "separator_comma",
           "named": true
         },
         {
@@ -3031,6 +3094,10 @@
           "named": true
         },
         {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
           "type": "number_literal",
           "named": true
         },
@@ -3261,6 +3328,10 @@
           "named": true
         },
         {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
           "type": "local_pattern_tuple",
           "named": true
         },
@@ -3377,6 +3448,69 @@
         },
         {
           "type": "variadic_expression",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "literal_annotation",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "bool_literal",
+          "named": true
+        },
+        {
+          "type": "bracket_lbracket",
+          "named": true
+        },
+        {
+          "type": "bracket_rbracket",
+          "named": true
+        },
+        {
+          "type": "forall_type",
+          "named": true
+        },
+        {
+          "type": "number_literal",
+          "named": true
+        },
+        {
+          "type": "operator_builtin",
+          "named": true
+        },
+        {
+          "type": "separator_dot",
+          "named": true
+        },
+        {
+          "type": "slot",
+          "named": true
+        },
+        {
+          "type": "string_literal",
+          "named": true
+        },
+        {
+          "type": "type_arrow",
+          "named": true
+        },
+        {
+          "type": "type_group",
+          "named": true
+        },
+        {
+          "type": "type_path",
+          "named": true
+        },
+        {
+          "type": "type_product",
           "named": true
         }
       ]
@@ -3893,6 +4027,10 @@
           "named": true
         },
         {
+          "type": "literal_annotation",
+          "named": true
+        },
+        {
           "type": "local_pattern_tuple",
           "named": true
         },
@@ -4017,6 +4155,10 @@
         },
         {
           "type": "let_statement",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -4361,6 +4503,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -5098,6 +5244,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {
@@ -5992,11 +6142,11 @@
       "required": true,
       "types": [
         {
-          "type": "bracket_lparen",
+          "type": "bracket_lbracket",
           "named": true
         },
         {
-          "type": "bracket_rparen",
+          "type": "bracket_rbracket",
           "named": true
         },
         {
@@ -6005,10 +6155,6 @@
         },
         {
           "type": "operator_builtin",
-          "named": true
-        },
-        {
-          "type": "separator_comma",
           "named": true
         },
         {
@@ -6172,10 +6318,6 @@
           "named": true
         },
         {
-          "type": "separator_comma",
-          "named": true
-        },
-        {
           "type": "type_param_binder",
           "named": true
         },
@@ -6315,6 +6457,29 @@
     }
   },
   {
+    "type": "typed_ufcs_callable",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "call_callee",
+          "named": true
+        },
+        {
+          "type": "call_type_arguments",
+          "named": true
+        },
+        {
+          "type": "grouped_ufcs_callable",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "ufcs_expr",
     "named": true,
     "fields": {
@@ -6327,7 +6492,19 @@
             "named": true
           },
           {
+            "type": "call_expr",
+            "named": true
+          },
+          {
+            "type": "grouped_expression",
+            "named": true
+          },
+          {
             "type": "grouped_ufcs_callable",
+            "named": true
+          },
+          {
+            "type": "typed_ufcs_callable",
             "named": true
           }
         ]
@@ -6378,6 +6555,10 @@
           },
           {
             "type": "label_value_expr",
+            "named": true
+          },
+          {
+            "type": "literal_annotation",
             "named": true
           },
           {
@@ -6749,6 +6930,10 @@
         },
         {
           "type": "label_value_expr",
+          "named": true
+        },
+        {
+          "type": "literal_annotation",
           "named": true
         },
         {

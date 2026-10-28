@@ -23,5 +23,5 @@ pub fn main() {
   // concrete `String -> String` instantiation, so the run exercises the
   // erased closure-value threading end to end.
   let shout = .(s: String) -> String { s };
-  print(run_fn(shout, "host-closure-type-param-leg\n"(String)))
+  print(run_fn(shout, "host-closure-type-param-leg\n"[String]))
 }

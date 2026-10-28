@@ -4,8 +4,8 @@ import __intrinsics__;
 
 pub type State = . | .;
 
-pub fn make() -> State { __left__(., ., ()) }
+pub fn make() -> State { __left__[.][.](()) }
 
 pub fn consume(state: State) {
-  __either__(., ., ., state, .(left: .) { left }, .(right: .) { right })
+  __either__[.][.][.](state, .(left: .) { left }, .(right: .) { right })
 }

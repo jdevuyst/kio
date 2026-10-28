@@ -350,7 +350,7 @@ declared role is the host's responsibility. The package does not defensively coe
 wrong-shaped private role values. A roleless nullary declaration uses its
 exact selected Python type unchanged.
 
-A parameterized host declaration `api.F[A, B]` uses the exact nested index
+A parameterized host declaration `api.F[A][B]` uses the exact nested index
 `KioApply1[KioApply1[KioHostMk_api__F, A], B]`. The declaration and every
 argument remain visible in the stub. Its private native value is accessible
 only through that declaration's `KioHostType_api__F` storage helper.
@@ -605,7 +605,7 @@ module hello/main;
 
 import hello(String, print);
 
-pub fn main() { print("hello\n"(String)) }
+pub fn main() { print("hello\n"[String]) }
 ```
 
 A Python host loads and calls it as:

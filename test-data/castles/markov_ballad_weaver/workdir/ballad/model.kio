@@ -26,26 +26,26 @@ pub labels Tally = { word: String, count: I32 };
 fn tally(word: String, count: I32) -> Tally { {word, count} }
 
 /// One chain entry: a word and everything observed to follow it.
-pub labels Row = { row_word: String, row_succs: List(Tally) };
+pub labels Row = { row_word: String, row_succs: List[Tally] };
 
-fn row(row_word: String, row_succs: List(Tally)) -> Row { {row_word, row_succs} }
+fn row(row_word: String, row_succs: List[Tally]) -> Row { {row_word, row_succs} }
 
-pub labels Model = { rows: List(Row), starts: List(Tally), ends: List(Tally) };
+pub labels Model = { rows: List[Row], starts: List[Tally], ends: List[Tally] };
 
-fn model(rows: List(Row), starts: List(Tally), ends: List(Tally)) -> Model { {rows, starts, ends} }
+fn model(rows: List[Row], starts: List[Tally], ends: List[Tally]) -> Model { {rows, starts, ends} }
 
-pub fn empty_model() -> Model { model(nil(Row), nil(Tally), nil(Tally)) }
+pub fn empty_model() -> Model { model(nil[Row], nil[Tally], nil[Tally]) }
 
-pub fn rows_of(m: Model) -> List(Row) { m.?{rows} }
+pub fn rows_of(m: Model) -> List[Row] { m.?{rows} }
 
-pub fn starts_of(m: Model) -> List(Tally) { m.?{starts} }
+pub fn starts_of(m: Model) -> List[Tally] { m.?{starts} }
 
-pub fn ends_of(m: Model) -> List(Tally) { m.?{ends} }
+pub fn ends_of(m: Model) -> List[Tally] { m.?{ends} }
 
-rec(loop) fn bump_onto(rest: List(Tally), w: String, seen: List(Tally)) -> List(Tally) {
+rec(loop) fn bump_onto(rest: List[Tally], w: String, seen: List[Tally]) -> List[Tally] {
   match(rest.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) {
+    , .(t: Tally, more: List[Tally]) {
         if(string_eq(t.?{word}, w)) {
           rev_onto(seen, cons(tally(w, add_i32(t.?{count}, 1)), more))
         } else {
@@ -59,12 +59,12 @@ rec(loop) fn bump_onto(rest: List(Tally), w: String, seen: List(Tally)) -> List(
 
 /// Add one observation of `w` to a weighted word list: bump it in place when
 /// already present, otherwise append it at the end so first-seen order holds.
-fn bump(ts: List(Tally), w: String) -> List(Tally) { bump_onto(ts, w, nil(Tally)) }
+fn bump(ts: List[Tally], w: String) -> List[Tally] { bump_onto(ts, w, nil[Tally]) }
 
-rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List(Row)) -> List(Row) {
+rec(loop) fn add_edge_onto(rest: List[Row], from: String, to: String, seen: List[Row]) -> List[Row] {
   match(rest.>List.un_list) {
     (
-    , .(r: Row, more: List(Row)) {
+    , .(r: Row, more: List[Row]) {
         if(string_eq(r.?{row_word}, from)) {
           rev_onto(seen, cons(row(from, bump(r.?{row_succs}, to)), more))
         } else {
@@ -76,31 +76,31 @@ rec(loop) fn add_edge_onto(rest: List(Row), from: String, to: String, seen: List
   }
 }
 
-fn add_edge(rows: List(Row), from: String, to: String) -> List(Row) {
-  add_edge_onto(rows, from, to, nil(Row))
+fn add_edge(rows: List[Row], from: String, to: String) -> List[Row] {
+  add_edge_onto(rows, from, to, nil[Row])
 }
 
-rec(loop) fn learn_edges(rows: List(Row), prev: String, rest: List(String)) -> List(Row) {
+rec(loop) fn learn_edges(rows: List[Row], prev: String, rest: List[String]) -> List[Row] {
   match(rest.>List.un_list) {
     (
-    , .(w: String, more: List(String)) { recur learn_edges(add_edge(rows, prev, w), w, more) }
+    , .(w: String, more: List[String]) { recur learn_edges(add_edge(rows, prev, w), w, more) }
     , .(_empty: .) { rows }
     )
   }
 }
 
-rec(loop) fn last_word(w: String, rest: List(String)) -> String {
+rec(loop) fn last_word(w: String, rest: List[String]) -> String {
   match(rest.>List.un_list) {
-    (.(x: String, more: List(String)) { recur last_word(x, more) }, .(_empty: .) { w })
+    (.(x: String, more: List[String]) { recur last_word(x, more) }, .(_empty: .) { w })
   }
 }
 
 /// Fold one phrase into the model: its first word starts a line, its last
 /// word ends one, and every adjacent pair is a chain edge.
-fn learn_phrase(m: Model, phrase: List(String)) -> Model {
+fn learn_phrase(m: Model, phrase: List[String]) -> Model {
   match(phrase.>List.un_list) {
     (
-    , .(first: String, rest: List(String)) {
+    , .(first: String, rest: List[String]) {
         model(
         , learn_edges(rows_of(m), first, rest)
         , bump(starts_of(m), first)
@@ -112,19 +112,19 @@ fn learn_phrase(m: Model, phrase: List(String)) -> Model {
   }
 }
 
-pub rec(loop) fn learn(m: Model, phrases: List(List(String))) -> Model {
+pub rec(loop) fn learn(m: Model, phrases: List[List[String]]) -> Model {
   match(phrases.>List.un_list) {
     (
-    , .(p: List(String), more: List(List(String))) { recur learn(learn_phrase(m, p), more) }
+    , .(p: List[String], more: List[List[String]]) { recur learn(learn_phrase(m, p), more) }
     , .(_empty: .) { m }
     )
   }
 }
 
-rec(loop) fn holds(ts: List(Tally), w: String) -> Bool {
+rec(loop) fn holds(ts: List[Tally], w: String) -> Bool {
   match(ts.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) {
+    , .(t: Tally, more: List[Tally]) {
         if(string_eq(t.?{word}, w)) { .t } else { recur holds(more, w) }
       }
     , .(_empty: .) { .f }
@@ -136,29 +136,29 @@ rec(loop) fn holds(ts: List(Tally), w: String) -> Bool {
 /// soon as it draws one of these.
 pub fn is_end(m: Model, w: String) -> Bool { holds(ends_of(m), w) }
 
-rec(loop) fn find_succs(rows: List(Row), w: String) -> List(Tally) {
+rec(loop) fn find_succs(rows: List[Row], w: String) -> List[Tally] {
   match(rows.>List.un_list) {
     (
-    , .(r: Row, more: List(Row)) {
+    , .(r: Row, more: List[Row]) {
         if(string_eq(r.?{row_word}, w)) { r.?{row_succs} } else { recur find_succs(more, w) }
       }
-    , .(_empty: .) { nil(Tally) }
+    , .(_empty: .) { nil[Tally] }
     )
   }
 }
 
 /// The successors observed after `w`, empty when the corpus never continued
 /// past it.
-pub fn succs_of(m: Model, w: String) -> List(Tally) { find_succs(rows_of(m), w) }
+pub fn succs_of(m: Model, w: String) -> List[Tally] { find_succs(rows_of(m), w) }
 
-rec(loop) fn weight_onto(ts: List(Tally), acc: I32) -> I32 {
+rec(loop) fn weight_onto(ts: List[Tally], acc: I32) -> I32 {
   match(ts.>List.un_list) {
     (
-    , .(t: Tally, more: List(Tally)) { recur weight_onto(more, add_i32(acc, t.?{count})) }
+    , .(t: Tally, more: List[Tally]) { recur weight_onto(more, add_i32(acc, t.?{count})) }
     , .(_empty: .) { acc }
     )
   }
 }
 
 /// The total weight of a word list — the modulus a draw rolls against.
-pub fn total_weight(ts: List(Tally)) -> I32 { weight_onto(ts, 0) }
+pub fn total_weight(ts: List[Tally]) -> I32 { weight_onto(ts, 0) }

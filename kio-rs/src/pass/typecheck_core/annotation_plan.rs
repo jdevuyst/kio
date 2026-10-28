@@ -4430,7 +4430,7 @@ mod tests {
                 ),
                 (
                     "outer.kio",
-                    "module outer; import inner(Wrapped); pub type Outer[Slot] = Wrapped(Slot);",
+                    "module outer; import inner(Wrapped); pub type Outer[Slot] = Wrapped[Slot];",
                 ),
                 ("caller.kio", "module caller; import outer(Outer);"),
             ],

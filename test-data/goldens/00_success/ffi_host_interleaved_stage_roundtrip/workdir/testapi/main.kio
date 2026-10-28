@@ -5,7 +5,7 @@ import testapi/arith(staged);
 import testapi/io(print);
 
 pub fn main() {
-  let after_first = staged(., "first"(String));
-  let after_type = after_first(.);
-  print(after_type("second\n"(String)))
+  let after_first = staged[.]("first"[String]);
+  let after_type = after_first[.];
+  print(after_type("second\n"[String]))
 }

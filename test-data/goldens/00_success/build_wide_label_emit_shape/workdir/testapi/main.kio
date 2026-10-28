@@ -21,6 +21,6 @@ pub type Wide = A & B & C & D & E & F & G & H & I & J & K & L;
 
 fn last(row: Wide) -> I32 { row.?{l} }
 
-fn revise(row: Wide) -> Wide { row.!{k = 120(I32)} }
+fn revise(row: Wide) -> Wide { row.!{k = 120[I32]} }
 
 pub fn entry(row: Wide) -> I32 { last(revise(row)) }

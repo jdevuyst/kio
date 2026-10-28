@@ -35,12 +35,12 @@ fn via_fn(n: I32) -> I32 {
 }
 
 pub fn main() {
-  print(int_to_string(double(7(I32))));
-  print("\n"(String));
-  print(int_to_string(triple(11(I32))));
-  print("\n"(String));
-  print(int_to_string(interleaved(13(I32))));
-  print("\n"(String));
-  print(int_to_string(via_fn(17(I32))));
-  print("\n"(String))
+  print(int_to_string(double(7[I32])));
+  print("\n"[String]);
+  print(int_to_string(triple(11[I32])));
+  print("\n"[String]);
+  print(int_to_string(interleaved(13[I32])));
+  print("\n"[String]);
+  print(int_to_string(via_fn(17[I32])));
+  print("\n"[String])
 }

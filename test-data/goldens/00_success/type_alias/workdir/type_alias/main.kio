@@ -11,4 +11,4 @@ type Pair[A][B] = A & B;
 
 fn id_int(x: Small) -> Small { x }
 
-fn id_pair(p: Pair(I32, I32)) -> Pair(I32, I32) { p }
+fn id_pair(p: Pair[I32][I32]) -> Pair[I32][I32] { p }

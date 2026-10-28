@@ -11,11 +11,11 @@ import testapi/arith as arith;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub type Scheme = lists.List(I32) & types.Ty;
+pub type Scheme = lists.List[I32] & types.Ty;
 
-pub type Environment = lists.List(String & Scheme);
+pub type Environment = lists.List[String & Scheme];
 
-pub fn monomorphic(ty: types.Ty) -> Scheme { (lists.nil(_), ty) }
+pub fn monomorphic(ty: types.Ty) -> Scheme { (lists.nil[_], ty) }
 
 pub fn extend(name: String, scheme: Scheme, environment: Environment) -> Environment {
   let visible =
@@ -38,8 +38,8 @@ pub rec(loop) fn lookup(name: String, environment: Environment) -> Scheme | . {
   }
 }
 
-fn free_variables(scheme: Scheme, substitutions: types.Substitution) -> lists.List(I32) {
-  let .(quantified: lists.List(I32), body: types.Ty) = scheme;
+fn free_variables(scheme: Scheme, substitutions: types.Substitution) -> lists.List[I32] {
+  let .(quantified: lists.List[I32], body: types.Ty) = scheme;
   walk.filter(
   , .(id: I32) {
       if(types.contains(id, quantified)) { .f } else { .t }
@@ -52,11 +52,11 @@ pub fn generalize(ty: types.Ty, environment: Environment, substitutions: types.S
   let solved = types.apply(substitutions, ty);
   let environment_variables =
     walk.foldl(
-    , .(acc: lists.List(I32), entry: String & Scheme) {
+    , .(acc: lists.List[I32], entry: String & Scheme) {
         let .(_name: String, scheme: Scheme) = entry;
         walk.append(acc, free_variables(scheme, substitutions))
       }
-    , lists.nil(_)
+    , lists.nil[_]
     , environment
     );
   let quantified =
@@ -69,11 +69,11 @@ pub fn generalize(ty: types.Ty, environment: Environment, substitutions: types.S
   (quantified, solved)
 }
 
-rec(loop) fn replacements(ids: lists.List(I32), next: I32, mapping: types.Substitution) ->
+rec(loop) fn replacements(ids: lists.List[I32], next: I32, mapping: types.Substitution) ->
   types.Substitution & I32
    {
   match(lists.uncons(ids)) {
-    .(id: I32, rest: lists.List(I32)) {
+    .(id: I32, rest: lists.List[I32]) {
       recur replacements(
       , rest
       , arith.add_i32(next, 1)
@@ -85,7 +85,7 @@ rec(loop) fn replacements(ids: lists.List(I32), next: I32, mapping: types.Substi
 }
 
 pub fn instantiate(scheme: Scheme, substitutions: types.Substitution, next: I32) -> types.Ty & I32 {
-  let .(quantified: lists.List(I32), body: types.Ty) = scheme;
-  let .(mapping: types.Substitution, after: I32) = replacements(quantified, next, lists.nil(_));
+  let .(quantified: lists.List[I32], body: types.Ty) = scheme;
+  let .(mapping: types.Substitution, after: I32) = replacements(quantified, next, lists.nil[_]);
   (types.apply(mapping, types.apply(substitutions, body)), after)
 }

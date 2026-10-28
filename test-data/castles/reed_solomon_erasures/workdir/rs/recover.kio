@@ -16,24 +16,24 @@ pub labels Decoded = { coefficients: p.Polynomial, repaired: s.Word, erased: s.W
 
 pub labels Result = { accepted: Decoded } | { rejected: String };
 
-rec(loop) fn valid_coordinates(rest: c.List(I32), seen: c.List(I32)) -> String | . {
+rec(loop) fn valid_coordinates(rest: c.List[I32], seen: c.List[I32]) -> String | . {
   match(c.uncons(rest)) {
-    .(coordinate: I32, tail: c.List(I32)) {
+    .(coordinate: I32, tail: c.List[I32]) {
       if(f.valid(coordinate)) {
         if(l.elem(f.equal, coordinate, seen)) {
-          "repeated codeword coordinate".>widen_sum
+          "repeated codeword coordinate"[String].>widen_sum
         } else {
           recur valid_coordinates(tail, c.cons(coordinate, seen))
         }
       } else {
-        "codeword coordinate outside F17".>widen_sum
+        "codeword coordinate outside F17"[String].>widen_sum
       }
     };
     .() { ().>widen_sum }
   }
 }
 
-rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List(I32), seen: c.List(I32)) -> String | . {
+rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List[I32], seen: c.List[I32]) -> String | . {
   match(c.uncons(rest)) {
     .(sample: s.Sample, tail: s.Word) {
       let coordinate = sample.?{s.coordinate};
@@ -41,18 +41,18 @@ rec(loop) fn valid_samples(rest: s.Word, coordinates: c.List(I32), seen: c.List(
         if(f.valid(sample.?{s.value})) {
           if(l.elem(f.equal, coordinate, coordinates)) {
             if(l.elem(f.equal, coordinate, seen)) {
-              "repeated surviving coordinate".>widen_sum
+              "repeated surviving coordinate"[String].>widen_sum
             } else {
               recur valid_samples(tail, coordinates, c.cons(coordinate, seen))
             }
           } else {
-            "surviving coordinate absent from codeword".>widen_sum
+            "surviving coordinate absent from codeword"[String].>widen_sum
           }
         } else {
-          "surviving value outside F17".>widen_sum
+          "surviving value outside F17"[String].>widen_sum
         }
       } else {
-        "surviving coordinate outside F17".>widen_sum
+        "surviving coordinate outside F17"[String].>widen_sum
       }
     };
     .() { ().>widen_sum }
@@ -83,7 +83,7 @@ fn term(sample: s.Sample, basis: s.Word) -> p.Polynomial | String {
     .(inverse: I32) {
       p.scale(product.?{factors}, f.multiply(sample.?{s.value}, inverse)).>widen_sum
     };
-    .() { "singular interpolation basis".>widen_sum }
+    .() { "singular interpolation basis"[String].>widen_sum }
   }
 }
 
@@ -109,7 +109,7 @@ fn agrees(poly: p.Polynomial, samples: s.Word) -> Bool {
   )
 }
 
-fn reconstruct(poly: p.Polynomial, coordinates: c.List(I32), samples: s.Word) -> Result {
+fn reconstruct(poly: p.Polynomial, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(agrees(poly, samples)) {
     let known = l.map(.(sample) { sample.?{s.coordinate} }, samples);
     let repaired = l.map(
@@ -128,7 +128,7 @@ fn reconstruct(poly: p.Polynomial, coordinates: c.List(I32), samples: s.Word) ->
   }
 }
 
-fn sufficient(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Result {
+fn sufficient(dimension: I32, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(a.lt_i32(l.length(samples), dimension)) {
     {rejected = "insufficient surviving symbols"}.>widen_sum
   } else {
@@ -140,13 +140,13 @@ fn sufficient(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Resu
   }
 }
 
-pub fn decode(dimension: I32, coordinates: c.List(I32), samples: s.Word) -> Result {
+pub fn decode(dimension: I32, coordinates: c.List[I32], samples: s.Word) -> Result {
   if(a.lt_i32(l.length(coordinates), dimension)) {
     {rejected = "codeword shorter than message dimension"}.>widen_sum
-  } else match(valid_coordinates(coordinates, c.nil(_))) {
+  } else match(valid_coordinates(coordinates, c.nil[_])) {
     .(error: String) { {rejected = error}.>widen_sum };
     .() {
-      match(valid_samples(samples, coordinates, c.nil(_))) {
+      match(valid_samples(samples, coordinates, c.nil[_])) {
         .(error: String) { {rejected = error}.>widen_sum };
         .() { sufficient(dimension, coordinates, samples) }
       }

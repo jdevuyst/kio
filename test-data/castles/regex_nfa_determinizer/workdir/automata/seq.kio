@@ -16,66 +16,66 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, leq_i32, lt_i32, sub_i32);
 import testapi/iter(loop);
 
-pub rec newtype List[A] : . | (A & List(A)) { constructor pack; pub projector unpack }
+pub rec newtype List[A] : . | (A & List[A]) { constructor pack; pub projector unpack }
 
-pub type Ints = List(I32);
+pub type Ints = List[I32];
 
-pub fn nil[A] -> List(A) { List.pack(A, widen_sum((), . | (A & List(A)))) }
+pub fn nil[A] -> List[A] { List.pack[A](widen_sum(())[. | (A & List[A])]) }
 
-pub fn cons[A](head: A, rest: List(A)) -> List(A) {
-  List.pack(A, widen_sum((head, rest), . | (A & List(A))))
+pub fn cons[A](head: A, rest: List[A]) -> List[A] {
+  List.pack[A](widen_sum((head, rest))[. | (A & List[A])])
 }
 
-pub fn one[A](value: A) -> List(A) { cons(value, nil(A)) }
+pub fn one[A](value: A) -> List[A] { cons(value, nil[A]) }
 
-pub fn empty() -> Ints { nil(I32) }
+pub fn empty() -> Ints { nil[I32] }
 
-fn is_empty[A](xs: List(A)) -> Bool {
+fn is_empty[A](xs: List[A]) -> Bool {
   match(xs.>List.unpack) {
-    (.(_head: A, _rest: List(A)) { .f }, .(_empty: .) { .t })
+    (.(_head: A, _rest: List[A]) { .f }, .(_empty: .) { .t })
   }
 }
 
-fn head_or[A](xs: List(A), fallback: A) -> A {
+fn head_or[A](xs: List[A], fallback: A) -> A {
   match(xs.>List.unpack) {
-    (.(head: A, _rest: List(A)) { head }, .(_empty: .) { fallback })
+    (.(head: A, _rest: List[A]) { head }, .(_empty: .) { fallback })
   }
 }
 
 /// The shared higher-order traversal for accumulator walks that need to visit
 /// every element. Operations that need early exit or pairwise state recurse
 /// directly instead.
-pub rec(loop) fn fold[A][B](xs: List(A), step: (B & A) -> B, seed: B) -> B {
+pub rec(loop) fn fold[A][B](xs: List[A], step: (B & A) -> B, seed: B) -> B {
   match(xs.>List.unpack) {
-    (.(head: A, rest: List(A)) { recur fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
+    (.(head: A, rest: List[A]) { recur fold(rest, step, step(seed, head)) }, .(_empty: .) { seed })
   }
 }
 
-pub fn reverse[A](xs: List(A)) -> List(A) {
-  fold(xs, .(acc: List(A), x: A) { cons(x, acc) }, nil(A))
+pub fn reverse[A](xs: List[A]) -> List[A] {
+  fold(xs, .(acc: List[A], x: A) { cons(x, acc) }, nil[A])
 }
 
-pub fn append[A](xs: List(A), ys: List(A)) -> List(A) {
-  fold(reverse(xs), .(acc: List(A), x: A) { cons(x, acc) }, ys)
+pub fn append[A](xs: List[A], ys: List[A]) -> List[A] {
+  fold(reverse(xs), .(acc: List[A], x: A) { cons(x, acc) }, ys)
 }
 
-fn snoc[A](xs: List(A), value: A) -> List(A) { append(xs, one(value)) }
+fn snoc[A](xs: List[A], value: A) -> List[A] { append(xs, one(value)) }
 
-pub fn len[A](xs: List(A)) -> I32 {
+pub fn len[A](xs: List[A]) -> I32 {
   fold(xs, .(n: I32, _x: A) { add_i32(n, 1) }, 0)
 }
 
-rec(loop) fn drop[A](xs: List(A), count: I32) -> List(A) {
+rec(loop) fn drop[A](xs: List[A], count: I32) -> List[A] {
   if(leq_i32(count, 0)) {
     xs
   } else match(xs.>List.unpack) {
-    (.(_head: A, rest: List(A)) { recur drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
+    (.(_head: A, rest: List[A]) { recur drop(rest, sub_i32(count, 1)) }, .(_empty: .) { xs })
   }
 }
 
 /// Total indexing: an out-of-range index yields the caller's fallback,
 /// which keeps the transition-table reads free of bounds special cases.
-pub fn nth_or[A](xs: List(A), index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
+pub fn nth_or[A](xs: List[A], index: I32, fallback: A) -> A { head_or(drop(xs, index), fallback) }
 
 pub rec(loop) fn member(value: I32, xs: Ints) -> Bool {
   match(xs.>List.unpack) {
@@ -111,7 +111,7 @@ pub fn singleton(value: I32) -> Ints { insert(value, empty()) }
 /// The positions of the elements satisfying `keep`, as a set. Both automata
 /// record their accepting states this way: a DFA state accepts when its NFA
 /// set holds the accept state, a block accepts when its representative does.
-pub fn positions[A](xs: List(A), keep: A -> Bool) -> Ints {
+pub fn positions[A](xs: List[A], keep: A -> Bool) -> Ints {
   let .(_count: I32, found: Ints) =
     fold(
     , xs
@@ -145,10 +145,10 @@ rec(loop) fn ints_eq(xs: Ints, ys: Ints) -> Bool {
   }
 }
 
-rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
+rec(loop) fn scan_for(rows: List[Ints], needle: Ints, at: I32) -> I32 {
   match(rows.>List.unpack) {
     (
-    , .(row: Ints, rest: List(Ints)) {
+    , .(row: Ints, rest: List[Ints]) {
         if(ints_eq(row, needle)) { at } else { recur scan_for(rest, needle, add_i32(at, 1)) }
       }
     , .(_empty: .) { at }
@@ -159,7 +159,7 @@ rec(loop) fn scan_for(rows: List(Ints), needle: Ints, at: I32) -> I32 {
 /// Give `needle` a stable id, appending it when it is new. A needle that is
 /// absent scans off the end and lands on `len(rows)` — exactly the id it
 /// then takes — so there is no not-found sentinel to thread.
-pub fn intern(rows: List(Ints), needle: Ints) -> List(Ints) & I32 {
+pub fn intern(rows: List[Ints], needle: Ints) -> List[Ints] & I32 {
   let at = scan_for(rows, needle, 0);
   if(lt_i32(at, len(rows))) { (rows, at) } else { (snoc(rows, needle), at) }
 }

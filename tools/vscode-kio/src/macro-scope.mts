@@ -59,6 +59,11 @@ export function macroScope(root: Node): MacroScope {
     }
   };
   const directHead = (node: Node): Node | undefined => {
+    if (node.type === "typed_ufcs_callable") {
+      const callee = node.namedChildren.find((child) =>
+        ["call_callee", "grouped_ufcs_callable"].includes(child.type));
+      return callee ? directHead(callee) : undefined;
+    }
     if (["call_callee", "expression_path"].includes(node.type)) {
       const words = node.namedChildren.filter((child) => !child.type.startsWith("comment") && !child.type.startsWith("doc_"));
       return words.length === 1 && ["identifier", "entity_name_function"].includes(words[0].type) ? words[0] : undefined;

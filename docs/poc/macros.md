@@ -47,7 +47,7 @@ layout:
   package file: a `build { ... }` block targeting `js`, `ts`, `python`,
   `java`, `rust`, `go`, `swift`, and `haskell`, and a `bridge { ... }` block
   exposing the root `testapi` host boundary plus every macro module.
-- [`demo/macro_demo.pkg.kio`](../../test-data/poc/macros/workdir/demo/macro_demo.pkg.kio)
+- [`demo/macros_demo.pkg.kio`](../../test-data/poc/macros/workdir/demo/macros_demo.pkg.kio)
   and [`demo/library.dep.kio`](../../test-data/poc/macros/workdir/demo/library.dep.kio)
   — the nested runnable package. It imports the root macro package as
   `library` and supplies the runner-facing host modules.
@@ -80,12 +80,13 @@ layout:
 
 The source-to-target coercion macros are all declared with the same call
 type — `[Source] Source -> [Target] Target`: a single value parameter (the
-source) and a target type-argument that follows the value, exactly
+source) and a target type-argument after that value stage, as in
+`fit(value)[Target]`, exactly
 the source-to-target shape the language mechanism specifies. Not every
 macro shares that shape — `match`, `zip` / `map`, and `set` / `get`
-take a second value parameter, and `type_of` takes a type argument and a
-Unit value. A block call supplies the final value slots through the declared
-blocks: `match(value) { clauses }` projects its product block into the clause
+have additional value stages, and `type_of` takes a type argument and a
+Unit value. A block call supplies each successive final function stage through
+one declared block: `match(value) { clauses }` projects its product block into the clause
 argument. The direct named call (`iso`, `fit`, `match`, …)
 runs the declared `impl` over the reflected source value and target type;
 what the implementation returns is the Kio' glue the substitute pass swaps in
@@ -127,8 +128,8 @@ They use ordinary reflected constructors, so neither declaration needs a
 compiler hook keyed to its name.
 
 `sequence` exports the transparent aliases
-`Bind[*F] = [A][B] (F(A) & (A -> F(B))) -> F(B)` and
-`Sequence[*F][Result] = Bind(F) -> F(Result)`. `do` has public type
+`Bind[*F] = [A][B] (F[A] & (A -> F[B])) -> F[B]` and
+`Sequence[*F][Result] = Bind[F] -> F[Result]`. `do` has public type
 `[Receiver][Result] Receiver -> (Receiver -> Result) -> Result`.
 Its `do_checked` implementation constructs an ordinary application of the
 projected sequence to the supplied bind function and returns an explicit fill
@@ -137,7 +138,7 @@ evaluated exactly once, including for a block with no bind steps. Ordinary
 public-call and header constraints determine the receiver's carrier; the
 block does not infer a missing carrier argument of a receiver factory. The
 sequence contains ordinary local lets and bind continuations, and ends with an explicit
-`F(R)` expression for the same carrier. It never inserts an implicit `pure` call.
+`F[R]` expression for the same carrier. It never inserts an implicit `pure` call.
 
 Import these names from the module you need, as with any other macro.
 The [macro guide](../guides/macros.md) explains all three descriptor
@@ -204,13 +205,13 @@ factor at its new slot; `reorder_sum` rebuilds the sum with
 
 ```text
 equiv reorder_prod_law[A][B](a: A, b: B) {
-  reorder_prod((a, b), B & A);
+  reorder_prod((a, b))[B & A];
   (b, a)
 }
 
 equiv reorder_sum_left_law[A][B](a: A) {
-  reorder_sum(__left__(A, B, a), B | A);
-  __right__(B, A, a)
+  reorder_sum(__left__[A][B](a))[B | A];
+  __right__[B][A](a)
 }
 ```
 
@@ -226,7 +227,7 @@ falls out as a sub-multiset projection.
 
 ```text
 equiv narrow_prod_law[A][B](a: A, b: B) {
-  narrow_prod((a, b), A);
+  narrow_prod((a, b))[A];
   a
 }
 ```
@@ -254,12 +255,12 @@ is **rejected**: that is partial sum narrowing, which is `match`'s territory.
 
 ```text
 equiv narrow_sum_left_law[A](a: A) {
-  narrow_sum(__left__(A, A, a), A);
+  narrow_sum(__left__[A][A](a))[A];
   a
 }
 
 equiv narrow_sum_drops_bottom_law[A](a: A) {
-  narrow_sum(__left__(A, !, a), A);
+  narrow_sum(__left__[A][!](a))[A];
   a
 }
 ```
@@ -269,8 +270,8 @@ non-`!` arms deduplicated by type:
 
 ```text
 equiv narrow_sum_default_law[A][B](a: A) {
-  narrow_sum(__left__(A, B, a));
-  __left__(A, B, a)
+  narrow_sum(__left__[A][B](a));
+  __left__[A][B](a)
 }
 ```
 
@@ -283,8 +284,8 @@ Adding a `!` arm (R-Identity-Sum-intro) is a degenerate widening.
 
 ```text
 equiv widen_sum_law[A][B](a: A) {
-  widen_sum(a, B | A);
-  __right__(B, A, a)
+  widen_sum(a)[B | A];
+  __right__[B][A](a)
 }
 
 equiv widen_sum_default_law[A](a: A) {
@@ -308,7 +309,7 @@ that uses a source value more than once.
 
 ```text
 equiv widen_prod_law[A](a: A) {
-  widen_prod(a, A & . & A);
+  widen_prod(a)[A & . & A];
   (a, ((), a))
 }
 ```
@@ -324,18 +325,18 @@ the form identity-short-circuits when the source already matches.
 
 ```text
 equiv flatten_prod_law[A][B][C](a: A, b: B, c: C) {
-  flatten_prod(((a, b), c), A & B & C);
+  flatten_prod(((a, b), c))[A & B & C];
   (a, (b, c))
 }
 
 equiv flatten_prod_multistep_law[A][B][C][D](a: A, b: B, c: C, d: D) {
-  flatten_prod((((a, b), c), d), A & B & C & D);
+  flatten_prod((((a, b), c), d))[A & B & C & D];
   (a, (b, (c, d)))
 }
 
 equiv flatten_sum_law[A][B][C](b: B) {
-  flatten_sum(__left__(A | B, C, __right__(A, B, b)), A | B | C);
-  __right__(A, B | C, __left__(B, C, b))
+  flatten_sum(__left__[A | B][C](__right__[A][B](b)))[A | B | C];
+  __right__[A][B | C](__left__[B][C](b))
 }
 ```
 
@@ -350,7 +351,7 @@ call supplying a different `T` is an error.
 
 ```text
 equiv one_prod_law[A][B](a: A, b: B) {
-  one_prod((b, a), A);
+  one_prod((b, a))[A];
   a
 }
 
@@ -360,12 +361,12 @@ equiv one_prod_default_law[A][B](a: A, b: B) {
 }
 
 equiv one_sum_left_law[A](a: A) {
-  one_sum(__left__(A, A, a), A);
+  one_sum(__left__[A][A](a))[A];
   a
 }
 
 equiv one_sum_ignores_bottom_law[A](a: A) {
-  one_sum(__left__(A, !, a), A);
+  one_sum(__left__[A][!](a))[A];
   a
 }
 ```
@@ -386,18 +387,18 @@ slot. Users who want duplication reach for `widen_prod` by name.
 
 ```text
 equiv fit_widen_sum_law[A][B](a: A) {
-  fit(a, A | B);
-  __left__(A, B, a)
+  fit(a)[A | B];
+  __left__[A][B](a)
 }
 
 equiv fit_recursive_product_law[A][B][C](a: A, b: B, c: C) {
-  fit(((a, b), c), A & C);
+  fit(((a, b), c))[A & C];
   (a, c)
 }
 
 equiv fit_recursive_sum_law[A][B][C](a: A, b: B) {
-  fit(__left__(A & B, C, (a, b)), A | C);
-  __left__(A, C, a)
+  fit(__left__[A & B][C]((a, b)))[A | C];
+  __left__[A][C](a)
 }
 ```
 
@@ -409,13 +410,13 @@ the target. The two function laws pin both polarities:
 
 ```text
 equiv fit_function_param_law[A][B](f: (A | B) -> ., a: A) {
-  fit(f, A -> .)(a);
-  f(__left__(A, B, a))
+  fit(f)[A -> .](a);
+  f(__left__[A][B](a))
 }
 
 equiv fit_function_return_law[A][B](f: A -> (A & B), a: A) {
-  fit(f, A -> A)(a);
-  __fst__(A, B, f(a))
+  fit(f)[A -> A](a);
+  __fst__[A][B](f(a))
 }
 ```
 
@@ -429,8 +430,8 @@ absurd-coerces.
 
 ```text
 equiv fit_bottom_law[A](impossible: !) {
-  fit(impossible, A);
-  __absurd__(A, impossible)
+  fit(impossible)[A];
+  __absurd__[A](impossible)
 }
 ```
 
@@ -466,18 +467,18 @@ the headline thing the spine palette cannot do.
 
 ```text
 equiv iso_reorder_law[A][B](a: A, b: B) {
-  iso((a, b), B & A);
+  iso((a, b))[B & A];
   (b, a)
 }
 
 equiv iso_distribute_law[A][B][C](a: A, b: B) {
-  iso((a, __left__(B, C, b)), (A & B) | (A & C));
-  __left__(A & B, A & C, (a, b))
+  iso((a, __left__[B][C](b)))[(A & B) | (A & C)];
+  __left__[A & B][A & C]((a, b))
 }
 
 equiv iso_undistribute_law[A][B][C](a: A, b: B) {
-  iso(__left__(A & B, A & C, (a, b)), A & (B | C));
-  (a, __left__(B, C, b))
+  iso(__left__[A & B][A & C]((a, b)))[A & (B | C)];
+  (a, __left__[B][C](b))
 }
 ```
 
@@ -491,12 +492,12 @@ target slot of type `T`.
 
 ```text
 equiv into_duplicate_law[A](a: A) {
-  into(a, A & A);
+  into(a)[A & A];
   (a, a)
 }
 
 equiv into_like_typed_source_order_law[A][B](first: A, b: B, second: A) {
-  into((first, (b, second)), A & A & B);
+  into((first, (b, second)))[A & A & B];
   (first, (second, b))
 }
 ```
@@ -514,7 +515,7 @@ collapse (`A | A → A`). Type narrows; values may identify. Sum *narrowing*
 
 ```text
 equiv onto_project_law[A][B](a: A, b: B) {
-  onto((a, b), A);
+  onto((a, b))[A];
   a
 }
 ```
@@ -527,8 +528,8 @@ duplication. The call-site guarantee: no factor data is dropped.
 
 ```text
 equiv align_sum_law[A][B](a: A) {
-  align(a, A | B);
-  __left__(A, B, a)
+  align(a)[A | B];
+  __left__[A][B](a)
 }
 ```
 
@@ -542,7 +543,7 @@ coercion mixes sum widening with product projection, which neither `align`
 
 ```text
 equiv ease_project_law[A][B](a: A, b: B) {
-  ease((a, b), A);
+  ease((a, b))[A];
   a
 }
 ```
@@ -566,7 +567,7 @@ identity.
 
 ```text
 equiv atom_project_law[A][B](a: A, b: B) {
-  atom((a, b), A);
+  atom((a, b))[A];
   a
 }
 ```
@@ -613,14 +614,14 @@ fill API for readers who want to follow or adapt the implementation.
 
 ```text
 equiv match_left_law[A][B](a: A) {
-  match(__left__(A, B, a)) {
+  match(__left__[A][B](a)) {
     (.(x: A) { x }, .(_y: B) { a })
   };
   a
 }
 
 equiv match_right_law[A][B](b: B) {
-  match(__right__(A, B, b)) {
+  match(__right__[A][B](b)) {
     (.(_x: A) { b }, .(y: B) { y })
   };
   b
@@ -662,7 +663,7 @@ anger to eliminate option arms and destructure pairs.
 
 ## `derive` — instance deriving
 
-`derive(<candidates>, <TargetType>)` constructs a value of a requested target
+`derive(<candidates>)[<TargetType>]` constructs a value of a requested target
 type by composing caller-supplied candidate `fn`s, threading each candidate's
 logical value slots as sub-goals to discharge from the same set, until the
 target is produced. The candidate argument is `()` for no candidates, one
@@ -677,27 +678,27 @@ The simplest cases pick one target from a candidate argument:
 
 ```text
 equiv derive_explicit_law() {
-  derive((derive_unit_rule, derive_string_rule), String);
+  derive((derive_unit_rule, derive_string_rule))[String];
   derive_string_rule()
 }
 
 equiv derive_expected_law() {
-  derive((derive_unit_rule, derive_expected_rule), String);
+  derive((derive_unit_rule, derive_expected_rule))[String];
   derive_expected_rule()
 }
 
 equiv derive_explicit_unit_law() {
-  derive(derive_unit_rule, .);
+  derive(derive_unit_rule)[.];
   derive_unit_rule()
 }
 
 equiv derive_unit_parameter_law() {
-  derive(derive_unit_parameter_rule, String);
+  derive(derive_unit_parameter_rule)[String];
   derive_unit_parameter_rule(())
 }
 ```
 
-Only candidate rules produce values. Consequently `derive((), T)` reports
+Only candidate rules produce values. Consequently `derive(())[T]` reports
 that no candidate rule derives `T` for every target `T`, including `.`,
 structurally inhabited product or sum types, and opaque `newtype`s. A candidate
 with no source parameters and one whose sole source parameter is `.` both have
@@ -711,10 +712,9 @@ precondition is a sub-goal discharged from the same candidate set:
 
 ```text
 equiv derive_recursive_law() {
-  Derived_wrap.un_derived_wrap(
-    , Derived_base
-    , derive((derive_wrap_rule, derive_base_rule), Derived_wrap(Derived_base))
-    );
+  Derived_wrap.un_derived_wrap[Derived_base](
+    derive((derive_wrap_rule, derive_base_rule))[Derived_wrap[Derived_base]]
+  );
   ()
 }
 ```
@@ -724,8 +724,8 @@ with the candidates (verbatim from `main`):
 ```text
 fn derive_base_rule() -> Derived_base { Derived_base.mk_derived_base(()) }
 
-fn derive_wrap_rule(_base: Derived_base) -> Derived_wrap(Derived_base) {
-  Derived_wrap.mk_derived_wrap(Derived_base, ())
+fn derive_wrap_rule(_base: Derived_base) -> Derived_wrap[Derived_base] {
+  Derived_wrap.mk_derived_wrap[Derived_base](())
 }
 ```
 
@@ -736,25 +736,21 @@ scaled up, composes a monad-transformer stack — each transformer rule's
 precondition is the inner instance, one type-constructor-wrap smaller, so
 resolution terminates. The package also exercises **polymorphic** derivation
 (a candidate with a `[A]` binder bound from the goal) and the **derived
-`Functor(Identity)`** pick the
+`Functor[Identity]`** pick the
 [`hkt` case study](hkt.md) uses:
 
 ```text
 equiv derive_polymorphic_law() {
-  Witness.un_witness(String, derive((derive_unit_rule, derive_witness_rule), Witness(String)));
+  Witness.un_witness[String](derive((derive_unit_rule, derive_witness_rule))[Witness[String]]);
   ()
 }
 
 equiv derive_functor_law() {
-  Identity.un_id(
-    , String
-    , Functor.fmap(derive((box_functor, identity_functor), Functor(Identity)))(
-        , String
-        , String
-        , .(value) { value }
-        , Identity.mk_id("derive functor: ok\n")
-        )
-    );
+  Identity.un_id[String](
+    Functor.fmap[Identity](derive((box_functor, identity_functor))[Functor[Identity]])[String][String](
+      (.(value) { value }, Identity.mk_id[String]("derive functor: ok\n"))
+    )
+  );
   "derive functor: ok\n"
 }
 ```
@@ -788,8 +784,8 @@ mapped in [`using-libraries.md`](../guides/using-libraries.md):
 
   ```text
   equiv lookup_present_label_law(a: I32) {
-    lookup(widen_sum(Foo.mk(a), Foo | (Bar & Flag)), Foo);
-    __left__(Foo, ., Foo.mk(a))
+    lookup(widen_sum(Foo.mk(a))[Foo | (Bar & Flag)])[Foo];
+    __left__[Foo][.](Foo.mk(a))
   }
   ```
 

@@ -55,16 +55,8 @@ impl Elaborations {
         let mut pending = vec![source];
         while let Some(source) = pending.pop() {
             if captures.sources.insert(source.site().id) {
-                match source {
-                    Expr::UserMacro { ext, .. }
-                    | Expr::Ufcs {
-                        macro_call: Some(_),
-                        ext,
-                        ..
-                    } => {
-                        captures.calls.insert(*ext, (source.site().id, root));
-                    }
-                    _ => {}
+                if let Expr::UserMacro { ext, .. } = source {
+                    captures.calls.insert(*ext, (source.site().id, root));
                 }
                 push_source_children(source, &mut pending);
             }
@@ -311,11 +303,12 @@ fn push_source_children<'a>(source: &'a Expr<Lowered>, pending: &mut Vec<&'a Exp
             pending.push(&plan.body);
         }
         Expr::RecQuote { .. } => {}
-        Expr::UserMacro { args, .. } => push_arguments(args, pending),
-        Expr::Ufcs { receiver, args, .. } => {
-            pending.push(receiver);
-            push_arguments(args, pending);
+        Expr::UserMacro { stages, .. } => {
+            for stage in stages {
+                push_arguments(&stage.args, pending);
+            }
         }
+        Expr::Ufcs { ext, .. } => match *ext {},
         Expr::Path { .. }
         | Expr::Unit { .. }
         | Expr::StrLit { .. }
@@ -357,4 +350,125 @@ fn push_arguments<'a>(args: &'a [CallArg<Lowered>], pending: &mut Vec<&'a Expr<L
         CallArg::Value(value) => Some(value),
         CallArg::Type(_) => None,
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::ast::{Expr, Lowered};
+    use crate::pass::full::FullPipeline;
+    use crate::pass::visit_mut::{TypecheckVisitMut, walk_expr};
+    use crate::pipeline::Pipeline;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn quoted_computed_callee_keeps_its_completed_source_type() {
+        for inferred in [false, true] {
+            for discard in [false, true] {
+                let (header, inner_type, result_type) = if inferred {
+                    (
+                        "fn stages[A](value: Bool) -> A -> A { .(last: A) { last } }",
+                        "p.Second -> p.Second",
+                        "p.Second",
+                    )
+                } else {
+                    (
+                        "fn stages(value: Bool) -> Second -> Third { .(last: Second) { finish(last) } }",
+                        "p.Second -> p.Third",
+                        "p.Third",
+                    )
+                };
+                let (implementation, result) = if discard {
+                    ("__term_unit__(ct)", ".")
+                } else {
+                    ("__intrinsic_pair__(ct, value, value)", "(A & A)")
+                };
+                let inner = "stages(recur(cont) left())";
+                let outer = "stages(recur(cont) left())(next())";
+                let source = format!("module p;
+                    import __comptime__;
+                    host type Bool role(bool);
+                    host type Second;
+                    host type Third;
+                    host fn loop[S][R](step: S -> (S | R), state: S) -> R;
+                    host fn next() -> Second;
+                    host fn finish(value: Second) -> Third;
+                    pure fn quote_impl(ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {{ {implementation} }}
+                    macro quote : [A] A -> {result} {{ impl quote_impl }}
+                    {header}
+                    rec(loop) {{
+                        fn left() -> Bool {{ .f }};
+                        pub fn go() -> Bool {{ let result = quote({outer}); .t }}
+                    }}");
+                let parsed = crate::pass::parser::parse(&source).unwrap();
+                let (modules, _) =
+                    FullPipeline::lower_package(vec![(PathBuf::from("p.kio"), parsed)], None)
+                        .unwrap();
+                let package =
+                    crate::pass::resolve::Package::build(Path::new(""), modules, None).unwrap();
+                package.resolve_imports().unwrap();
+                let checked =
+                    super::super::check_package_preserving_normalization(&package).unwrap();
+                struct Observe<'a> {
+                    source: &'a str,
+                    elaborations: &'a super::Elaborations,
+                    targets: [&'a str; 2],
+                    found: Vec<(crate::ast::ExpressionOccurrenceId, String, String)>,
+                }
+                impl TypecheckVisitMut<Lowered> for Observe<'_> {
+                    fn visit_expr(&mut self, expr: &mut Expr<Lowered>) {
+                        let span = expr.span();
+                        if matches!(expr, Expr::Call { .. })
+                            && let Some(text) =
+                                self.source.get(span.start as usize..span.end as usize)
+                            && self.targets.contains(&text)
+                            && let Some(ty) =
+                                self.elaborations.rec_quote_source_type(expr.site().id)
+                        {
+                            self.found.push((
+                                expr.site().id,
+                                text.to_owned(),
+                                crate::pass::typecheck_core::display_type(ty.as_type()),
+                            ));
+                        }
+                        walk_expr(self, expr);
+                    }
+                }
+                let mut observe = Observe {
+                    source: &source,
+                    elaborations: checked.elaborations(),
+                    targets: [inner, outer],
+                    found: Vec::new(),
+                };
+                observe.visit_module(&mut checked.package().module("p").unwrap().module.clone());
+                assert_eq!(
+                    observe.found.len(),
+                    2,
+                    "one retained identity per written call"
+                );
+                let inner_fact = observe
+                    .found
+                    .iter()
+                    .find(|(_, text, _)| text == inner)
+                    .unwrap();
+                let outer_fact = observe
+                    .found
+                    .iter()
+                    .find(|(_, text, _)| text == outer)
+                    .unwrap();
+                assert_ne!(inner_fact.0, outer_fact.0);
+                assert_eq!(
+                    inner_fact.2, inner_type,
+                    "callee completes before its retained owner is reused"
+                );
+                assert_eq!(
+                    outer_fact.2, result_type,
+                    "outer application keeps its own result"
+                );
+                drop(observe);
+                checked
+                    .complete()
+                    .expect("standalone Prime validates the substituted quotation");
+            }
+        }
+    }
 }

@@ -6,11 +6,11 @@ import testapi/io(print);
 import view as field;
 import view({entry});
 
-fn make_item[A](value: A) -> Item(A) { {entry = value} }
+fn make_item[A](value: A) -> Item[A] { {entry = value} }
 
-fn read_item[A](value: Item(A)) -> A { value.?{field.entry} }
+fn read_item[A](value: Item[A]) -> A { value.?{field.entry} }
 
-fn inspect_packet(value: Pack(String)) {
+fn inspect_packet(value: Pack[String]) {
   Pack.get(value)(.[U](prefix: String, payload: U, format: U -> String) {
     print(prefix);
     print(format(payload))

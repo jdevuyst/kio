@@ -39,7 +39,7 @@ least two semicolon-separated expression arms:
 fn id[A](value: A) -> A { value }
 
 equiv id_unfolds[A](value: A) {
-  id(A, value);
+  id[A](value);
   value
 }
 ```
@@ -170,18 +170,15 @@ uses the core sum operations, brought into scope with the module-level
 
 ```kio {@equiv}
 fn swap[A][B](value: A | B) -> B | A {
-  __either__(
-  , A
-  , B
-  , B | A
+  __either__[A][B][B | A](
   , value
-  , .(left) { __right__(B, A, left) }
-  , .(right) { __left__(B, A, right) }
+  , .(left) { __right__[B][A](left) }
+  , .(right) { __left__[B][A](right) }
   )
 }
 
 equiv swap_twice[A][B](value: A | B) {
-  swap(B, A, swap(A, B, value));
+  swap[B][A](swap[A][B](value));
   value
 }
 ```

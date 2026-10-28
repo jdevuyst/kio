@@ -18,9 +18,9 @@ literal ptr_base = 1000;
 
 pub labels Slot = { ptr: I32 } | { imm: I32 };
 
-fn ptr_slot(target: I32) -> Slot { {ptr = target}.>widen_sum(Slot) }
+fn ptr_slot(target: I32) -> Slot { ({ptr = target}.>widen_sum)[Slot] }
 
-fn imm_slot(value: I32) -> Slot { {imm = value}.>widen_sum(Slot) }
+fn imm_slot(value: I32) -> Slot { ({imm = value}.>widen_sum)[Slot] }
 
 /// Decode one raw field cell.
 pub fn slot_of(cell: I32) -> Slot {

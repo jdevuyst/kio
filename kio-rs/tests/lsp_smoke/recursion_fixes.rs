@@ -109,22 +109,22 @@ fn missing_non_tail_marker() {
 
 #[test]
 fn missing_polymorphic_marker() {
-    assert_recursion_repair("again(A & A, (x, x))", "recur(poly) again(A & A, (x, x))");
+    assert_recursion_repair("again[A & A]((x, x))", "recur(poly) again[A & A]((x, x))");
 }
 
 #[test]
 fn missing_polymorphic_non_tail_marker() {
     assert_recursion_repair(
-        "let result = again(A & A, (x, x)); result",
-        "let result = recur(poly, cont) again(A & A, (x, x)); result",
+        "let result = again[A & A]((x, x)); result",
+        "let result = recur(poly, cont) again[A & A]((x, x)); result",
     );
 }
 
 #[test]
 fn mode_missing_poly() {
     assert_recursion_repair(
-        "recur again(A & A, (x, x))",
-        "recur(poly) again(A & A, (x, x))",
+        "recur again[A & A]((x, x))",
+        "recur(poly) again[A & A]((x, x))",
     );
 }
 
@@ -162,8 +162,8 @@ fn mode_replace_poly_with_cont_atomically() {
 #[test]
 fn mode_replace_cont_with_poly_atomically() {
     assert_recursion_repair(
-        "recur(cont) again(A & A, (x, x))",
-        "recur(poly) again(A & A, (x, x))",
+        "recur(cont) again[A & A]((x, x))",
+        "recur(poly) again[A & A]((x, x))",
     );
 }
 
@@ -188,21 +188,21 @@ fn mode_removal_keeps_adjacent_keyword_and_callee_separate() {
 fn mode_combined_annotations_are_repaired_without_losing_the_other_mode() {
     for (body, repaired) in [
         (
-            "let result = recur(cont) again(A & A, (x, x)); result",
-            "let result = recur(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur(cont) again[A & A]((x, x)); result",
+            "let result = recur(poly, cont) again[A & A]((x, x)); result",
         ),
         (
-            "let result = recur(poly) again(A & A, (x, x)); result",
-            "let result = recur(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur(poly) again[A & A]((x, x)); result",
+            "let result = recur(poly, cont) again[A & A]((x, x)); result",
         ),
         (
-            "let result = recur again(A & A, (x, x)); result",
-            "let result = recur(poly, cont) again(A & A, (x, x)); result",
+            "let result = recur again[A & A]((x, x)); result",
+            "let result = recur(poly, cont) again[A & A]((x, x)); result",
         ),
         ("recur(poly, cont) again(x)", "recur  again(x)"),
         (
-            "recur(poly, cont) again(A & A, (x, x))",
-            "recur(poly ) again(A & A, (x, x))",
+            "recur(poly, cont) again[A & A]((x, x))",
+            "recur(poly ) again[A & A]((x, x))",
         ),
     ] {
         assert_recursion_repair(body, repaired);

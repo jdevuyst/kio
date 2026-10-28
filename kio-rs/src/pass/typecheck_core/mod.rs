@@ -8,7 +8,6 @@
 //! - **Pure type helpers** — `subst_type`, `display_type`,
 //!   `unfold_top` / `type_equiv` / `require_type_equiv` (with `AliasCtx<P>`),
 //!   `check_well_formed_type`, `right_fold_sum`,
-//!   `expr_to_type_arg`,
 //!   `intrinsic_call`, `clone_with_span`, the tiny constructors (`ty_path` /
 //!   `ty_sum` / `ty_product` / `ty_func` / `ty_nominal_segments` / `tp` /
 //!   `vp`). None touch the typer's stack
@@ -42,7 +41,7 @@
 //!
 //! - **`<P: Phase + Clone>`** — for helpers that don't
 //!   pattern-match on Type variants beyond what every phase has
-//!   (`right_fold_sum`, `intrinsic_call`, `expr_to_type_arg`).
+//!   (`right_fold_sum`, `intrinsic_call`).
 //! - **`<P: Phase<TypeLabelSugar = Never> [+ ItemLabels = Never]>`** — for
 //!   helpers that pattern-match on
 //!   `Type::LabelSugar` (and `Item::Labels` for the module-level
@@ -110,12 +109,11 @@ pub(crate) use call_args::{CanonicalCallCursor, CanonicalCallSlot, WrittenCallAr
 pub(crate) use types::canonicalize_type_expression_function_abi;
 pub(crate) use types::type_contains_goal;
 pub use types::{
-    CallArgSlotKind, InferFreeType, call_arg_to_type_arg, call_arg_type_slot_candidate,
-    check_kinds_in_type, check_no_infer, check_well_formed_type, clone_with_span, compute_kind,
-    display_type, expr_to_type_arg, intrinsic_call, lookup_newtype_by_name,
-    nominal_segments_in_module, right_fold_product, right_fold_sum, scheme_in_mono_position,
-    subst_type, tp, ty_func, ty_nominal_segments, ty_path, ty_product, ty_sum, type_contains_infer,
-    value_arg_looks_like_type_arg, vp, write_type,
+    CallArgSlotKind, InferFreeType, call_arg_to_type_arg, check_kinds_in_type, check_no_infer,
+    check_well_formed_type, clone_with_span, compute_kind, display_type, intrinsic_call,
+    lookup_newtype_by_name, nominal_segments_in_module, right_fold_product, right_fold_sum,
+    scheme_in_mono_position, subst_type, tp, ty_func, ty_nominal_segments, ty_path, ty_product,
+    ty_sum, type_contains_infer, vp, write_type,
 };
 pub(crate) use types::{append_type_args, collect_free_type_vars, fresh_type_var};
 #[cfg(feature = "surface")]
@@ -270,9 +268,9 @@ pub(crate) enum IntrinsicSpecialization<P: crate::ast::Phase> {
 /// instantiate at the bind site (see `test-data/goldens/00_success/
 /// typecheck_rank_n`).
 ///
-/// Call-site dispatch uses the function domain's normalized ABI-slot
-/// view for type-argument elision and flat calls across curry layers.
-/// Type equality is based on the folded function domain type.
+/// Call-site dispatch combines the public type with fixed written stages.
+/// Each value stage checks one packet against the complete Function domain;
+/// type equality is based on that folded domain type.
 ///
 /// Phase-polymorphic so the typer's notion of "what does this name
 /// mean" can be lifted across phases. `typecheck_full` consumes
@@ -518,15 +516,6 @@ where
     /// constructor is a separate Kio' rule and remains admissible.
     const ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS: bool;
 
-    /// True when this phase accepts the multi-layer flat-call form
-    /// per `specs/language.md` § Type parameters — one application that spans
-    /// multiple consecutive curry layers (e.g. `foo(T1, v1, T2,
-    /// v2)` against `Forall([A], Function(A, Forall([B],
-    /// Function(b, Unit))))`). Kio surface accepts it; Kio' rejects
-    /// it at type-check, requiring a separate written call for each function
-    /// layer. Consulted by [`apply_mono`].
-    const ALLOW_MULTI_LAYER_FLAT_CALL: bool;
-
     /// Walk an expression, synthesize its type. The four
     /// elaboration-bearing arms are dispatched per-phase; everything
     /// else (Path / Call / FnExpr / Let / literals / Unit) routes
@@ -605,31 +594,12 @@ where
     /// it's the `typecheck_full::Elaborations` table the
     /// `substitute` pass consults; at Prime it's the
     /// `PrimeElaborations` table the prime pipeline's bake pass
-    /// consults. (`Type::Infer` is statically uninhabited at Prime,
-    /// so the Prime recording covers only the `expr_to_type_arg`
-    /// reclassification path and inference-driven existential
-    /// constructor witnesses; the `_` placeholder path is
-    /// Lowered-only.)
+    /// consults. Prime records inferred existential constructor witnesses;
+    /// explicit inference placeholders occur only at Lowered.
     fn record_type_resolution<'m>(
         call_site: crate::ast::ExpressionSite,
         slot_index: usize,
         resolved: InternedType<P>,
-        tcx: &mut TypeCtx<'m, '_, P>,
-    );
-
-    /// Mark the `(call_site, slot_index)` pair as a value-shaped
-    /// expression supplied at a type-arg slot — the typer
-    /// reclassified it via `expr_to_type_arg`, and the post-typer
-    /// rewrite pass needs the marker to rewrite the slot as
-    /// `CallArg::Type` rather than leaving the value-arg in place
-    /// at the next slot. Per-phase because the recording sink
-    /// differs — Lowered records into `typecheck_full::Elaborations`
-    /// (consumed by `substitute`); Prime records into
-    /// `PrimeElaborations` (consumed by the prime pipeline's bake
-    /// pass).
-    fn mark_value_at_type_slot<'m>(
-        call_site: crate::ast::ExpressionSite,
-        slot_index: usize,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
 
@@ -651,22 +621,6 @@ where
     fn record_call_implicit_unit<'m>(
         call_site: crate::ast::ExpressionSite,
         slot_index: usize,
-        tcx: &mut TypeCtx<'m, '_, P>,
-    );
-
-    /// Record the Lowered-only rewrite from one regular UFCS expression
-    /// to the already-built ordinary prefix call that replaces it at the
-    /// Lowered → Prime boundary. The shared application planner invokes
-    /// this only after the application has completed, which lets a UFCS
-    /// value argument wait for its expected type without re-synthesizing
-    /// the callee or replaying the application.
-    ///
-    /// Prime has no inhabited `Expr::Ufcs`, so its implementation is
-    /// unreachable.
-    #[doc(hidden)]
-    fn record_regular_ufcs_elaboration<'m>(
-        original: &'m crate::ast::Expr<P>,
-        normalized_call: crate::ast::Expr<P>,
         tcx: &mut TypeCtx<'m, '_, P>,
     );
 
@@ -1257,36 +1211,21 @@ mod tests {
     }
 
     #[test]
-    fn expr_to_type_arg_rejects_values_and_malformed_type_paths() {
+    fn type_argument_slots_reject_value_operands() {
         let span = Span::new(0, 0);
-        // The Unit value never doubles as a Unit type argument.
-        let unit_expr: Expr = crate::ast::Expr::Unit {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            meta: Meta::new(span),
-        };
-        let error = expr_to_type_arg(&unit_expr).expect_err("`()` is a value, not a type");
-        assert!(matches!(error, Error::Type(_)));
-        let path_expr = |name: &str| -> Expr {
-            crate::ast::Expr::Path {
+        for name in ["A", "_A", "__Type__", "value"] {
+            let value: Expr = crate::ast::Expr::Path {
                 occurrence: Default::default(),
                 segments: vec![crate::ast::PathSegment::new(name, span)],
                 meta: Meta::new(span),
                 ext: (),
-            }
-        };
-        for name in ["A", "_A", "__Type__", "__Foo"] {
-            let ty = expr_to_type_arg(&path_expr(name)).expect("exact type-shaped path");
-            assert_eq!(display_type(&ty), name);
+            };
+            let error = call_arg_to_type_arg(&crate::ast::CallArg::Value(value))
+                .expect_err("value operands never become type arguments");
+            assert!(matches!(error, Error::Type(_)));
         }
-        for name in ["a", "_value"] {
-            let error = expr_to_type_arg(&path_expr(name)).expect_err("value path in type slot");
-            assert!(matches!(error, Error::Type(_)), "{name}: {error:?}");
-        }
-        for name in ["_FooBar", "_1Foo", "FooBar"] {
-            let error = expr_to_type_arg(&path_expr(name)).expect_err("invalid type path");
-            assert!(matches!(error, Error::Parse(_)), "{name}: {error:?}");
-        }
+        let written = crate::ast::CallArg::Type(unit());
+        assert!(call_arg_to_type_arg(&written).is_ok());
     }
 
     #[test]

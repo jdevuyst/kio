@@ -1149,7 +1149,7 @@ mod tests {
                       constructor make_inner; \
                       projector read_inner; \
                     }; \
-                    pub newtype Nested <U> : Inner(U) { \
+                    pub newtype Nested <U> : Inner[U] { \
                       constructor make_nested; \
                       projector read_nested; \
                     };";
@@ -1288,7 +1288,7 @@ mod tests {
              host fn ordered(value: T)[T](later: T) -> T; \
              host fn packed(value: Pack) -> Pack; \
              host fn poly(value: Poly) -> Poly; \
-             host fn capture(value: Capture(T)) -> Capture(T);",
+             host fn capture(value: Capture[T]) -> Capture[T];",
         );
         let descriptor = crate::host_descriptor::build_host_descriptor(&package);
         let capture_ty = descriptor

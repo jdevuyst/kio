@@ -2502,8 +2502,8 @@ mod prepared_tests {
                pub newtype Cut : Carrier { pub constructor make_cut; pub projector read_cut; }; \
                pub newtype Carrier : Cut { pub constructor make_carrier; projector read_carrier; }; \
              } \
-             host fn nested(value: Id(Id(I32))) -> Id(Id(I32)); \
-             host fn constant(value: Const(Self_cycle)) -> Const(Self_cycle); \
+             host fn nested(value: Id[Id[I32]]) -> Id[Id[I32]]; \
+             host fn constant(value: Const[Self_cycle]) -> Const[Self_cycle]; \
              host fn self_recursive(value: Self_cycle) -> Self_cycle; \
              host fn mutual_recursive(value: Left) -> Left; \
              host fn carrier_cut(value: Cut) -> Cut;",
@@ -2549,12 +2549,12 @@ mod prepared_tests {
     fn recursive_skin_identity_is_root_order_and_extension_invariant() {
         let declarations = "module api; host type I32 role(i32); \
             rec { \
-              pub newtype Left[A] : (. | (A & Right(A))) { pub constructor make; pub projector open; }; \
-              pub newtype Right[A] : (. | (A & Left(A))) { pub constructor make; pub projector open; }; \
+              pub newtype Left[A] : (. | (A & Right[A])) { pub constructor make; pub projector open; }; \
+              pub newtype Right[A] : (. | (A & Left[A])) { pub constructor make; pub projector open; }; \
             }";
-        let left = "host fn left(value: Left(I32)) -> Left(I32);";
-        let right = "host fn right(value: Right(I32)) -> Right(I32);";
-        let extension = "pub rec newtype Other[A] : (. | Other(A)) { pub constructor make; pub projector open; };";
+        let left = "host fn left(value: Left[I32]) -> Left[I32];";
+        let right = "host fn right(value: Right[I32]) -> Right[I32];";
+        let extension = "pub rec newtype Other[A] : (. | Other[A]) { pub constructor make; pub projector open; };";
         let mut observed = Vec::new();
         for roots in [
             left.to_owned(),
@@ -2587,8 +2587,8 @@ mod prepared_tests {
             "module api; \
              host type I32 role(i32); \
              pub newtype Id[A] : A { pub constructor make_id; pub projector read_id; }; \
-             pub newtype N[*F][A] : F(A) { pub constructor make_n; pub projector read_n; }; \
-             host fn hkt(value: N(N(Id), I32)) -> N(N(Id), I32);",
+             pub newtype N[*F][A] : F[A] { pub constructor make_n; pub projector read_n; }; \
+             host fn hkt(value: N[N[Id]][ I32]) -> N[N[Id]][ I32];",
         );
         let prepared =
             PreparedBoundaryCallableSites::collect_live(&package).expect("prepare HKT facade site");
@@ -2610,8 +2610,8 @@ mod prepared_tests {
             "module api; \
              host type I32 role(i32); \
              pub newtype Id[A] : A { pub constructor make_id; pub projector read_id; }; \
-             host fn wrapped_function(value: Id(I32 -> I32)) -> .; \
-             host fn wrapped_forall(value: Id([A] A -> A)) -> .;",
+             host fn wrapped_function(value: Id[I32 -> I32]) -> .; \
+             host fn wrapped_forall(value: Id[[A] A -> A]) -> .;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare transparent action facade sites");
@@ -2654,7 +2654,7 @@ mod prepared_tests {
             "module api; \
              host type I32 role(i32); \
              pub newtype Const[A] : . { pub constructor make_const; pub projector read_const; }; \
-             host fn ignore(value: Const(I32 & I32)) -> Const(I32 & I32);",
+             host fn ignore(value: Const[I32 & I32]) -> Const[I32 & I32];",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)
             .expect("prepare lazy facade site");
@@ -2979,7 +2979,7 @@ mod prepared_tests {
         let package = package(
             "module api; \
              pub type Erased[A] = .; \
-             pub newtype Empty <Hidden> : Erased(Hidden) { \
+             pub newtype Empty <Hidden> : Erased[Hidden] { \
                pub constructor make_empty; pub projector read_empty; \
              };",
         );

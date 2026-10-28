@@ -5,82 +5,76 @@ import testapi(I32, String);
 
 newtype Box[A] : A { pub constructor wrap; pub projector unwrap }
 
-type Alias_box[A] = Box(A);
+type Alias_box[A] = Box[A];
 
 type Ignored[A] = String;
 
-fn box[A](value: A) -> Box(A) { Box.wrap(value) }
+fn box[A](value: A) -> Box[A] { Box.wrap(value) }
 
-fn alias_box[A](value: A) -> Alias_box(A) { Box.wrap(value) }
+fn alias_box[A](value: A) -> Alias_box[A] { Box.wrap(value) }
 
 fn identity[A](value: A) -> A { value }
 
 fn first[A][B](left: A, _right: B) -> A { left }
 
-fn erase[A](number: A, known: String) -> Ignored(A) { known }
+fn erase[A](number: A, known: String) -> Ignored[A] { known }
 
 pub fn boxed_first(witness: String) -> String {
-  let selected = common(.() { box(witness) }, .() { alias_box("boxed") });
+  let selected = common(.() { box(witness) })(.() { alias_box("boxed") });
   Box.unwrap(selected())
 }
 
 pub fn boxed_last(witness: String) -> String {
-  let selected = common(.() { alias_box("boxed") }, .() { box(witness) });
+  let selected = common(.() { alias_box("boxed") })(.() { box(witness) });
   Box.unwrap(selected())
 }
 
 pub fn product_first(witness: String) -> String {
-  let selected = common(.() { (witness, 1(I32)) }, .() { (identity("tuple"), 2) });
+  let selected = common(.() { (witness, 1[I32]) })(.() { (identity("tuple"), 2) });
   first(selected())
 }
 
 pub fn product_last(witness: String) -> String {
-  let selected = common(.() { (identity("tuple"), 2) }, .() { (witness, 1(I32)) });
+  let selected = common(.() { (identity("tuple"), 2) })(.() { (witness, 1[I32]) });
   first(selected())
 }
 
 pub fn erased_first(witness: String) -> String {
-  let selected = common(.() { erase(1(I32), witness) }, .() { "erased" });
+  let selected = common(.() { erase(1[I32], witness) })(.() { "erased" });
   selected()
 }
 
 pub fn erased_last(witness: String) -> String {
-  let selected = common(.() { "erased" }, .() { erase(1(I32), witness) });
+  let selected = common(.() { "erased" })(.() { erase(1[I32], witness) });
   selected()
 }
 
 pub fn filled_first(witness: String) -> String {
-  let selected = common(.() { from_number(1(I32), witness) }, .() { keep_fills("filled") });
+  let selected = common(.() { from_number(1[I32])(witness) })(.() { keep_fills("filled") });
   selected()
 }
 
 pub fn filled_last(witness: String) -> String {
-  let selected = common(.() { keep_fills("filled") }, .() { from_number(1(I32), witness) });
+  let selected = common(.() { keep_fills("filled") })(.() { from_number(1[I32])(witness) });
   selected()
 }
 
 pub fn function_first(witness: String) -> String {
   let selected =
-    common(
-    , .() {
-        .() { witness }
-      }
-    , .() {
-        .() { identity("function") }
-      }
-    );
+    common(.() {
+      .() { witness }
+    })(.() {
+      .() { identity("function") }
+    });
   selected()()
 }
 
 pub fn function_last(witness: String) -> String {
   let selected =
-    common(
-    , .() {
-        .() { identity("function") }
-      }
-    , .() {
-        .() { witness }
-      }
-    );
+    common(.() {
+      .() { identity("function") }
+    })(.() {
+      .() { witness }
+    });
   selected()()
 }

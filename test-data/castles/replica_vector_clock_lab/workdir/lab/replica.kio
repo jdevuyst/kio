@@ -19,7 +19,7 @@ pub labels Message = { key: I32, payload: Version };
 pub labels Replica = {
 , node: clock.Node
 , observed: clock.Clock
-, records: dict.Dict(I32, core.List(Version))
+, records: dict.Dict[I32][core.List[Version]]
 };
 
 pub labels Fault =
@@ -35,16 +35,16 @@ pub fn key_order(a: I32, b: I32) -> dict.Ordering {
 }
 
 pub fn empty(node: clock.Node) -> Replica {
-  {node, observed = clock.zero(), records = dict.empty(_, _)}
+  {node, observed = clock.zero(), records = dict.empty[_][_]}
 }
 
-pub fn versions(replica: Replica, key: I32) -> core.List(Version) {
-  dict.get_or(key_order, replica.?{records}, key, core.nil(_))
+pub fn versions(replica: Replica, key: I32) -> core.List[Version] {
+  dict.get_or(key_order, replica.?{records}, key, core.nil[_])
 }
 
-rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
+rec(loop) fn insert_ordered(incoming: Version, retained: core.List[Version]) -> core.List[Version] {
   match(core.uncons(retained)) {
-    .(head: Version, tail: core.List(Version)) {
+    .(head: Version, tail: core.List[Version]) {
       if(clock.lexical_before(incoming.?{stamp}, head.?{stamp})) {
         core.cons(incoming, retained)
       } else {
@@ -55,7 +55,7 @@ rec(loop) fn insert_ordered(incoming: Version, retained: core.List(Version)) -> 
   }
 }
 
-fn merge(incoming: Version, retained: core.List(Version)) -> core.List(Version) {
+fn merge(incoming: Version, retained: core.List[Version]) -> core.List[Version] {
   let obsolete =
     lists.foldl(
     , .(found: Bool, old: Version) {
@@ -87,7 +87,7 @@ pub fn deliver(replica: Replica, message: Message) -> Replica {
   }
 }
 
-pub fn replay(replica: Replica, messages: core.List(Message)) -> Replica {
+pub fn replay(replica: Replica, messages: core.List[Message]) -> Replica {
   lists.foldl(deliver, replica, messages)
 }
 
@@ -97,32 +97,32 @@ pub fn write(replica: Replica, key: I32, value: I32) -> Change {
   (deliver(replica, message), message)
 }
 
-pub fn read(replica: Replica, key: I32) -> result.Result(I32, Fault) {
+pub fn read(replica: Replica, key: I32) -> result.Result[I32][Fault] {
   match(core.uncons(versions(replica, key))) {
-    .(head: Version, tail: core.List(Version)) {
+    .(head: Version, tail: core.List[Version]) {
       if(lists.null(tail)) {
         result.ok(head.?{value})
       } else {
-        result.err({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum(Fault))
+        result.err(({conflict = arith.add_i32(1, lists.length(tail))}.>widen_sum)[Fault])
       }
     };
-    .(_empty: .) { result.err({missing = key}.>widen_sum(Fault)) }
+    .(_empty: .) { result.err(({missing = key}.>widen_sum)[Fault]) }
   }
 }
 
-fn choose(replica: Replica, key: I32, choice: I32) -> result.Result(I32, Fault) {
+fn choose(replica: Replica, key: I32, choice: I32) -> result.Result[I32][Fault] {
   let retained = versions(replica, key);
   if(lists.null(retained)) {
-    result.err({missing = key}.>widen_sum(Fault))
+    result.err(({missing = key}.>widen_sum)[Fault])
   } else if(arith.lt_i32(lists.length(retained), 2)) {
-    result.err({not_conflicted = key}.>widen_sum(Fault))
+    result.err(({not_conflicted = key}.>widen_sum)[Fault])
   } else match(lists.find(.(v: Version) { arith.eq_i32(choice, v.?{value}) }, retained)) {
     .(v: Version) { result.ok(v.?{value}) };
-    .(_absent: .) { result.err({choice_absent = choice}.>widen_sum(Fault)) }
+    .(_absent: .) { result.err(({choice_absent = choice}.>widen_sum)[Fault]) }
   }
 }
 
-pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result(Change, Fault) {
+pub fn resolve(replica: Replica, key: I32, choice: I32) -> result.Result[Change][Fault] {
   result.map(.(selected: I32) { write(replica, key, selected) }, choose(replica, key, choice))
 }
 
@@ -130,7 +130,7 @@ fn same_version(x: Version, y: Version) -> Bool {
   if(arith.eq_i32(x.?{value}, y.?{value})) { clock.equal(x.?{stamp}, y.?{stamp}) } else { .f }
 }
 
-fn same_versions(xs: core.List(Version), ys: core.List(Version)) -> Bool {
+fn same_versions(xs: core.List[Version], ys: core.List[Version]) -> Bool {
   if(arith.eq_i32(lists.length(xs), lists.length(ys))) {
     lists.foldl(
     , .(same: Bool, v: Version) {
@@ -150,7 +150,7 @@ pub fn converged(x: Replica, y: Replica) -> Bool {
       dict.fold_asc(
       , x.?{records}
       , .t
-      , .(same: Bool, key: I32, retained: core.List(Version)) {
+      , .(same: Bool, key: I32, retained: core.List[Version]) {
           if(same) { same_versions(retained, versions(y, key)) } else { .f }
         }
       )

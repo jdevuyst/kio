@@ -1320,6 +1320,82 @@ fn alias_materializer_work() -> AliasMaterializerWork {
     work
 }
 
+enum AliasMaterializeFrame<'v, 'm, P>
+where
+    P: crate::ast::Phase,
+{
+    Enter(AliasVirtualView<'v, P>),
+    FinishStructure(AliasVirtualView<'v, P>),
+    EnterForall(AliasVirtualView<'v, P>),
+    FinishForall(AliasVirtualView<'v, P>, String),
+    FinishPath {
+        view: AliasVirtualView<'v, P>,
+        protected: Option<String>,
+        argument_count: usize,
+    },
+    FinishGoal(AliasVirtualView<'v, P>, usize),
+    FinishRedirect {
+        contribution: AliasPathRedirect<'v, 'm, P>,
+        alias_transporting: bool,
+    },
+    FormalSummary(AliasViewContextId),
+    FinishFormalSummary {
+        context: AliasViewContextId,
+        formals: Vec<(String, AliasViewId)>,
+        recording: bool,
+    },
+    FreeNames(AliasViewId),
+    FinishFreeNames(AliasViewId),
+    FinishForwardedFreeNames(AliasViewId, AliasViewId),
+}
+
+struct AliasMaterializedStack<P, N>(Vec<AliasMaterialized<P, N>>)
+where
+    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>;
+
+impl<P, N> Drop for AliasMaterializedStack<P, N>
+where
+    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+{
+    fn drop(&mut self) {
+        if !self.0.is_empty() {
+            release_alias_materialized_types(
+                std::mem::take(&mut self.0)
+                    .into_iter()
+                    .map(|value| value.ty)
+                    .collect(),
+            );
+        }
+    }
+}
+
+fn release_alias_materialized_types<P>(mut pending: Vec<crate::ast::Type<P>>)
+where
+    P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never>,
+{
+    while let Some(ty) = pending.pop() {
+        match ty {
+            crate::ast::Type::Path { args, .. } | crate::ast::Type::Goal { args, .. } => {
+                pending.extend(args);
+            }
+            crate::ast::Type::Function { param, ret, .. } => {
+                pending.push(*param);
+                pending.push(*ret);
+            }
+            crate::ast::Type::Product { left, right, .. }
+            | crate::ast::Type::Sum { left, right, .. } => {
+                pending.push(*left);
+                pending.push(*right);
+            }
+            crate::ast::Type::Forall { body, .. } => pending.push(*body),
+            crate::ast::Type::Unit { .. }
+            | crate::ast::Type::Bottom { .. }
+            | crate::ast::Type::Infer { .. } => {}
+            crate::ast::Type::LabelSugar { ext, .. } => match ext {},
+        }
+    }
+}
+
 struct AliasMaterializer<'p, 'v, 'c, 'm, P, S = NoAliasTransport>
 where
     P: crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
@@ -1863,66 +1939,6 @@ where
         }
     }
 
-    fn materialize_arg_rope(
-        &mut self,
-        args: AliasArgRopeId,
-        start_index: usize,
-    ) -> (Vec<crate::ast::Type<P>>, bool, S::Children) {
-        let views = self.collect_arg_views(args);
-        let mut canonical = true;
-        let mut values = Vec::with_capacity(views.len());
-        let mut children = S::Children::default();
-        for (offset, view) in views.into_iter().enumerate() {
-            let materialized = self.materialize_stored(view);
-            canonical &= materialized.identity_canonical;
-            self.transport.push_child(
-                &mut children,
-                AliasTransportEdge::TypeArgument(start_index + offset),
-                materialized.transport,
-            );
-            values.push(materialized.ty);
-        }
-        (values, canonical, children)
-    }
-
-    fn materialize_args(
-        &mut self,
-        native: &'v [crate::ast::Type<P>],
-        context: AliasViewContextId,
-        appended: AliasArgRopeId,
-    ) -> (Vec<crate::ast::Type<P>>, bool, S::Children) {
-        let mut canonical = true;
-        let mut values = Vec::with_capacity(
-            native
-                .len()
-                .checked_add(self.arg_rope_len(appended))
-                .expect("a materialized type argument count fits in usize"),
-        );
-        let mut children = S::Children::default();
-        for (index, argument) in native.iter().enumerate() {
-            let materialized = self.materialize(AliasVirtualView {
-                ty: argument,
-                context,
-                appended: AliasArgRopeId(0),
-                application_span: argument.span(),
-            });
-            canonical &= materialized.identity_canonical;
-            self.transport.push_child(
-                &mut children,
-                AliasTransportEdge::TypeArgument(index),
-                materialized.transport,
-            );
-            values.push(materialized.ty);
-        }
-        let (appended, appended_canonical, appended_children) =
-            self.materialize_arg_rope(appended, native.len());
-        canonical &= appended_canonical;
-        values.extend(appended);
-        self.transport
-            .append_children(&mut children, appended_children);
-        (values, canonical, children)
-    }
-
     fn forwarded_formal_view(&self, id: AliasViewId) -> Option<AliasViewId> {
         let view = self.views[id.0];
         if self.arg_rope_len(view.appended) != 0 {
@@ -1953,101 +1969,57 @@ where
         bound: &mut HashMap<&'t str, usize>,
         free: &mut HashSet<String>,
     ) {
-        #[cfg(test)]
-        update_alias_materializer_work(|work| work.free_name_summary_type_visits += 1);
-        match ty {
-            crate::ast::Type::Unit { .. }
-            | crate::ast::Type::Bottom { .. }
-            | crate::ast::Type::Infer { .. } => {}
-            crate::ast::Type::Path { segments, args, .. } => {
-                if segments.len() == 1 && !bound.contains_key(segments[0].as_str()) {
-                    free.insert(segments[0].name.clone());
-                }
-                for argument in args {
-                    Self::collect_materialized_free_names(argument, bound, free);
-                }
-            }
-            crate::ast::Type::Function { param, ret, .. } => {
-                Self::collect_materialized_free_names(param, bound, free);
-                Self::collect_materialized_free_names(ret, bound, free);
-            }
-            crate::ast::Type::Product { left, right, .. }
-            | crate::ast::Type::Sum { left, right, .. } => {
-                Self::collect_materialized_free_names(left, bound, free);
-                Self::collect_materialized_free_names(right, bound, free);
-            }
-            crate::ast::Type::Forall { param, body, .. } => {
-                *bound.entry(param.name.as_str()).or_default() += 1;
-                Self::collect_materialized_free_names(body, bound, free);
-                let depth = bound
-                    .get_mut(param.name.as_str())
-                    .expect("the active type binder was recorded");
-                *depth -= 1;
-                if *depth == 0 {
-                    bound.remove(param.name.as_str());
-                }
-            }
-            crate::ast::Type::Goal { args, .. } => {
-                for argument in args {
-                    Self::collect_materialized_free_names(argument, bound, free);
-                }
-            }
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
+        enum Frame<'t, P: crate::ast::Phase> {
+            Enter(&'t crate::ast::Type<P>),
+            Leave(&'t str),
         }
-    }
-
-    fn free_names_stored(&mut self, id: AliasViewId) -> Arc<HashSet<String>> {
-        if let Some(summary) = self.free_name_summaries[id.0].clone() {
-            return summary;
-        }
-        if self.free_name_summary_active[id.0] {
-            unreachable!("a virtual alias formal cannot recursively select itself");
-        }
-        self.free_name_summary_active[id.0] = true;
-        #[cfg(test)]
-        update_alias_materializer_work(|work| work.free_name_summary_builds += 1);
-        let summary = if let Some(forwarded) = self.forwarded_formal_view(id) {
-            self.free_names_stored(forwarded)
-        } else {
-            let materialized = self.materialize_stored(id);
-            let mut free = HashSet::new();
-            Self::collect_materialized_free_names(&materialized.ty, &mut HashMap::new(), &mut free);
+        let mut pending = vec![Frame::Enter(ty)];
+        while let Some(frame) = pending.pop() {
+            let ty = match frame {
+                Frame::Enter(ty) => ty,
+                Frame::Leave(name) => {
+                    let depth = bound
+                        .get_mut(name)
+                        .expect("the active type binder was recorded");
+                    *depth -= 1;
+                    if *depth == 0 {
+                        bound.remove(name);
+                    }
+                    continue;
+                }
+            };
             #[cfg(test)]
-            update_alias_materializer_work(|work| {
-                work.free_name_summary_retained_names += free.len();
-            });
-            Arc::new(free)
-        };
-        self.free_name_summary_active[id.0] = false;
-        self.free_name_summaries[id.0] = Some(summary.clone());
-        summary
-    }
-
-    fn formal_free_names(&mut self, context: AliasViewContextId) -> Arc<AliasFormalFreeNames> {
-        if let Some(free) = &self.context(context).formal_free_names {
-            return free.clone();
+            update_alias_materializer_work(|work| work.free_name_summary_type_visits += 1);
+            match ty {
+                crate::ast::Type::Unit { .. }
+                | crate::ast::Type::Bottom { .. }
+                | crate::ast::Type::Infer { .. } => {}
+                crate::ast::Type::Path { segments, args, .. } => {
+                    if segments.len() == 1 && !bound.contains_key(segments[0].as_str()) {
+                        free.insert(segments[0].name.clone());
+                    }
+                    pending.extend(args.iter().rev().map(Frame::Enter));
+                }
+                crate::ast::Type::Function { param, ret, .. } => {
+                    pending.push(Frame::Enter(ret));
+                    pending.push(Frame::Enter(param));
+                }
+                crate::ast::Type::Product { left, right, .. }
+                | crate::ast::Type::Sum { left, right, .. } => {
+                    pending.push(Frame::Enter(right));
+                    pending.push(Frame::Enter(left));
+                }
+                crate::ast::Type::Forall { param, body, .. } => {
+                    *bound.entry(param.name.as_str()).or_default() += 1;
+                    pending.push(Frame::Leave(param.name.as_str()));
+                    pending.push(Frame::Enter(body));
+                }
+                crate::ast::Type::Goal { args, .. } => {
+                    pending.extend(args.iter().rev().map(Frame::Enter));
+                }
+                crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
+            }
         }
-        #[cfg(test)]
-        update_alias_materializer_work(|work| work.formal_summary_builds += 1);
-        let mut formal_views = self
-            .context(context)
-            .formals
-            .as_deref()
-            .into_iter()
-            .flat_map(HashMap::iter)
-            .map(|(name, view)| ((*name).to_owned(), *view))
-            .collect::<Vec<_>>();
-        formal_views.sort_by(|(left, _), (right, _)| left.cmp(right));
-        let recording = self.transport.replace_recording(false);
-        let mut summary = AliasFormalFreeNames::default();
-        for (formal, view) in formal_views {
-            let free = self.free_names_stored(view);
-            summary.by_formal.insert(formal, free);
-        }
-        self.transport.replace_recording(recording);
-        let summary = Arc::new(summary);
-        self.context_mut(context).formal_free_names = Some(summary.clone());
-        summary
     }
 
     fn fresh_emitted_binder(
@@ -2086,257 +2058,512 @@ where
         }
     }
 
-    fn materialize_stored(&mut self, id: AliasViewId) -> AliasMaterialized<P, S::Node> {
-        self.materialize(self.views[id.0])
+    fn schedule_materialize_args(
+        &self,
+        native: &'v [crate::ast::Type<P>],
+        context: AliasViewContextId,
+        appended: AliasArgRopeId,
+        pending: &mut Vec<AliasMaterializeFrame<'v, 'm, P>>,
+    ) {
+        for id in self.collect_arg_views(appended).into_iter().rev() {
+            pending.push(AliasMaterializeFrame::Enter(self.views[id.0]));
+        }
+        for argument in native.iter().rev() {
+            pending.push(AliasMaterializeFrame::Enter(AliasVirtualView {
+                ty: argument,
+                context,
+                appended: AliasArgRopeId(0),
+                application_span: argument.span(),
+            }));
+        }
     }
 
-    fn materialize(&mut self, view: AliasVirtualView<'v, P>) -> AliasMaterialized<P, S::Node> {
-        #[cfg(test)]
-        update_alias_materializer_work(|work| work.materialize_calls += 1);
-        let nominal = self.context(view.context).scope.nominal();
-        match view.ty {
-            crate::ast::Type::Unit { .. }
-            | crate::ast::Type::Bottom { .. }
-            | crate::ast::Type::Infer { .. } => {
-                assert_eq!(
-                    self.arg_rope_len(view.appended),
-                    0,
-                    "only a path-like type head accepts appended type arguments"
-                );
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Ordinary,
-                    S::Children::default(),
-                );
-                AliasMaterialized {
-                    ty: (*view.ty).clone(),
-                    identity_canonical: true,
-                    transport,
-                }
-            }
-            crate::ast::Type::Function {
-                param,
-                ret,
-                meta,
-                abi_arity,
-                caps,
-            } => {
-                assert_eq!(
-                    self.arg_rope_len(view.appended),
-                    0,
-                    "a function type cannot receive appended type arguments"
-                );
-                let param = self.materialize(AliasVirtualView {
-                    ty: param,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: param.span(),
-                });
-                let ret = self.materialize(AliasVirtualView {
-                    ty: ret,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: ret.span(),
-                });
-                let mut children = S::Children::default();
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::FunctionParam,
-                    param.transport,
-                );
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::FunctionReturn,
-                    ret.transport,
-                );
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Ordinary,
-                    children,
-                );
-                AliasMaterialized {
-                    ty: crate::ast::Type::Function {
-                        param: Box::new(param.ty),
-                        ret: Box::new(ret.ty),
-                        meta: meta.clone(),
-                        abi_arity: *abi_arity,
-                        caps: caps.clone(),
-                    },
-                    identity_canonical: param.identity_canonical && ret.identity_canonical,
-                    transport,
-                }
-            }
-            crate::ast::Type::Product { left, right, meta } => {
-                assert_eq!(
-                    self.arg_rope_len(view.appended),
-                    0,
-                    "a product type cannot receive appended type arguments"
-                );
-                let left = self.materialize(AliasVirtualView {
-                    ty: left,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: left.span(),
-                });
-                let right = self.materialize(AliasVirtualView {
-                    ty: right,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: right.span(),
-                });
-                let mut children = S::Children::default();
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::ProductLeft,
-                    left.transport,
-                );
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::ProductRight,
-                    right.transport,
-                );
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Ordinary,
-                    children,
-                );
-                AliasMaterialized {
-                    ty: crate::ast::Type::Product {
-                        left: Box::new(left.ty),
-                        right: Box::new(right.ty),
-                        meta: meta.clone(),
-                    },
-                    identity_canonical: left.identity_canonical && right.identity_canonical,
-                    transport,
-                }
-            }
-            crate::ast::Type::Sum { left, right, meta } => {
-                assert_eq!(
-                    self.arg_rope_len(view.appended),
-                    0,
-                    "a sum type cannot receive appended type arguments"
-                );
-                let left = self.materialize(AliasVirtualView {
-                    ty: left,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: left.span(),
-                });
-                let right = self.materialize(AliasVirtualView {
-                    ty: right,
-                    context: view.context,
-                    appended: AliasArgRopeId(0),
-                    application_span: right.span(),
-                });
-                let mut children = S::Children::default();
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::SumLeft,
-                    left.transport,
-                );
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::SumRight,
-                    right.transport,
-                );
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Ordinary,
-                    children,
-                );
-                AliasMaterialized {
-                    ty: crate::ast::Type::Sum {
-                        left: Box::new(left.ty),
-                        right: Box::new(right.ty),
-                        meta: meta.clone(),
-                    },
-                    identity_canonical: left.identity_canonical && right.identity_canonical,
-                    transport,
-                }
-            }
-            crate::ast::Type::Forall { param, body, meta } => {
-                assert_eq!(
-                    self.arg_rope_len(view.appended),
-                    0,
-                    "a quantified value type cannot receive appended type arguments"
-                );
-                let free = self.formal_free_names(view.context);
-                let mut context = self.context(view.context).clone();
-                let emitted = Self::fresh_emitted_binder(&param.name, &free, &mut context);
-                let key = AliasBorrowedName(param.name.as_str());
-                context.protected = context
-                    .protected
-                    .remove(&key)
-                    .insert_with(key, emitted.clone(), |left, right| left == right)
-                    .expect("a structural binder has one emitted spelling");
-                context.emitted_binders = context
-                    .emitted_binders
-                    .insert(AliasOwnedName(emitted.clone()));
-                let context = self.alloc_context(context);
-                let body = self.materialize(AliasVirtualView {
-                    ty: body,
-                    context,
-                    appended: AliasArgRopeId(0),
-                    application_span: body.span(),
-                });
-                let mut children = S::Children::default();
-                self.transport.push_child(
-                    &mut children,
-                    AliasTransportEdge::ForallBody,
-                    body.transport,
-                );
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Forall(param),
-                    children,
-                );
-                AliasMaterialized {
-                    ty: crate::ast::Type::Forall {
-                        param: param.renamed(emitted),
-                        body: Box::new(body.ty),
-                        meta: meta.clone(),
-                    },
-                    identity_canonical: body.identity_canonical,
-                    transport,
-                }
-            }
-            crate::ast::Type::Path {
-                segments,
-                args,
-                meta,
-            } => self.materialize_path(view, segments, args, meta),
-            crate::ast::Type::Goal {
-                goal,
-                args,
-                meta,
-                ext,
-            } => {
-                let (args, canonical, children) =
-                    self.materialize_args(args, view.context, view.appended);
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    nominal,
-                    AliasTransportNodeKind::Ordinary,
-                    children,
-                );
-                AliasMaterialized {
-                    ty: crate::ast::Type::Goal {
-                        goal: *goal,
-                        args,
-                        meta: meta.clone(),
-                        ext: ext.clone(),
-                    },
-                    identity_canonical: canonical,
-                    transport,
-                }
-            }
-            crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
+    fn finish_materialize_args(
+        &mut self,
+        values: &mut AliasMaterializedStack<P, S::Node>,
+        count: usize,
+        native_count: usize,
+    ) -> (Vec<crate::ast::Type<P>>, bool, S::Children) {
+        let start = values
+            .0
+            .len()
+            .checked_sub(count)
+            .expect("argument results exist");
+        let mut args = Vec::with_capacity(count);
+        let mut canonical = true;
+        let mut children = S::Children::default();
+        let mut appended_children = S::Children::default();
+        for (index, value) in values.0.drain(start..).enumerate() {
+            canonical &= value.identity_canonical;
+            self.transport.push_child(
+                if index < native_count {
+                    &mut children
+                } else {
+                    &mut appended_children
+                },
+                AliasTransportEdge::TypeArgument(index),
+                value.transport,
+            );
+            args.push(value.ty);
         }
+        self.transport
+            .append_children(&mut children, appended_children);
+        (args, canonical, children)
+    }
+
+    fn materialize(&mut self, root: AliasVirtualView<'v, P>) -> AliasMaterialized<P, S::Node> {
+        use AliasMaterializeFrame as Frame;
+        let mut pending = vec![Frame::Enter(root)];
+        let mut values = AliasMaterializedStack(Vec::new());
+        while let Some(frame) = pending.pop() {
+            match frame {
+                Frame::Enter(view) => {
+                    #[cfg(test)]
+                    update_alias_materializer_work(|work| work.materialize_calls += 1);
+                    let nominal = self.context(view.context).scope.nominal();
+                    match view.ty {
+                        crate::ast::Type::Unit { .. }
+                        | crate::ast::Type::Bottom { .. }
+                        | crate::ast::Type::Infer { .. } => {
+                            assert_eq!(
+                                self.arg_rope_len(view.appended),
+                                0,
+                                "only a path-like type head accepts appended type arguments"
+                            );
+                            let transport = self.transport.finish_node(
+                                view.ty,
+                                nominal,
+                                AliasTransportNodeKind::Ordinary,
+                                S::Children::default(),
+                            );
+                            values.0.push(AliasMaterialized {
+                                ty: view.ty.clone(),
+                                identity_canonical: true,
+                                transport,
+                            });
+                        }
+                        crate::ast::Type::Function {
+                            param: left,
+                            ret: right,
+                            ..
+                        }
+                        | crate::ast::Type::Product { left, right, .. }
+                        | crate::ast::Type::Sum { left, right, .. } => {
+                            assert_eq!(
+                                self.arg_rope_len(view.appended),
+                                0,
+                                "a structural type cannot receive appended type arguments"
+                            );
+                            pending.push(Frame::FinishStructure(view));
+                            for child in [right, left] {
+                                pending.push(Frame::Enter(AliasVirtualView {
+                                    ty: child,
+                                    context: view.context,
+                                    appended: AliasArgRopeId(0),
+                                    application_span: child.span(),
+                                }));
+                            }
+                        }
+                        crate::ast::Type::Forall { .. } => {
+                            assert_eq!(
+                                self.arg_rope_len(view.appended),
+                                0,
+                                "a quantified value type cannot receive appended type arguments"
+                            );
+                            pending.push(Frame::EnterForall(view));
+                            pending.push(Frame::FormalSummary(view.context));
+                        }
+                        crate::ast::Type::Path { .. } => {
+                            let mut view = view;
+                            loop {
+                                let crate::ast::Type::Path { segments, args, .. } = view.ty else {
+                                    unreachable!("a path redirect cursor retains a path")
+                                };
+                                let context = self.context(view.context).clone();
+                                let protected = if segments.len() == 1 {
+                                    let name = segments[0].as_str();
+                                    context
+                                        .protected
+                                        .get(&AliasBorrowedName(name))
+                                        .cloned()
+                                        .or_else(|| {
+                                            context
+                                                .ambient_protected
+                                                .contains(name)
+                                                .then(|| name.to_owned())
+                                        })
+                                } else {
+                                    None
+                                };
+                                if protected.is_none()
+                                    && let Some(contribution) =
+                                        self.redirect_path(view, segments, args)
+                                {
+                                    let redirected = match &contribution {
+                                        AliasPathRedirect::Formal { selected, .. } => *selected,
+                                        AliasPathRedirect::Alias { body, .. } => *body,
+                                    };
+                                    if !S::RECORDS_TRANSPORT
+                                        && matches!(redirected.ty, crate::ast::Type::Path { .. })
+                                    {
+                                        #[cfg(test)]
+                                        update_alias_materializer_work(|work| {
+                                            work.path_redirects += 1
+                                        });
+                                        view = redirected;
+                                        continue;
+                                    }
+                                    let alias_transporting =
+                                        self.transport.replace_alias_transporting(true);
+                                    pending.push(Frame::FinishRedirect {
+                                        contribution,
+                                        alias_transporting,
+                                    });
+                                    pending.push(Frame::Enter(redirected));
+                                    break;
+                                }
+                                let argument_count = args
+                                    .len()
+                                    .checked_add(self.arg_rope_len(view.appended))
+                                    .expect("a materialized type argument count fits in usize");
+                                pending.push(Frame::FinishPath {
+                                    view,
+                                    protected,
+                                    argument_count,
+                                });
+                                self.schedule_materialize_args(
+                                    args,
+                                    view.context,
+                                    view.appended,
+                                    &mut pending,
+                                );
+                                break;
+                            }
+                        }
+                        crate::ast::Type::Goal { args, .. } => {
+                            let argument_count = args
+                                .len()
+                                .checked_add(self.arg_rope_len(view.appended))
+                                .expect("a materialized type argument count fits in usize");
+                            pending.push(Frame::FinishGoal(view, argument_count));
+                            self.schedule_materialize_args(
+                                args,
+                                view.context,
+                                view.appended,
+                                &mut pending,
+                            );
+                        }
+                        crate::ast::Type::LabelSugar { ext, .. } => match *ext {},
+                    }
+                }
+                Frame::FinishStructure(view) => {
+                    let right = values.0.pop().expect("right structural child exists");
+                    let left = values.0.pop().expect("left structural child exists");
+                    let identity_canonical = left.identity_canonical && right.identity_canonical;
+                    let (left_edge, right_edge) = match view.ty {
+                        crate::ast::Type::Function { .. } => (
+                            AliasTransportEdge::FunctionParam,
+                            AliasTransportEdge::FunctionReturn,
+                        ),
+                        crate::ast::Type::Product { .. } => (
+                            AliasTransportEdge::ProductLeft,
+                            AliasTransportEdge::ProductRight,
+                        ),
+                        crate::ast::Type::Sum { .. } => {
+                            (AliasTransportEdge::SumLeft, AliasTransportEdge::SumRight)
+                        }
+                        _ => unreachable!("a structural finish retains its binary type"),
+                    };
+                    let mut children = S::Children::default();
+                    self.transport
+                        .push_child(&mut children, left_edge, left.transport);
+                    self.transport
+                        .push_child(&mut children, right_edge, right.transport);
+                    let transport = self.transport.finish_node(
+                        view.ty,
+                        self.context(view.context).scope.nominal(),
+                        AliasTransportNodeKind::Ordinary,
+                        children,
+                    );
+                    let ty = match view.ty {
+                        crate::ast::Type::Function {
+                            meta,
+                            abi_arity,
+                            caps,
+                            ..
+                        } => crate::ast::Type::Function {
+                            param: Box::new(left.ty),
+                            ret: Box::new(right.ty),
+                            meta: meta.clone(),
+                            abi_arity: *abi_arity,
+                            caps: caps.clone(),
+                        },
+                        crate::ast::Type::Product { meta, .. } => crate::ast::Type::Product {
+                            left: Box::new(left.ty),
+                            right: Box::new(right.ty),
+                            meta: meta.clone(),
+                        },
+                        crate::ast::Type::Sum { meta, .. } => crate::ast::Type::Sum {
+                            left: Box::new(left.ty),
+                            right: Box::new(right.ty),
+                            meta: meta.clone(),
+                        },
+                        _ => unreachable!("a structural finish retains its binary type"),
+                    };
+                    values.0.push(AliasMaterialized {
+                        ty,
+                        identity_canonical,
+                        transport,
+                    });
+                }
+                Frame::EnterForall(view) => {
+                    let crate::ast::Type::Forall { param, body, .. } = view.ty else {
+                        unreachable!("a binder entry retains its quantified type")
+                    };
+                    let free = self
+                        .context(view.context)
+                        .formal_free_names
+                        .as_ref()
+                        .expect("the formal free-name summary completed")
+                        .clone();
+                    let mut context = self.context(view.context).clone();
+                    let emitted = Self::fresh_emitted_binder(&param.name, &free, &mut context);
+                    let key = AliasBorrowedName(param.name.as_str());
+                    context.protected = context
+                        .protected
+                        .remove(&key)
+                        .insert_with(key, emitted.clone(), |left, right| left == right)
+                        .expect("a structural binder has one emitted spelling");
+                    context.emitted_binders = context
+                        .emitted_binders
+                        .insert(AliasOwnedName(emitted.clone()));
+                    let context = self.alloc_context(context);
+                    pending.push(Frame::FinishForall(view, emitted));
+                    pending.push(Frame::Enter(AliasVirtualView {
+                        ty: body,
+                        context,
+                        appended: AliasArgRopeId(0),
+                        application_span: body.span(),
+                    }));
+                }
+                Frame::FinishForall(view, emitted) => {
+                    let crate::ast::Type::Forall { param, meta, .. } = view.ty else {
+                        unreachable!("a binder finish retains its quantified type")
+                    };
+                    let body = values.0.pop().expect("quantified body exists");
+                    let mut children = S::Children::default();
+                    self.transport.push_child(
+                        &mut children,
+                        AliasTransportEdge::ForallBody,
+                        body.transport,
+                    );
+                    let transport = self.transport.finish_node(
+                        view.ty,
+                        self.context(view.context).scope.nominal(),
+                        AliasTransportNodeKind::Forall(param),
+                        children,
+                    );
+                    values.0.push(AliasMaterialized {
+                        ty: crate::ast::Type::Forall {
+                            param: param.renamed(emitted),
+                            body: Box::new(body.ty),
+                            meta: meta.clone(),
+                        },
+                        identity_canonical: body.identity_canonical,
+                        transport,
+                    });
+                }
+                Frame::FinishPath {
+                    view,
+                    protected,
+                    argument_count,
+                } => {
+                    let crate::ast::Type::Path {
+                        segments,
+                        args: native,
+                        ..
+                    } = view.ty
+                    else {
+                        unreachable!("a path finish retains its path")
+                    };
+                    let (args, canonical, children) =
+                        self.finish_materialize_args(&mut values, argument_count, native.len());
+                    let context = self.context(view.context);
+                    let (segments, head_canonical) = match protected {
+                        Some(name) => (
+                            vec![crate::ast::PathSegment::new(name, view.application_span)],
+                            true,
+                        ),
+                        None => self.qualify_nominal_segments(segments, context),
+                    };
+                    let nominal = context.scope.nominal();
+                    let transport = self.transport.finish_node(
+                        view.ty,
+                        nominal,
+                        AliasTransportNodeKind::Ordinary,
+                        children,
+                    );
+                    values.0.push(AliasMaterialized {
+                        ty: crate::ast::Type::synth_path_segments(
+                            segments,
+                            args,
+                            view.application_span,
+                        ),
+                        identity_canonical: canonical && head_canonical,
+                        transport,
+                    });
+                }
+                Frame::FinishGoal(view, argument_count) => {
+                    let crate::ast::Type::Goal {
+                        goal,
+                        args: native,
+                        meta,
+                        ext,
+                    } = view.ty
+                    else {
+                        unreachable!("a goal finish retains its goal")
+                    };
+                    let (args, canonical, children) =
+                        self.finish_materialize_args(&mut values, argument_count, native.len());
+                    let transport = self.transport.finish_node(
+                        view.ty,
+                        self.context(view.context).scope.nominal(),
+                        AliasTransportNodeKind::Ordinary,
+                        children,
+                    );
+                    values.0.push(AliasMaterialized {
+                        ty: crate::ast::Type::Goal {
+                            goal: *goal,
+                            args,
+                            meta: meta.clone(),
+                            ext: ext.clone(),
+                        },
+                        identity_canonical: canonical,
+                        transport,
+                    });
+                }
+                Frame::FinishRedirect {
+                    contribution,
+                    alias_transporting,
+                } => {
+                    let result = values.0.last_mut().expect("redirected output exists");
+                    result.transport = match contribution {
+                        AliasPathRedirect::Formal {
+                            formal_ty,
+                            formal,
+                            selected_scope,
+                            ..
+                        } => self.transport.graft(
+                            formal_ty,
+                            formal,
+                            selected_scope,
+                            result.transport,
+                        ),
+                        AliasPathRedirect::Alias {
+                            application,
+                            owner_scope,
+                            ..
+                        } => self
+                            .transport
+                            .alias_root(application, owner_scope, result.transport),
+                    };
+                    self.transport
+                        .replace_alias_transporting(alias_transporting);
+                }
+                Frame::FormalSummary(context) => {
+                    if self.context(context).formal_free_names.is_some() {
+                        continue;
+                    }
+                    #[cfg(test)]
+                    update_alias_materializer_work(|work| work.formal_summary_builds += 1);
+                    let mut formals = self
+                        .context(context)
+                        .formals
+                        .as_deref()
+                        .into_iter()
+                        .flat_map(HashMap::iter)
+                        .map(|(name, view)| ((*name).to_owned(), *view))
+                        .collect::<Vec<_>>();
+                    formals.sort_by(|(left, _), (right, _)| left.cmp(right));
+                    let recording = self.transport.replace_recording(false);
+                    let summary_views = formals.iter().map(|(_, view)| *view).collect::<Vec<_>>();
+                    pending.push(Frame::FinishFormalSummary {
+                        context,
+                        formals,
+                        recording,
+                    });
+                    pending.extend(summary_views.into_iter().rev().map(Frame::FreeNames));
+                }
+                Frame::FinishFormalSummary {
+                    context,
+                    formals,
+                    recording,
+                } => {
+                    let mut summary = AliasFormalFreeNames::default();
+                    for (formal, view) in formals {
+                        summary.by_formal.insert(
+                            formal,
+                            self.free_name_summaries[view.0]
+                                .as_ref()
+                                .expect("the selected free-name summary completed")
+                                .clone(),
+                        );
+                    }
+                    self.transport.replace_recording(recording);
+                    self.context_mut(context).formal_free_names = Some(Arc::new(summary));
+                }
+                Frame::FreeNames(id) => {
+                    if self.free_name_summaries[id.0].is_some() {
+                        continue;
+                    }
+                    assert!(
+                        !self.free_name_summary_active[id.0],
+                        "a virtual alias formal cannot recursively select itself"
+                    );
+                    self.free_name_summary_active[id.0] = true;
+                    #[cfg(test)]
+                    update_alias_materializer_work(|work| work.free_name_summary_builds += 1);
+                    if let Some(forwarded) = self.forwarded_formal_view(id) {
+                        pending.push(Frame::FinishForwardedFreeNames(id, forwarded));
+                        pending.push(Frame::FreeNames(forwarded));
+                    } else {
+                        pending.push(Frame::FinishFreeNames(id));
+                        pending.push(Frame::Enter(self.views[id.0]));
+                    }
+                }
+                Frame::FinishFreeNames(id) => {
+                    let materialized = values.0.pop().expect("free-name summary output exists");
+                    let mut free = HashSet::new();
+                    Self::collect_materialized_free_names(
+                        &materialized.ty,
+                        &mut HashMap::new(),
+                        &mut free,
+                    );
+                    release_alias_materialized_types(vec![materialized.ty]);
+                    #[cfg(test)]
+                    update_alias_materializer_work(|work| {
+                        work.free_name_summary_retained_names += free.len()
+                    });
+                    self.free_name_summary_active[id.0] = false;
+                    self.free_name_summaries[id.0] = Some(Arc::new(free));
+                }
+                Frame::FinishForwardedFreeNames(id, forwarded) => {
+                    self.free_name_summaries[id.0] = Some(
+                        self.free_name_summaries[forwarded.0]
+                            .as_ref()
+                            .expect("the forwarded free-name summary completed")
+                            .clone(),
+                    );
+                    self.free_name_summary_active[id.0] = false;
+                }
+            }
+        }
+        assert_eq!(
+            values.0.len(),
+            1,
+            "materialization produces exactly one root"
+        );
+        values.0.pop().expect("materialized root exists")
     }
 
     /// Resolve one virtual path frontier without materializing it.
@@ -2524,134 +2751,6 @@ where
         AliasCompleteSchemeAnalysis {
             summary,
             proved_bare_spines,
-        }
-    }
-
-    fn materialize_path(
-        &mut self,
-        mut view: AliasVirtualView<'v, P>,
-        mut segments: &'v [crate::ast::PathSegment],
-        mut args: &'v [crate::ast::Type<P>],
-        mut _meta: &'v crate::ast::Meta<P>,
-    ) -> AliasMaterialized<P, S::Node> {
-        loop {
-            let context = self.context(view.context).clone();
-            let head = segments.last().map(crate::ast::PathSegment::as_str);
-
-            if segments.len() == 1
-                && let Some(name) = head
-                && let Some(emitted) = context
-                    .protected
-                    .get(&AliasBorrowedName(name))
-                    .cloned()
-                    .or_else(|| {
-                        context
-                            .ambient_protected
-                            .contains(name)
-                            .then(|| name.to_owned())
-                    })
-            {
-                let (args, args_canonical, children) =
-                    self.materialize_args(args, view.context, view.appended);
-                let transport = self.transport.finish_node(
-                    view.ty,
-                    context.scope.nominal(),
-                    AliasTransportNodeKind::Ordinary,
-                    children,
-                );
-                return AliasMaterialized {
-                    ty: crate::ast::Type::synth_path(vec![emitted], args, view.application_span),
-                    identity_canonical: args_canonical,
-                    transport,
-                };
-            }
-
-            if let Some(redirect) = self.redirect_path(view, segments, args) {
-                let (redirected, contribution) = match redirect {
-                    AliasPathRedirect::Formal {
-                        formal_ty,
-                        formal,
-                        selected,
-                        selected_scope,
-                    } => (
-                        selected,
-                        AliasPathRedirect::Formal {
-                            formal_ty,
-                            formal,
-                            selected,
-                            selected_scope,
-                        },
-                    ),
-                    AliasPathRedirect::Alias {
-                        application,
-                        body,
-                        owner_scope,
-                    } => (
-                        body,
-                        AliasPathRedirect::Alias {
-                            application,
-                            body,
-                            owner_scope,
-                        },
-                    ),
-                };
-                if !S::RECORDS_TRANSPORT
-                    && let crate::ast::Type::Path {
-                        segments: redirected_segments,
-                        args: redirected_args,
-                        meta: redirected_meta,
-                    } = redirected.ty
-                {
-                    #[cfg(test)]
-                    update_alias_materializer_work(|work| work.path_redirects += 1);
-                    view = redirected;
-                    segments = redirected_segments;
-                    args = redirected_args;
-                    _meta = redirected_meta;
-                    continue;
-                }
-                let alias_transporting = self.transport.replace_alias_transporting(true);
-                let mut materialized = self.materialize(redirected);
-                materialized.transport = match contribution {
-                    AliasPathRedirect::Formal {
-                        formal_ty,
-                        formal,
-                        selected_scope,
-                        ..
-                    } => self.transport.graft(
-                        formal_ty,
-                        formal,
-                        selected_scope,
-                        materialized.transport,
-                    ),
-                    AliasPathRedirect::Alias {
-                        application,
-                        owner_scope,
-                        ..
-                    } => {
-                        self.transport
-                            .alias_root(application, owner_scope, materialized.transport)
-                    }
-                };
-                self.transport
-                    .replace_alias_transporting(alias_transporting);
-                return materialized;
-            }
-
-            let (args, args_canonical, children) =
-                self.materialize_args(args, view.context, view.appended);
-            let (segments, head_canonical) = self.qualify_nominal_segments(segments, &context);
-            let transport = self.transport.finish_node(
-                view.ty,
-                context.scope.nominal(),
-                AliasTransportNodeKind::Ordinary,
-                children,
-            );
-            return AliasMaterialized {
-                ty: crate::ast::Type::synth_path_segments(segments, args, view.application_span),
-                identity_canonical: head_canonical && args_canonical,
-                transport,
-            };
         }
     }
 }
@@ -6008,6 +6107,194 @@ mod tests {
     }
 
     #[test]
+    fn deep_alias_actual_summary_and_release_use_heap_frames() {
+        const DEPTH: usize = 10_000;
+        let params = [TypeParam {
+            presentation: Default::default(),
+            name: "A".to_owned(),
+            span: span(),
+            kind: None,
+        }];
+        let body = forall("X", path("A"));
+        let local = HashMap::from([(
+            "Wrap",
+            AliasDef {
+                type_params: &params,
+                body: &body,
+                owner_module: None,
+            },
+        )]);
+        let cross_module = HashMap::new();
+        let ctx = AliasCtx {
+            local: &local,
+            cross_module: &cross_module,
+            type_interner: None,
+            source_module: None,
+            package: None,
+            binder_locals: None,
+        };
+        let actual = (0..DEPTH).fold(path("X"), |body, _| forall("Y", body));
+        let source = Type::synth_path(vec!["Wrap".to_owned()], vec![actual], span());
+        reset_alias_materializer_work();
+        let output = unfold_top(&source, &ctx);
+        let work = alias_materializer_work();
+        let Type::Forall {
+            param, body: tail, ..
+        } = &output
+        else {
+            panic!("the alias retains its outer binder")
+        };
+        assert_ne!(param.name, "X", "the free caller name remains uncaptured");
+        let mut cursor = tail.as_ref();
+        for _ in 0..DEPTH {
+            let Type::Forall { param, body, .. } = cursor else {
+                panic!("the complete actual binder spine remains")
+            };
+            assert_eq!(param.name, "Y");
+            cursor = body;
+        }
+        assert_eq!(cursor, &path("X"));
+        assert_eq!(work.free_name_summary_builds, 1);
+        assert_eq!(work.free_name_summary_type_visits, DEPTH + 1);
+        assert!(work.materialize_calls <= 3 * DEPTH + 20, "{work:?}");
+        release_alias_materialized_types(vec![source, output]);
+    }
+
+    #[test]
+    fn deep_recorded_alias_chain_preserves_transport_and_summary_sharing() {
+        const DEPTH: usize = 10_000;
+        let names = (0..DEPTH)
+            .map(|index| format!("Alias{index}"))
+            .collect::<Vec<_>>();
+        let params = [TypeParam {
+            presentation: Default::default(),
+            name: "A".to_owned(),
+            span: span(),
+            kind: None,
+        }];
+        let bodies = (0..DEPTH)
+            .map(|index| {
+                let tail = if index + 1 == DEPTH {
+                    path("A")
+                } else {
+                    Type::synth_path(vec![names[index + 1].clone()], vec![path("A")], span())
+                };
+                forall("X", tail)
+            })
+            .collect::<Vec<_>>();
+        let local = names
+            .iter()
+            .zip(&bodies)
+            .map(|(name, body)| {
+                (
+                    name.as_str(),
+                    AliasDef {
+                        type_params: &params,
+                        body,
+                        owner_module: None,
+                    },
+                )
+            })
+            .collect::<HashMap<_, _>>();
+        let cross_module = HashMap::new();
+        let ctx = AliasCtx {
+            local: &local,
+            cross_module: &cross_module,
+            type_interner: None,
+            source_module: None,
+            package: None,
+            binder_locals: None,
+        };
+        let source = Type::synth_path(
+            vec![names[0].clone()],
+            vec![Type::Infer {
+                ext: (),
+                meta: Meta::new(span()),
+            }],
+            span(),
+        );
+        reset_alias_materializer_work();
+        let materialized = materialize_aliases_with_source_transport(&source, &ctx, false);
+        let mut cursor = &materialized.ty;
+        for _ in 0..DEPTH {
+            let Type::Forall { param, body, .. } = cursor else {
+                panic!("each alias contributes its quantified body")
+            };
+            assert_eq!(param.name, "X");
+            cursor = body;
+        }
+        assert!(matches!(cursor, Type::Infer { .. }));
+        assert_eq!(materialized.transport.emitted_infers.len(), 1);
+        assert!(materialized.transport.first_forall_nested_infer().is_some());
+        let work = alias_materializer_work();
+        assert!(work.materialize_calls <= 6 * DEPTH + 20, "{work:?}");
+        assert!(work.free_name_summary_builds <= DEPTH + 1, "{work:?}");
+        assert_eq!(work.free_name_summary_type_visits, 1);
+        release_alias_materialized_types(vec![source, materialized.ty]);
+    }
+
+    #[test]
+    fn deep_native_argument_precedes_forwarded_appended_argument() {
+        const DEPTH: usize = 10_000;
+        let params = [
+            TypeParam {
+                presentation: Default::default(),
+                name: "F".to_owned(),
+                span: span(),
+                kind: Some(Box::new(crate::ast::Kind::Arrow(
+                    Box::new(crate::ast::Kind::Star),
+                    Box::new(crate::ast::Kind::Star),
+                ))),
+            },
+            TypeParam {
+                presentation: Default::default(),
+                name: "A".to_owned(),
+                span: span(),
+                kind: None,
+            },
+        ];
+        let body = Type::synth_path(vec!["F".to_owned()], vec![path("A")], span());
+        let local = HashMap::from([(
+            "Apply",
+            AliasDef {
+                type_params: &params,
+                body: &body,
+                owner_module: None,
+            },
+        )]);
+        let cross_module = HashMap::new();
+        let ctx = AliasCtx {
+            local: &local,
+            cross_module: &cross_module,
+            type_interner: None,
+            source_module: None,
+            package: None,
+            binder_locals: None,
+        };
+        let deep = (0..DEPTH).fold(path("Leaf"), |body, _| forall("X", body));
+        let head = Type::synth_path(vec!["Carrier".to_owned()], vec![deep], span());
+        let source = Type::synth_path(vec!["Apply".to_owned()], vec![head, path("Last")], span());
+        reset_alias_materializer_work();
+        let output = unfold_top(&source, &ctx);
+        let Type::Path { segments, args, .. } = &output else {
+            panic!("the selected nominal head remains a path")
+        };
+        assert_eq!(segments[0].as_str(), "Carrier");
+        assert_eq!(args.len(), 2);
+        assert_eq!(args[1], path("Last"));
+        let mut cursor = &args[0];
+        for _ in 0..DEPTH {
+            let Type::Forall { body, .. } = cursor else {
+                panic!("the native argument retains its complete binder spine")
+            };
+            cursor = body;
+        }
+        assert_eq!(cursor, &path("Leaf"));
+        assert!(alias_materializer_work().materialize_calls <= 3 * DEPTH + 20);
+        release_alias_materialized_types(vec![source, output]);
+    }
+
+    #[test]
     fn materialized_free_names_restore_scope_before_sibling() {
         let ty = product(forall("X", path("X")), path("X"));
         let mut bound = HashMap::new();
@@ -6898,7 +7185,7 @@ mod tests {
     fn alias_declaration_head_resolves_each_scope_and_owner_branch() {
         let source = parse_module(
             "module source; import provider(Host, Imported, Shared); import provider as dep; \
-             type Host[A] = dep.Host(A); type Local = .; type Shared = dep.Shared; \
+             type Host[A] = dep.Host[A]; type Local = .; type Shared = dep.Shared; \
              host type Terminal;",
         );
         let provider = parse_module(

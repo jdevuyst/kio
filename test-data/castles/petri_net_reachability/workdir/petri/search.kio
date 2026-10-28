@@ -15,8 +15,8 @@ import testapi/iter(loop);
 pub labels Node = { id: I32, marking: model.Marking, parent: I32, via: I32, depth: I32 };
 
 pub labels Search = {
-, frontier: queues.Queue(Node)
-, visited: lists.List(Node)
+, frontier: queues.Queue[Node]
+, visited: lists.List[Node]
 , edges: I32
 , duplicates: I32
 , terminals: I32
@@ -25,11 +25,11 @@ pub labels Search = {
 , peak: I32
 };
 
-pub fn find_node(nodes: lists.List(Node), node_id: I32) -> Node | . {
+pub fn find_node(nodes: lists.List[Node], node_id: I32) -> Node | . {
   traversal.find(.(node: Node) { arithmetic.eq_i32(node.?{id}, node_id) }, nodes)
 }
 
-fn seen(nodes: lists.List(Node), state: model.Marking) -> Bool {
+fn seen(nodes: lists.List[Node], state: model.Marking) -> Bool {
   match(traversal.find(.(node: Node) { model.equal(node.?{marking}, state) }, nodes)) {
     .(_node: Node) { .t };
     .() { .f }
@@ -65,12 +65,12 @@ fn discover(state: Search, source: Node, transition_id: I32, marking: model.Mark
 rec(loop) fn expand(
 , net: model.Net
 , source: Node
-, remaining: lists.List(model.Transition)
+, remaining: lists.List[model.Transition]
 , transition_id: I32
 , state: Search
 ) -> Search {
   match(lists.uncons(remaining)) {
-    .(transition: model.Transition, rest: lists.List(model.Transition)) {
+    .(transition: model.Transition, rest: lists.List[model.Transition]) {
       let .(next: Search) =
         match(model.fire(net, transition, source.?{marking})) {
           .(marking: model.Marking) { discover(state, source, transition_id, marking) };
@@ -93,7 +93,7 @@ fn record_deadlock(state: Search, node: Node) -> Search {
 
 rec(loop) fn explore(net: model.Net, state: Search) -> Search {
   match(fifo.dequeue(state.?{frontier})) {
-    .(node: Node, rest: queues.Queue(Node)) {
+    .(node: Node, rest: queues.Queue[Node]) {
       let .(popped: Search) = state.!{frontier = rest};
       let grown = expand(net, node, net.?{model.transitions}, 0, popped);
       let .(classified: Search) =

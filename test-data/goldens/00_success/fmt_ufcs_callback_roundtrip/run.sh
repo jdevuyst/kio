@@ -5,9 +5,9 @@ set -eu
 formatted=$("$KIO_BIN" fmt - <<'KIO'
 module api;
 pub newtype Vault[A] : A { constructor store; projector open }
-pub fn run(vault: Vault(. -> .)) { (vault.>Vault.open)() }
-pub fn unit(vault: Vault(. -> .)) { (vault.>Vault.open)(()) }
-pub fn value[A](vault: Vault(A -> A), value: A) -> A { (vault.>Vault.open)(value) }
+pub fn run(vault: Vault[. -> .]) { (vault.>Vault.open)() }
+pub fn unit(vault: Vault[. -> .]) { (vault.>Vault.open)(()) }
+pub fn value[A](vault: Vault[A -> A], value: A) -> A { (vault.>Vault.open)(value) }
 KIO
 )
 printf '%s\n' "$formatted" | "$KIO_BIN" fmt -

@@ -157,7 +157,9 @@ pub(crate) fn record_module(
                         }
                     }
                 }
-                pending.extend(prefix);
+                for stage in prefix {
+                    push_args(&mut pending, &stage.args);
+                }
                 pending.extend(
                     blocks
                         .iter()
@@ -168,11 +170,19 @@ pub(crate) fn record_module(
                 pending.push(callee);
                 push_args(&mut pending, args);
             }
-            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => {
-                push_args(&mut pending, args)
+            Expr::RecCall { stages, .. } | Expr::UserMacro { stages, .. } => {
+                for stage in stages {
+                    push_args(&mut pending, &stage.args);
+                }
             }
-            Expr::Ufcs { receiver, args, .. } => {
+            Expr::Ufcs {
+                receiver,
+                callee,
+                args,
+                ..
+            } => {
                 pending.push(receiver);
+                pending.push(callee);
                 push_args(&mut pending, args);
             }
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),

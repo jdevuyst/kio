@@ -9,6 +9,6 @@ host fn consume(value: .);
 pub fn main() {
   let produced = produce(());
   observe(());
-  consume(produced(.));
-  consume(produced(.))
+  consume(produced[.]);
+  consume(produced[.])
 }

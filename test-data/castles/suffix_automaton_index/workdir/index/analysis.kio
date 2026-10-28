@@ -8,7 +8,7 @@ import testapi/arith as n;
 import testapi/array as a;
 import testapi/iter(loop);
 
-rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) {
+rec(loop) fn collect_length(states: Array[sam.State], length: I32, state: I32) {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
     if(num.equal(item.?{sam.longest}, length)) {
@@ -28,7 +28,7 @@ rec(loop) fn collect_length(states: Array(sam.State), length: I32, state: I32) {
 }
 
 // Suffix links strictly shorten the represented words, so this order settles each count once.
-rec(loop) fn descending_lengths(states: Array(sam.State), length: I32) {
+rec(loop) fn descending_lengths(states: Array[sam.State], length: I32) {
   if(n.leq_i32(1, length)) {
     collect_length(states, length, 1);
     recur descending_lengths(states, n.sub_i32(length, 1))
@@ -42,7 +42,7 @@ pub fn finalize(index: sam.Index) {
   descending_lengths(states, a.array_get(states, index.?{sam.last}).?{sam.longest})
 }
 
-rec(loop) fn walk(states: Array(sam.State), query: Array(I32), state: I32, position: I32) -> I32 {
+rec(loop) fn walk(states: Array[sam.State], query: Array[I32], state: I32, position: I32) -> I32 {
   if(num.less(state, 0)) {
     0
   } else if(num.less(position, a.array_len(query))) {
@@ -59,7 +59,7 @@ rec(loop) fn walk(states: Array(sam.State), query: Array(I32), state: I32, posit
   }
 }
 
-pub fn occurrences(index: sam.Index, query: Array(I32)) -> I32 {
+pub fn occurrences(index: sam.Index, query: Array[I32]) -> I32 {
   if(num.equal(a.array_len(query), 0)) {
     n.add_i32(a.array_get(index.?{sam.states}, index.?{sam.last}).?{sam.longest}, 1)
   } else {
@@ -67,7 +67,7 @@ pub fn occurrences(index: sam.Index, query: Array(I32)) -> I32 {
   }
 }
 
-rec(loop) fn distinct_from(states: Array(sam.State), state: I32, total: I32) -> I32 {
+rec(loop) fn distinct_from(states: Array[sam.State], state: I32, total: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
     let parent = a.array_get(states, item.?{sam.suffix});
@@ -83,7 +83,7 @@ rec(loop) fn distinct_from(states: Array(sam.State), state: I32, total: I32) -> 
 
 pub fn distinct(index: sam.Index) -> I32 { distinct_from(index.?{sam.states}, 1, 0) }
 
-rec(loop) fn longest_from(states: Array(sam.State), state: I32, best: I32) -> I32 {
+rec(loop) fn longest_from(states: Array[sam.State], state: I32, best: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
     let item = a.array_get(states, state);
     let next = if(n.leq_i32(2, item.?{sam.ends})) {
@@ -99,7 +99,7 @@ rec(loop) fn longest_from(states: Array(sam.State), state: I32, best: I32) -> I3
 
 pub fn longest_repeated(index: sam.Index) -> I32 { longest_from(index.?{sam.states}, 1, 0) }
 
-rec(loop) fn rows_differ(states: Array(sam.State), left: I32, right: I32, symbol: I32) -> Bool {
+rec(loop) fn rows_differ(states: Array[sam.State], left: I32, right: I32, symbol: I32) -> Bool {
   if(num.less(symbol, 3)) {
     if(num.equal(sam.transition(states, left, symbol), sam.transition(states, right, symbol))) {
       recur rows_differ(states, left, right, n.add_i32(symbol, 1))
@@ -111,10 +111,10 @@ rec(loop) fn rows_differ(states: Array(sam.State), left: I32, right: I32, symbol
   }
 }
 
-rec(loop) fn divergent_from(states: Array(sam.State), state: I32, total: I32) -> I32 {
+rec(loop) fn divergent_from(states: Array[sam.State], state: I32, total: I32) -> I32 {
   if(num.less(state, a.array_len(states))) {
     let source = a.array_get(states, state).?{sam.copied_from};
-    let extra = if(num.less(source, 0)) {
+    let .(extra: I32) = if(num.less(source, 0)) {
       0
     } else if(rows_differ(states, source, state, 0)) {
       1

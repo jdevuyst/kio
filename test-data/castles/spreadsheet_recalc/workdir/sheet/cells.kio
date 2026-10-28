@@ -18,21 +18,21 @@ pub labels Content = { blank: . } | { number: I32 } | { formula: Expr };
 
 pub labels Value = { num: I32 } | { void: . } | { cycle: . };
 
-pub type Sheet = Table(Content);
+pub type Sheet = Table[Content];
 
-pub type Values = Table(Value);
+pub type Values = Table[Value];
 
-pub fn blank_content() -> Content { {blank=}.>widen_sum(Content) }
+pub fn blank_content() -> Content { ({blank=}.>widen_sum)[Content] }
 
-pub fn number_content(n: I32) -> Content { {number = n}.>widen_sum(Content) }
+pub fn number_content(n: I32) -> Content { ({number = n}.>widen_sum)[Content] }
 
-pub fn formula_content(e: Expr) -> Content { {formula = e}.>widen_sum(Content) }
+pub fn formula_content(e: Expr) -> Content { ({formula = e}.>widen_sum)[Content] }
 
-pub fn num_value(n: I32) -> Value { {num = n}.>widen_sum(Value) }
+pub fn num_value(n: I32) -> Value { ({num = n}.>widen_sum)[Value] }
 
-pub fn void_value() -> Value { {void=}.>widen_sum(Value) }
+pub fn void_value() -> Value { ({void=}.>widen_sum)[Value] }
 
-pub fn cycle_value() -> Value { {cycle=}.>widen_sum(Value) }
+pub fn cycle_value() -> Value { ({cycle=}.>widen_sum)[Value] }
 
 pub fn fold_content[R](c: Content, on_blank: R, on_number: I32 -> R, on_formula: Expr -> R) -> R {
   match(c) {
@@ -50,14 +50,14 @@ pub fn fold_value[R](v: Value, on_num: I32 -> R, on_void: R, on_cycle: R) -> R {
   }
 }
 
-pub fn empty_sheet() -> Sheet { empty(Content) }
+pub fn empty_sheet() -> Sheet { empty[Content] }
 
 /// A cell nobody wrote to is empty, not missing.
 pub fn content_at(s: Sheet, a: Addr) -> Content { get_or(s, a, blank_content()) }
 
 pub fn set_content(s: Sheet, a: Addr, c: Content) -> Sheet { put(s, a, c) }
 
-pub fn empty_values() -> Values { empty(Value) }
+pub fn empty_values() -> Values { empty[Value] }
 
 pub fn value_at(vals: Values, a: Addr) -> Value { get_or(vals, a, void_value()) }
 

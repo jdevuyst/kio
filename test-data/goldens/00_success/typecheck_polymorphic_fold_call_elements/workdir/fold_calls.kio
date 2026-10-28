@@ -13,25 +13,25 @@ host type String role(str);
 
 newtype Right[A] : . { constructor mk_right; projector un_right }
 
-fn right_base[A]() -> Right(A) { Right.mk_right(A, ()) }
+fn right_base[A]() -> Right[A] { Right.mk_right[A](()) }
 
-fn right_step[A](_value: A, acc: Right(A)) -> Right(A) { acc }
+fn right_step[A](_value: A, acc: Right[A]) -> Right[A] { acc }
 
 varop [* *] { foldr right_step right_base }
 
 newtype Left[A] : . { constructor mk_left; projector un_left }
 
-fn left_base[A]() -> Left(A) { Left.mk_left(A, ()) }
+fn left_base[A]() -> Left[A] { Left.mk_left[A](()) }
 
-fn left_step[A](acc: Left(A), _value: A) -> Left(A) { acc }
+fn left_step[A](acc: Left[A], _value: A) -> Left[A] { acc }
 
 varop [! !] { foldl left_step left_base }
 
 newtype Entries[K][V] : . { constructor mk_entries; projector un_entries }
 
-fn entries_base[K][V]() -> Entries(K, V) { Entries.mk_entries(K, V, ()) }
+fn entries_base[K][V]() -> Entries[K][V] { Entries.mk_entries[K][V](()) }
 
-fn entries_step[K][V]((_key: K, _value: V), acc: Entries(K, V)) -> Entries(K, V) { acc }
+fn entries_step[K][V]((_key: K, _value: V), acc: Entries[K][V]) -> Entries[K][V] { acc }
 
 fn entry[K][V](key: K, value: V) -> K & V { (key, value) }
 
@@ -43,11 +43,11 @@ newtype Before[A] : . { constructor mk_before; projector un_before }
 
 newtype After[A] : . { constructor mk_after; projector un_after }
 
-fn empty_base[A]() -> Before(A) { Before.mk_before(A, ()) }
+fn empty_base[A]() -> Before[A] { Before.mk_before[A](()) }
 
-fn empty_step[A](_value: A, acc: Before(A)) -> Before(A) { acc }
+fn empty_step[A](_value: A, acc: Before[A]) -> Before[A] { acc }
 
-fn empty_finalize[B](_acc: Before(I32)) -> After(B) { After.mk_after(B, ()) }
+fn empty_finalize[B](_acc: Before[I32]) -> After[B] { After.mk_after[B](()) }
 
 varop [+ +] { foldr empty_step empty_base; finalize empty_finalize }
 
@@ -57,25 +57,25 @@ fn first(value: I32, _other: I32) -> I32 { value }
 
 fn text(value: String) -> String { value }
 
-fn right_calls() -> Right(I32) { [* one(1), first(2, 3), one(first(4, 5)) *] }
+fn right_calls() -> Right[I32] { [* one(1), first(2, 3), one(first(4, 5)) *] }
 
-fn left_calls() -> Left(I32) { [! one(6), first(7, 8), one(first(9, 10)) !] }
+fn left_calls() -> Left[I32] { [! one(6), first(7, 8), one(first(9, 10)) !] }
 
-fn entry_calls() -> Entries(I32, String) {
+fn entry_calls() -> Entries[I32][String] {
   [% one(11) => text("first"), first(12, 13) => text("last") %]
 }
 
-fn nested_final_slot() -> Entries(String, Right(I32)) {
+fn nested_final_slot() -> Entries[String][Right[I32]] {
   [% text("key") => [* one(14), first(15, 16) *] %]
 }
 
-fn elaborated_nested_final_slot() -> Entries(String, Right(I32)) {
+fn elaborated_nested_final_slot() -> Entries[String][Right[I32]] {
   nested_nonfinalizing([% text("key") => [* one(17), first(18, 19) *] %])
 }
 
-fn elaborated_nonfinalizing_again() -> Right(I32) { nested_nonfinalizing([* first(25, 26) *]) }
+fn elaborated_nonfinalizing_again() -> Right[I32] { nested_nonfinalizing([* first(25, 26) *]) }
 
-fn elaborated_compact_triple_nesting() -> Right(Right(Right(I32))) {
+fn elaborated_compact_triple_nesting() -> Right[Right[Right[I32]]] {
   nested_finalizing([* [* [* one(20) *] *] *])
 }
 
@@ -83,6 +83,6 @@ fn elaborated_finalizing_again() -> I32 { nested_finalizing(one(27)) }
 
 fn elaborated_empty_implementation() -> I32 { nested_empty(one(24)) }
 
-fn elaborated_left_nested_fold() -> Left(I32) { nested_left([! one(21), first(22, 23) !]) }
+fn elaborated_left_nested_fold() -> Left[I32] { nested_left([! one(21), first(22, 23) !]) }
 
-fn empty_literal() -> After(String) { [+ +] }
+fn empty_literal() -> After[String] { [+ +] }

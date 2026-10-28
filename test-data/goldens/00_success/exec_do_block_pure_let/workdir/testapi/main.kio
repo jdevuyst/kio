@@ -7,9 +7,9 @@ import testapi/text(string_concat);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
 
-fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
 
 // Interleaved pure-let and bind-let statements. The pure-let
 // stays a lexical scope wrapper around the continuation tree —
@@ -26,10 +26,10 @@ fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
 //           box_pure(string_concat(c, "\n"))
 //         })
 //     })
-fn run() -> Box(String) {
+fn run() -> Box[String] {
   do(box_bind) {
-    let a <- box_pure("hello"(String));
-    let b = "world"(String);
+    let a <- box_pure("hello"[String]);
+    let b = "world"[String];
     let c <- box_pure(string_concat(a, b));
     box_pure(string_concat(c, "\n"))
   }

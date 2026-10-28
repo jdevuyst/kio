@@ -40,20 +40,20 @@ pub fn read_int(fallback: I32) -> I32 {
 /// Close the phrase under construction. `words` is accumulated backwards, so
 /// a non-empty phrase is reversed on the way out; a blank run of lines closes
 /// nothing.
-fn close_phrase(words: List(String), acc: List(List(String))) -> List(List(String)) {
+fn close_phrase(words: List[String], acc: List[List[String]]) -> List[List[String]] {
   match(words.>List.un_list) {
-    (.(_head: String, _rest: List(String)) { cons(reverse(words), acc) }, .(_empty: .) { acc })
+    (.(_head: String, _rest: List[String]) { cons(reverse(words), acc) }, .(_empty: .) { acc })
   }
 }
 
-rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(List(String)) {
+rec(loop) fn read_onto(words: List[String], acc: List[List[String]]) -> List[List[String]] {
   match(read_ascii_line()) {
     (
     , .(s: String) {
         if(string_eq(s, sentinel())) {
           reverse(close_phrase(words, acc))
         } else if(is_blank(s)) {
-          recur read_onto(nil(String), close_phrase(words, acc))
+          recur read_onto(nil[String], close_phrase(words, acc))
         } else {
           recur read_onto(cons(s, words), acc)
         }
@@ -65,4 +65,4 @@ rec(loop) fn read_onto(words: List(String), acc: List(List(String))) -> List(Lis
 
 /// The training corpus: one phrase per blank-line-delimited group, each a
 /// list of words in reading order.
-pub fn read_phrases() -> List(List(String)) { read_onto(nil(String), nil(List(String))) }
+pub fn read_phrases() -> List[List[String]] { read_onto(nil[String], nil[List[String]]) }

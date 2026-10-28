@@ -10,19 +10,19 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub type Tokens = lists.List(String);
+pub type Tokens = lists.List[String];
 
 rec(loop) fn collect(reversed: Tokens) -> Tokens | String {
   match(io.read_ascii_line()) {
     .(line: String) {
       if(text.string_eq(line, "end")) {
-        traversal.reverse(reversed).>widen_sum(Tokens | String)
+        (traversal.reverse(reversed).>widen_sum)[Tokens | String]
       } else {
         recur collect(lists.cons(line, reversed))
       }
     };
-    .() { "input ended before end marker".>widen_sum(Tokens | String) }
+    .() { ("input ended before end marker"[String].>widen_sum)[Tokens | String] }
   }
 }
 
-pub fn read_tokens() -> Tokens | String { collect(lists.nil(_)) }
+pub fn read_tokens() -> Tokens | String { collect(lists.nil[_]) }

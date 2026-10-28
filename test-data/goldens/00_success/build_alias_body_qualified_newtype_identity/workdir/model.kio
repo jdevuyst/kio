@@ -2,9 +2,9 @@ module model;
 
 import list/core as list;
 
-pub type Row = list.List(.);
+pub type Row = list.List[.];
 
-pub type Unit_box = list.Box(.);
+pub type Unit_box = list.Box[.];
 
 pub type Identity[A] = A;
 
@@ -12,4 +12,4 @@ pub fn keep(row: Row) -> Row { row }
 
 pub fn keep_box(value: Unit_box) -> Unit_box { value }
 
-pub fn keep_identity_box(value: Identity(list.Box(.))) -> Identity(list.Box(.)) { value }
+pub fn keep_identity_box(value: Identity[list.Box[.]]) -> Identity[list.Box[.]] { value }

@@ -81,8 +81,8 @@ the standalone checker and emitted-and-reparsed artifacts:
   default to Unit. Zero binder stars spell kind `*`, rather than an unknown kind.
 - Ordinary universal call arguments remain explicit; a resolved newtype
   constructor may recover its existential-witness suffix from the payload.
-- Empty calls supply Unit, while nonempty type-only packets stay residual.
-  Scoped Boolean-role selection supplies the branching intrinsic's scheme.
+- Empty value calls supply Unit, while nonempty square type groups stay residual. Explicit brackets and one value group per Function layer agree in full and Prime parsing.
+  Concrete checked Boolean specialization validates the branching intrinsic's explicit carrier.
 
 Trace the selected call arguments, lambda parameters, and intrinsic-value
 schemes into ordinary artifact syntax. Check that fresh validation needs no

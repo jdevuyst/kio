@@ -1131,7 +1131,6 @@ where
         exact_ty: super::InternedType<P>,
         source_checked: bool,
     },
-    TypeOnly,
 }
 
 /// Preflighted, exact-local recursive-order mutations. Construction finds the
@@ -1168,7 +1167,6 @@ impl<P: crate::ast::Phase> Clone for PendingRecOrderState<P> {
                 exact_ty: exact_ty.clone(),
                 source_checked: *source_checked,
             },
-            Self::TypeOnly => Self::TypeOnly,
         }
     }
 }
@@ -1757,7 +1755,7 @@ where
                         PendingRecOrderState::Runtime { exact_ty, .. } => {
                             Some((index, exact_ty.clone(), *decl_span))
                         }
-                        PendingRecOrderState::Pending | PendingRecOrderState::TypeOnly => None,
+                        PendingRecOrderState::Pending => None,
                     };
                 }
                 _ => {}

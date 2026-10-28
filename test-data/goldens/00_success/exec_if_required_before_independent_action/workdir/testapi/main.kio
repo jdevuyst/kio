@@ -10,7 +10,7 @@ fn exercise(condition: Bool) {
     if(condition) {
       identity_target(.(value) { value })
     } else {
-      finish(.(value: .) -> . { value }, _)
+      finish(.(value: .) -> . { value })[_]
     };
   selected(())
 }

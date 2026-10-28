@@ -23,14 +23,14 @@ pub labels Change = { put_number: I32 } | { put_formula: Expr } | { clear: . };
 pub labels Edit = { edit_at: Addr, edit_kind: Change };
 
 pub fn number_edit(a: Addr, n: I32) -> Edit {
-  {edit_at = a, edit_kind = {put_number = n}.>widen_sum(Change)}
+  {edit_at = a, edit_kind = ({put_number = n}.>widen_sum)[Change]}
 }
 
 pub fn formula_edit(a: Addr, e: Expr) -> Edit {
-  {edit_at = a, edit_kind = {put_formula = e}.>widen_sum(Change)}
+  {edit_at = a, edit_kind = ({put_formula = e}.>widen_sum)[Change]}
 }
 
-pub fn clear_edit(a: Addr) -> Edit { {edit_at = a, edit_kind = {clear=}.>widen_sum(Change)} }
+pub fn clear_edit(a: Addr) -> Edit { {edit_at = a, edit_kind = ({clear=}.>widen_sum)[Change]} }
 
 pub fn edit_addr(e: Edit) -> Addr { e.?{edit_at} }
 
@@ -59,7 +59,7 @@ fn apply_edit(s: Sheet, e: Edit) -> Sheet {
 }
 
 /// The current sheet's shape: inverted edges, cycle, evaluation order.
-pub labels Plan = { plan_deps: Deps, plan_cycle: List(Addr), plan_order: List(Addr) };
+pub labels Plan = { plan_deps: Deps, plan_cycle: List[Addr], plan_order: List[Addr] };
 
 pub fn build_plan(s: Sheet) -> Plan {
   let edges = build_deps(s);
@@ -67,17 +67,17 @@ pub fn build_plan(s: Sheet) -> Plan {
   {plan_deps = edges, plan_cycle = cyc, plan_order = topo_order(s, edges, cyc)}
 }
 
-pub fn plan_cycle(p: Plan) -> List(Addr) { p.?{plan_cycle} }
+pub fn plan_cycle(p: Plan) -> List[Addr] { p.?{plan_cycle} }
 
-pub fn plan_order(p: Plan) -> List(Addr) { p.?{plan_order} }
+pub fn plan_order(p: Plan) -> List[Addr] { p.?{plan_order} }
 
 /// Evaluate `todo` in order, threading each result into the store the next
 /// cell reads. A cell on a cycle has no well-founded value to compute, so it
 /// is settled as `#CYCLE` instead.
-rec(loop) fn eval_onto(s: Sheet, cyc: List(Addr), todo: List(Addr), vals: Values) -> Values {
+rec(loop) fn eval_onto(s: Sheet, cyc: List[Addr], todo: List[Addr], vals: Values) -> Values {
   match(todo.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) {
+    , .(a: Addr, rest: List[Addr]) {
         if(mem(cyc, a)) {
           recur eval_onto(s, cyc, rest, set_value(vals, a, cycle_value()))
         } else {
@@ -94,10 +94,10 @@ pub fn full_eval(s: Sheet, p: Plan) -> Values {
   eval_onto(s, plan_cycle(p), append(plan_cycle(p), plan_order(p)), empty_values())
 }
 
-rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(Addr) {
+rec(loop) fn close(deps: Deps, frontier: List[Addr], seen: List[Addr]) -> List[Addr] {
   match(frontier.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) {
+    , .(a: Addr, rest: List[Addr]) {
         if(mem(seen, a)) {
           recur close(deps, rest, seen)
         } else {
@@ -113,8 +113,8 @@ rec(loop) fn close(deps: Deps, frontier: List(Addr), seen: List(Addr)) -> List(A
 /// reads it, transitively. Nothing else can observe the edit, so nothing else
 /// is recomputed. Skipping seen cells is what lets the walk close over a
 /// graph that cycles.
-pub fn dirty_set(deps: Deps, a: Addr) -> List(Addr) {
-  let seen = close(deps, one(a), nil(Addr));
+pub fn dirty_set(deps: Deps, a: Addr) -> List[Addr] {
+  let seen = close(deps, one(a), nil[Addr]);
   filter(all_addrs(), .(c: Addr) { mem(seen, c) })
 }
 
@@ -122,8 +122,8 @@ pub labels Step = {
 , step_sheet: Sheet
 , step_values: Values
 , step_plan: Plan
-, step_dirty: List(Addr)
-, step_order: List(Addr)
+, step_dirty: List[Addr]
+, step_order: List[Addr]
 , step_recomputed: I32
 , step_skipped: I32
 };
@@ -134,9 +134,9 @@ pub fn step_values(st: Step) -> Values { st.?{step_values} }
 
 pub fn step_plan(st: Step) -> Plan { st.?{step_plan} }
 
-pub fn step_dirty(st: Step) -> List(Addr) { st.?{step_dirty} }
+pub fn step_dirty(st: Step) -> List[Addr] { st.?{step_dirty} }
 
-pub fn step_order(st: Step) -> List(Addr) { st.?{step_order} }
+pub fn step_order(st: Step) -> List[Addr] { st.?{step_order} }
 
 pub fn step_recomputed(st: Step) -> I32 { st.?{step_recomputed} }
 

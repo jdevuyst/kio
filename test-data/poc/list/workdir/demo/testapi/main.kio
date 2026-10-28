@@ -63,13 +63,13 @@ fn render_sum(value: I32 | .) -> String {
   }
 }
 
-fn show_list_i32(label: String, xs: List(I32)) { show(label, to_string(int_to_string, xs)) }
+fn show_list_i32(label: String, xs: List[I32]) { show(label, to_string(int_to_string, xs)) }
 
 fn inc(n: I32) -> I32 { add_i32(n, 1) }
 
 fn dbl(n: I32) -> I32 { mul_i32(n, 2) }
 
-fn demo() -> List(I32) { [* 1, 2, 3, 4, 5 *] }
+fn demo() -> List[I32] { [* 1, 2, 3, 4, 5 *] }
 
 pub fn main() {
   let xs = demo();
@@ -77,7 +77,7 @@ pub fn main() {
   show_list_i32("0 +: xs", 0 +: xs);
   show("length(xs)", int_to_string(length(xs)));
   show("null(xs)", bool_to_string(null(xs)));
-  show("null(nil)", bool_to_string(null(nil(I32))));
+  show("null(nil)", bool_to_string(null(nil[I32])));
   show_result_i32("head(xs)", head(xs));
   show_list_i32("tail(xs)", tail(xs));
   show_result_i32("last(xs)", last(xs));
@@ -88,7 +88,7 @@ pub fn main() {
   show_list_i32("xs |> dbl", xs |> dbl);
   show_list_i32("filter(<=3, xs)", filter(.(n: I32) -> Bool { leq_i32(n, 3) }, xs));
   show_list_i32("append([1,2], [3,4])", append([* 1, 2 *], [* 3, 4 *]));
-  let more = [* 6(I32), 7 *];
+  let more = [* 6[I32], 7 *];
   show_list_i32("xs ++ [6,7]", xs ++ more);
   show("foldl(+, 0, xs)", int_to_string(foldl(add_i32, 0, xs)));
   show("foldr(-, 0, xs)", int_to_string(foldr(sub_i32, 0, xs)));
@@ -106,14 +106,14 @@ pub fn main() {
   let unit_list = singleton(());
   let render_unit = .(_unit: .) -> String { "unit" };
   show_result("head(unit)", head(unit_list), render_unit);
-  show_result("head(empty Unit)", head(nil(.)), render_unit);
+  show_result("head(empty Unit)", head(nil[.]), render_unit);
   show_result("at(unit, 0)", at(0, unit_list), render_unit);
   show_result("at(unit, 1)", at(1, unit_list), render_unit);
-  let nested_number = singleton(widen_sum(7(I32), I32 | .));
-  let nested_unit = singleton(widen_sum((), I32 | .));
+  let nested_number = singleton(widen_sum(7[I32])[I32 | .]);
+  let nested_unit = singleton(widen_sum(())[I32 | .]);
   show_result("last(nested number)", last(nested_number), render_sum);
   show_result("last(nested unit)", last(nested_unit), render_sum);
-  show_result("last(empty nested)", last(nil(I32 | .)), render_sum);
+  show_result("last(empty nested)", last(nil[I32 | .]), render_sum);
   show_result("find(nested unit)", find(.(_value: I32 | .) -> Bool { .t }, nested_unit), render_sum);
   show_result("find(no Unit match)", find(.(_unit: .) -> Bool { .f }, unit_list), render_unit);
   show_result_i32("index_of(9, xs)", index_of(eq_i32, 9, xs))

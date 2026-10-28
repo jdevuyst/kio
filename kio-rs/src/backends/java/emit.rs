@@ -3257,7 +3257,7 @@ mod tests {
 
     #[test]
     fn forall_factories_defer_body_execution_until_each_advance() {
-        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F(A)) -> F(B)");
+        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F[A]) -> F[B]");
         let factories: Vec<_> = emitted
             .shapes_java
             .split("private static final class Factory_")
@@ -3284,7 +3284,7 @@ mod tests {
 
     #[test]
     fn forall_payload_stages_are_one_binder_methods_with_exact_residuals() {
-        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F(A)) -> F(B)");
+        let emitted = polymorphic_payload_source("[A][B] ((A -> B) & F[A]) -> F[B]");
         let public_stages: Vec<_> = emitted
             .shapes_java
             .lines()
@@ -3392,7 +3392,7 @@ mod tests {
 
     #[test]
     fn direct_polymorphic_newtype_members_preserve_canonical_payloads() {
-        for rendered in direct_payload_member_conversions("", "[A][B] ((A -> B) & F(A)) -> F(B)") {
+        for rendered in direct_payload_member_conversions("", "[A][B] ((A -> B) & F[A]) -> F[B]") {
             assert!(!rendered.contains("KioRuntime.map("), "{rendered}");
             assert!(!rendered.contains("java.util.Map"), "{rendered}");
         }
@@ -3410,14 +3410,14 @@ mod tests {
 
     #[test]
     fn polymorphic_payload_keeps_a_single_canonical_callback_domain() {
-        let emitted = polymorphic_payload_source("[A][B] (((A & B) -> A) & F(A)) -> F(A)");
+        let emitted = polymorphic_payload_source("[A][B] (((A & B) -> A) & F[A]) -> F[A]");
         assert!(
             emitted.shapes_java.contains("Shapes.Fn1<Shapes.Product<"),
             "{}",
             emitted.shapes_java
         );
         for rendered in
-            direct_payload_member_conversions("", "[A][B] (((A & B) -> A) & F(A)) -> F(A)")
+            direct_payload_member_conversions("", "[A][B] (((A & B) -> A) & F[A]) -> F[A]")
         {
             assert_eq!(rendered.matches("value").count(), 1, "{rendered}");
             assert!(
@@ -3432,7 +3432,7 @@ mod tests {
             compound_input_conversion("[A][B] (A & B) -> A", "value"),
             "value"
         );
-        let converted = direct_payload_member_conversions("", "(F(.) & F(.)) -> F(.)");
+        let converted = direct_payload_member_conversions("", "(F[.] & F[.]) -> F[.]");
         assert!(converted.iter().any(|value| value == "value"));
         assert!(
             converted
@@ -3847,7 +3847,7 @@ mod tests {
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
              newtype Token[A] : A { pub constructor make_token; projector read_token; };\n        \
-             host fn archived(value: Token(.)) -> .;\n        \
+             host fn archived(value: Token[.]) -> .;\n        \
              pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        \
              Token;\n        archived;\n      }\n    }\n  }\n}\n",
@@ -3891,10 +3891,10 @@ mod tests {
             "signature pkg v(4);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
              newtype Box[A] : [T] T -> A { pub constructor make; pub projector read; };\n        \
-             host fn first(value: Box(.)) -> .;\n        \
+             host fn first(value: Box[.]) -> .;\n        \
              pub fn unit() -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  breaking {\n    add {\n      module api {\n        \
-             host fn second(value: Box(.)) -> .;\n      }\n    };\n    modify {\n      module api {\n        \
+             host fn second(value: Box[.]) -> .;\n      }\n    };\n    modify {\n      module api {\n        \
              newtype Box[A] : [T] T -> A { pub constructor make; pub projector read; };\n      }\n    };\n    remove {\n      module api {\n        first;\n      }\n    }\n  }\n}\n\
              v(3) {\n  nonbreaking {\n    remove {\n      module api {\n        Box;\n        second;\n      }\n    }\n  }\n}\n",
         );
@@ -4397,8 +4397,8 @@ mod tests {
         let package = build_package(
             &["module api; \
                pub newtype Box[A] : A { pub constructor make_box; pub projector read_box; }; \
-               pub newtype Functor[*F] : [A] F(A) -> F(A) { pub constructor make_functor; pub projector read_functor; }; \
-               host fn round(value: Functor(Box)) -> Functor(Box);"],
+               pub newtype Functor[*F] : [A] F[A] -> F[A] { pub constructor make_functor; pub projector read_functor; }; \
+               host fn round(value: Functor[Box]) -> Functor[Box];"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4486,7 +4486,7 @@ mod tests {
     #[test]
     fn parameterized_host_type_storage_helpers_are_declaration_specific() {
         let package = build_package(
-            &["module api; host type Box[A]; host fn round[A](value: Box(A)) -> Box(A);"],
+            &["module api; host type Box[A]; host fn round[A](value: Box[A]) -> Box[A];"],
             "bridge { api; }",
         );
         let emitted = lower_package(&package, "pkg", None).expect("emit Java");
@@ -4516,7 +4516,7 @@ mod tests {
     fn procedure_callbacks_keep_explicit_unit_results_in_both_directions() {
         let package = build_package(
             &["module api; host type Str role(str); \
-               pub fn invoke(callback: Str -> .) -> . { callback(\"called\"(Str)) } \
+               pub fn invoke(callback: Str -> .) -> . { callback(\"called\"[Str]) } \
                pub fn supply() -> Str -> . { .(_value: Str) { () } }"],
             "bridge { api; }",
         );
@@ -4560,13 +4560,13 @@ mod tests {
                pub newtype Comptime_both : __Type__ { pub constructor make_comptime_both; pub projector read_comptime_both; }; \
                pub newtype Comptime_opaque : __Type__ { constructor make_comptime_opaque; projector read_comptime_opaque; }; \
                pub newtype Comptime_constructor : __Type__ { pub constructor make_comptime_constructor; projector read_comptime_constructor; }; \
-               pub newtype Packed_function : (Opaque_a & Projector_only(.)) -> Opaque_a { pub constructor make_packed_function; pub projector read_packed_function; }; \
+               pub newtype Packed_function : (Opaque_a & Projector_only[.]) -> Opaque_a { pub constructor make_packed_function; pub projector read_packed_function; }; \
                pub newtype Spread_function : [A] (Opaque_a & A) -> Opaque_a { pub constructor make_spread_function; pub projector read_spread_function; }; \
                pub fn keep_a(value: Opaque_a) -> Opaque_a { value } \
                pub fn keep_b(value: Opaque_b) -> Opaque_b { value } \
                host fn echo_outer(value: Outer) -> Outer; \
                host fn echo_direct(value: Direct_recursive) -> Direct_recursive; \
-               host fn nested_partial(value: Opaque_a & Projector_only(.)) -> Opaque_a | Projector_only(.); \
+               host fn nested_partial(value: Opaque_a & Projector_only[.]) -> Opaque_a | Projector_only[.]; \
                host fn nested_both(value: Transparent_both & Transparent_both) -> Transparent_both & Transparent_both;"],
             "bridge { api; }",
         );

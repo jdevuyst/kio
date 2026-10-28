@@ -23,7 +23,7 @@ fn threshold() -> I32 { 25 }
 
 fn frontier_threshold() -> I32 { 8 }
 
-fn is_frontier_cell(risk: Array(I32), barriers: Array(Bool), i: I32) -> Bool {
+fn is_frontier_cell(risk: Array[I32], barriers: Array[Bool], i: I32) -> Bool {
   if(array.array_get(barriers, i)) {
     .f
   } else {
@@ -31,16 +31,16 @@ fn is_frontier_cell(risk: Array(I32), barriers: Array(Bool), i: I32) -> Bool {
   }
 }
 
-fn is_available_candidate(candidates: Array(Bool), barriers: Array(Bool), i: I32) -> Bool {
+fn is_available_candidate(candidates: Array[Bool], barriers: Array[Bool], i: I32) -> Bool {
   if(array.array_get(candidates, i)) { grid.not_bool(array.array_get(barriers, i)) } else { .f }
 }
 
 rec(iter.loop) fn collect_frontier(
 , i: I32
-, risk: Array(I32)
-, barriers: Array(Bool)
-, frontier: Array(I32)
-) -> Array(I32) {
+, risk: Array[I32]
+, barriers: Array[Bool]
+, frontier: Array[I32]
+) -> Array[I32] {
   if(arith.leq_i32(i, grid.last_cell())) {
     if(is_frontier_cell(risk, barriers, i)) {
       array.array_push(frontier, i);
@@ -53,7 +53,7 @@ rec(iter.loop) fn collect_frontier(
   }
 }
 
-fn add_exposure(exposure: Array(I32), barriers: Array(Bool), target: I32, amount: I32) -> Array(I32) {
+fn add_exposure(exposure: Array[I32], barriers: Array[Bool], target: I32, amount: I32) -> Array[I32] {
   if(array.array_get(barriers, target)) {
     exposure
   } else {
@@ -63,7 +63,7 @@ fn add_exposure(exposure: Array(I32), barriers: Array(Bool), target: I32, amount
   }
 }
 
-fn scan_north(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Array(I32)) -> Array(I32) {
+fn scan_north(center: I32, risk: Array[I32], barriers: Array[Bool], exposure: Array[I32]) -> Array[I32] {
   if(grid.has_north(center)) {
     add_exposure(exposure, barriers, grid.north_of(center), array.array_get(risk, center))
   } else {
@@ -71,7 +71,7 @@ fn scan_north(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Ar
   }
 }
 
-fn scan_south(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Array(I32)) -> Array(I32) {
+fn scan_south(center: I32, risk: Array[I32], barriers: Array[Bool], exposure: Array[I32]) -> Array[I32] {
   if(grid.has_south(center)) {
     add_exposure(exposure, barriers, grid.south_of(center), array.array_get(risk, center))
   } else {
@@ -79,7 +79,7 @@ fn scan_south(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Ar
   }
 }
 
-fn scan_west(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Array(I32)) -> Array(I32) {
+fn scan_west(center: I32, risk: Array[I32], barriers: Array[Bool], exposure: Array[I32]) -> Array[I32] {
   if(grid.has_west(center)) {
     add_exposure(exposure, barriers, grid.west_of(center), array.array_get(risk, center))
   } else {
@@ -87,7 +87,7 @@ fn scan_west(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Arr
   }
 }
 
-fn scan_east(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Array(I32)) -> Array(I32) {
+fn scan_east(center: I32, risk: Array[I32], barriers: Array[Bool], exposure: Array[I32]) -> Array[I32] {
   if(grid.has_east(center)) {
     add_exposure(exposure, barriers, grid.east_of(center), array.array_get(risk, center))
   } else {
@@ -98,10 +98,10 @@ fn scan_east(center: I32, risk: Array(I32), barriers: Array(Bool), exposure: Arr
 fn scan_direction(
 , dir: I32
 , center: I32
-, risk: Array(I32)
-, barriers: Array(Bool)
-, exposure: Array(I32)
-) -> Array(I32) {
+, risk: Array[I32]
+, barriers: Array[Bool]
+, exposure: Array[I32]
+) -> Array[I32] {
   if(grid.eq_i32(dir, 0)) {
     scan_north(center, risk, barriers, exposure)
   } else if(grid.eq_i32(dir, 1)) {
@@ -116,10 +116,10 @@ fn scan_direction(
 rec(iter.loop) fn scan_neighbors(
 , dir: I32
 , center: I32
-, risk: Array(I32)
-, barriers: Array(Bool)
-, exposure: Array(I32)
-) -> Array(I32) {
+, risk: Array[I32]
+, barriers: Array[Bool]
+, exposure: Array[I32]
+) -> Array[I32] {
   if(arith.leq_i32(dir, 3)) {
     let updated = scan_direction(dir, center, risk, barriers, exposure);
     recur scan_neighbors(arith.add_i32(dir, 1), center, risk, barriers, updated)
@@ -130,11 +130,11 @@ rec(iter.loop) fn scan_neighbors(
 
 rec(iter.loop) fn spread_frontier(
 , cursor: I32
-, frontier: Array(I32)
-, risk: Array(I32)
-, barriers: Array(Bool)
-, exposure: Array(I32)
-) -> Array(I32) {
+, frontier: Array[I32]
+, risk: Array[I32]
+, barriers: Array[Bool]
+, exposure: Array[I32]
+) -> Array[I32] {
   if(arith.leq_i32(cursor, arith.sub_i32(array.array_len(frontier), 1))) {
     let center = array.array_get(frontier, cursor);
     let updated = scan_neighbors(0, center, risk, barriers, exposure);
@@ -144,7 +144,7 @@ rec(iter.loop) fn spread_frontier(
   }
 }
 
-fn candidate_score(risk: Array(I32), cost: Array(I32), exposure: Array(I32), i: I32) -> I32 {
+fn candidate_score(risk: Array[I32], cost: Array[I32], exposure: Array[I32], i: I32) -> I32 {
   let exposed = array.array_get(exposure, i);
   let local_risk = array.array_get(risk, i);
   let local_cost = array.array_get(cost, i);
@@ -153,13 +153,13 @@ fn candidate_score(risk: Array(I32), cost: Array(I32), exposure: Array(I32), i: 
 
 rec(iter.loop) fn score_candidates(
 , i: I32
-, risk: Array(I32)
-, cost: Array(I32)
-, candidates: Array(Bool)
-, barriers: Array(Bool)
-, exposure: Array(I32)
-, scores: Array(I32)
-) -> Array(I32) {
+, risk: Array[I32]
+, cost: Array[I32]
+, candidates: Array[Bool]
+, barriers: Array[Bool]
+, exposure: Array[I32]
+, scores: Array[I32]
+) -> Array[I32] {
   if(arith.leq_i32(i, grid.last_cell())) {
     if(is_available_candidate(candidates, barriers, i)) {
       array.array_set(scores, i, candidate_score(risk, cost, exposure, i));
@@ -190,8 +190,8 @@ rec(iter.loop) fn score_candidates(
 
 rec(iter.loop) fn count_candidates(
 , i: I32
-, candidates: Array(Bool)
-, barriers: Array(Bool)
+, candidates: Array[Bool]
+, barriers: Array[Bool]
 , count: I32
 ) -> I32 {
   if(arith.leq_i32(i, grid.last_cell())) {
@@ -206,10 +206,10 @@ rec(iter.loop) fn count_candidates(
 }
 
 fn can_choose(
-, candidates: Array(Bool)
-, barriers: Array(Bool)
-, scores: Array(I32)
-, cost: Array(I32)
+, candidates: Array[Bool]
+, barriers: Array[Bool]
+, scores: Array[I32]
+, cost: Array[I32]
 , spend_now: I32
 , i: I32
 ) -> Bool {
@@ -226,12 +226,12 @@ fn can_choose(
 
 rec(iter.loop) fn choose_cells(
 , i: I32
-, candidates: Array(Bool)
-, barriers: Array(Bool)
-, cost: Array(I32)
-, exposure: Array(I32)
-, scores: Array(I32)
-, chosen: Array(I32)
+, candidates: Array[Bool]
+, barriers: Array[Bool]
+, cost: Array[I32]
+, exposure: Array[I32]
+, scores: Array[I32]
+, chosen: Array[I32]
 , total_score: I32
 , spend_now: I32
 , blocked_now: I32
@@ -288,14 +288,14 @@ pub fn make_plan() -> Plan {
   let cost = store.build_cost();
   let barriers = store.build_barriers();
   let candidates = store.build_candidates();
-  let frontier = array.array_make_empty(I32, ());
+  let frontier = array.array_make_empty[I32](());
   let frontier = collect_frontier(0, risk, barriers, frontier);
-  let exposure = array.array_make_filled(grid.cell_count(), 0);
+  let .(exposure: Array[I32]) = array.array_make_filled(grid.cell_count(), 0);
   let exposure = spread_frontier(0, frontier, risk, barriers, exposure);
   let exposure_snapshot = array.array_clone(exposure);
-  let scores = array.array_make_filled(grid.cell_count(), 0);
+  let .(scores: Array[I32]) = array.array_make_filled(grid.cell_count(), 0);
   let scores = score_candidates(0, risk, cost, candidates, barriers, exposure_snapshot, scores);
-  let chosen = array.array_make_empty(I32, ());
+  let chosen = array.array_make_empty[I32](());
   choose_cells(
   , 0
   , candidates

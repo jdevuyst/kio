@@ -4,7 +4,7 @@ import gate_array_dp/constants(days);
 import testapi(Array, I32);
 import testapi/array(array_make_filled, array_set);
 
-pub fn traffic_risk() -> Array(I32) {
+pub fn traffic_risk() -> Array[I32] {
   let values = array_make_filled(days(), 0);
   array_set(values, 0, 5);
   array_set(values, 1, 2);
@@ -17,7 +17,7 @@ pub fn traffic_risk() -> Array(I32) {
   values
 }
 
-pub fn service_cost() -> Array(I32) {
+pub fn service_cost() -> Array[I32] {
   let values = array_make_filled(days(), 0);
   array_set(values, 0, 11);
   array_set(values, 1, 9);

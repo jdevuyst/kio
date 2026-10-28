@@ -297,7 +297,7 @@ function copyInstall(id: string) {
           <code>if(ok) { yes() } else { no() }</code>
           <p>
             Macros are imported library definitions that generate typed code using type information:
-            <code>reorder_prod((a, b), B &amp; A)</code> reorders a product to match the requested
+            <code>reorder_prod((a, b))[B &amp; A]</code> reorders a product to match the requested
             type, and familiar control forms such as <code>if</code> and <code>match</code>
             are library-defined too.
           </p>

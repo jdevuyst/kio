@@ -28,4 +28,4 @@ fn multi_step(p: ((A & B) & C) & D) -> A & B & C & D { flatten_prod(p) }
 fn identity_short_circuit(p: A & B & C) -> A & B & C { flatten_prod(p) }
 
 // UFCS spelling — same rule, postfix form.
-fn ufcs(p: (A & B) & C) -> A & B & C { p.>flatten_prod(A & B & C) }
+fn ufcs(p: (A & B) & C) -> A & B & C { (p.>flatten_prod)[A & B & C] }

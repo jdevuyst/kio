@@ -22,11 +22,11 @@ fn scalar_text(v: value.Value) -> testapi.String {
         match(scalar.scalar_as_i32(s)) {
           (
           , .(n: testapi.I32) { fmt.int_to_string(n) }
-          , .(_not_i32: .) { "not an i32"(testapi.String) }
+          , .(_not_i32: .) { "not an i32"[testapi.String] }
           )
         }
       }
-    , .(_not_scalar: .) { "not a scalar"(testapi.String) }
+    , .(_not_scalar: .) { "not a scalar"[testapi.String] }
     )
   }
 }
@@ -41,15 +41,15 @@ fn invoke(image: loader.Image, name: testapi.String) -> testapi.String {
               match(defaults.apply_default(function.>result.Ev_done.get, value.vunit())) {
                 (
                 , .(answer: result.Ev_done) { scalar_text(answer.>result.Ev_done.get) }
-                , .(_stuck: result.Ev_stuck) { "call stuck"(testapi.String) }
+                , .(_stuck: result.Ev_stuck) { "call stuck"[testapi.String] }
                 )
               }
             }
-          , .(_stuck: result.Ev_stuck) { "evaluation stuck"(testapi.String) }
+          , .(_stuck: result.Ev_stuck) { "evaluation stuck"[testapi.String] }
           )
         }
       }
-    , .(_missing: .) { "missing export"(testapi.String) }
+    , .(_missing: .) { "missing export"[testapi.String] }
     )
   }
 }
@@ -62,12 +62,12 @@ fn report_values(label: testapi.String, source: testapi.String) {
         io.print(text.string_concat(
         , label
         , text.string_concat(
-          , invoke(image, "consumer.first"(testapi.String))
+          , invoke(image, "consumer.first"[testapi.String])
           , text.string_concat(
-            , ", "(testapi.String)
+            , ", "[testapi.String]
             , text.string_concat(
-              , invoke(image, "consumer.second"(testapi.String))
-              , "\n"(testapi.String)
+              , invoke(image, "consumer.second"[testapi.String])
+              , "\n"[testapi.String]
               )
             )
           )
@@ -78,7 +78,7 @@ fn report_values(label: testapi.String, source: testapi.String) {
         , label
         , text.string_concat(
           , loader.diag_bare_message(failed.>loader.Lr_diag.get)
-          , "\n"(testapi.String)
+          , "\n"[testapi.String]
           )
         ))
       }
@@ -88,8 +88,8 @@ fn report_values(label: testapi.String, source: testapi.String) {
 
 fn provider_image() -> testapi.String {
   "module provider/names;\nimport hostapi(I32);\npub fn from() -> I32 { "
-  "7(I32) }\npub fn op() -> I32 { 11(I32) }\nmodule hostapi;\nhost type I32 "
-  "role(i32);\n"(testapi.String)
+  "7[I32] }\npub fn op() -> I32 { 11[I32] }\nmodule hostapi;\nhost type I32 "
+  "role(i32);\n"[testapi.String]
 }
 
 fn comma_image() -> testapi.String {
@@ -97,7 +97,7 @@ fn comma_image() -> testapi.String {
   , provider_image()
   , "module consumer;\nimport hostapi(I32);\nimport provider/names(\n  , from\n  "
     ", , op, ,\n);\npub fn first() -> I32 { from() }\npub fn second() -> I32 { "
-    "op() }\npackage header_guest;\nbridge { consumer; hostapi; }\n"(testapi.String)
+    "op() }\npackage header_guest;\nbridge { consumer; hostapi; }\n"[testapi.String]
   )
 }
 
@@ -105,11 +105,11 @@ fn header_image(header: testapi.String) -> testapi.String {
   text.string_concat(
   , provider_image()
   , text.string_concat(
-    , "module consumer;\n"(testapi.String)
+    , "module consumer;\n"[testapi.String]
     , text.string_concat(
       , header
       , "\npub fn run() -> . { () }\npackage header_probe;\nbridge { consumer; "
-        "hostapi; }\n"(testapi.String)
+        "hostapi; }\n"[testapi.String]
       )
     )
   )
@@ -119,52 +119,52 @@ fn report_header(label: testapi.String, header: testapi.String) {
   let outcome =
     match(loader.un_load_outcome(scan.load_package(header_image(header)))) {
       (
-      , .(_loaded: loader.Lr_image) { "loaded"(testapi.String) }
+      , .(_loaded: loader.Lr_image) { "loaded"[testapi.String] }
       , .(failed: loader.Lr_diag) { loader.diag_bare_message(failed.>loader.Lr_diag.get) }
       )
     };
-  io.print(text.string_concat(label, text.string_concat(outcome, "\n"(testapi.String))))
+  io.print(text.string_concat(label, text.string_concat(outcome, "\n"[testapi.String])))
 }
 
 pub fn main() {
-  report_values("emitted: "(testapi.String), imageio.read_image_stdin());
-  report_values("comma list: "(testapi.String), comma_image());
+  report_values("emitted: "[testapi.String], imageio.read_image_stdin());
+  report_values("comma list: "[testapi.String], comma_image());
   report_header(
-  , "selective control: "(testapi.String)
-  , "import provider/names(from, op);"(testapi.String)
+  , "selective control: "[testapi.String]
+  , "import provider/names(from, op);"[testapi.String]
   );
   report_header(
-  , "alias control: "(testapi.String)
-  , "import provider/names as names;"(testapi.String)
+  , "alias control: "[testapi.String]
+  , "import provider/names as names;"[testapi.String]
   );
-  report_header("intrinsics control: "(testapi.String), "import __intrinsics__;"(testapi.String));
-  report_header("missing provider: "(testapi.String), "import (from, op);"(testapi.String));
+  report_header("intrinsics control: "[testapi.String], "import __intrinsics__;"[testapi.String]);
+  report_header("missing provider: "[testapi.String], "import (from, op);"[testapi.String]);
   report_header(
-  , "missing opener: "(testapi.String)
-  , "import provider/names from, op);"(testapi.String)
+  , "missing opener: "[testapi.String]
+  , "import provider/names from, op);"[testapi.String]
   );
-  report_header("empty list: "(testapi.String), "import provider/names(,,);"(testapi.String));
+  report_header("empty list: "[testapi.String], "import provider/names(,,);"[testapi.String]);
   report_header(
-  , "missing separator: "(testapi.String)
-  , "import provider/names(from op);"(testapi.String)
-  );
-  report_header(
-  , "missing closer: "(testapi.String)
-  , "import provider/names(op, from;"(testapi.String)
+  , "missing separator: "[testapi.String]
+  , "import provider/names(from op);"[testapi.String]
   );
   report_header(
-  , "missing semicolon: "(testapi.String)
-  , "import provider/names(from, op)"(testapi.String)
+  , "missing closer: "[testapi.String]
+  , "import provider/names(op, from;"[testapi.String]
   );
-  report_header("missing alias: "(testapi.String), "import provider/names as ;"(testapi.String));
   report_header(
-  , "selective intrinsics: "(testapi.String)
-  , "import __intrinsics__(from);"(testapi.String)
+  , "missing semicolon: "[testapi.String]
+  , "import provider/names(from, op)"[testapi.String]
   );
-  report_header("label entry: "(testapi.String), "import provider/names({from});"(testapi.String));
+  report_header("missing alias: "[testapi.String], "import provider/names as ;"[testapi.String]);
   report_header(
-  , "operator entry: "(testapi.String)
-  , "import provider/names(op _ + _);"(testapi.String)
+  , "selective intrinsics: "[testapi.String]
+  , "import __intrinsics__(from);"[testapi.String]
   );
-  report_header("comptime import: "(testapi.String), "import __comptime__;"(testapi.String))
+  report_header("label entry: "[testapi.String], "import provider/names({from});"[testapi.String]);
+  report_header(
+  , "operator entry: "[testapi.String]
+  , "import provider/names(op _ + _);"[testapi.String]
+  );
+  report_header("comptime import: "[testapi.String], "import __comptime__;"[testapi.String])
 }

@@ -9,12 +9,12 @@ host type F64 role(f64);
 
 equiv integer_identity() {
   source.integer();
-  7(source.I32);
-  7(Whole)
+  7[source.I32];
+  7[Whole]
 }
 
 equiv float_identity() {
   source.float();
-  7.0(source.F64);
-  7.0(Decimal)
+  7.0[source.F64];
+  7.0[Decimal]
 }

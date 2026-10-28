@@ -163,13 +163,14 @@ transform(x).<<r
       (separator_dot)
       (entity_name_function)))
   (ufcs_expr
-    (call_callee
-      (entity_name_function))
-    (expression_arguments
-      (bracket_lparen)
-      (expression_path
-        (identifier))
-      (bracket_rparen))
+    (call_expr
+      (call_callee
+        (entity_name_function))
+      (expression_arguments
+        (bracket_lparen)
+        (expression_path
+          (identifier))
+        (bracket_rparen)))
     (operator_arrow_ufcs)
     (expression_path
       (identifier)))
@@ -205,13 +206,14 @@ transform(x).<<r
     (expression_path
       (identifier)))
   (ufcs_expr
-    (call_callee
-      (entity_name_function))
-    (expression_arguments
-      (bracket_lparen)
-      (expression_path
-        (identifier))
-      (bracket_rparen))
+    (call_expr
+      (call_callee
+        (entity_name_function))
+      (expression_arguments
+        (bracket_lparen)
+        (expression_path
+          (identifier))
+        (bracket_rparen)))
     (operator_arrow_ufcs)
     (expression_path
       (identifier))))
@@ -360,8 +362,8 @@ rejected bracket markers preserve following lexical boundaries
 ================================================================================
 compact forall brackets stay structural in declarations and lambdas
 ================================================================================
-fn id[A][*F](x: F(A)) -> A {}
-.[*F](x: F(.)) -> F(.) { x }
+fn id[A][*F](x: F[A]) -> A {}
+.[*F](x: F[.]) -> F[.] { x }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -390,10 +392,10 @@ fn id[A][*F](x: F(A)) -> A {}
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (type_path
                     (entity_name_type))
-                  (bracket_rparen)))))
+                  (bracket_rbracket)))))
           (bracket_rparen)))
       (operator_arrow_type)
       (type_path
@@ -419,17 +421,17 @@ fn id[A][*F](x: F(A)) -> A {}
             (type_path
               (entity_name_type)
               (type_arguments
-                (bracket_lparen)
+                (bracket_lbracket)
                 (separator_dot)
-                (bracket_rparen)))))
+                (bracket_rbracket)))))
         (bracket_rparen)))
     (operator_arrow_type)
     (type_path
       (entity_name_type)
       (type_arguments
-        (bracket_lparen)
+        (bracket_lbracket)
         (separator_dot)
-        (bracket_rparen)))
+        (bracket_rbracket)))
     (expression_block
       (bracket_lbrace)
       (expression_path
@@ -439,56 +441,63 @@ fn id[A][*F](x: F(A)) -> A {}
 ================================================================================
 polymorphic call arguments retain structural type owners
 ================================================================================
-consume([ // leading binder
-  A, // kinded binder
+consume[[ // leading binder
+  A][ // kinded binder
   *B // before close
-] Pair(A, [C] // nested forall
-  C -> A), value)
+] Pair[A][[C] // nested forall
+  C -> A]](value)
 --------------------------------------------------------------------------------
 
 (source_file
   (call_expr
-    (call_callee
-      (entity_name_function))
+    (call_expr
+      (call_callee
+        (entity_name_function))
+      (call_type_arguments
+        (bracket_lbracket)
+        (forall_type
+          (type_param_list
+            (type_param_group
+              (bracket_lbracket)
+              (comment_line)
+              (type_param_binder
+                (variable_parameter))
+              (bracket_rbracket))
+            (type_param_group
+              (bracket_lbracket)
+              (comment_line)
+              (type_param_binder
+                (operator_run)
+                (variable_parameter))
+              (comment_line)
+              (bracket_rbracket)))
+          (type_path
+            (entity_name_type)
+            (type_arguments
+              (bracket_lbracket)
+              (type_path
+                (entity_name_type))
+              (bracket_rbracket))
+            (type_arguments
+              (bracket_lbracket)
+              (forall_type
+                (type_param_list
+                  (type_param_group
+                    (bracket_lbracket)
+                    (type_param_binder
+                      (variable_parameter))
+                    (bracket_rbracket)))
+                (comment_line)
+                (type_arrow
+                  (type_path
+                    (entity_name_type))
+                  (operator_arrow_type)
+                  (type_path
+                    (entity_name_type))))
+              (bracket_rbracket))))
+        (bracket_rbracket)))
     (expression_arguments
       (bracket_lparen)
-      (forall_type
-        (type_param_list
-          (type_param_group
-            (bracket_lbracket)
-            (comment_line)
-            (type_param_binder
-              (variable_parameter))
-            (separator_comma)
-            (comment_line)
-            (type_param_binder
-              (operator_run)
-              (variable_parameter))
-            (comment_line)
-            (bracket_rbracket)))
-        (type_path
-          (entity_name_type)
-          (type_arguments
-            (bracket_lparen)
-            (type_path
-              (entity_name_type))
-            (separator_comma)
-            (forall_type
-              (type_param_list
-                (type_param_group
-                  (bracket_lbracket)
-                  (type_param_binder
-                    (variable_parameter))
-                  (bracket_rbracket)))
-              (comment_line)
-              (type_arrow
-                (type_path
-                  (entity_name_type))
-                (operator_arrow_type)
-                (type_path
-                  (entity_name_type))))
-            (bracket_rparen))))
-      (separator_comma)
       (expression_path
         (identifier))
       (bracket_rparen))))
@@ -496,15 +505,15 @@ consume([ // leading binder
 ================================================================================
 polymorphic call argument stops before the outer close
 ================================================================================
-consume([A] A)
+consume[[A] A]
 --------------------------------------------------------------------------------
 
 (source_file
   (call_expr
     (call_callee
       (entity_name_function))
-    (expression_arguments
-      (bracket_lparen)
+    (call_type_arguments
+      (bracket_lbracket)
       (forall_type
         (type_param_list
           (type_param_group
@@ -514,7 +523,7 @@ consume([A] A)
             (bracket_rbracket)))
         (type_path
           (entity_name_type)))
-      (bracket_rparen))))
+      (bracket_rbracket))))
 
 ================================================================================
 line comments are extras
@@ -1287,7 +1296,7 @@ type Alias[A] = A;
 type _Alias[_A] = _A;
 newtype Box[B] : B { constructor mk_box; projector un_box; };
 newtype _Box[_B] : _B { constructor mk_marked; projector un_marked; };
-fn use_types[A][_A](x: Box(A), y: _Box(_A)) -> _Alias(_A) { let _ = Box.un_box(A, x); _Box.un_marked(_A, y) }
+fn use_types[A][_A](x: Box[A], y: _Box[_A]) -> _Alias[_A] { let _ = Box.un_box[A](x); _Box.un_marked[_A](y) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1389,10 +1398,10 @@ fn use_types[A][_A](x: Box(A), y: _Box(_A)) -> _Alias(_A) { let _ = Box.un_box(A
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (type_path
                     (entity_name_type))
-                  (bracket_rparen)))))
+                  (bracket_rbracket)))))
           (separator_comma)
           (value_param_binder
             (binding_pattern
@@ -1401,19 +1410,19 @@ fn use_types[A][_A](x: Box(A), y: _Box(_A)) -> _Alias(_A) { let _ = Box.un_box(A
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (type_path
                     (entity_name_type))
-                  (bracket_rparen)))))
+                  (bracket_rbracket)))))
           (bracket_rparen)))
       (operator_arrow_type)
       (type_path
         (entity_name_type)
         (type_arguments
-          (bracket_lparen)
+          (bracket_lbracket)
           (type_path
             (entity_name_type))
-          (bracket_rparen))))
+          (bracket_rbracket))))
     (expression_block
       (bracket_lbrace)
       (let_statement
@@ -1421,29 +1430,35 @@ fn use_types[A][_A](x: Box(A), y: _Box(_A)) -> _Alias(_A) { let _ = Box.un_box(A
         (slot)
         (operator_builtin)
         (call_expr
-          (call_callee
-            (identifier)
-            (separator_dot)
-            (entity_name_function))
+          (call_expr
+            (call_callee
+              (identifier)
+              (separator_dot)
+              (entity_name_function))
+            (call_type_arguments
+              (bracket_lbracket)
+              (type_path
+                (entity_name_type))
+              (bracket_rbracket)))
           (expression_arguments
             (bracket_lparen)
-            (type_path
-              (entity_name_type))
-            (separator_comma)
             (expression_path
               (identifier))
             (bracket_rparen))))
       (separator_semicolon)
       (call_expr
-        (call_callee
-          (identifier)
-          (separator_dot)
-          (entity_name_function))
+        (call_expr
+          (call_callee
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
         (expression_arguments
           (bracket_lparen)
-          (type_path
-            (entity_name_type))
-          (separator_comma)
           (expression_path
             (identifier))
           (bracket_rparen)))

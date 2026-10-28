@@ -27,20 +27,20 @@ import testapi/iter(loop);
 /// than at the end of the line.
 labels Cell = { cell_val: I32, cell_at: I32 };
 
-labels Tick = { pushed: List(Cell) } | { blew: Failure };
+labels Tick = { pushed: List[Cell] } | { blew: Failure };
 
 fn cell(v: I32, spot: I32) -> Cell { {cell_val = v, cell_at = spot} }
 
-fn pushed(stack: List(Cell)) -> Tick { {pushed = stack}.>widen_sum(Tick) }
+fn pushed(stack: List[Cell]) -> Tick { ({pushed = stack}.>widen_sum)[Tick] }
 
-fn blew(f: Failure) -> Tick { {blew = f}.>widen_sum(Tick) }
+fn blew(f: Failure) -> Tick { ({blew = f}.>widen_sum)[Tick] }
 
 fn underflow(spot: I32) -> Tick { blew(fault_at(missing_operand_fault(), spot)) }
 
 /// Apply a binary operator to two known operands. The three partial cases —
 /// division by zero, remainder by zero, a negative exponent — become faults
 /// here rather than reaching the host.
-fn combine(b: Binop, spot: I32, left: I32, right: I32, rest: List(Cell)) -> Tick {
+fn combine(b: Binop, spot: I32, left: I32, right: I32, rest: List[Cell]) -> Tick {
   match(b) {
     (
     , .(_p: Plus) { pushed(cons(cell(add_i32(left, right), spot), rest)) }
@@ -71,13 +71,13 @@ fn combine(b: Binop, spot: I32, left: I32, right: I32, rest: List(Cell)) -> Tick
   }
 }
 
-fn apply_binop(b: Binop, spot: I32, stack: List(Cell)) -> Tick {
+fn apply_binop(b: Binop, spot: I32, stack: List[Cell]) -> Tick {
   match(stack.>List.un_list) {
     (
-    , .(right: Cell, below: List(Cell)) {
+    , .(right: Cell, below: List[Cell]) {
         match(below.>List.un_list) {
           (
-          , .(left: Cell, rest: List(Cell)) {
+          , .(left: Cell, rest: List[Cell]) {
               combine(b, spot, left.?{cell_val}, right.?{cell_val}, rest)
             }
           , .(_empty: .) { underflow(spot) }
@@ -89,10 +89,10 @@ fn apply_binop(b: Binop, spot: I32, stack: List(Cell)) -> Tick {
   }
 }
 
-fn apply_unop(u: Unop, spot: I32, stack: List(Cell)) -> Tick {
+fn apply_unop(u: Unop, spot: I32, stack: List[Cell]) -> Tick {
   match(stack.>List.un_list) {
     (
-    , .(top: Cell, rest: List(Cell)) {
+    , .(top: Cell, rest: List[Cell]) {
         match(u) {
           .(_n: Negate) { pushed(cons(cell(sub_i32(0, top.?{cell_val}), spot), rest)) }
         }
@@ -102,7 +102,7 @@ fn apply_unop(u: Unop, spot: I32, stack: List(Cell)) -> Tick {
   }
 }
 
-fn apply_op(op: Op, spot: I32, stack: List(Cell)) -> Tick {
+fn apply_op(op: Op, spot: I32, stack: List[Cell]) -> Tick {
   match(op) {
     (
     , .(b: Binary) { apply_binop(b.?{binary}, spot, stack) }
@@ -111,7 +111,7 @@ fn apply_op(op: Op, spot: I32, stack: List(Cell)) -> Tick {
   }
 }
 
-fn exec(s: Step, stack: List(Cell)) -> Tick {
+fn exec(s: Step, stack: List[Cell]) -> Tick {
   let spot = spot_of(s);
   match(act_of(s)) {
     (
@@ -127,10 +127,10 @@ fn exec(s: Step, stack: List(Cell)) -> Tick {
 /// value means an operand was pushed and never consumed; the fault quotes the
 /// topmost such value's own token, which for a trailing operand is the
 /// trailing token itself.
-fn settle(stack: List(Cell), last: I32) -> Answer {
+fn settle(stack: List[Cell], last: I32) -> Answer {
   match(stack.>List.un_list) {
     (
-    , .(top: Cell, rest: List(Cell)) {
+    , .(top: Cell, rest: List[Cell]) {
         if(is_empty(rest)) {
           value_answer(top.?{cell_val})
         } else {
@@ -142,10 +142,10 @@ fn settle(stack: List(Cell), last: I32) -> Answer {
   }
 }
 
-rec(loop) fn run(steps: List(Step), stack: List(Cell), last: I32) -> Answer {
+rec(loop) fn run(steps: List[Step], stack: List[Cell], last: I32) -> Answer {
   match(steps.>List.un_list) {
     (
-    , .(s: Step, rest: List(Step)) {
+    , .(s: Step, rest: List[Step]) {
         match(exec(s, stack)) {
           (
           , .(p: Pushed) { recur run(rest, p.?{pushed}, last) }
@@ -160,4 +160,4 @@ rec(loop) fn run(steps: List(Step), stack: List(Cell), last: I32) -> Answer {
 
 /// Evaluate an RPN queue. `last` is the position of the expression's final
 /// token, used only to place the fault of an expression that yields no value.
-pub fn evaluate(steps: List(Step), last: I32) -> Answer { run(steps, nil(Cell), last) }
+pub fn evaluate(steps: List[Step], last: I32) -> Answer { run(steps, nil[Cell], last) }

@@ -4,10 +4,10 @@ module continuations/macros/sequence;
 import __comptime__;
 
 /// Composes an effectful value with its continuation.
-pub type Bind[*F] = [A][B] (F(A) & (A -> F(B))) -> F(B);
+pub type Bind[*F] = [A][B] (F[A] & (A -> F[B])) -> F[B];
 
 /// A computation parameterized by its bind function.
-pub type Sequence[*F][Result] = Bind(F) -> F(Result);
+pub type Sequence[*F][Result] = Bind[F] -> F[Result];
 
 pure fn do_checked(
 , ct: __Comptime__

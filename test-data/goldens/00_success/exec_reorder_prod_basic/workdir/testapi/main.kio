@@ -16,7 +16,7 @@ pub fn main() {
   // After swap, slot 0 is I32 and slot 1 is String. Pick each via
   // `one_prod` (the spine palette's product-slot picker), then
   // print to verify the runtime payload survived the permutation.
-  let n = one_prod(swapped, I32);
-  let s = one_prod(swapped, String);
+  let n = one_prod(swapped)[I32];
+  let s = one_prod(swapped)[String];
   print(string_concat("swapped: ", string_concat(int_to_string(n), string_concat(" ", s))))
 }

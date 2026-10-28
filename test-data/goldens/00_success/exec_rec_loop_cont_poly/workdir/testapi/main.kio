@@ -22,14 +22,14 @@ rec(loop) {
 }
 
 pub rec(loop) fn poly_steps[A](n: I32) -> I32 {
-  if(leq_i32(n, 0)) { 0 } else { add_i32(1, recur(poly, cont) poly_steps(String, sub_i32(n, 1))) }
+  if(leq_i32(n, 0)) { 0 } else { add_i32(1, recur(poly, cont) poly_steps[String](sub_i32(n, 1))) }
 }
 
 pub rec(loop) fn elaborator_steps(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     0
   } else {
-    add_i32(1, one_prod((recur(cont) elaborator_steps(sub_i32(n, 1)), 0(I32)), I32))
+    add_i32(1, one_prod((recur(cont) elaborator_steps(sub_i32(n, 1)), 0[I32]))[I32])
   }
 }
 
@@ -37,7 +37,7 @@ pub rec(loop) fn elaborator_ufcs_steps(n: I32) -> I32 {
   if(leq_i32(n, 0)) {
     0
   } else {
-    add_i32(1, (recur(cont) elaborator_ufcs_steps(sub_i32(n, 1)), 0(I32)).>one_prod(I32))
+    add_i32(1, ((recur(cont) elaborator_ufcs_steps(sub_i32(n, 1)), 0[I32]).>one_prod)[I32])
   }
 }
 
@@ -46,7 +46,7 @@ pub fn main() {
   print(",");
   print(i32_to_string(even_steps(3)));
   print(",");
-  print(i32_to_string(poly_steps(I32, 4)));
+  print(i32_to_string(poly_steps[I32](4)));
   print(",");
   print(i32_to_string(elaborator_steps(2)));
   print(",");

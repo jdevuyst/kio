@@ -28,7 +28,7 @@ pub labels Step = { pos: I32, tag: String, held: ms.Active, top: I32, emitted: B
 pub labels Point = { x: I32, y: I32 };
 
 /// What one sweep produced: the trace, and the key points read off it.
-pub type Trace = lst.List(Step) & lst.List(Point);
+pub type Trace = lst.List[Step] & lst.List[Point];
 
 fn step(pos: I32, tag: String, held: ms.Active, top: I32, emitted: Bool) -> Step {
   {pos, tag, held, top, emitted}
@@ -50,15 +50,15 @@ pub fn x_of(p: Point) -> I32 { p.?{x} }
 
 pub fn y_of(p: Point) -> I32 { p.?{y} }
 
-pub fn steps_of(t: Trace) -> lst.List(Step) {
+pub fn steps_of(t: Trace) -> lst.List[Step] {
   match(t) {
-    .(s: lst.List(Step), _p: lst.List(Point)) { s }
+    .(s: lst.List[Step], _p: lst.List[Point]) { s }
   }
 }
 
-pub fn points_of(t: Trace) -> lst.List(Point) {
+pub fn points_of(t: Trace) -> lst.List[Point] {
   match(t) {
-    .(_s: lst.List(Step), p: lst.List(Point)) { p }
+    .(_s: lst.List[Step], p: lst.List[Point]) { p }
   }
 }
 
@@ -73,24 +73,24 @@ fn apply(e: events.Event, held: ms.Active) -> ms.Active {
 }
 
 /// Both accumulators were built by consing, so both come out backwards.
-fn finish(steps: lst.List(Step), points: lst.List(Point)) -> Trace {
+fn finish(steps: lst.List[Step], points: lst.List[Point]) -> Trace {
   (lst.reverse(steps), lst.reverse(points))
 }
 
 rec(loop) {
-  pub fn run(es: lst.List(events.Event)) -> Trace {
-    recur walk(es, ms.empty(), 0, lst.nil(Step), lst.nil(Point))
+  pub fn run(es: lst.List[events.Event]) -> Trace {
+    recur walk(es, ms.empty(), 0, lst.nil[Step], lst.nil[Point])
   };
   fn walk(
-  , es: lst.List(events.Event)
+  , es: lst.List[events.Event]
   , held: ms.Active
   , previous: I32
-  , steps: lst.List(Step)
-  , points: lst.List(Point)
+  , steps: lst.List[Step]
+  , points: lst.List[Point]
   ) -> Trace {
     match(es.>lst.List.un_list) {
       (
-      , .(e: events.Event, rest: lst.List(events.Event)) {
+      , .(e: events.Event, rest: lst.List[events.Event]) {
           let next = apply(e, held);
           let top = ms.peak(next);
           let changed = logic.not(logic.eq(top, previous));

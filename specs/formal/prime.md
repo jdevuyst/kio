@@ -63,7 +63,7 @@ Type ::=
   | ∃α. T                      (existential quantifier; surface
                                   newtype declarations introduce it
                                   with trailing `<α>` binders)
-  | H(T₁, ..., Tₙ)             (type application: H is a named type head N
+  | H[T₁]...[Tₙ]             (type application: H is a named type head N
                                   or a higher-kinded variable α)
 ```
 
@@ -78,7 +78,7 @@ CPS projector (§ 2.4).
 
 A **named type** `N` is one of:
 
-- A `newtype` declaration head, parameterized over zero or more `α`s, with a payload `Payload[α₁, ..., αₙ]`. Its payload may refer to its own head only when the declaration is written `rec newtype`, or to sibling heads when it is a member of a written `rec { ... }` type group. The head carries two members: a constructor `N.c` and a projector `N.p` (see § 3).
+- A `newtype` declaration head, parameterized over zero or more `α`s, with a payload `Payload[α₁]...[αₙ]`. Its payload may refer to its own head only when the declaration is written `rec newtype`, or to sibling heads when it is a member of a written `rec { ... }` type group. The head carries two members: a constructor `N.c` and a projector `N.p` (see § 3).
 - A `type` declaration head, parameterized over zero or more `α`s. A reference supplies exactly one argument per declared parameter; a bare or undersaturated parametric alias is ill-formed and cannot retain residual alias binders. Exact-arity references substitute their arguments and unfold the body structurally for type formation and equality. An alias introduces neither a nominal boundary nor a term-level constructor or reduction rule. When every edge of an alias chain is instead the fully saturated positional application of its next head, with the same binder kinds, the alias may qualify the terminal `newtype`'s existing constructor and projector; it does not mint members of its own. There is no singleton `rec type`; an alias may participate in a mutual group only when every cycle reaches a sibling nominal head and the alias-only subgraph is acyclic.
 - A `host type` declaration head. A roleless host type may have zero or more kind-`*` parameters; a role-bearing host type is nullary. It is an opaque nominal identity: neither typing nor reduction introspects a host representation (see § 1.2).
 
@@ -88,22 +88,21 @@ A **named type** `N` is one of:
 e ::=
     x                          (variable)
   | ()                        (unit value)
-  | .t(B) | .f(B)             (Bool literals; the annotation B must
+  | .t[B] | .f[B]             (Bool literals; the annotation B must
                                   be a role(bool) type in scope)
-  | n(N_k)                     (integer literal at type N_k;
+  | n[N_k]                     (integer literal at type N_k;
                                   N_k must carry role(k) for some
                                   k ∈ {i8, ..., u128})
-  | r(N_k)                     (float literal at type N_k; N_k
+  | r[N_k]                     (float literal at type N_k; N_k
                                   must carry role(k) for some
                                   k ∈ {f32, f64})
-  | s(S)                       (string literal at type S; S
+  | s[S]                       (string literal at type S; S
                                   must carry role(str))
   | λ(x₁: T₁, ..., xₙ: Tₙ). e  (value abstraction — a written value group)
   | Λα. e                      (one-binder type abstraction — a written
                                   type-parameter binder)
-  | e (T₁, ..., e₁, ...)       (call: type and value arguments
-                                  passed positionally in one list,
-                                  matching the binder order)
+  | e[T]                      (one explicit type instantiation)
+  | e(e₁, ..., eₙ)            (one product-domain value application)
   | { stmt ; ... ; stmt ; e }  (block — zero or more statements
                                   followed by a final expression;
                                   block's value is e, block's type
@@ -141,7 +140,7 @@ Host declarations use the signature-only forms described in § 1.2.
 
 ```text
 SigGroup ::=
-    [α₁, ...]                  (type-binder group)
+    [α]                        (one type-binder group)
   | (x₁: T₁, ...)             (value-parameter group)
 
 TopDecl ::=
@@ -191,7 +190,7 @@ A `rec newtype N` declaration checks its payload under the incoming context exte
 
 Let `G(D̄)` be the directed graph whose vertices are the heads written in a type group and whose edges are exact type references between those heads, after transparent-alias paths are followed. A group is well formed only when it has at least two members and `G(D̄)` is one cyclic strongly connected component. The alias-induced subgraph is acyclic, so every cycle crosses a `newtype` head. A one-member, acyclic, multi-component, helper-containing, or alias-only group is rejected. For `rec newtype N`, the payload must contain a path back to `N`; otherwise the marker is redundant.
 
-Each `newtype` declaration is an **iso-recursive boundary** — from the typing rules' perspective, `N(α)` is **not** equal to its one-step unfold `Payload[α]`. Crossing the boundary in values uses the newtype's declared constructor and projector explicitly. Transparent group-member aliases only provide finite paths to those nominal knots.
+Each `newtype` declaration is an **iso-recursive boundary** — from the typing rules' perspective, `N[α]` is **not** equal to its one-step unfold `Payload[α]`. Crossing the boundary in values uses the newtype's declared constructor and projector explicitly. Transparent group-member aliases only provide finite paths to those nominal knots.
 
 **Recursive-component positivity.** The check called strict positivity in the prose contract uses the composed-variance rule of § 2.5: every recursive use site must have variance `+` or `0` from the payload root. An arrow domain reverses variance, so two reversals compose to `+`; the rule is not a blanket prohibition on occurrences beneath an arrow domain. The check includes paths through transparent group-member aliases and composes through nested newtype parameters over the complete written component.
 
@@ -208,12 +207,12 @@ Each `newtype` declaration is an **iso-recursive boundary** — from the typing 
 Contexts `Γ` carry both type and value bindings:
 
 ```text
-Γ ::= · | Γ, α | Γ, x : T | Γ, N(α₁, ..., αₙ) := …
+Γ ::= · | Γ, α | Γ, x : T | Γ, N[α₁]...[αₙ] := …
 ```
 
 Module checking additionally carries a finite declaration map `Π` from each resolved top-level value identity in scope to one of `pure-fn`, `ordinary-fn`, `host-fn`, `intrinsic`, or `newtype-member`. Local term binders are deliberately absent from `Π`: the function-purity rule constrains declaration references, not values received through parameters or `let` bindings.
 
-The newtype-binding form `N(α₁, ..., αₙ) := { payload: Payload, constructor: c, projector: p }` records the `newtype`'s shape so the constructor / projector typing rules can reach it. An ordinary declaration adds it after its payload is checked; a recursive singleton or group predeclares the applicable head set as described in § 1.4 and completes each binding after checking the bodies.
+The newtype-binding form `N[α₁]...[αₙ] := { payload: Payload, constructor: c, projector: p }` records the `newtype`'s shape so the constructor / projector typing rules can reach it. An ordinary declaration adds it after its payload is checked; a recursive singleton or group predeclares the applicable head set as described in § 1.4 and completes each binding after checking the bodies.
 
 ### 2.2. Term typing rules
 
@@ -228,23 +227,23 @@ Variables, units, and literals:
 
 (B is a role(bool) type in Γ)
 ───────────────────────────────────  T-True
-Γ ⊢ .t(B) : B
+Γ ⊢ .t[B] : B
 
 (B is a role(bool) type in Γ)
 ───────────────────────────────────  T-False
-Γ ⊢ .f(B) : B
+Γ ⊢ .f[B] : B
 
 (N_k is a role(k) type in Γ; k ∈ {i8, ..., u128}; n fits k)
 ─────────────────────────────────────────────────────────────────  T-Int
-Γ ⊢ n(N_k) : N_k
+Γ ⊢ n[N_k] : N_k
 
 (N_k is a role(k) type in Γ; k ∈ {f32, f64}; round_k(r) is finite)
 ───────────────────────────────────────────────────  T-Float
-Γ ⊢ r(N_k) : N_k
+Γ ⊢ r[N_k] : N_k
 
 (S is a role(str) type in Γ)
 ──────────────────────────────────  T-Str
-Γ ⊢ s(S) : S
+Γ ⊢ s[S] : S
 ```
 
 Each literal carries its host-type annotation as a syntactic slot of the term — Kio' admits no unannotated-literal form (see [`../grammar.md` § Kio' grammar](../grammar.md#kio-grammar)). Its annotation must match the literal's lexical shape via the role-admission relation in [`../language.md` § Literals](../language.md#literals). Integer values must lie in the role's signed or unsigned range; integer negative zero denotes zero. `round_k` rounds the exact decimal directly to IEEE binary32 or binary64 using round to nearest, ties to even, preserving subnormals and signed zero, including underflow to signed zero. Type-checking is local: there is no context-driven resolution, no candidate pool, no unification. The surface language's concrete contextual inference rule (see [`../language.md` § Literals](../language.md#literals)) elaborates every unannotated literal to one of the annotated forms above before the program reaches Kio'; that elaboration is part of the surface→Kio' bridge described in [`elaboration.md` § 7.1](elaboration.md#71-unit-literals-and-absurd), not part of the Kio' core. Standalone Kio' checking independently validates the numeric premises.
@@ -270,7 +269,8 @@ Each literal carries its host-type annotation as a syntactic slot of the term �
 Γ ⊢ Λα. e : ∀α. T
 ```
 
-Application threads type arguments and value arguments through one positional list. Presented as right-leaning curried instantiation:
+Type instantiation and value application have separate written stages.
+The rules use one-binder instantiation and one product-domain application:
 
 ```text
 Γ ⊢ e : ∀α. T    Γ ⊢ U type
@@ -282,22 +282,21 @@ Application threads type arguments and value arguments through one positional li
 Γ ⊢ e(a₁, ..., aₙ) : R
 ```
 
-T-TApp is implicitly invoked once per leading `<α>` slot in the joint
-argument list — surface `e(U₁, ..., Uₘ, a₁, ..., aₙ)` corresponds to
-`e[U₁]...[Uₘ](a₁, ..., aₙ)`. The nesting is semantically
-significant: each T-TApp eliminates one `Forall` and leaves the next
-application boundary in place. A backend may erase `U` as data, but it cannot
-collapse that boundary past a later type or value application.
+Each source bracket supplies one type and invokes T-TApp once.
+`e[U₁]...[Uₘ](a₁, ..., aₙ)` preserves those explicit stages in the core.
+A bracketed vector such as `[Ū]` or `[T̄]` in the rules below abbreviates
+that sequence, never one comma-separated source bracket.
+Each written type or binder group contains one entry. Comma lists and empty
+groups are rejected, rather than silently split during formatting.
+Each value group invokes T-App exactly once. Products use the ordinary
+right-associated structure, so `e(a,b)` and `e((a,b))` agree; neither can
+consume a returned Function without another written group.
 
-T-TApp never implies T-App. A Kio' argument list containing only type
-arguments stops after the corresponding type applications, even if the
-resulting function domain is Unit after substitution or alias unfolding. For
-`nil : ∀α. Unit → List(α)`, `nil[A]` therefore has type
-`Unit → List(A)`; saturation is the explicitly nested `nil[A](())`, rendered
-as `nil(A, ())` or `nil(A)()` in source. The written term and its explicit type
-are the whole authority for this distinction. Declaration grouping,
-provenance, and private ABI metadata cannot add an application, and structural
-type equality cannot move T-App before its preceding T-TApp.
+T-TApp never implies T-App. For `nil : ∀α. Unit → List[α]`,
+`nil[A]` has type `Unit → List[A]`; saturation writes `nil[A](())` or
+`nil[A]()`. The written term and its explicit type are the whole authority.
+Declaration grouping, provenance and private ABI metadata cannot add an
+application, and structural equality cannot move T-App across T-TApp.
 
 T-Lam requires concrete parameter types at the point where it checks the
 lambda body. Ordinary bidirectional checking may recover an absent annotation
@@ -306,8 +305,8 @@ One application-local route is distinct: when a lambda literal is the direct
 callee, an absent value-parameter annotation may take the independently
 synthesized type of its corresponding argument at that same node. The
 application follows Kio''s ordinary slot and product-packing rules, completes
-the lambda, and then applies T-Lam and T-App to that concrete term. A Kio' flat
-call still cannot span multiple function layers.
+the lambda, and then applies T-Lam and T-App to that concrete term. A Kio' value
+application likewise consumes only its one Function layer.
 
 Neither route inspects the lambda body to infer a parameter, crosses a `let` or
 another application node, or infers an omitted universal call argument.
@@ -320,33 +319,33 @@ in [`elaboration.md` § Function application](elaboration.md#5-function-applicat
 Given a `newtype` declaration:
 
 ```text
-newtype N(<α₁>, ..., <αₘ>) : Payload[α] { constructor c; projector p; };
+newtype N[α₁]...[αₘ] : Payload[α] { constructor c; projector p; };
 ```
 
 the constructor `N.c` and projector `N.p` are typed by:
 
 ```text
-(N(α₁, ..., αₘ) := { payload: Payload, constructor: c, projector: p } in Γ)
+(N[α₁]...[αₘ] := { payload: Payload, constructor: c, projector: p } in Γ)
 ─────────────────────────────────────────────────────────────────────────  T-NewtypeC
-Γ ⊢ N.c : ∀α₁ ... αₘ. (Payload[α]) → N(α₁, ..., αₘ)
+Γ ⊢ N.c : ∀α₁ ... αₘ. (Payload[α]) → N[α₁]...[αₘ]
 
-(N(α₁, ..., αₘ) := { payload: Payload, constructor: c, projector: p } in Γ)
+(N[α₁]...[αₘ] := { payload: Payload, constructor: c, projector: p } in Γ)
 ─────────────────────────────────────────────────────────────────────────  T-NewtypeP
-Γ ⊢ N.p : ∀α₁ ... αₘ. (N(α₁, ..., αₘ)) → Payload[α]
+Γ ⊢ N.p : ∀α₁ ... αₘ. (N[α₁]...[αₘ]) → Payload[α]
 ```
 
 These displayed schemes are for a newtype without existential binders. With
 existential payload binders `β̄`, its constructor instead has scheme
-`∀ᾱ. ∀β̄. Payload[ᾱ, β̄] → N(ᾱ)`: construction supplies the witnesses,
+`∀ᾱ. ∀β̄. Payload[ᾱ][β̄] → N[ᾱ]`: construction supplies the witnesses,
 but they do not appear in the result nominal. Its projector has the CPS
 scheme in § 2.4, not the direct-return T-NewtypeP scheme above.
 
-The `Payload[α]` may mention only type heads in its lexical context: earlier declarations and imports, plus the exact head set of an enclosing explicit recursive singleton or group. Each newtype's nominal name is itself an iso-recursive boundary, so `N(α)` ↔ `Payload[α]` is **not** equated by the typing rules. To cross the boundary in values, apply the constructor / projector explicitly (T-App on `N.c` or `N.p`). The reduction relation (§ 3) makes wrap-then-unwrap reduce, formalizing the iso-recursive law at the value level.
+The `Payload[α]` may mention only type heads in its lexical context: earlier declarations and imports, plus the exact head set of an enclosing explicit recursive singleton or group. Each newtype's nominal name is itself an iso-recursive boundary, so `N[α]` ↔ `Payload[α]` is **not** equated by the typing rules. To cross the boundary in values, apply the constructor / projector explicitly (T-App on `N.c` or `N.p`). The reduction relation (§ 3) makes wrap-then-unwrap reduce, formalizing the iso-recursive law at the value level.
 
 Write `A ⇝id N` when an in-scope alias `A` reaches `newtype N` through a
 finite chain in which every declaration has the same binder kinds and every
 body is the fully saturated positional application of the next head:
-`A[α₁]…[αₘ] = B(α₁, …, αₘ)`. Cycles, missing targets, partial applications,
+`A[α₁]…[αₘ] = B[α₁]…[αₘ]`. Cycles, missing targets, partial applications,
 reordered arguments, and structural or otherwise transformed bodies do not
 establish this relation. If `A ⇝id N`, `A.c` and `A.p` are alternate qualified
 paths to the exact terms `N.c` and `N.p`, with the schemes above. The alias
@@ -367,7 +366,7 @@ __either__        : ∀α. ∀β. ∀γ. (α | β, α → γ, β → γ) → γ
 __pair__       : ∀α. ∀β. (α, β) → α & β
 __fst__           : ∀α. ∀β. (α & β) → α
 __snd__           : ∀α. ∀β. (α & β) → β
-__if_then_else__(B) : ∀α. (B, . → α, . → α) → α   (B concrete; role(B) = bool)
+__if_then_else__[B] : ∀α. (B, . → α, . → α) → α   (B concrete; role(B) = bool)
 __absurd__        : ∀α. ! → α
 ```
 
@@ -393,14 +392,14 @@ ordinary scheme; it does not constrain a generic `α`.
 **Existentials live inside `newtype`.** Kio' has no separate existential introduction or elimination intrinsic. The `newtype`-declared existential binder run (see § 1.3 and [`../prime.md` § Existential introduction and elimination](../prime.md#existential-introduction-and-elimination)) is the only existential-introducing construct; the newtype's CPS projector
 
 ```text
-N.p : ∀α₁ … αₘ. (N(α₁, …, αₘ)) → ∀ρ. (∀β₁ … βₙ. (Payload[α, β]) → ρ) → ρ
+N.p : ∀α₁ … αₘ. (N[α₁]…[αₘ]) → ∀ρ. (∀β₁ … βₙ. (Payload[α][β]) → ρ) → ρ
 ```
 
 is the only elimination form. The continuation's `∀β₁ … βₙ.` binders are System F universals scoping the existential witnesses — the body type cannot leak into `ρ` by ordinary scope rules, so no separate skolemization machinery is needed.
 
 ### 2.5. Strict positivity
 
-Strict positivity is stated as a side condition on `newtype` declarations. Let `αᵢ` be the i-th type-parameter of a parametric `newtype` `N([α₁], ..., [αₘ])`. The **variance** of `αᵢ` in `N`'s payload is computed by mutual fixpoint over the finite set of nominal declarations reachable through written type references:
+Strict positivity is stated as a side condition on `newtype` declarations. Let `αᵢ` be the i-th type-parameter of a parametric `newtype` `N[α₁]...[αₘ]`. The **variance** of `αᵢ` in `N`'s payload is computed by mutual fixpoint over the finite set of nominal declarations reachable through written type references:
 
 ```text
 Variance v ::=  0       (parameter is unused / phantom)
@@ -425,11 +424,11 @@ Join (combining variances when a parameter appears in multiple positions):
 The **variance environment** `V` maps each reachable parametric `newtype` plus the slot index to a variance. `V` is computed by the monotone fixpoint:
 
 1. Initialize every parameter to `0`.
-2. For each parametric `newtype` `N([α₁], ..., [αₘ]) : Payload[α]`, walk `Payload[α]` computing the join over all occurrences of each `αᵢ`, composing with the variance of each enclosing position:
+2. For each parametric `newtype` `N[α₁]...[αₘ] : Payload[α]`, walk `Payload[α]` computing the join over all occurrences of each `αᵢ`, composing with the variance of each enclosing position:
    - sum / product preserve (composition with `+`),
    - arrow LHS flips (composition with `−`) on the parameter side,
    - arrow RHS preserves (composition with `+`),
-   - entering a nested newtype application `M(...)` composes via `V(M, j)` for the j-th argument slot.
+   - entering a nested newtype application `M[...]` composes via `V(M, j)` for the j-th argument slot.
 3. Repeat until `V` reaches a fixed point. (Monotone over the four-element lattice; finitely many parameters; terminates.)
 
 **Roleless host types** have unknown variance: every parameter slot of a
@@ -442,7 +441,7 @@ A type variable of higher kind has no declared variance for its argument
 slots. Each slot is therefore conservatively invariant (`*`) when composing
 recursive occurrences through an application headed by that variable. Knowing
 the kind alone does not establish covariance. For example, in a declaration
-parameterized by `F: * -> *`, a recursive occurrence in `F(N(F))` cannot be
+parameterized by `F: * -> *`, a recursive occurrence in `F[N[F]]` cannot be
 accepted by assuming that `F` is covariant. Known nominal heads use their
 established variances, and transparent aliases are unfolded before applying
 these rules.
@@ -564,21 +563,21 @@ let x = a ; e                             →  e[x := a]                       (
 
 () ; e                                    →  e                                (β-SeqUnit)
 
-__either__(A, B, C, __left__(A, B, a), fl, fr)   →  fl(a)                 (ι-LeftEither)
-__either__(A, B, C, __right__(A, B, b), fl, fr)  →  fr(b)                 (ι-RightEither)
+__either__[A][B][C](__left__[A][B](a), fl, fr)   →  fl(a)                 (ι-LeftEither)
+__either__[A][B][C](__right__[A][B](b), fl, fr)  →  fr(b)                 (ι-RightEither)
 
-__fst__(A, B, __pair__(A, B, a, b))    →  a                               (ι-Fst)
-__snd__(A, B, __pair__(A, B, a, b))    →  b                               (ι-Snd)
+__fst__[A][B](__pair__[A][B](a, b))    →  a                               (ι-Fst)
+__snd__[A][B](__pair__[A][B](a, b))    →  b                               (ι-Snd)
 
-N.p(T̄, N.c(T̄, v))                          →  v                               (ι-Newtype)
+N.p[T̄](N.c[T̄](v))                          →  v                               (ι-Newtype)
                                               (where N has no existentials and
                                               T̄ matches both sides)
 
-N.p(T̄, N.c(T̄, Ū, v)) → Λρ. λ(k: ∀β̄. Payload[T̄, β̄] → ρ). k[Ū](v)   (ι-NewtypeExists)
+N.p[T̄](N.c[T̄][Ū](v)) → Λρ. λ(k: ∀β̄. Payload[T̄][β̄] → ρ). k[Ū](v)   (ι-NewtypeExists)
                        (where Ū are N's existential witnesses and ρ is fresh)
 
-__if_then_else__(B, A, .t(B), t, e)       →  t(())                              (ι-IfTrue)
-__if_then_else__(B, A, .f(B), t, e)       →  e(())                              (ι-IfFalse)
+__if_then_else__[B][A](.t[B], t, e)       →  t(())                              (ι-IfTrue)
+__if_then_else__[B][A](.f[B], t, e)       →  e(())                              (ι-IfFalse)
 ```
 
 `__absurd__` has no head-reduction rule: `!` has no introduction value to
@@ -590,7 +589,7 @@ neutral at an opaque host operation, the elimination remains stuck as well
 
 - A host call applied to fully-evaluated arguments (host calls are opaque — see § 3.3).
 - An expression statement whose left side is stuck on a host call. The statement waits on that opaque action and is itself a residual sequence; it does not reduce to the rest of the block.
-- An `__if_then_else__` whose condition is a stuck host call (the condition is not a literal `.t(B)` / `.f(B)`, so neither ι rule applies).
+- An `__if_then_else__` whose condition is a stuck host call (the condition is not a literal `.t[B]` / `.f[B]`, so neither ι rule applies).
 - An `__absurd__` whose argument is a stuck host call (a host function declared `-> !`, applied but not reduced).
 
 These are normal forms by definition; they are precisely the residuals the partial evaluator and equivalence relation in [`equiv.md`](equiv.md) compare structurally.
@@ -636,7 +635,7 @@ Furthermore, if `· ⊢ e : T` and `e → e'`, then `· ⊢ e' : T` (preservatio
 **Proof sketch.** Standard progress + preservation by induction on the typing derivation. The two non-standard pieces:
 
 - **Iso-recursive `newtype` boundary.** An introduction value of type
-  `N(T̄)` arises from its constructor, with a payload and any existential
+  `N[T̄]` arises from its constructor, with a payload and any existential
   witnesses. For a nonexistential declaration, ι-Newtype preserves the type
   by composing T-NewtypeC and T-NewtypeP. For an existential declaration,
   ι-NewtypeExists passes the same witnesses and payload to the universally
@@ -695,21 +694,21 @@ steps (`→*`), so the term itself is included:
 
 For recursive newtypes, the fixed-point variables range over **families** of
 candidates indexed by the declared type parameters and their interpretations.
-All well-kinded instantiations are included, not just one fixed `N(T̄)`;
+All well-kinded instantiations are included, not just one fixed `N[T̄]`;
 this matters when a payload recurs at different type arguments. Given such
 a family assignment `X`, interpret a newtype `N` by the constructor-aware
 operator
 
 ```text
 Φ_N(X)(Ū, C̄) =
-  { e ∈ SN at N(Ū) |
-    whenever e →* N.c(Ū, payload),
+  { e ∈ SN at N[Ū] |
+    whenever e →* N.c[Ū](payload),
     payload belongs to ⟦Payload_N⟧ with parameters (Ū, C̄)
     and recursive heads interpreted by X }
 ```
 
 This is not an equation identifying the nominal type with its payload.
-The `N.c` boundary is part of `Φ_N`; opaque inhabitants of `N(Ū)` remain
+The `N.c` boundary is part of `Φ_N`; opaque inhabitants of `N[Ū]` remain
 admissible neutrals. For an existential payload, each reachable constructor
 additionally has witness types. Its payload condition requires that **there
 exist** candidate interpretations at those witness types under which the

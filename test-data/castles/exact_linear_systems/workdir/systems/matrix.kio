@@ -9,9 +9,9 @@ import testapi(Bool, I32, String);
 import testapi/arith as a;
 import testapi/iter(loop);
 
-pub type Row = c.List(q.Rational);
+pub type Row = c.List[q.Rational];
 
-pub type Matrix = c.List(Row);
+pub type Matrix = c.List[Row];
 
 pub fn at(row: Row, index: I32) -> q.Rational {
   match(l.at(index, row)) {
@@ -23,11 +23,11 @@ pub fn at(row: Row, index: I32) -> q.Rational {
 pub fn row_at(matrix: Matrix, index: I32) -> Row {
   match(l.at(index, matrix)) {
     .(row: Row) { row };
-    .() { c.nil(_) }
+    .() { c.nil[_] }
   }
 }
 
-pub fn replace[A](values: c.List(A), index: I32, value: A) -> c.List(A) {
+pub fn replace[A](values: c.List[A], index: I32, value: A) -> c.List[A] {
   l.append(l.take(index, values), c.cons(value, l.drop(a.add_i32(index, 1), values)))
 }
 
@@ -52,7 +52,7 @@ rec(loop) fn subtract_walk(row: Row, pivot: Row, factor: q.Rational, result: Row
 }
 
 pub fn subtract_multiple(row: Row, pivot: Row, factor: q.Rational) -> Row {
-  subtract_walk(row, pivot, factor, c.nil(_))
+  subtract_walk(row, pivot, factor, c.nil[_])
 }
 
 rec(loop) fn dot_walk(left: Row, right: Row, total: q.Rational) -> q.Rational {
@@ -78,6 +78,6 @@ pub fn all_zero(row: Row) -> Bool {
 
 pub fn show(row: Row) -> String { l.to_string(q.show, row) }
 
-pub fn indices(count: I32) -> c.List(I32) {
+pub fn indices(count: I32) -> c.List[I32] {
   l.iterate(count, .(n) { a.add_i32(n, 1) }, 0)
 }

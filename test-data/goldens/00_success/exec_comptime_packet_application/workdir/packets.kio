@@ -1,0 +1,23 @@
+module packets;
+
+import __comptime__;
+
+pure fn invoke(ct: __Comptime__, body: __Checked_term__) -> __Checked_term__ {
+  let packet = (ct, __term_type__((ct, body)), body, __term_unit__(ct));
+  __term_call__(packet)
+}
+
+pure fn ordinary_impl(ct: __Comptime__, _result: __Type__, body: __Checked_term__) -> __Checked_term__ {
+  invoke(ct, body)
+}
+
+pure fn marked_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _result: __Type__
+, body: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (invoke(ct, body), fills) }
+
+pub macro ordinary : [Result] (. -> Result) -> Result { trailing thunk; impl ordinary_impl }
+
+pub macro marked : [Result] (. -> Result) -> Result { trailing thunk; impl(fills) marked_impl }

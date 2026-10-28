@@ -68,7 +68,7 @@ fn render_sum(value: I32 | .) -> String {
 
 fn string_is_empty(s: String) -> Bool { string_eq(s, "") }
 
-fn vec_to_string(v: Vec(I32)) -> String {
+fn vec_to_string(v: Vec[I32]) -> String {
   let body =
     fold(
     , .(acc: String, n: I32) -> String {
@@ -81,14 +81,14 @@ fn vec_to_string(v: Vec(I32)) -> String {
   string_concat("[", string_concat(body, "]"))
 }
 
-fn demo_vec() -> Vec(I32) {
-  fold_range(0, 20, .(acc: Vec(I32), i: I32) -> Vec(I32) { push_back(acc, mul(i, 10)) }, empty(I32))
+fn demo_vec() -> Vec[I32] {
+  fold_range(0, 20, .(acc: Vec[I32], i: I32) -> Vec[I32] { push_back(acc, mul(i, 10)) }, empty[I32])
 }
 
 pub fn main() {
   let v = demo_vec();
   show("length(v)", int_to_string(length(v)));
-  show("is_empty(empty)", bool_to_string(is_empty(empty(I32))));
+  show("is_empty(empty)", bool_to_string(is_empty(empty[I32])));
   show("is_empty(v)", bool_to_string(is_empty(v)));
   show_result_i32("at(v, 0)", at(v, 0));
   show_result_i32("at(v, 7)", at(v, 7));
@@ -108,9 +108,9 @@ pub fn main() {
   , "pop_back(v4) drops 200"
   , fold_result(
     , "none"
-    , .(p: I32 & Vec(I32)) -> String {
+    , .(p: I32 & Vec[I32]) -> String {
         match(p) {
-          .(x: I32, rest: Vec(I32)) {
+          .(x: I32, rest: Vec[I32]) {
             string_concat(
             , "popped "
             , string_concat(int_to_string(x), string_concat(", len ", int_to_string(length(rest))))
@@ -134,19 +134,19 @@ pub fn main() {
   show("concat(slice(0,3), slice(17,20))", vec_to_string(concat(a, b)));
   show("a ~~ b", vec_to_string(a ~~ b));
   show("slice(v, 5, 9)", vec_to_string(slice(v, 5, 9)));
-  let .(source_list: List(I32)) = [* 1, 2, 3 *];
-  let .(roundtrip: List(I32)) = to_list(from_list(source_list));
+  let .(source_list: List[I32]) = [* 1, 2, 3 *];
+  let .(roundtrip: List[I32]) = to_list(from_list(source_list));
   show("canonical List roundtrip", lists.to_string(int_to_string, roundtrip));
-  let .(empty_source: List(I32)) = [* *];
+  let .(empty_source: List[I32]) = [* *];
   show("canonical empty List", int_to_string(length(from_list(empty_source))));
   let unit_vec = from_list([* () *]);
   let render_unit = .(_unit: .) -> String { "unit" };
   show_result("at(Unit, 0)", at(unit_vec, 0), render_unit);
   show_result("at(Unit, 1)", at(unit_vec, 1), render_unit);
-  let render_unit_pair = .(_pair: . & Vec(.)) -> String { "unit pair" };
+  let render_unit_pair = .(_pair: . & Vec[.]) -> String { "unit pair" };
   show_result("pop_back(Unit)", pop_back(unit_vec), render_unit_pair);
-  show_result("pop_back(empty Unit)", pop_back(empty(.)), render_unit_pair);
-  let nested = from_list([* widen_sum(7, I32 | .), widen_sum((), I32 | .) *]);
+  show_result("pop_back(empty Unit)", pop_back(empty[.]), render_unit_pair);
+  let nested = from_list([* widen_sum(7[I32])[I32 | .], widen_sum(())[I32 | .] *]);
   show_result("at(nested number)", at(nested, 0), render_sum);
   show_result("at(nested unit)", at(nested, 1), render_sum);
   show_result("at(nested missing)", at(nested, 2), render_sum);

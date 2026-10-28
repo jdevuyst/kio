@@ -125,9 +125,9 @@ enum PublicationCommand<T> {
         resolved: Vec<T>,
         binders: super::TypeBinderScope,
     },
-    MarkValueAtTypeSlot {
+    MacroOutputStage {
         call_site: crate::ast::ExpressionSite,
-        slot_index: usize,
+        stage: usize,
     },
     CallSplit {
         call_site: crate::ast::ExpressionSite,
@@ -245,13 +245,9 @@ impl<T> PublicationCommand<T> {
                 resolved: resolved.into_iter().map(map).collect(),
                 binders,
             },
-            Self::MarkValueAtTypeSlot {
-                call_site,
-                slot_index,
-            } => PublicationCommand::MarkValueAtTypeSlot {
-                call_site,
-                slot_index,
-            },
+            Self::MacroOutputStage { call_site, stage } => {
+                PublicationCommand::MacroOutputStage { call_site, stage }
+            }
             Self::CallSplit {
                 call_site,
                 split_after_slot,
@@ -786,15 +782,12 @@ impl PublicationBuilder {
         });
     }
 
-    pub(crate) fn mark_value_at_type_slot(
+    pub(crate) fn record_macro_output_stage(
         &mut self,
         call_site: crate::ast::ExpressionSite,
-        slot_index: usize,
+        stage: usize,
     ) {
-        self.push_command(PublicationCommand::MarkValueAtTypeSlot {
-            call_site,
-            slot_index,
-        });
+        self.push_command(PublicationCommand::MacroOutputStage { call_site, stage });
     }
 
     pub(crate) fn record_call_split(
@@ -1649,16 +1642,8 @@ impl ClosedPublicationDelta {
                         .collect(),
                     binders,
                 ),
-                PublicationCommand::MarkValueAtTypeSlot {
-                    call_site,
-                    slot_index,
-                } => {
-                    elaborations.mark_value_at_type_slot(module_path, call_site.id, slot_index);
-                    elaborations.position_index.record_value_at_type_slot(
-                        module_path,
-                        call_site.span,
-                        slot_index,
-                    );
+                PublicationCommand::MacroOutputStage { call_site, stage } => {
+                    elaborations.record_macro_output_stage(module_path, call_site.id, stage)
                 }
                 PublicationCommand::CallSplit {
                     call_site,
@@ -2143,15 +2128,17 @@ mod tests {
         };
         assert_eq!(resolved, [10, 20, 30]);
 
-        let zero =
-            StagedPublicationCommand::<usize>::freeze(PublicationCommand::MarkValueAtTypeSlot {
-                call_site: fresh_site(span(1)),
-                slot_index: 4,
-            });
+        let zero = StagedPublicationCommand::<usize>::freeze(PublicationCommand::CallSplit {
+            call_site: fresh_site(span(1)),
+            split_after_slot: 4,
+        });
         assert_eq!(zero.frozen.type_slot_count, 0);
         assert!(matches!(
             zero.frozen.materialize(zero.type_slots),
-            PublicationCommand::MarkValueAtTypeSlot { slot_index: 4, .. }
+            PublicationCommand::CallSplit {
+                split_after_slot: 4,
+                ..
+            }
         ));
 
         assert_eq!(
@@ -2255,7 +2242,7 @@ mod tests {
             vec![scoped_type(&store, parent, unit(10))],
             Default::default(),
         );
-        parent_builder.mark_value_at_type_slot(call_site, 1);
+        parent_builder.record_call_split(call_site, 1);
         let child_slot = parent_builder.reserve_child(&store, child);
 
         let mut child_builder = PublicationBuilder::new(&store, &child_delta);
@@ -2284,7 +2271,7 @@ mod tests {
             vec![scoped_type(&store, parent, sum(13))],
             Default::default(),
         );
-        parent_builder.mark_value_at_type_slot(call_site, 3);
+        parent_builder.record_call_split(call_site, 3);
         let mut elaborations = Elaborations::new();
         let outputs = parent_builder
             .finish()
@@ -2311,11 +2298,19 @@ mod tests {
                 .collect::<Vec<_>>(),
             [".", "!", ". & .", ". | ."]
         );
-        assert!(elaborations.is_value_at_type_slot("<test>", call_site.id, 1));
-        assert!(elaborations.is_value_at_type_slot("<test>", call_site.id, 3));
+        assert!(
+            elaborations
+                .call_splits_for("<test>", call_site.id)
+                .is_some_and(|splits| splits.contains(&1))
+        );
+        assert!(
+            elaborations
+                .call_splits_for("<test>", call_site.id)
+                .is_some_and(|splits| splits.contains(&3))
+        );
         assert_eq!(
             elaborations.call_splits_for("<test>", call_site.id),
-            Some([2].as_slice())
+            Some([1, 2, 3].as_slice())
         );
     }
 
@@ -2358,7 +2353,7 @@ mod tests {
             if index + 1 < DEPTH {
                 child_slots[index] = Some(builder.reserve_child(&store, owners[index + 1]));
             }
-            builder.mark_value_at_type_slot(fresh_site(span(index)), 0);
+            builder.record_call_split(fresh_site(span(index)), 0);
         }
 
         let mut retained = None;

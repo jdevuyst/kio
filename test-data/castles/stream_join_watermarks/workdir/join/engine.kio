@@ -12,9 +12,9 @@ import testapi/text as text;
 
 pub fn empty() -> m.State {
   {
-  , m.left = core.nil(_)
-  , m.right = core.nil(_)
-  , m.pairs = core.nil(_)
+  , m.left = core.nil[_]
+  , m.right = core.nil[_]
+  , m.pairs = core.nil[_]
   , m.left_watermark = 0
   , m.right_watermark = 0
   , m.accepted_left = 0
@@ -40,12 +40,12 @@ fn matches(left: m.Event, right: m.Event) -> Bool {
 
 rec(loop) fn probe(
 , event: m.Event
-, others: core.List(m.Event)
+, others: core.List[m.Event]
 , from_left: Bool
-, pairs: core.List(m.Pair)
-) -> core.List(m.Pair) {
+, pairs: core.List[m.Pair]
+) -> core.List[m.Pair] {
   match(core.uncons(others)) {
-    .(other: m.Event, tail: core.List(m.Event)) {
+    .(other: m.Event, tail: core.List[m.Event]) {
       let .(left, right) = if(from_left) { (event, other) } else { (other, event) };
       let next =
         if(matches(left, right)) {

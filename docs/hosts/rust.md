@@ -197,7 +197,7 @@ module greeter/api;
 
 pub fn id[A](value: A) -> A { value }
 
-pub fn keep[*F][A](value: F(A) -> F(A)) -> (F(A) -> F(A)) { value }
+pub fn keep[*F][A](value: F[A] -> F[A]) -> (F[A] -> F[A]) { value }
 ```
 
 `id` returns its argument. `keep` returns a callback unchanged, keeping its
@@ -346,7 +346,7 @@ marker, including a `KioNative` native-container marker such as the `Optional`
 example. `Apply` remains the exact public-facade authority. The default
 `lift` / `project` methods use that selected marker's codec. A representation-
 varying container overrides the pair with a lossless, substitution-stable
-opaque-token representation, as `Optional` does above. An abstract `F(A)`
+opaque-token representation, as `Optional` does above. An abstract `F[A]`
 nevertheless remains the `KioApplied1<F, A>` marker with `KioApply1<F, A>` as
 its facade; choosing the exact marker does not make the native container the
 abstract facade.

@@ -25,7 +25,7 @@ fn select(value: I32 | I32) -> I32 {
 pub fn from_bottom(value: ! | I32) -> I32 {
   let impossible = __absurd__;
   let fold = __either__;
-  fold(value, impossible(I32), .(n: I32) { n })
+  fold(value, impossible[I32], .(n: I32) { n })
 }
 
 pub fn main() {
@@ -35,20 +35,20 @@ pub fn main() {
   let pair = make(marked("a\n", 10), marked("b\n", 20));
   emit(first(pair));
   emit(second(pair));
-  emit(first(make(3, 4(I32))));
-  let partial = __pair__(I32, I32);
+  emit(first(make(3, 4[I32])));
+  let partial = __pair__[I32][I32];
   emit(second(partial(5, 6)));
   let returned = pair_factory();
-  emit(first(returned(7, 8(I32))));
+  emit(first(returned(7, 8[I32])));
   emit(second(passed(__pair__, 9, 11)));
   let left = __left__;
   let right = __right__;
-  emit(select(left(I32, I32, 12)));
-  emit(select(right(I32, I32, 13)));
-  let choose = __if_then_else__(Bool);
+  emit(select(left[I32][I32](12)));
+  emit(select(right[I32][I32](13)));
+  let choose = __if_then_else__[Bool];
   emit(choose(arith.lt_i32(1, 2), .() { marked("then\n", 14) }, .() { marked("bad\n", 0) }));
   emit(choose(arith.lt_i32(2, 1), .() { marked("bad\n", 0) }, .() { marked("else\n", 15) }));
-  emit(from_bottom(right(!, I32, 16)));
+  emit(from_bottom(right[!][I32](16)));
   let callback = first(make(.(n: I32) { arith.add_i32(n, 1) }, ()));
   emit(callback(20))
 }

@@ -20,30 +20,28 @@ op _ => _ { impl pair_of }
 
 // Same cons-list of `a` as in exec_operators_cons_list — the
 // `::` operator gives it the standard right-folded surface.
-rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
+fn nil[A]() -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](x: A, xs: List(A)) -> List(A) { List.cons(widen_sum((x, xs), . | (A & List(A)))) }
+fn push[A](x: A, xs: List[A]) -> List[A] { List.cons(widen_sum((x, xs))[. | (A & List[A])]) }
 
 op _ :: __ { impl push }
 
-fn step[A][B](f: (A & B) -> B, acc: B, ys: List(A)) -> (B & List(A)) | B {
+fn step[A][B](f: (A & B) -> B, acc: B, ys: List[A]) -> (B & List[A]) | B {
   match(ys.>List.un_list) {
     (
-    , .(x: A, rest: List(A)) { widen_sum((f(x, acc), rest), (B & List(A)) | B) }
-    , .(_empty: .) { widen_sum(acc, (B & List(A)) | B) }
+    , .(x: A, rest: List[A]) { widen_sum((f(x, acc), rest))[(B & List[A]) | B] }
+    , .(_empty: .) { widen_sum(acc)[(B & List[A]) | B] }
     )
   }
 }
 
-fn fold[A][B](f: (A & B) -> B, seed: B, xs: List(A)) -> B {
-  loop(
-  , B & List(A)
-  , B
-  , .(state: B & List(A)) -> (B & List(A)) | B {
+fn fold[A][B](f: (A & B) -> B, seed: B, xs: List[A]) -> B {
+  loop[B & List[A]][B](
+  , .(state: B & List[A]) -> (B & List[A]) | B {
       match(state) {
-        .(acc: B, ys: List(A)) { step(f, acc, ys) }
+        .(acc: B, ys: List[A]) { step(f, acc, ys) }
       }
     }
   , (seed, xs)
@@ -64,6 +62,6 @@ fn format_step(p: Pair, acc: String) -> String {
 }
 
 pub fn main() {
-  let d = ("a" => 1) :: ("b" => 2) :: ("c" => 3) :: nil(Pair, ());
+  let d = ("a" => 1) :: ("b" => 2) :: ("c" => 3) :: nil[Pair](());
   print(fold(format_step, "", d))
 }

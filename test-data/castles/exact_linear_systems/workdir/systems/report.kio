@@ -47,7 +47,7 @@ rec(loop) fn directions(original: m.Matrix, variables: I32, vectors: m.Matrix, i
   }
 }
 
-fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List(I32)) {
+fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots: c.List[I32]) {
   match(c.head(pivots)) {
     .(column: I32) {
       let changed = m.replace(particular, column, q.add(m.at(particular, column), q.integer(1)));
@@ -59,7 +59,7 @@ fn perturbed_check(original: m.Matrix, variables: I32, particular: m.Row, pivots
   }
 }
 
-fn family(original: m.Matrix, variables: I32, pivots: c.List(I32), values: solution.Family) {
+fn family(original: m.Matrix, variables: I32, pivots: c.List[I32], values: solution.Family) {
   let particular = values.?{solution.particular};
   let nullspace = values.?{solution.directions};
   let free = values.?{solution.free_columns};

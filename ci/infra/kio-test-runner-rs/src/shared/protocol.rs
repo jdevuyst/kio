@@ -1970,7 +1970,7 @@ const TYPES_GENERATED_SURFACE: &[HostTypeBinding] = &[
     HostTypeBinding::role("prog", "F32", RoleFixture::F32),
     HostTypeBinding::role("prog", "F64", RoleFixture::F64),
     HostTypeBinding::role("prog", "String", RoleFixture::String),
-    HostTypeBinding::role("prog", "Bool", RoleFixture::Bool),
+    HostTypeBinding::role("control", "Bool", RoleFixture::Bool),
     HostTypeBinding::role("testapi", "String", RoleFixture::String),
     HostTypeBinding::role("testapi", "I32", RoleFixture::I32),
     HostTypeBinding::role("testapi", "Int", RoleFixture::I32),
@@ -6153,6 +6153,21 @@ mod tests {
         assert_eq!(surface.host_fns, FNS_GENERATED_OBSERVATION);
         assert_eq!(surface.host_types, TYPES_GENERATED_SURFACE);
         assert_eq!(surface.host_types.len(), 18);
+        assert!(core.host_types.contains(&HostTypeBinding::role(
+            "prog",
+            "Bool",
+            RoleFixture::Bool,
+        )));
+        assert!(surface.host_types.contains(&HostTypeBinding::role(
+            "control",
+            "Bool",
+            RoleFixture::Bool,
+        )));
+        assert!(!surface.host_types.contains(&HostTypeBinding::role(
+            "prog",
+            "Bool",
+            RoleFixture::Bool,
+        )));
         assert_eq!(
             surface
                 .host_types

@@ -10,7 +10,7 @@ import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, lt_i32, sub_i32);
 
-pub type Book_result = result.Result(Book, Failure);
+pub type Book_result = result.Result[Book][Failure];
 
 /// The catalog index is a `dict` keyed by call-number; a miss is a
 /// domain failure, not an absent value the caller has to think about.

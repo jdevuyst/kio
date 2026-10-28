@@ -15,9 +15,9 @@ type Alias = (// alias start
 type Function = (// function domain
 .) -> (// function result
 .);
-type Applied = Pair((. // first argument
-), (. // last argument
-));
+type Applied = Pair[(. // first argument
+)][(. // last argument
+)];
 type Chained = ((// chain start
 . // chain end
 ) & .);

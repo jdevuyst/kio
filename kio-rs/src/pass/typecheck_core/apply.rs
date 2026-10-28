@@ -37,8 +37,8 @@ use super::types::collect_free_type_vars;
 use super::types::fresh_type_var;
 use super::{
     AliasCtx, InternedType, PendingRecOrderState, PolymorphicInstantiationKey, Synth, TypeCtx,
-    Typer, TyperPhase, check_well_formed_type, display_type, expr_to_type_arg,
-    source_type_spelling_with_bound, subst_type, synth_path,
+    Typer, TyperPhase, check_well_formed_type, display_type, source_type_spelling_with_bound,
+    subst_type,
 };
 #[cfg(feature = "surface")]
 use super::{
@@ -229,6 +229,7 @@ fn update_terminal_public_layer_work(update: impl FnOnce(&mut TerminalPublicLaye
 #[cfg(all(test, feature = "surface"))]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) struct FinalMacroSuccessorWork {
+    pub(crate) fixed_stage_continues: usize,
     pub(crate) final_selected_layer_continues: usize,
     pub(crate) terminal_continues: usize,
     pub(crate) migrated_descents: usize,
@@ -240,6 +241,7 @@ pub(crate) struct FinalMacroSuccessorWork {
 thread_local! {
     static FINAL_MACRO_SUCCESSOR_WORK: std::cell::Cell<FinalMacroSuccessorWork> =
         const { std::cell::Cell::new(FinalMacroSuccessorWork {
+            fixed_stage_continues: 0,
             final_selected_layer_continues: 0,
             terminal_continues: 0,
             migrated_descents: 0,
@@ -392,6 +394,31 @@ fn record_lambda_header() {
 }
 
 #[cfg(all(test, feature = "surface"))]
+thread_local! {
+    static REC_ORDER_SOURCE_SPANS: std::cell::RefCell<Option<Vec<Span>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn reset_rec_order_source_spans() {
+    REC_ORDER_SOURCE_SPANS.with(|spans| *spans.borrow_mut() = Some(Vec::new()));
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn take_rec_order_source_spans() -> Vec<Span> {
+    REC_ORDER_SOURCE_SPANS.with(|spans| spans.borrow_mut().take().unwrap_or_default())
+}
+
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn record_rec_order_source_span(span: Span) {
+    REC_ORDER_SOURCE_SPANS.with(|spans| {
+        if let Some(spans) = spans.borrow_mut().as_mut() {
+            spans.push(span);
+        }
+    });
+}
+
+#[cfg(all(test, feature = "surface"))]
 fn record_rec_order_source_visit() {
     update_ordinary_planning_work(|work| work.rec_order_source_visits += 1);
 }
@@ -510,6 +537,7 @@ pub(crate) struct PublicHeaderWork {
     pub(crate) pending_exports: usize,
     pub(crate) bridge_exports: usize,
     pub(crate) blocked_macros: usize,
+    pub(crate) unmarked_publications: usize,
 }
 
 #[cfg(all(test, feature = "surface"))]
@@ -519,6 +547,7 @@ thread_local! {
             pending_exports: 0,
             bridge_exports: 0,
             blocked_macros: 0,
+            unmarked_publications: 0,
         }) };
 }
 
@@ -585,7 +614,7 @@ where
     pub(crate) fn type_slot_candidate(self) -> bool {
         match self {
             Self::Type(_) => true,
-            Self::Value(value) => super::value_arg_looks_like_type_arg(value),
+            Self::Value(_) => false,
         }
     }
 
@@ -595,7 +624,10 @@ where
     {
         match self {
             Self::Type(ty) => Ok(ty.clone()),
-            Self::Value(value) => expr_to_type_arg(value),
+            Self::Value(value) => Err(Error::type_(
+                value.span(),
+                "a value argument cannot fill a type-argument stage",
+            )),
         }
     }
 }
@@ -605,16 +637,6 @@ where
     P: crate::ast::Phase,
 {
     args.iter().map(CallArgRef::from_arg).collect()
-}
-
-fn owned_call_arg_from_ref<P>(arg: CallArgRef<'_, P>) -> crate::ast::CallArg<P>
-where
-    P: crate::ast::Phase + Clone,
-{
-    match arg {
-        CallArgRef::Type(ty) => crate::ast::CallArg::Type(ty.clone()),
-        CallArgRef::Value(value) => crate::ast::CallArg::Value(value.clone()),
-    }
 }
 
 fn effective_rec_order_args<'m, P>(
@@ -657,34 +679,7 @@ where
         .count()
 }
 
-fn result_after_written_type_arguments<P>(
-    binders: &[crate::ast::TypeParam],
-    written_type_args: &[CallArgRef<'_, P>],
-    result: &crate::ast::Type<P>,
-    identity_canonical: bool,
-    tcx: &TypeCtx<'_, '_, P>,
-) -> Result<InternedType<P>, Error>
-where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-{
-    validate_written_call_type_arguments(binders, written_type_args, true, tcx)?;
-    let mut substitutions = HashMap::new();
-    let mut result_canonical = identity_canonical;
-    for (binder, argument) in binders.iter().zip(written_type_args.iter().copied()) {
-        let raw = argument.to_type_arg()?;
-        if matches!(raw, crate::ast::Type::Infer { .. }) {
-            continue;
-        }
-        let (canonical, canonical_identity) = canonicalize_call_type_arg(&raw, tcx);
-        result_canonical &= canonical_identity;
-        substitutions.insert(binder.name.clone(), canonical);
-    }
-    Ok(InternedType::fresh_with_identity(
-        subst_type(result, &substitutions),
-        result_canonical,
-    ))
-}
-
+#[cfg(feature = "surface")]
 fn source_ends_written_value_packet<P>(
     args: &[CallArgRef<'_, P>],
     source_index: usize,
@@ -700,6 +695,7 @@ where
     }
 }
 
+#[cfg(feature = "surface")]
 #[derive(Clone, Copy)]
 struct SemanticPacketWidth {
     structural: usize,
@@ -836,6 +832,7 @@ where
         }
     }
 
+    #[cfg(feature = "surface")]
     fn structural_width(
         &self,
         protected_binders: &std::collections::HashSet<String>,
@@ -1054,8 +1051,8 @@ struct SelectedSemanticCall<P: crate::ast::Phase> {
     explicit_prefix: usize,
     param: Option<SemanticValueDomain<P>>,
     result: InternedType<P>,
+    #[cfg(feature = "surface")]
     width: SemanticPacketWidth,
-    consecutive_sources: usize,
 }
 
 fn directly_written_function_param<P>(ty: &crate::ast::Type<P>) -> Option<&crate::ast::Type<P>>
@@ -1099,6 +1096,7 @@ where
         Self::from_type_in_scope(ty, tcx.in_scope_type_param_binders(), tcx)
     }
 
+    #[cfg(feature = "surface")]
     fn from_type_in_scope(
         ty: &InternedType<P>,
         protected_binders: std::collections::HashSet<String>,
@@ -1243,6 +1241,7 @@ where
             .param
             .as_ref()
             .map(|param| param.substitute(&subst, identity_canonical));
+        #[cfg(feature = "surface")]
         let structural = param.as_ref().map_or(0, |param| {
             param.structural_width(&self.protected_binders, tcx)
         });
@@ -1250,17 +1249,15 @@ where
             explicit_prefix,
             param,
             result: substitute_semantic_handle(&self.result, &subst, identity_canonical),
+            #[cfg(feature = "surface")]
             width: SemanticPacketWidth {
                 structural,
                 capacity: structural.max(usize::from(self.param.is_some())),
             },
-            consecutive_sources: args[explicit_prefix..]
-                .iter()
-                .take_while(|argument| matches!(argument, CallArgRef::Value(_)))
-                .count(),
         })
     }
 
+    #[cfg(feature = "surface")]
     fn successor(
         &self,
         selected: &SelectedSemanticCall<P>,
@@ -1895,6 +1892,7 @@ where
         })
 }
 
+#[cfg(any(feature = "surface", test))]
 fn function_layer_value_slot_count_with_identity<P>(
     fn_param: &crate::ast::Type<P>,
     ctx: &AliasCtx<'_, '_, P>,
@@ -1966,198 +1964,7 @@ where
     }
 }
 
-fn call_arg_slot_sequence<P>(
-    ty: &crate::ast::Type<P>,
-    ctx: &AliasCtx<'_, '_, P>,
-    slots: &mut Vec<super::CallArgSlotKind>,
-    identity_canonical: bool,
-) -> bool
-where
-    P: crate::pass::resolve::ExportContractPhase + Clone,
-{
-    let (binders, body, identity_canonical) =
-        peel_forall_prefix_with_aliases(ty, ctx, identity_canonical);
-    let mut protected_binders = ctx.binder_local_names();
-    protected_binders.extend(binders.iter().map(|binder| binder.name.clone()));
-    let nested_ctx = AliasCtx {
-        binder_locals: Some(&protected_binders),
-        ..*ctx
-    };
-    let mut saw_call_shape = !binders.is_empty();
-    slots.extend(binders.iter().map(|_| super::CallArgSlotKind::Type));
-    if let crate::ast::Type::Function { param, ret, .. } = &body {
-        saw_call_shape = true;
-        let value_slots =
-            function_layer_value_slot_count_with_identity(param, &nested_ctx, identity_canonical)
-                // Unit is erased from the stable ABI, but it remains one semantic
-                // receiver/value packet for ordinary and UFCS source selection.
-                .max(1);
-        slots.extend((0..value_slots).map(|_| super::CallArgSlotKind::Value));
-        saw_call_shape |= call_arg_slot_sequence(ret, &nested_ctx, slots, identity_canonical);
-    }
-    saw_call_shape
-}
-
-fn has_applicable_head<P>(
-    ty: &crate::ast::Type<P>,
-    ctx: &AliasCtx<'_, '_, P>,
-    identity_canonical: bool,
-) -> bool
-where
-    P: crate::pass::resolve::ExportContractPhase + Clone,
-{
-    let mut slots = Vec::new();
-    call_arg_slot_sequence(ty, ctx, &mut slots, identity_canonical)
-}
-
-pub(crate) fn splice_ufcs_arg_refs_interned<'m, P>(
-    callee_ty: &InternedType<P>,
-    receiver: &'m crate::ast::Expr<P>,
-    args: &[CallArgRef<'m, P>],
-    selection_args: &[CallArgRef<'m, P>],
-    flavor: crate::ast::UfcsFlavor,
-    call_span: Span,
-    ctx: &AliasCtx<'_, '_, P>,
-) -> Result<Vec<CallArgRef<'m, P>>, Error>
-where
-    P: crate::pass::resolve::ExportContractPhase + Clone,
-{
-    splice_ufcs_arg_refs_with_identity(
-        callee_ty.as_type(),
-        callee_ty.identity_is_canonical(),
-        receiver,
-        args,
-        selection_args,
-        flavor,
-        call_span,
-        ctx,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn splice_ufcs_arg_refs_with_identity<'m, P>(
-    callee_ty: &crate::ast::Type<P>,
-    identity_canonical: bool,
-    receiver: &'m crate::ast::Expr<P>,
-    args: &[CallArgRef<'m, P>],
-    selection_args: &[CallArgRef<'m, P>],
-    flavor: crate::ast::UfcsFlavor,
-    call_span: Span,
-    ctx: &AliasCtx<'_, '_, P>,
-) -> Result<Vec<CallArgRef<'m, P>>, Error>
-where
-    P: crate::pass::resolve::ExportContractPhase + Clone,
-{
-    // Retained RecOrder sources classify written slots, while `args` keeps the
-    // generated paths that enforce runtime operand order.
-    assert_eq!(
-        args.len(),
-        selection_args.len(),
-        "UFCS selection arguments must preserve the emitted argument positions"
-    );
-    let mut slots = Vec::new();
-    let saw_call_shape = call_arg_slot_sequence(callee_ty, ctx, &mut slots, identity_canonical);
-    let target_slot = if flavor.inserts_first() {
-        slots
-            .iter()
-            .position(|slot| matches!(slot, super::CallArgSlotKind::Value))
-    } else {
-        slots
-            .iter()
-            .rposition(|slot| matches!(slot, super::CallArgSlotKind::Value))
-    };
-    let Some(target_slot) = target_slot else {
-        if !saw_call_shape && slots.is_empty() {
-            let mut out = Vec::with_capacity(args.len() + 1);
-            if flavor.inserts_first() {
-                out.push(CallArgRef::Value(receiver));
-            }
-            out.extend(args.iter().copied());
-            if !flavor.inserts_first() {
-                out.push(CallArgRef::Value(receiver));
-            }
-            return Ok(out);
-        }
-        return Err(Error::type_(
-            call_span,
-            "dot-splice receiver has no value-argument slot to fill",
-        )
-        .with_help("dot-splice inserts into value arguments only; type-argument slots are never filled by the receiver"));
-    };
-
-    // Normalize the surface splice from the callee type's slots and written
-    // argument kinds alone. The consecutive binder run immediately after the
-    // receiver reserves that many candidates from the ambiguous type-looking
-    // prefix at the receiver boundary; the binder run before the receiver
-    // consumes only the surplus. A value slot is therefore a hard boundary:
-    // no candidate can leap across an unfilled value layer to a later binder.
-    // The remaining walk is forward-only. In particular, this must not fit a
-    // suffix by typechecking, retry another placement after a mismatch, or use
-    // later application syntax to reinterpret this UFCS node.
-    let mut out = Vec::with_capacity(args.len() + 1);
-    let mut arg_index = 0usize;
-    let pre_receiver_type_run_start = slots[..target_slot]
-        .iter()
-        .rposition(|slot| matches!(slot, super::CallArgSlotKind::Value))
-        .map_or(0, |slot| slot + 1);
-    let pre_receiver_type_slots = target_slot - pre_receiver_type_run_start;
-    let post_receiver_type_slots = slots[target_slot + 1..]
-        .iter()
-        .take_while(|slot| matches!(slot, super::CallArgSlotKind::Type))
-        .count();
-    let mut pre_receiver_explicit_types = None;
-    for (slot_index, slot) in slots.iter().enumerate() {
-        if slot_index == target_slot {
-            out.push(CallArgRef::Value(receiver));
-            continue;
-        }
-        match slot {
-            super::CallArgSlotKind::Type => {
-                if slot_index == pre_receiver_type_run_start {
-                    let candidates = selection_args[arg_index..]
-                        .iter()
-                        .copied()
-                        .take_while(|arg| arg.type_slot_candidate())
-                        .count();
-                    pre_receiver_explicit_types = Some(
-                        candidates
-                            .saturating_sub(post_receiver_type_slots)
-                            .min(pre_receiver_type_slots),
-                    );
-                }
-                if (pre_receiver_type_run_start..target_slot).contains(&slot_index) {
-                    let remaining = pre_receiver_explicit_types
-                        .as_mut()
-                        .expect("the receiver-adjacent binder run initializes its split");
-                    if *remaining == 0 {
-                        continue;
-                    }
-                    *remaining -= 1;
-                }
-                if selection_args
-                    .get(arg_index)
-                    .copied()
-                    .is_some_and(CallArgRef::type_slot_candidate)
-                {
-                    out.push(args[arg_index]);
-                    arg_index += 1;
-                }
-            }
-            super::CallArgSlotKind::Value => {
-                if let Some(arg) = args.get(arg_index) {
-                    out.push(*arg);
-                    arg_index += 1;
-                }
-            }
-        }
-    }
-    while let Some(arg) = args.get(arg_index) {
-        out.push(*arg);
-        arg_index += 1;
-    }
-    Ok(out)
-}
-
+#[cfg(any(feature = "surface", test))]
 fn right_spine_value_slot_count<P>(
     ty: &crate::ast::Type<P>,
     ctx: &AliasCtx<'_, '_, P>,
@@ -2177,6 +1984,7 @@ where
     }
 }
 
+#[cfg(any(feature = "surface", test))]
 fn right_spine_product_tail_slot_count<P>(
     ty: &crate::ast::Type<P>,
     ctx: &AliasCtx<'_, '_, P>,
@@ -2275,32 +2083,6 @@ where
         ));
     }
     Ok(updates)
-}
-
-fn finish_pending_type_args<'m, P>(args: &[CallArgRef<'m, P>], tcx: &TypeCtx<'m, '_, P>)
-where
-    P: TyperPhase,
-{
-    let prepared = tcx.prepare_rec_order_updates(pending_type_arg_updates(args, tcx));
-    tcx.commit_prepared_rec_order(prepared);
-}
-
-fn pending_type_arg_updates<'m, P>(
-    args: &[CallArgRef<'m, P>],
-    tcx: &TypeCtx<'m, '_, P>,
-) -> Vec<(&'m crate::ast::Expr<P>, PendingRecOrderState<P>)>
-where
-    P: TyperPhase,
-{
-    if !tcx.has_pending_rec_order() {
-        return Vec::new();
-    }
-    args.iter()
-        .filter_map(|arg| match arg {
-            CallArgRef::Value(source) => Some((*source, PendingRecOrderState::TypeOnly)),
-            CallArgRef::Type(_) => None,
-        })
-        .collect()
 }
 
 fn accepts_zero_value_args<P>(param: &InternedType<P>, ctx: &AliasCtx<'_, '_, P>) -> bool
@@ -2448,7 +2230,7 @@ where
     );
     let unfolded = InternedType::fresh_with_identity(unfolded, identity_canonical)
         .preserving_requirement_from(callee_ty);
-    let static_semantic = if !<P::Typer as Typer<P>>::ALLOW_MULTI_LAYER_FLAT_CALL {
+    let static_semantic = {
         let Some(mut cursor) =
             SemanticCallCursor::from_normalized_type(&unfolded, scope_binders.clone(), tcx)
         else {
@@ -2469,73 +2251,17 @@ where
         }
         let selected = cursor.select(args, inferred_type_arg_suffix, call_site.span, tcx)?;
         Some((cursor, selected))
-    } else {
-        None
     };
-    // Multi-layer flat-call iteration per `specs/language.md` § Type parameters:
-    // a single application may consume multiple consecutive curry
-    // layers in Kio. We peel one layer's worth of args from the
-    // head, apply, recurse on the result with the rest. The peel
-    // size is `n_binders + value_slots` from each layer's
-    // function domain. Kio' opts out of the loop entirely via
-    // `ALLOW_MULTI_LAYER_FLAT_CALL`.
-    //
-    // The peel-size check is conservative: when `args.len()`
-    // already fits the first layer, the loop bails out immediately
-    // and the call dispatches through the single-layer path.
-    // Product-typed parameters count by
-    // their right spine here because tuple values and positional call
-    // arguments build the same product shape within one layer. The
-    // stored ABI arity is a lowering detail, not a source-call slot
-    // count.
-    if <P::Typer as Typer<P>>::ALLOW_MULTI_LAYER_FLAT_CALL
-        && let Some(application) = try_multi_layer_flat_call(
-            &unfolded,
-            args,
-            callee_span,
-            call_site,
-            slot_offset,
-            expected_ret,
-            allow_expected_deferral,
-            preparation_mode,
-            tcx,
-        )?
-    {
-        return Ok(match application {
-            ConsumingApplication::Complete(mut applied) => {
-                applied.inferred_type_arg_suffix = 0;
-                ConsumingApplication::Complete(applied)
-            }
-            ConsumingApplication::NeedsExpected(application) => {
-                ConsumingApplication::NeedsExpected(application)
-            }
-        });
-    }
-    let legacy_scheme = <P::Typer as Typer<P>>::ALLOW_MULTI_LAYER_FLAT_CALL.then(|| {
-        let aliases = tcx.binder_alias_ctx(&scope_binders);
-        peel_forall_prefix_with_aliases(
-            unfolded.as_type(),
-            &aliases,
-            unfolded.identity_is_canonical(),
-        )
-    });
-    let (scheme_binders, forall_body, body_identity_canonical) =
-        if let Some((cursor, _)) = static_semantic.as_ref() {
-            (
-                cursor.binders.as_slice(),
-                cursor
-                    .body
-                    .as_ref()
-                    .expect("the Prime semantic cursor comes from a resolved type")
-                    .as_type(),
-                cursor.identity_canonical,
-            )
-        } else {
-            let (binders, body, identity_canonical) = legacy_scheme
-                .as_ref()
-                .expect("the legacy application path canonicalizes its callee");
-            (binders.as_slice(), body, *identity_canonical)
-        };
+    let (cursor, _) = static_semantic
+        .as_ref()
+        .expect("a call has a selected public head");
+    let scheme_binders = cursor.binders.as_slice();
+    let forall_body = cursor
+        .body
+        .as_ref()
+        .expect("a selected call has a resolved public body")
+        .as_type();
+    let body_identity_canonical = cursor.identity_canonical;
     if !scheme_binders.is_empty() {
         let crate::ast::Type::Function {
             param: fn_param,
@@ -2663,223 +2389,8 @@ where
     }))
 }
 
-/// Try a multi-layer flat-call dispatch: peel one curry layer's
-/// args from the head, apply them, recurse on the substituted
-/// result with the rest. Returns `Ok(Some(application))` when the call
-/// dispatches under the multi-layer flat-call rules in
-/// `specs/language.md` § Type parameters, `Ok(None)`
-/// when this routine declines (so the caller falls back to the
-/// single-layer path), and `Err(...)` when a layer's dispatch
-/// itself errors. A trailing layer that needs the whole call's expected
-/// result bubbles the existing consuming application plan to its caller.
-///
-/// The routine declines (returns `Ok(None)`) when the head's args
-/// fit in one layer's needs — i.e., the existing single-layer
-/// dispatch can handle the call as before. This is the bail-out
-/// the caller relies on to keep behaviour unchanged for call
-/// shapes that didn't need iteration.
-///
-/// `expected_ret` only flows into the **trailing** layer's
-/// application recursion: the user's expected type is the type
-/// of the whole call's result, which is the last layer's return.
-/// Intermediate layers see `None` and rely solely on value-arg
-/// unification — keeping the localized-inference contract from
-/// `specs/language.md` § Type system intact.
-#[allow(clippy::too_many_arguments)] // existing flat-call context plus the bounded expected-type deferral switch
-fn try_multi_layer_flat_call<'m, P>(
-    unfolded: &InternedType<P>,
-    args: &[CallArgRef<'m, P>],
-    callee_span: Span,
-    call_site: crate::ast::ExpressionSite,
-    slot_offset: usize,
-    expected_ret: Option<&InternedType<P>>,
-    allow_expected_deferral: bool,
-    preparation_mode: ValuePreparationMode,
-    tcx: &mut TypeCtx<'m, '_, P>,
-) -> Result<Option<ConsumingApplication<'m, P>>, Error>
-where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-{
-    // Peel binders + the immediate Function to size this layer's
-    // args. Type binders are explicit slots when present; value slots
-    // come from the function domain's product width, with the actual
-    // argument spellings deciding how many source arguments are needed
-    // to fill those slots.
-    let identity_canonical = unfolded.identity_is_canonical();
-    let (binders, peeled) = peel_forall_prefix(unfolded.as_type());
-    let (binders_count, fn_param, fn_ret, abi_arity) = match peeled {
-        crate::ast::Type::Function {
-            param,
-            ret,
-            abi_arity,
-            ..
-        } => (binders.len(), param.as_ref(), ret.as_ref(), *abi_arity),
-        _ if !binders.is_empty() => return Ok(None),
-        _ => return Ok(None),
-    };
-    let ambient_binders = tcx.in_scope_type_param_binders();
-    let mut protected_binders = ambient_binders.clone();
-    protected_binders.extend(binders.iter().map(|binder| binder.name.clone()));
-    let value_slots = function_layer_value_slot_count_with_identity(
-        fn_param,
-        &tcx.binder_alias_ctx(&protected_binders),
-        identity_canonical,
-    );
-    // A Unit-domain layer is never traversed merely to route later written
-    // values. A caller must end the current packet or spell its Unit value
-    // before supplying arguments to a later curry layer.
-    if value_slots == 0 {
-        return Ok(None);
-    }
-    let explicit_prefix = explicit_type_arg_prefix_len(args, binders_count);
-    // With at most one source value argument there cannot be a later
-    // source argument to carry into another curry layer. Keep the
-    // ordinary fast/check path and avoid planning work.
-    if args.len() <= explicit_prefix + 1 {
-        return Ok(None);
-    }
-    let selected_fn_ret = result_after_written_type_arguments(
-        &binders,
-        &args[..explicit_prefix],
-        fn_ret,
-        identity_canonical,
-        tcx,
-    )?;
-    if !has_applicable_head(
-        selected_fn_ret.as_type(),
-        &tcx.binder_alias_ctx(&protected_binders),
-        selected_fn_ret.identity_is_canonical(),
-    ) {
-        return Ok(None);
-    }
-    let has_later_type_binders = !peel_forall_prefix_with_aliases(
-        selected_fn_ret.as_type(),
-        &tcx.binder_alias_ctx(&protected_binders),
-        selected_fn_ret.identity_is_canonical(),
-    )
-    .0
-    .is_empty();
-    let (mut plan, layer_needed) = PlannedApplication::gathering_expected_with_later_type_binders(
-        &binders,
-        PlannedExpectedValue::type_needing_substitution(InternedType::fresh_with_identity(
-            fn_param.clone(),
-            identity_canonical,
-        )),
-        args,
-        value_slots,
-        has_later_type_binders,
-        call_site,
-        &protected_binders,
-        tcx,
-    )?;
-    plan.param = InternedType::fresh_with_identity(fn_param.clone(), identity_canonical);
-    plan.slot_identity_canonical = identity_canonical;
-    let layer_canonical_slots = plan.binders.len() + plan.args.len();
-    let (layer_args, rest) = args.split_at(layer_needed);
-    let layer_application = if !binders.is_empty() {
-        let crate::ast::Type::Function { param, ret, .. } = peeled else {
-            return Ok(None);
-        };
-        if rest.is_empty() {
-            plan_polymorphic_function(
-                &binders,
-                param,
-                ret,
-                abi_arity,
-                None,
-                layer_args,
-                callee_span,
-                call_site,
-                slot_offset,
-                expected_ret,
-                identity_canonical,
-                0,
-                Some(plan),
-                allow_expected_deferral,
-                preparation_mode,
-                tcx,
-            )?
-        } else {
-            ConsumingApplication::Complete(apply_polymorphic_function(
-                &binders,
-                param,
-                ret,
-                abi_arity,
-                layer_args,
-                callee_span,
-                call_site,
-                slot_offset,
-                None,
-                identity_canonical,
-                0,
-                Some(plan),
-                tcx,
-            )?)
-        }
-    } else {
-        let mut subst = HashMap::new();
-        let type_param_names = std::collections::HashSet::new();
-        plan.gather_synthesized_constraints(
-            &type_param_names,
-            &mut subst,
-            call_site.span,
-            &tcx.binder_alias_ctx(&protected_binders),
-        )?;
-        plan.finalize(
-            &mut subst,
-            &type_param_names,
-            callee_span,
-            call_site,
-            slot_offset,
-            &mut ApplicationHoleState::default(),
-            None,
-            tcx,
-        )?;
-        ConsumingApplication::Complete(Applied {
-            ty: InternedType::fresh_with_identity(fn_ret.clone(), identity_canonical),
-            inferred_type_arg_suffix: 0,
-            consumed_value: true,
-        })
-    };
-    // After consuming one layer's args, the result must itself be
-    // callable for more args to be consumed. Recurse through the
-    // consuming application planner; each layer's function domain determines
-    // its own per-layer value slots. This is the trailing call —
-    // the user's `expected_ret` (if any) flows here. The remaining
-    // args begin after this layer's canonical type + value slots,
-    // which may exceed the number of source arguments when type
-    // arguments were elided. Advance `slot_offset` accordingly (the substitute
-    // pass keys every resolution by its call-global slot index).
-    if rest.is_empty() {
-        return Ok(Some(layer_application));
-    }
-    let ConsumingApplication::Complete(layer_result) = layer_application else {
-        unreachable!("an intermediate flat-call layer cannot wait for the whole call's result")
-    };
-    let mut result = plan_mono_refs_with_context(
-        &layer_result.ty,
-        rest,
-        ApplyContext {
-            inferred_type_arg_suffix: 0,
-            callee_span,
-            call_site,
-            slot_offset: slot_offset + layer_canonical_slots,
-            expected_ret,
-            preparation_mode,
-        },
-        allow_expected_deferral,
-        tcx,
-    )?;
-    if let ConsumingApplication::Complete(result) = &mut result {
-        result.consumed_value |= layer_result.consumed_value;
-    }
-    // The split is fixed by the source arguments already consumed above.
-    // Record it once here; a retained trailing plan completes only its own
-    // layer and never revisits this boundary.
-    <P::Typer as Typer<P>>::record_call_split(call_site, slot_offset + layer_canonical_slots, tcx);
-    Ok(Some(result))
-}
-
+/// Apply written types to a forall prefix whose body is not a function.
+#[allow(clippy::too_many_arguments)]
 fn apply_polymorphic_non_function<P>(
     binders: &[crate::ast::TypeParam],
     body: &crate::ast::Type<P>,
@@ -2914,6 +2425,12 @@ where
             "callee is a polymorphic non-function type; only type arguments are accepted here",
         ));
     }
+    if let Some(argument) = args.iter().find(|arg| matches!(arg, CallArgRef::Value(_))) {
+        return Err(Error::type_(
+            argument.span(),
+            "expected a type argument here, got a value argument",
+        ));
+    }
     validate_written_call_type_arguments(binders, args, false, tcx)?;
     let mut subst: HashMap<String, crate::ast::Type<P>> = HashMap::new();
     let mut resolutions = Vec::with_capacity(args.len());
@@ -2921,7 +2438,6 @@ where
     for (binder, arg) in binders.iter().zip(args.iter().copied()) {
         let raw = match arg {
             CallArgRef::Type(t) => t.clone(),
-            _ if arg.type_slot_candidate() => arg.to_type_arg()?,
             CallArgRef::Value(_) => {
                 return Err(Error::type_(
                     arg.span(),
@@ -2931,22 +2447,18 @@ where
         };
         let (canonical, is_canonical) = canonicalize_call_type_arg(&raw, tcx);
         result_canonical &= is_canonical;
-        resolutions.push((
-            InternedType::fresh_with_identity(canonical.clone(), is_canonical),
-            matches!(arg, CallArgRef::Value(_)),
+        resolutions.push(InternedType::fresh_with_identity(
+            canonical.clone(),
+            is_canonical,
         ));
         subst.insert(binder.name.clone(), canonical);
     }
     let substituted = subst_type(body, &subst);
-    finish_pending_type_args(args, tcx);
     if let Some(slot_offset) = publication_slot_offset {
         publish_written_call_type_argument_binders(args, tcx)?;
-        for (index, (resolved, parsed_as_value)) in resolutions.into_iter().enumerate() {
+        for (index, resolved) in resolutions.into_iter().enumerate() {
             let slot = slot_offset + index;
             <P::Typer as Typer<P>>::record_type_resolution(call_site, slot, resolved, tcx);
-            if parsed_as_value {
-                <P::Typer as Typer<P>>::mark_value_at_type_slot(call_site, slot, tcx);
-            }
         }
     }
     Ok(InternedType::fresh_with_identity(
@@ -2996,10 +2508,7 @@ where
                 }
             }
             CallArgRef::Type(ty) => validate_explicit_call_type_argument(binder, ty, tcx)?,
-            CallArgRef::Value(value) => {
-                let ty = expr_to_type_arg(value)?;
-                validate_explicit_call_type_argument(binder, &ty, tcx)?;
-            }
+            CallArgRef::Value(_) => unreachable!("a selected type slot contains a value operand"),
         }
     }
     Ok(())
@@ -3039,9 +2548,7 @@ where
         match argument {
             CallArgRef::Type(crate::ast::Type::Infer { .. }) => {}
             CallArgRef::Type(ty) => super::types::publish_validated_type_binders(ty, tcx),
-            CallArgRef::Value(value) => {
-                super::types::publish_validated_type_binders(&expr_to_type_arg(value)?, tcx);
-            }
+            CallArgRef::Value(_) => unreachable!("a selected type slot contains a value operand"),
         }
     }
     Ok(())
@@ -4283,7 +3790,6 @@ fn open_selecting_goal_call<'m>(
     callee: &Synth<crate::ast::Lowered>,
     args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
     direct: Option<PreparedDirectCallee>,
-    regular_ufcs: Option<(crate::ast::NodeId, crate::ast::Expr<crate::ast::Lowered>)>,
     slot_offset: usize,
     callee_span: Span,
     call_site: crate::ast::ExpressionSite,
@@ -4302,7 +3808,6 @@ fn open_selecting_goal_call<'m>(
         open_preflighted_selecting_goal_call(
             preflight,
             direct,
-            regular_ufcs,
             slot_offset,
             callee_span,
             call_site,
@@ -4326,7 +3831,6 @@ fn open_selecting_goal_call<'m>(
 fn open_preflighted_selecting_goal_call<'m>(
     preflight: GeneralGoalCallPreflight<'m>,
     direct: Option<PreparedDirectCallee>,
-    regular_ufcs: Option<(crate::ast::NodeId, crate::ast::Expr<crate::ast::Lowered>)>,
     slot_offset: usize,
     callee_span: Span,
     call_site: crate::ast::ExpressionSite,
@@ -4356,7 +3860,6 @@ fn open_preflighted_selecting_goal_call<'m>(
     finish_open_preflighted_selecting_goal_call(
         call,
         direct,
-        regular_ufcs,
         immediate_lambda,
         value_slots,
         expanded_value_slots,
@@ -4371,7 +3874,6 @@ fn open_preflighted_selecting_goal_call<'m>(
 fn finish_open_preflighted_selecting_goal_call<'m>(
     mut call: OpenGoalCall<'m>,
     direct: Option<PreparedDirectCallee>,
-    regular_ufcs: Option<(crate::ast::NodeId, crate::ast::Expr<crate::ast::Lowered>)>,
     immediate_lambda: Option<Box<ImmediateLambdaCall<'m>>>,
     mut value_slots: usize,
     mut expanded_value_slots: usize,
@@ -4403,7 +3905,7 @@ fn finish_open_preflighted_selecting_goal_call<'m>(
         selected: Vec::new(),
         probe: None,
         result_inferred_type_arg_suffix,
-        regular_ufcs,
+        result_context: None,
     })
 }
 
@@ -4420,6 +3922,7 @@ fn plan_immediate_lambda_call<'m>(
     callee: &'m crate::ast::Expr<crate::ast::Lowered>,
     args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
     mut header: super::annotation_plan::LambdaHeaderPlan<'m>,
+    remaining_stages: Vec<&'m crate::ast::Expr<crate::ast::Lowered>>,
     call_site: crate::ast::ExpressionSite,
     store: &mut GoalStore,
     owner: crate::ast::TypeGoalOwner,
@@ -4581,7 +4084,9 @@ fn plan_immediate_lambda_call<'m>(
         retained_binders: None,
         layers,
         current_layer: 0,
-        completed_layers: Vec::new(),
+        selected_layers: Vec::new(),
+        remaining_stages,
+        carried: Vec::new(),
         parameters,
         goal_parameter_indices: HashMap::with_capacity(remaining_holes),
         remaining_holes,
@@ -4649,7 +4154,7 @@ fn plan_immediate_lambda_call<'m>(
             selected: Vec::new(),
             probe: None,
             result_inferred_type_arg_suffix: 0,
-            regular_ufcs: None,
+            result_context: None,
         },
     )))
 }
@@ -4972,7 +4477,9 @@ struct ImmediateLambdaCall<'m> {
     retained_binders: Option<Vec<super::RetainedTypeBinder<'m>>>,
     layers: Vec<ImmediateLambdaLayer>,
     current_layer: usize,
-    completed_layers: Vec<ImmediateLambdaLayerInstantiation>,
+    selected_layers: Vec<ImmediateLambdaLayerInstantiation>,
+    remaining_stages: Vec<&'m crate::ast::Expr<crate::ast::Lowered>>,
+    carried: Vec<PendingOrdinaryCallChild<'m>>,
     parameters: Vec<ImmediateLambdaParameter>,
     goal_parameter_indices: HashMap<crate::ast::TypeGoalRef, usize>,
     remaining_holes: usize,
@@ -5075,7 +4582,7 @@ impl ImmediateLambdaCall<'_> {
             .iter()
             .map(|binder| binder.name.clone())
             .collect::<HashSet<_>>();
-        self.completed_layers
+        self.selected_layers
             .iter()
             .fold(self.layer_domain(ordinal), |domain, completed| {
                 completed.replacements.assert_owner(owner);
@@ -5110,7 +4617,7 @@ impl ImmediateLambdaCall<'_> {
             .iter()
             .map(|binder| binder.name.clone())
             .collect::<HashSet<_>>();
-        self.completed_layers
+        self.selected_layers
             .iter()
             .fold(ty.clone(), |ty, completed| {
                 InternedType::fresh_with_identity(
@@ -5475,6 +4982,36 @@ impl ImmediateLambdaCall<'_> {
 }
 
 #[cfg(feature = "surface")]
+struct FixedMacroStages<'m> {
+    remaining: &'m [crate::ast::CallStage<crate::ast::Lowered>],
+    public_layers: usize,
+    carried: Vec<PendingOrdinaryCallChild<'m>>,
+}
+
+#[cfg(feature = "surface")]
+fn take_macro_stage<'m>(
+    remaining: &mut &'m [crate::ast::CallStage<crate::ast::Lowered>],
+) -> Vec<CallArgRef<'m, crate::ast::Lowered>> {
+    let mut args = Vec::new();
+    while let Some((stage, rest)) = remaining.split_first() {
+        *remaining = rest;
+        let value = stage
+            .args
+            .iter()
+            .any(|argument| matches!(argument, crate::ast::CallArg::Value(_)));
+        assert!(
+            !stage.args.is_empty(),
+            "lowered value stages retain their explicit Unit packet"
+        );
+        args.extend(call_arg_refs(&stage.args));
+        if value {
+            break;
+        }
+    }
+    args
+}
+
+#[cfg(feature = "surface")]
 struct OpenGoalCall<'m> {
     owner: crate::ast::TypeGoalOwner,
     shape: GoalCallShape<'m>,
@@ -5489,6 +5026,7 @@ struct OpenGoalCall<'m> {
     call_site: crate::ast::ExpressionSite,
     slot_offset: usize,
     user_macro_transcript: Option<UserMacroCallTranscript>,
+    macro_stages: Option<Box<FixedMacroStages<'m>>>,
     immediate_lambda: Option<Box<ImmediateLambdaCall<'m>>>,
 }
 
@@ -5634,9 +5172,8 @@ impl<'m> OpenGoalCall<'m> {
             let raw = match written {
                 Some(CallArgRef::Type(crate::ast::Type::Infer { .. })) | None => None,
                 Some(CallArgRef::Type(ty)) => Some(ty.clone()),
-                Some(CallArgRef::Value(value)) => {
-                    let ty = expr_to_type_arg(value)?;
-                    Some(ty)
+                Some(CallArgRef::Value(_)) => {
+                    unreachable!("a selected type slot contains a value operand")
                 }
             };
             if let Some(raw) = raw {
@@ -5675,6 +5212,7 @@ impl<'m> OpenGoalCall<'m> {
             call_site,
             slot_offset,
             user_macro_transcript,
+            macro_stages: None,
             immediate_lambda: None,
         })
     }
@@ -5819,8 +5357,6 @@ impl<'m> OpenGoalCall<'m> {
     fn stage_type_argument_metadata(
         &self,
         goal_owner: crate::ast::TypeGoalOwner,
-        publication_owner: crate::ast::TypeGoalOwner,
-        store: &GoalStore,
         publication: &mut PublicationBuilder,
         tcx: &TypeCtx<'_, '_, crate::ast::Lowered>,
     ) -> Result<(), Error> {
@@ -5861,7 +5397,7 @@ impl<'m> OpenGoalCall<'m> {
             self.shape.explicit_prefix
         };
         let mut inlay_types = Vec::new();
-        for (layer_slot_index, binder) in self.shape.binders.iter().take(limit).enumerate() {
+        for layer_slot_index in 0..limit {
             let slot_index = self.slot_offset + layer_slot_index;
             match self.shape.type_args.get(layer_slot_index).copied() {
                 None => {
@@ -5883,25 +5419,8 @@ impl<'m> OpenGoalCall<'m> {
                         );
                     }
                 }
-                Some(CallArgRef::Value(value)) => {
-                    let raw = expr_to_type_arg(value)?;
-                    super::types::stage_validated_nominal_type_binders(&raw, tcx, publication);
-                    let written = store.scoped_type(
-                        publication_owner,
-                        InternedType::fresh(raw),
-                        value.span(),
-                    )?;
-                    publication.record_type_resolution(self.call_site, slot_index, written);
-                    publication.mark_value_at_type_slot(self.call_site, slot_index);
-                    let resolved = self
-                        .replacements
-                        .get(goal_owner, &binder.name)
-                        .expect("a value-shaped type argument resolved its binder");
-                    inlay_types.push(store.scoped_type(
-                        publication_owner,
-                        resolved,
-                        value.span(),
-                    )?);
+                Some(CallArgRef::Value(_)) => {
+                    unreachable!("a selected type slot contains a value operand")
                 }
                 Some(CallArgRef::Type(written)) => {
                     super::types::stage_validated_nominal_type_binders(written, tcx, publication);
@@ -6371,6 +5890,11 @@ enum CompletedInFrame {
     },
 }
 
+#[cfg(all(test, feature = "surface"))]
+thread_local! {
+    static IMMEDIATE_SPINE_EDGES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 #[cfg(feature = "surface")]
 #[derive(Debug)]
 enum OrdinaryRecursiveFamily {
@@ -6380,6 +5904,8 @@ enum OrdinaryRecursiveFamily {
     RecOrder,
     RecQuote,
     ComputedCall,
+    ComputedWithoutImmediate,
+    ComputedBeforeImmediate(usize),
 }
 
 #[cfg(feature = "surface")]
@@ -6495,7 +6021,7 @@ struct SelectingOrdinaryCall<'m> {
     selected: Vec<SelectedOrdinaryCallValue<'m>>,
     probe: Option<SelectingOrdinaryValue<'m>>,
     result_inferred_type_arg_suffix: usize,
-    regular_ufcs: Option<(crate::ast::NodeId, crate::ast::Expr<crate::ast::Lowered>)>,
+    result_context: Option<(ScopedType, Option<PendingExpectedResult>)>,
 }
 
 #[cfg(feature = "surface")]
@@ -6658,7 +6184,7 @@ impl OrdinaryCallContinuation<'_> {
 #[cfg(feature = "surface")]
 impl OrdinaryValueCursor<'_> {
     fn result_inferred_type_arg_suffix(&self) -> usize {
-        match &self.planned {
+        match self.planned.observed() {
             PlannedOrdinaryValue::Call(call) => call.result_inferred_type_arg_suffix(),
             PlannedOrdinaryValue::UserMacro(call) => match &call.state {
                 PlannedUserMacroCallState::Advancing(call) => {
@@ -6970,6 +6496,7 @@ enum OrdinaryLambdaActual {
 #[cfg(feature = "surface")]
 #[allow(clippy::large_enum_variant)] // computed-call continuations are hot iterative state
 enum ComputedCallContinuation<'m> {
+    MacroOutput(Box<MacroOutputApplication<'m>>),
     PlannedLambda(super::annotation_plan::LambdaHeaderPlan<'m>),
     Callee(OrdinaryChildContinuation<'m>),
     Application {
@@ -6977,6 +6504,64 @@ enum ComputedCallContinuation<'m> {
         application: OrdinaryChildContinuation<'m>,
     },
     Paired(Box<PairedComputedCall<'m>>),
+}
+
+#[cfg(feature = "surface")]
+struct MacroOutputApplication<'m> {
+    stages: &'m [crate::ast::CallStage<crate::ast::Lowered>],
+    action: Option<crate::pass::typecheck_full::PreparedUserMacroAction<'m>>,
+    continuation: Option<PlannedOrdinaryValue<'m>>,
+}
+
+#[cfg(feature = "surface")]
+#[derive(Clone, Copy)]
+struct ComputedApplicationSource<'m> {
+    source: &'m crate::ast::Expr<crate::ast::Lowered>,
+    stages: Option<&'m [crate::ast::CallStage<crate::ast::Lowered>]>,
+}
+
+#[cfg(feature = "surface")]
+impl<'m> ComputedApplicationSource<'m> {
+    fn args(self) -> &'m [crate::ast::CallArg<crate::ast::Lowered>] {
+        if let Some(stages) = self.stages {
+            return &stages.last().unwrap().args;
+        }
+        let crate::ast::Expr::Call { args, .. } = self.source else {
+            unreachable!("an ordinary computed application retains its call syntax")
+        };
+        args
+    }
+    fn site(self) -> crate::ast::ExpressionSite {
+        self.stages.map_or_else(
+            || self.source.site(),
+            |stages| stages.last().unwrap().site(),
+        )
+    }
+    fn callee_span(self) -> Span {
+        if let Some(stages) = self.stages {
+            return stages
+                .iter()
+                .rev()
+                .nth(1)
+                .map_or(self.source.span(), |stage| stage.meta.span);
+        }
+        let crate::ast::Expr::Call { callee, .. } = self.source else {
+            unreachable!()
+        };
+        callee.span()
+    }
+    fn retain(self, continuation: ComputedCallContinuation<'m>) -> ComputedCallContinuation<'m> {
+        match self.stages {
+            None => continuation,
+            Some(stages) => {
+                ComputedCallContinuation::MacroOutput(Box::new(MacroOutputApplication {
+                    stages,
+                    action: None,
+                    continuation: Some(PlannedOrdinaryValue::ComputedCall(continuation)),
+                }))
+            }
+        }
+    }
 }
 
 #[cfg(feature = "surface")]
@@ -7085,6 +6670,35 @@ enum PlannedOrdinaryValue<'m> {
 }
 
 #[cfg(feature = "surface")]
+impl<'m> PlannedOrdinaryValue<'m> {
+    fn observed(&self) -> &Self {
+        let mut current = self;
+        while let Self::ComputedCall(ComputedCallContinuation::MacroOutput(output)) = current {
+            let Some(inner) = &output.continuation else {
+                break;
+            };
+            current = inner;
+        }
+        current
+    }
+    fn observed_mut(&mut self) -> &mut Self {
+        let mut current = self;
+        loop {
+            let nested = matches!(current,
+                Self::ComputedCall(ComputedCallContinuation::MacroOutput(output))
+                    if output.continuation.is_some());
+            if !nested {
+                return current;
+            }
+            let Self::ComputedCall(ComputedCallContinuation::MacroOutput(output)) = current else {
+                unreachable!()
+            };
+            current = output.continuation.as_mut().unwrap();
+        }
+    }
+}
+
+#[cfg(feature = "surface")]
 enum OrdinaryValueSeed<'m> {
     Leaf(PreparedOrdinaryValue<'m>),
     PendingRecOrderPath,
@@ -7097,12 +6711,12 @@ enum OrdinaryValueSeed<'m> {
     DirectSelecting {
         direct: PreparedDirectCallee,
         args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
-        regular_ufcs: Option<(crate::ast::NodeId, crate::ast::Expr<crate::ast::Lowered>)>,
     },
     ImmediateLambdaCall {
         callee: &'m crate::ast::Expr<crate::ast::Lowered>,
         args: Vec<CallArgRef<'m, crate::ast::Lowered>>,
         header: super::annotation_plan::LambdaHeaderPlan<'m>,
+        stages: Vec<&'m crate::ast::Expr<crate::ast::Lowered>>,
     },
     ComputedLambdaCall {
         header: super::annotation_plan::LambdaHeaderPlan<'m>,
@@ -7232,13 +6846,21 @@ impl<'m> OrdinaryValueCursor<'m> {
                             Some(&completed.call)
                         }
                     };
-                    if let Some(immediate) = open.and_then(|call| call.immediate_lambda.as_ref())
-                        && let ImmediateLambdaBodyState::Advancing(lambda) = &immediate.body
-                    {
-                        nodes.push(CompletionNode::Lambda(lambda));
+                    if let Some(stages) = open.and_then(|call| call.macro_stages.as_ref()) {
+                        for pending in &stages.carried {
+                            nodes.push(CompletionNode::Value(&pending.child.cursor));
+                        }
+                    }
+                    if let Some(immediate) = open.and_then(|call| call.immediate_lambda.as_ref()) {
+                        for pending in &immediate.carried {
+                            nodes.push(CompletionNode::Value(&pending.child.cursor));
+                        }
+                        if let ImmediateLambdaBodyState::Advancing(lambda) = &immediate.body {
+                            nodes.push(CompletionNode::Lambda(lambda));
+                        }
                     }
                 }
-                CompletionNode::Value(cursor) => match &cursor.planned {
+                CompletionNode::Value(cursor) => match cursor.planned.observed() {
                     PlannedOrdinaryValue::Lambda(lambda) => {
                         nodes.push(CompletionNode::Lambda(lambda))
                     }
@@ -7306,7 +6928,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     | PlannedOrdinaryValue::Literal
                     | PlannedOrdinaryValue::ConnectedCall { .. }
                     | PlannedOrdinaryValue::ComputedCall(
-                        ComputedCallContinuation::PlannedLambda(_),
+                        ComputedCallContinuation::PlannedLambda(_)
+                        | ComputedCallContinuation::MacroOutput(_),
                     )
                     | PlannedOrdinaryValue::Recursive(_) => {}
                 },
@@ -7649,6 +7272,14 @@ impl<'m> OrdinaryValueCursor<'m> {
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueSeed<'m>, Error> {
+        Self::seed_with_immediate_search(source, true, tcx)
+    }
+
+    fn seed_with_immediate_search(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        search_immediate: bool,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryValueSeed<'m>, Error> {
         Ok(match source {
             crate::ast::Expr::BlockCall { ext, .. } => match *ext {},
             crate::ast::Expr::Path { .. } if tcx.is_pending_rec_order_path(source) => {
@@ -7665,21 +7296,71 @@ impl<'m> OrdinaryValueCursor<'m> {
             | crate::ast::Expr::FloatLit { .. }
             | crate::ast::Expr::BoolLit { .. } => OrdinaryValueSeed::Literal,
             crate::ast::Expr::Call { callee, args, .. } => {
-                if let crate::ast::Expr::FnExpr { sig, ret_ty, .. } = callee.as_ref() {
-                    let mut header = super::annotation_plan::plan_lowered_lambda_header(
-                        sig,
-                        ret_ty.as_ref(),
-                        tcx,
-                    )?;
-                    if header.requires_immediate_selection() {
-                        return Ok(OrdinaryValueSeed::ImmediateLambdaCall {
-                            callee,
-                            args: call_arg_refs(args),
-                            header,
-                        });
+                let mut computed = OrdinaryRecursiveFamily::ComputedWithoutImmediate;
+                if search_immediate {
+                    let mut direct = callee.as_ref();
+                    let mut depth = 1;
+                    while let crate::ast::Expr::Call { callee, .. } = direct {
+                        #[cfg(test)]
+                        IMMEDIATE_SPINE_EDGES.with(|count| count.set(count.get() + 1));
+                        depth += 1;
+                        direct = callee;
                     }
-                    header.promote_ambient_lexical(tcx);
-                    return Ok(OrdinaryValueSeed::ComputedLambdaCall { header });
+                    if let crate::ast::Expr::FnExpr { sig, ret_ty, .. } = direct {
+                        let mut header = super::annotation_plan::plan_lowered_lambda_header(
+                            sig,
+                            ret_ty.as_ref(),
+                            tcx,
+                        )?;
+                        if header.requires_immediate_selection() {
+                            let value_layers = sig
+                                .canonical_group_refs()
+                                .filter(|group| {
+                                    matches!(group, crate::ast::SignatureGroupRef::Value(_))
+                                })
+                                .count();
+                            let mut stage = source;
+                            let mut stages = Vec::new();
+                            while let crate::ast::Expr::Call { callee, .. } = stage {
+                                #[cfg(test)]
+                                IMMEDIATE_SPINE_EDGES.with(|count| count.set(count.get() + 1));
+                                stages.push(stage);
+                                stage = callee;
+                            }
+                            let value_prefix = stages
+                                .iter()
+                                .rev()
+                                .take_while(|stage| {
+                                    let crate::ast::Expr::Call { args, .. } = stage else {
+                                        unreachable!()
+                                    };
+                                    args.iter()
+                                        .any(|arg| matches!(arg, crate::ast::CallArg::Value(_)))
+                                })
+                                .count()
+                                .min(value_layers);
+                            if depth == 1 || value_prefix == depth {
+                                let first = stages.last().expect("an immediate call has one stage");
+                                let crate::ast::Expr::Call { args, .. } = first else {
+                                    unreachable!()
+                                };
+                                return Ok(OrdinaryValueSeed::ImmediateLambdaCall {
+                                    callee: direct,
+                                    args: call_arg_refs(args),
+                                    header,
+                                    stages,
+                                });
+                            }
+                            if value_prefix > 0 {
+                                computed = OrdinaryRecursiveFamily::ComputedBeforeImmediate(
+                                    depth - value_prefix,
+                                );
+                            }
+                        } else if depth == 1 {
+                            header.promote_ambient_lexical(tcx);
+                            return Ok(OrdinaryValueSeed::ComputedLambdaCall { header });
+                        }
+                    }
                 }
                 if let Some(selected) =
                     select_path_unit_call_chain(callee, args, source.site(), tcx)
@@ -7694,66 +7375,14 @@ impl<'m> OrdinaryValueCursor<'m> {
                     return Ok(OrdinaryValueSeed::ConnectedCall { direct, layers });
                 }
                 let Some(direct) = PreparedDirectCallee::path(callee, tcx)? else {
-                    return Ok(OrdinaryValueSeed::Recursive(
-                        OrdinaryRecursiveFamily::ComputedCall,
-                    ));
+                    return Ok(OrdinaryValueSeed::Recursive(computed));
                 };
                 tcx.elaborations
                     .record_rec_loop_diagnostic(source, &direct.synth.ty);
                 let args = call_arg_refs(args);
-                OrdinaryValueSeed::DirectSelecting {
-                    direct,
-                    args,
-                    regular_ufcs: None,
-                }
+                OrdinaryValueSeed::DirectSelecting { direct, args }
             }
-            crate::ast::Expr::Ufcs {
-                source_trivia: _,
-                occurrence: _,
-                receiver,
-                callee_segments,
-                callee_span,
-                args,
-                flavor,
-                macro_call: None,
-                meta,
-                ext,
-            } => {
-                let direct =
-                    PreparedDirectCallee::path_segments(callee_segments, *callee_span, tcx)?;
-                let args = call_arg_refs(args);
-                let effective_args = effective_rec_order_args(&args, tcx);
-                let selection_args = effective_args.as_deref().unwrap_or(&args);
-                let spliced = splice_ufcs_arg_refs_interned(
-                    &direct.synth.ty,
-                    receiver,
-                    &args,
-                    selection_args,
-                    *flavor,
-                    meta.span,
-                    &tcx.env.alias_ctx(),
-                )?;
-                let normalized = crate::ast::Expr::synth_call(
-                    crate::ast::Expr::Path {
-                        occurrence: crate::ast::ExpressionOccurrence::fresh(),
-                        segments: callee_segments.to_vec(),
-                        meta: crate::ast::Meta::new(*callee_span),
-                        ext: (),
-                    },
-                    spliced
-                        .iter()
-                        .copied()
-                        .map(owned_call_arg_from_ref)
-                        .collect(),
-                    meta.span,
-                )
-                .with_fresh_occurrence();
-                OrdinaryValueSeed::DirectSelecting {
-                    direct,
-                    args: spliced,
-                    regular_ufcs: Some((*ext, normalized)),
-                }
-            }
+            crate::ast::Expr::Ufcs { ext, .. } => match *ext {},
             crate::ast::Expr::FnExpr { sig, ret_ty, .. } => {
                 let mut header =
                     super::annotation_plan::plan_lowered_lambda_header(sig, ret_ty.as_ref(), tcx)?;
@@ -7778,11 +7407,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }
                 OrdinaryValueSeed::Recursive(OrdinaryRecursiveFamily::RecQuote)
             }
-            crate::ast::Expr::UserMacro { .. }
-            | crate::ast::Expr::Ufcs {
-                macro_call: Some(_),
-                ..
-            } => OrdinaryValueSeed::UserMacro(
+            crate::ast::Expr::UserMacro { .. } => OrdinaryValueSeed::UserMacro(
                 crate::pass::typecheck_full::prepare_user_macro_action(source, tcx)?,
             ),
             crate::ast::Expr::RecCall { ext, .. }
@@ -7838,19 +7463,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                     state: OrdinaryLambdaState::Unselected,
                 })
             }
-            OrdinaryValueSeed::DirectSelecting {
-                direct,
-                args,
-                regular_ufcs,
-            } => {
-                let call_site = regular_ufcs
-                    .as_ref()
-                    .map_or_else(|| source.site(), |(_, call)| call.site());
+            OrdinaryValueSeed::DirectSelecting { direct, args } => {
+                let call_site = source.site();
                 let mut selecting = open_selecting_goal_call(
                     &direct.synth,
                     args,
                     None,
-                    regular_ufcs,
                     0,
                     direct.span,
                     call_site,
@@ -7867,29 +7485,49 @@ impl<'m> OrdinaryValueCursor<'m> {
                 callee,
                 args,
                 header,
-            } => match plan_immediate_lambda_call(
-                callee,
-                args,
-                header,
-                source.site(),
-                store,
-                owner,
-                tcx,
-            )? {
-                ImmediateLambdaPlanOutcome::Selected(selecting) => {
-                    PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Selecting(selecting))
+                mut stages,
+            } => {
+                let first = stages
+                    .pop()
+                    .expect("an immediate call has one selected stage");
+                match plan_immediate_lambda_call(
+                    callee,
+                    args,
+                    header,
+                    stages,
+                    first.site(),
+                    store,
+                    owner,
+                    tcx,
+                )? {
+                    ImmediateLambdaPlanOutcome::Selected(selecting) => {
+                        PlannedOrdinaryValue::Call(OrdinaryCallContinuation::Selecting(selecting))
+                    }
+                    ImmediateLambdaPlanOutcome::Declined(header) => {
+                        PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::PlannedLambda(
+                            header,
+                        ))
+                    }
                 }
-                ImmediateLambdaPlanOutcome::Declined(header) => PlannedOrdinaryValue::ComputedCall(
-                    ComputedCallContinuation::PlannedLambda(header),
-                ),
-            },
+            }
             OrdinaryValueSeed::ComputedLambdaCall { header } => {
                 PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::PlannedLambda(header))
             }
-            OrdinaryValueSeed::UserMacro(action) => {
+            OrdinaryValueSeed::UserMacro(mut action) => {
+                let output_stages = action.take_output_stages();
+                if !output_stages.is_empty() {
+                    return Ok(PlannedOrdinaryValue::ComputedCall(
+                        ComputedCallContinuation::MacroOutput(Box::new(MacroOutputApplication {
+                            stages: output_stages,
+                            action: Some(action),
+                            continuation: None,
+                        })),
+                    ));
+                }
                 let span = action.span();
                 let callee = Synth::complete_scheme_interned(action.call_ty().clone());
-                let args = action.args().to_vec();
+                let mut remaining_stages = action.stages();
+                let args = take_macro_stage(&mut remaining_stages);
                 let terminal_type_layer =
                     action.terminal_type_only_layer().map(|(ordinal, params)| {
                         UserMacroTerminalTypeLayerCapability {
@@ -7906,20 +7544,29 @@ impl<'m> OrdinaryValueCursor<'m> {
                     next_source_index: 0,
                     terminal_type_layer,
                 });
-                let selecting = open_selecting_goal_call(
+                let mut selecting = open_selecting_goal_call(
                     &callee,
                     args,
                     None,
-                    None,
                     0,
                     span,
-                    source.site(),
+                    crate::ast::ExpressionSite {
+                        id: source.site().id,
+                        span: action.result_span(),
+                    },
                     EmptyCallMode::ImplicitUnit,
                     transcript,
                     store,
                     owner,
                     tcx,
                 )?;
+                if !remaining_stages.is_empty() {
+                    selecting.call.macro_stages = Some(Box::new(FixedMacroStages {
+                        remaining: remaining_stages,
+                        public_layers: action.public_layer_count(),
+                        carried: Vec::new(),
+                    }));
+                }
                 let call = OrdinaryCallContinuation::Selecting(Box::new(selecting));
                 if action.schedule() == crate::ast::MacroSchedule::Fills {
                     return Ok(PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
@@ -7987,7 +7634,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             if cursor.expected.is_some() {
                 return false;
             }
-            match &cursor.planned {
+            match cursor.planned.observed() {
                 PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AdvancingLayer(layer))
                 | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
@@ -8151,7 +7798,7 @@ impl<'m> OrdinaryValueCursor<'m> {
     /// Whether this source is already known to occupy exactly one value slot
     /// and therefore needs that slot before its first retained child step.
     fn needs_selected_width_one_expectation(&self) -> bool {
-        match &self.planned {
+        match self.planned.observed() {
             PlannedOrdinaryValue::PendingRecOrderPath => self.expected.is_none(),
             PlannedOrdinaryValue::Leaf(leaf) => leaf.prepared.synth.is_scheme,
             PlannedOrdinaryValue::Lambda(PlannedOrdinaryLambda {
@@ -8206,7 +7853,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 "an expected type was attached twice along one continuation chain"
             );
             cursor.expected = Some(expected.clone());
-            match &mut cursor.planned {
+            match cursor.planned.observed_mut() {
                 PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AdvancingLayer(layer))
                 | PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
                     state:
@@ -8486,6 +8133,37 @@ impl<'m> OrdinaryValueCursor<'m> {
             PlannedOrdinaryValue::Recursive(OrdinaryRecursiveFamily::ComputedCall) => {
                 Self::advance_computed_call_step(
                     source, expected, None, mode, demand, frontier, tcx,
+                )
+            }
+            PlannedOrdinaryValue::Recursive(
+                family @ (OrdinaryRecursiveFamily::ComputedWithoutImmediate
+                | OrdinaryRecursiveFamily::ComputedBeforeImmediate(_)),
+            ) => {
+                let crate::ast::Expr::Call { callee, .. } = source else {
+                    unreachable!("a classified computed spine retains its ordinary call")
+                };
+                let seed = match family {
+                    OrdinaryRecursiveFamily::ComputedWithoutImmediate => {
+                        Self::seed_with_immediate_search(callee, false, tcx)?
+                    }
+                    OrdinaryRecursiveFamily::ComputedBeforeImmediate(1) => Self::seed(callee, tcx)?,
+                    OrdinaryRecursiveFamily::ComputedBeforeImmediate(distance) => {
+                        assert!(distance > 1, "an immediate prefix distance is positive");
+                        OrdinaryValueSeed::Recursive(
+                            OrdinaryRecursiveFamily::ComputedBeforeImmediate(distance - 1),
+                        )
+                    }
+                    _ => unreachable!(),
+                };
+                let child = Self::begin_seeded_child(callee, None, seed, frontier, tcx)?;
+                Self::advance_computed_call_step(
+                    source,
+                    expected,
+                    Some(ComputedCallContinuation::Callee(child)),
+                    mode,
+                    demand,
+                    frontier,
+                    tcx,
                 )
             }
             PlannedOrdinaryValue::Recursive(OrdinaryRecursiveFamily::RecOrder) => {
@@ -9296,12 +8974,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                                 .span(),
                                         )?;
                                         Self::finish_rec_order(
-                                            source,
-                                            expected,
-                                            Some(binding),
-                                            body,
-                                            frontier,
-                                            tcx,
+                                            source, expected, binding, body, frontier, tcx,
                                         )
                                         .map(OrdinaryDriverStep::Ready)
                                     }
@@ -9365,20 +9038,9 @@ impl<'m> OrdinaryValueCursor<'m> {
                                                 plan.name
                                             )
                                         };
-                                        let Some(binding) = binding else {
-                                            return Self::finish_rec_order(
-                                                source, expected, None, completed, frontier, tcx,
-                                            )
-                                            .map(OrdinaryDriverStep::Ready);
-                                        };
                                         if source_checked {
                                             return Self::finish_rec_order(
-                                                source,
-                                                expected,
-                                                Some(binding),
-                                                completed,
-                                                frontier,
-                                                tcx,
+                                                source, expected, binding, completed, frontier, tcx,
                                             )
                                             .map(OrdinaryDriverStep::Ready);
                                         }
@@ -9388,6 +9050,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             plan.value.as_ref(),
                                             plan.value.span(),
                                         );
+                                        #[cfg(test)]
+                                        record_rec_order_source_span(plan.value.span());
                                         let value = Self::begin_child(
                                             plan.value.as_ref(),
                                             Some(OwnerBoundType::Retained {
@@ -9459,12 +9123,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                 )))
                             }
                             OrdinaryChildAdvance::Complete(_) => Self::finish_rec_order(
-                                source,
-                                expected,
-                                Some(binding),
-                                body,
-                                frontier,
-                                tcx,
+                                source, expected, binding, body, frontier, tcx,
                             )
                             .map(OrdinaryDriverStep::Ready),
                         },
@@ -9566,12 +9225,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                 )))
                             }
                             OrdinaryChildAdvance::Complete(completed) => Self::finish_rec_order(
-                                source,
-                                expected,
-                                Some(binding),
-                                completed,
-                                frontier,
-                                tcx,
+                                source, expected, binding, completed, frontier, tcx,
                             )
                             .map(OrdinaryDriverStep::Ready),
                         },
@@ -9625,7 +9279,7 @@ impl<'m> OrdinaryValueCursor<'m> {
     fn finish_rec_order(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
-        binding: Option<ScopedType>,
+        binding: ScopedType,
         // Completing the retained body is the proof that `plan.runtime_ty`
         // was checked.  Keep the enclosing expected occurrence when one was
         // supplied so its owner and rigid scope remain intact.
@@ -9652,25 +9306,21 @@ impl<'m> OrdinaryValueCursor<'m> {
         };
         {
             let (store, _owner, publication) = frontier.publication_mut();
-            if let Some(binding) = binding {
-                publication.record_rec_order_binding(
-                    store,
-                    *ext,
-                    crate::ast::Expr::Let {
-                        occurrence: crate::ast::ExpressionOccurrence::fresh(),
-                        name: plan.name.clone(),
-                        name_span: plan.value.span(),
-                        ty: None,
-                        pattern: (),
-                        value: plan.value.clone(),
-                        body: plan.body.clone(),
-                        meta: crate::ast::Meta::new(source.span()),
-                    },
-                    binding,
-                );
-            } else {
-                publication.record_lowered_elaboration(store, *ext, plan.body.as_ref().clone());
-            }
+            publication.record_rec_order_binding(
+                store,
+                *ext,
+                crate::ast::Expr::Let {
+                    occurrence: crate::ast::ExpressionOccurrence::fresh(),
+                    name: plan.name.clone(),
+                    name_span: plan.value.span(),
+                    ty: None,
+                    pattern: (),
+                    value: plan.value.clone(),
+                    body: plan.body.clone(),
+                    meta: crate::ast::Meta::new(source.span()),
+                },
+                binding,
+            );
         }
         let completed = CompletedInFrame::Value(actual, 0);
         Self::stage_expression_type(source, &completed, frontier, tcx);
@@ -9685,7 +9335,11 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
-        if mode != frontier::FrontierMode::Final || expected.is_none() {
+        if expected.is_none() {
+            assert!(
+                retained.is_none(),
+                "a retained recursive-order source keeps its selected expectation"
+            );
             return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Pending(
                 Box::new(Self {
                     source,
@@ -9705,6 +9359,8 @@ impl<'m> OrdinaryValueCursor<'m> {
             None => {
                 #[cfg(test)]
                 record_rec_order_source_visit();
+                #[cfg(test)]
+                record_rec_order_source_span(effective_source.span());
                 let child =
                     Self::begin_child(effective_source, Some(expected.clone()), frontier, tcx)?;
                 let header = expected.clone().into_scoped(
@@ -9718,23 +9374,27 @@ impl<'m> OrdinaryValueCursor<'m> {
         };
         Ok(OrdinaryDriverStep::Descend(OrdinaryDriverDescend {
             child,
-            inherited_mode: frontier::FrontierMode::Final,
+            inherited_mode: mode,
             demand: OrdinaryCompletionDemand::GoalFreeValue,
             handoff: OrdinaryDriverHandoff::Current(Box::new(move |result, frontier, tcx| {
                 let completed = match result {
                     OrdinaryChildAdvance::Complete(completed) => completed,
                     OrdinaryChildAdvance::Pending(child) => {
+                        let waiting = child.is_completion_wait();
                         assert!(
-                            child.is_completion_wait(),
+                            mode != frontier::FrontierMode::Final || waiting,
                             "a recursive-order source remained mode-pending after Final"
                         );
-                        return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Waiting(
-                            Box::new(Self {
-                                source,
-                                expected: Some(expected),
-                                planned: PlannedOrdinaryValue::PendingRecOrderSource(child),
-                            }),
-                        )));
+                        let cursor = Box::new(Self {
+                            source,
+                            expected: Some(expected),
+                            planned: PlannedOrdinaryValue::PendingRecOrderSource(child),
+                        });
+                        return Ok(OrdinaryDriverStep::Ready(if waiting {
+                            OrdinaryValueAdvance::Waiting(cursor)
+                        } else {
+                            OrdinaryValueAdvance::Pending(cursor)
+                        }));
                     }
                 };
                 frontier.stage_rec_order(
@@ -10037,7 +9697,6 @@ impl<'m> OrdinaryValueCursor<'m> {
                     &callee,
                     args,
                     None,
-                    None,
                     slot_offset,
                     source.span(),
                     call_site,
@@ -10225,15 +9884,16 @@ impl<'m> OrdinaryValueCursor<'m> {
 
     #[allow(clippy::too_many_arguments)]
     fn begin_next_immediate_value_layer(
-        mut completed: Box<CompletedPathUnitGoalCall<'m>>,
+        mut previous_call: OpenGoalCall<'m>,
+        previous_result: ScopedType,
         remaining: Vec<CallArgRef<'m, crate::ast::Lowered>>,
         transition: DeclaredValueTransition,
         split_after: usize,
+        next_site: Option<(crate::ast::ExpressionSite, Span)>,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<SelectingOrdinaryCall<'m>, Error> {
-        let mut immediate = *completed
-            .call
+        let mut immediate = *previous_call
             .immediate_lambda
             .take()
             .expect("a declared-layer transition lost its immediate lambda");
@@ -10256,20 +9916,22 @@ impl<'m> OrdinaryValueCursor<'m> {
             call_site,
             slot_offset: _,
             user_macro_transcript,
+            macro_stages: _,
             immediate_lambda: _,
-        } = completed.call;
+        } = previous_call;
+        let (call_site, callee_span) = next_site.unwrap_or((call_site, callee_span));
         assert_eq!(
             owner,
             frontier.goal_owner(),
             "a declared-layer transition changed inference owners"
         );
         immediate
-            .completed_layers
+            .selected_layers
             .push(ImmediateLambdaLayerInstantiation {
                 ordinal: immediate.current_layer,
                 binders: shape.binders,
                 replacements,
-                output: completed.result,
+                output: previous_result,
                 result_canonical,
             });
         immediate.current_layer = next_ordinal;
@@ -10342,7 +10004,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             constrain_immediate_lambda_residuals(
                 frontier,
                 residuals,
-                immediate.completed_layers.len(),
+                immediate.selected_layers.len(),
                 call_site.span,
                 tcx,
             )?;
@@ -10360,7 +10022,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             selected: Vec::new(),
             probe: None,
             result_inferred_type_arg_suffix: 0,
-            regular_ufcs: None,
+            result_context: None,
         })
     }
 
@@ -10409,7 +10071,6 @@ impl<'m> OrdinaryValueCursor<'m> {
         if !matches!(returned_head, crate::ast::Type::Forall { .. }) {
             return Ok(None);
         }
-
         let split_after = completed.call.next_slot_offset();
         let (returned_params, _) = peel_forall_prefix(&returned_head);
         assert_eq!(
@@ -10424,6 +10085,31 @@ impl<'m> OrdinaryValueCursor<'m> {
                 "a macro terminal successor changed binder kind"
             );
         }
+        let expected_is_forall = if let Some(expected) = expected.as_ref() {
+            let (store, owner, delta, _publication) = frontier.parts_mut();
+            let expected = expected.clone().into_scoped(owner, store, source.span())?;
+            let expected = store.zonk_for_progress(delta, expected, tcx)?;
+            let (head, _) = super::aliases::unfold_and_qualify_state(
+                expected.ty().as_type(),
+                &aliases,
+                expected.ty().identity_is_canonical(),
+            );
+            matches!(head, crate::ast::Type::Forall { .. })
+        } else {
+            false
+        };
+        if expected_is_forall {
+            // Preserve the public binder run; the unconsumed ABI layer is
+            // materialized beneath the existing residual type abstraction.
+            completed
+                .call
+                .user_macro_transcript
+                .as_mut()
+                .expect("a ready terminal layer retains its transcript")
+                .terminal_type_layer = None;
+            return Ok(None);
+        }
+
         let callee = Synth::complete_scheme_interned(returned.ty().clone());
         let Some(preflight) = preflight_general_goal_call_layer(
             &callee,
@@ -10554,10 +10240,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                 publication.record_call_split(completed.call.call_site, split_after);
             }
             let selecting = Self::begin_next_immediate_value_layer(
-                completed,
+                completed.call,
+                completed.result,
                 remaining,
                 transition,
                 split_after,
+                None,
                 frontier,
                 tcx,
             )?;
@@ -10578,9 +10266,14 @@ impl<'m> OrdinaryValueCursor<'m> {
                 assert!(
                     matches!(immediate.body, ImmediateLambdaBodyState::Complete { .. })
                         && matches!(
-                                source,
-                                crate::ast::Expr::Call { callee, .. }
-                                    if std::ptr::eq(callee.as_ref(), immediate.source)
+                                {
+                                    let mut callee = source;
+                                    while let crate::ast::Expr::Call { callee: inner, .. } = callee {
+                                        callee = inner;
+                                    }
+                                    callee
+                                },
+                                callee if std::ptr::eq(callee, immediate.source)
                         ),
                     "a post-body expectation crossed immediate lambda lifecycles"
                 );
@@ -10744,7 +10437,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 match retained_callable {
                     Some(RetainedCallableProgress::FunctionScheme) => {
                         publication.record_scoped_function_scheme_position_type(
-                            source.span(),
+                            completed.call.call_site.span,
                             completed.result.clone(),
                             tcx.in_scope_type_param_presentation(),
                         );
@@ -10755,7 +10448,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     )
                     | None => {
                         publication.record_position_type(
-                            source.span(),
+                            completed.call.call_site.span,
                             completed.result.clone(),
                             tcx.in_scope_type_param_presentation(),
                         );
@@ -10938,6 +10631,116 @@ impl<'m> OrdinaryValueCursor<'m> {
         }
     }
 
+    fn begin_next_macro_stage(
+        mut advancing: Box<AdvancingOrdinaryCall<'m>>,
+        split_after: usize,
+        frontier: &mut impl OrdinaryFrontierReentry<'m>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<SelectingOrdinaryCall<'m>, Error> {
+        let mut stages = advancing
+            .call
+            .macro_stages
+            .take()
+            .expect("a fixed macro stage transition lost its remaining stages");
+        assert!(!stages.remaining.is_empty());
+        assert!(
+            advancing.pending_expected_result.is_none()
+                && !advancing.result_context_available
+                && advancing.call.immediate_lambda.is_none()
+                && advancing.call.shape.specialization.is_none(),
+            "a macro stage transition retained an unrelated call obligation"
+        );
+        let transcript = advancing
+            .call
+            .user_macro_transcript
+            .take()
+            .expect("a fixed macro stage lost its public transcript");
+        assert!(
+            transcript.layers.len() < stages.public_layers,
+            "an ordinary result application entered the macro input transcript"
+        );
+        let args = take_macro_stage(&mut stages.remaining);
+        let progressed = {
+            let (store, _, delta, _) = frontier.parts_mut();
+            store.zonk_for_progress(delta, advancing.result, tcx)?
+        };
+        let callee = Synth::complete_scheme_interned(progressed.ty().clone());
+        let Some(preflight) =
+            preflight_general_goal_call_layer(&callee, &args, EmptyCallMode::ImplicitUnit, tcx)?
+        else {
+            return Err(non_function_call_error(
+                &callee.ty,
+                advancing.call.call_site.span,
+                tcx,
+            ));
+        };
+        let GeneralGoalCallPreflight {
+            shape,
+            value_slots,
+            expanded_value_slots,
+            candidates,
+            result_inferred_type_arg_suffix,
+        } = preflight;
+        validate_written_call_type_arguments(&shape.binders, &shape.type_args, true, tcx)?;
+        let owner = frontier.goal_owner();
+        assert_eq!(
+            owner, advancing.call.owner,
+            "a fixed macro stage changed its inference owner"
+        );
+        let mut occurrences = Vec::with_capacity(shape.binders.len());
+        for (index, binder) in shape.binders.iter().enumerate() {
+            let written = shape.type_args.get(index).copied();
+            let inferred = matches!(
+                written,
+                Some(CallArgRef::Type(crate::ast::Type::Infer { .. })) | None
+            );
+            if !inferred {
+                occurrences.push(None);
+                continue;
+            }
+            let goal = frontier.reserve_goal_in_live_delta(
+                binder.effective_kind(),
+                GoalSolutionPolicy::PolytypeAllowed,
+                GoalOrigin::named(
+                    written.map_or(advancing.call.call_site.span, CallArgRef::span),
+                    GoalRole::TypeArgument,
+                    binder.name.clone(),
+                ),
+            )?;
+            occurrences.push(Some(frontier.store().scoped_goal_at(
+                goal,
+                Vec::new(),
+                owner,
+                binder.span,
+            )?));
+        }
+        let mut call = OpenGoalCall::begin_at_slot_offset_with_activated_binders(
+            shape,
+            owner,
+            advancing.call.callee_span,
+            advancing.call.call_site,
+            split_after,
+            Some(transcript),
+            occurrences,
+            frontier.store(),
+            tcx,
+        )?;
+        stages.carried.append(&mut advancing.pending);
+        call.macro_stages = Some(stages);
+        let (_, _, publication) = frontier.publication_mut();
+        publication.record_call_split(call.call_site, split_after);
+        finish_open_preflighted_selecting_goal_call(
+            call,
+            None,
+            None,
+            value_slots,
+            expanded_value_slots,
+            candidates,
+            result_inferred_type_arg_suffix,
+            tcx,
+        )
+    }
+
     fn advance_selected_layer_step(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
@@ -10952,6 +10755,94 @@ impl<'m> OrdinaryValueCursor<'m> {
             remaining,
             split_after,
         } = layer;
+        if advancing
+            .call
+            .macro_stages
+            .as_ref()
+            .is_some_and(|stages| !stages.remaining.is_empty())
+        {
+            return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+                Self {
+                    source,
+                    expected,
+                    planned: PlannedOrdinaryValue::Call(OrdinaryCallContinuation::AdvancingLayer(
+                        AdvancingOrdinaryLayer {
+                            advancing,
+                            remaining,
+                            split_after,
+                        },
+                    )),
+                },
+            )));
+        }
+        if advancing
+            .call
+            .immediate_lambda
+            .as_ref()
+            .is_some_and(|immediate| !immediate.remaining_stages.is_empty())
+        {
+            assert!(
+                remaining.is_empty(),
+                "one written immediate stage retained excess inputs"
+            );
+            assert!(
+                advancing.pending_expected_result.is_none()
+                    && !advancing.result_context_available
+                    && advancing.call.shape.specialization.is_none(),
+                "an immediate stage retained an unrelated call obligation"
+            );
+            let mut advancing = *advancing;
+            let immediate = advancing.call.immediate_lambda.as_mut().unwrap();
+            let stage = immediate.remaining_stages.pop().unwrap();
+            let crate::ast::Expr::Call { callee, args, .. } = stage else {
+                unreachable!("an immediate source stage is an ordinary call")
+            };
+            let transition = DeclaredValueTransition {
+                next_ordinal: immediate.current_layer + 1,
+            };
+            immediate.carried.append(&mut advancing.pending);
+            {
+                let (_, _, publication) = frontier.publication_mut();
+                publication.record_position_type(
+                    advancing.call.call_site.span,
+                    advancing.result.clone(),
+                    tcx.in_scope_type_param_presentation(),
+                );
+                if tcx
+                    .elaborations
+                    .captures_rec_quote_source(advancing.call.call_site.id)
+                {
+                    publication.record_rec_quote_source_type(
+                        advancing.call.call_site.id,
+                        advancing.result.clone(),
+                        false,
+                    );
+                }
+            }
+            let selecting = Self::begin_next_immediate_value_layer(
+                advancing.call,
+                advancing.result,
+                call_arg_refs(args),
+                transition,
+                0,
+                Some((stage.site(), callee.span())),
+                frontier,
+                tcx,
+            )?;
+            return Ok(OrdinaryDriverStep::Continue(Box::new(
+                move |frontier, tcx| {
+                    Self::advance_selecting_call_step(
+                        source,
+                        expected,
+                        Box::new(selecting),
+                        mode,
+                        demand,
+                        frontier,
+                        tcx,
+                    )
+                },
+            )));
+        }
         let declared_transition = advancing
             .call
             .immediate_lambda
@@ -11106,12 +10997,11 @@ impl<'m> OrdinaryValueCursor<'m> {
             let (store, owner, publication) = frontier.publication_mut();
             direct.stage_type(owner, store, publication, tcx)?;
         }
-        if let Some((node_id, replacement)) = selecting.regular_ufcs.take() {
-            let (store, _owner, publication) = frontier.publication_mut();
-            publication.record_lowered_elaboration(store, node_id, replacement);
-        }
 
-        if selecting.value_slots == 0 && !selecting.candidates.is_empty() {
+        if selecting.call.shape.has_value_layer
+            && selecting.value_slots == 0
+            && !selecting.candidates.is_empty()
+        {
             return Err(
                 Error::type_(source.span(), "too many arguments in this call")
                     .with_help(
@@ -11122,6 +11012,52 @@ impl<'m> OrdinaryValueCursor<'m> {
                         operation: crate::error::CallFailureOperation::Selection,
                     }),
             );
+        }
+
+        if selecting.next_candidate == 0
+            && selecting.probe.is_none()
+            && selecting.result_context.is_none()
+            && let Some(expected_result) = expected.as_ref()
+            && selecting.call.shape.has_value_layer
+            && selecting.call.immediate_lambda.is_none()
+            && selecting
+                .call
+                .macro_stages
+                .as_ref()
+                .is_none_or(|stages| stages.remaining.is_empty())
+            && !selecting.candidates.is_empty()
+            && selecting.candidates.len() <= selecting.value_slots
+            && selecting
+                .candidates
+                .iter()
+                .all(|arg| matches!(arg, CallArgRef::Value(_)))
+        {
+            let result = selecting.call.result_type(frontier.goal_owner());
+            let ambient_binders = tcx.in_scope_type_param_binders();
+            let (head, _) = super::aliases::unfold_and_qualify_state(
+                result.as_type(),
+                &tcx.binder_alias_ctx(&ambient_binders),
+                result.identity_is_canonical(),
+            );
+            if !matches!(
+                head,
+                crate::ast::Type::Forall { .. } | crate::ast::Type::Goal { .. }
+            ) {
+                let span = selecting.call.call_site;
+                let result = prepare_owner_bound_type(frontier, result, span.span, tcx)?
+                    .into_scoped(frontier.owner(), frontier.store(), span.span)?;
+                let mut pending = Some(PendingExpectedResult::new(expected_result.clone()));
+                let destination = frontier.owner();
+                try_apply_expected_result_equation(
+                    frontier,
+                    destination,
+                    span,
+                    &result,
+                    &mut pending,
+                    tcx,
+                )?;
+                selecting.result_context = Some((result, pending));
+            }
         }
 
         while selecting.selected_slots < selecting.value_slots {
@@ -11177,10 +11113,19 @@ impl<'m> OrdinaryValueCursor<'m> {
                         selected_expanded_slots_after,
                     });
                     let child_expected = preselected.as_ref().and_then(|preselected| {
-                        preselected
-                            .immediate_evidence
-                            .is_none()
-                            .then(|| preselected.expected.clone())
+                        let exposes_packet_context = if preselected.immediate_evidence.is_some() {
+                            let ambient_binders = tcx.in_scope_type_param_binders();
+                            let ty = preselected.expected.ty();
+                            let (head, _) = super::aliases::unfold_and_qualify_state(
+                                ty.as_type(),
+                                &tcx.binder_alias_ctx(&ambient_binders),
+                                ty.identity_is_canonical(),
+                            );
+                            matches!(head, crate::ast::Type::Product { .. })
+                        } else {
+                            true
+                        };
+                        exposes_packet_context.then(|| preselected.expected.clone())
                     });
                     let child = Self::begin_child(candidate, child_expected, frontier, tcx)?;
                     if let PlannedOrdinaryValue::Lambda(lambda) = &child.cursor.planned
@@ -11335,7 +11280,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                 .flatten()
                 .map(PendingExpectedResult::new);
             if let Some(immediate) = selecting.call.immediate_lambda.as_mut() {
-                immediate.outer_expected = expected.clone();
+                immediate.outer_expected = immediate
+                    .remaining_stages
+                    .is_empty()
+                    .then(|| expected.clone())
+                    .flatten();
             }
             let mut completed = advance_path_unit_goal_call(
                 frontier,
@@ -11392,16 +11341,42 @@ impl<'m> OrdinaryValueCursor<'m> {
             false
         };
         let is_immediate = selecting.call.immediate_lambda.is_some();
-        let result_context_eligible = remaining.is_empty() && !returned_forall && !is_immediate;
-        let expected_result = result_context_eligible.then(|| expected.clone()).flatten();
+        let result_context_eligible = remaining.is_empty()
+            && selecting
+                .call
+                .macro_stages
+                .as_ref()
+                .is_none_or(|stages| stages.remaining.is_empty())
+            && !returned_forall
+            && !is_immediate;
+        let (prepared_result, expected_result) = match selecting.result_context {
+            None => (
+                None,
+                result_context_eligible
+                    .then(|| expected.clone())
+                    .flatten()
+                    .map(PendingExpectedResult::new),
+            ),
+            Some((result, pending)) => {
+                assert!(
+                    result_context_eligible,
+                    "a prepared result equation stays on its selected value layer"
+                );
+                (Some(result), pending)
+            }
+        };
         if let Some(immediate) = selecting.call.immediate_lambda.as_mut() {
-            immediate.outer_expected = remaining.is_empty().then(|| expected.clone()).flatten();
+            immediate.outer_expected = (remaining.is_empty()
+                && immediate.remaining_stages.is_empty())
+            .then(|| expected.clone())
+            .flatten();
         }
         let mut advancing = begin_general_goal_call(
             frontier,
             selecting.call,
             selecting.selected,
             selecting.result_inferred_type_arg_suffix,
+            prepared_result,
             expected_result,
             tcx,
         )?;
@@ -12301,7 +12276,6 @@ impl<'m> OrdinaryValueCursor<'m> {
                     call,
                     None,
                     None,
-                    None,
                     value_slots,
                     expanded_value_slots,
                     candidates,
@@ -12399,6 +12373,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     call_expected.is_some(),
                     "the shared call selector changed its attached expectation while pending"
                 );
+                let next_fixed_stage = matches!(&call, OrdinaryCallContinuation::AdvancingLayer(layer)
+                    if layer.advancing.call.macro_stages.as_ref().is_some_and(|stages| !stages.remaining.is_empty()));
                 let terminal_successor = matches!(
                     &call,
                     OrdinaryCallContinuation::Successor(successor)
@@ -12499,6 +12475,13 @@ impl<'m> OrdinaryValueCursor<'m> {
                         state: PlannedUserMacroCallState::Advancing(call),
                     },
                 };
+                if next_fixed_stage {
+                    #[cfg(test)]
+                    update_final_macro_successor_work(|work| {
+                        work.fixed_stage_continues += 1;
+                    });
+                    return ResumedUserMacroCall::Continue(continuation);
+                }
                 if terminal_successor && mode.executes_relation_actions() {
                     #[cfg(test)]
                     update_final_macro_successor_work(|work| {
@@ -12661,6 +12644,17 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
+        if demand == OrdinaryCompletionDemand::PublicHeader
+            && !matches!(&continuation.state, PlannedUserMacroCallState::Advancing(_))
+        {
+            return Ok(OrdinaryDriverStep::Ready(OrdinaryValueAdvance::pending(
+                Self {
+                    source,
+                    expected,
+                    planned: PlannedOrdinaryValue::UserMacro(continuation),
+                },
+            )));
+        }
         let PlannedUserMacroCall { action, state } = continuation;
         let (mut action, call, mut marked_projection) = match state {
             PlannedUserMacroCallState::Fills(state) => match state.into_advance() {
@@ -12852,6 +12846,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                             frontier,
                             tcx,
                         )?;
+                        let result_span = ready.result_span();
                         let obligation = crate::pass::typecheck_full::materialize_ready_projected_user_macro_action(
                             ready,
                             materialized.typed,
@@ -12885,7 +12880,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                         let closed_result = materialized.public_residual_result;
                         let (_store, _owner, _delta, publication) = frontier.parts_mut();
                         publication.record_position_type(
-                            source.span(),
+                            result_span,
                             closed_result.clone(),
                             tcx.in_scope_type_param_presentation(),
                         );
@@ -13040,6 +13035,59 @@ impl<'m> OrdinaryValueCursor<'m> {
             action.is_some(),
             "an advancing macro call lost its prepared action"
         );
+        let call = match call {
+            OrdinaryCallContinuation::AdvancingLayer(layer)
+                if layer
+                    .advancing
+                    .call
+                    .macro_stages
+                    .as_ref()
+                    .is_some_and(|stages| !stages.remaining.is_empty()) =>
+            {
+                assert!(
+                    layer.remaining.is_empty(),
+                    "a fixed macro stage retained packet values"
+                );
+                let selecting = Self::begin_next_macro_stage(
+                    layer.advancing,
+                    layer.split_after,
+                    frontier,
+                    tcx,
+                )?;
+                let call = OrdinaryCallContinuation::Selecting(Box::new(selecting));
+                let continuation = if let Some(projection) = marked_projection {
+                    PlannedUserMacroCall {
+                        action: None,
+                        state: PlannedUserMacroCallState::Fills(Box::new(
+                            fills::MarkedCallState::project_with(
+                                action.take().expect("a macro stage retains its action"),
+                                call,
+                                projection,
+                            ),
+                        )),
+                    }
+                } else {
+                    PlannedUserMacroCall {
+                        action,
+                        state: PlannedUserMacroCallState::Advancing(call),
+                    }
+                };
+                return Ok(OrdinaryDriverStep::Continue(Box::new(
+                    move |frontier, tcx| {
+                        Self::advance_user_macro_step(
+                            source,
+                            expected,
+                            continuation,
+                            mode,
+                            demand,
+                            frontier,
+                            tcx,
+                        )
+                    },
+                )));
+            }
+            call => call,
+        };
         let call_expected = match &call {
             OrdinaryCallContinuation::Successor(successor)
                 if successor
@@ -13286,6 +13334,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryValueAdvance<'m>, Error> {
+        let result_span = ready.result_span();
         let (obligation, closed_result) = if must_evaluate {
             let (store, owner, delta, _publication) = frontier.parts_mut();
             let (obligation, exact_ty) =
@@ -13330,11 +13379,13 @@ impl<'m> OrdinaryValueCursor<'m> {
         {
             let (_store, _owner, _delta, publication) = frontier.parts_mut();
             publication.record_position_type(
-                source.span(),
+                result_span,
                 closed_result.clone(),
                 tcx.in_scope_type_param_presentation(),
             );
             publication.record_user_macro(obligation);
+            #[cfg(test)]
+            record_public_header_work(|work| work.unmarked_publications += 1);
         }
         Ok(OrdinaryValueAdvance::Complete(CompletedInFrame::Value(
             closed_result,
@@ -13358,6 +13409,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         else {
             unreachable!("a projecting fills macro reached marked evaluation")
         };
+        let result_span = ready.result_span();
         let (proof, context) = crate::normalization::fresh_fills_capability_values();
         let evaluation = crate::pass::typecheck_full::evaluate_ready_fills_user_macro_action(
             ready, proof, context, tcx,
@@ -13387,7 +13439,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         let _relations = returned_context.relations_in_source_order();
         let (_store, _owner, _delta, publication) = frontier.parts_mut();
         publication.record_position_type(
-            source.span(),
+            result_span,
             closed_result.clone(),
             tcx.in_scope_type_param_presentation(),
         );
@@ -14033,22 +14085,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryChildContinuation<'m>, Error> {
-        let (reservation, planned) =
-            frontier.reserve_ordinary_child_with(source.span(), tcx, |store, owner| {
-                Self::plan(source, seed, store, owner, tcx)
-            })?;
-        let mut child = frontier.open_ordinary_child(reservation)?;
-        child.retain_quote_source(source, tcx);
-        let cursor = match expected {
-            Some(expected) => Self::bind(source, expected, planned),
-            None => Self::bind_synth(source, planned),
-        };
-        Ok(OrdinaryChildContinuation {
-            child,
-            cursor: Box::new(cursor),
-            next_mode: frontier::FrontierMode::ExpectedOnly,
-            suspension: OrdinarySuspension::Mode,
-        })
+        Self::begin_child_from_seed(source, expected, None, seed, frontier, tcx)
     }
 
     fn begin_child(
@@ -14074,10 +14111,25 @@ impl<'m> OrdinaryValueCursor<'m> {
     fn begin_child_with_annotation(
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
+        annotation: Option<(
+            &'m crate::ast::Type<crate::ast::Lowered>,
+            super::annotation_plan::AnnotationPlan<'m, crate::ast::Lowered>,
+        )>,
+        frontier: &mut impl OrdinaryFrontierReentry<'m>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryChildContinuation<'m>, Error> {
+        let seed = Self::seed(source, tcx)?;
+        Self::begin_child_from_seed(source, expected, annotation, seed, frontier, tcx)
+    }
+
+    fn begin_child_from_seed(
+        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        expected: Option<OwnerBoundType>,
         mut annotation: Option<(
             &'m crate::ast::Type<crate::ast::Lowered>,
             super::annotation_plan::AnnotationPlan<'m, crate::ast::Lowered>,
         )>,
+        seed: OrdinaryValueSeed<'m>,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryChildContinuation<'m>, Error> {
@@ -14085,7 +14137,6 @@ impl<'m> OrdinaryValueCursor<'m> {
             expected.is_none() || annotation.is_none(),
             "an ordinary child received two expected-type authorities"
         );
-        let seed = Self::seed(source, tcx)?;
         let (reservation, planned, reserved_annotation) = match seed {
             OrdinaryValueSeed::ConnectedCall { direct, layers } => {
                 match frontier.select_ordinary_child_with(source.span(), tcx, |store, owner| {
@@ -14223,11 +14274,13 @@ impl<'m> OrdinaryValueCursor<'m> {
                     PlannedOrdinaryValue::Call(call) => {
                         fills::projected_call_header_result(call, span, &mut child_frontier, tcx)?
                     }
-                    PlannedOrdinaryValue::Field(_) => fills::observed_cursor_header_result(
-                        &mut child.cursor,
-                        &mut child_frontier,
-                        tcx,
-                    )?,
+                    PlannedOrdinaryValue::Field(_) | PlannedOrdinaryValue::UserMacro(_) => {
+                        fills::observed_cursor_header_result(
+                            &mut child.cursor,
+                            &mut child_frontier,
+                            tcx,
+                        )?
+                    }
                     _ => None,
                 };
                 let Some(header) = header else {
@@ -14684,7 +14737,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     let current = active.next_mode;
                     let advanced = (|| {
                         if public_header_only {
-                            let body_free = match &cursor.planned {
+                            let body_free = match cursor.planned.observed() {
                                 PlannedOrdinaryValue::Leaf(_) | PlannedOrdinaryValue::Literal => {
                                     true
                                 }
@@ -14694,9 +14747,17 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             && call.user_macro_transcript.is_none()
                                     })
                                 }
+                                PlannedOrdinaryValue::UserMacro(PlannedUserMacroCall {
+                                    state: PlannedUserMacroCallState::Advancing(call),
+                                    ..
+                                }) => call
+                                    .open_goal_call()
+                                    .is_some_and(|call| call.immediate_lambda.is_none()),
                                 PlannedOrdinaryValue::ComputedCall(_)
                                 | PlannedOrdinaryValue::Recursive(
-                                    OrdinaryRecursiveFamily::ComputedCall,
+                                    OrdinaryRecursiveFamily::ComputedCall
+                                    | OrdinaryRecursiveFamily::ComputedWithoutImmediate
+                                    | OrdinaryRecursiveFamily::ComputedBeforeImmediate(_),
                                 ) => true,
                                 PlannedOrdinaryValue::Field(_)
                                 | PlannedOrdinaryValue::Recursive(OrdinaryRecursiveFamily::Field) =>
@@ -14721,7 +14782,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                 ));
                             }
                         }
-                        if current == frontier::FrontierMode::Final
+                        if cursor.expected.is_some()
                             && matches!(&cursor.planned, PlannedOrdinaryValue::PendingRecOrderPath)
                         {
                             let effective_source = tcx.effective_rec_order_source(cursor.source);
@@ -14736,7 +14797,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     ty: checked,
                                 };
                                 let expected = cursor.expected.clone().expect(
-                                    "a final pending recursive-order occurrence has an expected type",
+                                    "a selected pending recursive-order occurrence has an expected type",
                                 );
                                 let mut child_frontier =
                                     frontier.ordinary_child_frontier(&mut active.child);
@@ -14778,7 +14839,16 @@ impl<'m> OrdinaryValueCursor<'m> {
                         }
                         let mut child_frontier =
                             frontier.ordinary_child_frontier(&mut active.child);
-                        (*cursor).advance_step(current, active.demand, &mut child_frontier, tcx)
+                        let demand = if public_header_only
+                            && matches!(
+                                cursor.planned.observed(),
+                                PlannedOrdinaryValue::UserMacro(_)
+                            ) {
+                            OrdinaryCompletionDemand::PublicHeader
+                        } else {
+                            active.demand
+                        };
+                        (*cursor).advance_step(current, demand, &mut child_frontier, tcx)
                     })();
                     match advanced {
                         Ok(step) => step,
@@ -14863,6 +14933,19 @@ impl<'m> OrdinaryValueCursor<'m> {
                     active.completion_wait = true;
                 }
                 OrdinaryDriverStep::Ready(OrdinaryValueAdvance::Complete(completed)) => {
+                    // A completed callee can retain its owner for a later application.
+                    // Freeze its own source type before that owner carries a new result.
+                    if let Some(source) = active.child.take_quote_source() {
+                        assert!(
+                            !matches!(completed, CompletedInFrame::UserMacroCall { .. }),
+                            "a public quotation source completed as an internal call transcript"
+                        );
+                        active.child.publication_mut().record_rec_quote_source_type(
+                            source,
+                            completed.scoped().clone(),
+                            matches!(completed, CompletedInFrame::FunctionScheme(..)),
+                        );
+                    }
                     let completed = OpenOrdinaryChildAdvance::Complete {
                         child: active.child,
                         completed,
@@ -15776,32 +15859,29 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn begin_computed_application(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         callee: Synth<crate::ast::Lowered>,
         expected: Option<OwnerBoundType>,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryChildContinuation<'m>, Error> {
-        let crate::ast::Expr::Call {
-            callee: callee_source,
-            args,
-            ..
-        } = source
-        else {
-            unreachable!("a computed-call continuation received another expression family")
-        };
-        let args = call_arg_refs(args);
-        reject_invalid_polymorphic_non_function_application(&callee.ty, &args, source.site(), tcx)?;
+        let source = application_source.source;
+        let args = call_arg_refs(application_source.args());
+        reject_invalid_polymorphic_non_function_application(
+            &callee.ty,
+            &args,
+            application_source.site(),
+            tcx,
+        )?;
         let (reservation, plan) =
             frontier.reserve_ordinary_child_with(source.span(), tcx, |store, owner| {
                 open_selecting_goal_call(
                     &callee,
                     args,
                     None,
-                    None,
                     0,
-                    callee_source.span(),
-                    source.site(),
+                    application_source.callee_span(),
+                    application_source.site(),
                     EmptyCallMode::ImplicitUnit,
                     None,
                     store,
@@ -15828,14 +15908,13 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn begin_paired_computed_application(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         callee: &mut OrdinaryValueCursor<'m>,
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<Option<(OrdinaryChildContinuation<'m>, ScopedType)>, Error> {
-        let crate::ast::Expr::Call { args, .. } = source else {
-            unreachable!("a computed application retains its written call")
-        };
+        let source = application_source.source;
+        let args = application_source.args();
         let Some((header, result)) = fills::observed_application_header(
             callee,
             &call_arg_refs(args),
@@ -15851,7 +15930,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             ty: result.clone(),
         };
         let application = Self::begin_computed_application(
-            source,
+            application_source,
             Synth::value_interned(header.ty().clone())
                 .with_inferred_type_arg_suffix(callee.result_inferred_type_arg_suffix()),
             Some(expected_result),
@@ -15862,12 +15941,13 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn apply_paired_computed_context(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         pair: &mut PairedComputedCall<'m>,
         child_completed: bool,
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<(), Error> {
+        let source = application_source.source;
         let Some(pending) = pair.pending_expected_result.as_ref() else {
             return Ok(());
         };
@@ -15901,7 +15981,7 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn advance_paired_computed_application(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         expected: Option<OwnerBoundType>,
         mut pair: PairedComputedCall<'m>,
         mode: frontier::FrontierMode,
@@ -15909,7 +15989,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
-        Self::apply_paired_computed_context(source, &mut pair, false, frontier, tcx)?;
+        Self::apply_paired_computed_context(application_source, &mut pair, false, frontier, tcx)?;
         let PairedComputedCall {
             callee_child,
             callee,
@@ -15944,11 +16024,21 @@ impl<'m> OrdinaryValueCursor<'m> {
                                     work.paired_computed.applications_completed += 1
                                 });
                                 Self::apply_paired_computed_context(
-                                    source, &mut pair, true, frontier, tcx,
+                                    application_source,
+                                    &mut pair,
+                                    true,
+                                    frontier,
+                                    tcx,
                                 )?;
                             }
                             Self::advance_paired_computed_callee(
-                                source, expected, pair, mode, demand, frontier, tcx,
+                                application_source,
+                                expected,
+                                pair,
+                                mode,
+                                demand,
+                                frontier,
+                                tcx,
                             )
                         }),
                     },
@@ -15957,7 +16047,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             }
             application @ OrdinaryChildAdvance::Complete(_) => {
                 Self::advance_paired_computed_callee(
-                    source,
+                    application_source,
                     expected,
                     PairedComputedCall {
                         callee_child,
@@ -15976,7 +16066,7 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn advance_paired_computed_callee(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         expected: Option<OwnerBoundType>,
         pair: PairedComputedCall<'m>,
         mode: frontier::FrontierMode,
@@ -15993,7 +16083,7 @@ impl<'m> OrdinaryValueCursor<'m> {
         } = pair;
         let Some(callee) = callee else {
             return Self::finish_paired_computed_call(
-                source,
+                application_source,
                 expected,
                 PairedComputedCall {
                     callee_child,
@@ -16019,7 +16109,7 @@ impl<'m> OrdinaryValueCursor<'m> {
             handoff: OrdinaryDriverHandoff::Open(Box::new(move |advance, frontier, tcx| {
                 match advance {
                     OpenOrdinaryChildAdvance::Pending(callee) => Self::finish_paired_computed_call(
-                        source,
+                        application_source,
                         expected,
                         PairedComputedCall {
                             callee_child: callee.child,
@@ -16055,10 +16145,20 @@ impl<'m> OrdinaryValueCursor<'m> {
                             pending_expected_result,
                         };
                         Self::apply_paired_computed_context(
-                            source, &mut pair, true, frontier, tcx,
+                            application_source,
+                            &mut pair,
+                            true,
+                            frontier,
+                            tcx,
                         )?;
                         Self::advance_paired_computed_application(
-                            source, expected, pair, mode, demand, frontier, tcx,
+                            application_source,
+                            expected,
+                            pair,
+                            mode,
+                            demand,
+                            frontier,
+                            tcx,
                         )
                     }
                 }
@@ -16068,14 +16168,15 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn finish_paired_computed_call(
-        source: &'m crate::ast::Expr<crate::ast::Lowered>,
+        application_source: ComputedApplicationSource<'m>,
         expected: Option<OwnerBoundType>,
         mut pair: PairedComputedCall<'m>,
         mode: frontier::FrontierMode,
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
-        Self::apply_paired_computed_context(source, &mut pair, false, frontier, tcx)?;
+        let source = application_source.source;
+        Self::apply_paired_computed_context(application_source, &mut pair, false, frontier, tcx)?;
         if pair.callee.is_none() && matches!(pair.application, OrdinaryChildAdvance::Complete(_)) {
             if let Some(pending) = &pair.pending_expected_result {
                 if mode == frontier::FrontierMode::Final {
@@ -16111,9 +16212,9 @@ impl<'m> OrdinaryValueCursor<'m> {
             Self {
                 source,
                 expected,
-                planned: PlannedOrdinaryValue::ComputedCall(ComputedCallContinuation::Paired(
-                    Box::new(pair),
-                )),
+                planned: PlannedOrdinaryValue::ComputedCall(
+                    application_source.retain(ComputedCallContinuation::Paired(Box::new(pair))),
+                ),
             },
         )))
     }
@@ -16127,26 +16228,119 @@ impl<'m> OrdinaryValueCursor<'m> {
         frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
     ) -> Result<OrdinaryDriverStep<'m>, Error> {
-        let crate::ast::Expr::Call { callee, .. } = source else {
-            unreachable!("a computed-call continuation received another expression family")
+        let Some(ComputedCallContinuation::MacroOutput(output)) = continuation else {
+            return Self::advance_computed_stage_step(
+                ComputedApplicationSource {
+                    source,
+                    stages: None,
+                },
+                expected,
+                continuation,
+                mode,
+                demand,
+                frontier,
+                tcx,
+            );
+        };
+        let MacroOutputApplication {
+            stages,
+            action,
+            continuation,
+        } = *output;
+        let application_source = ComputedApplicationSource {
+            source,
+            stages: Some(stages),
+        };
+        let continuation = match continuation {
+            Some(PlannedOrdinaryValue::ComputedCall(continuation)) => continuation,
+            Some(_) => unreachable!("a macro output retains the ordinary computed-call driver"),
+            None => {
+                let action =
+                    action.expect("a new macro output application retains its input action");
+                let boundary = action.stages().len();
+                let (_, _, publication) = frontier.publication_mut();
+                publication.record_macro_output_stage(source.site(), boundary);
+                let prefix = &stages[..stages.len() - 1];
+                let (reservation, planned) =
+                    frontier.reserve_ordinary_child_with(source.span(), tcx, |store, owner| {
+                        if prefix.is_empty() {
+                            Self::plan(
+                                source,
+                                OrdinaryValueSeed::UserMacro(action),
+                                store,
+                                owner,
+                                tcx,
+                            )
+                        } else {
+                            Ok(PlannedOrdinaryValue::ComputedCall(
+                                ComputedCallContinuation::MacroOutput(Box::new(
+                                    MacroOutputApplication {
+                                        stages: prefix,
+                                        action: Some(action),
+                                        continuation: None,
+                                    },
+                                )),
+                            ))
+                        }
+                    })?;
+                ComputedCallContinuation::Callee(OrdinaryChildContinuation {
+                    child: frontier.open_ordinary_child(reservation)?,
+                    cursor: Box::new(Self::bind_synth(source, planned)),
+                    next_mode: frontier::FrontierMode::ExpectedOnly,
+                    suspension: OrdinarySuspension::Mode,
+                })
+            }
+        };
+        Self::advance_computed_stage_step(
+            application_source,
+            expected,
+            Some(continuation),
+            mode,
+            demand,
+            frontier,
+            tcx,
+        )
+    }
+
+    fn advance_computed_stage_step(
+        application_source: ComputedApplicationSource<'m>,
+        expected: Option<OwnerBoundType>,
+        continuation: Option<ComputedCallContinuation<'m>>,
+        mode: frontier::FrontierMode,
+        demand: OrdinaryCompletionDemand,
+        frontier: &mut frontier::ConnectedCallFrontier<'_, 'm>,
+        tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+    ) -> Result<OrdinaryDriverStep<'m>, Error> {
+        let source = application_source.source;
+        let callee = match source {
+            crate::ast::Expr::Call { callee, .. } if application_source.stages.is_none() => {
+                Some(callee.as_ref())
+            }
+            _ => None,
         };
         let continuation = match continuation {
             Some(continuation) => continuation,
-            None => {
-                ComputedCallContinuation::Callee(Self::begin_child(callee, None, frontier, tcx)?)
-            }
+            None => ComputedCallContinuation::Callee(Self::begin_child(
+                callee.expect("an ordinary callee retains its source"),
+                None,
+                frontier,
+                tcx,
+            )?),
         };
         match continuation {
+            ComputedCallContinuation::MacroOutput(_) => {
+                unreachable!("the stage dispatcher unwraps output applications")
+            }
             ComputedCallContinuation::PlannedLambda(header) => {
                 let callee_continuation = Self::begin_seeded_child(
-                    callee,
+                    callee.expect("an immediate lambda retains its ordinary call source"),
                     None,
                     OrdinaryValueSeed::Lambda(OrdinaryLambdaSeed { header }),
                     frontier,
                     tcx,
                 )?;
-                Self::advance_computed_call_step(
-                    source,
+                Self::advance_computed_stage_step(
+                    application_source,
                     expected,
                     Some(ComputedCallContinuation::Callee(callee_continuation)),
                     mode,
@@ -16170,7 +16364,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             &mut callee_continuation.child,
                                         );
                                         Self::begin_paired_computed_application(
-                                            source,
+                                            application_source,
                                             &mut callee_continuation.cursor,
                                             &mut callee_frontier,
                                             tcx,
@@ -16189,8 +16383,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                                             next_mode: frontier::FrontierMode::ExpectedOnly,
                                             suspension: callee_continuation.suspension,
                                         };
-                                        return Self::advance_computed_call_step(
-                                            source,
+                                        return Self::advance_computed_stage_step(
+                                            application_source,
                                             expected.clone(),
                                             Some(ComputedCallContinuation::Paired(Box::new(
                                                 PairedComputedCall {
@@ -16221,7 +16415,11 @@ impl<'m> OrdinaryValueCursor<'m> {
                                         source,
                                         expected,
                                         planned: PlannedOrdinaryValue::ComputedCall(
-                                            ComputedCallContinuation::Callee(callee_continuation),
+                                            application_source.retain(
+                                                ComputedCallContinuation::Callee(
+                                                    callee_continuation,
+                                                ),
+                                            ),
                                         ),
                                     },
                                 )))
@@ -16232,42 +16430,54 @@ impl<'m> OrdinaryValueCursor<'m> {
                             } => {
                                 child.finish_independent_source();
                                 let inferred_type_arg_suffix = completed.inferred_type_arg_suffix();
-                                let callee = match completed {
-                                    CompletedInFrame::Value(ty, _) => {
-                                        Synth::value_interned(ty.ty().clone())
+                                let callee = {
+                                    let mut callee_frontier =
+                                        frontier.ordinary_child_frontier(&mut child);
+                                    let (store, _owner, delta, _publication) =
+                                        callee_frontier.parts_mut();
+                                    let output = store.zonk_for_progress(
+                                        delta,
+                                        completed.scoped().clone(),
+                                        tcx,
+                                    )?;
+                                    match completed {
+                                        CompletedInFrame::Value(..) => {
+                                            Synth::value_interned(output.ty().clone())
+                                        }
+                                        CompletedInFrame::FunctionScheme(..) => {
+                                            Synth::complete_scheme_interned(output.ty().clone())
+                                        }
+                                        CompletedInFrame::IntrinsicCallable { boolean, .. } => {
+                                            let boolean =
+                                                store.zonk_for_progress(delta, *boolean, tcx)?;
+                                            let mut callee =
+                                                Synth::value_interned(output.ty().clone());
+                                            callee.specialization = Some(Box::new(
+                                                super::IntrinsicSpecialization::Boolean(
+                                                    boolean.ty().clone(),
+                                                ),
+                                            ));
+                                            callee
+                                        }
+                                        CompletedInFrame::UserMacroCall { .. } => unreachable!(
+                                            "a macro transcript escaped its owning value cursor"
+                                        ),
                                     }
-                                    CompletedInFrame::FunctionScheme(ty, _) => {
-                                        Synth::complete_scheme_interned(ty.ty().clone())
-                                    }
-                                    CompletedInFrame::IntrinsicCallable {
-                                        output, boolean, ..
-                                    } => {
-                                        let mut callee = Synth::value_interned(output.ty().clone());
-                                        callee.specialization = Some(Box::new(
-                                            super::IntrinsicSpecialization::Boolean(
-                                                boolean.ty().clone(),
-                                            ),
-                                        ));
-                                        callee
-                                    }
-                                    CompletedInFrame::UserMacroCall { .. } => unreachable!(
-                                        "a macro transcript escaped its owning value cursor"
-                                    ),
                                 }
                                 .with_inferred_type_arg_suffix(inferred_type_arg_suffix);
                                 let application = {
                                     let mut callee_frontier =
                                         frontier.ordinary_child_frontier(&mut child);
                                     Self::begin_computed_application(
-                                        source,
+                                        application_source,
                                         callee,
                                         expected.clone(),
                                         &mut callee_frontier,
                                         tcx,
                                     )?
                                 };
-                                Self::advance_computed_call_step(
-                                    source,
+                                Self::advance_computed_stage_step(
+                                    application_source,
                                     expected,
                                     Some(ComputedCallContinuation::Application {
                                         callee_child: child,
@@ -16285,7 +16495,13 @@ impl<'m> OrdinaryValueCursor<'m> {
                 }))
             }
             ComputedCallContinuation::Paired(pair) => Self::advance_paired_computed_application(
-                source, expected, *pair, mode, demand, frontier, tcx,
+                application_source,
+                expected,
+                *pair,
+                mode,
+                demand,
+                frontier,
+                tcx,
             ),
             ComputedCallContinuation::Application {
                 callee_child,
@@ -16314,10 +16530,12 @@ impl<'m> OrdinaryValueCursor<'m> {
                                         source,
                                         expected,
                                         planned: PlannedOrdinaryValue::ComputedCall(
-                                            ComputedCallContinuation::Application {
-                                                callee_child,
-                                                application,
-                                            },
+                                            application_source.retain(
+                                                ComputedCallContinuation::Application {
+                                                    callee_child,
+                                                    application,
+                                                },
+                                            ),
                                         ),
                                     },
                                 )))
@@ -17152,7 +17370,7 @@ trait OrdinaryFrontierReentry<'m> {
         &mut self,
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error>;
+    ) -> Result<Option<(ScopedType, bool)>, Error>;
 
     fn begin_gather(
         &mut self,
@@ -17322,7 +17540,7 @@ impl<'m> OrdinaryFrontierReentry<'m> for frontier::OrdinaryFrontier<'m> {
         &mut self,
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         frontier::OrdinaryFrontier::take_rec_order_observation(self, source, tcx)
     }
 
@@ -17531,7 +17749,7 @@ impl<'m> OrdinaryFrontierReentry<'m> for frontier::ConnectedCallFrontier<'_, 'm>
         &mut self,
         source: &'m crate::ast::Expr<crate::ast::Lowered>,
         tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         frontier::ConnectedCallFrontier::take_rec_order_observation(self, source, tcx)
     }
 
@@ -17702,9 +17920,6 @@ fn advance_path_unit_goal_call<'m>(
         frontier.goal_owner(),
         "goal-call plan was advanced through a different inference owner"
     );
-    for (source, state) in pending_type_arg_updates(&call.shape.type_args, tcx) {
-        frontier.stage_rec_order(source, state, tcx)?;
-    }
 
     let goal_owner = frontier.goal_owner();
     let owner = frontier.owner();
@@ -17835,8 +18050,6 @@ fn advance_path_unit_goal_call<'m>(
     }
     let result = result_type.into_scoped(owner, frontier.store(), call.call_site.span)?;
     {
-        let store = frontier.store();
-        let publication_owner = gather.owner();
         let (_, publication) = gather.parts_mut();
         if call.shape.has_implicit_unit_value() {
             publication.record_call_implicit_unit(
@@ -17844,7 +18057,7 @@ fn advance_path_unit_goal_call<'m>(
                 call.slot_offset + call.shape.binders.len(),
             );
         }
-        call.stage_type_argument_metadata(goal_owner, publication_owner, store, publication, tcx)?;
+        call.stage_type_argument_metadata(goal_owner, publication, tcx)?;
     }
     frontier.close_gather(gather, tcx)?;
     Ok(CompletedPathUnitGoalCall {
@@ -17860,7 +18073,8 @@ fn begin_general_goal_call<'m>(
     mut call: OpenGoalCall<'m>,
     values: Vec<SelectedOrdinaryCallValue<'m>>,
     result_inferred_type_arg_suffix: usize,
-    expected_ret: Option<OwnerBoundType>,
+    prepared_result: Option<ScopedType>,
+    pending_expected_result: Option<PendingExpectedResult>,
     tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<AdvancingOrdinaryCall<'m>, Error> {
     assert_eq!(
@@ -17868,9 +18082,6 @@ fn begin_general_goal_call<'m>(
         frontier.goal_owner(),
         "ordinary goal-call plan was advanced through another inference owner"
     );
-    for (source, state) in pending_type_arg_updates(&call.shape.type_args, tcx) {
-        frontier.stage_rec_order(source, state, tcx)?;
-    }
 
     let goal_owner = frontier.goal_owner();
     let owner = frontier.owner();
@@ -17974,12 +18185,16 @@ fn begin_general_goal_call<'m>(
             });
         }
     }
-    let result_type = prepare_owner_bound_type(
-        frontier,
-        call.result_type(goal_owner),
-        call.call_site.span,
-        tcx,
-    )?;
+    let result = match prepared_result {
+        Some(result) => result,
+        None => prepare_owner_bound_type(
+            frontier,
+            call.result_type(goal_owner),
+            call.call_site.span,
+            tcx,
+        )?
+        .into_scoped(owner, frontier.store(), call.call_site.span)?,
+    };
 
     let mut gather = None;
     let mut retained = Vec::new();
@@ -18096,18 +18311,21 @@ fn begin_general_goal_call<'m>(
         gather = Some(frontier.begin_gather(call.call_site.span, tcx)?);
     }
     let mut gather = gather.expect("ordinary call always has a final gather segment");
-    // Every caller immediately advances this continuation through one
-    // frontier mode. Let that scheduler own the first result equation so an
-    // initially deferred equation is not retried before any child progresses.
-    let pending_expected_result = expected_ret.map(PendingExpectedResult::new);
-    let result = result_type.into_scoped(owner, frontier.store(), call.call_site.span)?;
     {
-        let store = frontier.store();
-        let publication_owner = gather.owner();
         let (_, publication) = gather.parts_mut();
-        call.stage_type_argument_metadata(goal_owner, publication_owner, store, publication, tcx)?;
+        call.stage_type_argument_metadata(goal_owner, publication, tcx)?;
     }
     frontier.close_gather(gather, tcx)?;
+    if let Some(stages) = call.macro_stages.as_mut() {
+        let mut pending = std::mem::take(&mut stages.carried);
+        pending.append(&mut retained);
+        retained = pending;
+    }
+    if let Some(immediate) = call.immediate_lambda.as_mut() {
+        let mut pending = std::mem::take(&mut immediate.carried);
+        pending.append(&mut retained);
+        retained = pending;
+    }
 
     Ok(AdvancingOrdinaryCall {
         result_context_available: false,
@@ -18195,18 +18413,29 @@ fn expected_equation_snapshot<'m>(
     advancing: &AdvancingOrdinaryCall<'m>,
     tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<EquationSnapshot, Error> {
-    let span = advancing.call.call_site;
-    let pending = advancing
-        .pending_expected_result
-        .as_ref()
-        .expect("an expected-result progress snapshot lost its equation");
+    pending_expected_equation_snapshot(
+        frontier,
+        &advancing.result,
+        advancing
+            .pending_expected_result
+            .as_ref()
+            .expect("an expected-result progress snapshot lost its equation"),
+        advancing.call.call_site.span,
+        tcx,
+    )
+}
+
+#[cfg(feature = "surface")]
+fn pending_expected_equation_snapshot<'m>(
+    frontier: &mut impl OrdinaryFrontierReentry<'m>,
+    result: &ScopedType,
+    pending: &PendingExpectedResult,
+    span: Span,
+    tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<EquationSnapshot, Error> {
     let (store, owner, delta, _publication) = frontier.parts_mut();
-    let result = advancing.result.clone();
-    let expected = pending
-        .expected
-        .clone()
-        .into_scoped(owner, store, span.span)?;
-    EquationSnapshot::zonked(store, delta, result, expected, tcx)
+    let expected = pending.expected.clone().into_scoped(owner, store, span)?;
+    EquationSnapshot::zonked(store, delta, result.clone(), expected, tcx)
 }
 
 #[cfg(feature = "surface")]
@@ -18218,48 +18447,77 @@ fn try_apply_pending_expected_result<'m>(
     if advancing.pending_expected_result.is_none() {
         return Ok(true);
     }
-    let snapshot = expected_equation_snapshot(frontier, advancing, tcx)?;
-    let Some(mut pending) = advancing.pending_expected_result.take() else {
-        unreachable!("an expected-result attempt lost its pending equation")
-    };
-    #[cfg(test)]
-    record_expected_result_equation();
-    let mut gather = frontier.begin_gather(advancing.call.call_site.span, tcx)?;
-    let store = frontier.store();
-    let result = OwnerBoundType::Retained {
-        owner: advancing.destination,
-        ty: advancing.result.clone(),
-    }
-    .into_scoped(gather.owner(), store, advancing.call.call_site.span)?;
-    let expected_equation = pending.expected.clone().into_expected_equation_operand(
-        gather.owner(),
-        store,
-        advancing.call.call_site.span,
+    let applied = try_apply_expected_result_equation(
+        frontier,
+        advancing.destination,
+        advancing.call.call_site,
+        &advancing.result,
+        &mut advancing.pending_expected_result,
+        tcx,
     )?;
-    let outcome = store
-        .try_constrain_gather_equation(
-            gather.delta_mut(),
-            result.clone(),
-            expected_equation,
-            advancing.call.call_site.span,
-            tcx,
-        )
-        .map_err(|error| {
-            error.with_type_failure_origin(crate::error::TypeFailureOrigin::Application {
-                call_site: advancing.call.call_site.id,
-                operation: crate::error::CallFailureOperation::Result,
-            })
-        })?;
-    frontier.close_gather(gather, tcx)?;
-    if outcome == CloseReadyEquationConstraint::Deferred {
-        pending.progress = EquationProgress::AwaitingProgress(snapshot);
-        advancing.pending_expected_result = Some(pending);
-    } else if let Some(immediate) = advancing.call.immediate_lambda.as_ref() {
+    if applied && let Some(immediate) = advancing.call.immediate_lambda.as_ref() {
         assert!(
             matches!(immediate.body, ImmediateLambdaBodyState::Complete { .. })
                 && immediate.outer_expected.is_none(),
             "an expected-result equation consumed an incomplete immediate lambda"
         );
+    }
+    Ok(applied)
+}
+
+#[cfg(feature = "surface")]
+fn try_apply_expected_result_equation<'m>(
+    frontier: &mut impl OrdinaryFrontierReentry<'m>,
+    destination: crate::ast::TypeGoalOwner,
+    call_site: crate::ast::ExpressionSite,
+    result: &ScopedType,
+    pending: &mut Option<PendingExpectedResult>,
+    tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
+) -> Result<bool, Error> {
+    let snapshot = pending_expected_equation_snapshot(
+        frontier,
+        result,
+        pending
+            .as_ref()
+            .expect("an expected-result attempt has its pending equation"),
+        call_site.span,
+        tcx,
+    )?;
+    let mut equation = pending
+        .take()
+        .expect("an expected-result attempt lost its pending equation");
+    #[cfg(test)]
+    record_expected_result_equation();
+    let mut gather = frontier.begin_gather(call_site.span, tcx)?;
+    let store = frontier.store();
+    let result = OwnerBoundType::Retained {
+        owner: destination,
+        ty: result.clone(),
+    }
+    .into_scoped(gather.owner(), store, call_site.span)?;
+    let expected_equation = equation.expected.clone().into_expected_equation_operand(
+        gather.owner(),
+        store,
+        call_site.span,
+    )?;
+    let outcome = store
+        .try_constrain_gather_equation(
+            gather.delta_mut(),
+            result,
+            expected_equation,
+            call_site.span,
+            tcx,
+        )
+        .map_err(|error| {
+            error.with_type_failure_origin(crate::error::TypeFailureOrigin::Application {
+                call_site: call_site.id,
+                operation: crate::error::CallFailureOperation::Result,
+            })
+        })?;
+    frontier.close_gather(gather, tcx)?;
+    if outcome == CloseReadyEquationConstraint::Deferred {
+        equation.progress = EquationProgress::AwaitingProgress(snapshot);
+        *pending = Some(equation);
     }
     Ok(outcome == CloseReadyEquationConstraint::Applied)
 }
@@ -18285,16 +18543,16 @@ fn instantiated_immediate_lambda_residuals<'m>(
         "an immediate lambda result changed its application destination"
     );
     assert_eq!(
-        immediate.completed_layers.len(),
+        immediate.selected_layers.len(),
         immediate.current_layer,
         "an immediate lambda lost one declared-layer instantiation"
     );
     let mut actual_body = actual.ty().clone_type();
     let mut identity_canonical = actual.ty().identity_is_canonical();
-    let mut residuals = Vec::with_capacity(immediate.completed_layers.len() + 1);
+    let mut residuals = Vec::with_capacity(immediate.selected_layers.len() + 1);
 
     for (ordinal, (binders, replacements, output, result_canonical)) in immediate
-        .completed_layers
+        .selected_layers
         .iter()
         .map(|layer| {
             (
@@ -18312,7 +18570,7 @@ fn instantiated_immediate_lambda_residuals<'m>(
         )))
         .enumerate()
     {
-        if let Some(completed) = immediate.completed_layers.get(ordinal) {
+        if let Some(completed) = immediate.selected_layers.get(ordinal) {
             assert_eq!(
                 completed.ordinal, ordinal,
                 "an immediate lambda reordered its declared layers"
@@ -19128,22 +19386,11 @@ fn advance_general_goal_call_driver_deferred<'m>(
 #[cfg(feature = "surface")]
 fn close_completed_ordinary_child<'m>(
     frontier: &mut impl OrdinaryFrontierReentry<'m>,
-    mut child: frontier::OpenRetainedPremise<'m>,
+    child: frontier::OpenRetainedPremise<'m>,
     completed: CompletedInFrame,
     destination: crate::ast::TypeGoalOwner,
     tcx: &TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<CompletedInFrame, Error> {
-    if let Some(source) = child.take_quote_source() {
-        assert!(
-            !matches!(completed, CompletedInFrame::UserMacroCall { .. }),
-            "a public quotation source closed as an internal call transcript"
-        );
-        child.publication_mut().record_rec_quote_source_type(
-            source,
-            completed.scoped().clone(),
-            matches!(completed, CompletedInFrame::FunctionScheme(..)),
-        );
-    }
     let completed = match completed {
         CompletedInFrame::UserMacroCall {
             output,
@@ -19742,79 +19989,6 @@ impl<'m> UnpreparedConnectedCallChain<'m> {
     }
 }
 
-/// Apply a polymorphic function `Forall(binders, Function(param,
-/// ret))` to a call's positional args. Walks the type left-to-right:
-/// the first `binders.len()` slots are type arguments; remaining
-/// arguments are values that right-fold into a `Product` matching
-/// `param`. Surface Kio may infer omitted type slots. Kio' requires
-/// universal slots explicitly and permits inference only for the
-/// tracked existential suffix of a newtype constructor.
-///
-/// The function domain's product width lets the inference path detect
-/// when the user elided type-args
-/// (call has fewer args than `n_binders + value_slots`).
-///
-/// `expected_ret` is the call's expected return type when one is
-/// available from the surrounding checked context (the
-/// `check_call_against` entry path). In an inference-admitting slot,
-/// any binder still unbound after value-argument unification is
-/// solved by unifying the callee's return type against this expected
-/// type — the bidirectional flow `specs/language.md` § Type system
-/// specifies. Binders reachable from neither path remain unbound and
-/// surface the "cannot infer" diagnostic.
-///
-/// `slot_offset` is the count of canonical argument slots already
-/// consumed by preceding layers of a multi-layer flat call
-/// (`specs/language.md` § Type parameters). The substitute pass walks one global
-/// slot index across the *whole* flat argument list, so every
-/// recorded resolution / value-at-type-slot marker must key off the
-/// call-global slot (`slot_offset + layer_local_index`), not the
-/// layer-local index. For a single-layer call the offset is 0 and
-/// the two coincide.
-#[allow(clippy::too_many_arguments)] // every argument is load-bearing: callee scheme parts (binders / fn_param / fn_ret / abi_arity), the call's args, the call's span, the per-layer slot offset, the call's expected return type for inference, and the typer context
-fn apply_polymorphic_function<'m, P>(
-    binders: &[crate::ast::TypeParam],
-    fn_param: &crate::ast::Type<P>,
-    fn_ret: &crate::ast::Type<P>,
-    abi_arity: usize,
-    args: &[CallArgRef<'m, P>],
-    callee_span: Span,
-    call_site: crate::ast::ExpressionSite,
-    slot_offset: usize,
-    expected_ret: Option<&InternedType<P>>,
-    identity_canonical: bool,
-    inferred_type_arg_suffix: usize,
-    preplanned: Option<PlannedApplication<'m, P>>,
-    tcx: &mut TypeCtx<'m, '_, P>,
-) -> Result<Applied<P>, Error>
-where
-    P: TyperPhase + crate::ast::Phase<TypeLabelSugar = crate::ast::Never> + Clone,
-{
-    match plan_polymorphic_function(
-        binders,
-        fn_param,
-        fn_ret,
-        abi_arity,
-        None,
-        args,
-        callee_span,
-        call_site,
-        slot_offset,
-        expected_ret,
-        identity_canonical,
-        inferred_type_arg_suffix,
-        preplanned,
-        false,
-        ValuePreparationMode::LexicalFallback,
-        tcx,
-    )? {
-        ConsumingApplication::Complete(applied) => Ok(applied),
-        ConsumingApplication::NeedsExpected(_) => {
-            unreachable!("ordinary application did not permit expected-type deferral")
-        }
-    }
-}
-
 #[allow(clippy::too_many_arguments)] // shared consuming-application entry plus the bounded expected-type deferral switch
 fn plan_polymorphic_function<'m, P>(
     binders: &[crate::ast::TypeParam],
@@ -19843,16 +20017,6 @@ where
     let ambient_type_params = tcx.in_scope_type_param_binders();
     let mut protected_type_params = ambient_type_params.clone();
     protected_type_params.extend(binders.iter().map(|binder| binder.name.clone()));
-    let value_slots = semantic.map_or_else(
-        || {
-            function_layer_value_slot_count_with_identity(
-                fn_param,
-                &tcx.binder_alias_ctx(&protected_type_params),
-                identity_canonical,
-            )
-        },
-        |(_, selected)| selected.width.structural,
-    );
     let explicit_prefix = preplanned.as_ref().map_or_else(
         || {
             semantic.map_or_else(
@@ -20016,50 +20180,6 @@ where
         let substituted_param =
             InternedType::fresh_with_identity(subst_type(fn_param, &subst), result_canonical)
                 .with_requirement_source(requirement_source);
-        if !<P::Typer as Typer<P>>::ALLOW_MULTI_LAYER_FLAT_CALL {
-            // Kio' does not traverse a later curry layer through one flat
-            // call. A binder instantiated with a product may widen one source
-            // slot into several positional slots; a binder instantiated with
-            // Unit retains its one explicitly supplied value slot. Reject
-            // only when the suffix exceeds both views and the result actually
-            // has another callable layer.
-            // The zero-component product has no ABI slots, but a source or
-            // Prime call may still spell its sole value explicitly as `()`.
-            // That one value belongs to this layer; only a later value would
-            // cross into the returned function layer.
-            let (first_layer_capacity, has_successor) = semantic.map_or_else(
-                || {
-                    let substituted_value_slots = function_layer_value_slot_count_with_identity(
-                        substituted_param.as_type(),
-                        &tcx.binder_alias_ctx(&protected_type_params),
-                        substituted_param.identity_is_canonical(),
-                    );
-                    (
-                        value_slots.max(substituted_value_slots).max(1),
-                        has_applicable_head(
-                            fn_ret,
-                            &tcx.binder_alias_ctx(&protected_type_params),
-                            identity_canonical,
-                        ),
-                    )
-                },
-                |(cursor, selected)| {
-                    (
-                        selected.width.capacity,
-                        cursor.successor(selected, tcx).is_some(),
-                    )
-                },
-            );
-            let source_count = semantic.map_or(value_args.len(), |(_, selected)| {
-                selected.consecutive_sources
-            });
-            if source_count > first_layer_capacity && has_successor {
-                return Err(Error::type_(
-                    call_site.span,
-                    "Kio' requires one application per function layer",
-                ));
-            }
-        }
         let seeds = PlannedApplication::plan_value_args(value_args, call_site, tcx)?;
         plan.with_expected_slots(
             PlannedExpectedValue::final_type(substituted_param),
@@ -20153,14 +20273,6 @@ enum PlannedApplicationCompletion {
     PartialTypeApplication,
 }
 
-struct RegularUfcsElaboration<'m, P>
-where
-    P: crate::ast::Phase,
-{
-    original: &'m crate::ast::Expr<P>,
-    normalized_call: crate::ast::Expr<P>,
-}
-
 enum CompletedValue<P>
 where
     P: crate::ast::Phase,
@@ -20218,7 +20330,6 @@ where
 {
     Application {
         application: Box<ExpectedApplication<'m, P>>,
-        regular_ufcs: Option<Box<RegularUfcsElaboration<'m, P>>>,
     },
     Lambda {
         source: &'m crate::ast::Expr<P>,
@@ -20790,8 +20901,8 @@ struct DecodedApplicationPacket {
 fn decode_application_packet<'m, P>(
     binders: &[crate::ast::TypeParam],
     args: &[CallArgRef<'m, P>],
-    target_slots: usize,
-    has_later_type_binders: bool,
+    _target_slots: usize,
+    _has_later_type_binders: bool,
     call_span: Span,
     tcx: &TypeCtx<'m, '_, P>,
 ) -> Result<DecodedApplicationPacket, Error>
@@ -20821,29 +20932,17 @@ where
     };
 
     let value_args = &args[explicit_prefix..];
-    let available_value_sources = value_args
+    if let Some(argument) = value_args
         .iter()
-        .copied()
-        .take_while(|argument| matches!(argument, CallArgRef::Value(_)))
-        .count();
-    let maximum_source_count = available_value_sources.min(target_slots);
-    // A later Forall run is a lexical packet boundary. Paths whose first
-    // letter is uppercase (possibly after the single marker) are type-shaped
-    // before lookup, so this decision is stable under open-world declaration
-    // growth and independent of every source's inferred type.
-    let selected_source_count = if !has_later_type_binders {
-        maximum_source_count
-    } else {
-        (1..=maximum_source_count)
-            .find(|source_count| {
-                source_ends_written_value_packet(
-                    value_args,
-                    source_count - 1,
-                    has_later_type_binders,
-                )
-            })
-            .unwrap_or(maximum_source_count)
-    };
+        .find(|argument| matches!(argument, CallArgRef::Type(_)))
+    {
+        return Err(Error::type_(
+            argument.span(),
+            "type arguments must precede the value group in this call",
+        )
+        .with_help("write a separate bracket stage after the preceding value application"));
+    }
+    let selected_source_count = value_args.len();
 
     Ok(DecodedApplicationPacket {
         explicit_prefix,
@@ -20996,7 +21095,9 @@ where
                     }
                     ty.clone()
                 }
-                CallArgRef::Value(value) => expr_to_type_arg(value)?,
+                CallArgRef::Value(_) => {
+                    unreachable!("a selected type slot contains a value operand")
+                }
             };
             let (canonical, is_canonical) = super::aliases::canonicalize_for_comparison(
                 &raw,
@@ -21052,20 +21153,8 @@ where
                         tcx,
                     );
                 }
-                Some(CallArgRef::Value(value)) => {
-                    let written = expr_to_type_arg(value)?;
-                    <P::Typer as Typer<P>>::record_type_resolution(
-                        call_site,
-                        slot_offset + slot_index,
-                        InternedType::fresh(written),
-                        tcx,
-                    );
-                    <P::Typer as Typer<P>>::mark_value_at_type_slot(
-                        call_site,
-                        slot_offset + slot_index,
-                        tcx,
-                    );
-                    inlay_types.push(resolved);
+                Some(CallArgRef::Value(_)) => {
+                    unreachable!("a selected type slot contains a value operand")
                 }
                 Some(CallArgRef::Type(_)) => {}
             }
@@ -21078,7 +21167,6 @@ where
             tcx,
         );
         publish_written_call_type_argument_binders(&self.written_type_args, tcx)?;
-        finish_pending_type_args(&self.written_type_args, tcx);
         Ok(())
     }
 
@@ -21774,10 +21862,7 @@ where
         tcx: &mut TypeCtx<'m, '_, P>,
     ) -> Result<DispatchState<'m, P>, Error> {
         match self {
-            Self::Application {
-                mut application,
-                regular_ufcs,
-            } => {
+            Self::Application { mut application } => {
                 let position_span = application.call_site;
                 if !application.retained_holes.params.is_empty()
                     || !application.retained_holes.subst.is_empty()
@@ -21805,7 +21890,6 @@ where
                 Ok(finish_value_application(
                     application,
                     position_span.span,
-                    regular_ufcs.map(|value| *value),
                     tcx,
                 ))
             }
@@ -22199,7 +22283,6 @@ where
 fn finish_value_application<'m, P>(
     application: ConsumingApplication<'m, P>,
     position_span: Span,
-    regular_ufcs: Option<RegularUfcsElaboration<'m, P>>,
     tcx: &mut TypeCtx<'m, '_, P>,
 ) -> DispatchState<'m, P>
 where
@@ -22207,23 +22290,13 @@ where
 {
     match application {
         ConsumingApplication::Complete(applied) => {
-            if let Some(regular_ufcs) = regular_ufcs {
-                <P::Typer as Typer<P>>::record_regular_ufcs_elaboration(
-                    regular_ufcs.original,
-                    regular_ufcs.normalized_call,
-                    tcx,
-                );
-            }
-            // Planning consumed the original Call / UFCS directly, so it
+            // Planning consumed the original call directly, so it
             // never returns through `Typer::synth_expr`'s index boundary.
             <P::Typer as Typer<P>>::record_position_type(position_span, applied.ty.clone(), tcx);
             DispatchState::Complete(CompletedValue::Synth(Synth::value_interned(applied.ty)))
         }
         ConsumingApplication::NeedsExpected(application) => {
-            DispatchState::NeedsExpected(Box::new(ExpectedValue::Application {
-                application,
-                regular_ufcs: regular_ufcs.map(Box::new),
-            }))
+            DispatchState::NeedsExpected(Box::new(ExpectedValue::Application { application }))
         }
     }
 }
@@ -22490,63 +22563,7 @@ where
             mode,
             tcx,
         )?;
-        return Ok(finish_value_application(application, e.span(), None, tcx));
-    }
-    if let crate::ast::Expr::Ufcs {
-        receiver,
-        callee_segments,
-        callee_span,
-        args,
-        flavor,
-        macro_call: None,
-        ..
-    } = e
-    {
-        let callee_synth = synth_path(callee_segments, *callee_span, tcx)?;
-        let arg_refs = call_arg_refs(args);
-        let effective_args = effective_rec_order_args(&arg_refs, tcx);
-        let selection_args = effective_args.as_deref().unwrap_or(&arg_refs);
-        let spliced_args = splice_ufcs_arg_refs_interned(
-            &callee_synth.ty,
-            receiver,
-            &arg_refs,
-            selection_args,
-            *flavor,
-            e.span(),
-            &tcx.env.alias_ctx(),
-        )?;
-        let normalized_call = crate::ast::Expr::synth_call(
-            crate::ast::Expr::Path {
-                occurrence: crate::ast::ExpressionOccurrence::fresh(),
-                segments: callee_segments.to_vec(),
-                meta: crate::ast::Meta::new(*callee_span),
-                ext: (),
-            },
-            spliced_args
-                .iter()
-                .copied()
-                .map(owned_call_arg_from_ref)
-                .collect(),
-            e.span(),
-        )
-        .with_fresh_occurrence();
-        let application = plan_consuming_application(
-            &callee_synth,
-            &spliced_args,
-            *callee_span,
-            normalized_call.site(),
-            mode,
-            tcx,
-        )?;
-        return Ok(finish_value_application(
-            application,
-            e.span(),
-            Some(RegularUfcsElaboration {
-                original: e,
-                normalized_call,
-            }),
-            tcx,
-        ));
+        return Ok(finish_value_application(application, e.span(), tcx));
     }
     Ok(complete_synth(
         e,
@@ -22811,8 +22828,14 @@ mod tests {
             std::mem::size_of::<Option<Box<Expr>>>(),
         );
         assert_eq!(std::mem::size_of::<UserMacroCallTranscript>(), 96);
-        assert_eq!(std::mem::size_of::<OpenGoalCall<'_>>(), 624);
-        assert_eq!(std::mem::size_of::<PlannedUserMacroCallState<'_>>(), 432);
+        assert_eq!(
+            std::mem::size_of::<OpenGoalCall<'_>>(),
+            624 + std::mem::size_of::<Option<Box<FixedMacroStages<'_>>>>()
+        );
+        assert_eq!(
+            std::mem::size_of::<PlannedUserMacroCallState<'_>>(),
+            432 + std::mem::size_of::<Span>()
+        );
         assert_eq!(std::mem::size_of::<CompletedInFrame>(), 200);
         assert_eq!(std::mem::size_of::<OrdinaryDriverStep<'_>>(), 240);
         assert_eq!(std::mem::size_of::<OpenOrdinaryChildAdvance<'_>>(), 288);
@@ -22922,6 +22945,11 @@ mod tests {
             std::mem::size_of::<PairedComputedCall<'_>>(),
             std::mem::size_of::<OrdinaryValueCursor<'_>>()
         );
+        eprintln!(
+            "selection result context: state={}, selecting={}",
+            std::mem::size_of::<Option<(ScopedType, Option<PendingExpectedResult>)>>(),
+            std::mem::size_of::<SelectingOrdinaryCall<'_>>()
+        );
         assert_eq!(std::mem::size_of::<ComputedCallContinuation<'_>>(), 400);
         assert_eq!(std::mem::size_of::<PairedComputedCall<'_>>(), 584);
         assert_eq!(std::mem::size_of::<frontier::FrontierMode>(), 1);
@@ -22951,9 +22979,9 @@ mod tests {
         for body in ["step(())", "accept(step)"] {
             let source = format!("module main;
                 newtype Box[A] : A {{ constructor box; projector unbox }}
-                host fn accept[*F](step: [A] A -> F(A)) -> F(.);
-                host fn collect[*F](body: ([A] A -> F(A)) -> F(.), later: F(.)) -> F(.);
-                fn result() -> Box(.) {{ let result = collect(.(step) {{ {body} }}, Box.box(())); result }}");
+                host fn accept[*F](step: [A] A -> F[A]) -> F[.];
+                host fn collect[*F](body: ([A] A -> F[A]) -> F[.], later: F[.]) -> F[.];
+                fn result() -> Box[.] {{ let result = collect(.(step) {{ {body} }}, Box.box(())); result }}");
             reset_retained_local_work();
             let package = resolved_lowered_test_package(&source);
             let module = &package.module("main").expect("main").module;
@@ -22974,8 +23002,8 @@ mod tests {
                 .expect("local proof stays scoped");
             let work = retained_local_work();
             assert!(
-                work.open_forall_consumes > 0,
-                "the local read must consume the open rank-N proof: {body}: {work:?}"
+                work.captures > 0 && work.consumes > 0,
+                "the local read must capture and consume its rank-N proof: {body}: {work:?}"
             );
             eprintln!("rank-N {body}: {work:?}");
         }
@@ -22989,7 +23017,7 @@ mod tests {
             let later = if invalid { ". -> ." } else { "." };
             let source = format!("module main;
                 newtype Box[A] : A {{ constructor box; projector unbox }}
-                host fn collect[*F](body: ([A] A -> F(A)) -> F(.), later: F(.)) -> F(.);
+                host fn collect[*F](body: ([A] A -> F[A]) -> F[.], later: F[.]) -> F[.];
                 host fn outer[T](value: T, later: .) -> T;
                 fn witness(later: {later}) {{ outer(collect(.(step) {{ step(()) }}, Box.box(())), later) }}");
             let package = resolved_lowered_test_package(&source);
@@ -23015,8 +23043,8 @@ mod tests {
             let result = run_general_ordinary_value(&def.body, None, &mut tcx);
             let work = retained_local_work();
             assert!(
-                work.open_forall_consumes > 0,
-                "must stage the open local before the sibling verdict: {work:?}"
+                work.captures > 0 && work.consumes > 0,
+                "must stage the local proof before the sibling verdict: {work:?}"
             );
             let start = source.find("step(())").unwrap() as u32;
             let span = Span::new(start, start + 4);
@@ -23043,6 +23071,181 @@ mod tests {
                 (mark.2, mark.3),
                 "local and hole scopes restore"
             );
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn retained_rank_n_consumption_keeps_an_open_owner_goal_until_root_commit() {
+        use super::super::env::{reset_retained_local_work, retained_local_work};
+        for body in ["step(())", "accept(step)"] {
+            for commit in [false, true] {
+                let source = format!(
+                    "module main;
+                    host fn accept[R](step: [A] A -> R) -> R;
+                    fn witness(step: [A] A -> .) -> . {{ {body} }}"
+                );
+                let package = resolved_lowered_test_package(&source);
+                let module = &package.module("main").expect("main").module;
+                let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
+                    .expect("environment");
+                let (index, def) = module
+                    .items
+                    .iter()
+                    .enumerate()
+                    .find_map(|(index, item)| match item {
+                        Item::FnDef(def) if def.name == "witness" => Some((index, def)),
+                        _ => None,
+                    })
+                    .expect("witness");
+                let span = def.body.span();
+                let mut elaborations = Elaborations::new();
+                let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(index);
+                let (mut frontier, (goal, result, retained)) =
+                    frontier::OrdinaryFrontier::begin_root_with(span, &tcx, |store, owner| {
+                        let goal = store.alloc_goal(
+                            owner,
+                            crate::ast::Kind::Star,
+                            GoalSolutionPolicy::Monotype,
+                            GoalOrigin::named(span, GoalRole::TypeArgument, "Result"),
+                        )?;
+                        let result = store.scoped_goal_at(goal, Vec::new(), owner, span)?;
+                        let forall = |name: &str, body| Type::Forall {
+                            param: crate::ast::TypeParam {
+                                presentation: Default::default(),
+                                name: name.to_owned(),
+                                span,
+                                kind: None,
+                            },
+                            body: Box::new(body),
+                            meta: Meta::new(span),
+                        };
+                        let scheme = store.scoped_type(
+                            owner,
+                            InternedType::fresh_canonical(forall(
+                                "Result",
+                                forall(
+                                    "A",
+                                    Type::synth_function(
+                                        vec![Type::synth_path(
+                                            vec!["A".to_owned()],
+                                            Vec::new(),
+                                            span,
+                                        )],
+                                        Type::synth_path(
+                                            vec!["Result".to_owned()],
+                                            Vec::new(),
+                                            span,
+                                        ),
+                                        span,
+                                    ),
+                                ),
+                            )),
+                            span,
+                        )?;
+                        let retained = scheme
+                            .projected_public_forall_prefix_application(std::slice::from_ref(
+                                &result,
+                            ))
+                            .expect("instantiate only the owner result binder");
+                        Ok((goal, result, retained))
+                    })
+                    .expect("open rank-N owner");
+                let owner = frontier.owner();
+                tcx.push_retained_value("step".to_owned(), owner, retained);
+                reset_retained_local_work();
+                let child = OrdinaryValueCursor::begin_child(
+                    &def.body,
+                    Some(OwnerBoundType::Retained {
+                        owner,
+                        ty: result.clone(),
+                    }),
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .expect("begin actual retained-local use");
+                let advance = OrdinaryValueCursor::advance_child_for_test(
+                    child,
+                    frontier::FrontierMode::ExpectedOnly,
+                    &mut frontier,
+                    &mut tcx,
+                )
+                .expect("consume the owner-scoped rank-N local");
+                let work = retained_local_work();
+                assert!(
+                    work.captures > 0 && work.open_forall_consumes > 0,
+                    "{body}/{commit}: {work:?}"
+                );
+                assert_eq!(
+                    tcx.elaborations.type_resolution_count(),
+                    0,
+                    "the root has not committed its local use"
+                );
+                let mut gather = frontier.begin_gather(span, &tcx).expect("result gather");
+                let store = frontier.store();
+                let open = store
+                    .scoped_goal_at(goal, Vec::new(), gather.owner(), span)
+                    .expect("same ancestor goal");
+                let unit = store
+                    .scoped_type(
+                        gather.owner(),
+                        InternedType::fresh_canonical(unit_ty()),
+                        span,
+                    )
+                    .expect("Unit result");
+                store
+                    .constrain_equation(gather.delta_mut(), open, unit.into(), span, &tcx)
+                    .expect("close the result after consuming the local");
+                frontier
+                    .close_gather(gather, &tcx)
+                    .expect("commit result equation");
+                let completed = match advance {
+                    OrdinaryChildAdvance::Complete(completed) => completed,
+                    OrdinaryChildAdvance::Pending(child) => {
+                        match OrdinaryValueCursor::advance_child_for_test(
+                            child,
+                            frontier::FrontierMode::Final,
+                            &mut frontier,
+                            &mut tcx,
+                        )
+                        .expect("finish retained local")
+                        {
+                            OrdinaryChildAdvance::Complete(completed) => completed,
+                            OrdinaryChildAdvance::Pending(_) => {
+                                panic!("closed rank-N result remained pending")
+                            }
+                        }
+                    }
+                };
+                let closed = frontier.close_root_with(
+                    vec![(completed.scoped().clone(), GoalEscape::ClosedAt(owner))],
+                    &mut tcx,
+                    |_outputs, _tcx| {
+                        if commit {
+                            Ok(())
+                        } else {
+                            Err(Error::type_(span, "later root rejection"))
+                        }
+                    },
+                );
+                assert_eq!(closed.is_ok(), commit);
+                let start = source.rfind("step").expect("last local use") as u32;
+                let local = Span::new(start, start + 4);
+                assert_eq!(
+                    tcx.elaborations
+                        .position_index()
+                        .type_at("main", local)
+                        .is_some(),
+                    commit
+                );
+                assert_eq!(
+                    tcx.elaborations
+                        .position_index()
+                        .binder_at("main", local)
+                        .is_some(),
+                    commit
+                );
+            }
         }
     }
 
@@ -23904,7 +24107,7 @@ mod tests {
          type Unit_packet = I32 & .;
          type With_unit[A] = A & .;
          fn identity[A](value: A) -> A { value }
-         fn consume[T](_f: T -> With_unit(T), _value: T) -> . { () }
+         fn consume[T](_f: T -> With_unit[T], _value: T) -> . { () }
          fn rank_n_round_trip(tail: N) -> Rank_packet {
              .(function, done: N) { (function, done) }((identity, tail))
          }
@@ -24018,7 +24221,7 @@ mod tests {
             .expect("open root owner");
         let first_delta = store.begin_delta(owner, sp()).expect("open first delta");
         let mut first_publication = PublicationBuilder::new(&store, &first_delta);
-        first_publication.mark_value_at_type_slot(source.site(), 0);
+        first_publication.record_call_split(source.site(), 0);
         let prepared = first_publication
             .finish()
             .prepare_root(&store, first_delta, Vec::new(), &tcx)
@@ -24042,14 +24245,15 @@ mod tests {
         ));
         assert!(
             !tcx.elaborations
-                .is_value_at_type_slot("main", source.site().id, 0)
+                .call_splits_for("main", source.site().id)
+                .is_some_and(|splits| splits.contains(&0))
         );
 
         let second_delta = store
             .begin_delta(owner, sp())
             .expect("dropping the prepared close must leave the owner open");
         let mut second_publication = PublicationBuilder::new(&store, &second_delta);
-        second_publication.mark_value_at_type_slot(source.site(), 0);
+        second_publication.record_call_split(source.site(), 0);
         let prepared = second_publication
             .finish()
             .prepare_root(&store, second_delta, Vec::new(), &tcx)
@@ -24079,7 +24283,8 @@ mod tests {
         );
         assert!(
             tcx.elaborations
-                .is_value_at_type_slot("main", source.site().id, 0)
+                .call_splits_for("main", source.site().id)
+                .is_some_and(|splits| splits.contains(&0))
         );
     }
 
@@ -24097,31 +24302,31 @@ mod tests {
             (
                 "expected result",
                 "fn witness(marker: Marker, value: I32) -> I32 {
-                   route_unbound(marker, value)
+                   route_unbound(marker)(value)
                  }",
             ),
             (
                 "retained value layer",
                 "fn witness(marker: Marker, value: I32) -> I32 {
-                   route_unbound(_)(marker)(value)
+                   route_unbound[_](marker)(value)
                  }",
             ),
             (
                 "retained value UFCS layer",
                 "fn witness(marker: Marker, value: I32) -> I32 {
-                   marker.>route_unbound(_)(value)
+                   (marker.>route_unbound[_])(value)
                  }",
             ),
             (
                 "later forall exposure",
                 "fn witness(first: I32, second: String) -> I32 {
-                   later(first, second)
+                   later(first)(second)
                  }",
             ),
             (
                 "later sibling inference",
                 "fn witness(first: I32, second: String) -> String {
-                   second_infers(first, second)
+                   second_infers(first)(second)
                  }",
             ),
         ] {
@@ -24136,7 +24341,7 @@ mod tests {
              host type Marker;
              host fn route_unbound[A](_marker: Marker) -> I32 -> A;
              fn witness(marker: Marker, value: I32) -> . {
-               let unresolved = route_unbound(marker, value);
+               let unresolved = route_unbound(marker)(value);
                ()
              }",
             "two-layer synthesis barrier",
@@ -24201,10 +24406,10 @@ mod tests {
              host type Marker;
              host fn marker_then[A](_marker: Marker) -> I32 -> A;
              fn ordinary(marker: Marker, value: I32) -> I32 {
-               marker_then(_)(marker)(value)
+               marker_then[_](marker)(value)
              }
              fn ufcs(marker: Marker, value: I32) -> I32 {
-               marker.>marker_then(_)(value)
+               (marker.>marker_then[_])(value)
              }",
         )
         .expect("parse ordinary/UFCS parity witness");
@@ -24237,13 +24442,10 @@ mod tests {
             .expect("ordinary witness function");
         let inner_call_span = {
             let Expr::Call { callee, .. } = &ordinary_def.body else {
-                panic!("ordinary witness must contain its final call")
-            };
-            let Expr::Call { callee, .. } = callee.as_ref() else {
-                panic!("ordinary witness must contain its retained value layer")
+                panic!("ordinary witness must contain its final value layer")
             };
             let Expr::Call { .. } = callee.as_ref() else {
-                panic!("ordinary witness must contain its inferred type-only layer")
+                panic!("ordinary witness must retain its inferred type slot on the first call")
             };
             callee.site()
         };
@@ -24273,8 +24475,8 @@ mod tests {
         .expect("the shared cursor must close the retained ordinary call");
         assert_eq!(
             ordinary_planning_work().open_goal_calls,
-            3,
-            "each written call layer must be planned exactly once"
+            2,
+            "each selected Function layer must be planned exactly once"
         );
         assert!(matches!(
             cursor_result.ty.as_type(),
@@ -24728,7 +24930,7 @@ mod tests {
             "module main;
              host type I32;
              host fn partial[A][B]() -> B;
-             fn witness() -> [B] . -> B { partial(_) }",
+             fn witness() -> [B] . -> B { partial[_] }",
         )
         .expect("parse placeholder type-prefix witness");
         let (modules, _) =
@@ -25115,6 +25317,7 @@ mod tests {
         let Expr::Call { args, .. } = &def.body else {
             panic!("witness body should be one ordinary call")
         };
+        let args = written_packet_arguments(args, 2);
         let [CallArg::Value(literal), CallArg::Value(_selected)] = args.as_slice() else {
             panic!("witness call should contain one literal and one path")
         };
@@ -25164,7 +25367,7 @@ mod tests {
                 "module main;
                  {role_declaration}
                  fn identity[T](value: T) -> T {{ value }}
-                 fn witness() -> {expected_name} {{ identity({literal_source}({expected_name})) }}"
+                 fn witness() -> {expected_name} {{ identity({literal_source}[{expected_name}]) }}"
             );
             let module = parse(&source)
                 .unwrap_or_else(|error| panic!("parse `{expected_name}` annotation: {error:?}"));
@@ -25237,8 +25440,8 @@ mod tests {
              host type I32 role(i32);
              host type Str role(str);
              fn same[T](first: T, _second: T) -> T { first }
-             fn bad() -> I32 { same(42(I32), \"wrong\"(Str)) }
-             fn good() -> I32 { same(42(I32), 7(I32)) }",
+             fn bad() -> I32 { same(42[I32], \"wrong\"[Str]) }
+             fn good() -> I32 { same(42[I32], 7[I32]) }",
         )
         .expect("parse literal rollback witnesses");
         let (modules, _) =
@@ -25273,8 +25476,9 @@ mod tests {
             else {
                 panic!("`{function_name}` body should be one ordinary call")
             };
-            let [CallArg::Value(first), CallArg::Value(second)] = args.as_slice() else {
-                panic!("`{function_name}` should pass two literals")
+            let values = written_packet_arguments(args, 2);
+            let [CallArg::Value(first), CallArg::Value(second)] = values.as_slice() else {
+                panic!("`{function_name}` should preserve its two written literal operands")
             };
             let literal_spans = [first.site(), second.site()];
             let mut elaborations = Elaborations::new();
@@ -25332,9 +25536,9 @@ mod tests {
              host type I32;
              host type String;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
-             fn lift[*F][A](value: F(A)) -> F(A) { value }
-             fn good() -> Box(I32) -> Box(I32) { lift(Box, _) }
-             fn bad() -> Box(I32) -> Box(String) { lift(Box, _) }",
+             fn lift[*F][A](value: F[A]) -> F[A] { value }
+             fn good() -> Box[I32] -> Box[I32] { lift[Box][_] }
+             fn bad() -> Box[I32] -> Box[String] { lift[Box][_] }",
         )
         .expect("parse mixed type-only residual witnesses");
         let (modules, _) =
@@ -25359,19 +25563,37 @@ mod tests {
                     _ => None,
                 })
                 .unwrap_or_else(|| panic!("missing `{name}` witness function"));
-            let Expr::Call {
-                occurrence: _,
-                diagnostic: _,
-                callee,
-                ..
-            } = &def.body
-            else {
-                panic!("`{name}` witness body should be one ordinary call")
+            let Expr::Call { callee, args, .. } = &def.body else {
+                panic!("`{name}` witness body should be one compact type-only application")
             };
-            (item_index, def, callee.as_ref(), def.body.site())
+            let Expr::Path { .. } = callee.as_ref() else {
+                panic!("adjacent type-only prefixes must share one direct callee")
+            };
+            let [
+                CallArg::Type(Type::Path { segments, args, .. }),
+                CallArg::Type(Type::Infer { .. }),
+            ] = args.as_slice()
+            else {
+                panic!("the compact call must retain explicit Box and inferred second type slots")
+            };
+            assert!(
+                segments
+                    .last()
+                    .is_some_and(|segment| segment.as_str() == "Box")
+                    && args.is_empty(),
+                "the explicit first type slot must remain the exact Box constructor"
+            );
+            let explicit_span = segments.last().expect("Box type path segment").span;
+            (
+                item_index,
+                def,
+                callee.as_ref(),
+                def.body.site(),
+                explicit_span,
+            )
         };
 
-        let (good_index, good_def, good_callee, good_call_span) = call_parts("good");
+        let (good_index, good_def, good_callee, good_call_span, good_box_span) = call_parts("good");
         let mut good_elaborations = Elaborations::new();
         let mut good_tcx = TypeCtx::new(&env, &mut good_elaborations).at_item(good_index);
         let good_result = run_general_ordinary_value(
@@ -25389,52 +25611,39 @@ mod tests {
             false,
         )
         .expect("the root route must retain the exact residual function");
-        for (slot, expected) in [(0, "Box"), (1, "I32")] {
-            let resolved = good_tcx
-                .elaborations
-                .type_resolution_for("main", good_call_span.id, slot)
-                .unwrap_or_else(|| panic!("the good call must publish type slot {slot}"));
-            let Type::Path { segments, .. } = &resolved.resolved else {
-                panic!("the good call type slot {slot} should resolve to a nominal type")
-            };
-            assert_eq!(
-                segments.last().map(|segment| segment.as_str()),
-                Some(expected),
-                "the good call published the wrong exact type at slot {slot}"
-            );
-        }
         assert!(
             good_tcx
                 .elaborations
-                .is_value_at_type_slot("main", good_call_span.id, 0),
-            "the explicit constructor path must retain its value-shaped type-slot marker"
+                .type_resolution_for("main", good_call_span.id, 0)
+                .is_none(),
+            "the source-explicit Box type must remain syntax, without inferred-slot metadata"
         );
+        assert!(matches!(
+            good_tcx.elaborations.position_index().binder_at("main", good_box_span),
+            Some(crate::pass::typecheck_full::ResolvedBinder::Newtype { module_path, name })
+                if module_path == "main" && name == "Box"
+        ));
+        let inferred = good_tcx
+            .elaborations
+            .type_resolution_for("main", good_call_span.id, 1)
+            .expect("the compact call must publish its inferred second type slot");
+        assert!(matches!(
+            &inferred.resolved,
+            Type::Path { segments, args, .. }
+                if segments.last().is_some_and(|segment| segment.as_str() == "I32") && args.is_empty()
+        ));
+
+        let good_inlay_span = Span::new(good_callee.span().end, good_callee.span().end);
         assert!(
             !good_tcx
                 .elaborations
-                .is_value_at_type_slot("main", good_call_span.id, 1),
-            "the inferred placeholder must remain a type-shaped slot"
-        );
-        let good_inlay_span = Span::new(good_callee.span().end, good_callee.span().end);
-        let (_, inlay_types) = good_tcx
-            .elaborations
-            .position_index()
-            .inlay_type_args_iter()
-            .find(|((module, span), _)| module == "main" && *span == good_inlay_span)
-            .expect("the successful mixed residual call must publish its inlay");
-        let [Type::Path { segments, args, .. }] = inlay_types else {
-            panic!("the successful mixed residual call must publish exactly one path inlay")
-        };
-        let inlay_path = segments
-            .iter()
-            .map(|segment| segment.as_str())
-            .collect::<Vec<_>>();
-        assert!(
-            args.is_empty() && inlay_path == ["main", "Box"],
-            "the mixed residual inlay must name the exact `Box` constructor, got {inlay_types:?}"
+                .position_index()
+                .inlay_type_args_iter()
+                .any(|((module, span), _)| module == "main" && *span == good_inlay_span),
+            "source-explicit Box and `_` type arguments must not publish an omitted-argument inlay"
         );
 
-        let (bad_index, bad_def, bad_callee, bad_call_span) = call_parts("bad");
+        let (bad_index, bad_def, bad_callee, bad_call_span, bad_box_span) = call_parts("bad");
         let mut bad_elaborations = Elaborations::new();
         let mut bad_tcx = TypeCtx::new(&env, &mut bad_elaborations).at_item(bad_index);
         let error = match run_general_ordinary_value(
@@ -25450,19 +25659,28 @@ mod tests {
             "unexpected mixed residual rollback diagnostic: {}",
             error.diagnostic().message
         );
+        assert!(
+            bad_tcx
+                .elaborations
+                .position_index()
+                .binder_at("main", bad_box_span)
+                .is_none(),
+            "the failed root must not publish the explicit Box nominal binder"
+        );
         for slot in 0..2 {
             assert!(
                 bad_tcx
                     .elaborations
                     .type_resolution_for("main", bad_call_span.id, slot)
                     .is_none(),
-                "a failed mixed residual call must not publish type slot {slot}"
+                "a failed mixed residual root must not publish type slot {slot}"
             );
             assert!(
                 !bad_tcx
                     .elaborations
-                    .is_value_at_type_slot("main", bad_call_span.id, slot),
-                "a failed mixed residual call must not publish slot marker {slot}"
+                    .call_splits_for("main", bad_call_span.id)
+                    .is_some_and(|splits| splits.contains(&slot)),
+                "a failed mixed residual root must not publish split marker {slot}"
             );
         }
         let bad_inlay_span = Span::new(bad_callee.span().end, bad_callee.span().end);
@@ -25550,7 +25768,7 @@ mod tests {
              host type Witness;
              fn consume(_f: Witness -> Witness)(_value: Witness) -> . { () }
              fn witness(value: Witness) -> . {
-               consume(.(item) { item }, value)
+               consume(.(item) { item })(value)
              }",
         )
         .expect("parse selected lambda-expectation witness");
@@ -25584,9 +25802,19 @@ mod tests {
             );
         }
 
+        let Expr::Call {
+            callee: selected_call,
+            ..
+        } = &def.body
+        else {
+            panic!("the witness body should retain its final Function application")
+        };
+        let Expr::Call { .. } = selected_call.as_ref() else {
+            panic!("the lambda-selection stage should remain a separate call site")
+        };
         assert!(matches!(
-            OrdinaryValueCursor::seed(&def.body, &mut tcx)
-                .expect("seed selected lambda-expectation witness"),
+            OrdinaryValueCursor::seed(selected_call, &mut tcx)
+                .expect("seed the call stage that selects the lambda"),
             OrdinaryValueSeed::DirectSelecting { .. }
         ));
         let expected = InternedType::fresh(def.ret.clone());
@@ -25718,7 +25946,7 @@ mod tests {
                 nested = format!("enter_now(.() {{ {nested} }})");
             }
             cases.push((format!("marked-depth-{depth}"), format!(
-                "fn result() -> . {{ let chosen = choose_lazy(.t(Flag), .() {{ {nested} }}, .() {{ infer_unit() }}); chosen }}"
+                "fn result() -> . {{ let chosen = choose_lazy(.t[Flag])(.() {{ {nested} }})(.() {{ infer_unit() }}); chosen }}"
             ), depth + 2, depth + 2, true));
         }
         for width in [4, 16, 64] {
@@ -25822,7 +26050,7 @@ mod tests {
                 "module main; import mechanisms(macro choose_lazy, macro enter_now, macro infer_unit); \
                  host type Caller_flag role(bool); host fn supply[A]() -> A; \
                  fn result() -> . {{ \
-                   let chosen = choose_lazy(.t(Caller_flag), .() {{ {left} }}, .() {{ {right} }}); \
+                   let chosen = choose_lazy(.t[Caller_flag])(.() {{ {left} }})(.() {{ {right} }}); \
                    chosen \
                  }}"
             );
@@ -26095,7 +26323,7 @@ mod tests {
             "module main;
              host type I32;
              fn witness() -> [B] I32 -> I32 {
-               .[A][B](value: _) { value }(I32)
+               .[A][B](value: _) { value }[I32]
              }",
         )
         .expect("parse exact-plan decline witness");
@@ -26211,7 +26439,7 @@ mod tests {
         let expected_lambda = parse(
             "module main; \
              fn consume[T](_function: T -> T) -> . { () } \
-             fn witness() -> . { consume(., .(value) { value }) }",
+             fn witness() -> . { consume[.](.(value) { value }) }",
         )
         .expect("parse standalone Prime expected-lambda witness");
         let (expected_lambda, _) = crate::prime::pipeline::PrimePipeline::lower_package(
@@ -26255,7 +26483,7 @@ mod tests {
                 let source = format!(
                     "module main;\n\
                      host fn keep[T]({parameters}) -> T;\n\
-                     fn witness[U](value: U) -> U {{ keep(U, {arguments}) }}\n"
+                     fn witness[U](value: U) -> U {{ keep[U]({arguments}) }}\n"
                 );
                 let full = typecheck_surface_source(&source, "contextual rank-N binder");
                 let module = parse(&source).expect("parse contextual rank-N Prime witness");
@@ -26409,7 +26637,7 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn general_ordinary_root_selects_flat_call_layers_from_retained_values() {
+    fn general_ordinary_root_checks_written_call_stages_from_retained_values() {
         let module = parse(
             "module main;
              host type Second role(i32);
@@ -26417,7 +26645,7 @@ mod tests {
              fn make_pair(left: Second, right: Second) -> Second & Second { (left, right) }
              fn layered[T](first: T, second: T)(tail: String) -> T { first }
              fn scalar(left: Second, right: Second, tail: String) -> Second {
-               layered(left, right, tail)
+               layered(left, right)(tail)
              }
              fn packed(left: Second, right: Second, tail: String) -> Second {
                layered(make_pair(left, right))(tail)
@@ -26451,11 +26679,8 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` witness"))
         };
 
-        for (name, expected_split) in [
-            ("scalar", Some(3usize)),
-            ("packed", None),
-            ("explicit_zero", None),
-        ] {
+        for (name, expected_split) in [("scalar", None), ("packed", None), ("explicit_zero", None)]
+        {
             let (item_index, def) = find(name);
             let mut elaborations = Elaborations::new();
             let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(item_index);
@@ -26501,6 +26726,14 @@ mod tests {
             Ok(_) => panic!("a flat call must not skip a zero-value function layer"),
             Err(error) => error,
         };
+        assert_eq!(
+            error.diagnostic().message,
+            "type mismatch: expected `Second`, found `Second -> Second`",
+            "the known result rejects the unconsumed value layer"
+        );
+        let error = run_general_ordinary_value(&def.body, None, &mut tcx)
+            .err()
+            .expect("without result context the missing Unit operand still rejects");
         assert!(
             error.diagnostic().message.contains("type mismatch")
                 && error.diagnostic().message.contains("expected `.`")
@@ -26563,9 +26796,9 @@ mod tests {
         let module = parse(
             "module main;
              host type I32 role(i32);
-             host fn make[A, B](value: A) -> B & .;
+             host fn make[A][ B](value: A) -> B & .;
              fn same[T](_left: T, _right: T) -> . { () }
-             fn witness() -> . { same(make(0(I32)), (1(I32), ())) }",
+             fn witness() -> . { same(make(0[I32]), (1[I32], ())) }",
         )
         .expect("parse multiply deferred result-equation witness");
         let (modules, _) =
@@ -26587,7 +26820,7 @@ mod tests {
         let module = parse(
             "module main;
              host type I32 role(i32);
-             fn literal() -> I32 { 0(I32) }",
+             fn literal() -> I32 { 0[I32] }",
         )
         .expect("parse scheduler-state witness");
         let (modules, _) =
@@ -26674,10 +26907,11 @@ mod tests {
         let publication_span = fresh_site(Span::new(10, 11));
         call_child
             .publication_mut()
-            .mark_value_at_type_slot(publication_span, 0);
+            .record_call_split(publication_span, 0);
         assert!(
             !tcx.elaborations
-                .is_value_at_type_slot("main", publication_span.id, 0)
+                .call_splits_for("main", publication_span.id)
+                .is_some_and(|splits| splits.contains(&0))
         );
         let result = frontier
             .store()
@@ -26772,7 +27006,8 @@ mod tests {
         );
         assert!(
             !tcx.elaborations
-                .is_value_at_type_slot("main", publication_span.id, 0),
+                .call_splits_for("main", publication_span.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "a deferred or retried equation published before its owner closed"
         );
         let CompletedInFrame::Value(result_at_root, _) = completed else {
@@ -26793,7 +27028,8 @@ mod tests {
             .expect("close the causal retry witness");
         assert!(
             tcx.elaborations
-                .is_value_at_type_slot("main", publication_span.id, 0)
+                .call_splits_for("main", publication_span.id)
+                .is_some_and(|splits| splits.contains(&0))
         );
     }
 
@@ -27064,7 +27300,7 @@ mod tests {
             });
             call_child
                 .publication_mut()
-                .mark_value_at_type_slot(publication_span, 0);
+                .record_call_split(publication_span, 0);
             let ancestor_at_child = frontier
                 .store()
                 .scoped_goal_at(ancestor, Vec::new(), call_owner, sp())
@@ -27174,7 +27410,8 @@ mod tests {
             assert_eq!(ordinary_planning_work().expected_result_equations, 1);
             assert!(
                 !tcx.elaborations
-                    .is_value_at_type_slot("main", publication_span.id, 0),
+                    .call_splits_for("main", publication_span.id)
+                    .is_some_and(|splits| splits.contains(&0)),
                 "a failed Final deferral published child metadata"
             );
         }
@@ -27725,7 +27962,7 @@ mod tests {
         }
 
         fn independent_nested_calls(depth: usize) -> String {
-            let call = (0..depth).fold("()".to_owned(), |call, _| format!("id(., {call})"));
+            let call = (0..depth).fold("()".to_owned(), |call, _| format!("id[.]({call})"));
             prelude(&format!("fn run() -> . {{ {call} }}"))
         }
 
@@ -27809,40 +28046,49 @@ mod tests {
                     goals: goal_work(4 * width, width, 2 * width, 3, 1, 3),
                     planning: planning_work(width, width, 0, width, 1),
                 },
-                "connected-wide" => {
-                    let max_owners = if width == 1 { 3 } else { 4 };
-                    let max_goals = if width == 1 { 1 } else { 2 };
-                    Observation {
-                        goals: goal_work(
-                            3 * width + 2,
-                            width,
-                            3 * width,
-                            max_owners,
-                            max_goals,
-                            max_owners,
-                        ),
-                        planning: planning_work(width, 1, width, width, 1),
-                    }
-                }
+                "connected-wide" if width == 1 => Observation {
+                    goals: goal_work(5, 1, 3, 3, 1, 3),
+                    planning: planning_work(1, 1, 1, 1, 1),
+                },
+                "connected-wide" => Observation {
+                    // Each written comma adds one ordinary pair call with two
+                    // type goals, in the same retained product spine.
+                    goals: goal_work(
+                        7 * width - 2,
+                        3 * width - 2,
+                        6 * width - 3,
+                        width + 3,
+                        2 * width,
+                        width + 3,
+                    ),
+                    planning: planning_work(
+                        2 * width - 1,
+                        width,
+                        2 * width - 1,
+                        3 * width - 2,
+                        width + 1,
+                    ),
+                },
                 "independent-deep" => Observation {
                     goals: goal_work(3 * width + 2, 0, 2 * width + 1, width + 2, 0, width + 2),
                     planning: planning_work(width, 1, width, width, width),
                 },
                 "connected-deep" => Observation {
                     goals: goal_work(
-                        3 * width + 8,
-                        width + 2,
-                        2 * width + 6,
+                        3 * width + 12,
                         width + 4,
-                        width + 2,
+                        2 * width + 9,
+                        width + 5,
                         width + 4,
+                        width + 5,
                     ),
-                    planning: planning_work(width + 2, 1, width + 2, width + 2, width + 1),
+                    planning: planning_work(width + 3, 2, width + 3, width + 4, width + 3),
                 },
                 _ => panic!("unknown natural-boundary scaling row `{label}`"),
             }
         }
 
+        let mut mismatches = Vec::new();
         for width in [1, 8, 32, 128] {
             for (label, source) in [
                 ("let", let_prefixes(width)),
@@ -27852,13 +28098,17 @@ mod tests {
                 ("connected-deep", connected_deep_calls(width)),
             ] {
                 let observed = observe(&source);
-                assert_eq!(
-                    observed,
-                    expected_observation(label, width),
-                    "natural-boundary `{label}` work changed at width {width}"
-                );
+                let expected = expected_observation(label, width);
+                if observed != expected {
+                    mismatches.push((label, width, observed, expected));
+                }
             }
         }
+
+        assert!(
+            mismatches.is_empty(),
+            "natural-boundary work changed: {mismatches:#?}"
+        );
 
         for source in [
             let_prefixes(32),
@@ -27881,7 +28131,7 @@ mod tests {
              host type Reflected;
              host fn returned_type(token: .) -> [A] Reflected;
              fn witness(token: .) -> Reflected {
-                 returned_type(token, [B] B -> B)
+                 returned_type(token)[ [B] B -> B]
              }",
         )
         .expect("parse ordinary returned-polytype witness");
@@ -27940,10 +28190,7 @@ mod tests {
             }",
             "product control without alias",
         );
-        assert_eq!(
-            outcome,
-            Err("type mismatch: expected `.`, found `Q`".to_owned())
-        );
+        assert_eq!(outcome, Ok(()));
     }
 
     #[cfg(feature = "surface")]
@@ -27962,10 +28209,7 @@ mod tests {
             }",
             "with product alias",
         );
-        assert_eq!(
-            outcome,
-            Err("type mismatch: expected `.`, found `Q`".to_owned())
-        );
+        assert_eq!(outcome, Ok(()));
     }
 
     #[cfg(feature = "surface")]
@@ -28005,8 +28249,8 @@ mod tests {
         assert_module_alias_does_not_capture_call_binder(
             "module main;
              type Twice[T] = T & T;
-             fn witness[A](source: Twice(A) -> . -> ., left: A, right: A) -> . {
-               let .(local: Twice(A) -> . -> .) = source;
+             fn witness[A](source: Twice[A] -> . -> ., left: A, right: A) -> . {
+               let .(local: Twice[A] -> . -> .) = source;
                local(left, right)(())
              }",
             "Twice call-binder control without alias",
@@ -28020,8 +28264,8 @@ mod tests {
             "module main;
              type Twice[T] = T & T;
              type A = .;
-             fn witness[A](source: Twice(A) -> . -> ., left: A, right: A) -> . {
-               let .(local: Twice(A) -> . -> .) = source;
+             fn witness[A](source: Twice[A] -> . -> ., left: A, right: A) -> . {
+               let .(local: Twice[A] -> . -> .) = source;
                local(left, right)(())
              }",
             "Twice call binder with same-named alias",
@@ -28036,13 +28280,23 @@ mod tests {
              host type I32;
              type Poly = [A] A;
              fn direct(poly: [A] A, value: I32) -> I32 {
-               poly(I32 -> I32)(value)
+               poly[I32 -> I32](value)
              }
              fn aliased(poly: Poly, value: I32) -> I32 {
-               poly(I32 -> I32)(value)
+               poly[I32 -> I32](value)
+             }
+             fn grouped(poly: Poly, value: I32) -> I32 {
+               (poly[I32 -> I32])(value)
              }",
             "raw and alias-backed polymorphic non-function",
         );
+        let error = module_alias_call_binder_outcome(
+            "module main;
+             fn bad(poly: [A] A) -> . { poly[.](()) }",
+            "explicit non-function specialization",
+        )
+        .expect_err("an explicit type stage cannot make Unit callable");
+        assert!(error.contains("this is applied like a function, but its type is `.`"));
     }
 
     #[cfg(feature = "surface")]
@@ -28063,12 +28317,12 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
-    fn flat_successor_reports_solved_non_function_type() {
+    fn written_successor_reports_solved_non_function_type() {
         let error = module_alias_call_binder_outcome(
             "module main;
              fn identity[A](value: A) -> A { value }
-             fn bad() -> . { identity((), ()) }",
-            "solved flat-call successor",
+             fn bad() -> . { identity(())(()) }",
+            "solved written-call successor",
         )
         .expect_err("applying the Unit result must be rejected");
         assert_eq!(
@@ -28087,10 +28341,10 @@ mod tests {
              host fn make[A]() -> A;
              fn unary(value: N) -> N { value }
              fn consume(_function: N -> N) -> . { () }
-             fn residual() -> N -> N { identity(_) }
+             fn residual() -> N -> N { identity[_] }
              fn implicit_unit() -> . { identity() }
              fn applied() -> N { make() }
-             fn residual_argument() -> . { consume(identity(_)) }
+             fn residual_argument() -> . { consume(identity[_]) }
              fn rejected() -> N { unary() }
              fn unit_argument() -> . { consume(identity()) }",
         )
@@ -28232,13 +28486,13 @@ mod tests {
              host fn make[A]() -> A;
              fn product[A](value: A, tail: .) -> . { tail }
              fn direct() -> . { identity() }
-             fn residual_argument() -> . { consume(identity(_)) }
-             fn written_residual_argument() -> . { consume(identity(N)) }
-             fn written_unit_argument() -> . -> . { identity(.) }
-             fn written_unit_alias_argument() -> Unit_alias -> Unit_alias { identity(Unit_alias) }
-             fn written_unit_domain() -> . -> N { make(N) }
-             fn explicit_unit_domain() -> N { make(N, ()) }
-             fn product_domain_remains_residual() -> . { consume_unit_product(product(.)) }",
+             fn residual_argument() -> . { consume(identity[_]) }
+             fn written_residual_argument() -> . { consume(identity[N]) }
+             fn written_unit_argument() -> . -> . { identity[.] }
+             fn written_unit_alias_argument() -> Unit_alias -> Unit_alias { identity[Unit_alias] }
+             fn written_unit_domain() -> . -> N { make[N] }
+             fn explicit_unit_domain() -> N { make[N]( ()) }
+             fn product_domain_remains_residual() -> . { consume_unit_product(product[.]) }",
             "empty Unit application controls",
         );
 
@@ -28278,7 +28532,7 @@ mod tests {
                .[B](_value: B) { seed }
              }
              pure fn stage_impl(ct: __Comptime__) -> __Checked_term__ {
-               let _ignored = retained(ct)(__Comptime__, ct);
+               let _ignored = retained(ct)[__Comptime__]( ct);
                __term_unit__(ct)
              }
              pub macro stage : . -> . { impl stage_impl; };",
@@ -28381,14 +28635,40 @@ mod tests {
             let crate::ast::Expr::Call { args, .. } = &function.body else {
                 panic!("Prime `{name}` body should remain an ordinary call")
             };
-            let [
-                crate::ast::CallArg::Type(left),
-                crate::ast::CallArg::Type(right),
-                crate::ast::CallArg::Value(_),
-                crate::ast::CallArg::Value(_),
-            ] = args.as_slice()
-            else {
-                panic!("Prime `{name}` call should materialize two exact type arguments")
+            let (left, right) = if name == "tuple_form" {
+                let [
+                    crate::ast::CallArg::Type(left),
+                    crate::ast::CallArg::Type(right),
+                    crate::ast::CallArg::Value(_),
+                    crate::ast::CallArg::Value(_),
+                ] = args.as_slice()
+                else {
+                    panic!(
+                        "Prime tuple packet should materialize two exact type arguments and two values"
+                    )
+                };
+                (left, right)
+            } else {
+                let [
+                    crate::ast::CallArg::Type(left),
+                    crate::ast::CallArg::Type(right),
+                    crate::ast::CallArg::Value(packet),
+                ] = args.as_slice()
+                else {
+                    panic!(
+                        "Prime `{name}` call should retain two type arguments and one pair packet"
+                    )
+                };
+                let (packet_left_ty, packet_right_ty, _, _) = prime_pair_packet(packet);
+                assert!(
+                    prime_types_equiv(left, packet_left_ty),
+                    "`{name}` left packet type must be semantically equivalent"
+                );
+                assert!(
+                    prime_types_equiv(right, packet_right_ty),
+                    "`{name}` right packet type must be semantically equivalent"
+                );
+                (left, right)
             };
             assert!(
                 matches!(left, crate::ast::Type::Forall { .. })
@@ -28449,6 +28729,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
+            let args = written_packet_arguments(args, 3);
             let [
                 CallArg::Value(Expr::Call {
                     occurrence: meta_occurrence,
@@ -28699,6 +28980,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness should be one outer call")
             };
+            let args = written_packet_arguments(args, 2);
             let [CallArg::Value(first), CallArg::Value(second)] = args.as_slice() else {
                 panic!("outer call should contain two retained immediate calls")
             };
@@ -28898,13 +29180,13 @@ mod tests {
              host type I32;
              host type String;
              fn bad(left: I32, wrong: String) -> I32 {
-                 .[T](first: T, token)[T](second: T) -> T { second }(
-                     _, left, (), I32, wrong
+                 .[T](first: T, token)[T](second: T) -> T { second }[_](
+                     left, ())[ I32]( wrong
                  )
              }
              fn good(left: I32, right: I32) -> I32 {
-                 .[T](first: T, token)[T](second: T) -> T { second }(
-                     _, left, (), I32, right
+                 .[T](first: T, token)[T](second: T) -> T { second }[_](
+                     left, ())[ I32]( right
                  )
              }";
         let module = parse(source).expect("parse multi-layer immediate rollback twins");
@@ -28940,25 +29222,47 @@ mod tests {
         };
         let site = |def: &crate::ast::FnDef<Lowered>| {
             let Expr::Call {
-                occurrence: call_meta_occurrence,
+                occurrence: outer_occurrence,
                 diagnostic: _,
-                callee,
-                args,
-                meta: call_meta,
+                callee: inner_call,
+                args: outer_args,
+                meta: outer_meta,
                 ..
             } = &def.body
             else {
-                panic!("rollback twin must remain one flat immediate call")
+                panic!("rollback twin must retain the final call stage")
+            };
+            let [CallArg::Type(explicit_type), CallArg::Value(last)] = outer_args.as_slice() else {
+                panic!("final stage must retain its explicit type and one value")
+            };
+            let Expr::Call {
+                occurrence: inner_occurrence,
+                diagnostic: _,
+                callee,
+                args: inner_args,
+                meta: inner_meta,
+                ..
+            } = inner_call.as_ref()
+            else {
+                panic!("rollback twin must retain the preceding call stage")
+            };
+            let [CallArg::Type(_inferred_type), CallArg::Value(_packet)] = inner_args.as_slice()
+            else {
+                panic!("first stage must retain its inferred type and one written value packet")
+            };
+            let values = written_packet_arguments(&inner_args[1..], 2);
+            let [CallArg::Value(left), CallArg::Value(unit)] = values.as_slice() else {
+                panic!("first stage packet must retain the exact left and Unit operands")
             };
             let Expr::FnExpr {
-                occurrence: lambda_meta_occurrence,
+                occurrence: lambda_occurrence,
                 sig,
                 body,
                 meta: lambda_meta,
                 ..
             } = callee.as_ref()
             else {
-                panic!("rollback twin must retain its immediate lambda")
+                panic!("first call stage must retain its immediate lambda")
             };
             let [
                 crate::ast::SignatureParam::Type(_),
@@ -28968,35 +29272,35 @@ mod tests {
                 crate::ast::SignatureParam::Value(second),
             ] = sig.params.as_slice()
             else {
-                panic!("rollback lambda must retain both source layers")
-            };
-            let [
-                CallArg::Type(_),
-                CallArg::Value(left),
-                CallArg::Value(unit),
-                CallArg::Value(explicit_type),
-                CallArg::Value(last),
-            ] = args.as_slice()
-            else {
-                panic!("rollback call must retain its flat two-layer packet: {args:?}")
+                panic!("rollback lambda must retain both source Function layers")
             };
             (
                 crate::ast::ExpressionSite {
-                    id: lambda_meta_occurrence.key(),
+                    id: lambda_occurrence.key(),
                     span: lambda_meta.span,
                 },
                 crate::ast::ExpressionSite {
-                    id: call_meta_occurrence.key(),
-                    span: call_meta.span,
+                    id: inner_occurrence.key(),
+                    span: inner_meta.span,
                 },
                 body.span(),
-                [left.span(), unit.span(), explicit_type.span(), last.span()],
+                [left.span(), unit.span(), last.span()],
                 [
                     (first.name.clone(), first.meta.span),
                     (token.name.clone(), token.meta.span),
                     (second.name.clone(), second.meta.span),
                 ],
                 last.span(),
+                crate::ast::ExpressionSite {
+                    id: outer_occurrence.key(),
+                    span: outer_meta.span,
+                },
+                match explicit_type {
+                    Type::Path { segments, .. } => {
+                        segments.last().expect("explicit type path segment").span
+                    }
+                    other => panic!("explicit I32 type argument must remain a path: {other:?}"),
+                },
             )
         };
 
@@ -29036,13 +29340,21 @@ mod tests {
             error.diagnostic().message
         );
         assert_eq!(error.diagnostic().span, bad_site.5);
+        assert!(
+            bad_tcx
+                .elaborations
+                .position_index()
+                .binder_at("main", bad_site.7)
+                .is_none(),
+            "the rejected root must not publish the explicit I32 nominal binder"
+        );
         assert_eq!(
             (
                 direct_lambda_work().body_entries,
                 direct_lambda_work().resume_entries,
             ),
-            (1, 1),
-            "the rejected multi-layer lambda must check and resume exactly once"
+            (0, 0),
+            "the incompatible later header must reject before checking or resuming the lambda body"
         );
         for span in std::iter::once(bad_site.0.span)
             .chain(std::iter::once(bad_site.1.span))
@@ -29083,31 +29395,32 @@ mod tests {
                 "the rejected multi-layer root published `{name}`"
             );
         }
-        for slot in 0..5 {
+        for site in [bad_site.1, bad_site.6] {
+            for slot in 0..2 {
+                assert!(
+                    bad_tcx
+                        .elaborations
+                        .type_resolution_for("main", site.id, slot)
+                        .is_none(),
+                    "the rejected multi-layer root published type slot {slot} at {site:?}"
+                );
+            }
             assert!(
                 bad_tcx
                     .elaborations
-                    .type_resolution_for("main", bad_site.1.id, slot)
-                    .is_none(),
-                "the rejected multi-layer root published type slot {slot}"
+                    .call_splits_for("main", site.id)
+                    .is_none()
+                    && bad_tcx
+                        .elaborations
+                        .call_implicit_unit_slots_for("main", site.id)
+                        .is_none()
+                    && bad_tcx
+                        .elaborations
+                        .call_residual_eta_type_for("main", site.id)
+                        .is_none(),
+                "the rejected multi-layer root published a call plan at {site:?}"
             );
         }
-        assert!(
-            bad_tcx
-                .elaborations
-                .call_splits_for("main", bad_site.1.id)
-                .is_none()
-                && bad_tcx
-                    .elaborations
-                    .call_implicit_unit_slots_for("main", bad_site.1.id)
-                    .is_none()
-                && bad_tcx
-                    .elaborations
-                    .call_residual_eta_type_for("main", bad_site.1.id)
-                    .is_none(),
-            "the rejected multi-layer root published a call plan"
-        );
-
         reset_direct_lambda_work();
         let mut good_elaborations = Elaborations::new();
         let mut good_tcx = TypeCtx::new(&env, &mut good_elaborations).at_item(good_index);
@@ -29140,13 +29453,7 @@ mod tests {
         for span in std::iter::once(good_site.0.span)
             .chain(std::iter::once(good_site.1.span))
             .chain(std::iter::once(good_site.2))
-            .chain(
-                good_site
-                    .3
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(index, span)| (index != 2).then_some(span)),
-            )
+            .chain(good_site.3)
         {
             assert!(
                 good_tcx
@@ -29179,9 +29486,24 @@ mod tests {
                 .elaborations
                 .type_resolution_for("main", good_site.1.id, 0)
                 .is_some(),
-            "the successful multi-layer root omitted its inferred first type slot"
+            "the successful first call stage omitted its inferred type slot"
         );
 
+        assert!(
+            good_tcx
+                .elaborations
+                .type_resolution_for("main", good_site.6.id, 0)
+                .is_none(),
+            "the source-explicit I32 type must not create inferred-slot metadata"
+        );
+        assert!(
+            matches!(
+                good_tcx.elaborations.position_index().binder_at("main", good_site.7),
+                Some(crate::pass::typecheck_full::ResolvedBinder::HostType { module_path, name })
+                    if module_path == "main" && name == "I32"
+            ),
+            "the explicit I32 must retain its exact nominal type binder"
+        );
         let mut success = parse(source).expect("parse standalone successful multi-layer twin");
         success
             .items
@@ -29212,8 +29534,8 @@ mod tests {
              fn curried[T](first: T)(second: T) -> T { first }
              fn bad_single(first: I32, wrong: String) -> I32 { same(first, wrong) }
              fn good_single(first: I32, second: I32) -> I32 { same(first, second) }
-             fn bad_multi(first: I32, wrong: String) -> I32 { curried(first, wrong) }
-             fn good_multi(first: I32, second: I32) -> I32 { curried(first, second) }",
+             fn bad_multi(first: I32, wrong: String) -> I32 { curried(first)(wrong) }
+             fn good_multi(first: I32, second: I32) -> I32 { curried(first)(second) }",
         )
         .expect("parse public ordinary-call check witnesses");
         let (modules, _) =
@@ -29238,40 +29560,67 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` witness function"))
         };
         let call_spans = |body: &Expr| {
-            let Expr::Call {
-                occurrence: _,
-                diagnostic: _,
-                callee,
-                args,
-                ..
-            } = body
-            else {
+            let Expr::Call { callee, args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
-            let Expr::Path {
-                meta: callee_meta, ..
-            } = callee.as_ref()
-            else {
-                panic!("witness callee should be a direct path")
+            let callee_meta = match callee.as_ref() {
+                Expr::Path { meta, .. } => meta,
+                Expr::Call { callee: direct, .. } => {
+                    let Expr::Path { meta, .. } = direct.as_ref() else {
+                        panic!("curried call should retain its direct path callee")
+                    };
+                    meta
+                }
+                other => {
+                    panic!("witness callee should be a direct path or one call stage: {other:?}")
+                }
             };
-            let value_spans = args
-                .iter()
-                .filter_map(|arg| match arg {
-                    CallArg::Value(value) => Some(value.span()),
-                    CallArg::Type(_) => None,
-                })
-                .collect::<Vec<_>>();
-            (body.site(), callee_meta.span, value_spans)
+            let mut sites = vec![body.site()];
+            let mut value_spans = Vec::new();
+            match callee.as_ref() {
+                Expr::Path { .. } => {
+                    let values = written_packet_arguments(args, 2);
+                    value_spans.extend(values.iter().map(|arg| match arg {
+                        CallArg::Value(value) => value.span(),
+                        CallArg::Type(_) => {
+                            panic!("same[T] values must remain in one written packet")
+                        }
+                    }));
+                }
+                Expr::Call {
+                    callee: inner_callee,
+                    args: inner_args,
+                    ..
+                } => {
+                    let [CallArg::Value(outer_value)] = args.as_slice() else {
+                        panic!("second curried Function stage must retain one value")
+                    };
+                    let [CallArg::Value(inner_value)] = inner_args.as_slice() else {
+                        panic!("first curried Function stage must retain one value")
+                    };
+                    let Expr::Path { .. } = inner_callee.as_ref() else {
+                        panic!("first curried Function stage must retain the direct path callee")
+                    };
+                    let Expr::Call { .. } = callee.as_ref() else {
+                        unreachable!()
+                    };
+                    sites.push(callee.site());
+                    value_spans.extend([inner_value.span(), outer_value.span()]);
+                }
+                _ => unreachable!(),
+            }
+            (sites, callee_meta.span, value_spans)
         };
 
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
-        for (bad_name, good_name, good_split) in [
-            ("bad_single", "good_single", None),
-            ("bad_multi", "good_multi", Some(&[2usize][..])),
+        for (bad_name, good_name, expected_stages) in [
+            ("bad_single", "good_single", 1),
+            ("bad_multi", "good_multi", 2),
         ] {
             let (bad_index, bad) = def(bad_name);
-            let (bad_call_span, bad_callee_span, bad_value_spans) = call_spans(&bad.body);
+            let (bad_call_sites, bad_callee_span, bad_value_spans) = call_spans(&bad.body);
+            assert_eq!(bad_call_sites.len(), expected_stages);
             let mut bad_elaborations = Elaborations::new();
             let mut bad_tcx = TypeCtx::new(&env, &mut bad_elaborations).at_item(bad_index);
             for param in bad.sig.value_params() {
@@ -29292,20 +29641,22 @@ mod tests {
                 "unexpected `{bad_name}` diagnostic: {}",
                 error.diagnostic().message
             );
-            assert!(
-                bad_tcx
-                    .elaborations
-                    .type_resolution_for("main", bad_call_span.id, 0)
-                    .is_none(),
-                "`{bad_name}` must not publish its inferred type argument"
-            );
-            assert!(
-                bad_tcx
-                    .elaborations
-                    .call_splits_for("main", bad_call_span.id)
-                    .is_none(),
-                "`{bad_name}` must not publish a call split"
-            );
+            for site in &bad_call_sites {
+                assert!(
+                    bad_tcx
+                        .elaborations
+                        .type_resolution_for("main", site.id, 0)
+                        .is_none(),
+                    "`{bad_name}` must not publish a type argument at {site:?}"
+                );
+                assert!(
+                    bad_tcx
+                        .elaborations
+                        .call_splits_for("main", site.id)
+                        .is_none(),
+                    "`{bad_name}` must keep its written Function stages separate at {site:?}"
+                );
+            }
             assert!(
                 bad_tcx
                     .elaborations
@@ -29331,7 +29682,8 @@ mod tests {
             }
 
             let (good_index, good) = def(good_name);
-            let (good_call_span, good_callee_span, good_value_spans) = call_spans(&good.body);
+            let (good_call_sites, good_callee_span, good_value_spans) = call_spans(&good.body);
+            assert_eq!(good_call_sites.len(), expected_stages);
             let mut good_elaborations = Elaborations::new();
             let mut good_tcx = TypeCtx::new(&env, &mut good_elaborations).at_item(good_index);
             for param in good.sig.value_params() {
@@ -29349,17 +29701,17 @@ mod tests {
             assert!(
                 good_tcx
                     .elaborations
-                    .type_resolution_for("main", good_call_span.id, 0)
+                    .type_resolution_for("main", good_call_sites.last().expect("call stage").id, 0)
                     .is_some(),
                 "`{good_name}` must publish its inferred type argument"
             );
-            if let Some(expected_split) = good_split {
-                assert_eq!(
+            for site in &good_call_sites {
+                assert!(
                     good_tcx
                         .elaborations
-                        .call_splits_for("main", good_call_span.id),
-                    Some(expected_split),
-                    "`{good_name}` must publish the exact global split"
+                        .call_splits_for("main", site.id)
+                        .is_none(),
+                    "`{good_name}` must keep separate Function stages at distinct call sites"
                 );
             }
             assert!(
@@ -29399,8 +29751,8 @@ mod tests {
              fn curried[T](first: T)(second: T) -> T { first }
              fn bad_single(first: I32, wrong: String) -> I32 { first.>same(wrong) }
              fn good_single(first: I32, second: I32) -> I32 { first.>same(second) }
-             fn bad_multi(first: I32, wrong: String) -> I32 { first.>curried(wrong) }
-             fn good_multi(first: I32, second: I32) -> I32 { first.>curried(second) }",
+             fn bad_multi(first: I32, wrong: String) -> I32 { (first.>curried)(wrong) }
+             fn good_multi(first: I32, second: I32) -> I32 { (first.>curried)(second) }",
         )
         .expect("parse public root-UFCS synthesis witnesses");
         let (modules, _) =
@@ -29425,14 +29777,36 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` witness function"))
         };
 
+        let call_sites = |body: &Expr| {
+            let Expr::Call { callee, args, .. } = body else {
+                panic!("lowered UFCS witness must be an ordinary call")
+            };
+            let mut sites = vec![body.site()];
+            let direct = match callee.as_ref() {
+                Expr::Path { meta, .. } => meta,
+                Expr::Call { callee: direct, .. } => {
+                    let Expr::Path { meta, .. } = direct.as_ref() else {
+                        panic!("curried UFCS call must retain its direct path callee")
+                    };
+                    sites.push(callee.site());
+                    meta
+                }
+                other => panic!("UFCS call must normalize to a direct call chain: {other:?}"),
+            };
+            let type_site = if sites.len() == 1 { sites[0] } else { sites[1] };
+            let _ = args;
+            (sites, direct.span, type_site)
+        };
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
-        for (bad_name, good_name, good_split) in [
-            ("bad_single", "good_single", None),
-            ("bad_multi", "good_multi", Some(&[2usize][..])),
+        for (bad_name, good_name, expected_stages) in [
+            ("bad_single", "good_single", 1),
+            ("bad_multi", "good_multi", 2),
         ] {
             let (bad_index, bad) = def(bad_name);
-            assert!(matches!(bad.body, Expr::Ufcs { .. }));
+            assert!(matches!(bad.body, Expr::Call { .. }));
+            let (bad_call_sites, bad_callee_span, _bad_type_site) = call_sites(&bad.body);
+            assert_eq!(bad_call_sites.len(), expected_stages);
             let bad_span = bad.body.site();
             let mut bad_elaborations = Elaborations::new();
             assert_eq!(bad_elaborations.type_resolution_count(), 0);
@@ -29457,12 +29831,22 @@ mod tests {
                 "unexpected `{bad_name}` diagnostic: {}",
                 error.diagnostic().message
             );
+            for site in &bad_call_sites {
+                assert!(
+                    bad_tcx
+                        .elaborations
+                        .call_splits_for("main", site.id)
+                        .is_none(),
+                    "`{bad_name}` must preserve each normalized call stage separately"
+                );
+            }
             assert!(
                 bad_tcx
                     .elaborations
-                    .elaboration_for("main", &bad.body)
+                    .position_index()
+                    .type_at("main", bad_callee_span)
                     .is_none(),
-                "`{bad_name}` must not publish a normalized UFCS rewrite"
+                "`{bad_name}` must not publish the normalized direct callee type"
             );
             assert_eq!(bad_tcx.elaborations.type_resolution_count(), 0);
             assert_eq!(bad_tcx.elaborations.call_plan_count(), 0);
@@ -29476,7 +29860,9 @@ mod tests {
             );
 
             let (good_index, good) = def(good_name);
-            assert!(matches!(good.body, Expr::Ufcs { .. }));
+            assert!(matches!(good.body, Expr::Call { .. }));
+            let (good_call_sites, good_callee_span, good_type_site) = call_sites(&good.body);
+            assert_eq!(good_call_sites.len(), expected_stages);
             let good_span = good.body.site();
             let mut good_elaborations = Elaborations::new();
             let mut good_tcx = TypeCtx::new(&env, &mut good_elaborations).at_item(good_index);
@@ -29493,33 +29879,30 @@ mod tests {
                 )
                 .unwrap_or_else(|error| panic!("synthesize `{good_name}`: {error:?}"));
             assert!(matches!(completed.ty.as_type(), Type::Path { .. }));
-            let Some(crate::pass::typecheck_full::RecordedElaboration::Lowered(
-                normalized @ Expr::Call { .. },
-            )) = good_tcx.elaborations.elaboration_for("main", &good.body)
-            else {
-                panic!("`{good_name}` must publish its normalized UFCS rewrite");
-            };
-            let normalized_occurrence = normalized.site().id;
-            assert_ne!(normalized_occurrence, good_span.id);
             assert!(
                 good_tcx
                     .elaborations
-                    .type_resolution_for("main", normalized_occurrence, 0)
+                    .type_resolution_for("main", good_type_site.id, 0)
                     .is_some()
                     && good_tcx
                         .elaborations
                         .position_index()
                         .type_at("main", good_span.span)
+                        .is_some()
+                    && good_tcx
+                        .elaborations
+                        .position_index()
+                        .type_at("main", good_callee_span)
                         .is_some(),
-                "`{good_name}` must publish its UFCS result metadata"
+                "`{good_name}` must publish its normalized call result, type argument, and direct callee"
             );
-            if let Some(expected_split) = good_split {
-                assert_eq!(
+            for site in &good_call_sites {
+                assert!(
                     good_tcx
                         .elaborations
-                        .call_splits_for("main", normalized_occurrence),
-                    Some(expected_split),
-                    "`{good_name}` must publish the exact global split"
+                        .call_splits_for("main", site.id)
+                        .is_none(),
+                    "`{good_name}` must retain separate call sites for each Function stage"
                 );
             }
         }
@@ -29536,10 +29919,10 @@ mod tests {
              fn identity(value: I32) -> I32 { value }
              fn consume(_first: I32)(_second: I32)(_third: I32) -> . { () }
              fn good(first: I32, second: I32, third: I32) -> . {
-                 retain(consume)(first, identity(second), third)
+                 retain(consume)(first)(identity(second))(third)
              }
              fn bad(first: I32, second: I32, wrong: String) -> . {
-                 retain(consume)(first, identity(second), wrong)
+                 retain(consume)(first)(identity(second))(wrong)
              }",
         )
         .expect("parse computed-callee rollback witness");
@@ -29565,51 +29948,66 @@ mod tests {
                 .unwrap_or_else(|| panic!("missing `{name}` witness function"))
         };
         let call_spans = |body: &Expr| {
-            let Expr::Call { callee, args, .. } = body else {
-                panic!("witness body should be an ordinary call")
+            let Expr::Call {
+                callee: c2,
+                args: final_args,
+                ..
+            } = body
+            else {
+                panic!("witness body should be the final ordinary call")
+            };
+            let [CallArg::Value(third)] = final_args.as_slice() else {
+                panic!("final Function layer should have one written value")
             };
             let Expr::Call {
-                occurrence: meta_occurrence,
-                diagnostic: _,
-                callee: computed_callee,
-                meta,
+                callee: c1,
+                args: middle_args,
                 ..
-            } = callee.as_ref()
+            } = c2.as_ref()
             else {
-                panic!("witness should apply a computed call result")
+                panic!("witness should retain the preceding Function call")
+            };
+            let [CallArg::Value(identity)] = middle_args.as_slice() else {
+                panic!("middle Function layer should have one written value")
+            };
+            let Expr::Call { callee: c0, .. } = c1.as_ref() else {
+                panic!("witness should retain the first computed Function application")
+            };
+            let Expr::Call {
+                callee: retain_callee,
+                ..
+            } = c0.as_ref()
+            else {
+                panic!("computed call should retain the `retain(consume)` application")
             };
             let Expr::Path {
-                meta: computed_callee_meta,
-                ..
-            } = computed_callee.as_ref()
+                meta: retain_meta, ..
+            } = retain_callee.as_ref()
             else {
-                panic!("computed call should have one direct callee")
+                panic!("the first computed call should have a direct `retain` callee")
             };
-            let Some(CallArg::Value(Expr::Call {
-                occurrence: _,
-                diagnostic: _,
-                callee: nested_callee,
-                meta: nested_meta,
+            let Expr::Call {
+                callee: identity_callee,
                 ..
-            })) = args.get(1)
+            } = identity
             else {
-                panic!("witness second argument should be one nested call")
+                panic!("the second written value should be the nested identity call")
             };
             let Expr::Path {
-                meta: nested_callee_meta,
+                meta: identity_meta,
                 ..
-            } = nested_callee.as_ref()
+            } = identity_callee.as_ref()
             else {
-                panic!("nested call should have one direct callee")
+                panic!("identity call should retain its direct path callee")
             };
+            let sites = [body.site(), c2.site(), c1.site(), c0.site()];
+            let _ = third;
             (
-                crate::ast::ExpressionSite {
-                    id: meta_occurrence.key(),
-                    span: meta.span,
-                },
-                computed_callee_meta.span,
-                nested_callee_meta.span,
-                nested_meta.span,
+                c0.site(),
+                retain_meta.span,
+                identity_meta.span,
+                identity.site().span,
+                sites,
             )
         };
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
@@ -29621,6 +30019,7 @@ mod tests {
             good_computed_callee_span,
             good_nested_callee_span,
             good_nested_span,
+            good_call_sites,
         ) = call_spans(&good.body);
         let mut good_elaborations = Elaborations::new();
         let mut good_tcx = TypeCtx::new(&env, &mut good_elaborations).at_item(good_index);
@@ -29655,13 +30054,15 @@ mod tests {
                 .is_some(),
             "a successful root must publish the computed call's direct callee type"
         );
-        assert_eq!(
-            good_tcx
-                .elaborations
-                .call_splits_for("main", good.body.site().id),
-            Some(&[1, 2][..]),
-            "a successful three-layer call must publish both global splits"
-        );
+        for site in good_call_sites {
+            assert!(
+                good_tcx
+                    .elaborations
+                    .call_splits_for("main", site.id)
+                    .is_none(),
+                "separate written Function layers must remain separate call sites"
+            );
+        }
         assert!(
             good_tcx
                 .elaborations
@@ -29680,8 +30081,13 @@ mod tests {
         );
 
         let (bad_index, bad) = def("bad");
-        let (bad_computed_span, bad_computed_callee_span, bad_nested_callee_span, bad_nested_span) =
-            call_spans(&bad.body);
+        let (
+            bad_computed_span,
+            bad_computed_callee_span,
+            bad_nested_callee_span,
+            bad_nested_span,
+            bad_call_sites,
+        ) = call_spans(&bad.body);
         let mut bad_elaborations = Elaborations::new();
         let mut bad_tcx = TypeCtx::new(&env, &mut bad_elaborations).at_item(bad_index);
         for param in bad.sig.value_params() {
@@ -29725,13 +30131,22 @@ mod tests {
                 .is_none(),
             "a rejected root must not publish the computed call's direct callee type"
         );
-        assert!(
-            bad_tcx
-                .elaborations
-                .call_splits_for("main", bad.body.site().id)
-                .is_none(),
-            "a rejected three-layer call must not publish a split"
-        );
+        for site in bad_call_sites {
+            assert!(
+                bad_tcx
+                    .elaborations
+                    .call_splits_for("main", site.id)
+                    .is_none(),
+                "a rejected root must not publish a split at any Function stage"
+            );
+            assert!(
+                bad_tcx
+                    .elaborations
+                    .type_resolution_for("main", site.id, 0)
+                    .is_none(),
+                "a rejected root must not publish a type slot at any Function stage"
+            );
+        }
         for span in [bad_nested_callee_span, bad_nested_span] {
             assert!(
                 bad_tcx
@@ -29758,10 +30173,10 @@ mod tests {
              fn return_poly2(_unit: .) -> [A][B] (A & B) -> A { poly2 }
              fn parameter_boundary() -> . { retain(accepts_poly)(poly) }
              fn return_boundary(value: I32) -> I32 {
-                 retain(return_poly)(())(I32, value)
+                 retain(return_poly)(())[I32]( value)
              }
              fn partial_prefix_boundary() -> [B] (I32 & B) -> I32 {
-                 retain(return_poly2)(())(I32)
+                 retain(return_poly2)(())[I32]
              }",
         )
         .expect("parse computed-callee forall-boundary witnesses");
@@ -29809,8 +30224,8 @@ mod tests {
                constructor mk_pack;
                projector un_pack;
              };
-             fn witness(left: I32, right: String) -> Pack(I32) {
-                 Pack.mk_pack(I32)(left, right)
+             fn witness(left: I32, right: String) -> Pack[I32] {
+                 Pack.mk_pack[I32](left, right)
              }",
         )
         .expect("parse partial-prefix constructor witness");
@@ -29839,21 +30254,22 @@ mod tests {
             occurrence: meta_occurrence,
             diagnostic: _,
             callee,
+            args,
+            meta: call_meta,
             ..
         } = &def.body
         else {
-            panic!("partial-prefix witness must contain an outer call")
+            panic!("partial-prefix witness must be one call with a type prefix and value packet")
         };
-        let Expr::Call {
-            occurrence: _,
-            diagnostic: _,
-            callee: direct,
-            args: prefix,
-            meta: prefix_meta,
-            ..
-        } = callee.as_ref()
+        let Expr::Path { .. } = callee.as_ref() else {
+            panic!("the constructor call must retain its direct path callee")
+        };
+        let [
+            CallArg::Type(_explicit_universal),
+            CallArg::Value(_written_packet),
+        ] = args.as_slice()
         else {
-            panic!("partial-prefix witness must retain its type-only inner call")
+            panic!("the constructor stage must retain its explicit prefix and one packed value")
         };
         let mut elaborations = Elaborations::new();
         let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(item_index);
@@ -29865,7 +30281,7 @@ mod tests {
         }
         let constructor =
             <crate::pass::typecheck_full::LoweredTyper as Typer<Lowered>>::synth_expr(
-                direct, &mut tcx,
+                callee, &mut tcx,
             )
             .expect("synthesize existential constructor");
         assert_eq!(
@@ -29873,7 +30289,7 @@ mod tests {
             "the real constructor must expose one inference-driven existential suffix"
         );
         let (partial, residual_suffix) =
-            plan_incomplete_type_prefix_call(&constructor, &call_arg_refs(prefix), &tcx)
+            plan_incomplete_type_prefix_call(&constructor, &call_arg_refs(&args[..1]), &tcx)
                 .expect("preflight the explicit universal prefix")
                 .expect("the explicit universal prefix must retain the existential binder");
         assert_eq!(residual_suffix, 1);
@@ -29888,16 +30304,11 @@ mod tests {
                 if segments.last().is_some_and(|segment| segment.as_str() == "Pack")
                     && args.len() == 1
         ));
-        assert!(matches!(
-            tcx.elaborations
-                .position_index()
-                .type_at("main", prefix_meta.span),
-            Some(Type::Forall { .. })
-        ));
         let inferred = tcx
             .elaborations
-            .type_resolution_for("main", meta_occurrence.key(), 0)
-            .expect("the outer layer must infer the retained existential slot");
+            .type_resolution_for("main", meta_occurrence.key(), 1)
+            .expect("the same call stage must infer the existential suffix at slot one");
+        assert_eq!(call_meta.span, def.body.span());
         assert!(matches!(
             &inferred.resolved,
             Type::Path { segments, args, .. }
@@ -29931,13 +30342,13 @@ mod tests {
                constructor mk_phantom;
                projector un_phantom;
              };
-             fn inferred(payload: I32 & String) -> Pack(I32) {
-               Pack.mk_pack(I32, payload)
+             fn inferred(payload: I32 & String) -> Pack[I32] {
+               Pack.mk_pack[I32]( payload)
              }
              fn elided(value: I32) -> Hidden { Hidden.mk_hidden(value) }
              fn duo(pair: I32 & String) -> Duo { Duo.mk_duo(pair) }
              fn bad(bad_value: I32) -> I32 { Hidden.mk_hidden(bad_value) }
-             fn unresolved(value: I32) -> Phantom(I32) {
+             fn unresolved(value: I32) -> Phantom[I32] {
                Phantom.mk_phantom(value)
              }",
         )
@@ -30479,6 +30890,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
+            let args = written_packet_arguments(args, 2);
             let Some(CallArg::Value(Expr::FnExpr { body, .. })) = args.first() else {
                 panic!("first argument should be the checked lambda")
             };
@@ -30605,6 +31017,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
+            let args = written_packet_arguments(args, 2);
             let Some(CallArg::Value(Expr::FnExpr { body, .. })) = args.first() else {
                 panic!("first argument should be the checked lambda")
             };
@@ -30727,6 +31140,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
+            let args = written_packet_arguments(args, 2);
             let Some(CallArg::Value(conditional @ Expr::UserMacro { .. })) = args.first() else {
                 panic!("first argument should be the conditional")
             };
@@ -30861,6 +31275,7 @@ mod tests {
             let Expr::Call { args, .. } = body else {
                 panic!("witness body should be an ordinary call")
             };
+            let args = written_packet_arguments(args, 2);
             let [
                 CallArg::Value(
                     access @ Expr::Elaborator {
@@ -31276,7 +31691,7 @@ mod tests {
                 false,
             ),
         ] {
-            let _ = pending_source_control(
+            let _ = pending_source_scope_control(
                 label,
                 body,
                 accepts,
@@ -31286,12 +31701,12 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
-    fn pending_source_control(
+    fn pending_source_scope_control(
         label: &str,
         body: &str,
         accepts: bool,
         extra: &str,
-    ) -> CompletionWork {
+    ) -> PendingSourceControl {
         let source_text = format!(
             r#"module main;
             import __comptime__;
@@ -31374,22 +31789,19 @@ mod tests {
             work.generic_pending_entries, 0,
             "{label} must use the retained path"
         );
-        assert_eq!(
-            ordinary_planning_work().rec_order_source_visits,
-            1,
-            "{label}"
-        );
-        assert_eq!(
-            take_lambda_body_entries()
-                .iter()
-                .filter(|entry| entry.span == source.body.span())
-                .count(),
-            1,
-            "{label}"
-        );
+        let source_entries = ordinary_planning_work().rec_order_source_visits;
+        let body_entries = take_lambda_body_entries()
+            .iter()
+            .filter(|entry| entry.span == source.body.span())
+            .count();
         if label == "nested transport let" {
-            assert_eq!(work.rec_order_entry_forwards, 2);
-            assert_eq!(work.transport_refreshes, 1);
+            assert_eq!(work.rec_order_entry_forwards, 3);
+            assert_eq!(
+                work.rec_order_forward_gathers,
+                work.rec_order_entry_forwards
+            );
+            assert_eq!(work.transport_refreshes, 0);
+            assert_eq!(work.source_records_live, 0);
         }
         if !accepts {
             assert_eq!(
@@ -31407,8 +31819,33 @@ mod tests {
                 "{label}"
             );
         }
-        work
+        PendingSourceControl {
+            work,
+            source_entries,
+            body_entries,
+        }
     }
+
+    #[cfg(feature = "surface")]
+    struct PendingSourceControl {
+        work: CompletionWork,
+        source_entries: usize,
+        body_entries: usize,
+    }
+
+    #[cfg(feature = "surface")]
+    fn pending_source_control(
+        label: &str,
+        body: &str,
+        accepts: bool,
+        extra: &str,
+    ) -> CompletionWork {
+        let result = pending_source_scope_control(label, body, accepts, extra);
+        assert_eq!(result.source_entries, 1, "{label}");
+        assert_eq!(result.body_entries, 1, "{label}");
+        result.work
+    }
+
     #[cfg(feature = "surface")]
     #[test]
     fn pending_source_forwarding_depth_cost() {
@@ -31428,12 +31865,12 @@ mod tests {
                 true,
                 "fn pass_unit(value: .) -> . { value }",
             );
-            assert_eq!(work.rec_order_entry_forwards, depth + 2);
+            assert_eq!(work.rec_order_entry_forwards, depth + 3);
             assert_eq!(
                 work.rec_order_forward_gathers,
                 work.rec_order_entry_forwards
             );
-            assert_eq!(work.transport_refreshes, depth + 1);
+            assert_eq!(work.transport_refreshes, 0);
             assert_eq!(work.source_records_live, 0);
         }
     }
@@ -31559,7 +31996,10 @@ mod tests {
             .take_rec_order_observation(&source.body, &tcx)
             .expect("alias observation")
             .expect("runtime observation");
-        assert!(observation.0.is_some());
+        assert_eq!(
+            crate::pass::typecheck_core::types::display_type(observation.0.ty().as_type()),
+            crate::pass::typecheck_core::types::display_type(&witness.ret),
+        );
         assert!(
             !observation.1,
             "a checked use cannot certify its unchecked RHS"
@@ -32303,6 +32743,52 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
+    fn written_call_named<'a>(source: &'a Expr, name: &str) -> &'a Expr {
+        fn find<'a>(source: &'a Expr, name: &str) -> Option<&'a Expr> {
+            let Expr::Call { callee, args, .. } = source else {
+                return None;
+            };
+            if matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.last().is_some_and(|segment| segment.as_str() == name))
+            {
+                return Some(source);
+            }
+            find(callee, name).or_else(|| {
+                args.iter().find_map(|arg| match arg {
+                    CallArg::Value(value) => find(value, name),
+                    CallArg::Type(_) => None,
+                })
+            })
+        }
+        find(source, name).unwrap_or_else(|| panic!("missing ordinary `{name}` call in {source:?}"))
+    }
+
+    #[cfg(feature = "surface")]
+    fn written_path_span(source: &Expr, name: &str) -> Span {
+        struct Paths<'a> {
+            name: &'a str,
+            spans: Vec<Span>,
+        }
+        impl crate::pass::visit_mut::TypecheckVisitMut<Lowered> for Paths<'_> {
+            fn visit_expr(&mut self, source: &mut Expr) {
+                if let Expr::Path { segments, .. } = source
+                    && let [segment] = segments.as_slice()
+                    && segment.as_str() == self.name
+                {
+                    self.spans.push(segment.span);
+                }
+                crate::pass::visit_mut::walk_expr(self, source);
+            }
+        }
+        let mut paths = Paths {
+            name,
+            spans: Vec::new(),
+        };
+        crate::pass::visit_mut::TypecheckVisitMut::visit_expr(&mut paths, &mut source.clone());
+        assert_eq!(paths.spans.len(), 1, "expected one `{name}` occurrence");
+        paths.spans[0]
+    }
+
+    #[cfg(feature = "surface")]
     #[test]
     fn failed_later_sibling_does_not_publish_a_retained_regular_ufcs() {
         fn path_leaf(ty: &Type) -> &str {
@@ -32313,68 +32799,6 @@ mod tests {
                 .last()
                 .expect("a nominal path has one segment")
                 .as_str()
-        }
-
-        fn nested_ufcs(body: &Expr) -> &Expr {
-            let Expr::Call { args, .. } = body else {
-                panic!("witness body should be an ordinary call")
-            };
-            let Some(CallArg::Value(ufcs @ Expr::Ufcs { .. })) = args.first() else {
-                panic!("witness first sibling should be a regular UFCS call")
-            };
-            ufcs
-        }
-
-        fn ufcs_path_spans(ufcs: &Expr) -> (Span, Span) {
-            let Expr::Ufcs {
-                receiver,
-                callee_segments,
-                ..
-            } = ufcs
-            else {
-                unreachable!("caller retained one UFCS expression")
-            };
-            let [segment] = callee_segments.as_slice() else {
-                panic!("bounded regular UFCS should have one callee segment")
-            };
-            let Expr::Path {
-                segments: receiver_segments,
-                ..
-            } = receiver.as_ref()
-            else {
-                panic!("witness UFCS receiver should be one path")
-            };
-            let [receiver_segment] = receiver_segments.as_slice() else {
-                panic!("witness UFCS receiver should have one path segment")
-            };
-            (segment.span, receiver_segment.span)
-        }
-
-        fn outer_sibling_spans(body: &Expr) -> [Span; 2] {
-            let Expr::Call { args, .. } = body else {
-                unreachable!("witness body is one outer call")
-            };
-            let [
-                CallArg::Value(Expr::Ufcs { .. }),
-                CallArg::Value(Expr::Path {
-                    segments: left_segments,
-                    ..
-                }),
-                CallArg::Value(Expr::Path {
-                    segments: right_segments,
-                    ..
-                }),
-            ] = args.as_slice()
-            else {
-                panic!("witness should have one UFCS call and two path siblings")
-            };
-            let [left_segment] = left_segments.as_slice() else {
-                panic!("left sibling should have one path segment")
-            };
-            let [right_segment] = right_segments.as_slice() else {
-                panic!("right sibling should have one path segment")
-            };
-            [left_segment.span, right_segment.span]
         }
 
         let module = parse(
@@ -32417,12 +32841,24 @@ mod tests {
         let (good_index, good_def) = def("good");
         let bad = &bad_def.body;
         let good = &good_def.body;
-        let bad_ufcs = nested_ufcs(bad);
-        let good_ufcs = nested_ufcs(good);
-        let (bad_callee_span, bad_receiver_span) = ufcs_path_spans(bad_ufcs);
-        let (good_callee_span, good_receiver_span) = ufcs_path_spans(good_ufcs);
-        let bad_sibling_spans = outer_sibling_spans(bad);
-        let good_sibling_spans = outer_sibling_spans(good);
+        let bad_ufcs = written_call_named(bad, "lift");
+        let good_ufcs = written_call_named(good, "lift");
+        let (bad_callee_span, bad_receiver_span) = (
+            written_path_span(bad_ufcs, "lift"),
+            written_path_span(bad_ufcs, "bad_marker"),
+        );
+        let (good_callee_span, good_receiver_span) = (
+            written_path_span(good_ufcs, "lift"),
+            written_path_span(good_ufcs, "good_marker"),
+        );
+        let bad_sibling_spans = [
+            written_path_span(bad, "bad_left"),
+            written_path_span(bad, "bad_right"),
+        ];
+        let good_sibling_spans = [
+            written_path_span(good, "good_left"),
+            written_path_span(good, "good_right"),
+        ];
         let [
             crate::ast::SignatureParam::Value(bad_marker),
             crate::ast::SignatureParam::Value(bad_left),
@@ -32465,7 +32901,7 @@ mod tests {
         );
         assert!(
             tcx.elaborations.elaboration_for("main", bad_ufcs).is_none(),
-            "a failed later sibling must not publish the retained UFCS rewrite"
+            "a failed later sibling must not publish the UFCS call facts"
         );
         assert_eq!(
             tcx.elaborations.type_resolution_count(),
@@ -32511,17 +32947,21 @@ mod tests {
             .expect("the successful parent should publish the retained UFCS position type");
         assert_eq!(path_leaf(positioned), "I32");
 
-        let Some(crate::pass::typecheck_full::RecordedElaboration::Lowered(Expr::Call {
+        let Expr::Call {
             occurrence: normalized_occurrence,
-            diagnostic: _,
             callee,
             args,
             ..
-        })) = tcx.elaborations.elaboration_for("main", good_ufcs)
+        } = good_ufcs
         else {
-            panic!("the successful parent should publish one ordinary-call UFCS rewrite")
+            unreachable!()
         };
-        assert_ne!(normalized_occurrence.key(), good_ufcs.site().id);
+        assert!(
+            tcx.elaborations
+                .elaboration_for("main", good_ufcs)
+                .is_none(),
+            "UFCS is already an ordinary call before typechecking"
+        );
         let resolved = tcx
             .elaborations
             .type_resolution_for("main", normalized_occurrence.key(), 0)
@@ -32608,32 +33048,9 @@ mod tests {
                 _ => None,
             })
             .expect("good witness function");
-        let Expr::Call { args, .. } = &good_def.body else {
-            panic!("good witness body should be one outer call")
-        };
-        let Some(CallArg::Value(
-            ufcs @ Expr::Ufcs {
-                receiver,
-                callee_segments,
-                ..
-            },
-        )) = args.first()
-        else {
-            panic!("good witness should start with one regular UFCS call")
-        };
-        let [callee_segment] = callee_segments.as_slice() else {
-            panic!("imported UFCS witness should have one callee segment")
-        };
-        let Expr::Path {
-            segments: receiver_segments,
-            ..
-        } = receiver.as_ref()
-        else {
-            panic!("imported UFCS receiver should be one path")
-        };
-        let [receiver_segment] = receiver_segments.as_slice() else {
-            panic!("imported UFCS receiver should have one path segment")
-        };
+        let ufcs = written_call_named(&good_def.body, "lift");
+        let callee_span = written_path_span(ufcs, "lift");
+        let receiver_span = written_path_span(ufcs, "good_marker");
 
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
@@ -32656,25 +33073,24 @@ mod tests {
         assert!(matches!(
             tcx.elaborations
                 .position_index()
-                .binder_at("main", callee_segment.span),
+                .binder_at("main", callee_span),
             Some(crate::pass::typecheck_full::ResolvedBinder::HostEnvFn { name, .. })
                 if name == "lift"
         ));
         assert!(matches!(
             tcx.elaborations
                 .position_index()
-                .binder_at("main", receiver_segment.span),
+                .binder_at("main", receiver_span),
             Some(crate::pass::typecheck_full::ResolvedBinder::Local { name, .. })
                 if name == "good_marker"
         ));
-        let Some(crate::pass::typecheck_full::RecordedElaboration::Lowered(Expr::Call {
-            callee,
-            args,
-            ..
-        })) = tcx.elaborations.elaboration_for("main", ufcs)
-        else {
-            panic!("the imported UFCS must publish one ordinary-call rewrite")
+        let Expr::Call { callee, args, .. } = ufcs else {
+            unreachable!()
         };
+        assert!(
+            tcx.elaborations.elaboration_for("main", ufcs).is_none(),
+            "imported UFCS is an ordinary call before checking"
+        );
         let Expr::Path { segments, .. } = callee.as_ref() else {
             panic!("the normalized imported UFCS callee should remain one path")
         };
@@ -32846,6 +33262,115 @@ mod tests {
     }
 
     #[cfg(feature = "surface")]
+    fn written_packet_arguments(args: &[CallArg<Lowered>], width: usize) -> Vec<&CallArg<Lowered>> {
+        assert!(width > 0);
+        let [tail] = args else {
+            panic!("one written value stage must lower to one packet")
+        };
+        let mut tail = tail;
+        let mut values = Vec::with_capacity(width);
+        for _ in 1..width {
+            let CallArg::Value(Expr::Call { callee, args, .. }) = tail else {
+                panic!("the fixture's remaining written operands must form a pair")
+            };
+            assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+                if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__")));
+            let [
+                CallArg::Type(Type::Infer { .. }),
+                CallArg::Type(Type::Infer { .. }),
+                left @ CallArg::Value(_),
+                right @ CallArg::Value(_),
+            ] = args.as_slice()
+            else {
+                panic!("the fixture packet must retain both inferred pair types and both values")
+            };
+            values.push(left);
+            tail = right;
+        }
+        assert!(matches!(tail, CallArg::Value(_)));
+        values.push(tail);
+        values
+    }
+
+    #[cfg(feature = "surface")]
+    fn prime_types_equiv(
+        left: &crate::ast::Type<crate::ast::Prime>,
+        right: &crate::ast::Type<crate::ast::Prime>,
+    ) -> bool {
+        let local: HashMap<
+            &'static str,
+            crate::pass::typecheck_core::AliasDef<'static, crate::ast::Prime>,
+        > = HashMap::new();
+        let cross_module: HashMap<
+            &'static str,
+            crate::pass::typecheck_core::AliasDef<'static, crate::ast::Prime>,
+        > = HashMap::new();
+        let aliases = AliasCtx {
+            local: &local,
+            cross_module: &cross_module,
+            type_interner: None,
+            source_module: None,
+            package: None,
+            binder_locals: None,
+        };
+        crate::pass::typecheck_core::type_equiv(left, right, &aliases)
+    }
+
+    #[cfg(feature = "surface")]
+    fn prime_pair_packet(
+        expr: &crate::ast::Expr<crate::ast::Prime>,
+    ) -> (
+        &crate::ast::Type<crate::ast::Prime>,
+        &crate::ast::Type<crate::ast::Prime>,
+        &crate::ast::Expr<crate::ast::Prime>,
+        &crate::ast::Expr<crate::ast::Prime>,
+    ) {
+        let crate::ast::Expr::Call { callee, args, .. } = expr else {
+            panic!("a Prime value packet must retain its pair call")
+        };
+        assert!(
+            matches!(callee.as_ref(), crate::ast::Expr::Path { segments, .. }
+            if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__"))
+        );
+        let [
+            crate::ast::CallArg::Type(left_ty),
+            crate::ast::CallArg::Type(right_ty),
+            crate::ast::CallArg::Value(left),
+            crate::ast::CallArg::Value(right),
+        ] = args.as_slice()
+        else {
+            panic!("a Prime pair packet must retain two resolved component types and values")
+        };
+        assert!(
+            !type_contains_goal(left_ty)
+                && !type_contains_infer(left_ty)
+                && !type_contains_goal(right_ty)
+                && !type_contains_infer(right_ty),
+            "Prime pair component types must be resolved: {left_ty:?}, {right_ty:?}"
+        );
+        (left_ty, right_ty, left, right)
+    }
+
+    #[cfg(feature = "surface")]
+    fn lowered_pair_values(expr: &Expr) -> (&Expr, &Expr) {
+        let Expr::Call { callee, args, .. } = expr else {
+            panic!("expected one lowered product node")
+        };
+        assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "__pair__"));
+        let [
+            CallArg::Type(_),
+            CallArg::Type(_),
+            CallArg::Value(left),
+            CallArg::Value(right),
+        ] = args.as_slice()
+        else {
+            panic!("a lowered product node must retain two types and two value components")
+        };
+        (left, right)
+    }
+
+    #[cfg(feature = "surface")]
     #[test]
     fn rejected_multi_parameter_immediate_lambda_does_not_publish_metadata() {
         let module = parse(
@@ -32913,10 +33438,15 @@ mod tests {
         let [body_path] = body_segments.as_slice() else {
             panic!("bad lambda body should contain one path segment")
         };
-        let argument_spans = args
-            .iter()
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("bad lambda call should contain one product packet")
+        };
+        let (first, rest) = lowered_pair_values(packet);
+        let (middle, last) = lowered_pair_values(rest);
+        let argument_spans = [first, middle, last]
+            .into_iter()
             .map(|argument| match argument {
-                CallArg::Value(Expr::Path { segments, .. }) => {
+                Expr::Path { segments, .. } => {
                     let [path] = segments.as_slice() else {
                         panic!("each bad lambda argument should contain one path segment")
                     };
@@ -33007,7 +33537,7 @@ mod tests {
     fn deep_lambda_owner_chain_materializes_only_solver_slices() {
         fn source(depth: usize, holes: bool) -> String {
             let mut lambda = String::from(".");
-            let mut arguments = Vec::with_capacity(depth * 2);
+            let mut arguments = String::new();
             for index in 0..depth {
                 let annotation = if holes {
                     "_".to_owned()
@@ -33015,12 +33545,10 @@ mod tests {
                     format!("T{index}")
                 };
                 lambda.push_str(&format!("[T{index}](value{index}: {annotation})"));
-                arguments.push(".".to_owned());
-                arguments.push("()".to_owned());
+                arguments.push_str("[.](())");
             }
-            lambda.push_str(" { () }(");
-            lambda.push_str(&arguments.join(", "));
-            lambda.push(')');
+            lambda.push_str(" { () }");
+            lambda.push_str(&arguments);
             format!("module main; fn witness() -> . {{ {lambda} }}")
         }
 
@@ -33074,7 +33602,7 @@ mod tests {
              host type I32;
              fn consume[T](_function: [X] ([A] A -> T) -> [Y] . -> .) -> . { () }
              fn witness() -> . {
-                 consume(_, .[X](function: [A] A -> I32)[Y](unit: .) { () })
+                 consume[_](.[X](function: [A] A -> I32)[Y](unit: .) { () })
              }",
         )
         .expect("parse sparse retained-Forall witness");
@@ -33148,10 +33676,17 @@ mod tests {
         };
         let lambda_params = sig.value_params().collect::<Vec<_>>();
         assert_eq!(lambda_params.len(), 3);
-        let CallArg::Value(Expr::Path {
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("bad lambda call should contain one product packet")
+        };
+        let (first, rest) = lowered_pair_values(packet);
+        let (middle, last) = lowered_pair_values(rest);
+        assert!(matches!(middle, Expr::Path { .. }));
+        assert!(matches!(last, Expr::Path { .. }));
+        let Expr::Path {
             segments: first_argument,
             ..
-        }) = &args[0]
+        } = first
         else {
             panic!("the first argument should be one path")
         };
@@ -33279,10 +33814,14 @@ mod tests {
         let [body_path] = body_segments.as_slice() else {
             panic!("bad lambda body should contain one path segment")
         };
-        let argument_paths = args
-            .iter()
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("bad packed call should contain one product packet")
+        };
+        let (first, packed) = lowered_pair_values(packet);
+        let argument_paths = [first, packed]
+            .into_iter()
             .map(|argument| match argument {
-                CallArg::Value(Expr::Path { segments, .. }) => {
+                Expr::Path { segments, .. } => {
                     let [path] = segments.as_slice() else {
                         panic!("each packed-call argument should contain one path segment")
                     };
@@ -33372,6 +33911,9 @@ mod tests {
              host type N;
              fn bad(left: I32, right: String, later: I32) -> N {
                  .(pair: I32 & String, tail: N) -> N { tail }((left, right), later)
+             }
+             fn good(left: I32, right: String, later: N) -> N {
+                 .(pair: I32 & String, tail: N) -> N { tail }((left, right), later)
              }",
         )
         .expect("parse direct-pair immediate-lambda witness");
@@ -33427,20 +33969,24 @@ mod tests {
         let [body_path] = body_segments.as_slice() else {
             panic!("bad lambda body should contain one path segment")
         };
-        let [
-            CallArg::Value(Expr::Call {
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("bad call should contain one product packet")
+        };
+        let (pair, later) = lowered_pair_values(packet);
+        let (
+            Expr::Call {
                 occurrence: pair_meta_occurrence,
                 diagnostic: _,
                 callee: pair_callee,
                 args: pair_args,
                 meta: pair_meta,
                 ..
-            }),
-            CallArg::Value(Expr::Path {
+            },
+            Expr::Path {
                 segments: later_segments,
                 ..
-            }),
-        ] = args.as_slice()
+            },
+        ) = (pair, later)
         else {
             panic!("bad call should contain one direct pair followed by one path")
         };
@@ -33499,10 +34045,18 @@ mod tests {
             "unexpected diagnostic: {}",
             error.diagnostic().message
         );
+        assert!(
+            error
+                .diagnostic()
+                .message
+                .contains("expected `N`, found `I32`"),
+            "the product packet must reject only its mismatched tail: {}",
+            error.diagnostic().message
+        );
         assert_eq!(
             error.diagnostic().span,
-            later_path.span,
-            "the direct pair must typecheck before the later argument fails"
+            later.span(),
+            "the mismatch should identify the incompatible packet component"
         );
 
         let mut leaked = Vec::new();
@@ -33562,6 +34116,67 @@ mod tests {
             leaked.is_empty(),
             "a rejected direct-pair immediate call published speculative metadata: {leaked:?}"
         );
+
+        let (good_index, good) = module
+            .items
+            .iter()
+            .enumerate()
+            .find_map(|(index, item)| match item {
+                Item::FnDef(def) if def.name == "good" => Some((index, def)),
+                _ => None,
+            })
+            .expect("good direct-pair publication control");
+        let Expr::Call { args, .. } = &good.body else {
+            panic!("good witness should be one direct lambda call")
+        };
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("good call should contain one product packet")
+        };
+        let (pair, _) = lowered_pair_values(packet);
+        let Expr::Call { occurrence, .. } = pair else {
+            panic!("good packet should retain its nested direct pair")
+        };
+        let (left, right) = lowered_pair_values(pair);
+        let mut elaborations = Elaborations::new();
+        let mut tcx = TypeCtx::new(&env, &mut elaborations).at_item(good_index);
+        for param in good.sig.value_params() {
+            tcx.push_value(
+                param.name.clone(),
+                param.ty.clone().expect("good parameter annotation"),
+            );
+        }
+        <crate::pass::typecheck_full::LoweredTyper as Typer<Lowered>>::check_value_against_interned(
+            &good.body,
+            &InternedType::fresh(good.ret.clone()),
+            &mut tcx,
+        )
+        .expect("the same nested pair with a nominal N tail must typecheck");
+        for slot in 0..2 {
+            assert!(
+                tcx.elaborations
+                    .type_resolution_for("main", occurrence.key(), slot)
+                    .is_some(),
+                "the accepted control must publish pair type-resolution slot {slot}"
+            );
+        }
+        for value in [left, right] {
+            assert!(
+                tcx.elaborations
+                    .position_index()
+                    .binder_at("main", value.span())
+                    .is_some(),
+                "the accepted control must publish each nested pair operand's binder"
+            );
+        }
+        for value in [left, right, pair] {
+            assert!(
+                tcx.elaborations
+                    .position_index()
+                    .type_at("main", value.span())
+                    .is_some(),
+                "the accepted control must publish nested pair types"
+            );
+        }
     }
 
     #[cfg(feature = "surface")]
@@ -33941,12 +34556,29 @@ mod tests {
         let crate::ast::Expr::Call { args, .. } = &nested.body else {
             panic!("Prime nested consumer should remain one ordinary call")
         };
+        let [
+            crate::ast::CallArg::Type(type_arg),
+            crate::ast::CallArg::Value(packet),
+        ] = args.as_slice()
+        else {
+            panic!("the nested consumer must retain its resolved type and one written value packet")
+        };
         assert!(
-            args.iter().any(|arg| matches!(
-                arg,
-                crate::ast::CallArg::Value(crate::ast::Expr::FnExpr { .. })
-            )),
-            "the nested consumer must retain its inferred pair-body lambda"
+            matches!(
+                type_arg,
+                crate::ast::Type::Path { segments, args, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == "I32") && args.is_empty()
+            ),
+            "the nested consumer must retain its resolved I32 type argument: {type_arg:?}"
+        );
+        let (_, _, function, value) = prime_pair_packet(packet);
+        assert!(
+            matches!(function, crate::ast::Expr::FnExpr { .. }),
+            "the first pair component must remain the inferred pair-body lambda"
+        );
+        assert!(
+            matches!(value, crate::ast::Expr::Path { .. }),
+            "the second pair component must remain the supplied value"
         );
     }
 
@@ -34050,14 +34682,14 @@ mod tests {
     fn immediate_lambda_infers_complete_higher_kinded_scheme_parameter() {
         let module = parse(
             "module main;
-             fn identity_hkt[*G](value: G(.)) -> G(.) { value }
+             fn identity_hkt[*G](value: G[.]) -> G[.] { value }
              newtype Box[A] : A { constructor mk_box; projector un_box; };
              newtype Wrap[A] : A { constructor mk_wrap; projector un_wrap; };
-             fn witness(box: Box(.), wrap: Wrap(.)) -> Wrap(.) {
-                 .[*F](function, first: F(.))[*F](second: F(.)) -> F(.) { second }(
+             fn witness(box: Box[.], wrap: Wrap[.]) -> Wrap[.] {
+                 .[*F](function, first: F[.])[*F](second: F[.]) -> F[.] { second }(
                      identity_hkt,
-                     box,
-                     Wrap,
+                     box)[
+                     Wrap](
                      wrap
                  )
              }",
@@ -34123,12 +34755,27 @@ mod tests {
         };
         let [
             crate::ast::CallArg::Type(inner_type),
-            crate::ast::CallArg::Value(_),
-            crate::ast::CallArg::Value(_),
+            crate::ast::CallArg::Value(packet),
         ] = inner_args.as_slice()
         else {
-            panic!("the first HKT layer must retain one type and two value arguments")
+            panic!("the first HKT layer must retain one type and one written pair packet")
         };
+        let (function_packet_type, first_packet_type, function_value, first_value) =
+            prime_pair_packet(packet);
+        assert!(
+            matches!(
+                first_packet_type,
+                crate::ast::Type::Path { segments, args, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == "Box")
+                        && matches!(args.as_slice(), [crate::ast::Type::Unit { .. }])
+            ),
+            "the first HKT pair component must retain the exact Box[.] type: {first_packet_type:?}"
+        );
+        assert!(
+            matches!(function_value, crate::ast::Expr::Path { .. })
+                && matches!(first_value, crate::ast::Expr::Path { .. }),
+            "the pair packet must retain both supplied HKT values"
+        );
         assert!(
             matches!(
                 inner_type,
@@ -34165,6 +34812,16 @@ mod tests {
         };
         assert_eq!(param.effective_kind().arity(), 1);
         assert!(
+            prime_types_equiv(
+                function_packet_type,
+                function
+                    .ty
+                    .as_ref()
+                    .expect("inferred HKT scheme annotation"),
+            ),
+            "the pair packet must preserve the semantically exact inferred higher-kinded scheme"
+        );
+        assert!(
             first
                 .ty
                 .as_ref()
@@ -34188,12 +34845,160 @@ mod tests {
 
     #[cfg(feature = "surface")]
     #[test]
+    fn structured_packet_context_precedes_component_probing() {
+        for body in [
+            ".[T](_seed, _early: T, _late: Remote & T) { () }((), 42[Remote], pair_same())",
+            ".[T](_seed, _id: [A] A -> A, _early: T, _late: Remote & T) { () } \
+                ((), identity, 42[Remote], pair_same())",
+            ".[U](_marker: U)[T](_seed, _early: T, _late: Remote & T) { () } \
+                [.](())[Remote]((), 42[Remote], pair_same())",
+        ] {
+            let source = format!(
+                "module main; host type Remote role(i32); host type Other role(i32); \
+                 host fn pair_same[A]() -> A & A; \
+                 fn identity[A](value: A) -> A {{ value }} \
+                 fn witness() -> . {{ {body} }}"
+            );
+            let package = resolved_lowered_test_package(&source);
+            let normalized = crate::pass::alpha_normalize::normalize_package(&package);
+            let scope = super::super::PackageTypecheckScope::fresh_for_normalized_package(
+                &normalized,
+                std::sync::Arc::new(super::super::TypeInterner::default()),
+            );
+            let mut elaborations = Elaborations::new();
+            reset_direct_lambda_work();
+            super::super::check_package_modules_with_typecheck_scope_collect_errors_with_execution(
+                normalized.package(),
+                &mut elaborations,
+                scope,
+                super::super::TypecheckExecution::Sequential,
+            )
+            .unwrap_or_else(|error| panic!("structured packet context: {body}: {error:?}"));
+            assert_eq!(direct_lambda_work().body_entries, 1, "{body}");
+            crate::pass::typecheck_full::validate_substituted_package(
+                crate::pass::substitute::substitute_normalized_package(normalized, &elaborations),
+            )
+            .expect("packet component context survives independent Prime checking");
+        }
+        for body in [
+            ".(_missing, _known: Remote) { () }(42, 42[Remote])",
+            ".(_missing, _known: Remote) -> Remote { _missing }(42, 42[Remote])",
+        ] {
+            let source = format!(
+                "module main; host type Remote role(i32); \
+                 fn witness() -> . {{ let value = {body}; () }}"
+            );
+            let package = resolved_lowered_test_package(&source);
+            assert!(
+                crate::pass::typecheck_full::check_package_preserving_normalization(&package)
+                    .is_err(),
+                "a separate component or the body cannot determine a missing carrier: {body}"
+            );
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn immediate_written_stages_share_context_and_preserve_partial_boundaries() {
+        for body in [
+            r#"let result = .[A](first: A)(middle)(last: A) -> A { first }
+                ("left")(())(known); result"#,
+            r#".[A](pair: A & A)(middle)(last: A) -> A { last }
+                ("left", "right")(())(known)"#,
+            r#".[A](first: A)[B](middle)(last: A) -> A { first }
+                ("left")[.](())(known)"#,
+            r#".(value) -> String -> String { .(last: String) { last } }
+                (known)(known)"#,
+        ] {
+            let source = format!(
+                "module main; host type String role(str); \
+                 fn witness(known: String) -> String {{ {body} }}"
+            );
+            let package = resolved_lowered_test_package(&source);
+            reset_direct_lambda_work();
+            let checked =
+                crate::pass::typecheck_full::check_package_preserving_normalization(&package)
+                    .unwrap_or_else(|error| panic!("written immediate stages: {body}: {error:?}"));
+            crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
+                .expect("written immediate stages retain ordinary Prime applications");
+            assert_eq!(direct_lambda_work().body_entries, 1, "{body}");
+        }
+        for source in [
+            r#"module main; host type I32 role(i32); host type String role(str);
+                fn witness(known: I32) -> I32 {
+                    .[A](first: A)(middle)(last: A) -> A { first }
+                        ("left")(())(known)
+                }"#,
+            r#"module main; fn witness() -> . {
+                let partial = .[A]()(value) { value }[.](()); ()
+            }"#,
+        ] {
+            let package = resolved_lowered_test_package(source);
+            assert!(
+                crate::pass::typecheck_full::check_package_preserving_normalization(&package)
+                    .is_err(),
+                "an incompatible carrier or independent partial lambda must reject: {source}"
+            );
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn immediate_spine_classification_visits_ordinary_suffixes_linearly() {
+        for family in ["path", "complete_lambda", "lambda_prefix"] {
+            let mut previous = None;
+            for depth in [12, 24] {
+                let groups = (0..depth)
+                    .map(|index| format!("(value{index}: String)"))
+                    .collect::<String>();
+                let arguments = "(\"value\"[String])".repeat(depth);
+                let (declaration, head) = match family {
+                    "path" => (format!("host fn target{groups} -> .;"), "target".to_owned()),
+                    "complete_lambda" => (String::new(), format!("(.{groups} -> . {{ () }})")),
+                    "lambda_prefix" => {
+                        let tail_groups = (1..depth)
+                            .map(|index| format!("(value{index}: String)"))
+                            .collect::<String>();
+                        let result = format!("{}. ", "String -> ".repeat(depth - 1));
+                        (
+                            format!("host fn tail{tail_groups} -> .;"),
+                            format!("(.(value) -> {result} {{ tail }})"),
+                        )
+                    }
+                    _ => unreachable!(),
+                };
+                let source = format!(
+                    "module main; host type String role(str); {declaration} \
+                     fn witness() -> . {{ {head}{arguments} }}"
+                );
+                let package = resolved_lowered_test_package(&source);
+                IMMEDIATE_SPINE_EDGES.with(|count| count.set(0));
+                let checked =
+                    crate::pass::typecheck_full::check_package_preserving_normalization(&package)
+                        .unwrap_or_else(|error| panic!("{family}/{depth}: {error:?}"));
+                let edges = IMMEDIATE_SPINE_EDGES.with(std::cell::Cell::get);
+                assert!(edges <= 3 * depth + 4, "{family}/{depth}: {edges}");
+                if let Some(previous) = previous {
+                    assert!(
+                        edges <= 2 * previous + 4,
+                        "{family}/{depth}: {previous} -> {edges}"
+                    );
+                }
+                previous = Some(edges);
+                crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
+                    .expect("the retained immediate prefix and ordinary suffix remain Prime");
+            }
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
     fn immediate_lambda_zero_value_layer_substitutes_to_exact_prime_calls() {
         reset_direct_lambda_work();
         let module = parse(
             "module main;
              fn witness() -> . {
-                 .[A]()(value) { value }(., (), ())
+                 .[A]()(value) { value }[.]()(())
              }",
         )
         .expect("parse same-node zero-value-layer witness");
@@ -34288,8 +35093,8 @@ mod tests {
              host fn accept(_value: I32 -> I32) -> I32 -> I32;
              fn witness() -> I32 -> I32 {
                  accept(.[T](token, value: T) -> [A] A -> T {
-                     delayed(T, token)
-                 }((), 42(I32)))
+                     delayed[T]( token)
+                 }((), 42[I32]))
              }",
         )
         .expect("parse immediate returned-Forall witness");
@@ -34435,7 +35240,7 @@ mod tests {
              host fn accept(_value: I32 -> I32) -> I32 -> I32;
              fn witness() -> I32 -> I32 {
                  accept(.[T](token, value: T) -> [A] A -> T {
-                     delayed(T, token)
+                     delayed[T](token)
                  }((), make_other()))
              }",
         )
@@ -34475,13 +35280,11 @@ mod tests {
         else {
             panic!("the rejected immediate callee should remain a lambda")
         };
-        let [
-            crate::ast::CallArg::Value(_),
-            crate::ast::CallArg::Value(wrong),
-        ] = args.as_slice()
-        else {
-            panic!("the rejected immediate call should retain both sources")
+        let [crate::ast::CallArg::Value(packet)] = args.as_slice() else {
+            panic!("the rejected immediate call should retain one product packet")
         };
+        let (token, wrong) = lowered_pair_values(packet);
+        assert!(matches!(token, Expr::Unit { .. }));
         let env = super::super::ModuleEnv::build(module, None, None, Some(&package))
             .expect("module environment");
         let mut elaborations = Elaborations::new();
@@ -34549,7 +35352,7 @@ mod tests {
              host fn delayed[T](_token: .) -> [A] A -> T;
              host fn accept(_value: I32 -> I32) -> I32 -> I32;
              fn witness[A]() -> I32 -> I32 {
-                 accept(.[T](token) -> [A] A -> T { delayed(T, token) }(()))
+                 accept(.[T](token) -> [A] A -> T { delayed[T]( token) }(()))
              }",
         )
         .expect("parse ambient-binder returned-Forall witness");
@@ -34587,10 +35390,10 @@ mod tests {
             "module main;
              host type I32;
              pub type Delayed[T] = [A] A -> T;
-             host fn delayed[T](_token: .) -> Delayed(T);
+             host fn delayed[T](_token: .) -> Delayed[T];
              host fn accept(_value: I32 -> I32) -> I32 -> I32;
              fn witness() -> I32 -> I32 {
-                 accept(.[T](token) -> Delayed(T) { delayed(T, token) }(()))
+                 accept(.[T](token) -> Delayed[T] { delayed[T]( token) }(()))
              }",
         )
         .expect("parse alias-hidden actual returned-Forall witness");
@@ -34632,7 +35435,7 @@ mod tests {
              host fn delayed[T](_token: .) -> [A] A -> T;
              host fn accept(_value: Expected) -> .;
              fn witness() -> . {
-                 accept(.[T](token) -> [A] A -> T { delayed(T, token) }(()))
+                 accept(.[T](token) -> [A] A -> T { delayed[T]( token) }(()))
              }",
         )
         .expect("parse structural returned-Forall witness");
@@ -34748,8 +35551,8 @@ mod tests {
         reset_direct_lambda_work();
         let module = parse(
             "module main;
-             fn identity_hkt[*F](value: F(.)) -> F(.) { value }
-             fn direct() -> [*F] F(.) -> F(.) {
+             fn identity_hkt[*F](value: F[.]) -> F[.] { value }
+             fn direct() -> [*F] F[.] -> F[.] {
                  .(_token) { identity_hkt }(())
              }",
         )
@@ -35030,12 +35833,12 @@ mod tests {
              fn flat(pair: I32 & String, value: String) -> I32 {
                  .(left, _right: String) -> [R] R -> I32 {
                      .[R](_value: R) -> I32 { left }
-                 }(pair, String, value)
+                 }(pair)[ String]( value)
              }
              fn nested(pair: I32 & String, value: String) -> I32 {
                  .(left, _right: String) -> [R] R -> I32 {
                      .[R](_value: R) -> I32 { left }
-                 }(pair)(String, value)
+                 }(pair)[String]( value)
              }",
         )
         .expect("parse concrete-successor partition witnesses");
@@ -35070,13 +35873,55 @@ mod tests {
                     parameter.ty.clone().expect("witness parameter annotation"),
                 );
             }
-            if name == "flat" {
-                assert!(matches!(
-                    OrdinaryValueCursor::seed(&def.body, &mut tcx)
-                        .expect("seed flat concrete-successor witness"),
-                    OrdinaryValueSeed::ImmediateLambdaCall { .. }
-                ));
-            }
+            let Expr::Call {
+                callee: inner_call,
+                args: outer_args,
+                ..
+            } = &def.body
+            else {
+                panic!("`{name}` must retain its final explicit type/value stage")
+            };
+            let [
+                CallArg::Type(Type::Path { segments, args, .. }),
+                CallArg::Value(value),
+            ] = outer_args.as_slice()
+            else {
+                panic!("`{name}` final stage must contain String and its one value")
+            };
+            assert!(
+                segments
+                    .last()
+                    .is_some_and(|segment| segment.as_str() == "String")
+                    && args.is_empty(),
+                "`{name}` final type argument must remain the exact String path"
+            );
+            let explicit_string_span = segments.last().expect("String type path segment").span;
+            assert!(matches!(value, Expr::Path { .. }));
+            let Expr::Call {
+                callee: lambda,
+                args: first_args,
+                ..
+            } = inner_call.as_ref()
+            else {
+                panic!("`{name}` must preserve its first immediate-lambda call stage")
+            };
+            let [CallArg::Value(pair)] = first_args.as_slice() else {
+                panic!("`{name}` first stage must contain the written pair value")
+            };
+            assert!(matches!(lambda.as_ref(), Expr::FnExpr { .. }));
+            assert!(matches!(pair, Expr::Path { .. }));
+            assert!(matches!(
+                OrdinaryValueCursor::seed(inner_call, &mut tcx)
+                    .expect("seed the direct immediate-lambda stage"),
+                OrdinaryValueSeed::ImmediateLambdaCall { .. }
+            ));
+            assert!(matches!(
+                OrdinaryValueCursor::seed(&def.body, &mut tcx)
+                    .expect("seed the computed successor stage"),
+                OrdinaryValueSeed::Recursive(OrdinaryRecursiveFamily::ComputedBeforeImmediate(1))
+            ));
+            let first_stage_site = inner_call.site();
+            let later_stage_site = def.body.site();
 
             reset_direct_lambda_work();
             let expected = InternedType::fresh(def.ret.clone());
@@ -35103,16 +35948,30 @@ mod tests {
                 "`{name}` must advance its immediate lambda exactly once"
             );
 
-            if name == "flat" {
-                assert_eq!(
-                    tcx.elaborations.call_splits_for("main", def.body.site().id),
-                    Some(&[1][..]),
-                    "the packed pair must end the immediate lambda's value packet"
-                );
-                assert!(
+            assert_ne!(
+                first_stage_site.id, later_stage_site.id,
+                "both whitespace variants must retain two actual Function call sites"
+            );
+            assert!(
+                tcx.elaborations
+                    .type_resolution_for("main", later_stage_site.id, 0)
+                    .is_none(),
+                "source-explicit String must not create inferred-slot metadata"
+            );
+            assert!(
+                matches!(
                     tcx.elaborations
-                        .is_value_at_type_slot("main", def.body.site().id, 1),
-                    "the following `String` token must be the returned layer's type argument"
+                        .position_index()
+                        .binder_at("main", explicit_string_span),
+                    Some(crate::pass::typecheck_full::ResolvedBinder::HostType { module_path, name })
+                        if module_path == "main" && name == "String"
+                ),
+                "the explicit String type must retain its exact nominal binder"
+            );
+            for site in [first_stage_site, later_stage_site] {
+                assert!(
+                    tcx.elaborations.call_splits_for("main", site.id).is_none(),
+                    "separate written stages must not publish an in-call split"
                 );
             }
         }
@@ -35223,35 +36082,35 @@ mod tests {
              import domain(Wrap, I32);
              import domain({wrap});
              type Identity[A] = A;
-             type Wrapped[A] = Wrap(A);
+             type Wrapped[A] = Wrap[A];
              fn apply[A](read: A -> I32, value: A) -> I32 { read(value) }
-             fn apply_identity[A](read: Identity(A) -> I32, value: A) -> I32 { read(value) }
-             fn apply_wrapped[A](read: Wrapped(A) -> I32, value: Wrapped(A)) -> I32 { read(value) }
-             fn apply_wrap(read: Wrap(I32) -> I32, value: Wrap(I32)) -> I32 { read(value) }
-             pub fn held_call(value: Wrap(I32)) -> I32 {
-                 apply(.(booked: Wrap(I32)) { booked.?{wrap} }, value)
+             fn apply_identity[A](read: Identity[A] -> I32, value: A) -> I32 { read(value) }
+             fn apply_wrapped[A](read: Wrapped[A] -> I32, value: Wrapped[A]) -> I32 { read(value) }
+             fn apply_wrap(read: Wrap[I32] -> I32, value: Wrap[I32]) -> I32 { read(value) }
+             pub fn held_call(value: Wrap[I32]) -> I32 {
+                 apply(.(booked: Wrap[I32]) { booked.?{wrap} }, value)
              }
-             pub fn absent_annotation(value: Wrap(I32)) -> I32 {
+             pub fn absent_annotation(value: Wrap[I32]) -> I32 {
                  apply(.(booked) { booked.?{wrap} }, value)
              }
-             pub fn alias_hidden_goal(value: Wrap(I32)) -> I32 {
+             pub fn alias_hidden_goal(value: Wrap[I32]) -> I32 {
                  apply_identity(.(booked) { booked.?{wrap} }, value)
              }
-             pub fn alias_preserved_shape(value: Wrap(I32)) -> I32 {
+             pub fn alias_preserved_shape(value: Wrap[I32]) -> I32 {
                  apply_wrapped(.(booked) { booked.?{wrap} }, value)
              }
-             pub fn partial_annotation(value: Wrap(I32)) -> I32 {
-                 apply(.(booked: Wrap(_)) { booked.?{wrap} }, value)
+             pub fn partial_annotation(value: Wrap[I32]) -> I32 {
+                 apply(.(booked: Wrap[_]) { booked.?{wrap} }, value)
              }
-             pub fn explicit_type(value: Wrap(I32)) -> I32 {
-                 apply(Wrap(I32), .(booked: Wrap(I32)) { booked.?{wrap} }, value)
+             pub fn explicit_type(value: Wrap[I32]) -> I32 {
+                 apply[Wrap[I32]]( .(booked: Wrap[I32]) { booked.?{wrap} }, value)
              }
-             pub fn typed_let(value: Wrap(I32)) -> I32 {
-                 let .(read: Wrap(I32) -> I32) = .(booked: Wrap(I32)) { booked.?{wrap} };
+             pub fn typed_let(value: Wrap[I32]) -> I32 {
+                 let .(read: Wrap[I32] -> I32) = .(booked: Wrap[I32]) { booked.?{wrap} };
                  apply(read, value)
              }
-             pub fn non_generic(value: Wrap(I32)) -> I32 {
-                 apply_wrap(.(booked: Wrap(I32)) { booked.?{wrap} }, value)
+             pub fn non_generic(value: Wrap[I32]) -> I32 {
+                 apply_wrap(.(booked: Wrap[I32]) { booked.?{wrap} }, value)
              }",
         )
         .expect("parse annotated-lambda field consumer");
@@ -35313,16 +36172,18 @@ mod tests {
             else {
                 panic!("`{name}` should contain one retained call")
             };
-            let [
-                CallArg::Value(Expr::FnExpr {
-                    occurrence: lambda_meta_occurrence,
-                    sig,
-                    body: lambda_body,
-                    meta: lambda_meta,
-                    ..
-                }),
-                CallArg::Value(_),
-            ] = args.as_slice()
+            let [CallArg::Value(packet)] = args.as_slice() else {
+                panic!("`{name}` should contain one product packet")
+            };
+            let (lambda, value) = lowered_pair_values(packet);
+            assert!(matches!(value, Expr::Path { .. }));
+            let Expr::FnExpr {
+                occurrence: lambda_meta_occurrence,
+                sig,
+                body: lambda_body,
+                meta: lambda_meta,
+                ..
+            } = lambda
             else {
                 panic!("`{name}` should contain one lambda and value")
             };
@@ -35361,14 +36222,14 @@ mod tests {
             else {
                 panic!("`{name}` lambda tail should be one ordinary call")
             };
-            let [
-                CallArg::Value(_),
-                CallArg::Value(
-                    later @ Expr::Call {
-                        args: later_args, ..
-                    },
-                ),
-            ] = tail_args.as_slice()
+            let [CallArg::Value(tail_packet)] = tail_args.as_slice() else {
+                panic!("`{name}` lambda tail should contain one product packet")
+            };
+            let (held, later) = lowered_pair_values(tail_packet);
+            assert!(matches!(held, Expr::Path { .. }));
+            let later @ Expr::Call {
+                args: later_args, ..
+            } = later
             else {
                 panic!("`{name}` lambda tail should end in one retained sibling")
             };
@@ -35412,25 +36273,25 @@ mod tests {
              fn identity[A](value: A) -> A { value }
              fn keep(value: I32, _later: I32) -> I32 { value }
              fn consume[P][R](read: P -> R, value: P) -> R { read(value) }
-             fn bad_partial(value: Wrap(I32), wrong: String) -> I32 {
-                 consume(.(booked: Wrap(_)) {
+             fn bad_partial(value: Wrap[I32], wrong: String) -> I32 {
+                 consume(.(booked: Wrap[_]) {
                      let held = booked.?{wrap};
                      keep(held, identity(wrong))
                  }, value)
              }
-             fn bad_absent(value: Wrap(I32), wrong: String) -> I32 {
+             fn bad_absent(value: Wrap[I32], wrong: String) -> I32 {
                  consume(.(booked) {
                      let held = booked.?{wrap};
                      keep(held, identity(wrong))
                  }, value)
              }
-             fn good_partial(value: Wrap(I32), right: I32) -> I32 {
-                 consume(.(booked: Wrap(_)) {
+             fn good_partial(value: Wrap[I32], right: I32) -> I32 {
+                 consume(.(booked: Wrap[_]) {
                      let held = booked.?{wrap};
                      keep(held, identity(right))
                  }, value)
              }
-             fn good_absent(value: Wrap(I32), right: I32) -> I32 {
+             fn good_absent(value: Wrap[I32], right: I32) -> I32 {
                  consume(.(booked) {
                      let held = booked.?{wrap};
                      keep(held, identity(right))
@@ -35664,11 +36525,25 @@ mod tests {
         let crate::ast::Expr::Call { args, .. } = &main.body else {
             panic!("Prime main body should remain one ordinary call")
         };
-        let Some(crate::ast::Expr::FnExpr { sig, .. }) = args.iter().find_map(|arg| match arg {
-            crate::ast::CallArg::Value(value) => Some(value),
-            crate::ast::CallArg::Type(_) => None,
-        }) else {
-            panic!("Prime call should retain the explicit-binder lambda")
+        let [
+            crate::ast::CallArg::Type(type_arg),
+            crate::ast::CallArg::Value(packet),
+        ] = args.as_slice()
+        else {
+            panic!("Prime main call should retain its resolved type and one written pair packet")
+        };
+        assert!(
+            matches!(
+                type_arg,
+                crate::ast::Type::Path { segments, args, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == "I32") && args.is_empty()
+            ),
+            "Prime main call must retain its resolved I32 type argument: {type_arg:?}"
+        );
+        let (_, _, function, value) = prime_pair_packet(packet);
+        assert!(matches!(value, crate::ast::Expr::Path { .. }));
+        let crate::ast::Expr::FnExpr { sig, .. } = function else {
+            panic!("Prime pair packet should retain the explicit-binder lambda first")
         };
         let [
             crate::ast::SignatureParam::Type(binder),
@@ -35715,11 +36590,20 @@ mod tests {
         let crate::ast::Expr::Call { args, .. } = &binder_param.body else {
             panic!("Prime binder-param body should remain one ordinary call")
         };
-        let Some(crate::ast::Expr::FnExpr { sig, .. }) = args.iter().find_map(|arg| match arg {
-            crate::ast::CallArg::Value(value) => Some(value),
-            crate::ast::CallArg::Type(_) => None,
-        }) else {
-            panic!("Prime binder-param call should retain its lambda")
+        let [
+            crate::ast::CallArg::Type(type_arg),
+            crate::ast::CallArg::Value(packet),
+        ] = args.as_slice()
+        else {
+            panic!("Prime binder-param call should retain its type and one written pair packet")
+        };
+        assert!(matches!(type_arg,
+            crate::ast::Type::Path { segments, args, .. }
+                if segments.last().is_some_and(|segment| segment.as_str() == "I32") && args.is_empty()));
+        let (_, _, function, value) = prime_pair_packet(packet);
+        assert!(matches!(value, crate::ast::Expr::Path { .. }));
+        let crate::ast::Expr::FnExpr { sig, .. } = function else {
+            panic!("Prime pair packet should retain the binder-param lambda first")
         };
         let [
             crate::ast::SignatureParam::Type(binder),
@@ -35754,13 +36638,20 @@ mod tests {
             let crate::ast::Expr::Call { args, .. } = &def.body else {
                 panic!("Prime `{name}` body should remain one ordinary call")
             };
-            let Some(crate::ast::Expr::FnExpr { sig, .. }) =
-                args.iter().find_map(|arg| match arg {
-                    crate::ast::CallArg::Value(value) => Some(value),
-                    crate::ast::CallArg::Type(_) => None,
-                })
+            let [
+                crate::ast::CallArg::Type(type_arg),
+                crate::ast::CallArg::Value(packet),
+            ] = args.as_slice()
             else {
-                panic!("Prime `{name}` call should retain its lambda")
+                panic!("Prime `{name}` call should retain its type and one written pair packet")
+            };
+            assert!(matches!(type_arg,
+                crate::ast::Type::Path { segments, args, .. }
+                    if segments.last().is_some_and(|segment| segment.as_str() == "I32") && args.is_empty()));
+            let (_, _, function, value) = prime_pair_packet(packet);
+            assert!(matches!(value, crate::ast::Expr::Path { .. }));
+            let crate::ast::Expr::FnExpr { sig, .. } = function else {
+                panic!("Prime pair packet should retain `{name}` lambda first")
             };
             let [crate::ast::SignatureParam::Value(value)] = sig.params.as_slice() else {
                 panic!("Prime `{name}` lambda should retain one value parameter")
@@ -35785,11 +36676,11 @@ mod tests {
              host type I32;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
              fn consume[T](_f: [A] (A & T) -> T, _value: T) -> . { () }
-             fn consume_partial[T](_f: [A] (A & Box(T)) -> T, _value: T) -> . { () }
+             fn consume_partial[T](_f: [A] (A & Box[T]) -> T, _value: T) -> . { () }
              fn consume_nested[T](_f: [A] ([X] X -> T) -> T, _value: T) -> . { () }
              fn partial(value: I32) -> . {
                  consume_partial(
-                     .[B](_first: B, _second: Box(_)) { value },
+                     .[B](_first: B, _second: Box[_]) { value },
                      value)
              }
              fn nested(value: I32) -> . {
@@ -35864,7 +36755,7 @@ mod tests {
                 "path/unit",
                 "",
                 "Token",
-                "identity(Token, value)",
+                "identity[Token](value)",
                 "Token",
                 true,
                 Some("main"),
@@ -35873,7 +36764,7 @@ mod tests {
                 "general",
                 "",
                 "Token",
-                "identity(Token, Token.mk(()))",
+                "identity[Token](Token.mk(()))",
                 "Token",
                 true,
                 Some("main"),
@@ -35882,7 +36773,7 @@ mod tests {
                 "qualified",
                 "",
                 "p.Token",
-                "identity(p.Token, value)",
+                "identity[p.Token](value)",
                 "p.Token",
                 true,
                 Some("aux"),
@@ -35891,7 +36782,7 @@ mod tests {
                 "caller binder",
                 "[Token]",
                 "Token",
-                "identity(Token, value)",
+                "identity[Token](value)",
                 "Token",
                 true,
                 None,
@@ -35900,7 +36791,7 @@ mod tests {
                 "later sibling",
                 "",
                 "Token",
-                "choose(Token, value, ())",
+                "choose[Token](value, ())",
                 "Token",
                 false,
                 None,
@@ -35909,7 +36800,7 @@ mod tests {
                 "nested child before failing sibling",
                 "",
                 "Token",
-                "choose(Token, identity(Token, value), ())",
+                "choose[Token](identity[Token](value), ())",
                 "Token",
                 false,
                 None,
@@ -35918,7 +36809,7 @@ mod tests {
                 "result",
                 "",
                 "Token",
-                "identity(Token, value)",
+                "identity[Token](value)",
                 ".",
                 false,
                 None,
@@ -35927,7 +36818,7 @@ mod tests {
                 "wrong kind",
                 "",
                 "Token",
-                "higher(Token, ())",
+                "higher[Token](())",
                 ".",
                 false,
                 None,
@@ -36125,7 +37016,7 @@ mod tests {
         let package = resolved_lowered_test_package(
             "module main;
              host type Token role(i32);
-             fn literal() -> Token { 1(main.Token) }",
+             fn literal() -> Token { 1[main.Token] }",
         );
         let module = &package.module("main").expect("main module").module;
         let (index, definition) = module
@@ -36735,7 +37626,7 @@ mod tests {
             CallArgRef::Value(&tail),
         ];
         for (successor, expected_binders, expected_partition) in
-            [(path_ty("Mono"), 0, (2, 1)), (path_ty("Tail"), 1, (1, 2))]
+            [(path_ty("Mono"), 0, (2, 1)), (path_ty("Tail"), 1, (2, 1))]
         {
             reset_ordinary_planning_work();
             let raw = forall(&["A"], func(vec![path_ty("A")], successor));
@@ -36782,7 +37673,7 @@ mod tests {
             assert_eq!(
                 (current_sources, value_args.len() - current_sources),
                 expected_partition,
-                "only a returned Forall splits before the uppercase candidate"
+                "a value operand never introduces an explicit type stage"
             );
             let work = ordinary_planning_work();
             assert_eq!(work.semantic_packet_decodes, 1);
@@ -37077,162 +37968,22 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "surface")]
     #[test]
-    fn ufcs_splice_consumes_leading_type_arguments_before_receiver() {
-        let ctx = empty_alias_ctx();
-        let explicit = path_ty("Foo");
-        let receiver = unit_expr();
-        let callee = forall(
-            &["A"],
-            func(vec![unit_ty()], func(vec![path_ty("I32")], path_ty("A"))),
-        );
-        let spliced = splice_ufcs_arg_refs_with_identity(
-            &callee,
-            false,
-            &receiver,
-            &[CallArgRef::Type(&explicit)],
-            &[CallArgRef::Type(&explicit)],
-            crate::ast::UfcsFlavor::ReceiverFirst,
-            sp(),
-            &ctx,
+    fn call_stages_ufcs_type_boundaries_use_written_groups() {
+        typecheck_surface_source(
+            "module main; host type First; host type Returned;
+             host fn leading[A](value: .) -> First -> A;
+             host fn returned[A](value: A)[B]() -> B;
+             host fn staged(prefix: First)[A](value: A) -> First;
+             fn one() -> First -> First { ().>leading[First] }
+             fn two(value: First) -> Returned { (value.>returned[First])[Returned]() }
+             fn three(value: First) -> Returned { (value.>returned)[Returned]() }
+             fn four(value: First) -> First { staged(value)[First].<value }
+             fn five(value: First) -> First { staged(value)[First].<<value }",
+            "UFCS written type/value stages",
         )
-        .expect("the receiver fills the first value slot");
-
-        assert_eq!(spliced.len(), 2);
-        assert!(matches!(spliced[0], CallArgRef::Type(ty) if std::ptr::eq(ty, &explicit)));
-        assert!(matches!(spliced[1], CallArgRef::Value(value) if std::ptr::eq(value, &receiver)));
-    }
-
-    #[test]
-    fn ufcs_splice_preserves_returned_type_slot_after_receiver() {
-        let ctx = empty_alias_ctx();
-        let first_type = path_ty("First");
-        let returned_type = path_ty("Returned");
-        let receiver = unit_expr();
-        let callee = forall(
-            &["A"],
-            func(vec![path_ty("A")], forall(&["B"], path_ty("B"))),
-        );
-        let spliced = splice_ufcs_arg_refs_with_identity(
-            &callee,
-            false,
-            &receiver,
-            &[
-                CallArgRef::Type(&first_type),
-                CallArgRef::Type(&returned_type),
-            ],
-            &[
-                CallArgRef::Type(&first_type),
-                CallArgRef::Type(&returned_type),
-            ],
-            crate::ast::UfcsFlavor::ReceiverLast,
-            sp(),
-            &ctx,
-        )
-        .expect("the receiver fills the only value slot");
-
-        assert_eq!(spliced.len(), 3);
-        assert!(matches!(spliced[0], CallArgRef::Type(ty) if std::ptr::eq(ty, &first_type)));
-        assert!(matches!(spliced[1], CallArgRef::Value(value) if std::ptr::eq(value, &receiver)));
-        assert!(matches!(spliced[2], CallArgRef::Type(ty) if std::ptr::eq(ty, &returned_type)));
-    }
-
-    #[test]
-    fn ufcs_splice_reserves_one_candidate_for_returned_binder_after_receiver() {
-        let ctx = empty_alias_ctx();
-        let returned_type = path_ty("Returned");
-        let receiver = unit_expr();
-        let callee = forall(
-            &["Source"],
-            func(
-                vec![path_ty("Source")],
-                forall(&["Target"], path_ty("Target")),
-            ),
-        );
-
-        for flavor in [
-            crate::ast::UfcsFlavor::ReceiverFirst,
-            crate::ast::UfcsFlavor::ReceiverLast,
-            crate::ast::UfcsFlavor::ArgumentFirst,
-            crate::ast::UfcsFlavor::ArgumentLast,
-        ] {
-            let spliced = splice_ufcs_arg_refs_with_identity(
-                &callee,
-                false,
-                &receiver,
-                &[CallArgRef::Type(&returned_type)],
-                &[CallArgRef::Type(&returned_type)],
-                flavor,
-                sp(),
-                &ctx,
-            )
-            .expect("the receiver solves Source before the returned Target binder");
-
-            assert_eq!(spliced.len(), 2);
-            assert!(
-                matches!(spliced[0], CallArgRef::Value(value) if std::ptr::eq(value, &receiver))
-            );
-            assert!(matches!(spliced[1], CallArgRef::Type(ty) if std::ptr::eq(ty, &returned_type)));
-        }
-    }
-
-    #[test]
-    fn ufcs_splice_does_not_reserve_across_an_unfilled_value_layer() {
-        let ctx = empty_alias_ctx();
-        let leading_type = path_ty("Leading");
-        let receiver = unit_expr();
-        let callee = forall(
-            &["A"],
-            func(
-                vec![path_ty("A")],
-                func(vec![path_ty("X")], forall(&["B"], path_ty("B"))),
-            ),
-        );
-        let spliced = splice_ufcs_arg_refs_with_identity(
-            &callee,
-            false,
-            &receiver,
-            &[CallArgRef::Type(&leading_type)],
-            &[CallArgRef::Type(&leading_type)],
-            crate::ast::UfcsFlavor::ReceiverFirst,
-            sp(),
-            &ctx,
-        )
-        .expect("the candidate fills the leading binder before the receiver");
-
-        assert_eq!(spliced.len(), 2);
-        assert!(matches!(spliced[0], CallArgRef::Type(ty) if std::ptr::eq(ty, &leading_type)));
-        assert!(matches!(spliced[1], CallArgRef::Value(value) if std::ptr::eq(value, &receiver)));
-    }
-
-    #[test]
-    fn ufcs_splice_keeps_mid_layer_type_arguments_after_first_receiver() {
-        let ctx = empty_alias_ctx();
-        let explicit = path_ty("Foo");
-        let receiver = unit_expr();
-        let later_value = unit_expr();
-        let callee = func(
-            vec![path_ty("Prefix")],
-            forall(&["A"], func(vec![path_ty("A")], path_ty("Prefix"))),
-        );
-        let spliced = splice_ufcs_arg_refs_with_identity(
-            &callee,
-            false,
-            &receiver,
-            &[CallArgRef::Type(&explicit), CallArgRef::Value(&later_value)],
-            &[CallArgRef::Type(&explicit), CallArgRef::Value(&later_value)],
-            crate::ast::UfcsFlavor::ReceiverFirst,
-            sp(),
-            &ctx,
-        )
-        .expect("the receiver fills the first value layer");
-
-        assert_eq!(spliced.len(), 3);
-        assert!(matches!(spliced[0], CallArgRef::Value(value) if std::ptr::eq(value, &receiver)));
-        assert!(matches!(spliced[1], CallArgRef::Type(ty) if std::ptr::eq(ty, &explicit)));
-        assert!(
-            matches!(spliced[2], CallArgRef::Value(value) if std::ptr::eq(value, &later_value))
-        );
+        .expect("explicit type groups never move across a receiver's selected value group");
     }
 
     #[test]
@@ -37270,9 +38021,9 @@ mod tests {
         assert_module_alias_does_not_capture_call_binder(
             "module main;
              newtype Monad[*F] : . { constructor mk_monad; projector un_monad; };
-             fn product[*F][*G][A](value: F(A) & G(A)) -> F(A) & G(A) { value }
-             fn sum[*F][*G][A](value: F(A) | G(A)) -> F(A) | G(A) { value }
-             fn dictionary[*F](value: Monad(F)) -> Monad(F) { value }",
+             fn product[*F][*G][A](value: F[A] & G[A]) -> F[A] & G[A] { value }
+             fn sum[*F][*G][A](value: F[A] | G[A]) -> F[A] | G[A] { value }
+             fn dictionary[*F](value: Monad[F]) -> Monad[F] { value }",
             "saturated higher-kinded product and sum",
         );
 
@@ -37302,10 +38053,10 @@ mod tests {
              host type String;
              newtype Either[E][A] : E | A { constructor mk_either; projector un_either; };
              newtype Monad[*F] : . { constructor mk_monad; projector un_monad; };
-             type Unary = Either(String);
-             type Unary_with[E] = Either(E);
-             fn nullary(_value: Monad(Unary)) -> . { () }
-             fn parametric(_value: Monad(Unary_with(String))) -> . { () }",
+             type Unary = Either[String];
+             type Unary_with[E] = Either[E];
+             fn nullary(_value: Monad[Unary]) -> . { () }
+             fn parametric(_value: Monad[Unary_with[String]]) -> . { () }",
             "higher-kinded transparent alias body",
         );
     }
@@ -37317,7 +38068,7 @@ mod tests {
             "module main;
              host type String;
              newtype Either[E][A] : E | A { constructor mk_either; projector un_either; };
-             type Unary = Either(String);
+             type Unary = Either[String];
              fn invalid(_value: Unary) -> . { () }",
             "higher-kinded alias in a runtime value position",
         )
@@ -37334,8 +38085,8 @@ mod tests {
         assert_module_alias_does_not_capture_call_binder(
             "module main;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
-             fn valid(value: Box(.)) -> Box(.) {
-               .[*F](item: F(.)) -> F(.) { item }(Box, value)
+             fn valid(value: Box[.]) -> Box[.] {
+               .[*F](item: F[.]) -> F[.] { item }[Box]( value)
              }",
             "anonymous complete higher-kinded function scheme",
         );
@@ -37347,12 +38098,12 @@ mod tests {
         assert_module_alias_does_not_capture_call_binder(
             "module main;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
-             type Apply[*F] = F(.) -> F(.);
-             type Scheme = [*F] Apply(F);
+             type Apply[*F] = F[.] -> F[.];
+             type Scheme = [*F] Apply[F];
              fn keep(value: Scheme) -> Scheme { value }
-             fn valid(value: Box(.)) -> Box(.) {
-               let same = keep(.[*F](item: F(.)) -> F(.) { item });
-               same(Box, value)
+             fn valid(value: Box[.]) -> Box[.] {
+               let same = keep(.[*F](item: F[.]) -> F[.] { item });
+               same[Box]( value)
              }",
             "alias-hidden complete higher-kinded function scheme",
         );
@@ -37363,10 +38114,10 @@ mod tests {
     fn recursive_and_existential_newtypes_accept_complete_higher_kinded_schemes() {
         assert_module_alias_does_not_capture_call_binder(
             "module main;
-             rec newtype Recursive : . | (([*F] F(.) -> F(.)) & Recursive) {
+             rec newtype Recursive : . | (([*F] F[.] -> F[.]) & Recursive) {
                constructor mk_recursive; projector un_recursive;
              };
-             newtype Existential <U> : U & ([*F] F(U) -> F(U)) {
+             newtype Existential <U> : U & ([*F] F[U] -> F[U]) {
                constructor mk_existential; projector un_existential;
              };",
             "complete higher-kinded schemes in named payloads",
@@ -37378,7 +38129,7 @@ mod tests {
     fn incomplete_higher_kinded_forall_is_rejected_as_a_value_type() {
         let error = module_alias_call_binder_outcome(
             "module main;
-             fn bad() -> [*F] F(.) & . { () }",
+             fn bad() -> [*F] F[.] & . { () }",
             "incomplete higher-kinded forall",
         )
         .expect_err("a higher-kinded forall must end in a function");
@@ -37411,9 +38162,9 @@ mod tests {
             "module main;
              host type Box[A];
              host fn apply[S][R](function: S -> R, value: S) -> R;
-             host fn get[A](value: Box(A)) -> A;
-             fn nested[A](value: Box(A)) -> A {
-                 apply(.(item: Box(A)) { get(item) }, value)
+             host fn get[A](value: Box[A]) -> A;
+             fn nested[A](value: Box[A]) -> A {
+                 apply(.(item: Box[A]) { get(item) }, value)
              }",
             "retained prepared leaf with a descendant result goal",
         )
@@ -37425,15 +38176,15 @@ mod tests {
     fn retained_prepared_leaf_close_causality_controls() {
         for (call, case) in [
             (
-                "apply(.(item: Box(A)) { get(A, item) }, value)",
+                "apply(.(item: Box[A]) { get[A](item) }, value)",
                 "an explicit inner type argument",
             ),
             (
-                "apply(Box(A), .(item: Box(A)) { get(item) }, value)",
+                "apply[Box[A]](.(item: Box[A]) { get(item) }, value)",
                 "an explicit outer parameter type",
             ),
             (
-                "apply(_, A, .(item: Box(A)) { get(item) }, value)",
+                "apply[_][A](.(item: Box[A]) { get(item) }, value)",
                 "an explicit outer result with both causal parameter goals inferred",
             ),
         ] {
@@ -37442,8 +38193,8 @@ mod tests {
                     "module main;
                      host type Box[A];
                      host fn apply[S][R](function: S -> R, value: S) -> R;
-                     host fn get[A](value: Box(A)) -> A;
-                     fn nested[A](value: Box(A)) -> A {{ {call} }}"
+                     host fn get[A](value: Box[A]) -> A;
+                     fn nested[A](value: Box[A]) -> A {{ {call} }}"
                 ),
                 case,
             )
@@ -37501,7 +38252,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -37582,13 +38333,13 @@ mod tests {
              fn unary(value: I32) -> I32 { value }
              host fn returned(tag: Tag) -> [B] B;
              fn bad_non_function(tag: Tag, value: I32) -> . { hold(value)(tag)(tag) }
-             fn bad_arity(tag: Tag, left: I32, right: I32) -> . {
+             fn bad_packet(tag: Tag, left: I32, right: I32) -> . {
                hold(unary)(tag)(left, right)
              }
              fn bad_poly_value(tag: Tag, value: I32) -> . {
                hold(returned)(tag)(tag)(value)
              }
-             fn bad_poly_arity(tag: Tag, left: I32, right: I32) -> . {
+             fn bad_poly_packet(tag: Tag, left: I32, right: I32) -> . {
                hold(returned)(tag)(tag)(left, right)
              }",
         )
@@ -37612,9 +38363,9 @@ mod tests {
                 "callee",
             ),
             (
-                "bad_arity",
-                "this is applied like a function, but its type is `I32`",
-                "call",
+                "bad_packet",
+                "type mismatch: expected `I32`, found `a & b`",
+                "value",
             ),
             (
                 "bad_poly_value",
@@ -37622,9 +38373,9 @@ mod tests {
                 "value",
             ),
             (
-                "bad_poly_arity",
-                "callee is a polymorphic non-function type; only type arguments are accepted here",
-                "call",
+                "bad_poly_packet",
+                "expected a type argument here, got a value argument",
+                "value",
             ),
         ] {
             let (item_index, def) = module
@@ -37655,7 +38406,7 @@ mod tests {
             else {
                 panic!("dynamic `{name}` witness must contain an outer call")
             };
-            let selected = select_path_unit_call_chain(
+            let selected = written_call_spine(
                 callee,
                 args,
                 crate::ast::ExpressionSite {
@@ -37685,10 +38436,24 @@ mod tests {
                 .map(|layer| layer.call_site)
                 .collect::<Vec<_>>();
             let staged_spans = std::iter::once(selected.direct_callee.span())
-                .chain(selected.layers.iter().flat_map(|layer| {
-                    std::iter::once(layer.call_site.span)
-                        .chain(layer.args.iter().map(|arg| arg.meta().span))
-                }))
+                .chain(
+                    selected
+                        .layers
+                        .iter()
+                        .enumerate()
+                        .flat_map(|(index, layer)| {
+                            let width = if index + 1 == selected.layers.len()
+                                && matches!(name, "bad_packet" | "bad_poly_packet")
+                            {
+                                2
+                            } else {
+                                1
+                            };
+                            std::iter::once(layer.call_site.span)
+                                .chain(layer.args.iter().map(|arg| arg.meta().span))
+                                .chain(written_layer_value_spans(layer, width))
+                        }),
+                )
                 .collect::<Vec<_>>();
             let error =
                 match <crate::pass::typecheck_full::LoweredTyper as Typer<Lowered>>::synth_expr(
@@ -37804,7 +38569,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -37815,14 +38580,7 @@ mod tests {
         )
         .expect("rank-N rollback witness must select two ordinary layers");
         let first_call_span = selected.layers[0].call_site;
-        let first_value_spans = selected.layers[0]
-            .args
-            .iter()
-            .filter_map(|arg| match arg {
-                CallArg::Value(value) => Some(value.span()),
-                CallArg::Type(_) => None,
-            })
-            .collect::<Vec<_>>();
+        let first_value_spans = written_layer_value_spans(&selected.layers[0], 2);
         let CallArg::Value(wrong) = &selected.layers[1].args[0] else {
             panic!("outer rank-N rollback layer must pass one wrong value")
         };
@@ -37881,7 +38639,7 @@ mod tests {
              host type String;
              host fn retained[A](seed: A) -> [B] (B & A) -> A;
              fn witness(seed: I32, tag: String, wrong: String) -> I32 {
-               retained(seed)(String, tag, wrong)
+               retained(seed)[String]( tag, wrong)
              }",
         )
         .expect("parse retained-abstraction rollback witness");
@@ -37925,7 +38683,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -37943,16 +38701,10 @@ mod tests {
         let staged_value_spans = selected
             .layers
             .iter()
-            .flat_map(|layer| layer.args.iter())
-            .filter_map(|arg| match arg {
-                CallArg::Value(value) => Some(value.span()),
-                CallArg::Type(_) => None,
-            })
+            .zip([1, 2])
+            .flat_map(|(layer, width)| written_layer_value_spans(layer, width))
             .collect::<Vec<_>>();
-        let wrong_span = staged_value_spans
-            .last()
-            .copied()
-            .expect("rollback witness has a wrong value argument");
+        let wrong_span = written_layer_value_spans(&selected.layers[1], 2)[2];
         let error = match run_general_ordinary_value(
             &def.body,
             Some(&InternedType::fresh(def.ret.clone())),
@@ -38005,7 +38757,7 @@ mod tests {
              host type Tag;
              host fn deep[A](seed: A) -> Tag -> [B] (B & A) -> A;
              fn witness(seed: I32, tag: Tag, other: I32) -> I32 {
-               deep(seed)(tag)(I32, other, seed)
+               deep(seed)(tag)[I32]( other, seed)
              }",
         )
         .expect("parse deep retained-abstraction witness");
@@ -38074,7 +38826,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -38177,16 +38929,17 @@ mod tests {
                 .is_none(),
             "the monomorphic middle layer must not invent a type slot"
         );
-        let inner_solution = tcx
-            .elaborations
-            .type_resolution_for("main", call_spans[2].id, 0)
-            .expect("the outer call must publish B's value-shaped solution");
-        assert_eq!(path_leaf(&inner_solution.resolved), "I32");
+        let CallArg::Type(written) = &selected.layers[2].args[0] else {
+            panic!("the outer call retains its explicit B argument")
+        };
+        assert_eq!(path_leaf(written), "I32");
         assert!(
             tcx.elaborations
-                .is_value_at_type_slot("main", call_spans[2].id, 0),
-            "the explicit `I32` path must retain its value-shaped type-slot classification"
+                .type_resolution_for("main", call_spans[2].id, 0)
+                .is_none(),
+            "the explicit B argument is not an inferred type slot"
         );
+
         FullPipeline::typecheck(&package)
             .expect("the deep retained-abstraction witness must pass the complete pipeline");
     }
@@ -38201,11 +38954,11 @@ mod tests {
              newtype Box[A] : A { constructor mk_box; projector un_box; };
              fn identity[A](value: A) -> A { value }
              fn consume[*F](
-               _function: [A] A -> F(A), _value: F(I32), fallback: I32
+               _function: [A] A -> F[A], _value: F[I32], fallback: I32
              ) -> N -> I32 {
                .(_next: N) { fallback }
              }
-             fn witness(value: Box(I32), fallback: I32, next: N) -> I32 {
+             fn witness(value: Box[I32], fallback: I32, next: N) -> I32 {
                consume(identity, value, fallback)(next)
              }",
         )
@@ -38250,7 +39003,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -38268,11 +39021,8 @@ mod tests {
         let value_spans = selected
             .layers
             .iter()
-            .flat_map(|layer| layer.args.iter())
-            .filter_map(|arg| match arg {
-                CallArg::Value(value) => Some(value.span()),
-                CallArg::Type(_) => None,
-            })
+            .zip([3, 1])
+            .flat_map(|(layer, width)| written_layer_value_spans(layer, width))
             .collect::<Vec<_>>();
         let error = match run_general_ordinary_value(
             &def.body,
@@ -38280,7 +39030,7 @@ mod tests {
             &mut tcx,
         ) {
             Err(error) => error,
-            Ok(_) => panic!("identity cannot inhabit `[A] A -> Box(A)`"),
+            Ok(_) => panic!("identity cannot inhabit `[A] A -> Box[A]`"),
         };
         assert!(
             error.diagnostic().message.contains("type mismatch"),
@@ -38310,6 +39060,65 @@ mod tests {
     #[cfg(feature = "surface")]
     fn direct_rank_n_rejection(source: &str, name: &str) -> Error {
         typecheck_surface_source(source, name).unwrap_err().error
+    }
+
+    #[cfg(feature = "surface")]
+    fn written_layer_value_spans(layer: &SelectedPathUnitCallLayer<'_>, width: usize) -> Vec<Span> {
+        let first = layer
+            .args
+            .iter()
+            .position(|arg| matches!(arg, CallArg::Value(_)))
+            .expect("the fixture stage has a value packet");
+        let args = &layer.args[first..];
+        let mut spans = vec![args[0].meta().span];
+        spans.extend(
+            written_packet_arguments(args, width)
+                .into_iter()
+                .map(|arg| arg.meta().span),
+        );
+        spans
+    }
+
+    #[cfg(feature = "surface")]
+    struct WrittenCallSpine<'a> {
+        direct_callee: &'a Expr,
+        layers: Vec<SelectedPathUnitCallLayer<'a>>,
+    }
+
+    #[cfg(feature = "surface")]
+    fn written_call_spine<'a>(
+        mut callee: &'a Expr,
+        mut args: &'a [CallArg<Lowered>],
+        mut call_site: crate::ast::ExpressionSite,
+        _tcx: &TypeCtx<'_, '_, Lowered>,
+    ) -> Option<WrittenCallSpine<'a>> {
+        let mut layers = Vec::new();
+        loop {
+            layers.push(SelectedPathUnitCallLayer {
+                callee_span: callee.span(),
+                call_site,
+                args,
+            });
+            let Expr::Call {
+                callee: inner,
+                args: inner_args,
+                ..
+            } = callee
+            else {
+                break;
+            };
+            call_site = callee.site();
+            callee = inner;
+            args = inner_args;
+        }
+        if !matches!(callee, Expr::Path { .. }) {
+            return None;
+        }
+        layers.reverse();
+        Some(WrittenCallSpine {
+            direct_callee: callee,
+            layers,
+        })
     }
 
     #[cfg(feature = "surface")]
@@ -38367,7 +39176,7 @@ mod tests {
                 parameter.ty.clone().expect("value parameter annotation"),
             );
         }
-        let selected = select_path_unit_call_chain(
+        let selected = written_call_spine(
             callee,
             args,
             crate::ast::ExpressionSite {
@@ -38452,7 +39261,7 @@ mod tests {
              fn poly_id[A](value: A) -> A { value }
              host fn infer[T](function: T) -> I32;
              fn inferred() -> I32 { infer(poly_id) }
-             fn placeholder() -> I32 { infer(_, poly_id) }",
+             fn placeholder() -> I32 { infer[_](poly_id) }",
             "inferred polytype slots",
         )
         .expect("a complete named scheme may solve an omitted or `_` type argument");
@@ -38479,7 +39288,7 @@ mod tests {
             "module main;
              type Rank_n[A] = [B] B -> A;
              fn discard[B](_value: B) -> . { () }
-             fn consume[A](_function: Rank_n(A), value: A) -> . -> A {
+             fn consume[A](_function: Rank_n[A], value: A) -> . -> A {
                .(_next: .) { value }
              }
              fn witness() -> . { consume(discard, ())(()) }",
@@ -38509,7 +39318,7 @@ mod tests {
             "module main;
              type Rank_n[A] = [B] B -> A;
              fn discard[B](_value: B) -> . { () }
-             fn consume[A](_function: Rank_n(A), value: A) -> . -> A {
+             fn consume[A](_function: Rank_n[A], value: A) -> . -> A {
                .(_next: .) { value }
              }
              fn witness() -> . { consume(discard, ())() }",
@@ -38582,7 +39391,7 @@ mod tests {
              host type I32;
              host fn retained[A](seed: A) -> [B] (B & A) -> A;
              fn witness(seed: I32, other: I32) -> I32 {
-               retained(seed)(I32, other, seed)
+               retained(seed)[I32]( other, seed)
              }",
             2,
         );
@@ -38593,8 +39402,8 @@ mod tests {
     fn retained_abstraction_accepts_single_layer_higher_kinded_scheme() {
         assert_retained_abstraction_witness(
             "module main;
-             fn make[A](seed: A)[*F](_value: F(A)) -> A { seed }
-             fn witness() -> [*F] F(.) -> . { make(()) }",
+             fn make[A](seed: A)[*F](_value: F[A]) -> A { seed }
+             fn witness() -> [*F] F[.] -> . { make(()) }",
             1,
         );
     }
@@ -38605,8 +39414,8 @@ mod tests {
         assert_retained_abstraction_witness(
             "module main;
              newtype Box[A] : A { constructor mk_box; projector un_box; };
-             fn make[A](seed: A)[*F](_value: F(A)) -> A { seed }
-             fn witness(boxed: Box(.)) -> . { make(())(Box, boxed) }",
+             fn make[A](seed: A)[*F](_value: F[A]) -> A { seed }
+             fn witness(boxed: Box[.]) -> . { make(())[Box]( boxed) }",
             2,
         );
     }
@@ -38619,7 +39428,7 @@ mod tests {
              host type I32;
              host type Seed;
              host fn expected[A](seed: Seed) -> [B] B -> A;
-             fn witness(seed: Seed, value: I32) -> I32 { expected(seed)(I32, value) }",
+             fn witness(seed: Seed, value: I32) -> I32 { expected(seed)[I32]( value) }",
             2,
         );
     }
@@ -38632,7 +39441,7 @@ mod tests {
              host type I32;
              host type Seed;
              host fn expected[A](seed: Seed) -> [B] B -> A;
-             fn witness(seed: Seed, value: I32) -> . { expected(seed)(I32, value) }",
+             fn witness(seed: Seed, value: I32) -> . { expected(seed)[I32]( value) }",
             "retained result",
         );
     }
@@ -38645,7 +39454,7 @@ mod tests {
              host type I32;
              host type Seed;
              host fn absent[A](seed: Seed) -> [B] B -> .;
-             fn witness(seed: Seed, value: I32) -> . { absent(seed)(I32, value) }",
+             fn witness(seed: Seed, value: I32) -> . { absent(seed)[I32]( value) }",
             "absent retained result",
         );
     }
@@ -38675,10 +39484,10 @@ mod tests {
             "module main;
              host type I32;
              type Bundle[A] = (([B] B -> A) & I32);
-             fn make[A](_seed: A, fallback: I32) -> Bundle(A) -> I32 {
-               .(_bundle: Bundle(A)) { fallback }
+             fn make[A](_seed: A, fallback: I32) -> Bundle[A] -> I32 {
+               .(_bundle: Bundle[A]) { fallback }
              }
-             fn witness(seed: I32, fallback: I32, bundle: Bundle(I32)) -> I32 {
+             fn witness(seed: I32, fallback: I32, bundle: Bundle[I32]) -> I32 {
                make(seed, fallback)(bundle)
              }",
             2,
@@ -38710,10 +39519,10 @@ mod tests {
             "module main;
              host type I32;
              type Bundle[T] = (([A] A -> T) & T);
-             fn make[T](_seed: T, fallback: I32) -> Bundle(T) -> I32 {
-               .(_bundle: Bundle(T)) { fallback }
+             fn make[T](_seed: T, fallback: I32) -> Bundle[T] -> I32 {
+               .(_bundle: Bundle[T]) { fallback }
              }
-             fn witness[A](seed: A, fallback: I32, bundle: Bundle(A)) -> I32 {
+             fn witness[A](seed: A, fallback: I32, bundle: Bundle[A]) -> I32 {
                make(seed, fallback)(bundle)
              }",
             2,
@@ -38727,11 +39536,11 @@ mod tests {
             "module main;
              host type I32;
              type Bundle[A][U] = (([B] B -> A) & U);
-             fn make[A](_seed: A, fallback: I32) -> [U] Bundle(A, U) -> I32 {
-               .[U](_bundle: Bundle(A, U)) { fallback }
+             fn make[A](_seed: A, fallback: I32) -> [U] Bundle[A][ U] -> I32 {
+               .[U](_bundle: Bundle[A][ U]) { fallback }
              }
-             fn witness(seed: I32, fallback: I32, bundle: Bundle(I32, I32)) -> I32 {
-               make(seed, fallback)(I32, bundle)
+             fn witness(seed: I32, fallback: I32, bundle: Bundle[I32][ I32]) -> I32 {
+               make(seed, fallback)[I32]( bundle)
              }",
             2,
         );
@@ -38743,11 +39552,11 @@ mod tests {
         assert_retained_abstraction_witness(
             "module main;
              host type I32;
-             fn make[T](_seed: T, fallback: I32) -> (([*F] F(T) -> T) & T) -> I32 {
-               .(_bundle: (([*F] F(T) -> T) & T)) { fallback }
+             fn make[T](_seed: T, fallback: I32) -> (([*F] F[T] -> T) & T) -> I32 {
+               .(_bundle: (([*F] F[T] -> T) & T)) { fallback }
              }
              fn witness[A](
-               seed: A, fallback: I32, bundle: (([*G] G(A) -> A) & A)
+               seed: A, fallback: I32, bundle: (([*G] G[A] -> A) & A)
              ) -> I32 {
                make(seed, fallback)(bundle)
              }",
@@ -38761,8 +39570,8 @@ mod tests {
         assert_retained_single_layer_witness(
             "module main;
              type Handlers[A] = (([B] B -> A) & ([C] C -> A));
-             fn consume[A](_handlers: Handlers(A), value: A) -> A { value }
-             fn witness(handlers: Handlers(.)) -> . { consume(handlers, ()) }",
+             fn consume[A](_handlers: Handlers[A], value: A) -> A { value }
+             fn witness(handlers: Handlers[.]) -> . { consume(handlers, ()) }",
         );
     }
 
@@ -38773,7 +39582,7 @@ mod tests {
             "module main;
              type Handlers[A] = (([B] B -> A) & ([C] C -> A));
              fn discard[B](_value: B) -> . { () }
-             fn consume[A](_handlers: Handlers(A), value: A) -> A { value }
+             fn consume[A](_handlers: Handlers[A], value: A) -> A { value }
              fn witness() -> . { consume((discard, discard), ()) }",
         );
     }
@@ -38846,6 +39655,7 @@ mod tests {
             let Expr::Call { args, .. } = &def.body else {
                 panic!("`{name}` witness body must be one call")
             };
+            let args = written_packet_arguments(args, 2);
             let Some(CallArg::Value(Expr::FnExpr {
                 occurrence: _,
                 sig,
@@ -38908,6 +39718,154 @@ mod tests {
                     decl_span: Some(span),
                 }) if bound_name == &param.name && *span == param.meta.span
             ));
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn pending_rec_order_source_advances_before_final_without_publication() {
+        for mode in [
+            frontier::FrontierMode::ExpectedOnly,
+            frontier::FrontierMode::LexicalFallback,
+        ] {
+            let module = parse("module main; host type I32;").unwrap();
+            let (modules, _) =
+                FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None)
+                    .unwrap();
+            let package = Package::build(Path::new(""), modules, None).unwrap();
+            let module = &package.module("main").unwrap().module;
+            let env = super::super::ModuleEnv::build(module, None, None, Some(&package)).unwrap();
+            let source_span = Span::new(10, 11);
+            let path_span = Span::new(12, 13);
+            let path = |name: &str, span| Expr::Path {
+                occurrence: crate::ast::ExpressionOccurrenceCarrier::fresh(),
+                segments: vec![crate::ast::PathSegment::new(name, span)],
+                meta: Meta::new(span),
+                ext: (),
+            };
+            let source = path("source_value", source_span);
+            let pending_path = path("pending", path_span);
+            let mut elaborations = Elaborations::new();
+            let mut tcx = TypeCtx::new(&env, &mut elaborations);
+            tcx.push_value("source_value".to_owned(), path_ty("I32"));
+            let pending = tcx.push_pending_rec_order("pending".to_owned(), &source, path_span);
+            let (mut frontier, ()) =
+                frontier::OrdinaryFrontier::begin_root_with(path_span, &tcx, |_, _| Ok(()))
+                    .unwrap();
+            let expected = OwnerBoundType::Plain(InternedType::fresh(path_ty("I32")));
+            reset_ordinary_planning_work();
+            let child = OrdinaryValueCursor::begin_child(
+                &pending_path,
+                Some(expected),
+                &mut frontier,
+                &mut tcx,
+            )
+            .unwrap();
+            let result =
+                OrdinaryValueCursor::advance_child_for_test(child, mode, &mut frontier, &mut tcx)
+                    .unwrap();
+            assert!(
+                matches!(result, OrdinaryChildAdvance::Complete(_)),
+                "{mode:?}"
+            );
+            assert_eq!(ordinary_planning_work().rec_order_source_visits, 1);
+            assert!(matches!(
+                tcx.pending_rec_order_state(pending),
+                PendingRecOrderState::Pending
+            ));
+            assert!(
+                tcx.elaborations
+                    .position_index()
+                    .binder_at("main", source_span)
+                    .is_none()
+            );
+            let rejected: Result<(), Error> =
+                frontier.close_root_with(Vec::new(), &mut tcx, |_, _| {
+                    Err(Error::type_(path_span, "later root rejection"))
+                });
+            assert_eq!(
+                rejected.unwrap_err().diagnostic().message,
+                "later root rejection"
+            );
+            assert!(matches!(
+                tcx.pending_rec_order_state(pending),
+                PendingRecOrderState::Pending
+            ));
+            assert!(
+                tcx.elaborations
+                    .position_index()
+                    .binder_at("main", source_span)
+                    .is_none()
+            );
+            assert!(
+                tcx.elaborations
+                    .position_index()
+                    .type_at("main", path_span)
+                    .is_none()
+            );
+        }
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn recursive_nested_calls_share_completed_branch_context() {
+        for (left, right, accepts) in [
+            (
+                "concat(\"(\", concat(recur(cont) run(.f), \")\"))",
+                "\"\"",
+                true,
+            ),
+            (
+                "\"\"",
+                "concat(\"(\", concat(recur(cont) run(.t), \")\"))",
+                true,
+            ),
+            (
+                "concat(\"(\", concat(recur(cont) run(.f), \")\"))",
+                "7[I32]",
+                false,
+            ),
+        ] {
+            let source = format!(
+                "module main; import control(Bool, macro if); \
+                 host type String role(str); host type I32 role(i32); \
+                 host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
+                 host fn concat(left: String, right: String) -> String; \
+                 pub rec(loop) fn run(condition: Bool) -> String {{ \
+                   let children = if (condition) {{ {left} }} else {{ {right} }}; children \
+                 }}"
+            );
+            let control = parse(include_str!(
+                "../../../../test-data/poc/macros/workdir/control.kio"
+            ))
+            .unwrap();
+            let (modules, _) = FullPipeline::lower_package(
+                vec![
+                    (PathBuf::from("main.kio"), parse(&source).unwrap()),
+                    (PathBuf::from("control.kio"), control),
+                ],
+                None,
+            )
+            .unwrap();
+            let package = Package::build(Path::new(""), modules, None).unwrap();
+            package.resolve_imports().unwrap();
+            let checked =
+                crate::pass::typecheck_full::check_package_preserving_normalization(&package);
+            if accepts {
+                let checked = checked.unwrap_or_else(|error| panic!("{source}: {error:?}"));
+                crate::pass::typecheck_full::validate_substituted_package(checked.substituted())
+                    .expect("completed branch context survives standalone Prime");
+            } else {
+                let error = checked
+                    .err()
+                    .expect("a completed branch cannot authorize an incompatible sibling")
+                    .error;
+                assert!(matches!(error, Error::Type(_)), "{error:?}");
+                assert!(
+                    error.diagnostic().message.contains("type mismatch"),
+                    "{error:?}"
+                );
+            }
         }
     }
 }

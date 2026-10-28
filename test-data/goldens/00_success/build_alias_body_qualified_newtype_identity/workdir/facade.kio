@@ -9,9 +9,9 @@ pub fn keep(row: model.Row) -> model.Row { model.keep(row) }
 
 pub fn keep_box(value: model.Unit_box) -> model.Unit_box { model.keep_box(value) }
 
-pub fn keep_identity_box(value: list.Box(.)) -> list.Box(.) { model.keep_identity_box(value) }
+pub fn keep_identity_box(value: list.Box[.]) -> list.Box[.] { model.keep_identity_box(value) }
 
-pub fn unwrap[A](value: list.List(A)) -> . | (A & list.List(A)) {
+pub fn unwrap[A](value: list.List[A]) -> . | (A & list.List[A]) {
   let projector = list.List.un_list;
-  projector(A, value)
+  projector[A](value)
 }

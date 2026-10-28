@@ -8508,11 +8508,11 @@ v(1) {
     add {
       module api {
         type Capture[X] = [A_n2][A] (X & A_n2 & A);
-        newtype Payload[A] : Capture(A) {
+        newtype Payload[A] : Capture[A] {
           pub constructor wrap;
           pub projector unwrap;
         };
-        host fn consume[A](value: Payload(A)) -> .;
+        host fn consume[A](value: Payload[A]) -> .;
       }
     }
   }
@@ -9714,7 +9714,7 @@ v(1) {
           pub constructor wrap;
           pub projector unwrap;
         };
-        host fn old(value: (Count & Token & Box(.) & Wrapper(.))) -> .;
+        host fn old(value: (Count & Token & Box[.] & Wrapper[.])) -> .;
       }
     }
   }
@@ -9817,7 +9817,7 @@ v(1) {
     add {
       module api {
         newtype Token[A] : A { pub constructor make_token; projector read_token; };
-        host fn old(value: Token(.)) -> .;
+        host fn old(value: Token[.]) -> .;
       }
     }
   }
@@ -9868,8 +9868,8 @@ v(1) {
       module api {
         host type Str role(str);
         newtype Box[A] : A { pub constructor make_box; pub projector un_box; };
-        newtype Lift[*F] : F(Str) { pub constructor make_lift; pub projector un_lift; };
-        host fn old(value: Lift(Box)) -> Lift(Box);
+        newtype Lift[*F] : F[Str] { pub constructor make_lift; pub projector un_lift; };
+        host fn old(value: Lift[Box]) -> Lift[Box];
       }
     }
   }
@@ -10457,7 +10457,7 @@ v(1) {
     add {
       module api {
         newtype Box[A] : A { pub constructor make; pub projector read; };
-        host fn old(value: Box(.)) -> .;
+        host fn old(value: Box[.]) -> .;
       }
     }
   }
@@ -10509,14 +10509,14 @@ v(1) {
     add {
       module api {
         newtype Box[A] : A { pub constructor wrap; pub projector unwrap; };
-        host fn first(value: Box(.)) -> .;
+        host fn first(value: Box[.]) -> .;
       }
     }
   }
 }
 v(2) {
   breaking {
-    add { module api { host fn second(value: Box(.)) -> .; } };
+    add { module api { host fn second(value: Box[.]) -> .; } };
     modify {
       module api {
         newtype Box[B] : B { pub constructor wrap; pub projector unwrap; };
@@ -10547,7 +10547,7 @@ v(1) {
     add {
       module api {
         newtype Token[A] : A { constructor make; projector read; };
-        host fn old(value: Token(.)) -> .;
+        host fn old(value: Token[.]) -> .;
       }
     }
   }
@@ -10775,8 +10775,8 @@ v(1) {
     add {
       module api {
         host type Box[A];
-        type Wrapped[A] = Box(A);
-        host fn consume[A](value: Wrapped(A)) -> Wrapped(A);
+        type Wrapped[A] = Box[A];
+        host fn consume[A](value: Wrapped[A]) -> Wrapped[A];
       }
     }
   }
@@ -10855,8 +10855,8 @@ v(1) {
     add {
       module api {
         host type Pair[A][B];
-        type Apply[*F] = F(.);
-        host fn old(value: Apply(Pair(.))) -> .;
+        type Apply[*F] = F[.];
+        host fn old(value: Apply[Pair[.]]) -> .;
       }
     }
   }
@@ -10978,7 +10978,7 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        host fn old[*F](value: F(F)) -> .;
+        host fn old[*F](value: F[F]) -> .;
       }
     }
   }
@@ -11009,8 +11009,8 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        type Apply[*F] = F(.);
-        host fn old(value: Apply(.)) -> .;
+        type Apply[*F] = F[.];
+        host fn old(value: Apply[.]) -> .;
       }
     }
   }
@@ -11039,12 +11039,12 @@ v(2) {
             (
                 "under-applied host type",
                 "host type Pair[A][B];",
-                "host fn old(value: Pair(.)) -> .;",
+                "host fn old(value: Pair[.]) -> .;",
             ),
             (
                 "over-applied host type",
                 "host type Pair[A][B];",
-                "host fn old(value: Pair(., ., .)) -> .;",
+                "host fn old(value: Pair[.][.][.]) -> .;",
             ),
             (
                 "under-applied newtype",
@@ -11054,7 +11054,7 @@ v(2) {
             (
                 "over-applied newtype",
                 "newtype Box[A] : . { pub constructor wrap; pub projector unwrap; };",
-                "host fn old(value: Box(., .)) -> .;",
+                "host fn old(value: Box[.][.]) -> .;",
             ),
         ];
         let package = package_with_items("api", Vec::new());
@@ -11088,8 +11088,8 @@ v(1) {
   nonbreaking {
     add {
       module api {
-        type Bad[A] = A(.);
-        host fn old(value: Bad(.)) -> .;
+        type Bad[A] = A[.];
+        host fn old(value: Bad[.]) -> .;
       }
     }
   }

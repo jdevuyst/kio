@@ -11,15 +11,15 @@ import systems/rational as q;
 import systems/reduce as reduction;
 import testapi(Bool, I32);
 
-pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List(I32) };
+pub labels Family = { particular: m.Row, directions: m.Matrix, free_columns: c.List[I32] };
 
 pub labels Outcome = { solved: Family } | { inconsistent: q.Rational };
 
-fn is_free(column: I32, pivots: c.List(I32)) -> Bool {
+fn is_free(column: I32, pivots: c.List[I32]) -> Bool {
   if(l.elem(integers.eq_i32, column, pivots)) { .f } else { .t }
 }
 
-fn particular(reduced: m.Matrix, pivots: c.List(I32), variables: I32) -> m.Row {
+fn particular(reduced: m.Matrix, pivots: c.List[I32], variables: I32) -> m.Row {
   l.map(
   , .(column) {
       match(l.index_of(integers.eq_i32, column, pivots)) {
@@ -31,7 +31,7 @@ fn particular(reduced: m.Matrix, pivots: c.List(I32), variables: I32) -> m.Row {
   )
 }
 
-fn direction(reduced: m.Matrix, pivots: c.List(I32), variables: I32, free: I32) -> m.Row {
+fn direction(reduced: m.Matrix, pivots: c.List[I32], variables: I32, free: I32) -> m.Row {
   l.map(
   , .(column) {
       match(l.index_of(integers.eq_i32, column, pivots)) {

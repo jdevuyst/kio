@@ -9,18 +9,18 @@ import testapi/fmt(bool_to_string, int_to_string);
 import testapi/text(string_concat);
 
 labels Form = {
-, email: Option(String)
-, age: Option(I32)
-, country: Option(String)
-, terms: Option(Bool)
-, nickname: Option(String)
+, email: Option[String]
+, age: Option[I32]
+, country: Option[String]
+, terms: Option[Bool]
+, nickname: Option[String]
 };
 
 labels Field_report = { field: String, message: String };
 
 labels Validation = { ok_report: Field_report } | { err_report: Field_report };
 
-type Validation_result = Result(Ok_report, Err_report);
+type Validation_result = Result[Ok_report][Err_report];
 
 labels Validation_total = { passed: I32, failed: I32, details: String };
 
@@ -36,29 +36,29 @@ fn invite102() -> Form {
   , age = some(29)
   , country = some("NL")
   , terms = some(.t)
-  , nickname = none(String)
+  , nickname = none[String]
   }
 }
 
 fn invite204() -> Form {
   {
-  , email = none(String)
+  , email = none[String]
   , age = some(15)
-  , country = none(String)
+  , country = none[String]
   , terms = some(.f)
   , nickname = some("q")
   }
 }
 
-fn email_value(form: Form) -> Option(String) { form.?{email} }
+fn email_value(form: Form) -> Option[String] { form.?{email} }
 
-fn age_value(form: Form) -> Option(I32) { form.?{age} }
+fn age_value(form: Form) -> Option[I32] { form.?{age} }
 
-fn country_value(form: Form) -> Option(String) { form.?{country} }
+fn country_value(form: Form) -> Option[String] { form.?{country} }
 
-fn terms_value(form: Form) -> Option(Bool) { form.?{terms} }
+fn terms_value(form: Form) -> Option[Bool] { form.?{terms} }
 
-fn nickname_value(form: Form) -> Option(String) { form.?{nickname} }
+fn nickname_value(form: Form) -> Option[String] { form.?{nickname} }
 
 fn field_report(field_name: String, text: String) -> Field_report {
   {field = field_name, message = text}
@@ -78,7 +78,7 @@ fn validate_required_text(
 , field_name: String
 , missing_text: String
 , present_prefix: String
-, value: Option(String)
+, value: Option[String]
 ) -> Validation_result {
   option(
   , missing(field_name, missing_text)
@@ -87,11 +87,11 @@ fn validate_required_text(
   )
 }
 
-fn validate_email(value: Option(String)) -> Validation_result {
+fn validate_email(value: Option[String]) -> Validation_result {
   validate_required_text("email", "missing required email", "present: ", value)
 }
 
-fn validate_country(value: Option(String)) -> Validation_result {
+fn validate_country(value: Option[String]) -> Validation_result {
   validate_required_text("country", "missing required country", "present: ", value)
 }
 
@@ -105,7 +105,7 @@ fn validate_age_value(age: I32) -> Validation_result {
   }
 }
 
-fn validate_age(value: Option(I32)) -> Validation_result {
+fn validate_age(value: Option[I32]) -> Validation_result {
   option(missing("age", "missing required age"), .(age: I32) { validate_age_value(age) }, value)
 }
 
@@ -113,7 +113,7 @@ fn validate_terms_value(accepted: Bool) -> Validation_result {
   if(accepted) { pass("terms", "accepted") } else { fail("terms", "terms not accepted") }
 }
 
-fn validate_terms(value: Option(Bool)) -> Validation_result {
+fn validate_terms(value: Option[Bool]) -> Validation_result {
   option(
   , missing("terms", "missing terms response")
   , .(accepted: Bool) { validate_terms_value(accepted) }
@@ -121,7 +121,7 @@ fn validate_terms(value: Option(Bool)) -> Validation_result {
   )
 }
 
-fn validate_nickname(value: Option(String)) -> Validation_result {
+fn validate_nickname(value: Option[String]) -> Validation_result {
   option(pass("nickname", "omitted"), .(s: String) { pass("nickname", cat("present: ", s)) }, value)
 }
 

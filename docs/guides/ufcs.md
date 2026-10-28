@@ -27,10 +27,10 @@ All four forms build the same call plan as a prefix call. The spelling controls 
 
 | Form | Means | Inserted value |
 | --- | --- | --- |
-| `x.>f(T, a)` | `f(T, x, a)` | first value slot |
-| `x.>>f(T, a)` | `f(T, a, x)` | last value slot |
-| `f(T, a).<x` | `f(T, a, x)` | last value slot |
-| `f(T, a).<<x` | `f(T, x, a)` | first value slot |
+| `x.>f[T](a)` | `f[T](x, a)` | first value slot |
+| `x.>>f[T](a)` | `f[T](a, x)` | last value slot |
+| `f[T](a).<x` | `f[T](a, x)` | last value slot |
+| `f[T](a).<<x` | `f[T](x, a)` | first value slot |
 
 The inserted value follows the same right-associated product rule as ordinary calls. If `x` has product type, it can fill a product parameter exactly as `f(x)` or `f((a, b))` would; dot-splice does not invent a separate receiver-passing rule. Receiver insertion happens before the resulting prefix call is checked.
 
@@ -95,23 +95,25 @@ The right side still requires a path; calls such as these are not accepted:
 "a".>>(make_formatter())
 ```
 
-`.<` and `.<<` take the callee on the left and the value on the right. The callee must be a path, a direct path call, or a complete block macro call:
+`.<` and `.<<` select the immediately preceding outermost value call.
+They can therefore operate on a call whose callee is itself computed:
 
 ```text
-f.<value
-f(a).<value
-module_alias.f(a).<<value
-Type.member(a).<<value
+f(a)(b).<value       // f(a)(b, value)
+f(a)(b).<<value      // f(a)(value, b)
+(f(a).<value)(b)     // f(a, value)(b)
+(f(a)(b)).<value     // f(a)(b, value)
 ```
 
-The left side is not an arbitrary expression that happens to have a function type.
-A block-call splice inserts an argument into that call; it does not call the
-function returned by its blocks. To call a computed function, bind it first:
+The last example groups the whole left expression, so it selects the same
+outer call. To target an earlier stage, place the splice inside the grouping,
+as the third example does. To call the *result* instead, use an ordinary value
+group: `f(a)(b)(value)`.
 
-```text
-let formatter = make_formatter(seed);
-formatter.<value
-```
+With no preceding value application, a reverse splice applies its receiver
+to the selected value: `f.<value` means `f(value)`. A trailing type group is
+an explicit stage boundary: `f(a)[B].<value` means `f(a)[B](value)`, without
+searching backwards to insert into `(a)`.
 
 ## Type arguments
 
@@ -120,39 +122,30 @@ UFCS calls accept explicit type arguments anywhere the equivalent prefix call wo
 ```kio {@module}
 fn id[A](x: A) -> A { x }
 
-fn explicit(s: String) -> String { s.>id(String) }
+fn explicit(s: String) -> String { s.>id[String] }
 
-fn explicit_last(s: String) -> String { s.>>id(String) }
+fn explicit_last(s: String) -> String { s.>>id[String] }
 ```
 
 Type arguments stay in type slots. The receiver is never inserted into a type
 slot. A `. -> R` function type always has one Unit receiver slot, regardless
 of whether its declaration used `()` or one explicit Unit parameter.
 
-When a receiver sits between two binder runs, a type-looking written argument
-at that boundary belongs to the consecutive binder run immediately after the
-receiver first. The binder run before the receiver consumes only any surplus.
-An unfilled value layer stops that reservation, so an argument never jumps
-across a missing value to reach later binders. This is determined from the
-callee's unfolded function type and the written argument shapes; declaration
-arity and parameter spelling do not participate, and a type mismatch does not
-make the typer retry a different placement.
+Brackets on a forward callee instantiate its leading binders before receiver
+insertion: `x.>f[A](b)` means `f[A](x,b)`. If consuming `x` exposes another
+binder, instantiate that result afterward: `f(x)[T]` or `(x.>f)[T]`.
+The brackets never choose a type slot by searching around the receiver.
 
-The ordinary Unit spellings remain distinct before and after receiver
-insertion: `()` is a value argument and `.` is a type argument. UFCS never
-reinterprets one as the other. If `nil : [A] . -> List(A)`, the prefix call
-`nil(A)` is the residual function `. -> List(A)`. The receiver form
-`().>nil(A)` inserts the written Unit receiver and is equivalent to
-`nil(A, ())`; so is the explicitly nested `nil(A)()`. The receiver saturates
-the UFCS call. Merely exposing a Unit domain through a type argument or
-transparent alias never creates a value application.
+The Unit type is `.`, while `()` is a value. For
+`nil : [A] . -> List[A]`, `nil[A]` retains `. -> List[A]`;
+`().>nil[A]` and `nil[A]()` apply the Unit stage. Exposing a Unit domain
+through substitution or a transparent alias does not create a value call.
 
-Receiver insertion does not create a second argument-grouping rule. Prefix
-and UFCS calls both walk the resolved call type from left to right: values
-followed by more values fill product slots one at a time, and only the final
-value in a packet may fill the whole remaining product. The typer does not
-retry another packing after a mismatch. An explicit nested application remains
-the way to mark a product boundary, just as in the equivalent prefix call.
+Each selected group is one product argument for one function stage. A
+receiver with product type follows ordinary tuple rules; insertion does not
+split it across a returned function. For `f : (A & B) -> C -> R`,
+`a.>f(b)(c)` means `f(a,b)(c)`, while `f(a,b)(c).<r` modifies the second
+group and means `f(a,b)(c,r)`, subject to that group's ordinary type check.
 
 ## Grouping
 
@@ -193,18 +186,19 @@ Macro calls also keep a bare receiver-only spelling in each direction:
 `transform.<<value`. The UFCS argument list, when present, must contain an argument.
 
 ```kio {@module}
-fn drop_unit_right(p: String & .) -> String { p.>narrow_prod(String) }
+fn drop_unit_right(p: String & .) -> String { (p.>narrow_prod)[String] }
 
-fn drop_unit_left(p: String & .) -> String { narrow_prod(String).<<p }
+fn drop_unit_left(p: String & .) -> String { (narrow_prod.<<p)[String] }
 ```
 
-Both functions build the same macro call: `narrow_prod(p, String)`.
+Both functions build the same macro call: `narrow_prod(p)[String]`.
 
 ### Calls with trailing blocks
 
 Trailing blocks stay attached to the macro in every direction. The receiver
-becomes the first or last value **before the blocks**, even when you write it
-after them:
+enters a prefix group **before the blocks**, even when written after them.
+Forward forms select the first prefix group and reverse forms the last.
+With no prefix group, insertion creates a receiver-only stage:
 
 | Spelling | Means |
 | --- | --- |
@@ -214,8 +208,9 @@ after them:
 | `f(a) { body }.<r` | `f(a, r) { body }` |
 
 Here `f` stands for an imported macro with the corresponding ordinary values
-and trailing block. These are the same quoted macro arguments as in the direct
-call; the notation does not make their contents run eagerly.
+and trailing block. Each block projects one value for a successive function
+stage; multiple prefix groups likewise supply successive stages. These are
+the same quoted macro arguments as in the direct call; the notation does not make their contents run eagerly.
 
 For example, the library `match` macro accepts a scrutinee and a clause block.
 Here its module is available as `match`; use your configured dependency path
@@ -285,15 +280,15 @@ fn outer_splice[A](value: A) -> A {
   if {
     value
   } else {
-    if(.f(Bool)) { value } else { value }
-  }.<(.t(Bool))
+    if(.f[Bool]) { value } else { value }
+  }.<(.t[Bool])
 }
 
 fn inner_splice[A](value: A) -> A {
-  if(.t(Bool)) {
+  if(.t[Bool]) {
     value
   } else {
-    if { value } else { value }.<(.f(Bool))
+    if { value } else { value }.<(.f[Bool])
   }
 }
 ```
@@ -327,10 +322,10 @@ The inner result fills the last argument of the outer call. Choose a prefix
 call when it shows the roles more clearly; changing a right-nested tree into a
 left-associated chain can change evaluation order or host-visible behavior.
 
-- Use `.>` when the value is the subject and the function naturally follows it: `row.>narrow_prod(Name)`.
+- Use `.>` when the value is the subject and the function naturally follows it: `(row.>narrow_prod)[Name]`.
 - Use `.>>` when a pipeline value belongs after already-written arguments: `msg.>>string_concat(prefix)`.
 - Use `.<` when you have written a function call and want to append one value: `pair(left).<right`.
-- Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`, or `narrow_prod(Target).<<value`.
+- Use `.<<` when you have written a function call and want to prepend one value: `pair(right).<<left`. For a target-directed macro, its target bracket follows the completed splice: `(narrow_prod.<<value)[Target]`.
 
 All four forms are surface syntax only. During typing, ordinary UFCS calls record normalized prefix calls, and macro UFCS calls record the same elaboration the equivalent prefix macro call would produce.
 

@@ -1,0 +1,5 @@
+module m;
+
+host fn returned() -> [A] A;
+
+fn invalid(value: .) { returned()(value) }

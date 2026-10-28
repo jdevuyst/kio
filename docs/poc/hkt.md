@@ -125,35 +125,35 @@ and the type checker keeps the two apart.
 
 Four instance newtypes capture the operations the program dispatches over.
 Each carries a **polymorphic function** as its payload — the language feature
-that makes first-class `Functor(F)` / `Monad(F)` instances possible:
+that makes first-class `Functor[F]` / `Monad[F]` instances possible:
 
 ```kio {@hkt}
-pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;
   pub projector bind
   }
 
-pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
   pub constructor mk_functor;
   pub projector fmap
   }
 
-pub newtype Pure[*F] : [A] A -> F(A) { pub constructor mk_pure; pub projector lift }
+pub newtype Pure[*F] : [A] A -> F[A] { pub constructor mk_pure; pub projector lift }
 
-pub newtype Extract[*F] : [A] F(A) -> A { pub constructor mk_extract; pub projector peel }
+pub newtype Extract[*F] : [A] F[A] -> A { pub constructor mk_extract; pub projector peel }
 ```
 
 The `[*F]` binder is kind-`*→*`: it stands for a one-argument type
-constructor, applied as `F(A)` and `F(B)` inside each payload. The payload is
+constructor, applied as `F[A]` and `F[B]` inside each payload. The payload is
 itself polymorphic — `Monad`'s `[A][B]` are bound at construction time inside
 the lambda literal that goes into `mk_monad`, and the projector preserves
 that polymorphism. So `Monad.bind(monad)` yields a value whose remaining
 `[A][B]` polymorphism is intact, and one instance handles every carrier pair.
 
-`Pure(F)` lifts a bare `A` into `F(A)`; `Extract(F)` peels an `F(A)` back to
+`Pure[F]` lifts a bare `A` into `F[A]`; `Extract[F]` peels an `F[A]` back to
 `A`. These two exist because a brand-*generic* body has no brand-crossing
 primitive over an opaque `F` — there is no way to call `Box.mk_box` when all
-you know is "some `F`." Generic code threads `Pure(F)` / `Extract(F)`
+you know is "some `F`." Generic code threads `Pure[F]` / `Extract[F]`
 instances and dispatches through their members instead.
 
 > Why a newtype payload may be a polymorphic function is explained in
@@ -168,35 +168,35 @@ instance bodies are where the concrete brand crossing happens — `Box` lifts
 and projects through `Box.mk_box` / `Box.un_box`, `Identity` through its own:
 
 ```kio {@hkt}
-fn box_monad() -> Monad(Box) {
+fn box_monad() -> Monad[Box] {
   Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
 }
 
-fn box_functor() -> Functor(Box) {
+fn box_functor() -> Functor[Box] {
   Functor.mk_functor(.[A][B](step, value) { Box.mk_box(step(Box.un_box(value))) })
 }
 
-fn box_pure() -> Pure(Box) {
+fn box_pure() -> Pure[Box] {
   Pure.mk_pure(.[A](x) { Box.mk_box(x) })
 }
 
-fn box_extract() -> Extract(Box) {
+fn box_extract() -> Extract[Box] {
   Extract.mk_extract(.[A](m) { Box.un_box(m) })
 }
 
-fn identity_monad() -> Monad(Identity) {
+fn identity_monad() -> Monad[Identity] {
   Monad.mk_monad(.[A][B](m, k) { k(Identity.un_id(m)) })
 }
 
-fn identity_functor() -> Functor(Identity) {
+fn identity_functor() -> Functor[Identity] {
   Functor.mk_functor(.[A][B](step, value) { Identity.mk_id(step(Identity.un_id(value))) })
 }
 
-fn identity_pure() -> Pure(Identity) {
+fn identity_pure() -> Pure[Identity] {
   Pure.mk_pure(.[A](x) { Identity.mk_id(x) })
 }
 
-fn identity_extract() -> Extract(Identity) {
+fn identity_extract() -> Extract[Identity] {
   Extract.mk_extract(.[A](m) { Identity.un_id(m) })
 }
 ```
@@ -227,15 +227,15 @@ through threaded instances, then project back out. The brand-generic part is
 ```kio {@hkt}
 // `[*F]`-generic: there is no brand-crossing primitive over an opaque
 // `F`, so the body threads the two instances and dispatches through their
-// members. Peel `x : F(A)` down to `A`, then re-lift back up to `F(A)`.
-fn rebrand[*F][A](pur: Pure(F), ext: Extract(F), x: F(A)) -> F(A) {
+// members. Peel `x : F[A]` down to `A`, then re-lift back up to `F[A]`.
+fn rebrand[*F][A](pur: Pure[F], ext: Extract[F], x: F[A]) -> F[A] {
   Pure.lift(pur)(Extract.peel(ext)(x))
 }
 ```
 
-`Extract.peel(ext)` projects the `Extract(F)` dictionary to its underlying
-`F(A) -> A` function; `Pure.lift(pur)` projects `Pure(F)` to `A -> F(A)`.
-Composing them is the type-constructor-generic identity on `F(A)`. The body
+`Extract.peel(ext)` projects the `Extract[F]` dictionary to its underlying
+`F[A] -> A` function; `Pure.lift(pur)` projects `Pure[F]` to `A -> F[A]`.
+Composing them is the type-constructor-generic identity on `F[A]`. The body
 never names `Box` or `Identity` — it cannot, since `F` is abstract — so the
 same compiled body serves both brands.
 
@@ -264,33 +264,33 @@ applied at two distinct brands.
 ## Abstract brand crossing in a `do` block: `pipeline`
 
 The next two lines exercise the same generic abstraction in a richer body.
-`pipeline` is `[*F]`-generic over a `Monad(F)` dictionary, a `Pure(F)`
+`pipeline` is `[*F]`-generic over a `Monad[F]` dictionary, a `Pure[F]`
 dictionary, and a branded seed; it threads two bind steps interleaved with a
 pure `let`, all via imported `do` with the *projected* dictionary's `bind`:
 
 ```kio {@hkt}
-fn pipeline[*F](monad: Monad(F), pur: Pure(F), seed: F(String)) -> F(String) {
+fn pipeline[*F](monad: Monad[F], pur: Pure[F], seed: F[String]) -> F[String] {
   do(Monad.bind(monad)) {
     let prefix <- seed;
-    let middle = " ok"(String);
+    let middle = " ok"[String];
     let trailed <- Pure.lift(pur)(string_concat(prefix, middle));
-    Pure.lift(pur)(string_concat(trailed, "\n"(String)))
+    Pure.lift(pur)(string_concat(trailed, "\n"[String]))
   }
 }
 ```
 
-`Monad.bind(monad)` projects the `Monad(F)` instance to a value whose
+`Monad.bind(monad)` projects the `Monad[F]` instance to a value whose
 `[A][B]` polymorphism survives — that is what makes it a valid bind function
 for `do` against an abstract `F`. Inside the block:
 
-- `let prefix <- seed;` is a bind step: it unwraps `seed : F(String)` and
+- `let prefix <- seed;` is a bind step: it unwraps `seed : F[String]` and
   names the carrier `prefix : String`.
-- `let middle = " ok"(String);` is a pure let — no bind, just a local
+- `let middle = " ok"[String];` is a pure let — no bind, just a local
   binding interleaved between steps.
 - `let trailed <- Pure.lift(pur)(...);` lifts the concatenated string back
-  into `F(String)` (via the threaded `Pure` instance, since `F` is abstract)
+  into `F[String]` (via the threaded `Pure` instance, since `F` is abstract)
   and binds the next step.
-- the final expression is the block's overall `F(String)` result.
+- the final expression is the block's overall `F[String]` result.
 
 The `do` library applies its projected sequence to `Monad.bind(monad)`.
 The sequence contains nested bind calls; the supplied bind expression is
@@ -346,16 +346,16 @@ return type:
 ```kio {@hkt}
 // Candidates type elided as `_`; target inferred from the return type.
 // `derive` unifies each candidate's result type against the goal
-// `Functor(Identity)` and finds exactly one that fits — `identity_functor`.
-fn derived_identity_functor() -> Functor(Identity) { derive(_, (box_functor, identity_functor)) }
+// `Functor[Identity]` and finds exactly one that fits — `identity_functor`.
+fn derived_identity_functor() -> Functor[Identity] { derive[_]((box_functor, identity_functor)) }
 ```
 
 The public call type is `[Candidates] Candidates -> [Target] Target`.
 The candidate tuple is the value argument; the leading `_` occupies its
-`Candidates` type slot, not the trailing `Target` slot. `derive` reads `Functor(Identity)`
+`Candidates` type slot, not the trailing `Target` slot. `derive` reads `Functor[Identity]`
 from the return type, then unifies each candidate's result type against that
-goal: `box_functor` produces `Functor(Box)` (no match), `identity_functor`
-produces `Functor(Identity)` (match). Exactly one candidate fits, so resolution is unambiguous and the
+goal: `box_functor` produces `Functor[Box]` (no match), `identity_functor`
+produces `Functor[Identity]` (match). Exactly one candidate fits, so resolution is unambiguous and the
 form elaborates to a plain call to `identity_functor()`. `derive` is pure
 surface convenience — it writes the call you would otherwise write by hand
 and leaves no trace in Kio'.
@@ -376,10 +376,8 @@ fn run_derived_functor(s: String) -> String {
   let functor = derived_identity_functor();
   let branded = Identity.mk_id(s);
   let mapped =
-    Functor.fmap(functor)(
-    , String
-    , String
-    , .(value) { string_concat(value, " ok\n"(String)) }
+    Functor.fmap(functor)[String][String](
+    , .(value) { string_concat(value, " ok\n"[String]) }
     , branded
     );
   Identity.un_id(mapped)
@@ -387,9 +385,10 @@ fn run_derived_functor(s: String) -> String {
 ```
 
 `Functor.fmap(functor)` projects the dictionary to its `fmap` value; the
-following call supplies the two carrier types (`String`, `String`), the
-mapping function, and the branded value. The leading-comma positional layout
-is Kio's multi-argument-call style.
+following type group selects the two carriers (`String`, `String`), and the
+value group supplies the mapping function and branded value as one product.
+The dictionary projection, explicit instantiation and value application are
+separate written stages. Leading commas format the multi-line value group.
 
 ## The demonstrative `main`
 
@@ -398,11 +397,11 @@ prints each result, matching the five output lines verbatim:
 
 ```kio {@hkt}
 pub fn main() {
-  print(run_box("higher-kinded box ok\n"(String)));
-  print(run_identity("higher-kinded identity ok\n"(String)));
-  print(run_box_pipeline("brand-generic pipeline over box"(String)));
-  print(run_identity_pipeline("brand-generic pipeline over identity"(String)));
-  print(run_derived_functor("derived functor over identity"(String)))
+  print(run_box("higher-kinded box ok\n"[String]));
+  print(run_identity("higher-kinded identity ok\n"[String]));
+  print(run_box_pipeline("brand-generic pipeline over box"[String]));
+  print(run_identity_pipeline("brand-generic pipeline over identity"[String]));
+  print(run_derived_functor("derived functor over identity"[String]))
 }
 ```
 
@@ -445,7 +444,7 @@ The generic operations work with another arity-1 type constructor when you
 can supply the dictionaries each operation requires. `rebrand` needs `Pure`
 and `Extract`; `pipeline` needs `Monad` and `Pure`. The two canonical wrappers
 here support all four dictionaries. An optional container, for example, cannot
-generically supply `Extract(F)`: an absent value contains no `A` to return.
+generically supply `Extract[F]`: an absent value contains no `A` to return.
 Choose the dictionaries your constructor can support, then use the matching
 generic operations.
 

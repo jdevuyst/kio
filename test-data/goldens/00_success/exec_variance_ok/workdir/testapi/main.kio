@@ -18,6 +18,6 @@ rec newtype Reclist : . | (String & Reclist) { pub constructor mk_rl; pub projec
 
 // `Wrap(Reclist)` puts `Reclist` in `Wrap`'s `[A]` slot.
 // `[A]` is covariant in `Wrap`, so this is strictly positive.
-newtype Boxed : Wrap(Reclist) { pub constructor mk_boxed; pub projector un_boxed }
+newtype Boxed : Wrap[Reclist] { pub constructor mk_boxed; pub projector un_boxed }
 
-pub fn main() { print("variance ok\n"(String)) }
+pub fn main() { print("variance ok\n"[String]) }

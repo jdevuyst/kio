@@ -9,14 +9,14 @@ import testapi(String);
 import testapi/iter(loop);
 import testapi/text as text;
 
-newtype Crumb : String & lists.List(tree.Node) & lists.List(tree.Node) {
+newtype Crumb : String & lists.List[tree.Node] & lists.List[tree.Node] {
   constructor make;
   projector open
   }
 
-pub newtype Cursor : tree.Node & lists.List(Crumb) { constructor make; projector open }
+pub newtype Cursor : tree.Node & lists.List[Crumb] { constructor make; projector open }
 
-pub fn start(root: tree.Node) -> Cursor { Cursor.make((root, lists.nil(_))) }
+pub fn start(root: tree.Node) -> Cursor { Cursor.make((root, lists.nil[_])) }
 
 pub fn focus(cursor: Cursor) -> tree.Node { let .(node, _crumbs) = Cursor.open(cursor); node }
 
@@ -28,17 +28,17 @@ fn rebuild(node: tree.Node, crumb: Crumb) -> tree.Node {
 pub fn parent(cursor: Cursor) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       Cursor.make((rebuild(node, crumb), rest)).>widen_sum
     };
-    .() { "root has no parent".>widen_sum }
+    .() { "root has no parent"[String].>widen_sum }
   }
 }
 
 pub rec(loop) fn root(cursor: Cursor) -> Cursor {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       recur root(Cursor.make((rebuild(node, crumb), rest)))
     };
     .() { cursor }
@@ -48,45 +48,45 @@ pub rec(loop) fn root(cursor: Cursor) -> Cursor {
 pub fn child(cursor: Cursor) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(tree.children(node))) {
-    .(first: tree.Node, rest: lists.List(tree.Node)) {
-      let crumb = Crumb.make((tree.name(node), lists.nil(_), rest));
+    .(first: tree.Node, rest: lists.List[tree.Node]) {
+      let crumb = Crumb.make((tree.name(node), lists.nil[_], rest));
       Cursor.make((first, lists.cons(crumb, crumbs))).>widen_sum
     };
-    .() { "focus has no children".>widen_sum }
+    .() { "focus has no children"[String].>widen_sum }
   }
 }
 
 pub fn next(cursor: Cursor) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(title, left_rev, right) = Crumb.open(crumb);
       match(lists.uncons(right)) {
-        .(sibling: tree.Node, tail: lists.List(tree.Node)) {
+        .(sibling: tree.Node, tail: lists.List[tree.Node]) {
           let context = Crumb.make((title, lists.cons(node, left_rev), tail));
           Cursor.make((sibling, lists.cons(context, rest))).>widen_sum
         };
-        .() { "no next sibling".>widen_sum }
+        .() { "no next sibling"[String].>widen_sum }
       }
     };
-    .() { "root has no siblings".>widen_sum }
+    .() { "root has no siblings"[String].>widen_sum }
   }
 }
 
 pub fn previous(cursor: Cursor) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(title, left_rev, right) = Crumb.open(crumb);
       match(lists.uncons(left_rev)) {
-        .(sibling: tree.Node, tail: lists.List(tree.Node)) {
+        .(sibling: tree.Node, tail: lists.List[tree.Node]) {
           let context = Crumb.make((title, tail, lists.cons(node, right)));
           Cursor.make((sibling, lists.cons(context, rest))).>widen_sum
         };
-        .() { "no previous sibling".>widen_sum }
+        .() { "no previous sibling"[String].>widen_sum }
       }
     };
-    .() { "root has no siblings".>widen_sum }
+    .() { "root has no siblings"[String].>widen_sum }
   }
 }
 
@@ -103,42 +103,42 @@ pub fn append_child(cursor: Cursor, title: String) -> Cursor {
 pub fn insert_before(cursor: Cursor, title: String) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(parent_title, left_rev, right) = Crumb.open(crumb);
       let context = Crumb.make((parent_title, lists.cons(tree.leaf(title), left_rev), right));
       Cursor.make((node, lists.cons(context, rest))).>widen_sum
     };
-    .() { "cannot insert a sibling of the root".>widen_sum }
+    .() { "cannot insert a sibling of the root"[String].>widen_sum }
   }
 }
 
 pub fn insert_after(cursor: Cursor, title: String) -> Cursor | String {
   let .(node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(parent_title, left_rev, right) = Crumb.open(crumb);
       let context = Crumb.make((parent_title, left_rev, lists.cons(tree.leaf(title), right)));
       Cursor.make((node, lists.cons(context, rest))).>widen_sum
     };
-    .() { "cannot insert a sibling of the root".>widen_sum }
+    .() { "cannot insert a sibling of the root"[String].>widen_sum }
   }
 }
 
 pub fn delete(cursor: Cursor) -> Cursor | String {
   let .(_node, crumbs) = Cursor.open(cursor);
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(title, left_rev, right) = Crumb.open(crumb);
       let surviving = traversal.append(traversal.reverse(left_rev), right);
       Cursor.make((tree.branch(title, surviving), rest)).>widen_sum
     };
-    .() { "cannot delete the root".>widen_sum }
+    .() { "cannot delete the root"[String].>widen_sum }
   }
 }
 
-rec(loop) fn path_ancestors(crumbs: lists.List(Crumb), suffix: String) -> String {
+rec(loop) fn path_ancestors(crumbs: lists.List[Crumb], suffix: String) -> String {
   match(lists.uncons(crumbs)) {
-    .(crumb: Crumb, rest: lists.List(Crumb)) {
+    .(crumb: Crumb, rest: lists.List[Crumb]) {
       let .(title, _left, _right) = Crumb.open(crumb);
       recur path_ancestors(rest, text.string_concat("/", text.string_concat(title, suffix)))
     };

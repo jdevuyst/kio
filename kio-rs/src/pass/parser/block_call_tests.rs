@@ -1,5 +1,5 @@
 use super::{parse, parse_lazy};
-use crate::ast::{BlockExposure, Expr, Item, NeutralItem};
+use crate::ast::{BlockExposure, CallArg, CallStage, Expr, Item, NeutralItem};
 
 #[test]
 fn block_cursor_regions_survive_incomplete_bodies_without_descriptors() {
@@ -60,6 +60,18 @@ fn block_cursor_regions_survive_incomplete_bodies_without_descriptors() {
     }
 }
 
+fn single_prefix_values(prefix: &[CallStage]) -> Vec<&Expr> {
+    assert_eq!(prefix.len(), 1, "one written value group");
+    prefix[0]
+        .args
+        .iter()
+        .map(|arg| match arg {
+            CallArg::Value(value) => value,
+            CallArg::Type(_) => panic!("expected value prefix"),
+        })
+        .collect()
+}
+
 fn function(module: &crate::ast::Module) -> &Expr {
     let Item::FnDef(def) = module.items.last().expect("function") else {
         panic!("expected final function");
@@ -103,8 +115,8 @@ fn block_ufcs_places_the_receiver_in_the_ordinary_prefix() {
         };
         assert_eq!(splice, Some(flavor));
         assert_eq!(blocks.len(), 2);
-        let actual: Vec<_> = prefix
-            .iter()
+        let actual: Vec<_> = single_prefix_values(&prefix)
+            .into_iter()
             .map(|value| match value {
                 Expr::Path { segments, .. } => segments[0].name.as_str(),
                 _ => panic!("{body}: path prefix"),
@@ -144,7 +156,12 @@ fn block_reverse_splice_follows_labels_and_uses_a_tight_receiver() {
         panic!("outer block")
     };
     assert_eq!(splice, Some(crate::ast::UfcsFlavor::ArgumentLast));
-    assert_eq!(prefix.len(), 2);
+    assert_eq!(prefix.len(), 1);
+    let values = single_prefix_values(&prefix);
+    assert_eq!(values.len(), 2);
+    for (value, name) in values.into_iter().zip(["a", "r"]) {
+        assert!(matches!(value, Expr::Path { segments, .. } if segments[0].name == name));
+    }
     assert!(matches!(
         &blocks[1].items[0],
         NeutralItem::Expression {
@@ -233,10 +250,11 @@ fn block_reverse_splice_requires_its_own_final_label_braces() {
                     panic!("fix keeps the outer call")
                 };
                 assert_eq!(*splice, Some(flavor));
+                let values = single_prefix_values(prefix);
                 let receiver = if flavor.inserts_first() {
-                    &prefix[0]
+                    values[0]
                 } else {
-                    prefix.last().unwrap()
+                    values.last().unwrap()
                 };
                 assert!(matches!(receiver, Expr::Path { segments, .. } if segments[0].name == "r"));
                 assert!(!blocks[1].elided);
@@ -346,7 +364,7 @@ fn reverse_splice_receivers_keep_their_own_block_calls() {
     assert_eq!(head.name, "f");
     assert_eq!(blocks.len(), 1);
     assert!(
-        matches!(prefix.last(), Some(Expr::BlockCall { head, blocks, .. }) if head.name == "r" && blocks.len() == 1)
+        matches!(single_prefix_values(&prefix).last(), Some(Expr::BlockCall { head, blocks, .. }) if head.name == "r" && blocks.len() == 1)
     );
 }
 
@@ -357,8 +375,8 @@ fn block_splice_receivers_cannot_supply_type_arguments() {
         "A.>>f { b }",
         "f { b }.<A",
         "f { b }.<<A",
-        "(A(B)).>f { b }",
-        "f { b }.<(A(B))",
+        "(A[B]).>f { b }",
+        "f { b }.<(A[B])",
     ] {
         let source = format!("module consumer; fn subject() {{ {body} }}");
         let error = parse(&source).expect_err("a block receiver is an ordinary value prefix");
@@ -517,7 +535,7 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
     for (body, expected) in [
         ("if (.t) { yes() } else { no() }", true),
         ("if (.f) { yes() } else { no() }", false),
-        ("choose (.t(Bool)) { yes() } fallback { no() }", true),
+        ("choose (.t[Bool]) { yes() } fallback { no() }", true),
         (
             "choose // head\n (.f) // prefix\n { yes() } fallback { no() }",
             false,
@@ -527,7 +545,9 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
         let Expr::BlockCall { prefix, blocks, .. } = expr else {
             panic!("expected a block call");
         };
-        assert!(matches!(prefix.as_slice(), [Expr::BoolLit { value, .. }] if *value == expected));
+        assert!(
+            matches!(single_prefix_values(&prefix).as_slice(), [Expr::BoolLit { value, .. }] if *value == expected)
+        );
         assert_eq!(blocks.len(), 2);
     }
     roundtrip("outer(inner (.t) { yes() } else { no() }) { body() }", "");
@@ -549,12 +569,13 @@ fn boolean_block_prefixes_use_the_existing_leading_dot_literal() {
 fn block_prefix_layout_preserves_expression_boundaries() {
     for (body, head) in [
         ("outer(value) { b() }", "outer(value) {"),
-        ("outer(f(A)(value)) { b() }", "outer(f(A)(value)) {"),
+        ("outer(f[A](value)) { b() }", "outer(f[A](value)) {"),
         ("outer(A.member(value)) { b() }", "outer(A.member(value)) {"),
         ("outer(convert(value)) { b() }", "outer(convert(value)) {"),
         ("outer(-1) { b() }", "outer(-1) {"),
         ("outer(-1.5) { b() }", "outer(-1.5) {"),
-        ("outer(()) { b() }", "outer() {"),
+        ("outer(()) { b() }", "outer(()) {"),
+        ("outer() { b() }", "outer() {"),
         ("outer { b() }", "outer {"),
         ("outer(left, right) { b() }", "outer(left, right) {"),
         ("outer((left, right)) { b() }", "outer((left, right)) {"),
@@ -589,7 +610,7 @@ fn block_prefix_layout_preserves_expression_boundaries() {
     for body in [
         "outer // prefix\n (value) { b() }",
         "outer // prefix\n (value) { b() }",
-        "outer // prefix\n (f(A)(value)) { b() }",
+        "outer // prefix\n (f[A](value)) { b() }",
         "outer // prefix\n (convert(value)) { b() }",
         "outer // prefix\n (-1.5) { b() }",
         "outer(value // tail\n) { b() }",
@@ -680,13 +701,19 @@ fn blockless_prefix_and_grouped_child_have_distinct_ownership() {
     let Expr::BlockCall { prefix, blocks, .. } = ordinary else {
         panic!("outer block");
     };
-    assert!(matches!(prefix.as_slice(), [Expr::Call { .. }]));
+    assert!(matches!(
+        single_prefix_values(&prefix).as_slice(),
+        [Expr::Call { .. }]
+    ));
     assert_eq!(blocks.len(), 1);
     let nested = roundtrip("outer(convert(value) { a() }) { b() }", "");
     let Expr::BlockCall { prefix, .. } = nested else {
         panic!("outer block");
     };
-    assert!(matches!(prefix.as_slice(), [Expr::BlockCall { .. }]));
+    assert!(matches!(
+        single_prefix_values(&prefix).as_slice(),
+        [Expr::BlockCall { .. }]
+    ));
     let elided = roundtrip(
         "choose (condition) { first() } else choose (next) { second() } else { third() }",
         "",
@@ -728,11 +755,11 @@ fn slot_chain_extent_does_not_steal_enclosing_body() {
 
 #[test]
 fn block_prefix_role_follows_only_the_callee_spine() {
-    for value in ["A", "A(B)", "A(B)(C)"] {
+    for value in ["A", "A[B]", "A[B][C]"] {
         let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         assert!(parse(&source).is_err(), "{value}");
     }
-    for value in ["f(A)", "f(A)(value)", "A.member(B)(value)", "-1", "-1.5"] {
+    for value in ["f[A]", "f[A](value)", "A.member[B](value)", "-1", "-1.5"] {
         roundtrip(&format!("outer({value}) {{ b() }}"), "");
     }
     roundtrip("outer(- value) { b() }", "import absent(op - _);");
@@ -890,19 +917,20 @@ fn neutral_binder_completion_is_source_ordered_and_block_local() {
 
 #[test]
 fn neutral_binding_and_prefix_errors_keep_source_spans() {
-    for value in ["A", "A(B)", "A(B)(C)"] {
+    for value in ["A", "A[B]", "A[B][C]"] {
         let source = format!("module consumer; fn subject() {{ outer({value}) {{ b() }} }}");
         let error = parse(&source).unwrap_err();
         assert!(matches!(error, crate::error::Error::Parse(_)));
         let diagnostic = error.diagnostic();
         assert_eq!(
             &source[diagnostic.span.start as usize..diagnostic.span.end as usize],
-            value
+            "A"
         );
+        assert_eq!(diagnostic.span.start as usize, source.find(value).unwrap());
         assert!(
             diagnostic
                 .message
-                .contains("block prefix requires a value argument")
+                .contains("expected a value operand, found a type path")
         );
     }
     let source =

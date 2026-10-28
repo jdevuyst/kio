@@ -41,7 +41,7 @@ rec(loop) fn values(
 , g: graph.Graph
 , selection: extract.Selection
 , root: I32
-, samples: Array(I32 & I32)
+, samples: Array[I32 & I32]
 , i: I32
 , agrees: Bool
 ) -> Bool {
@@ -77,7 +77,7 @@ pub fn result(g: graph.Graph, root: I32) {
   io.print(" classes=");
   number(graph.class_count(g));
   io.print("\n");
-  let .(samples: Array(I32 & I32)) = arr.array_make_empty();
+  let .(samples: Array[I32 & I32]) = arr.array_make_empty();
   arr.array_push(samples, (-2, 5));
   arr.array_push(samples, (0, 1));
   arr.array_push(samples, (3, -1));

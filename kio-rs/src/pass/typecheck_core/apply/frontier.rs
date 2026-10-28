@@ -201,15 +201,10 @@ pub(super) struct ConnectedCallFrontier<'a, 'm> {
 
 type RecOrderProposal<'m> = (&'m crate::ast::Expr<Lowered>, PendingRecOrderState<Lowered>);
 
-enum RecOrderEntry<'m, T> {
-    TypeOnly {
-        source: &'m crate::ast::Expr<Lowered>,
-    },
-    Runtime {
-        source: &'m crate::ast::Expr<Lowered>,
-        payload: T,
-        source_checked: bool,
-    },
+struct RecOrderEntry<'m, T> {
+    source: &'m crate::ast::Expr<Lowered>,
+    payload: T,
+    source_checked: bool,
 }
 
 struct RecOrderEntries<'m, T> {
@@ -244,16 +239,13 @@ impl<'m> RecOrderJournal<'m> {
         }
         match state {
             PendingRecOrderState::Pending => {}
-            PendingRecOrderState::TypeOnly => {
-                self.entries.push(RecOrderEntry::TypeOnly { source });
-            }
             PendingRecOrderState::Runtime {
                 exact_ty,
                 source_checked,
             } => {
                 let span = exact_ty.span();
                 let exact_ty = store.scoped_type(owner, exact_ty, span)?;
-                self.entries.push(RecOrderEntry::Runtime {
+                self.entries.push(RecOrderEntry {
                     source,
                     payload: exact_ty,
                     source_checked,
@@ -272,13 +264,9 @@ impl<'m> RecOrderJournal<'m> {
     /// this owner-local evidence; carrier finalization remains the sole
     /// destructive journal operation.
     fn checked_runtime_for(&self, source: &'m crate::ast::Expr<Lowered>) -> Option<ScopedType> {
-        self.entries.iter().find_map(|entry| match entry {
-            RecOrderEntry::Runtime {
-                source: candidate,
-                payload,
-                source_checked: true,
-            } if std::ptr::eq(*candidate, source) => Some(payload.clone()),
-            RecOrderEntry::TypeOnly { .. } | RecOrderEntry::Runtime { .. } => None,
+        self.entries.iter().find_map(|entry| {
+            (entry.source_checked && std::ptr::eq(entry.source, source))
+                .then(|| entry.payload.clone())
         })
     }
 
@@ -293,39 +281,24 @@ impl<'m> RecOrderJournal<'m> {
         store: &GoalStore,
         delta: &mut GoalDelta,
         tcx: &TypeCtx<'m, '_, Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         let mut retained = Vec::with_capacity(self.entries.len());
-        let mut found = false;
         let mut exact: Option<ScopedType> = None;
         let mut source_checked = false;
         for entry in std::mem::take(&mut self.entries) {
-            let matches_source = match &entry {
-                RecOrderEntry::TypeOnly { source: candidate }
-                | RecOrderEntry::Runtime {
-                    source: candidate, ..
-                } => std::ptr::eq(*candidate, source),
-            };
-            if !matches_source {
+            if !std::ptr::eq(entry.source, source) {
                 retained.push(entry);
                 continue;
             }
-            found = true;
-            if let RecOrderEntry::Runtime {
-                payload,
-                source_checked: checked,
-                ..
-            } = entry
-            {
-                source_checked |= checked;
-                if let Some(existing) = exact.as_ref() {
-                    store.constrain(delta, existing.clone(), payload, source.span(), tcx)?;
-                } else {
-                    exact = Some(payload);
-                }
+            source_checked |= entry.source_checked;
+            if let Some(existing) = exact.as_ref() {
+                store.constrain(delta, existing.clone(), entry.payload, source.span(), tcx)?;
+            } else {
+                exact = Some(entry.payload);
             }
         }
         self.entries = retained;
-        Ok(found.then_some((exact, source_checked)))
+        Ok(exact.map(|exact| (exact, source_checked)))
     }
 
     fn into_outputs(
@@ -335,23 +308,12 @@ impl<'m> RecOrderJournal<'m> {
         let mut entries = Vec::with_capacity(self.entries.len());
         let mut outputs = Vec::new();
         for entry in self.entries {
-            match entry {
-                RecOrderEntry::TypeOnly { source } => {
-                    entries.push(RecOrderEntry::TypeOnly { source });
-                }
-                RecOrderEntry::Runtime {
-                    source,
-                    payload,
-                    source_checked,
-                } => {
-                    entries.push(RecOrderEntry::Runtime {
-                        source,
-                        payload: (),
-                        source_checked,
-                    });
-                    outputs.push((payload, escape));
-                }
-            }
+            entries.push(RecOrderEntry {
+                source: entry.source,
+                payload: (),
+                source_checked: entry.source_checked,
+            });
+            outputs.push((entry.payload, escape));
         }
         (RecOrderEntries { entries }, outputs)
     }
@@ -361,19 +323,10 @@ impl<'m> RecOrderJournal<'m> {
         let mut by_source: std::collections::HashMap<*const crate::ast::Expr<Lowered>, usize> =
             std::collections::HashMap::new();
         for entry in self.entries {
-            let (source, incoming) = match entry {
-                RecOrderEntry::TypeOnly { source } => (source, PendingRecOrderState::TypeOnly),
-                RecOrderEntry::Runtime {
-                    source,
-                    payload,
-                    source_checked,
-                } => (
-                    source,
-                    PendingRecOrderState::Runtime {
-                        exact_ty: payload.into_interned_type(),
-                        source_checked,
-                    },
-                ),
+            let source = entry.source;
+            let incoming = PendingRecOrderState::Runtime {
+                exact_ty: entry.payload.into_interned_type(),
+                source_checked: entry.source_checked,
             };
             let key = source as *const crate::ast::Expr<Lowered>;
             if let Some(index) = by_source.get(&key).copied() {
@@ -406,25 +359,14 @@ impl<'m> RecOrderOutputPlan<'m> {
         let mut outputs = outputs.into_iter();
         let mut rebuilt = Vec::with_capacity(self.entries.len());
         for entry in self.entries {
-            match entry {
-                RecOrderEntry::TypeOnly { source } => {
-                    rebuilt.push(RecOrderEntry::TypeOnly { source });
-                }
-                RecOrderEntry::Runtime {
-                    source,
-                    payload: (),
-                    source_checked,
-                } => {
-                    let output = outputs.next().unwrap_or_else(|| {
-                        panic!("{boundary} recursive-order observation lost its semantic output")
-                    });
-                    rebuilt.push(RecOrderEntry::Runtime {
-                        source,
-                        payload: take_scoped(output),
-                        source_checked,
-                    });
-                }
-            }
+            let output = outputs.next().unwrap_or_else(|| {
+                panic!("{boundary} recursive-order observation lost its semantic output")
+            });
+            rebuilt.push(RecOrderEntry {
+                source: entry.source,
+                payload: take_scoped(output),
+                source_checked: entry.source_checked,
+            });
         }
         assert!(
             outputs.next().is_none(),
@@ -476,28 +418,10 @@ fn join_rec_order_state(
     span: Span,
     tcx: &TypeCtx<'_, '_, Lowered>,
 ) -> Result<PendingRecOrderState<Lowered>, Error> {
-    use PendingRecOrderState::{Pending, Runtime, TypeOnly};
+    use PendingRecOrderState::{Pending, Runtime};
 
     match (existing, incoming) {
         (Pending, state) | (state, Pending) => Ok(state),
-        (TypeOnly, TypeOnly) => Ok(TypeOnly),
-        (
-            Runtime {
-                exact_ty,
-                source_checked,
-            },
-            TypeOnly,
-        )
-        | (
-            TypeOnly,
-            Runtime {
-                exact_ty,
-                source_checked,
-            },
-        ) => Ok(Runtime {
-            exact_ty,
-            source_checked,
-        }),
         (
             Runtime {
                 exact_ty: existing,
@@ -709,6 +633,15 @@ impl<'m> FrontierFrame<'m> {
         tcx: &TypeCtx<'m, '_, Lowered>,
     ) -> Result<GatherFrame, Error> {
         let scope = store.scope_from_type_ctx(tcx);
+        self.begin_gather_in_scope(store, scope, span)
+    }
+
+    fn begin_gather_in_scope(
+        &mut self,
+        store: &mut GoalStore,
+        scope: crate::pass::typecheck_core::RigidScope,
+        span: Span,
+    ) -> Result<GatherFrame, Error> {
         let owner = store.begin_owner(
             Some(self.owner),
             scope,
@@ -1316,7 +1249,7 @@ impl<'m> FrontierFrame<'m> {
         store: &GoalStore,
         source: &'m crate::ast::Expr<Lowered>,
         tcx: &TypeCtx<'m, '_, Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         if let Some(entered) = self.entered_rec_order.as_mut() {
             entered.retain(|entry| !std::ptr::eq(entry.source, source));
         }
@@ -1569,7 +1502,7 @@ impl<'m> OrdinaryFrontier<'m> {
         &mut self,
         source: &'m crate::ast::Expr<Lowered>,
         tcx: &TypeCtx<'m, '_, Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         self.root
             .take_rec_order_observation(&self.store, source, tcx)
     }
@@ -1781,7 +1714,12 @@ impl<'m> ConnectedCallFrontier<'_, 'm> {
                 source.span(),
                 tcx,
             )?;
-            let mut gather = child.frame.begin_gather(self.store, source.span(), tcx)?;
+            let scope = self
+                .store
+                .owner_scope_snapshot(child.frame.owner, source.span())?;
+            let mut gather = child
+                .frame
+                .begin_gather_in_scope(self.store, scope, source.span())?;
             let actual = self.store.use_retained_type_at(
                 child.frame.owner,
                 gather.owner,
@@ -1868,8 +1806,25 @@ impl<'m> ConnectedCallFrontier<'_, 'm> {
             child.parent, self.frame.owner,
             "a projected header was installed through a non-parent frontier"
         );
+        let child_header = reserved.child_header().clone();
+        let parent_header =
+            self.store
+                .install_parent_header_export(&mut child.frame.delta, reserved, span, tcx)?;
+        let scope = self.store.owner_scope_snapshot(child.frame.owner, span)?;
+        let mut gather = child.frame.begin_gather_in_scope(self.store, scope, span)?;
+        let actual =
+            self.store
+                .use_retained_type_at(child.frame.owner, gather.owner, child_header, span)?;
+        let expected = self.store.use_retained_type_at(
+            self.frame.owner,
+            gather.owner,
+            parent_header.clone(),
+            span,
+        )?;
         self.store
-            .install_parent_header_export(&mut child.frame.delta, reserved, span, tcx)
+            .constrain(&mut gather.delta, actual, expected, span, tcx)?;
+        child.frame.close_gather(self.store, gather, tcx)?;
+        Ok(parent_header)
     }
 
     pub(super) fn reserve_projected_header_hole(
@@ -2008,7 +1963,7 @@ impl<'m> ConnectedCallFrontier<'_, 'm> {
         &mut self,
         source: &'m crate::ast::Expr<Lowered>,
         tcx: &TypeCtx<'m, '_, Lowered>,
-    ) -> Result<Option<(Option<ScopedType>, bool)>, Error> {
+    ) -> Result<Option<(ScopedType, bool)>, Error> {
         self.frame
             .take_rec_order_observation(self.store, source, tcx)
     }
@@ -2111,7 +2066,7 @@ mod tests {
     }
 
     #[test]
-    fn rec_order_join_is_commutative_idempotent_and_runtime_dominant() {
+    fn rec_order_join_is_commutative_idempotent_and_pending_neutral() {
         let package = package(
             "module main;
              host type N;
@@ -2125,50 +2080,7 @@ mod tests {
         let n = tcx.intern_type(&path_ty("N"));
         let alias = tcx.intern_type(&path_ty("Alias"));
 
-        assert!(matches!(
-            join_rec_order_state(
-                PendingRecOrderState::Pending,
-                PendingRecOrderState::TypeOnly,
-                sp(),
-                &tcx,
-            )
-            .expect("pending is the join identity"),
-            PendingRecOrderState::TypeOnly
-        ));
-        assert!(matches!(
-            join_rec_order_state(
-                PendingRecOrderState::TypeOnly,
-                PendingRecOrderState::Pending,
-                sp(),
-                &tcx,
-            )
-            .expect("pending is the join identity in either order"),
-            PendingRecOrderState::TypeOnly
-        ));
-        assert!(matches!(
-            join_rec_order_state(
-                PendingRecOrderState::TypeOnly,
-                PendingRecOrderState::TypeOnly,
-                sp(),
-                &tcx,
-            )
-            .expect("type-only observations are idempotent"),
-            PendingRecOrderState::TypeOnly
-        ));
-
         for state in [
-            join_rec_order_state(
-                PendingRecOrderState::TypeOnly,
-                runtime(n.clone(), false),
-                sp(),
-                &tcx,
-            ),
-            join_rec_order_state(
-                runtime(n.clone(), false),
-                PendingRecOrderState::TypeOnly,
-                sp(),
-                &tcx,
-            ),
             join_rec_order_state(
                 PendingRecOrderState::Pending,
                 runtime(n.clone(), false),
@@ -2443,7 +2355,7 @@ mod tests {
             presentations.push(display_type(joined.as_type()));
         }
         assert_eq!(presentations[0], presentations[1]);
-        assert_eq!(presentations[0], "main.Box(main.N)");
+        assert_eq!(presentations[0], "main.Box[main.N]");
     }
 
     #[test]
@@ -2853,7 +2765,7 @@ mod tests {
         fn run(
             reverse_completion: bool,
             swap_observations: bool,
-            type_only_first: bool,
+            unchecked_header_first: bool,
         ) -> (InternedType<Lowered>, bool) {
             let package = package("module main;");
             let module = &package.module("main").expect("main module").module;
@@ -2869,13 +2781,18 @@ mod tests {
             let pending = tcx.push_pending_rec_order("pending".to_owned(), &source, source.span());
             let forall_a = tcx.intern_type(&forall_identity("First"));
             let forall_b = tcx.intern_type(&forall_identity("Second"));
+            let forall_identity_header = tcx.intern_type(&forall_identity("Header"));
             let (mut frontier, ()) =
                 OrdinaryFrontier::begin_root_with(sp(), &tcx, |_store, _owner| Ok(()))
                     .expect("begin root");
-            if type_only_first {
+            if unchecked_header_first {
                 frontier
-                    .stage_rec_order(&source, PendingRecOrderState::TypeOnly, &tcx)
-                    .expect("stage leading TypeOnly observation");
+                    .stage_rec_order(
+                        &source,
+                        runtime(forall_identity_header.clone(), false),
+                        &tcx,
+                    )
+                    .expect("stage leading unchecked runtime header");
             }
 
             let (first_reservation, ()) = frontier
@@ -2949,10 +2866,14 @@ mod tests {
                         .is_empty()
                 );
             }
-            if !type_only_first {
+            if !unchecked_header_first {
                 frontier
-                    .stage_rec_order(&source, PendingRecOrderState::TypeOnly, &tcx)
-                    .expect("stage trailing TypeOnly observation");
+                    .stage_rec_order(
+                        &source,
+                        runtime(forall_identity_header.clone(), false),
+                        &tcx,
+                    )
+                    .expect("stage trailing unchecked runtime header");
             }
             frontier
                 .close_root_with(Vec::new(), &mut tcx, |outputs, _tcx| {
@@ -2980,6 +2901,64 @@ mod tests {
         }));
         assert_eq!(presentations[0].0, display_type(&forall_identity("A")));
         assert_eq!(presentations[0].1, Span::new(50, 51));
+    }
+
+    #[test]
+    fn header_export_gather_retains_the_child_lexical_scope() {
+        let package = package("module main;");
+        let module = &package.module("main").expect("main module").module;
+        let env = super::super::super::ModuleEnv::build(module, None, None, Some(&package))
+            .expect("module environment");
+        let mut elaborations = Elaborations::new();
+        let mut tcx = TypeCtx::new(&env, &mut elaborations);
+        tcx.push_type_param("A", Span::new(10, 11));
+        let parent_mark = tcx.save();
+        let (mut frontier, ()) =
+            OrdinaryFrontier::begin_root_with(sp(), &tcx, |_store, _owner| Ok(()))
+                .expect("begin root");
+        tcx.push_type_param("B", Span::new(12, 13));
+        let (reservation, ()) = frontier
+            .reserve_root_child_with(
+                GoalOwnerKind::LambdaFrontier,
+                sp(),
+                &tcx,
+                |_store, _owner| Ok(()),
+            )
+            .expect("reserve lexical child");
+        let mut child = frontier
+            .open_reserved_child(reservation)
+            .expect("open lexical child");
+        let header = frontier
+            .store
+            .scoped_type(
+                child.frame.owner,
+                InternedType::fresh_canonical(Type::Unit {
+                    meta: Meta::new(sp()),
+                }),
+                sp(),
+            )
+            .expect("retained header");
+        tcx.restore(parent_mark);
+        let mut connected = ConnectedCallFrontier {
+            goal_owner: frontier.root.owner,
+            store: &mut frontier.store,
+            frame: &mut frontier.root,
+        };
+        let reserved = connected
+            .reserve_parent_header_export(&child, header, sp())
+            .expect("reserve header from lexical child");
+        connected
+            .install_parent_header_export(&mut child, reserved, sp(), &tcx)
+            .expect("the relation stays in its retained scope after ambient restoration");
+        connected
+            .close_child(child, Vec::new(), &tcx)
+            .expect("close lexical child");
+        frontier
+            .close_root_with(Vec::new(), &mut tcx, |outputs, _| {
+                assert!(outputs.is_empty());
+                Ok(())
+            })
+            .expect("close root");
     }
 
     #[test]
@@ -3098,7 +3077,7 @@ mod tests {
             id: crate::ast::ExpressionOccurrence::fresh().key(),
             span: Span::new(74, 75),
         };
-        child.publication_mut().mark_value_at_type_slot(marker, 0);
+        child.publication_mut().record_call_split(marker, 0);
 
         let outputs = frontier
             .close_prepared_root_child(
@@ -3117,7 +3096,9 @@ mod tests {
             PendingRecOrderState::Pending
         ));
         assert!(
-            !tcx.elaborations.is_value_at_type_slot("main", marker.id, 0),
+            !tcx.elaborations
+                .call_splits_for("main", marker.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "child close must not publish before root commit"
         );
 
@@ -3130,7 +3111,11 @@ mod tests {
         let (exact_ty, source_checked) = expect_runtime(tcx.pending_rec_order_state(pending));
         assert_eq!(display_type(exact_ty.as_type()), "main.N");
         assert!(source_checked);
-        assert!(tcx.elaborations.is_value_at_type_slot("main", marker.id, 0));
+        assert!(
+            tcx.elaborations
+                .call_splits_for("main", marker.id)
+                .is_some_and(|splits| splits.contains(&0))
+        );
     }
 
     #[test]
@@ -3190,7 +3175,7 @@ mod tests {
             id: crate::ast::ExpressionOccurrence::fresh().key(),
             span: Span::new(82, 83),
         };
-        child.publication_mut().mark_value_at_type_slot(marker, 0);
+        child.publication_mut().record_call_split(marker, 0);
         tcx.restore(parent_mark);
 
         let error = frontier
@@ -3213,7 +3198,9 @@ mod tests {
             PendingRecOrderState::Pending
         ));
         assert!(
-            !tcx.elaborations.is_value_at_type_slot("main", marker.id, 0),
+            !tcx.elaborations
+                .call_splits_for("main", marker.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "a rejected prepared child must not publish metadata"
         );
     }
@@ -3260,7 +3247,7 @@ mod tests {
             id: crate::ast::ExpressionOccurrence::fresh().key(),
             span: Span::new(5, 6),
         };
-        child.publication_mut().mark_value_at_type_slot(marker, 0);
+        child.publication_mut().record_call_split(marker, 0);
         tcx.restore(parent_mark);
 
         let error = match frontier.close_root_child(child, Vec::new(), &tcx) {
@@ -3280,7 +3267,9 @@ mod tests {
             PendingRecOrderState::Pending
         ));
         assert!(
-            !tcx.elaborations.is_value_at_type_slot("main", marker.id, 0),
+            !tcx.elaborations
+                .call_splits_for("main", marker.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "a rejected child close must not publish its metadata"
         );
     }
@@ -3326,7 +3315,7 @@ mod tests {
         conflict
             .root_publication_mut()
             .2
-            .mark_value_at_type_slot(conflict_marker, 0);
+            .record_call_split(conflict_marker, 0);
         conflict
             .stage_rec_order(&conflict_source, runtime(n.clone(), false), &tcx)
             .expect("stage first conflicting observation");
@@ -3348,7 +3337,8 @@ mod tests {
         ));
         assert!(
             !tcx.elaborations
-                .is_value_at_type_slot("main", conflict_marker.id, 0),
+                .call_splits_for("main", conflict_marker.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "a fold failure must not commit publication metadata"
         );
 
@@ -3362,7 +3352,7 @@ mod tests {
         callback
             .root_publication_mut()
             .2
-            .mark_value_at_type_slot(callback_marker, 0);
+            .record_call_split(callback_marker, 0);
         callback
             .stage_rec_order(&callback_source, runtime(n.clone(), true), &tcx)
             .expect("stage callback observation");
@@ -3377,7 +3367,8 @@ mod tests {
         ));
         assert!(
             !tcx.elaborations
-                .is_value_at_type_slot("main", callback_marker.id, 0),
+                .call_splits_for("main", callback_marker.id)
+                .is_some_and(|splits| splits.contains(&0)),
             "a callback failure must not commit publication metadata"
         );
 
@@ -3391,7 +3382,7 @@ mod tests {
         success
             .root_publication_mut()
             .2
-            .mark_value_at_type_slot(success_marker, 0);
+            .record_call_split(success_marker, 0);
         success
             .stage_rec_order(&callback_source, runtime(n, true), &tcx)
             .expect("stage successful observation");
@@ -3405,7 +3396,8 @@ mod tests {
         assert!(source_checked);
         assert!(
             tcx.elaborations
-                .is_value_at_type_slot("main", success_marker.id, 0)
+                .call_splits_for("main", success_marker.id)
+                .is_some_and(|splits| splits.contains(&0))
         );
         assert!(matches!(
             tcx.pending_rec_order_state(conflict_pending),

@@ -11,7 +11,7 @@ import testapi/io as io;
 
 pub fn main() {
   match(input.consume()) {
-    .(state: codec.Encoder, original: lists.List(I32)) {
+    .(state: codec.Encoder, original: lists.List[I32]) {
       let runs = codec.finish(state);
       report.encoding(state, runs);
       report.roundtrip(original, decode.samples(runs))

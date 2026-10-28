@@ -110,11 +110,11 @@ The multi-line form puts a leading comma on every item, including the first:
 
 ```kio
 fn merge_sorted_runs[A](
-, left_run: List(A)
-, right_run: List(A)
+, left_run: List[A]
+, right_run: List[A]
 , compare_elements: A -> A -> Bool
 , size_limit: I32
-) -> List(A) { left_run }
+) -> List[A] { left_run }
 ```
 
 - The opener (`(`, `<`, `{`) is the **last token on the introducing line** — same line as the function name, type name, etc.
@@ -124,11 +124,11 @@ fn merge_sorted_runs[A](
 - The continuation after the closer (`-> R`, `{ … }`, `;`) follows on the closer's line.
 
 ```kio
-fn filter[A](keep: A -> Bool, xs: List(A)) -> List(A) {
+fn filter[A](keep: A -> Bool, xs: List[A]) -> List[A] {
   reverse(fold_list(
   , xs
-  , nil(A, ())
-  , .(carry: List(A), x: A) -> List(A) {
+  , nil[A](())
+  , .(carry: List[A], x: A) -> List[A] {
       if(keep(x)) { cons(x, carry) } else { carry }
     }
   ))
@@ -145,12 +145,16 @@ A1 applies to every comma-separated list that remains comma-separated in canonic
 - Product-valued expressions, including preassembled products of `match` clauses.
 - Tuple literals (`(a, b, c)`).
 - Call argument lists (`f(a, b, c)`).
-- Type-application argument lists at use sites (`Foo(A, B)`).
 - Label construction in expression position (`{f = e1, g = e2}`).
 - Label access and update postfix lists (`x.?{f, g}` / `x.!{f = e1, g = e2}`).
 - Row-let statement lists (`let .({f, g as payload}) = row;`).
 
-Type-binder groups are the exception: source may write `[A, B]`, but canonical output always prints adjacent singleton binders (`[A][B]`). This applies in signatures, function types, `type` / `newtype` heads, and the named-form `labels T[A][B] = …` head. Function-type value groups are not comma lists; product domains use `&` (`(A & B) -> C`).
+Type and binder brackets are not comma lists. Each contains exactly one entry,
+so multiple arguments or binders use adjacent singleton groups (`[A][B]`).
+Comma-list and empty bracket forms are rejected, in both definitions and
+applications, rather than split by formatting. This applies to callable
+signatures, prefix-forall types, `type` / `newtype` / named `labels` heads,
+type constructors, value instantiation and literal-carrier annotations. Function-type value groups are not comma lists; product domains use `&` (`(A & B) -> C`).
 
 An explicit label-reuse marker keeps the canonical spelling `name: _` (or `name[A]: _` with its universal header). Formatting never expands `_` back into the original payload and never treats it as a new declaration.
 
@@ -276,6 +280,18 @@ let values =
   !];
 ```
 
+## Call stages
+
+Every type or binder bracket contains exactly one entry: `f[A](a)[B](b)`,
+`Map[K][V]`, and `fn f[A][B]`. Empty brackets and comma-separated type or
+binder lists are rejected before formatting; the formatter never splits an
+admitted list into singleton groups. Each value group applies one Function
+layer; formatting never moves values into another group or changes
+`f(a,b)` into a call on a returned function. Normal comma-list layout applies
+to value groups. A long type may break within its one bracket group, retaining
+its own structural grouping. Literal and literal-alias carriers use the same
+singleton brackets, such as `42[I32]` and `count[I32]`.
+
 ## UFCS chains
 
 A right-leaning UFCS chain `receiver.>f(...).>>g(...).>h(...)` is the canonical surface form for chained projector / callable application. The layout is the value-position analogue of [§ Type-operator chains](#type-operator-chains) — width-driven, all-or-nothing, with the dot-splice operator (`.>` or `.>>`) leading each broken line.
@@ -317,7 +333,12 @@ An ordinary call of a UFCS result keeps its grouping: `(vault.>Vault.open)()`, `
 
 **Left-call splices** preserve their spelling. With no existing arguments, `f.<x` and `f.<<x` emit without an empty `()`; with existing arguments, `f(a).<x` and `f(a).<<x` keep the call on the left. If the inserted right-hand value is compound enough that dropping grouping would change the parse, `kio fmt` emits parentheses, for example `f.<(x.>g)`.
 
-**Macro-form preservation.** Blockless macro calls can use the standalone prefix form (`iso(r, T)`, `fit(r, T)`, `checked(r, T)`) or a dot-splice form that builds the same argument list (`r.>iso(T)`, `r.>>fit`, `iso(T).<<r`, `r.>checked(T)`). `kio fmt` preserves that user-authored spelling; it does not rewrite between prefix and dot-splice forms. Right-callee forms with no written arguments remain argless (`r.>iso`), and nonempty argument lists keep their parentheses (`r.>iso(T)`).
+**Macro-form preservation.** Blockless source-to-target macros can use a
+prefix form such as `iso(r)[T]` or a receiver form such as `(r.>iso)[T]`.
+The returned type stage stays after the source value stage; formatter output
+never moves it onto the callee before receiver insertion. `kio fmt` preserves
+prefix versus splice spelling and authored type-group boundaries. Omitted
+targets remain omitted, as in `iso(r)` or `r.>iso`.
 
 Block calls preserve their direct or spliced spelling in all four directions,
 using the block-prefix and arm-layout rules above. A reverse splice stays
@@ -571,7 +592,7 @@ The lexer accepts a generous input form for literals; the formatter normalizes t
   and `42e-0`. The formatter does not expand them to integer digits or insert
   the decimal point required for floating-point spelling.
 - **Integer and float digits** — emitted as the lexer-stripped form (no separators). `1_000_000` parses to digits `"1000000"` and re-emits as `1000000`.
-- **Literal annotations** — a literal's optional `(Type)` annotation (the `LiteralCall` form) is emitted abutting the literal with no interior space: `42(I32)`, never `42 (I32)`. An unannotated literal stays unannotated — the formatter never adds an annotation a literal didn't carry.
+- **Literal annotations** — a literal's optional `[Type]` annotation (the `LiteralCall` form) is emitted abutting the literal with no interior space: `42[I32]`, never `42 [I32]`. An unannotated literal stays unannotated — the formatter never adds an annotation a literal didn't carry.
 
 Formatting preserves integer versus float category. It does not insert a
 decimal point because of a type annotation, expected type or visible role-bearing type.
@@ -607,7 +628,10 @@ Within an expression body, comments preserve through a `kio fmt` round-trip at t
 - **Inside a call's argument list** — comments captured before each argument's first token (or before the leading `,` separator). Any comment forces the call into the multi-line A1 layout, with the comment on its own line above its argument's `, arg` line.
 - **Inside a tuple literal** — same per-element capture as call arguments. Any comment forces the tuple into the multi-line A1 layout. Comment preservation applies to source formatting, not to comments inside surface forms eliminated from emitted Kio'.
 - **Inside a label-value `{f = e, g = e'}`** — same per-label capture as tuple elements; the same surface-form comment lifetime applies.
-- **Inside a type-application argument list** — comments above each type-arg in `Foo(A, B)` or `mk_foo(A, B, x)`. Forces multi-line A1 layout when any entry has a comment.
+- **Inside a type or binder bracket** — comments remain with its single entry.
+  Multiple type arguments use separate brackets, never a leading-comma list.
+  A comment that requires a line break breaks that bracket without moving the
+  type across its application boundary.
 - **Inside a `labels { f: X, g: Y }` block** — comments above any label entry; the same surface-form comment lifetime applies.
 - **Trailing the last element of a comma list, before the `)` / `}`** — a comment after the final argument / tuple element / label / row-let binder emits on its own line below that element, inside the broken A1 layout, before the closer. The list breaks to multi-line because a comment can't sit inline before the closer.
 - **Dangling at the end of a block, before `}`** — a comment after the body's last token emits on its own line at the body indent, before the closing `}`, forcing the block to multi-line layout.

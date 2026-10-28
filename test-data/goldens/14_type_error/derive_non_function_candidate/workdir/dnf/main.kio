@@ -5,12 +5,12 @@ import macros/derive(macro derive);
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;
   pub projector bind
   }
 
-fn box_monad() -> Monad(Box) {
+fn box_monad() -> Monad[Box] {
   Monad.mk_monad(.[A][B](m, k) { k(Box.un_box(m)) })
 }
 
@@ -18,6 +18,6 @@ fn box_monad() -> Monad(Box) {
 // `I32` literal, not a rule — its signature can't be read as an
 // inference rule, so it is a type error pointing at the offending
 // element (the `derive_non_function_candidate` condition).
-fn bad() -> Monad(Box) { derive((box_monad, 42(I32)), Monad(Box)) }
+fn bad() -> Monad[Box] { derive((box_monad, 42[I32]))[Monad[Box]] }
 
 pub fn main() { () }

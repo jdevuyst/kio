@@ -1,0 +1,76 @@
+module testapi/main;
+
+import host_descriptor(Host_type, bool_role, i32_role, mk_host_id, mk_role_host_type);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/spine_macros(macro widen_sum);
+import parse(P_err, P_ok, Type_scope, parse_str, perr_message);
+import testapi(I32, String);
+import testapi/io(print);
+import testapi/text(string_eq);
+import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Toks, un_token, un_toks);
+
+fn resolve_host_type(tokens: Toks, _types: Type_scope) -> Host_type | String {
+  match(un_toks(tokens)) {
+    (
+    , .(token: Token, _position: I32, _tail: Toks) {
+        match(un_token(token)) {
+          (
+          , .(word: Tk_word) {
+              let name = Tk_word.get(word);
+              if(string_eq(name, "Flag")) {
+                widen_sum(mk_role_host_type(mk_host_id("guest", name), bool_role()))[| Host_type
+                | String]
+              } else if(string_eq(name, "I32")) {
+                widen_sum(mk_role_host_type(mk_host_id("guest", name), i32_role()))[| Host_type
+                | String]
+              } else {
+                widen_sum("unknown host type"[String])[Host_type | String]
+              }
+            }
+          , .(_number: Tk_num) { widen_sum("expected host type"[String])[Host_type | String] }
+          , .(_string: Tk_str) { widen_sum("expected host type"[String])[Host_type | String] }
+          , .(_punct: Tk_punct) { widen_sum("expected host type"[String])[Host_type | String] }
+          )
+        }
+      }
+    , .(_empty: .) { widen_sum("missing host type"[String])[Host_type | String] }
+    )
+  }
+}
+
+fn report(label: String, source: String) {
+  print(label);
+  match(parse_str(source, resolve_host_type)) {
+    (
+    , .(_parsed: P_ok) { print("parsed") }
+    , .(error: P_err) { print(perr_message(P_err.get(error))) }
+    )
+  };
+  print("\n")
+}
+
+pub fn main() {
+  report(
+  , "nested head: "
+  , "((__if_then_else__))[Flag][I32](.t[Flag], .() { 31[I32] }, .() { 99[I32] "
+    "})"
+  );
+  report(
+  , "split groups: "
+  , "((__if_then_else__[Flag]))[I32](.f[Flag], .() { 99[I32] }, .() { 32[I32] "
+    "})"
+  );
+  report(
+  , "group in argument: "
+  , "__pair__[I32][I32](((__if_then_else__))[Flag][I32](.t[Flag], .() { "
+    "33[I32] }, .() { 99[I32] }), 34[I32])"
+  );
+  report(
+  , "lexical scope: "
+  , ".[A](value: A) { ((__if_then_else__))[Flag][A](.t[Flag], .() { value }, "
+    ".() { value }) }"
+  );
+  report("call delimiter: ", "__pair__[I32][I32](__if_then_else__)[Flag]");
+  report("wrong role: ", "(__if_then_else__)[I32][I32](1[I32], .() { 31[I32] }, .() { 99[I32] })")
+}

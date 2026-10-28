@@ -28,6 +28,6 @@ newtype B : . { pub constructor mk_b; pub projector un_b }
 // compiler off this case under --prime-only.
 fn foo[A](v1: A)[B](v2: B) { () }
 
-fn flat() { foo(A, A.mk_a(()), B, B.mk_b(())) }
+fn flat() { foo[A](A.mk_a(()))[B](B.mk_b(())) }
 
-fn curried() { foo(A, A.mk_a(()))(B, B.mk_b(())) }
+fn curried() { foo[A](A.mk_a(()))[B](B.mk_b(())) }

@@ -6,5 +6,5 @@ import ifnobool(Str);
 import ifnobool/qualified as qualified;
 
 fn pick(c: qualified.Bool, a: Str, b: Str) -> Str {
-  __if_then_else__(qualified.Bool, Str, c, .() -> Str { a }, .() -> Str { b })
+  __if_then_else__[qualified.Bool][Str](c, .() -> Str { a }, .() -> Str { b })
 }

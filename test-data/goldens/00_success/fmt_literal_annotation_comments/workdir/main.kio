@@ -2,7 +2,7 @@ module main;
 
 fn integer() {
   915 // before annotation
-  ( // inside annotation
+  [ // inside annotation
   I16 // after annotation
-  )
+  ]
 }

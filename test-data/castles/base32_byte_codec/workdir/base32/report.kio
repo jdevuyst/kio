@@ -144,9 +144,9 @@ fn summary(ok: I32, refusals: I32, bytes: I32) -> String {
 
 rec(loop) {
   /// Render every fixture in order, then the closing tally.
-  pub fn render(fixtures: list.List(Fixture)) -> String { recur walk(fixtures, 1, "", 0, 0, 0) };
+  pub fn render(fixtures: list.List[Fixture]) -> String { recur walk(fixtures, 1, "", 0, 0, 0) };
   fn walk(
-  , fixtures: list.List(Fixture)
+  , fixtures: list.List[Fixture]
   , index: I32
   , done: String
   , ok: I32
@@ -155,7 +155,7 @@ rec(loop) {
   ) -> String {
     match(fixtures.>list.List.un_list) {
       (
-      , .(fixture: Fixture, rest: list.List(Fixture)) {
+      , .(fixture: Fixture, rest: list.List[Fixture]) {
           let .(block: String, hit: I32, miss: I32, recovered: I32) = entry_for(index, fixture);
           recur walk(
           , rest

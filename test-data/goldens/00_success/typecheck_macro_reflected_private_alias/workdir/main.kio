@@ -1,0 +1,13 @@
+module main;
+
+import generated(macro captured_type_app);
+import types as real;
+
+fn generated_alias_type_app(value: real.Actual) -> real.Actual {
+  captured_type_app[real.Actual](())(value)
+}
+
+equiv generated_alias_type_app_matches_direct_identity() {
+  .(value: real.Actual) -> real.Actual { captured_type_app[real.Actual](())(value) };
+  .(value: real.Actual) -> real.Actual { real.polymorphic[real.Actual](value) }
+}

@@ -380,7 +380,7 @@ mod tests {
         check_projection(&ty, "[A] A -> [A] A -> A");
         check_projection(&forall("Renamed", "A_n2", path("Renamed")), "[A_n2] A_n2");
         let applied = Type::synth_path(vec!["Renamed".into()], vec![path("Free")], Span::new(0, 1));
-        check_projection(&forall("Renamed", "F", applied), "[F] F(Free)");
+        check_projection(&forall("Renamed", "F", applied), "[F] F[Free]");
     }
 
     #[test]
@@ -403,7 +403,7 @@ mod tests {
             vec![path("Raw")],
             Span::new(0, 1),
         );
-        check_projection(&forall("Raw", "A", nominal), "[A] provider.A(A)");
+        check_projection(&forall("Raw", "A", nominal), "[A] provider.A[A]");
     }
 
     #[test]

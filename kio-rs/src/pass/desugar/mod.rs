@@ -36,11 +36,7 @@
 //! table and the substitute pass swaps the recorded form into the
 //! AST at the [`Lowered`] → [`Prime`] boundary.
 //!
-//! [`Expr::Ufcs`] also survives this boundary. Dot-splice calls need the
-//! resolved callee type to decide which value-argument slot the receiver
-//! fills, so the typer records their equivalent prefix call or
-//! user-macro expansion and substitution erases the node before
-//! Prime.
+//! UFCS is normalized to written ordinary application stages before this boundary.
 //!
 //! The per-variant clone-and-recurse boilerplate lives on the
 //! [`crate::pass::desugar::walk::SurfaceToDesugared`] visitor trait; this
@@ -63,7 +59,7 @@ use escape::{RecEscapeContext, RecEscapePlan};
 pub mod walk;
 
 use crate::ast::{
-    CallArg, Desugared, ElaboratorCall, ElaboratorKind, Equiv, Expr, FieldAccessLabel,
+    CallArg, CallStage, Desugared, ElaboratorCall, ElaboratorKind, Equiv, Expr, FieldAccessLabel,
     FieldUpdateLabel, FnDef, Import, ImportKind, Item, LabelValueLabel, LiteralAlias,
     LiteralAliasValue, Meta, Module, ModulePath, Newtype, NodeId, Op, PackageFile, Param,
     ParamPattern, ParamPatternElem, PathSegment, PlaceholderState, RecCallMode, RecCallSyntax,
@@ -605,7 +601,71 @@ fn rec_state_arm_types(ctx: &RecLoweringCtx) -> Vec<Type<Desugared>> {
         .collect()
 }
 
-type RecCallParts = (Vec<Type<Desugared>>, Vec<Expr<Surface>>);
+struct RecCallParts {
+    type_args: Vec<Type<Desugared>>,
+    packets: Vec<Expr<Surface>>,
+    packet_types: Vec<Type<Desugared>>,
+    result_stage_count: usize,
+}
+
+fn rec_result_application(
+    modes: Vec<RecCallMode>,
+    callee: PathSegment,
+    mut stages: Vec<CallStage<Surface>>,
+    syntax: RecCallSyntax,
+    span: Span,
+    result_stage_count: usize,
+) -> Expr<Surface> {
+    let result_stages = stages.split_off(stages.len() - result_stage_count);
+    let header_end = stages
+        .last()
+        .map_or(callee.span.end, |stage| stage.meta.span.end);
+    let mut value = Expr::RecCall {
+        occurrence: Default::default(),
+        modes,
+        callee,
+        stages,
+        meta: Meta::new(Span::new(span.start, header_end)),
+        ext: syntax,
+    };
+    for stage in result_stages {
+        value = Expr::Call {
+            occurrence: Default::default(),
+            diagnostic: Default::default(),
+            callee: Box::new(value),
+            args: stage.args,
+            source_trivia: stage.source_trivia,
+            meta: Meta::new(Span::new(span.start, stage.meta.span.end)),
+            ext: (),
+        };
+    }
+    value
+}
+
+fn rec_member_call_signature(member: &RecMemberPlan) -> Signature<Desugared> {
+    let mut types = member.type_params.iter();
+    let mut values = member.value_params.iter();
+    let params = member
+        .wrapper_sig
+        .params
+        .iter()
+        .map(|param| match param {
+            SignatureParam::Type(_) => SignatureParam::Type(
+                types
+                    .next()
+                    .expect("wrapper preserves member type binders")
+                    .clone(),
+            ),
+            SignatureParam::Value(_) => SignatureParam::Value(
+                values
+                    .next()
+                    .expect("wrapper preserves member value bindings")
+                    .clone(),
+            ),
+        })
+        .collect();
+    Signature::from_parts(params, member.wrapper_sig.groups.clone())
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RecCallPosition {
@@ -1065,13 +1125,56 @@ fn deferred_tail_tree_has_required(expr: &Expr<Surface>) -> bool {
     }
 }
 
+fn stage_args<P: crate::ast::Phase>(stages: &[CallStage<P>]) -> impl Iterator<Item = &CallArg<P>> {
+    stages.iter().flat_map(|stage| stage.args.iter())
+}
+
+fn deferred_tail_stages_have_required(stages: &[CallStage<Surface>]) -> bool {
+    stages
+        .iter()
+        .any(|stage| deferred_tail_args_have_required(&stage.args))
+}
+
+/// Preserve written stage cuts while the recursive CPS visitor maps operands
+/// in evaluation order. These lengths never select application typing slots.
+fn take_stage_operands<P: crate::ast::Phase>(
+    stages: Vec<CallStage<P>>,
+) -> (Vec<CallArg<P>>, Vec<(usize, Span)>) {
+    let mut args = Vec::new();
+    let mut layout = Vec::with_capacity(stages.len());
+    for stage in stages {
+        layout.push((stage.args.len(), stage.meta.span));
+        args.extend(stage.args);
+    }
+    (args, layout)
+}
+
+fn restore_stage_operands<P: crate::ast::Phase>(
+    args: Vec<CallArg<P>>,
+    layout: Vec<(usize, Span)>,
+) -> Vec<CallStage<P>> {
+    let mut args = args.into_iter();
+    let stages = layout
+        .into_iter()
+        .map(|(count, span)| CallStage {
+            occurrence: Default::default(),
+            args: (0..count)
+                .map(|_| args.next().expect("CPS preserves each stage operand"))
+                .collect(),
+            source_trivia: Default::default(),
+            meta: Meta::new(span),
+        })
+        .collect();
+    assert!(
+        args.next().is_none(),
+        "CPS cannot create a surplus stage operand"
+    );
+    stages
+}
+
 fn deferred_tail_args_have_required(args: &[CallArg<Surface>]) -> bool {
     args.iter()
         .any(|arg| matches!(arg, CallArg::Value(value) if deferred_tail_tree_has_required(value)))
-}
-
-fn deferred_tail_ufcs_has_required(receiver: &Expr<Surface>, args: &[CallArg<Surface>]) -> bool {
-    deferred_tail_tree_has_required(receiver) || deferred_tail_args_have_required(args)
 }
 
 fn rec_group_uses_mode(group: &RecGroup<Surface>, mode: RecCallMode) -> bool {
@@ -1086,9 +1189,9 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
         crate::ast::Expr::BlockCall { .. } => {
             unreachable!("trailing blocks are projected before desugaring")
         }
-        Expr::RecCall { modes, args, .. } => {
+        Expr::RecCall { modes, stages, .. } => {
             RecCallMode::is_effective(modes, mode)
-                || args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode))
+                || stage_args(stages).any(|arg| call_arg_uses_rec_mode(arg, mode))
         }
         Expr::Call { callee, args, .. } => {
             expr_uses_rec_mode(callee, mode)
@@ -1110,15 +1213,14 @@ fn expr_uses_rec_mode(expr: &Expr<Surface>, mode: RecCallMode) -> bool {
         }
         Expr::Elaborator { call, .. } => elaborator_call_uses_rec_mode(call, mode),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { args, .. } => args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode)),
+        Expr::UserMacro { stages, .. } => {
+            stage_args(stages).any(|arg| call_arg_uses_rec_mode(arg, mode))
+        }
         Expr::LabelValue { labels, .. } => labels
             .iter()
             .any(|label| expr_uses_rec_mode(&label.value, mode)),
         Expr::Tuple { items, .. } => items.iter().any(|item| expr_uses_rec_mode(item, mode)),
-        Expr::Ufcs { receiver, args, .. } => {
-            expr_uses_rec_mode(receiver, mode)
-                || args.iter().any(|arg| call_arg_uses_rec_mode(arg, mode))
-        }
+        crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { slots, .. } => {
                 slots.iter().any(|slot| expr_uses_rec_mode(slot, mode))
@@ -1238,15 +1340,15 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
                 collect_surface_call_arg_names(arg, names);
             }
         }
-        Expr::RecCall { callee, args, .. } => {
+        Expr::RecCall { callee, stages, .. } => {
             names.insert(callee.name.clone());
-            for arg in args {
+            for arg in stage_args(stages) {
                 collect_surface_call_arg_names(arg, names);
             }
         }
-        Expr::UserMacro { name, args, .. } => {
+        Expr::UserMacro { name, stages, .. } => {
             names.insert(name.clone());
-            for arg in args {
+            for arg in stage_args(stages) {
                 collect_surface_call_arg_names(arg, names);
             }
         }
@@ -1328,18 +1430,7 @@ fn collect_surface_expr_names(expr: &Expr<Surface>, names: &mut std::collections
                 }
             }
         },
-        Expr::Ufcs {
-            receiver,
-            callee_segments,
-            args,
-            ..
-        } => {
-            collect_surface_expr_names(receiver, names);
-            collect_surface_path_head(callee_segments.iter().map(PathSegment::as_str), names);
-            for arg in args {
-                collect_surface_call_arg_names(arg, names);
-            }
-        }
+        crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { slots, .. } => {
                 for slot in slots {
@@ -2640,11 +2731,13 @@ impl DesugarVisitor {
             Expr::RecCall {
                 modes,
                 callee,
-                args,
+                stages,
                 meta,
                 ext,
                 ..
-            } => self.transform_rec_call(modes, callee, args, meta.span, ext, current_member, ctx),
+            } => {
+                self.transform_rec_call(modes, callee, stages, meta.span, ext, current_member, ctx)
+            }
             Expr::RowLet {
                 entries,
                 value,
@@ -2734,21 +2827,20 @@ impl DesugarVisitor {
                 })
             }
             Expr::UserMacro {
-                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
-                args,
+                stages,
                 meta,
                 ext,
-            } if deferred_tail_args_have_required(&args)
-                || args.iter().any(call_arg_contains_rec) =>
+            } if deferred_tail_stages_have_required(&stages)
+                || stage_args(&stages).any(call_arg_contains_rec) =>
             {
                 let continuation = self.rec_initial_cont(current_member, ctx);
                 self.transform_deferred_tail_user_macro(
                     name,
                     form,
-                    args,
+                    stages,
                     meta,
                     ext,
                     current_member,
@@ -2758,38 +2850,7 @@ impl DesugarVisitor {
                     ctx,
                 )
             }
-            Expr::Ufcs {
-                source_trivia: _,
-                occurrence: _,
-                receiver,
-                callee_segments,
-                callee_span,
-                args,
-                flavor,
-                macro_call: Some(macro_call),
-                meta,
-                ext,
-            } if deferred_tail_ufcs_has_required(&receiver, &args)
-                || expr_contains_rec_call(&receiver)
-                || args.iter().any(call_arg_contains_rec) =>
-            {
-                let continuation = self.rec_initial_cont(current_member, ctx);
-                self.transform_deferred_tail_ufcs(
-                    *receiver,
-                    callee_segments,
-                    callee_span,
-                    args,
-                    flavor,
-                    macro_call,
-                    meta,
-                    ext,
-                    current_member,
-                    RecCpsContinuation::ordinary(continuation),
-                    Some(current_member.ret.clone()),
-                    RecCallPosition::Tail,
-                    ctx,
-                )
-            }
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             other => {
                 self.validate_no_bad_rec(&other, ctx)?;
                 let value = self.walk_expr(other)?;
@@ -2808,7 +2869,7 @@ impl DesugarVisitor {
         &mut self,
         name: String,
         form: crate::ast::UserMacroCallForm,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         meta: Meta<Surface>,
         ext: NodeId,
         current_member: &RecMemberPlan,
@@ -2821,7 +2882,8 @@ impl DesugarVisitor {
         let continuation_name = rec_tmp_name("tail_cont", span, 0);
         let continuation_ref =
             RecCpsContinuation::ordinary(path_expr(continuation_name.clone(), span));
-        let defer_callbacks = deferred_tail_args_have_required(&args);
+        let defer_callbacks = deferred_tail_stages_have_required(&stages);
+        let (args, layout) = take_stage_operands(stages);
         let args = self.transform_deferred_tail_args(
             args,
             current_member,
@@ -2831,71 +2893,10 @@ impl DesugarVisitor {
             ctx,
         )?;
         let call = Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
-            args,
-            meta: Meta::new(span),
-            ext: self.state.cloned_elaboration_id(ext),
-        };
-        Ok(self.bind_deferred_tail_continuation(
-            continuation_name,
-            continuation,
-            call,
-            known_continuation_input,
-            span,
-            ctx,
-        ))
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn transform_deferred_tail_ufcs(
-        &mut self,
-        receiver: Expr<Surface>,
-        callee_segments: Vec<PathSegment>,
-        callee_span: Span,
-        args: Vec<CallArg<Surface>>,
-        flavor: crate::ast::UfcsFlavor,
-        macro_call: Span,
-        meta: Meta<Surface>,
-        ext: NodeId,
-        current_member: &RecMemberPlan,
-        continuation: RecCpsContinuation,
-        known_continuation_input: Option<Type<Desugared>>,
-        position: RecCallPosition,
-        ctx: &RecLoweringCtx,
-    ) -> Result<Expr<Desugared>, Error> {
-        let span = meta.span;
-        let continuation_name = rec_tmp_name("tail_cont", span, 0);
-        let continuation_ref =
-            RecCpsContinuation::ordinary(path_expr(continuation_name.clone(), span));
-        let defer_callbacks = deferred_tail_ufcs_has_required(&receiver, &args);
-        let receiver = self.transform_deferred_tail_tree(
-            receiver,
-            current_member,
-            &continuation_ref,
-            position,
-            defer_callbacks,
-            ctx,
-        )?;
-        let args = self.transform_deferred_tail_args(
-            args,
-            current_member,
-            &continuation_ref,
-            position,
-            defer_callbacks,
-            ctx,
-        )?;
-        let call = Expr::Ufcs {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            receiver: Box::new(receiver),
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call: Some(macro_call),
+            stages: restore_stage_operands(args, layout),
             meta: Meta::new(span),
             ext: self.state.cloned_elaboration_id(ext),
         };
@@ -3022,13 +3023,8 @@ impl DesugarVisitor {
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
         let needs_local_completion = match &value {
-            Expr::UserMacro { args, .. } => deferred_tail_args_have_required(args),
-            Expr::Ufcs {
-                receiver,
-                args,
-                macro_call: Some(_),
-                ..
-            } => deferred_tail_ufcs_has_required(receiver, args),
+            Expr::UserMacro { stages, .. } => deferred_tail_stages_have_required(stages),
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             _ => false,
         };
         if needs_local_completion {
@@ -3126,7 +3122,13 @@ impl DesugarVisitor {
                     defer_callbacks,
                     ctx,
                 )?;
-                Ok(Expr::synth_call(callee, args, meta.span))
+                let stage = self.pack_desugared_call_stage(CallStage {
+                    occurrence: Default::default(),
+                    args,
+                    source_trivia: Default::default(),
+                    meta: Meta::new(meta.span),
+                });
+                Ok(self.finish_source_call(callee, stage.args, stage.meta.span))
             }
             Expr::FnExpr {
                 occurrence: _,
@@ -3393,56 +3395,17 @@ impl DesugarVisitor {
                     ext: self.state.cloned_elaboration_id(ext),
                 })
             }
-            Expr::Ufcs {
-                receiver,
-                callee_segments,
-                callee_span,
-                args,
-                flavor,
-                macro_call,
-                meta,
-                ext,
-                ..
-            } => {
-                self.state.needs_intrinsics |= macro_call.is_some();
-                let receiver = self.transform_deferred_tail_tree(
-                    *receiver,
-                    current_member,
-                    continuation,
-                    RecCallPosition::NonTail,
-                    defer_callbacks,
-                    ctx,
-                )?;
-                let args = self.transform_deferred_tail_args(
-                    args,
-                    current_member,
-                    continuation,
-                    RecCallPosition::NonTail,
-                    defer_callbacks,
-                    ctx,
-                )?;
-                Ok(Expr::Ufcs {
-                    source_trivia: Default::default(),
-                    occurrence: Default::default(),
-                    receiver: Box::new(receiver),
-                    callee_segments,
-                    callee_span,
-                    args,
-                    flavor,
-                    macro_call,
-                    meta: Meta::new(meta.span),
-                    ext: self.state.cloned_elaboration_id(ext),
-                })
-            }
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             Expr::UserMacro {
                 name,
                 form,
-                args,
+                stages,
                 meta,
                 ext,
                 ..
             } => {
                 self.state.needs_intrinsics = true;
+                let (args, layout) = take_stage_operands(stages);
                 let args = self.transform_deferred_tail_args(
                     args,
                     current_member,
@@ -3452,11 +3415,10 @@ impl DesugarVisitor {
                     ctx,
                 )?;
                 Ok(Expr::UserMacro {
-                    source_trivia: Default::default(),
                     occurrence: Default::default(),
                     name,
                     form,
-                    args,
+                    stages: restore_stage_operands(args, layout),
                     meta: Meta::new(meta.span),
                     ext: self.state.cloned_elaboration_id(ext),
                 })
@@ -3653,6 +3615,79 @@ impl DesugarVisitor {
         Ok(lower_fn_placeholder(body, slot_count, stem_span, meta))
     }
 
+    fn walk_source_call_stage(
+        &mut self,
+        stage: CallStage<Surface>,
+    ) -> Result<CallStage<Desugared>, Error> {
+        let args = stage
+            .args
+            .into_iter()
+            .map(|arg| self.walk_call_arg(arg))
+            .collect::<Result<_, _>>()?;
+        Ok(self.pack_desugared_call_stage(CallStage {
+            occurrence: Default::default(),
+            args,
+            source_trivia: Default::default(),
+            meta: Meta::new(stage.meta.span),
+        }))
+    }
+
+    fn pack_desugared_call_stage(&mut self, stage: CallStage<Desugared>) -> CallStage<Desugared> {
+        let span = stage.meta.span;
+        let type_count = stage
+            .args
+            .iter()
+            .take_while(|arg| matches!(arg, CallArg::Type(_)))
+            .count();
+        let mut written = stage.args.into_iter();
+        let mut args = written.by_ref().take(type_count).collect::<Vec<_>>();
+        let mut values = written
+            .map(|value| {
+                let CallArg::Value(value) = value else {
+                    unreachable!("a written stage cannot interleave type and value arguments")
+                };
+                value
+            })
+            .collect::<Vec<_>>();
+        if type_count == 0 || !values.is_empty() {
+            let value = match values.len() {
+                0 => Expr::Unit {
+                    source_trivia: Default::default(),
+                    occurrence: Default::default(),
+                    meta: Meta::new(span),
+                },
+                1 => values.pop().unwrap(),
+                _ => self.fold_desugared_tuple(values),
+            };
+            args.push(CallArg::Value(value));
+        }
+        CallStage {
+            occurrence: Default::default(),
+            args,
+            source_trivia: Default::default(),
+            meta: Meta::new(span),
+        }
+    }
+
+    fn finish_source_call(
+        &mut self,
+        callee: Expr<Desugared>,
+        args: Vec<CallArg<Desugared>>,
+        span: Span,
+    ) -> Expr<Desugared> {
+        match callee {
+            Expr::Call {
+                callee,
+                args: mut prefix,
+                ..
+            } if !prefix.is_empty() && prefix.iter().all(|arg| matches!(arg, CallArg::Type(_))) => {
+                prefix.extend(args);
+                Expr::synth_call(*callee, prefix, span)
+            }
+            callee => Expr::synth_call(callee, args, span),
+        }
+    }
+
     fn fold_desugared_tuple(&mut self, values: Vec<Expr<Desugared>>) -> Expr<Desugared> {
         debug_assert!(values.len() >= 2);
         self.state.needs_intrinsics = true;
@@ -3671,72 +3706,180 @@ impl DesugarVisitor {
     fn rec_call_parts(
         &mut self,
         member: &RecMemberPlan,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         span: Span,
-        ctx: &RecLoweringCtx,
     ) -> Result<RecCallParts, Error> {
         self.rec_header_call_parts(
-            (&member.name, &member.type_params, member.value_params.len()),
-            args,
+            &member.name,
+            &rec_member_call_signature(member),
+            stages,
             span,
-            &ctx.member_names,
         )
     }
 
     fn rec_header_call_parts(
         &mut self,
-        (name, type_params, value_param_count): (&str, &[TypeParam], usize),
-        args: Vec<CallArg<Surface>>,
+        name: &str,
+        signature: &Signature<Desugared>,
+        stages: Vec<CallStage<Surface>>,
         span: Span,
-        member_names: &std::collections::HashSet<String>,
     ) -> Result<RecCallParts, Error> {
-        let type_param_count = type_params.len();
-        let explicit_type_args =
-            type_param_count > 0 && args.len() == type_param_count + value_param_count;
-        if args.len() != value_param_count && !explicit_type_args {
+        // The recursive transition saturates the member header. Its declared
+        // result is not another state parameter, even when it is callable.
+        let mut header = signature.signature_ty(unit_type(span), span);
+        let mut type_args = Vec::new();
+        let mut type_subst = std::collections::HashMap::new();
+        let mut packets = Vec::new();
+        let mut packet_types = Vec::new();
+        let stage_count = stages.len();
+        let mut result_stage_count = 0;
+        for (index, stage) in stages.into_iter().enumerate() {
+            if matches!(header, Type::Unit { .. }) {
+                result_stage_count = stage_count - index;
+                break;
+            }
+            if matches!(stage.args.first(), Some(CallArg::Type(_))) {
+                let [CallArg::Type(ty)] = stage.args.as_slice() else {
+                    unreachable!("a parsed type stage contains exactly one type")
+                };
+                let Type::Forall { param, body, .. } = header else {
+                    return Err(Error::parse(
+                        stage.meta.span,
+                        format!("`recur {name}` has no type parameter at this stage"),
+                    ));
+                };
+                let ty = self.walk_type(ty.clone())?;
+                type_subst.insert(param.name, ty.clone());
+                type_args.push(ty);
+                header = *body;
+                continue;
+            }
+            while let Type::Forall { param, body, .. } = header {
+                let ty = Type::synth_path(vec![param.name.clone()], Vec::new(), stage.meta.span);
+                type_subst.insert(param.name, ty.clone());
+                type_args.push(ty);
+                header = *body;
+            }
+            let Type::Function { param, ret, .. } = header else {
+                assert!(
+                    matches!(header, Type::Unit { .. }),
+                    "recursive header ends at its result sentinel"
+                );
+                result_stage_count = stage_count - index;
+                break;
+            };
+            let values = stage
+                .args
+                .into_iter()
+                .map(|arg| match arg {
+                    CallArg::Value(value) => value,
+                    CallArg::Type(_) => unreachable!("a value stage contains only expressions"),
+                })
+                .collect::<Vec<_>>();
+            let packet = match values.len() {
+                0 => Expr::Unit {
+                    source_trivia: stage.source_trivia,
+                    occurrence: Default::default(),
+                    meta: stage.meta,
+                },
+                1 => values.into_iter().next().expect("one packet value"),
+                _ => Expr::Tuple {
+                    occurrence: Default::default(),
+                    items: values,
+                    meta: stage.meta,
+                    ext: (),
+                },
+            };
+            packets.push(packet);
+            packet_types.push(subst_rec_type(&param, &type_subst));
+            header = *ret;
+        }
+        while let Type::Forall { param, body, .. } = header {
+            type_args.push(Type::synth_path(vec![param.name], Vec::new(), span));
+            header = *body;
+        }
+        if matches!(header, Type::Function { .. }) {
             return Err(Error::parse(
                 span,
-                format!(
-                    "`recur {}` expects {} value argument(s), or {} type argument(s) followed by \
-                     {} value argument(s), but {} argument(s) were supplied",
-                    name,
-                    value_param_count,
-                    type_param_count,
-                    value_param_count,
-                    args.len()
-                ),
+                format!("`recur {name}` requires another value argument group"),
             ));
         }
-        let mut args = args.into_iter();
-        let type_args = if explicit_type_args {
-            (0..type_param_count)
-                .map(|_| {
-                    let arg = args
-                        .next()
-                        .expect("explicit type-arg count was checked before splitting");
-                    if let CallArg::Value(value) = &arg {
-                        self.validate_no_bad_rec_names(value, member_names)?;
-                    }
-                    let ty = crate::pass::typecheck_core::call_arg_to_type_arg(&arg)?;
-                    self.walk_type(ty)
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        } else {
-            type_param_paths(type_params, span)
+        Ok(RecCallParts {
+            type_args,
+            packets,
+            packet_types,
+            result_stage_count,
+        })
+    }
+
+    fn rec_call_payload(
+        &mut self,
+        member: &RecMemberPlan,
+        type_args: &[Type<Desugared>],
+        packets: Vec<Expr<Desugared>>,
+        extra_values: Vec<Expr<Desugared>>,
+        extra_types: Vec<Type<Desugared>>,
+        span: Span,
+    ) -> Expr<Desugared> {
+        let value_types = instantiate_rec_value_tys(member, type_args);
+        let signature = rec_member_call_signature(member);
+        let mut slot_index = 0;
+        let mut values = Vec::new();
+        let mut groups = Vec::new();
+        for group in signature.canonical_group_refs() {
+            let crate::ast::SignatureGroupRef::Value(params) = group else {
+                continue;
+            };
+            let mut bindings = Vec::new();
+            for _ in params {
+                let name = rec_tmp_name("packet_slot", span, slot_index);
+                let ty = value_types[slot_index].clone();
+                values.push(path_expr(name.clone(), span));
+                bindings.push(Param {
+                    name,
+                    ty: Some(ty),
+                    pattern: (),
+                    meta: Meta::new(span),
+                });
+                slot_index += 1;
+            }
+            groups.push(crate::ast::SignatureGroup::Value(bindings));
+        }
+        assert_eq!(
+            slot_index,
+            value_types.len(),
+            "recursive state bindings cover the header"
+        );
+        let mut payload_types = value_types;
+        values.extend(extra_values);
+        payload_types.extend(extra_types);
+        let payload_type = crate::ast::build_product_right_fold(payload_types.clone(), span);
+        let body = product_value_from_values(values, payload_types, span);
+        if packets.is_empty() {
+            assert!(
+                groups.is_empty(),
+                "a saturated recursive header has all value packets"
+            );
+            return body;
+        }
+        if groups.is_empty() {
+            groups.push(crate::ast::SignatureGroup::Value(Vec::new()));
+        }
+        // Ordinary parameter binding checks each complete public Function
+        // domain and evaluates the packet once before state-layout packing.
+        let mut value = Expr::FnExpr {
+            occurrence: Default::default(),
+            sig: Signature::from_groups(groups),
+            ret_ty: Some(payload_type),
+            body: Box::new(body),
+            meta: Meta::new(span),
+            caps: (),
         };
-        let values = args
-            .map(|arg| match arg {
-                CallArg::Value(value) => Ok(value),
-                CallArg::Type(ty) => Err(Error::parse(
-                    ty.span(),
-                    format!(
-                        "`recur {}` value argument positions must contain expressions",
-                        name
-                    ),
-                )),
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((type_args, values))
+        for packet in packets {
+            let call_span = Span::new(span.start, packet.span().end);
+            value = Expr::synth_call(value, vec![CallArg::Value(packet)], call_span);
+        }
+        value
     }
 
     fn validate_rec_poly_mode(
@@ -3808,7 +3951,7 @@ impl DesugarVisitor {
             Expr::RecCall {
                 modes,
                 callee,
-                args,
+                stages,
                 meta,
                 ext,
                 ..
@@ -3817,9 +3960,16 @@ impl DesugarVisitor {
                     .members
                     .iter()
                     .find(|member| member.name == callee.name)?;
-                let (type_args, _) = self
-                    .rec_call_parts(member, args.clone(), meta.span, ctx)
+                let RecCallParts {
+                    type_args,
+                    result_stage_count,
+                    ..
+                } = self
+                    .rec_call_parts(member, stages.clone(), meta.span)
                     .ok()?;
+                if result_stage_count != 0 {
+                    return None;
+                }
                 self.validate_rec_poly_mode(
                     member,
                     current_member,
@@ -3869,12 +4019,32 @@ impl DesugarVisitor {
         &mut self,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         span: Span,
         syntax: RecCallSyntax,
         current_member: &RecMemberPlan,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
+        let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
+            return Err(Error::name_res(
+                callee.span,
+                format!(
+                    "`recur {}` is not a member of this `rec(loop)` group",
+                    callee.name
+                ),
+            ));
+        };
+        let RecCallParts {
+            type_args,
+            packets,
+            result_stage_count,
+            ..
+        } = self.rec_call_parts(member, stages.clone(), span)?;
+        if result_stage_count != 0 {
+            let expr =
+                rec_result_application(modes, callee, stages, syntax, span, result_stage_count);
+            return self.transform_rec_tail_expr(expr, current_member, ctx);
+        }
         let site = recursion_fixes::CallSite {
             syntax: &syntax,
             callee: callee.span,
@@ -3893,38 +4063,20 @@ impl DesugarVisitor {
                 false,
             ));
         }
-        let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
-            return Err(Error::name_res(
-                callee.span,
-                format!(
-                    "`recur {}` is not a member of this `rec(loop)` group",
-                    callee.name
-                ),
-            ));
-        };
-        let (type_args, values) = self.rec_call_parts(member, args, span, ctx)?;
         self.validate_rec_poly_mode(member, current_member, &type_args, &modes, site, span)?;
-        let values = values
+        let packets = packets
             .into_iter()
             .map(|value| {
                 self.validate_no_bad_rec(&value, ctx)?;
                 self.walk_expr(value)
             })
             .collect::<Result<Vec<_>, _>>()?;
-        let value_tys = instantiate_rec_value_tys(member, &type_args);
-        let mut values = values;
-        let mut value_tys = value_tys;
-        values.extend(rec_phantom_witness_values(
-            &type_args,
-            &member.phantom_witness_indices,
-            span,
-        ));
-        value_tys.extend(rec_phantom_witness_tys(
-            &type_args,
-            &member.phantom_witness_indices,
-            span,
-        ));
-        let payload = product_value_from_values(values, value_tys, span);
+        let extra_values =
+            rec_phantom_witness_values(&type_args, &member.phantom_witness_indices, span);
+        let extra_types =
+            rec_phantom_witness_tys(&type_args, &member.phantom_witness_indices, span);
+        let payload =
+            self.rec_call_payload(member, &type_args, packets, extra_values, extra_types, span);
         let member_state =
             self.rec_wrap_state(member, ctx.state_type_args.clone(), type_args, payload);
         let state = inject_sum_arm(member_state, &rec_state_arm_types(ctx), member.index, span);
@@ -3948,14 +4100,14 @@ impl DesugarVisitor {
             Expr::RecCall {
                 modes,
                 callee,
-                args,
+                stages,
                 meta,
                 ext,
                 ..
             } => self.transform_rec_call_cps(
                 modes,
                 callee,
-                args,
+                stages,
                 meta.span,
                 ext,
                 current_member,
@@ -4182,20 +4334,19 @@ impl DesugarVisitor {
             // the checked recipe, not the call's source position, decides
             // whether each staged lambda is terminal.
             Expr::UserMacro {
-                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
-                args,
+                stages,
                 meta,
                 ext,
-            } if deferred_tail_args_have_required(&args)
-                || args.iter().any(call_arg_contains_rec) =>
+            } if deferred_tail_stages_have_required(&stages)
+                || stage_args(&stages).any(call_arg_contains_rec) =>
             {
                 self.transform_deferred_tail_user_macro(
                     name,
                     form,
-                    args,
+                    stages,
                     meta,
                     ext,
                     current_member,
@@ -4206,267 +4357,28 @@ impl DesugarVisitor {
                 )
             }
             Expr::UserMacro {
-                source_trivia: _,
                 occurrence: _,
                 name,
                 form,
-                args,
+                stages,
                 meta,
                 ext,
-            } => self.transform_rec_cps_user_macro_args(
-                name,
-                form,
-                args,
-                Vec::new(),
-                meta,
-                ext,
-                current_member,
-                cont,
-                ctx,
-            ),
-            // Bang-UFCS has the same structural tail authority as a direct
-            // macro call; receiver placement does not narrow it.
-            Expr::Ufcs {
-                source_trivia: _,
-                occurrence: _,
-                receiver,
-                callee_segments,
-                callee_span,
-                args,
-                flavor,
-                macro_call: Some(macro_call),
-                meta,
-                ext,
-            } if deferred_tail_ufcs_has_required(&receiver, &args)
-                || expr_contains_rec_call(&receiver)
-                || args.iter().any(call_arg_contains_rec) =>
-            {
-                self.transform_deferred_tail_ufcs(
-                    *receiver,
-                    callee_segments,
-                    callee_span,
+            } => {
+                let (args, layout) = take_stage_operands(stages);
+                self.transform_rec_cps_user_macro_args(
+                    name,
+                    form,
                     args,
-                    flavor,
-                    macro_call,
+                    Vec::new(),
+                    layout,
                     meta,
                     ext,
                     current_member,
                     cont,
-                    None,
-                    position,
                     ctx,
                 )
             }
-            Expr::Ufcs {
-                source_trivia: _,
-                occurrence: _,
-                receiver,
-                callee_segments,
-                callee_span,
-                mut args,
-                flavor,
-                macro_call,
-                meta,
-                ext,
-            } => {
-                let receiver_contains_rec = expr_contains_rec_call(&receiver);
-                let first_rec_arg = args.iter().position(call_arg_contains_rec);
-                let receiver_is_first = flavor.inserts_first();
-                if macro_call.is_none()
-                    && receiver_is_first
-                    && !receiver_contains_rec
-                    && first_rec_arg.is_some()
-                    && !rec_cps_operand_is_inert(&receiver)
-                {
-                    let span = receiver.span();
-                    let name = rec_tmp_name("ufcs_receiver", span, 0);
-                    let receiver_value = *receiver;
-                    self.validate_no_bad_rec(&receiver_value, ctx)?;
-                    let receiver_value = self.walk_expr(receiver_value)?;
-                    let type_span = receiver_value.span();
-                    let body = self.transform_rec_cps_expr(
-                        Expr::Ufcs {
-                            source_trivia: Default::default(),
-                            occurrence: Default::default(),
-                            receiver: Box::new(surface_path_expr(name.clone(), span)),
-                            callee_segments,
-                            callee_span,
-                            args,
-                            flavor,
-                            macro_call,
-                            meta,
-                            ext,
-                        },
-                        current_member,
-                        cont,
-                        position,
-                        ctx,
-                    )?;
-                    Ok(self.rec_cps_pending_let(
-                        name,
-                        type_span,
-                        RecOrderTypeFlow::ExpectedFromBody,
-                        receiver_value,
-                        body,
-                        ctx,
-                    ))
-                } else if let Some(earlier_index) = if macro_call.is_none() {
-                    let earlier_end =
-                        match (receiver_is_first, receiver_contains_rec, first_rec_arg) {
-                            (true, true, _) => None,
-                            (_, _, Some(index)) => Some(index),
-                            (false, true, None) => Some(args.len()),
-                            _ => None,
-                        };
-                    earlier_end.and_then(|end| {
-                        args[..end].iter().position(|arg| {
-                            matches!(
-                                arg,
-                                CallArg::Value(value) if !rec_cps_operand_is_inert(value)
-                            )
-                        })
-                    })
-                } else {
-                    None
-                } {
-                    let span = args[earlier_index].meta().span;
-                    let name = rec_tmp_name("ufcs_arg", span, earlier_index);
-                    let CallArg::Value(arg_value) = std::mem::replace(
-                        &mut args[earlier_index],
-                        CallArg::Value(surface_path_expr(name.clone(), span)),
-                    ) else {
-                        unreachable!("the earlier UFCS operand was selected as a value")
-                    };
-                    self.validate_no_bad_rec(&arg_value, ctx)?;
-                    let arg_value = self.walk_expr(arg_value)?;
-                    let type_span = arg_value.span();
-                    let body = self.transform_rec_cps_expr(
-                        Expr::Ufcs {
-                            source_trivia: Default::default(),
-                            occurrence: Default::default(),
-                            receiver,
-                            callee_segments,
-                            callee_span,
-                            args,
-                            flavor,
-                            macro_call,
-                            meta,
-                            ext,
-                        },
-                        current_member,
-                        cont,
-                        position,
-                        ctx,
-                    )?;
-                    Ok(self.rec_cps_pending_let(
-                        name,
-                        type_span,
-                        RecOrderTypeFlow::ExpectedFromBody,
-                        arg_value,
-                        body,
-                        ctx,
-                    ))
-                } else if receiver_contains_rec
-                    && (macro_call.is_some() || receiver_is_first || first_rec_arg.is_none())
-                {
-                    let span = receiver.span();
-                    let name = rec_tmp_name("ufcs_receiver", span, 0);
-                    let receiver_value = *receiver;
-                    let param_ty = self.rec_expr_type_hint(&receiver_value, current_member, ctx);
-                    let body = self.transform_rec_cps_expr(
-                        Expr::Ufcs {
-                            source_trivia: Default::default(),
-                            occurrence: Default::default(),
-                            receiver: Box::new(surface_path_expr(name.clone(), span)),
-                            callee_segments,
-                            callee_span,
-                            args,
-                            flavor,
-                            macro_call,
-                            meta,
-                            ext,
-                        },
-                        current_member,
-                        cont,
-                        position,
-                        ctx,
-                    )?;
-                    let k = rec_cps_lambda(
-                        name,
-                        param_ty,
-                        body,
-                        ctx,
-                        span,
-                        RecCpsApplication::ExpectedFromBody,
-                    );
-                    self.transform_rec_cps_expr(
-                        receiver_value,
-                        current_member,
-                        k,
-                        RecCallPosition::NonTail,
-                        ctx,
-                    )
-                } else if let Some(index) = first_rec_arg {
-                    let span = args[index].meta().span;
-                    let name = rec_tmp_name("ufcs_arg", span, index);
-                    let CallArg::Value(arg_value) = std::mem::replace(
-                        &mut args[index],
-                        CallArg::Value(surface_path_expr(name.clone(), span)),
-                    ) else {
-                        unreachable!("call_arg_contains_rec only matches value arguments")
-                    };
-                    let param_ty = self.rec_expr_type_hint(&arg_value, current_member, ctx);
-                    let body = self.transform_rec_cps_expr(
-                        Expr::Ufcs {
-                            source_trivia: Default::default(),
-                            occurrence: Default::default(),
-                            receiver,
-                            callee_segments,
-                            callee_span,
-                            args,
-                            flavor,
-                            macro_call,
-                            meta,
-                            ext,
-                        },
-                        current_member,
-                        cont,
-                        position,
-                        ctx,
-                    )?;
-                    let k = rec_cps_lambda(
-                        name,
-                        param_ty,
-                        body,
-                        ctx,
-                        span,
-                        RecCpsApplication::ExpectedFromBody,
-                    );
-                    self.transform_rec_cps_expr(
-                        arg_value,
-                        current_member,
-                        k,
-                        RecCallPosition::NonTail,
-                        ctx,
-                    )
-                } else {
-                    let expr = Expr::Ufcs {
-                        source_trivia: Default::default(),
-                        occurrence: Default::default(),
-                        receiver,
-                        callee_segments,
-                        callee_span,
-                        args,
-                        flavor,
-                        macro_call,
-                        meta,
-                        ext,
-                    };
-                    self.validate_no_bad_rec(&expr, ctx)?;
-                    let value = self.walk_expr(expr)?;
-                    Ok(self.apply_rec_cont(cont, value, ctx.span))
-                }
-            }
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             Expr::FnExpr {
                 occurrence: _,
                 sig,
@@ -4534,6 +4446,7 @@ impl DesugarVisitor {
         form: crate::ast::UserMacroCallForm,
         mut args: Vec<CallArg<Surface>>,
         mut out: Vec<CallArg<Desugared>>,
+        layout: Vec<(usize, Span)>,
         meta: Meta<Surface>,
         ext: NodeId,
         current_member: &RecMemberPlan,
@@ -4543,11 +4456,10 @@ impl DesugarVisitor {
         if args.is_empty() {
             let ext = self.state.cloned_elaboration_id(ext);
             let value = Expr::UserMacro {
-                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name,
                 form,
-                args: out,
+                stages: restore_stage_operands(out, layout),
                 meta: Meta::new(meta.span),
                 ext,
             };
@@ -4562,6 +4474,7 @@ impl DesugarVisitor {
                     form,
                     args,
                     out,
+                    layout,
                     meta,
                     ext,
                     current_member,
@@ -4580,6 +4493,7 @@ impl DesugarVisitor {
                     form,
                     args,
                     next_out,
+                    layout,
                     meta,
                     ext,
                     current_member,
@@ -4604,6 +4518,7 @@ impl DesugarVisitor {
                     form,
                     args,
                     out,
+                    layout,
                     meta,
                     ext,
                     current_member,
@@ -4623,14 +4538,51 @@ impl DesugarVisitor {
         cont: RecCpsContinuation,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
+        if args.iter().any(call_arg_contains_rec) && rec_cps_has_unfinished_direct_header(&callee) {
+            let mut root = callee;
+            let mut stages = Vec::new();
+            while let Expr::Call {
+                callee, args, meta, ..
+            } = root
+            {
+                stages.push(CallStage {
+                    occurrence: Default::default(),
+                    args,
+                    source_trivia: Default::default(),
+                    meta,
+                });
+                root = *callee;
+            }
+            stages.reverse();
+            stages.push(CallStage {
+                occurrence: Default::default(),
+                args,
+                source_trivia: Default::default(),
+                meta: Meta::new(span),
+            });
+            self.validate_no_bad_rec(&root, ctx)?;
+            let callee = self.walk_expr(root)?;
+            let (args, layout) = take_stage_operands(stages);
+            return self.transform_rec_cps_call_args(
+                callee,
+                RecCpsCallOperands::new(args),
+                Vec::new(),
+                Some(layout),
+                span,
+                current_member,
+                cont,
+                ctx,
+            );
+        }
         if expr_contains_rec_call(&callee) {
             let callee_span = callee.span();
             let name = rec_tmp_name("callee", callee_span, 0);
             let callee_ref = path_expr(name.clone(), callee_span);
             let body = self.transform_rec_cps_call_args(
                 callee_ref,
-                args,
+                RecCpsCallOperands::new(args),
                 Vec::new(),
+                None,
                 span,
                 current_member,
                 cont,
@@ -4656,8 +4608,9 @@ impl DesugarVisitor {
                 let name = rec_tmp_name("callee", callee_span, 0);
                 let body = self.transform_rec_cps_call_args(
                     path_expr(name.clone(), callee_span),
-                    args,
+                    RecCpsCallOperands::new(args),
                     Vec::new(),
+                    None,
                     span,
                     current_member,
                     cont,
@@ -4674,8 +4627,9 @@ impl DesugarVisitor {
             }
             self.transform_rec_cps_call_args(
                 callee,
-                args,
+                RecCpsCallOperands::new(args),
                 Vec::new(),
+                None,
                 span,
                 current_member,
                 cont,
@@ -4688,24 +4642,51 @@ impl DesugarVisitor {
     fn transform_rec_cps_call_args(
         &mut self,
         callee: Expr<Desugared>,
-        mut args: Vec<CallArg<Surface>>,
+        mut args: RecCpsCallOperands,
         mut out: Vec<CallArg<Desugared>>,
+        layout: Option<Vec<(usize, Span)>>,
         span: Span,
         current_member: &RecMemberPlan,
         cont: RecCpsContinuation,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
-        if args.is_empty() {
-            let value = Expr::synth_call(callee, out, span);
+        let Some((first, first_contains_rec)) = args.next() else {
+            let value = match layout {
+                Some(layout) => {
+                    restore_stage_operands(out, layout)
+                        .into_iter()
+                        .fold(callee, |callee, stage| {
+                            let stage = self.pack_desugared_call_stage(stage);
+                            self.finish_source_call(callee, stage.args, stage.meta.span)
+                        })
+                }
+                None => {
+                    let stage = self.pack_desugared_call_stage(CallStage {
+                        occurrence: Default::default(),
+                        args: out,
+                        source_trivia: Default::default(),
+                        meta: Meta::new(span),
+                    });
+                    self.finish_source_call(callee, stage.args, span)
+                }
+            };
             return Ok(self.apply_rec_cont(cont, value, span));
-        }
-        let first = args.remove(0);
+        };
         match first {
             CallArg::Type(ty) => {
                 out.push(CallArg::Type(self.walk_type(ty)?));
-                self.transform_rec_cps_call_args(callee, args, out, span, current_member, cont, ctx)
+                self.transform_rec_cps_call_args(
+                    callee,
+                    args,
+                    out,
+                    layout,
+                    span,
+                    current_member,
+                    cont,
+                    ctx,
+                )
             }
-            CallArg::Value(value) if expr_contains_rec_call(&value) => {
+            CallArg::Value(value) if first_contains_rec => {
                 let name = rec_tmp_name("arg", value.span(), out.len());
                 let mut next_out = out;
                 next_out.push(CallArg::Value(path_expr(name.clone(), value.span())));
@@ -4713,6 +4694,7 @@ impl DesugarVisitor {
                     callee,
                     args,
                     next_out,
+                    layout,
                     span,
                     current_member,
                     cont,
@@ -4730,7 +4712,7 @@ impl DesugarVisitor {
             }
             CallArg::Value(value) => {
                 let bind_before_rest =
-                    args.iter().any(call_arg_contains_rec) && !rec_cps_operand_is_inert(&value);
+                    args.remaining_recursive != 0 && !rec_cps_operand_is_inert(&value);
                 let value_span = value.span();
                 self.validate_no_bad_rec(&value, ctx)?;
                 let value = self.walk_expr(value)?;
@@ -4741,6 +4723,7 @@ impl DesugarVisitor {
                         callee,
                         args,
                         out,
+                        layout,
                         span,
                         current_member,
                         cont,
@@ -4753,6 +4736,7 @@ impl DesugarVisitor {
                     callee,
                     args,
                     out,
+                    layout,
                     span,
                     current_member,
                     cont,
@@ -4935,7 +4919,7 @@ impl DesugarVisitor {
         &mut self,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         span: Span,
         syntax: RecCallSyntax,
         current_member: &RecMemberPlan,
@@ -4943,6 +4927,26 @@ impl DesugarVisitor {
         position: RecCallPosition,
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
+        let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
+            return Err(Error::name_res(
+                callee.span,
+                format!(
+                    "`recur {}` is not a member of this `rec(loop)` group",
+                    callee.name
+                ),
+            ));
+        };
+        let RecCallParts {
+            type_args,
+            packets,
+            packet_types,
+            result_stage_count,
+        } = self.rec_call_parts(member, stages.clone(), span)?;
+        if result_stage_count != 0 {
+            let expr =
+                rec_result_application(modes, callee, stages, syntax, span, result_stage_count);
+            return self.transform_rec_cps_expr(expr, current_member, cont, position, ctx);
+        }
         let site = recursion_fixes::CallSite {
             syntax: &syntax,
             callee: callee.span,
@@ -4968,21 +4972,12 @@ impl DesugarVisitor {
             }
             _ => {}
         }
-        let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
-            return Err(Error::name_res(
-                callee.span,
-                format!(
-                    "`recur {}` is not a member of this `rec(loop)` group",
-                    callee.name
-                ),
-            ));
-        };
-        let (type_args, values) = self.rec_call_parts(member, args, span, ctx)?;
         self.validate_rec_poly_mode(member, current_member, &type_args, &modes, site, span)?;
         self.transform_rec_call_cps_values(
             member,
             type_args,
-            values,
+            packets,
+            packet_types,
             Vec::new(),
             cont,
             position == RecCallPosition::NonTail,
@@ -4998,6 +4993,7 @@ impl DesugarVisitor {
         member: &RecMemberPlan,
         type_args: Vec<Type<Desugared>>,
         mut values: Vec<Expr<Surface>>,
+        packet_types: Vec<Type<Desugared>>,
         mut out: Vec<Expr<Desugared>>,
         cont: RecCpsContinuation,
         schedule_return: bool,
@@ -5006,26 +5002,20 @@ impl DesugarVisitor {
         ctx: &RecLoweringCtx,
     ) -> Result<Expr<Desugared>, Error> {
         if values.is_empty() {
-            let mut value_tys = instantiate_rec_value_tys(member, &type_args);
+            let mut extra_types =
+                rec_phantom_witness_tys(&type_args, &member.phantom_witness_indices, span);
             let cont_input_ty = instantiate_rec_ret_ty(member, &type_args);
-            out.extend(rec_phantom_witness_values(
-                &type_args,
-                &member.phantom_witness_indices,
-                span,
-            ));
-            value_tys.extend(rec_phantom_witness_tys(
-                &type_args,
-                &member.phantom_witness_indices,
-                span,
-            ));
-            value_tys.push(rec_cont_fn_type(&cont_input_ty, &ctx.step_result_ty, span));
+            let mut extra_values =
+                rec_phantom_witness_values(&type_args, &member.phantom_witness_indices, span);
+            extra_types.push(rec_cont_fn_type(&cont_input_ty, &ctx.step_result_ty, span));
             let cont = if schedule_return {
                 self.rec_scheduled_cont(cont, &cont_input_ty, span, ctx)
             } else {
                 cont.into_expr()
             };
-            out.push(cont);
-            let payload = product_value_from_values(out, value_tys, span);
+            extra_values.push(cont);
+            let payload =
+                self.rec_call_payload(member, &type_args, out, extra_values, extra_types, span);
             let member_state =
                 self.rec_wrap_state(member, ctx.state_type_args.clone(), type_args, payload);
             let state = inject_sum_arm(member_state, &rec_state_arm_types(ctx), member.index, span);
@@ -5037,10 +5027,7 @@ impl DesugarVisitor {
             ));
         }
         let first = values.remove(0);
-        let value_ty = instantiate_rec_value_tys(member, &type_args)
-            .into_iter()
-            .nth(out.len())
-            .expect("recursive value position has a declared slot type");
+        let value_ty = packet_types[out.len()].clone();
         if expr_contains_rec_call(&first) {
             let first_span = first.span();
             let name = rec_tmp_name("rec_arg", first_span, out.len());
@@ -5049,6 +5036,7 @@ impl DesugarVisitor {
                 member,
                 type_args,
                 values,
+                packet_types,
                 out,
                 cont,
                 schedule_return,
@@ -5077,6 +5065,7 @@ impl DesugarVisitor {
                     member,
                     type_args,
                     values,
+                    packet_types,
                     out,
                     cont,
                     schedule_return,
@@ -5091,6 +5080,7 @@ impl DesugarVisitor {
                 member,
                 type_args,
                 values,
+                packet_types,
                 out,
                 cont,
                 schedule_return,
@@ -5344,8 +5334,8 @@ impl DesugarVisitor {
                 }
             },
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-            Expr::UserMacro { args, .. } => {
-                for arg in args {
+            Expr::UserMacro { stages, .. } => {
+                for arg in stage_args(stages) {
                     if let CallArg::Value(value) = arg {
                         self.validate_no_bad_rec_names(value, ctx)?;
                     }
@@ -5365,15 +5355,7 @@ impl DesugarVisitor {
                 Ok(())
             }
             Expr::FnPlaceholder { body, .. } => self.validate_no_bad_rec_names(body, ctx),
-            Expr::Ufcs { receiver, args, .. } => {
-                self.validate_no_bad_rec_names(receiver, ctx)?;
-                for arg in args {
-                    if let CallArg::Value(value) = arg {
-                        self.validate_no_bad_rec_names(value, ctx)?;
-                    }
-                }
-                Ok(())
-            }
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             Expr::OpChain { kind, .. } => {
                 match kind {
                     crate::ast::OpChainKind::Normal { slots, .. } => {
@@ -5621,12 +5603,12 @@ impl SurfaceToDesugared for DesugarVisitor {
         &mut self,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         syntax: RecCallSyntax,
         meta: Meta<Surface>,
     ) -> Result<Expr<Desugared>, Error> {
         if self.state.escaped_rec.is_some() {
-            return self.transform_rec_escape_call(modes, callee, args, syntax, meta.span);
+            return self.transform_rec_escape_call(modes, callee, stages, syntax, meta.span);
         }
         Err(Error::parse(
             meta.span,
@@ -5753,11 +5735,13 @@ impl SurfaceToDesugared for DesugarVisitor {
             return self.expand_literal(&def, Some(annotation), span, segments[0].span);
         }
         let callee = self.walk_expr(*callee)?;
-        let args: Vec<CallArg<Desugared>> = args
-            .into_iter()
-            .map(|a| self.walk_call_arg(a))
-            .collect::<Result<_, _>>()?;
-        Ok(Expr::synth_call(callee, args, span))
+        let stage = self.walk_source_call_stage(CallStage {
+            occurrence: Default::default(),
+            args,
+            source_trivia: None,
+            meta: Meta::new(span),
+        })?;
+        Ok(self.finish_source_call(callee, stage.args, span))
     }
 
     fn visit_expr_fn(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
@@ -5997,67 +5981,34 @@ impl SurfaceToDesugared for DesugarVisitor {
     }
 
     fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        self.state.needs_intrinsics = true;
         let Expr::UserMacro {
-            source_trivia: _,
-            occurrence: _,
             name,
             form,
-            args,
-            meta: Meta { span, .. },
+            stages,
+            meta,
             ext,
+            ..
         } = e
         else {
             unreachable!()
         };
+        self.state.needs_intrinsics = true;
+        let stages = stages
+            .into_iter()
+            .map(|stage| self.walk_source_call_stage(stage))
+            .collect::<Result<_, Error>>()?;
         Ok(Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
-            args: args
-                .into_iter()
-                .map(|arg| self.walk_call_arg(arg))
-                .collect::<Result<_, _>>()?,
-            meta: Meta::new(span),
+            stages,
+            meta: Meta::new(meta.span),
             ext: self.state.cloned_elaboration_id(ext),
         })
     }
 
-    fn visit_expr_ufcs(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::Ufcs {
-            source_trivia: _,
-            occurrence: _,
-            receiver,
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        if macro_call.is_some() {
-            self.state.needs_intrinsics = true;
-        }
-        Ok(Expr::Ufcs {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            receiver: Box::new(self.walk_expr(*receiver)?),
-            callee_segments,
-            callee_span,
-            args: args
-                .into_iter()
-                .map(|arg| self.walk_call_arg(arg))
-                .collect::<Result<_, _>>()?,
-            flavor,
-            macro_call,
-            meta: Meta::new(span),
-            ext: self.state.cloned_elaboration_id(ext),
-        })
+    fn visit_expr_ufcs(&mut self, _e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
+        unreachable!("UFCS is normalized before desugaring")
     }
 
     // ---- Top-level binder scope-management overrides ----------------
@@ -7085,14 +7036,12 @@ fn expr_contains_rec_call(expr: &Expr<Surface>) -> bool {
         }
         Expr::Elaborator { call, .. } => elaborator_call_contains_rec(call),
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { args, .. } => args.iter().any(call_arg_contains_rec),
+        Expr::UserMacro { stages, .. } => stage_args(stages).any(call_arg_contains_rec),
         Expr::LabelValue { labels, .. } => labels
             .iter()
             .any(|label| expr_contains_rec_call(&label.value)),
         Expr::Tuple { items, .. } => items.iter().any(expr_contains_rec_call),
-        Expr::Ufcs { receiver, args, .. } => {
-            expr_contains_rec_call(receiver) || args.iter().any(call_arg_contains_rec)
-        }
+        crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::OpChain { kind, .. } => match kind {
             crate::ast::OpChainKind::Normal { slots, .. } => {
                 slots.iter().any(expr_contains_rec_call)
@@ -7135,6 +7084,87 @@ fn call_arg_contains_rec(arg: &CallArg<Surface>) -> bool {
         CallArg::Type(_) => false,
         CallArg::Value(value) => expr_contains_rec_call(value),
     }
+}
+
+struct RecCpsCallOperands {
+    pending: std::vec::IntoIter<(CallArg<Surface>, bool)>,
+    remaining_recursive: usize,
+}
+
+impl RecCpsCallOperands {
+    fn new(args: Vec<CallArg<Surface>>) -> Self {
+        let mut remaining_recursive = 0;
+        let pending = args
+            .into_iter()
+            .map(|arg| {
+                let contains_rec = call_arg_contains_rec(&arg);
+                remaining_recursive += usize::from(contains_rec);
+                (arg, contains_rec)
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        Self {
+            pending,
+            remaining_recursive,
+        }
+    }
+
+    fn next(&mut self) -> Option<(CallArg<Surface>, bool)> {
+        let (arg, contains_rec) = self.pending.next()?;
+        self.remaining_recursive -= usize::from(contains_rec);
+        Some((arg, contains_rec))
+    }
+}
+
+/// A direct lambda cannot execute its body while its public header still has
+/// a Function or Forall layer. Earlier value operands can still have effects;
+/// the CPS operand visitor preserves their source order before rebuilding the
+/// unchanged application stages.
+fn rec_cps_has_unfinished_direct_header(callee: &Expr<Surface>) -> bool {
+    let mut root = callee;
+    let mut stages = Vec::new();
+    while let Expr::Call { callee, args, .. } = root {
+        stages.push(args.as_slice());
+        root = callee;
+    }
+    if stages.is_empty() {
+        return false;
+    }
+    let Expr::FnExpr { sig, .. } = root else {
+        return false;
+    };
+    // These are the lambda's public evaluation layers, not its value-param
+    // count or the callable shape of its body result. Domains are immaterial
+    // here, so omitted parameter annotations need no fabricated type.
+    let no_groups = sig.canonical_group_refs().next().is_none();
+    let mut header = sig
+        .canonical_group_refs()
+        .flat_map(|group| match group {
+            crate::ast::SignatureGroupRef::Type(params) => std::iter::repeat_n(true, params.len()),
+            crate::ast::SignatureGroupRef::Value(_) => std::iter::repeat_n(false, 1),
+        })
+        .chain(std::iter::repeat_n(false, usize::from(no_groups)))
+        .peekable();
+    for args in stages.into_iter().rev() {
+        if matches!(args.first(), Some(CallArg::Type(_))) {
+            for argument in args {
+                let CallArg::Type(_) = argument else {
+                    unreachable!("Surface type applications contain only type operands")
+                };
+                if header.next() != Some(true) {
+                    return false;
+                }
+            }
+        } else {
+            while header.peek() == Some(&true) {
+                header.next();
+            }
+            if header.next() != Some(false) {
+                return false;
+            }
+        }
+    }
+    header.peek().is_some()
 }
 
 fn rec_cps_operand_is_inert(expr: &Expr<Surface>) -> bool {
@@ -7240,19 +7270,13 @@ fn desugared_contains_rec_quote(source: &Expr<Desugared>) -> bool {
                 pending.push(&plan.body);
                 pending.extend(plan.tail_continuation.iter().map(|value| value.as_ref()));
             }
-            Expr::UserMacro { args, .. } => {
-                pending.extend(args.iter().filter_map(|arg| match arg {
+            Expr::UserMacro { stages, .. } => {
+                pending.extend(stage_args(stages).filter_map(|arg| match arg {
                     CallArg::Value(value) => Some(value),
                     CallArg::Type(_) => None,
                 }))
             }
-            Expr::Ufcs { receiver, args, .. } => {
-                pending.push(receiver);
-                pending.extend(args.iter().filter_map(|arg| match arg {
-                    CallArg::Value(value) => Some(value),
-                    CallArg::Type(_) => None,
-                }));
-            }
+            crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
             Expr::LabelValue { labels, .. } => {
                 pending.extend(labels.iter().map(|label| &label.value))
             }
@@ -7362,9 +7386,9 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
             collect_identifiers(&plan.value, out);
             collect_identifiers(&plan.body, out);
         }
-        Expr::UserMacro { name, args, .. } => {
+        Expr::UserMacro { name, stages, .. } => {
             out.insert(name.clone());
-            for arg in args {
+            for arg in stage_args(stages) {
                 if let CallArg::Value(value) = arg {
                     collect_identifiers(value, out);
                 }
@@ -7376,22 +7400,7 @@ fn collect_identifiers(e: &Expr<Desugared>, out: &mut std::collections::HashSet<
             }
         }
         Expr::RowLet { ext, .. } => match *ext {},
-        Expr::Ufcs {
-            receiver,
-            callee_segments,
-            args,
-            ..
-        } => {
-            collect_identifiers(receiver, out);
-            if let Some(head) = callee_segments.first() {
-                out.insert(head.name.clone());
-            }
-            for a in args {
-                if let CallArg::Value(v) = a {
-                    collect_identifiers(v, out);
-                }
-            }
-        }
+        crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::Unit { .. }
         | Expr::StrLit { .. }
         | Expr::IntLit { .. }
@@ -7591,23 +7600,30 @@ fn rename_paths(
             }
         }
         Expr::UserMacro {
-            source_trivia: _,
             occurrence: _,
             name,
             form,
-            args,
+            stages,
             meta,
             ext,
         } => Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
-            args: args
+            stages: stages
                 .into_iter()
-                .map(|arg| match arg {
-                    CallArg::Value(value) => CallArg::Value(rename_paths(value, renames)),
-                    CallArg::Type(ty) => CallArg::Type(ty),
+                .map(|stage| CallStage {
+                    occurrence: Default::default(),
+                    args: stage
+                        .args
+                        .into_iter()
+                        .map(|arg| match arg {
+                            CallArg::Value(value) => CallArg::Value(rename_paths(value, renames)),
+                            CallArg::Type(ty) => CallArg::Type(ty),
+                        })
+                        .collect(),
+                    source_trivia: stage.source_trivia,
+                    meta: stage.meta,
                 })
                 .collect(),
             meta,
@@ -7632,43 +7648,7 @@ fn rename_paths(
             meta,
             ext,
         },
-        Expr::Ufcs {
-            source_trivia: _,
-            occurrence: _,
-            receiver,
-            mut callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta,
-            ext,
-        } => {
-            if macro_call.is_none()
-                && callee_segments.len() == 1
-                && let Some(renamed) = renames.get(&callee_segments[0].name)
-            {
-                callee_segments[0].name = renamed.clone();
-            }
-            Expr::Ufcs {
-                source_trivia: Default::default(),
-                occurrence: Default::default(),
-                receiver: Box::new(rename_paths(*receiver, renames)),
-                callee_segments,
-                callee_span,
-                args: args
-                    .into_iter()
-                    .map(|a| match a {
-                        CallArg::Value(v) => CallArg::Value(rename_paths(v, renames)),
-                        CallArg::Type(t) => CallArg::Type(t),
-                    })
-                    .collect(),
-                flavor,
-                macro_call,
-                meta,
-                ext,
-            }
-        }
+        crate::ast::Expr::Ufcs { .. } => unreachable!("UFCS is normalized before desugaring"),
         Expr::Unit {
             source_trivia: _,
             occurrence: _,
@@ -7818,16 +7798,17 @@ mod tests {
                     visit_desugared_expr(expression, visit);
                 }
             }
-            Expr::UserMacro { args, .. } => visit_desugared_call_args(args, visit),
+            Expr::UserMacro { stages, .. } => {
+                for stage in stages {
+                    visit_desugared_call_args(&stage.args, visit);
+                }
+            }
             Expr::LabelValue { labels, .. } => {
                 for label in labels {
                     visit_desugared_expr(&label.value, visit);
                 }
             }
-            Expr::Ufcs { receiver, args, .. } => {
-                visit_desugared_expr(receiver, visit);
-                visit_desugared_call_args(args, visit);
-            }
+            Expr::Ufcs { ext, .. } => match *ext {},
             Expr::Path { .. }
             | Expr::Unit { .. }
             | Expr::StrLit { .. }
@@ -7894,6 +7875,24 @@ mod tests {
                         if segments.len() == 1 && segments[0].as_str() == name
                 )
         )
+    }
+
+    fn desugared_pair_values(expr: &Expr<Desugared>) -> (&Expr<Desugared>, &Expr<Desugared>) {
+        let Expr::Call { callee, args, .. } = expr else {
+            panic!("expected a lowered product packet")
+        };
+        assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "__pair__"));
+        let [
+            CallArg::Type(_),
+            CallArg::Type(_),
+            CallArg::Value(first),
+            CallArg::Value(rest),
+        ] = args.as_slice()
+        else {
+            panic!("a synthesized pair has two type operands and two value components")
+        };
+        (first, rest)
     }
 
     fn desugared_expr_node_count(expr: &Expr<Desugared>) -> usize {
@@ -8010,7 +8009,7 @@ mod tests {
     #[test]
     fn literal_decl_expands_annotation_call() {
         let m =
-            d(r#"module x; literal greeting = "abc"; fn main() -> String { greeting(String) }"#);
+            d(r#"module x; literal greeting = "abc"; fn main() -> String { greeting[String] }"#);
         let Item::FnDef(f) = &m.items[0] else {
             panic!("expected fn, got {:?}", m.items[0]);
         };
@@ -8030,8 +8029,8 @@ mod tests {
     #[test]
     fn literal_alias_expansions_keep_distinct_use_spans() {
         let m = d("module x; literal one = 1; \
-             fn one_i32() -> I32 { one(I32) } \
-             fn one_i64() -> I64 { one(I64) }");
+             fn one_i32() -> I32 { one[I32] } \
+             fn one_i64() -> I64 { one[I64] }");
         let spans = m
             .items
             .iter()
@@ -8090,7 +8089,7 @@ mod tests {
                 parsed(
                     "module pkg/main; \
                      import pkg/util(zero); \
-                     fn main() -> I32 { zero(I32) }",
+                     fn main() -> I32 { zero[I32] }",
                 ),
             ),
         ];
@@ -8128,21 +8127,15 @@ mod tests {
             panic!("expected one placeholder parameter")
         };
         assert_eq!(param.name, "p1_v2");
-        let Expr::Ufcs {
-            receiver,
-            callee_segments,
-            ..
-        } = body.as_ref()
-        else {
-            panic!("expected UFCS placeholder body")
+        let Expr::Call { callee, args, .. } = body.as_ref() else {
+            panic!("expected ordinary call after UFCS projection")
         };
-        assert_eq!(callee_segments.len(), 1);
-        assert_eq!(callee_segments[0].as_str(), "p1");
-        assert!(matches!(
-            receiver.as_ref(),
-            Expr::Path { segments, .. }
-                if segments.len() == 1 && segments[0].as_str() == "p1_v2"
-        ));
+        assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "p1"));
+        assert!(
+            matches!(args.as_slice(), [CallArg::Value(Expr::Path { segments, .. })]
+            if segments.len() == 1 && segments[0].as_str() == "p1_v2")
+        );
     }
 
     #[test]
@@ -8155,12 +8148,15 @@ mod tests {
             panic!("expected one placeholder parameter")
         };
         assert_eq!(param.name, "p1_v2");
-        let Expr::UserMacro { name, args, .. } = body.as_ref() else {
+        let Expr::UserMacro { name, stages, .. } = body.as_ref() else {
             panic!("expected macro call placeholder body")
         };
         assert_eq!(name, "p1");
+        let [stage] = stages.as_slice() else {
+            panic!("one written value stage")
+        };
         assert!(matches!(
-            args.as_slice(),
+            stage.args.as_slice(),
             [CallArg::Value(Expr::Path { segments, .. })]
                 if segments.len() == 1 && segments[0].as_str() == "p1_v2"
         ));
@@ -8186,6 +8182,269 @@ mod tests {
             desugared_path_use_count(body, &crate::pass::placeholder::local_name(1)),
             0
         );
+    }
+
+    fn staged_rec_parts(source: &str) -> RecCallParts {
+        let module = parsed(source);
+        let Item::RecGroup(group, _) = &module.items[0] else {
+            panic!("expected recursive group")
+        };
+        let member = &group.members[0];
+        let Expr::RecCall { stages, meta, .. } = &member.body else {
+            panic!("expected recursive call")
+        };
+        let mut visitor = DesugarVisitor {
+            state: DesugarState::default(),
+        };
+        let (signature, _) = visitor
+            .walk_function_header(member.sig.clone(), member.ret.clone())
+            .expect("header");
+        visitor
+            .rec_header_call_parts(&member.name, &signature, stages.clone(), meta.span)
+            .expect("staged recursive header")
+    }
+
+    #[test]
+    fn rec_cps_direct_header_operand_storage_scales_with_written_stages() {
+        let mut sizes = Vec::new();
+        for width in [4, 8, 16] {
+            let parameters = (0..width)
+                .map(|i| format!("(value{i})"))
+                .collect::<String>();
+            let arguments = "(effect())".repeat(width);
+            let source = format!(
+                "module x; rec(loop) fn step(value: .) -> . {{
+                .[A]{parameters}(tail) {{ tail }}[.]{arguments}(recur(cont) step(()))
+            }}"
+            );
+            let module = d(&source);
+            let bodies = module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::FnDef(def) => Some(&def.body),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                bodies
+                    .iter()
+                    .map(|body| desugared_path_use_count(body, "effect"))
+                    .sum::<usize>(),
+                width
+            );
+            sizes.push(
+                bodies
+                    .iter()
+                    .map(|body| desugared_expr_node_count(body))
+                    .sum::<usize>(),
+            );
+        }
+        assert!(sizes[1] > sizes[0]);
+        assert_eq!(
+            sizes[2] - sizes[1],
+            2 * (sizes[1] - sizes[0]),
+            "CPS output must grow linearly with the written operand stages: {sizes:?}"
+        );
+    }
+
+    #[test]
+    fn rec_cps_direct_header_stops_before_body_and_returned_function() {
+        for (prefix, expected) in [
+            (".[A](value) { value }[.]", true),
+            (".[A][B](value) { value }[.]", true),
+            (".(first)(second) { second }(())", true),
+            (".[A](first: A)[B](second: B) { second }(())", true),
+            (".()(value) { value }()", true),
+            (".[A](value) { value }[.](())", false),
+            (".(value) -> . -> . { .(last: .) { last } }(())", false),
+            (
+                ".[A](value: A) -> [B] B -> B { .[B](last: B) { last } }[.](())",
+                false,
+            ),
+            ("factory()", false),
+            ("named[.]", false),
+        ] {
+            let module = parsed(&format!("module x; fn witness() {{ {prefix} }}"));
+            let Item::FnDef(def) = &module.items[0] else {
+                panic!("source function")
+            };
+            assert_eq!(
+                rec_cps_has_unfinished_direct_header(&def.body),
+                expected,
+                "{prefix}"
+            );
+        }
+    }
+
+    #[test]
+    fn rec_cps_direct_header_spills_earlier_effects_once_in_source_order() {
+        let module = d("module x; rec(loop) fn step(value: .) -> . {
+            .[A](first, second)()(tail) { tail }[.]
+                (effect_first(), effect_second())()(recur(cont) step(()))
+        }");
+        let mut ordered = Vec::new();
+        visit_desugared_expr(desugared_fn_body(&module, "step"), &mut |expr| {
+            let Expr::RecOrder { plan, .. } = expr else {
+                return;
+            };
+            for name in ["effect_first", "effect_second"] {
+                if is_call_to(&plan.value, name) {
+                    assert_eq!(
+                        plan.disposition,
+                        RecOrderDisposition::Ordered(RecOrderTypeFlow::ExpectedFromBody)
+                    );
+                    ordered.push(name);
+                }
+            }
+            if matches!(
+                plan.disposition,
+                RecOrderDisposition::Ordered(RecOrderTypeFlow::SynthesizedValue)
+            ) {
+                let mut head = plan.value.as_ref();
+                while let Expr::Call { callee, .. } = head {
+                    head = callee;
+                }
+                assert!(
+                    !matches!(head, Expr::FnExpr { .. }),
+                    "an unfinished direct header must remain connected"
+                );
+            }
+        });
+        assert_eq!(ordered, ["effect_first", "effect_second"]);
+        let mut complete_headers = 0;
+        visit_desugared_expr(desugared_fn_body(&module, "step"), &mut |expr| {
+            let mut root = expr;
+            let mut stages = Vec::new();
+            while let Expr::Call { callee, args, .. } = root {
+                stages.push(args.as_slice());
+                root = callee;
+            }
+            let Expr::FnExpr { sig, .. } = root else {
+                return;
+            };
+            if stages.len() != 3 || !sig.value_params().next().is_some_and(|p| p.name == "first") {
+                return;
+            }
+            stages.reverse();
+            let [CallArg::Type(_), CallArg::Value(packet)] = stages[0] else {
+                panic!("compact type plus one packet")
+            };
+            let (first, second) = desugared_pair_values(packet);
+            assert!(matches!(first, Expr::Path { .. }) && matches!(second, Expr::Path { .. }));
+            assert!(matches!(stages[1], [CallArg::Value(Expr::Unit { .. })]));
+            assert!(matches!(stages[2], [CallArg::Value(Expr::Path { .. })]));
+            complete_headers += 1;
+        });
+        assert_eq!(complete_headers, 1);
+        for name in ordered {
+            let count: usize = module
+                .items
+                .iter()
+                .filter_map(|item| match item {
+                    Item::FnDef(def) => Some(desugared_path_use_count(&def.body, name)),
+                    _ => None,
+                })
+                .sum();
+            assert_eq!(count, 1, "{name} must execute once");
+        }
+    }
+
+    #[test]
+    fn rec_call_stages_preserve_packets_and_interleaved_type_omission() {
+        let parts = staged_rec_parts(
+            "module x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step[T](first(), second())(third()) }",
+        );
+        assert_eq!(parts.type_args.len(), 2);
+        assert!(
+            matches!(&parts.type_args[0], Type::Path { segments, .. } if segments[0].name == "T")
+        );
+        assert!(
+            matches!(&parts.type_args[1], Type::Path { segments, .. } if segments[0].name == "B")
+        );
+        assert_eq!(parts.packets.len(), 2);
+        assert!(matches!(&parts.packets[0], Expr::Tuple { items, .. } if items.len() == 2));
+        assert!(
+            matches!(&parts.packet_types[0], Type::Product { left, right, .. }
+            if matches!(left.as_ref(), Type::Path { segments, .. } if segments[0].name == "T")
+            && matches!(right.as_ref(), Type::Path { segments, .. } if segments[0].name == "T"))
+        );
+        assert!(
+            matches!(&parts.packet_types[1], Type::Path { segments, .. } if segments[0].name == "B")
+        );
+        assert_eq!(parts.result_stage_count, 0);
+
+        let whole = staged_rec_parts(
+            "module x; rec(loop) fn step[A](x: A, y: A)[B](z: B) -> . { recur step(make_pair())[U](third()) }",
+        );
+        assert_eq!(whole.packets.len(), 2);
+        assert!(matches!(&whole.packets[0], Expr::Call { .. }));
+        assert!(
+            matches!(&whole.type_args[0], Type::Path { segments, .. } if segments[0].name == "A")
+        );
+        assert!(
+            matches!(&whole.type_args[1], Type::Path { segments, .. } if segments[0].name == "U")
+        );
+    }
+
+    #[test]
+    fn rec_call_stages_reject_one_packet_for_two_function_layers() {
+        let error = desugar_module(parsed(
+            "module x; rec(loop) fn step(x: .)(y: .) -> . { recur step(x, y) }",
+        ))
+        .expect_err("one product packet cannot supply two Function layers");
+        assert!(
+            error
+                .diag()
+                .1
+                .contains("requires another value argument group"),
+            "{error:?}"
+        );
+    }
+
+    #[test]
+    fn rec_call_stages_keep_callable_result_applications_outside_state() {
+        let parts = staged_rec_parts(
+            "module x; rec(loop) fn step(x: .) -> [A] A -> A { recur(cont) step(())[T](value) }",
+        );
+        assert_eq!(parts.packets.len(), 1);
+        assert_eq!(parts.result_stage_count, 2);
+        assert!(parts.type_args.is_empty());
+        let module = d(
+            "module x; rec(loop) fn step(x: .) -> . -> . { let value = recur(cont) step(x)(()); .() { value } }",
+        );
+        assert!(
+            module
+                .items
+                .iter()
+                .any(|item| matches!(item, Item::FnDef(def) if def.name == "step"))
+        );
+    }
+
+    #[test]
+    fn rec_call_stages_evaluate_effectful_packets_once() {
+        for source in [
+            "module x; rec(loop) fn step(x: ., y: .) -> . { recur step(make_pair()) }",
+            "module x; rec(loop) fn step(x: .)(y: .) -> . { let result = recur(cont) step(make_first())(make_second()); result }",
+            "module x; rec(loop) fn step(x: ., y: .) -> . -> . { .() { recur(escape) step(make_pair())(()) } }",
+        ] {
+            let module = d(source);
+            for name in ["make_pair", "make_first", "make_second"] {
+                let count: usize = module
+                    .items
+                    .iter()
+                    .filter_map(|item| match item {
+                        Item::FnDef(def) => Some(desugared_path_use_count(&def.body, name)),
+                        _ => None,
+                    })
+                    .sum();
+                assert_eq!(
+                    count,
+                    usize::from(source.contains(name)),
+                    "{name}: {source}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -8278,7 +8537,7 @@ mod tests {
     #[test]
     fn mutual_rec_step_owns_only_outer_state_type_parameters() {
         let module = d("module x; rec(loop) { \
-            fn first[A][B](value: A, extra: B) -> A { recur second(A, B, value, extra) }; \
+            fn first[A][B](value: A, extra: B) -> A { recur second[A][B](value, extra) }; \
             fn second[A][B](value: A, extra: B) -> A { value } \
         }");
         let helper = module
@@ -8733,7 +8992,7 @@ mod tests {
         let prefix = "module x;\n\
              host fn loop[S][R](step: S -> (S | R), state: S) -> R;\n\
              rec(loop) { \
-               fn go[A][B](value: A, extra: B) -> A { recur next(A, B, value, extra) }; \
+               fn go[A][B](value: A, extra: B) -> A { recur next[A][B](value, extra) }; \
                fn next[A][B](value: A, extra: B) -> A { value } \
              }\n";
         let parsed_prefix = parse(prefix).expect("parse preceding host and recursive group");
@@ -8930,43 +9189,43 @@ mod tests {
         crate::pass::block_projection::project_module(&mut module, &scope, &macro_calls)
             .expect("projection");
         let module = desugar_module(module).expect("desugar projected ordinary call");
-        let Expr::UserMacro { args, form, .. } = desugared_fn_body(&module, "f") else {
+        let Expr::UserMacro { stages, form, .. } = desugared_fn_body(&module, "f") else {
             panic!("ordinary user call")
         };
         assert_eq!(*form, crate::ast::UserMacroCallForm::TrailingBlocks);
-        let [CallArg::Value(Expr::FnExpr { body, .. })] = args.as_slice() else {
+        let [stage] = stages.as_slice() else {
+            panic!("one projected block stage")
+        };
+        let [CallArg::Value(Expr::FnExpr { body, .. })] = stage.args.as_slice() else {
             panic!("one projected thunk")
         };
         assert!(matches!(body.as_ref(), Expr::Seq { .. }));
     }
 
     #[test]
-    fn match_ufcs_survives_desugar() {
+    fn match_ufcs_lowers_to_macro_stages() {
         let m = d(
             "module x; import fixture(macro match); fn f(v: I32 | String) -> . { \
              v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }",
         );
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
+        let Expr::UserMacro { name, stages, .. } = desugared_fn_body(&m, "f") else {
+            panic!("expected projected macro call")
         };
-        let Expr::Ufcs {
-            receiver,
-            callee_segments,
-            args,
-            flavor,
-            macro_call,
-            ..
-        } = &d.body
-        else {
-            panic!("expected match UFCS, got {:?}", d.body);
+        assert_eq!(name, "match");
+        let [stage] = stages.as_slice() else {
+            panic!("the UFCS receiver enters the one written value packet")
         };
-        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-        assert_eq!(callee_segments, &vec!["match".to_owned()]);
-        assert_eq!(*flavor, crate::ast::UfcsFlavor::ReceiverFirst);
-        assert!(macro_call.is_some());
-        assert_eq!(args.len(), 2);
-        assert!(matches!(args[0], CallArg::Value(Expr::Call { .. })));
-        assert!(matches!(args[1], CallArg::Value(Expr::Unit { .. })));
+        let [CallArg::Value(packet)] = stage.args.as_slice() else {
+            panic!("one product packet")
+        };
+        let (receiver, rest) = desugared_pair_values(packet);
+        assert!(matches!(receiver, Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "v"));
+        let (clauses, unit) = desugared_pair_values(rest);
+        let (first, second) = desugared_pair_values(clauses);
+        assert!(matches!(first, Expr::FnExpr { .. }));
+        assert!(matches!(second, Expr::FnExpr { .. }));
+        assert!(matches!(unit, Expr::Unit { .. }));
     }
 
     // A recursive direct-lambda argument to a user macro is staged for
@@ -8976,7 +9235,7 @@ mod tests {
     fn rec_call_in_match_clause_lowers_in_tail_position() {
         d(
             "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }",
+             match(v, (.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
         );
     }
 
@@ -9073,9 +9332,9 @@ mod tests {
         for (receiver, expected) in [
             ("recur(cont) missing(value)", "not a member"),
             ("recur factory(value)", "not in tail position"),
-            ("recur(cont, poly) factory(T, value)", "only needed"),
-            ("recur(cont) factory(., ())", "changes type parameters"),
-            ("recur(cont) factory()", "expects 1 value"),
+            ("recur(cont, poly) factory[T](value)", "only needed"),
+            ("recur(cont) factory[.](())", "changes type parameters"),
+            ("recur(cont) factory[T]", "expected a value argument group"),
             ("recur(cont) factory(factory)", "cannot be used as a value"),
             (
                 "recur(cont) factory(recur(cont) missing(value))",
@@ -9088,7 +9347,11 @@ mod tests {
                     do ({receiver}) {{ .[A][B](value: A, next: A -> B) {{ next(value) }} }}
                 }}"
             );
-            let error = projected_sequence_desugar(&source).expect_err(receiver);
+            let error = if receiver == "recur(cont) factory[T]" {
+                parse(&source).expect_err("a recursive call requires a written value stage")
+            } else {
+                projected_sequence_desugar(&source).expect_err(receiver)
+            };
             assert!(error.diag().1.contains(expected), "{receiver}: {error:?}");
         }
     }
@@ -9102,8 +9365,8 @@ mod tests {
             let source = format!(
                 "module main; import sequence(macro do);
                 newtype Box[A] : A {{ constructor box; projector unbox; }};
-                rec(loop) fn go(value: .) -> Box(.) {{
-                    let receiver = .[A][B](input: Box(A), next: A -> Box(B)) -> Box(B) {{ {body} }};
+                rec(loop) fn go(value: .) -> Box[.] {{
+                    let receiver = .[A][B](input: Box[A], next: A -> Box[B]) -> Box[B] {{ {body} }};
                     do (receiver) {{ Box.box(()) }}
                 }}"
             );
@@ -9160,7 +9423,7 @@ mod tests {
             }");
         let mut field_ids = Vec::new();
         let mut user_ids = Vec::new();
-        let mut ufcs_ids = Vec::new();
+        let mut projected_identity_calls = 0;
         for item in &module.items {
             let Item::FnDef(def) = item else {
                 continue;
@@ -9168,15 +9431,24 @@ mod tests {
             visit_desugared_expr(&def.body, &mut |expr| match expr {
                 Expr::Elaborator { ext, .. } => field_ids.push(*ext),
                 Expr::UserMacro { ext, .. } => user_ids.push(*ext),
-                Expr::Ufcs { ext, .. } => ufcs_ids.push(*ext),
+                call if is_call_to(call, "identity") => {
+                    let Expr::Call { args, .. } = call else {
+                        unreachable!()
+                    };
+                    assert!(
+                        matches!(args.as_slice(), [CallArg::Value(Expr::Elaborator { .. })]),
+                        "the projected UFCS receiver remains the field access"
+                    );
+                    projected_identity_calls += 1;
+                }
                 _ => {}
             });
         }
-        for (kind, ids, count) in [
-            ("field", field_ids, 1),
-            ("user macro", user_ids, 2),
-            ("UFCS", ufcs_ids, 1),
-        ] {
+        assert_eq!(
+            projected_identity_calls, 1,
+            "the UFCS call is projected once"
+        );
+        for (kind, ids, count) in [("field", field_ids, 1), ("user macro", user_ids, 2)] {
             assert_eq!(
                 ids.len(),
                 count,
@@ -9262,7 +9534,7 @@ mod tests {
     fn rec_call_in_match_ufcs_clause_lowers_in_tail_position() {
         d(
             "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             v.>match((.(n: I32) { n }, .(_s: String) { recur go(__left__(I32, String, 0)) })) }",
+             v.>match((.(n: I32) { n }, .(_s: String) { recur go(__left__[I32][ String]( 0)) })) }",
         );
     }
 
@@ -9281,7 +9553,7 @@ mod tests {
     fn rec_cont_call_in_match_clause_lowers() {
         d(
             "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__(I32, String, 0))) })) }",
+             match(v, (.(n: I32) { n }, .(_s: String) { add(1, recur(cont) go(__left__[I32][ String]( 0))) })) }",
         );
     }
 
@@ -9474,8 +9746,8 @@ mod tests {
         let elaborated = deferred_continuation_elaborated_value(&shells[0]);
         assert!(matches!(
             elaborated,
-            Expr::Ufcs { callee_segments, macro_call: Some(_), .. }
-                if callee_segments.len() == 1 && callee_segments[0].as_str() == "match"
+            Expr::UserMacro { name, stages, .. }
+                if name == "match" && stages.len() == 1
         ));
         let mut deferred = 0;
         visit_desugared_expr(elaborated, &mut |expr| {
@@ -9602,14 +9874,15 @@ mod tests {
             }
         }
         for sample in samples {
-            // The final tree has twenty-five nodes per staged candidate at each
-            // nesting level, three nodes per continuation shell (the outer
+            // The final tree has twenty-eight nodes per staged candidate at each
+            // nesting level, including the packet adapter's function, call, and
+            // bound-slot path. There are three nodes per continuation shell (the outer
             // shell, its elaborated-value carrier, and that carrier's result
             // path), forty fixed wrapper/dispatch nodes, and two nodes (callee
             // path + call) per downstream continuation step. In particular,
             // there is no downstream-size × width/depth term and no nonlinear
             // nesting beyond the authored width × depth candidate count.
-            let expected_final_nodes = 25 * sample.width * sample.depth
+            let expected_final_nodes = 28 * sample.width * sample.depth
                 + 3 * sample.depth
                 + 40
                 + 2 * sample.continuation_size;
@@ -9753,21 +10026,72 @@ mod tests {
              hold(take(supply(), recur(cont) go(value))) }",
         );
         let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "supply");
-        let Expr::UserMacro { args, .. } = source else {
+        let Expr::UserMacro { stages, .. } = source else {
             panic!("the macro call remains the quoted source")
         };
-        let [CallArg::Value(value)] = args.as_slice() else {
+        let [stage] = stages.as_slice() else {
+            panic!("one written macro stage")
+        };
+        let [CallArg::Value(value)] = stage.args.as_slice() else {
             panic!("one ordinary call is quoted")
         };
         assert!(is_call_to(value, "take"));
         let Expr::Call { args, .. } = value else {
             unreachable!()
         };
+        let [CallArg::Value(packet)] = args.as_slice() else {
+            panic!("one written value group lowers to one packet")
+        };
+        let (first, recursive) = desugared_pair_values(packet);
+        assert!(is_call_to(first, "supply"));
         assert!(
-            matches!(args.as_slice(), [CallArg::Value(first), CallArg::Value(Expr::RecQuote { plan, .. })]
-            if is_call_to(first, "supply") && matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })),
-            "ordinary call operands retain their written order until typed call replay"
+            matches!(recursive, Expr::RecQuote { plan, .. }
+            if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })),
+            "the packet retains source order and the exact recursive quotation"
         );
+    }
+
+    #[test]
+    fn quoted_call_stages_keep_type_only_and_empty_value_groups_distinct() {
+        let module = d(
+            "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
+             hold(take[.](empty(), type_only[.], recur(cont) go(value))) }",
+        );
+        let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "empty");
+        let Expr::UserMacro { stages, .. } = source else {
+            panic!("the macro remains the quoted source")
+        };
+        let [stage] = stages.as_slice() else {
+            panic!("one written macro stage")
+        };
+        let [CallArg::Value(Expr::Call { callee, args, .. })] = stage.args.as_slice() else {
+            panic!("one quoted ordinary call")
+        };
+        assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "take"));
+        let [CallArg::Type(Type::Unit { .. }), CallArg::Value(packet)] = args.as_slice() else {
+            panic!("the explicit type prefix precedes one value packet")
+        };
+        let (empty, rest) = desugared_pair_values(packet);
+        let (type_only, recursive) = desugared_pair_values(rest);
+        assert!(is_call_to(empty, "empty"));
+        let Expr::Call { args, .. } = empty else {
+            unreachable!()
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Unit { .. })]
+        ));
+        assert!(is_call_to(type_only, "type_only"));
+        let Expr::Call { args, .. } = type_only else {
+            unreachable!()
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Unit { .. })]
+        ));
+        assert!(matches!(recursive, Expr::RecQuote { plan, .. }
+            if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })));
     }
 
     #[test]
@@ -9779,7 +10103,7 @@ mod tests {
                  .(_unit: .) -> _ { recur go(value) },
                  .(_unit: .) { () },
                  .(_unit: .) -> _ { () },
-                 .(_unit: .) -> Box(_) { make_box() },
+                 .(_unit: .) -> Box[_] { make_box() },
                  .(_unit: .) -> . { () }
                ))
              }");
@@ -9941,16 +10265,16 @@ mod tests {
             host type I32;
             host fn loop[S][R](step: S -> (S | R), state: S) -> R;
             newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
-            fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value }
-            rec(loop) fn value(n: I32) -> Box(I32) {
-              let .(box: Box(_)) = choose_box(0, recur(cont) value(0));
+            fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value }
+            rec(loop) fn value(n: I32) -> Box[I32] {
+              let .(box: Box[_]) = choose_box(0, recur(cont) value(0));
               box
             }";
         let module = d(source);
         let source_infer = source
-            .find("Box(_)")
+            .find("Box[_]")
             .expect("the fixture has one partial local annotation")
-            + "Box(".len();
+            + "Box[".len();
         let mut observations = Vec::new();
         visit_desugared_expr(desugared_fn_body(&module, "value"), &mut |expr| {
             let Expr::RecOrder { plan, .. } = expr else {
@@ -9984,27 +10308,24 @@ mod tests {
             "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
              effect(()).>hold(recur(cont) go(())) }",
         );
-        quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
-        let mut quoted_receiver_count = 0;
-        visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
-            Expr::Ufcs {
-                receiver,
-                callee_segments,
-                macro_call: Some(_),
-                ..
-            } if callee_segments.len() == 1 && callee_segments[0].as_str() == "hold" => {
-                assert!(
-                    is_call_to(receiver, "effect"),
-                    "the non-inert macro UFCS receiver must remain quoted"
-                );
-                quoted_receiver_count += 1;
-                assert!(matches!(expr, Expr::Ufcs { args, .. }
-                    if matches!(args.as_slice(), [CallArg::Value(Expr::RecQuote { plan, .. })]
-                        if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. }))));
-            }
-            _ => {}
-        });
-        assert_eq!(quoted_receiver_count, 1, "expected one hold UFCS call");
+        let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
+        let Expr::UserMacro { name, stages, .. } = source else {
+            panic!("the projected macro call remains quoted")
+        };
+        assert_eq!(name, "hold");
+        let [stage] = stages.as_slice() else {
+            panic!("one written value stage")
+        };
+        let [CallArg::Value(packet)] = stage.args.as_slice() else {
+            panic!("the receiver and written argument form one packet")
+        };
+        let (receiver, operand) = desugared_pair_values(packet);
+        assert!(
+            is_call_to(receiver, "effect"),
+            "the non-inert macro UFCS receiver must remain quoted before its operand"
+        );
+        assert!(matches!(operand, Expr::RecQuote { plan, .. }
+            if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })));
     }
 
     #[test]
@@ -10013,29 +10334,30 @@ mod tests {
             "module x; import fixture(macro hold); rec(loop) fn go(value: .) -> . { \
              value.>hold(effect(()), recur(cont) go(())) }",
         );
-        quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
-        let mut quoted_arg_count = 0;
-        visit_desugared_expr(desugared_fn_body(&module, "go"), &mut |expr| match expr {
-            Expr::Ufcs {
-                callee_segments,
-                args,
-                macro_call: Some(_),
-                ..
-            } if callee_segments.len() == 1 && callee_segments[0].as_str() == "hold" => {
-                assert!(
-                    matches!(args.first(), Some(CallArg::Value(value)) if is_call_to(value, "effect")),
-                    "the non-inert written macro UFCS argument must remain quoted"
-                );
-                quoted_arg_count += 1;
-                assert!(
-                    matches!(args.as_slice(), [CallArg::Value(first), CallArg::Value(Expr::RecQuote { plan, .. })]
-                    if is_call_to(first, "effect") && matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })),
-                    "the effect and suspension retain their written argument order"
-                );
-            }
-            _ => {}
-        });
-        assert_eq!(quoted_arg_count, 1, "expected one hold UFCS call");
+        let source = quoted_source_with_one_operand(desugared_fn_body(&module, "go"), "effect");
+        let Expr::UserMacro { name, stages, .. } = source else {
+            panic!("the projected macro call remains quoted")
+        };
+        assert_eq!(name, "hold");
+        let [stage] = stages.as_slice() else {
+            panic!("one written value stage")
+        };
+        let [CallArg::Value(packet)] = stage.args.as_slice() else {
+            panic!("the receiver and written arguments form one packet")
+        };
+        let (receiver, rest) = desugared_pair_values(packet);
+        assert!(matches!(receiver, Expr::Path { segments, .. }
+            if segments.len() == 1 && segments[0].as_str() == "value"));
+        let (effect, operand) = desugared_pair_values(rest);
+        assert!(
+            is_call_to(effect, "effect"),
+            "the non-inert written argument stays quoted after the receiver"
+        );
+        assert!(
+            matches!(operand, Expr::RecQuote { plan, .. }
+            if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { .. })),
+            "the effect and suspension retain their written order"
+        );
     }
 
     // A `rec` call in the `match` scrutinee is *not* tail; the rec
@@ -10044,7 +10366,7 @@ mod tests {
     fn rec_call_in_match_scrutinee_is_rejected() {
         let m = parse(
             "module x; import fixture(macro match); rec(loop) fn go(v: I32 | String) -> I32 { \
-             match(recur go(__left__(I32, String, 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
+             match(recur go(__left__[I32][ String]( 0)), (.(n: I32) { n }, .(_s: String) { 0 })) }",
         )
         .expect("parse");
         let err = desugar_module(m).expect_err("expected non-tail rejection");
@@ -10056,31 +10378,28 @@ mod tests {
     }
 
     #[test]
-    fn derive_ufcs_survives_desugar() {
+    fn derive_ufcs_lowers_to_macro_stages() {
         let m = d(
-            "module x; import fixture(macro derive); fn f() -> Monad(Maybe) { \
-             maybe_monad.>derive(Monad(Maybe)) }",
+            "module x; import fixture(macro derive); fn f() -> Monad[Maybe] { \
+             (maybe_monad.>derive)[Monad[Maybe]] }",
         );
-        let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
+        let Expr::UserMacro { name, stages, .. } = desugared_fn_body(&m, "f") else {
+            panic!("expected derive macro stages")
         };
-        let Expr::Ufcs {
-            receiver,
-            callee_segments,
-            args,
-            flavor,
-            macro_call,
-            ..
-        } = &d.body
-        else {
-            panic!("expected derive UFCS, got {:?}", d.body);
+        assert_eq!(name, "derive");
+        let [value_stage, type_stage] = stages.as_slice() else {
+            panic!("the receiver stage precedes the target type stage")
         };
-        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-        assert_eq!(callee_segments, &vec!["derive".to_owned()]);
-        assert_eq!(*flavor, crate::ast::UfcsFlavor::ReceiverFirst);
-        assert!(macro_call.is_some());
-        assert_eq!(args.len(), 1);
-        assert!(matches!(args[0], CallArg::Value(Expr::Call { .. })));
+        assert!(
+            matches!(value_stage.args.as_slice(), [CallArg::Value(Expr::Path { segments, .. })]
+            if segments.len() == 1 && segments[0].as_str() == "maybe_monad")
+        );
+        assert!(
+            matches!(type_stage.args.as_slice(), [CallArg::Type(Type::Path { segments, args, .. })]
+            if segments.len() == 1 && segments[0].as_str() == "Monad"
+            && matches!(args.as_slice(), [Type::Path { segments, .. }]
+                if segments.len() == 1 && segments[0].as_str() == "Maybe"))
+        );
     }
 
     #[test]

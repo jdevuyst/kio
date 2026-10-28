@@ -178,6 +178,18 @@ fn read_note_then_name(row: Name & Note) -> String & String { row.?{note, name} 
 
 The result contains payloads, not label wrappers.
 
+Kio determines the receiver's type before selecting its fields. A result
+annotation does not supply missing type information inside that receiver.
+For a generic label, an explicit literal type can provide it:
+
+```kio {@row}
+labels { item[A]: A };
+
+fn read_literal() -> String { Item.mk("text"[String]).?{item} }
+```
+
+Here `[String]` determines `Item[String]` before the access is checked.
+
 ## Row-let with `let .({...}) = value`
 
 Row-let destructures labels into local names:
@@ -212,7 +224,7 @@ An empty update is valid and returns the row unchanged. If a caller needs a diff
 ```kio {@row}
 fn wants_note_first(_x: Note & Name) { () }
 
-fn call_it(x: Name & Note) { wants_note_first(x.>reorder_prod(Note & Name)) }
+fn call_it(x: Name & Note) { wants_note_first((x.>reorder_prod)[Note & Name]) }
 ```
 
 ## Where this leads

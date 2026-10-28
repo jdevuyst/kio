@@ -42,9 +42,9 @@ rec(loop) fn fill_coords(
 , cell: I32
 , row: I32
 , col: I32
-, rows: Array(I32)
-, cols: Array(I32)
-, boxes: Array(I32)
+, rows: Array[I32]
+, cols: Array[I32]
+, boxes: Array[I32]
 ) {
   if(leq_i32(cell, last_cell())) {
     array_set(rows, cell, row);
@@ -62,10 +62,10 @@ rec(loop) fn fill_coords(
 }
 
 /// The row, column, and box index of every cell, in that order.
-pub fn build_coords() -> Array(I32) & Array(I32) & Array(I32) {
-  let rows = array_make_filled(cell_count(), 0);
-  let cols = array_make_filled(cell_count(), 0);
-  let boxes = array_make_filled(cell_count(), 0);
+pub fn build_coords() -> Array[I32] & Array[I32] & Array[I32] {
+  let .(rows: Array[I32]) = array_make_filled(cell_count(), 0);
+  let .(cols: Array[I32]) = array_make_filled(cell_count(), 0);
+  let .(boxes: Array[I32]) = array_make_filled(cell_count(), 0);
   fill_coords(0, 0, 0, rows, cols, boxes);
   (rows, cols, boxes)
 }

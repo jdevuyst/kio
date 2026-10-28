@@ -1,0 +1,15 @@
+module testapi/main;
+
+import macros/control(macro if);
+import testapi(Bool, String);
+import testapi/io(print);
+import testapi/iter(loop);
+import testapi/text(string_concat);
+
+rec(loop) fn render(condition: Bool) -> String {
+  let children =
+    if(condition) { string_concat("(", string_concat(recur(cont) render(.f), ")")) } else { "" };
+  children
+}
+
+pub fn main() { print(render(.t)); print("\n") }

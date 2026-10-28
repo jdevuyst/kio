@@ -2,8 +2,8 @@ module main;
 
 type Mixed[Slot] = Slot & ([Mixed_bound] Slot -> Mixed_bound);
 
-fn consume(wrapper: Mixed(.) -> .) { () }
+fn consume(wrapper: Mixed[.] -> .) { () }
 
 fn partial() {
-  consume(.(function: Mixed(_)) { () })
+  consume(.(function: Mixed[_]) { () })
 }

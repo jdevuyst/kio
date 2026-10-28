@@ -80,17 +80,17 @@ fn parser_context_file_identity_precedes_comment_and_binder_suppression() {
 fn parser_context_recursive_label_payload_recovery_keeps_type_scope() {
     for (marked, expected, excluded) in [
         (
-            "module app; import pkg/dep(Imported); rec labels { list[A] <U> : Pair(A, bogus[B]: |",
+            "module app; import pkg/dep(Imported); rec labels { list[A] <U> : Pair[A][bogus[B]: |",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
-            "module app; import pkg/dep(Imported); rec labels Tree[A] = { list[B] <U> : Pair(B, bogus[C]: |",
+            "module app; import pkg/dep(Imported); rec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: |",
             vec!["A", "B", "U", "Tree", "List", "Imported"],
             vec!["C", "Bogus"],
         ),
         (
-            "module app; rec labels { first[A]: Pair(A, bogus[B]: ), second[C]: |",
+            "module app; rec labels { first[A]: Pair[A][bogus[B]: ], second[C]: |",
             vec!["C", "First", "Second"],
             vec!["A", "B", "Bogus"],
         ),
@@ -116,9 +116,9 @@ fn parser_context_recursive_label_payload_recovery_keeps_type_scope() {
     }
     for marked in [
         "module app; rec labels { malformed[A B]: |",
-        "module app; rec labels { list[A] <U> : Pair(A, bogus[B]: // A|",
-        "module app; rec labels { list[A] <U> : Pair(A, bogus[B]: \"A|",
-        "module app; rec labels { first[A]: Pair(A, bogus[B]: ), se|cond[C]: . };",
+        "module app; rec labels { list[A] <U> : Pair[A][bogus[B]: // A|",
+        "module app; rec labels { list[A] <U> : Pair[A][bogus[B]: \"A|",
+        "module app; rec labels { first[A]: Pair[A][bogus[B]: ], se|cond[C]: . };",
     ] {
         assert!(complete_marked("", marked).1.items.is_empty(), "{marked}");
     }
@@ -452,7 +452,7 @@ fn parser_context_qualified_nominals_keep_scope_order_and_identity_aliases() {
         let (_, result) = complete_marked(
             "",
             &format!(
-                "module app; newtype Box[A] : A {{ constructor make; projector read; }}; type Alias[A] = Box(A); fn run() {{ {head}.|"
+                "module app; newtype Box[A] : A {{ constructor make; projector read; }}; type Alias[A] = Box[A]; fn run() {{ {head}.|"
             ),
         );
         assert_eq!(

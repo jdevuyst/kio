@@ -167,10 +167,10 @@ selector with its required parentheses.
 ## Expression queries
 
 Expressions use the loaded module's ordinary literal rules. A scalar literal needs an explicit
-annotation such as `42(Int)` or a concrete local context that determines its
+annotation such as `42[Int]` or a concrete local context that determines its
 carrier. A bare `42` query without that evidence is unresolved. `role` alone
 does not select a carrier,
-and `42(Float)` does not convert integer spelling into a float. See
+and `42[Float]` does not convert integer spelling into a float. See
 [literal types and local inference](typechecking.md#literal-types-and-local-inference).
 
 A line that doesn't start with `:` is a bare query. The REPL looks at what the line is and dispatches it the same way the matching meta-command would:
@@ -190,7 +190,7 @@ pub fn example_fn1(x: Int, y: Int) -> Int
 (also: :signature  :source  :type  :pure  :normalize  :doc  :which  :references)
 kio> example_fn1(3, 4)
 example_fn1(3, 4) : Int
-mul(3(Int), 4(Int))
+mul(3[Int], 4[Int])
 (also: :type  :pure  :normalize)
 ```
 
@@ -198,15 +198,15 @@ A single identifier on its own is read as that name, not as a zero-argument call
 
 `:normalize <expr>` shows what the expression reduces to: the REPL simplifies as far as its reduction rules allow — running through function bodies, substituting `let`-bindings, and reducing the intrinsics produced by macro calls. Literals are already values. Host functions never execute here, even when all their arguments are known. An intrinsic can also remain residual when an opaque input hides information its rule needs, such as a product projection whose pair is unknown; free variables likewise remain symbolic.
 
-Numeric literals display their checked values. For example, `010(Int)`
-normalizes to `10(Int)`. If `Float` has `role(f32)`, `0.1(Float)` can display
-as `0.10000000149011612(Float)`: that decimal preserves the selected binary32
+Numeric literals display their checked values. For example, `010[Int]`
+normalizes to `10[Int]`. If `Float` has `role(f32)`, `0.1[Float]` can display
+as `0.10000000149011612[Float]`: that decimal preserves the selected binary32
 value across host backends. Negative floating zero retains its sign. Source
 formatting preserves source digits; normalization shows the semantic value.
 
 Host calls remain visible even when their `()` result is discarded, so an extra `print(...)` still changes the residual form. A function result is summarized by where it came from and which parameter groups remain, for example `<closure provider.wrap(x)(y)>`. This is an explanation, not Kio code: the REPL does not repeat the function body or its captured values, and two matching closure summaries are not proof that the functions are equivalent. If reduction leaves a newtype constructor or projector from a dependency in any other result that the current module cannot identify clearly, the REPL prints ordinary qualified `import` lines that distinguish the declarations, then a blank line and the reduced expression. Those lines explain which declarations the answer means; they do not change the loaded module's scope or promise that copying the output produces a complete program. Private declarations and missing surrounding type information can still keep such a copy from type-checking. The REPL omits the extra lines when the current module already has an unshadowed name for every declaration. Reduction uses the same rules as `equiv` proofs (Kio's mechanism for asserting two expressions are equivalent; see [`specs/formal/equiv.md`](../../specs/formal/equiv.md)); the informational closure summary is only a display of that internal result.
 
-`:t` reports just the synthesized type — the same line a bare expression already prints first — and accepts either a name/FQN or an expression. These remain distinct input categories: a spelling that resolves as a declared name or exact item FQN, such as `my_package/examples.example_fn1`, or names a loaded module uses the name branch. Otherwise, a path-shaped spelling that parses in the current module uses the expression branch. That includes an alias-qualified value path such as `value.item`, and a slash-operator expression with either a bare or dotted right operand when `/` is imported. Once that expression parses, any type error is reported as an expression error; if the expression parse also fails, the name-resolution error is reported. Asked of a type-level name (a `newtype`, `type`, or `labels`), `:t` reports a kind error: a type-level name binds no value, so it has no type to print (use `:signature` for its declaration header). Asked of a `literal` alias, `:t` asks for an annotated expression such as `name(Type)`, because the literal gets its concrete type from the use site.
+`:t` reports just the synthesized type — the same line a bare expression already prints first — and accepts either a name/FQN or an expression. These remain distinct input categories: a spelling that resolves as a declared name or exact item FQN, such as `my_package/examples.example_fn1`, or names a loaded module uses the name branch. Otherwise, a path-shaped spelling that parses in the current module uses the expression branch. That includes an alias-qualified value path such as `value.item`, and a slash-operator expression with either a bare or dotted right operand when `/` is imported. Once that expression parses, any type error is reported as an expression error; if the expression parse also fails, the name-resolution error is reported. Asked of a type-level name (a `newtype`, `type`, or `labels`), `:t` reports a kind error: a type-level name binds no value, so it has no type to print (use `:signature` for its declaration header). Asked of a `literal` alias, `:t` asks for an annotated expression such as `name[Type]`, because the literal gets its concrete type from the use site.
 
 `:pure` accepts the same two categories and prints either `pure` or `impure`. For a declaration name or exact FQN, it reads the declaration contract: a `pure fn` is pure, while an unmarked `fn` or a `host fn` is impure. Other declaration kinds receive a kind-aware error because they are not executable value bindings. For an expression, the REPL asks whether the compiler would admit that expression as the body of an ordinary `pure fn`. If only an unrestricted function admits it, the answer is `impure`; if neither context admits it, the REPL shows the underlying syntax or type error instead. This is a compile-time query and does not evaluate the expression. The pure context includes nested lambda bodies, so a lambda that refers to a host function is impure even when the query only constructs the lambda and never calls it.
 
@@ -221,7 +221,7 @@ pure
 kio> :t example_fn1(3, 4)
 example_fn1(3, 4) : Int
 kio> :normalize example_fn1(3, 4)
-mul(3(Int), 4(Int))
+mul(3[Int], 4[Int])
 ```
 
 An expression that does not parse, or does not type-check, reports the error and leaves the session unchanged. Invalid syntax keeps the “not a name or a Kio expression” guidance and adds the parser's explanation, with a marker pointing into the expression you submitted. The `<repl>` line and column refer to that expression, without the command prefix. Expression queries resolve names through the current scope, so load a module first; with nothing loaded, queries with short names have nothing to resolve against.

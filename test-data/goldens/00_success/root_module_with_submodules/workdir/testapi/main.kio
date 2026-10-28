@@ -6,6 +6,6 @@ import testapi(String);
 import testapi/io(print);
 
 pub fn main() {
-  let a = identity("root module with submodules: ok\n"(String));
+  let a = identity("root module with submodules: ok\n"[String]);
   print(keep_first(a, "unused"))
 }

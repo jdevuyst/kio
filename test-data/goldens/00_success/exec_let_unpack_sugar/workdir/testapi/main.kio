@@ -25,13 +25,13 @@ import testapi/io(print);
 // `__snd__` type arguments then select the string component.
 newtype Boxed_string <U> : U & String {
   pub constructor mk_boxed_string;
-  pub projector un_boxed_string;
-  };
+  pub projector un_boxed_string
+  }
 
 fn box_string(s: String) -> Boxed_string { Boxed_string.mk_boxed_string((s, s)) }
 
 fn extract_string(b: Boxed_string) -> String {
-  Boxed_string.un_boxed_string(b)(_, .[U](pair) { __snd__(U, String, pair) })
+  Boxed_string.un_boxed_string(b)[_](.[U](pair) { __snd__[U][String](pair) })
 }
 
 pub fn main() { let b = box_string("let-unpack-sugar-ok\n"); print(extract_string(b)) }

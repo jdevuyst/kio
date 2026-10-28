@@ -1,0 +1,9 @@
+module main;
+
+host type String role(str);
+
+host fn make[A]() -> A;
+
+labels { item[A]: A };
+
+fn read() -> String { Item.mk("text").?{item} }

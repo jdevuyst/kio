@@ -10,7 +10,7 @@ pub type I32 = _rehost_gegjgdhefpgigphdhe.I32;
 
 pub fn add(p0: I32, p1: I32) -> I32 { _rehost_gegjgdhefpgigphdhe.add(p0, p1) }
 
-pub fn loop[S][R](p0: S -> (S | R), p1: S) -> R { _rehost_gegjgdhefpgigphdhe.loop(S, R, p0, p1) }
+pub fn loop[S][R](p0: S -> (S | R), p1: S) -> R { _rehost_gegjgdhefpgigphdhe.loop[S][R](p0, p1) }
 
 /// Defines the ordering labels used to distinguish less-than, equal, and greater-than comparison outcomes.
 pub labels { ord_lt: ., ord_eq: ., ord_gt: . };
@@ -19,13 +19,13 @@ pub labels { ord_lt: ., ord_eq: ., ord_gt: . };
 pub type Ordering = Ord_lt | Ord_eq | Ord_gt;
 
 /// Builds the less-than ordering case for a key comparison result.
-pub fn lt() -> Ordering { widen_sum({ord_lt=}, Ord_lt | Ord_eq | Ord_gt) }
+pub fn lt() -> Ordering { widen_sum({ord_lt=})[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Builds the equal ordering case for a key comparison result.
-pub fn eq() -> Ordering { widen_sum({ord_eq=}, Ord_lt | Ord_eq | Ord_gt) }
+pub fn eq() -> Ordering { widen_sum({ord_eq=})[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Builds the greater-than ordering case for a key comparison result.
-pub fn gt() -> Ordering { widen_sum({ord_gt=}, Ord_lt | Ord_eq | Ord_gt) }
+pub fn gt() -> Ordering { widen_sum({ord_gt=})[Ord_lt | Ord_eq | Ord_gt] }
 
 /// Selects a caller-chosen result for each comparison outcome.
 pub fn ord_select[A](on_lt: A, on_eq: A, on_gt: A, o: Ordering) -> A {
@@ -41,10 +41,10 @@ pub labels { btrue: ., bfalse: . };
 pub type Flag = Btrue | Bfalse;
 
 /// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Flag { widen_sum({btrue=}, Btrue | Bfalse) }
+pub fn yes() -> Flag { widen_sum({btrue=})[Btrue | Bfalse] }
 
 /// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Flag { widen_sum({bfalse=}, Btrue | Bfalse) }
+pub fn no() -> Flag { widen_sum({bfalse=})[Btrue | Bfalse] }
 
 /// Eliminates a dictionary `Flag` without exposing the label internals to callers.
 pub fn bool_select[A](on_true: A, on_false: A, b: Flag) -> A {
@@ -55,7 +55,7 @@ pub fn bool_select[A](on_true: A, on_false: A, b: Flag) -> A {
 
 /// Collapses two explicit Flag arms into one Flag.
 pub fn collapse_bool(doubled: Flag | Flag) -> Flag {
-  narrow_sum(flatten_sum(doubled, Btrue | Bfalse | Btrue | Bfalse))
+  narrow_sum(flatten_sum(doubled)[Btrue | Bfalse | Btrue | Bfalse])
 }
 
 // Red-black trees colour each node red or black to bound the longest
@@ -67,10 +67,10 @@ labels { red: ., black: . };
 type Colour = Red | Black;
 
 /// Builds the red tree-color case.
-fn c_red() -> Colour { widen_sum({red=}, Red | Black) }
+fn c_red() -> Colour { widen_sum({red=})[Red | Black] }
 
 /// Builds the black tree-color case.
-fn c_black() -> Colour { widen_sum({black=}, Red | Black) }
+fn c_black() -> Colour { widen_sum({black=})[Red | Black] }
 
 /// Reports whether a tree node color is red.
 fn is_red(c: Colour) -> Flag {
@@ -81,49 +81,49 @@ fn is_red(c: Colour) -> Flag {
 
 /// Ordered dictionary with private node construction and projection.
 /// Use the same lawful, consistent key ordering for every update and lookup.
-pub rec newtype Dict[K][V] : . | (Colour & K & V & Dict(K, V) & Dict(K, V)) {
+pub rec newtype Dict[K][V] : . | (Colour & K & V & Dict[K][V] & Dict[K][V]) {
   constructor pack;
   projector unpack
   }
 
 /// Builds an empty dictionary.
-pub fn empty[K][V] -> Dict(K, V) {
-  Dict.pack(widen_sum((), . | (Colour & K & V & Dict(K, V) & Dict(K, V))))
+pub fn empty[K][V] -> Dict[K][V] {
+  Dict.pack(widen_sum(())[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
 }
 
 // Rebuild a raw node only within the balancing and traversal implementation.
-fn node[K][V](c: Colour, key: K, val: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) {
-  Dict.pack(widen_sum((c, key, val, l, r), . | (Colour & K & V & Dict(K, V) & Dict(K, V))))
+fn node[K][V](c: Colour, key: K, val: V, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
+  Dict.pack(widen_sum((c, key, val, l, r))[. | (Colour & K & V & Dict[K][V] & Dict[K][V])])
 }
 
 /// `singleton(k, v)` is the one-entry map — a single black node.
-pub fn singleton[K][V](key: K, val: V) -> Dict(K, V) {
-  node(c_black(), key, val, empty(_, _), empty(_, _))
+pub fn singleton[K][V](key: K, val: V) -> Dict[K][V] {
+  node(c_black(), key, val, empty[_][_], empty[_][_])
 }
 
 /// One-step destructor: `()` for the empty tree, or the node 5-tuple.
 /// Every walk projects through this.
-fn un_node[K][V](d: Dict(K, V)) -> . | (Colour & K & V & Dict(K, V) & Dict(K, V)) { d.>Dict.unpack }
+fn un_node[K][V](d: Dict[K][V]) -> . | (Colour & K & V & Dict[K][V] & Dict[K][V]) { d.>Dict.unpack }
 
 /// `is_empty(d)` is the pure emptiness predicate.
-pub fn is_empty[K][V](d: Dict(K, V)) -> Flag {
+pub fn is_empty[K][V](d: Dict[K][V]) -> Flag {
   match(un_node(d)) {
-    (.(_n: Colour & K & V & Dict(K, V) & Dict(K, V)) { no() }, .(_e: .) { yes() })
+    (.(_n: Colour & K & V & Dict[K][V] & Dict[K][V]) { no() }, .(_e: .) { yes() })
   }
 }
 
 // `insert` paints the root black as its final step, restoring the "root is
 // black" invariant after the red-black fixup.
 /// Recolors a dictionary node while preserving its key, value, and children.
-fn paint[K][V](c: Colour, d: Dict(K, V)) -> Dict(K, V) {
+fn paint[K][V](c: Colour, d: Dict[K][V]) -> Dict[K][V] {
   match(un_node(d)) {
     (
-    , .(p: Colour & K & V & Dict(K, V) & Dict(K, V)) {
+    , .(p: Colour & K & V & Dict[K][V] & Dict[K][V]) {
         match(p) {
-          .(_old: Colour, key: K, val: V, l: Dict(K, V), r: Dict(K, V)) { node(c, key, val, l, r) }
+          .(_old: Colour, key: K, val: V, l: Dict[K][V], r: Dict[K][V]) { node(c, key, val, l, r) }
         }
       }
-    , .(_e: .) { empty(_, _) }
+    , .(_e: .) { empty[_][_] }
     )
   }
 }
@@ -151,32 +151,32 @@ fn paint[K][V](c: Colour, d: Dict(K, V)) -> Dict(K, V) {
 fn rotated[K][V](
 , xk: K
 , xv: V
-, a: Dict(K, V)
-, b: Dict(K, V)
+, a: Dict[K][V]
+, b: Dict[K][V]
 , yk: K
 , yv: V
 , zk: K
 , zv: V
-, c: Dict(K, V)
-, d: Dict(K, V)
-) -> Dict(K, V) {
+, c: Dict[K][V]
+, d: Dict[K][V]
+) -> Dict[K][V] {
   node(c_red(), yk, yv, node(c_black(), xk, xv, a, b), node(c_black(), zk, zv, c, d))
 }
 
-fn hit[K][V](d: Dict(K, V)) -> Dict(K, V) | . { widen_sum(d, Dict(K, V) | .) }
+fn hit[K][V](d: Dict[K][V]) -> Dict[K][V] | . { widen_sum(d)[Dict[K][V] | .] }
 
-fn miss[K][V] -> Dict(K, V) | . { widen_sum((), Dict(K, V) | .) }
+fn miss[K][V] -> Dict[K][V] | . { widen_sum(())[Dict[K][V] | .] }
 
 fn with_red_node[K][V][R](
-, d: Dict(K, V)
+, d: Dict[K][V]
 , on_other: . -> R
-, on_red: (K & V & Dict(K, V) & Dict(K, V)) -> R
+, on_red: (K & V & Dict[K][V] & Dict[K][V]) -> R
 ) -> R {
   match(un_node(d)) {
     (
-    , .(n: Colour & K & V & Dict(K, V) & Dict(K, V)) {
+    , .(n: Colour & K & V & Dict[K][V] & Dict[K][V]) {
         match(n) {
-          .(c: Colour, key: K, val: V, l: Dict(K, V), rr: Dict(K, V)) {
+          .(c: Colour, key: K, val: V, l: Dict[K][V], rr: Dict[K][V]) {
             bool_select(on_red(key, val, l, rr), on_other(), is_red(c))
           }
         }
@@ -186,25 +186,25 @@ fn with_red_node[K][V][R](
   }
 }
 
-fn try_balance_left[K][V](zk: K, zv: V, l: Dict(K, V), d: Dict(K, V)) -> Dict(K, V) | . {
+fn try_balance_left[K][V](zk: K, zv: V, l: Dict[K][V], d: Dict[K][V]) -> Dict[K][V] | . {
   with_red_node(
   , l
-  , .() -> Dict(K, V) | . { miss(_, _) }
-  , .(yk: K, yv: V, ly: Dict(K, V), c: Dict(K, V)) -> Dict(K, V) | . {
+  , .() -> Dict[K][V] | . { miss[_][_] }
+  , .(yk: K, yv: V, ly: Dict[K][V], c: Dict[K][V]) -> Dict[K][V] | . {
       // left-left: ly is red.
       with_red_node(
       , ly
-      , .() -> Dict(K, V) | . {
+      , .() -> Dict[K][V] | . {
           // left-right: c (y's right child) is red.
           with_red_node(
           , c
-          , .() -> Dict(K, V) | . { miss(_, _) }
-          , .(xk2: K, xv2: V, b: Dict(K, V), cc: Dict(K, V)) -> Dict(K, V) | . {
+          , .() -> Dict[K][V] | . { miss[_][_] }
+          , .(xk2: K, xv2: V, b: Dict[K][V], cc: Dict[K][V]) -> Dict[K][V] | . {
               hit(rotated(yk, yv, ly, b, xk2, xv2, zk, zv, cc, d))
             }
           )
         }
-      , .(xk: K, xv: V, a: Dict(K, V), b: Dict(K, V)) -> Dict(K, V) | . {
+      , .(xk: K, xv: V, a: Dict[K][V], b: Dict[K][V]) -> Dict[K][V] | . {
           hit(rotated(xk, xv, a, b, yk, yv, zk, zv, c, d))
         }
       )
@@ -212,25 +212,25 @@ fn try_balance_left[K][V](zk: K, zv: V, l: Dict(K, V), d: Dict(K, V)) -> Dict(K,
   )
 }
 
-fn try_balance_right[K][V](xk: K, xv: V, a: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) | . {
+fn try_balance_right[K][V](xk: K, xv: V, a: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] | . {
   with_red_node(
   , r
-  , .() -> Dict(K, V) | . { miss(_, _) }
-  , .(yk: K, yv: V, ry_l: Dict(K, V), d: Dict(K, V)) -> Dict(K, V) | . {
+  , .() -> Dict[K][V] | . { miss[_][_] }
+  , .(yk: K, yv: V, ry_l: Dict[K][V], d: Dict[K][V]) -> Dict[K][V] | . {
       // right-left: ry_l (y's left child) is red.
       with_red_node(
       , ry_l
-      , .() -> Dict(K, V) | . {
+      , .() -> Dict[K][V] | . {
           // right-right: d (y's right child) is red.
           with_red_node(
           , d
-          , .() -> Dict(K, V) | . { miss(_, _) }
-          , .(zk2: K, zv2: V, c2: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V) | . {
+          , .() -> Dict[K][V] | . { miss[_][_] }
+          , .(zk2: K, zv2: V, c2: Dict[K][V], d2: Dict[K][V]) -> Dict[K][V] | . {
               hit(rotated(xk, xv, a, ry_l, yk, yv, zk2, zv2, c2, d2))
             }
           )
         }
-      , .(yk2: K, yv2: V, b: Dict(K, V), c: Dict(K, V)) -> Dict(K, V) | . {
+      , .(yk2: K, yv2: V, b: Dict[K][V], c: Dict[K][V]) -> Dict[K][V] | . {
           hit(rotated(xk, xv, a, b, yk2, yv2, yk, yv, c, d))
         }
       )
@@ -238,15 +238,15 @@ fn try_balance_right[K][V](xk: K, xv: V, a: Dict(K, V), r: Dict(K, V)) -> Dict(K
   )
 }
 
-fn balance_black_right[K][V](xk: K, xv: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) {
+fn balance_black_right[K][V](xk: K, xv: V, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
   match(try_balance_right(xk, xv, l, r)) {
-    (.(t: Dict(K, V)) { t }, .(_absent: .) { node(c_black(), xk, xv, l, r) })
+    (.(t: Dict[K][V]) { t }, .(_absent: .) { node(c_black(), xk, xv, l, r) })
   }
 }
 
-fn balance_black[K][V](zk: K, zv: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) {
+fn balance_black[K][V](zk: K, zv: V, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
   match(try_balance_left(zk, zv, l, r)) {
-    (.(t: Dict(K, V)) { t }, .(_absent: .) { balance_black_right(zk, zv, l, r) })
+    (.(t: Dict[K][V]) { t }, .(_absent: .) { balance_black_right(zk, zv, l, r) })
   }
 }
 
@@ -254,7 +254,7 @@ fn balance_black[K][V](zk: K, zv: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V)
 /// when the node is black and a red-red violation is present in a child.
 /// `c` is the node's intended colour; only the black case can trigger a
 /// rotation (a red parent with a red child is fixed one level up).
-fn balance[K][V](c: Colour, key: K, val: V, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) {
+fn balance[K][V](c: Colour, key: K, val: V, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
   bool_select(node(c, key, val, l, r), balance_black(key, val, l, r), is_red(c))
 }
 
@@ -267,16 +267,16 @@ fn balance[K][V](c: Colour, key: K, val: V, l: Dict(K, V), r: Dict(K, V)) -> Dic
 fn lookup_step[K][V][R](
 , cmp_at: K -> Ordering
 , on_found: V -> R
-, go_left: Dict(K, V) -> R
-, go_right: Dict(K, V) -> R
+, go_left: Dict[K][V] -> R
+, go_right: Dict[K][V] -> R
 , on_empty: . -> R
-, d: Dict(K, V)
+, d: Dict[K][V]
 ) -> R {
   match(un_node(d)) {
     (
-    , .(n: Colour & K & V & Dict(K, V) & Dict(K, V)) {
+    , .(n: Colour & K & V & Dict[K][V] & Dict[K][V]) {
         match(n) {
-          .(_c: Colour, key: K, val: V, l: Dict(K, V), rr: Dict(K, V)) {
+          .(_c: Colour, key: K, val: V, l: Dict[K][V], rr: Dict[K][V]) {
             ord_select(go_left(l), on_found(val), go_right(rr), cmp_at(key))
           }
         }
@@ -292,21 +292,21 @@ fn lookup_step[K][V][R](
 /// rebalanced left subtree; `step_right` is the mirror. A self-contained
 /// product per arm; the descent threads the private `Crumbs` zipper.
 labels {
-, step_left[K][V]: Colour & K & V & Dict(K, V)
-, step_right[K][V]: Colour & K & V & Dict(K, V)
+, step_left[K][V]: Colour & K & V & Dict[K][V]
+, step_right[K][V]: Colour & K & V & Dict[K][V]
 };
 
 /// One zipper frame recording the sibling subtree and side taken during insertion.
-type Crumb[K][V] = Step_left(K, V) | Step_right(K, V);
+type Crumb[K][V] = Step_left[K][V] | Step_right[K][V];
 
 /// Records that insertion descended into the left subtree of a dictionary node.
-fn crumb_left[K][V](c: Colour, key: K, val: V, sibling: Dict(K, V)) -> Crumb(K, V) {
-  widen_sum({step_left = (c, key, val, sibling)}, Step_left(K, V) | Step_right(K, V))
+fn crumb_left[K][V](c: Colour, key: K, val: V, sibling: Dict[K][V]) -> Crumb[K][V] {
+  widen_sum({step_left = (c, key, val, sibling)})[Step_left[K][V] | Step_right[K][V]]
 }
 
 /// Records that insertion descended into the right subtree of a dictionary node.
-fn crumb_right[K][V](c: Colour, key: K, val: V, sibling: Dict(K, V)) -> Crumb(K, V) {
-  widen_sum({step_right = (c, key, val, sibling)}, Step_left(K, V) | Step_right(K, V))
+fn crumb_right[K][V](c: Colour, key: K, val: V, sibling: Dict[K][V]) -> Crumb[K][V] {
+  widen_sum({step_right = (c, key, val, sibling)})[Step_left[K][V] | Step_right[K][V]]
 }
 
 /// `rebuild_step(crumb, child)` re-attaches `child` as the subtree we
@@ -314,17 +314,17 @@ fn crumb_right[K][V](c: Colour, key: K, val: V, sibling: Dict(K, V)) -> Crumb(K,
 /// that level. This is the pure per-step work of the rebuild loop: given
 /// the breadcrumb (which way we turned + the sibling) and the rebalanced
 /// child, produce the rebalanced parent.
-fn rebuild_step[K][V](crumb: Crumb(K, V), child: Dict(K, V)) -> Dict(K, V) {
+fn rebuild_step[K][V](crumb: Crumb[K][V], child: Dict[K][V]) -> Dict[K][V] {
   match(crumb) {
     (
-    , .(sl: Step_left(K, V)) {
+    , .(sl: Step_left[K][V]) {
         match(sl.>Step_left.get) {
-          .(c: Colour, key: K, val: V, sib: Dict(K, V)) { balance(c, key, val, child, sib) }
+          .(c: Colour, key: K, val: V, sib: Dict[K][V]) { balance(c, key, val, child, sib) }
         }
       }
-    , .(sr: Step_right(K, V)) {
+    , .(sr: Step_right[K][V]) {
         match(sr.>Step_right.get) {
-          .(c: Colour, key: K, val: V, sib: Dict(K, V)) { balance(c, key, val, sib, child) }
+          .(c: Colour, key: K, val: V, sib: Dict[K][V]) { balance(c, key, val, sib, child) }
         }
       }
     )
@@ -335,14 +335,14 @@ fn rebuild_step[K][V](crumb: Crumb(K, V), child: Dict(K, V)) -> Dict(K, V) {
 /// reaches when the key is absent. New nodes are red (Okasaki): a red
 /// leaf preserves black-height, and the rebuild's `balance` plus the
 /// final root-repaint restore the colour invariants.
-fn insert_at_leaf[K][V](key: K, val: V) -> Dict(K, V) {
-  node(c_red(), key, val, empty(_, _), empty(_, _))
+fn insert_at_leaf[K][V](key: K, val: V) -> Dict[K][V] {
+  node(c_red(), key, val, empty[_][_], empty[_][_])
 }
 
 /// `replace_value(key, val, c, l, r)` rebuilds an existing node with a new
 /// value, keeping colour and children — last-write-wins when the key is
 /// already present.
-fn replace_value[K][V](key: K, val: V, c: Colour, l: Dict(K, V), r: Dict(K, V)) -> Dict(K, V) {
+fn replace_value[K][V](key: K, val: V, c: Colour, l: Dict[K][V], r: Dict[K][V]) -> Dict[K][V] {
   node(c, key, val, l, r)
 }
 
@@ -352,15 +352,15 @@ fn replace_value[K][V](key: K, val: V, c: Colour, l: Dict(K, V), r: Dict(K, V)) 
 pub type Compare[K] = (K & K) -> Ordering;
 
 /// Returns the value at the target key, or the absent Unit arm.
-pub fn get[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> V | . {
+pub fn get[K][V](cmp: Compare[K], d: Dict[K][V], target: K) -> V | . {
   loop(
-  , .(current: Dict(K, V)) -> Dict(K, V) | V | . {
+  , .(current: Dict[K][V]) -> Dict[K][V] | V | . {
       lookup_step(
       , .(key: K) -> Ordering { cmp(target, key) }
-      , .(val: V) -> Dict(K, V) | V | . { widen_sum(val, Dict(K, V) | V | .) }
-      , .(l: Dict(K, V)) -> Dict(K, V) | V | . { widen_sum(l, Dict(K, V) | V | .) }
-      , .(r: Dict(K, V)) -> Dict(K, V) | V | . { widen_sum(r, Dict(K, V) | V | .) }
-      , .() -> Dict(K, V) | V | . { widen_sum((), Dict(K, V) | V | .) }
+      , .(val: V) -> Dict[K][V] | V | . { widen_sum(val)[Dict[K][V] | V | .] }
+      , .(l: Dict[K][V]) -> Dict[K][V] | V | . { widen_sum(l)[Dict[K][V] | V | .] }
+      , .(r: Dict[K][V]) -> Dict[K][V] | V | . { widen_sum(r)[Dict[K][V] | V | .] }
+      , .() -> Dict[K][V] | V | . { widen_sum(())[Dict[K][V] | V | .] }
       , current
       )
     }
@@ -369,17 +369,17 @@ pub fn get[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> V | . {
 }
 
 /// Reports whether the target key is present.
-pub fn has_key[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> Flag {
+pub fn has_key[K][V](cmp: Compare[K], d: Dict[K][V], target: K) -> Flag {
   match(get(cmp, d, target)) {
     (.(_value: V) { yes() }, .(_absent: .) { no() })
   }
 }
 
 /// Reports whether the target key is present.
-pub fn member[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> Flag { has_key(cmp, d, target) }
+pub fn member[K][V](cmp: Compare[K], d: Dict[K][V], target: K) -> Flag { has_key(cmp, d, target) }
 
 /// Returns the value at the target key, or the default when absent.
-pub fn get_or[K][V](cmp: Compare(K), d: Dict(K, V), target: K, default: V) -> V {
+pub fn get_or[K][V](cmp: Compare[K], d: Dict[K][V], target: K, default: V) -> V {
   match(get(cmp, d, target)) {
     (.(value: V) { value }, .(_absent: .) { default })
   }
@@ -387,37 +387,37 @@ pub fn get_or[K][V](cmp: Compare(K), d: Dict(K, V), target: K, default: V) -> V 
 
 // Insertion records only the ancestors and sibling subtrees needed to
 // rebuild one search path, then restores the black root invariant.
-rec newtype Crumbs[K][V] : . | (Crumb(K, V) & Crumbs(K, V)) { constructor pack; projector unpack }
+rec newtype Crumbs[K][V] : . | (Crumb[K][V] & Crumbs[K][V]) { constructor pack; projector unpack }
 
-fn no_crumbs[K][V] -> Crumbs(K, V) { Crumbs.pack(widen_sum((), . | (Crumb(K, V) & Crumbs(K, V)))) }
+fn no_crumbs[K][V] -> Crumbs[K][V] { Crumbs.pack(widen_sum(())[. | (Crumb[K][V] & Crumbs[K][V])]) }
 
-fn push_crumb[K][V](head: Crumb(K, V), tail: Crumbs(K, V)) -> Crumbs(K, V) {
-  Crumbs.pack(widen_sum((head, tail), . | (Crumb(K, V) & Crumbs(K, V))))
+fn push_crumb[K][V](head: Crumb[K][V], tail: Crumbs[K][V]) -> Crumbs[K][V] {
+  Crumbs.pack(widen_sum((head, tail))[. | (Crumb[K][V] & Crumbs[K][V])])
 }
 
-type Zip[K][V] = Dict(K, V) & Crumbs(K, V);
+type Zip[K][V] = Dict[K][V] & Crumbs[K][V];
 
 // The two insertion passes have the same state and result shape. The
 // private done label distinguishes a stopped zipper from a continuing one.
-labels { done[K][V]: Zip(K, V) };
+labels { done[K][V]: Zip[K][V] };
 
-type Step[K][V] = Zip(K, V) | Done(K, V);
+type Step[K][V] = Zip[K][V] | Done[K][V];
 
-fn step_go[K][V](z: Zip(K, V)) -> Step(K, V) { widen_sum(z, Zip(K, V) | Done(K, V)) }
+fn step_go[K][V](z: Zip[K][V]) -> Step[K][V] { widen_sum(z)[Zip[K][V] | Done[K][V]] }
 
-fn step_done[K][V](z: Zip(K, V)) -> Step(K, V) { widen_sum({done = z}, Zip(K, V) | Done(K, V)) }
+fn step_done[K][V](z: Zip[K][V]) -> Step[K][V] { widen_sum({done = z})[Zip[K][V] | Done[K][V]] }
 
-fn insert_descend[K][V](cmp: Compare(K), d: Dict(K, V), key: K, val: V) -> Zip(K, V) {
+fn insert_descend[K][V](cmp: Compare[K], d: Dict[K][V], key: K, val: V) -> Zip[K][V] {
   let stopped =
     loop(
-    , .(state: Zip(K, V)) -> Zip(K, V) | Done(K, V) {
+    , .(state: Zip[K][V]) -> Zip[K][V] | Done[K][V] {
         match(state) {
-          .(current: Dict(K, V), crumbs: Crumbs(K, V)) {
+          .(current: Dict[K][V], crumbs: Crumbs[K][V]) {
             match(un_node(current)) {
               (
-              , .(n: Colour & K & V & Dict(K, V) & Dict(K, V)) {
+              , .(n: Colour & K & V & Dict[K][V] & Dict[K][V]) {
                   match(n) {
-                    .(c: Colour, nkey: K, nval: V, l: Dict(K, V), r: Dict(K, V)) {
+                    .(c: Colour, nkey: K, nval: V, l: Dict[K][V], r: Dict[K][V]) {
                       ord_select(
                       , step_go((l, push_crumb(crumb_left(c, nkey, nval, r), crumbs)))
                       , step_done((replace_value(nkey, val, c, l, r), crumbs))
@@ -433,22 +433,22 @@ fn insert_descend[K][V](cmp: Compare(K), d: Dict(K, V), key: K, val: V) -> Zip(K
           }
         }
       }
-    , (d, no_crumbs(_, _))
+    , (d, no_crumbs[_][_])
     );
   stopped.>Done.get
 }
 
-fn insert_rebuild[K][V](built: Dict(K, V), crumbs: Crumbs(K, V)) -> Dict(K, V) {
+fn insert_rebuild[K][V](built: Dict[K][V], crumbs: Crumbs[K][V]) -> Dict[K][V] {
   let stopped =
     loop(
-    , .(state: Zip(K, V)) -> Zip(K, V) | Done(K, V) {
+    , .(state: Zip[K][V]) -> Zip[K][V] | Done[K][V] {
         match(state) {
-          .(child: Dict(K, V), rest: Crumbs(K, V)) {
+          .(child: Dict[K][V], rest: Crumbs[K][V]) {
             match(rest.>Crumbs.unpack) {
               (
-              , .(pair: Crumb(K, V) & Crumbs(K, V)) {
+              , .(pair: Crumb[K][V] & Crumbs[K][V]) {
                   match(pair) {
-                    .(crumb: Crumb(K, V), tail: Crumbs(K, V)) {
+                    .(crumb: Crumb[K][V], tail: Crumbs[K][V]) {
                       step_go((rebuild_step(crumb, child), tail))
                     }
                   }
@@ -462,68 +462,63 @@ fn insert_rebuild[K][V](built: Dict(K, V), crumbs: Crumbs(K, V)) -> Dict(K, V) {
     , (built, crumbs)
     );
   match(stopped.>Done.get) {
-    .(root: Dict(K, V), _empty: Crumbs(K, V)) { root }
+    .(root: Dict[K][V], _empty: Crumbs[K][V]) { root }
   }
 }
 
 /// Adds or overwrites a binding in O(log n) comparisons.
 /// Use the same lawful ordering that built the dictionary.
-pub fn insert[K][V](cmp: Compare(K), d: Dict(K, V), key: K, val: V) -> Dict(K, V) {
+pub fn insert[K][V](cmp: Compare[K], d: Dict[K][V], key: K, val: V) -> Dict[K][V] {
   match(insert_descend(cmp, d, key, val)) {
-    .(leaf: Dict(K, V), crumbs: Crumbs(K, V)) { paint(c_black(), insert_rebuild(leaf, crumbs)) }
+    .(leaf: Dict[K][V], crumbs: Crumbs[K][V]) { paint(c_black(), insert_rebuild(leaf, crumbs)) }
   }
 }
 
 // Each frame holds the next binding, its right subtree, and the remaining
 // ancestors. Descending left and then popping a frame visits each binding
 // once in ascending order without materializing a collection of entries.
-rec newtype Work[K][V] : . | (K & V & Dict(K, V) & Work(K, V)) {
+rec newtype Work[K][V] : . | (K & V & Dict[K][V] & Work[K][V]) {
   constructor pack;
   projector unpack
   }
 
-fn no_work[K][V] -> Work(K, V) { Work.pack(widen_sum((), . | (K & V & Dict(K, V) & Work(K, V)))) }
+fn no_work[K][V] -> Work[K][V] { Work.pack(widen_sum(())[. | (K & V & Dict[K][V] & Work[K][V])]) }
 
-fn push_work[K][V](key: K, val: V, right: Dict(K, V), rest: Work(K, V)) -> Work(K, V) {
-  Work.pack(widen_sum((key, val, right, rest), . | (K & V & Dict(K, V) & Work(K, V))))
+fn push_work[K][V](key: K, val: V, right: Dict[K][V], rest: Work[K][V]) -> Work[K][V] {
+  Work.pack(widen_sum((key, val, right, rest))[. | (K & V & Dict[K][V] & Work[K][V])])
 }
 
-type Traversal[K][V][Acc] = Dict(K, V) & Work(K, V) & Acc;
+type Traversal[K][V][Acc] = Dict[K][V] & Work[K][V] & Acc;
 
 /// Folds entries in ascending key order, calling the step once per binding.
 /// Ordering is the lawful, consistent ordering used to construct the dictionary.
 /// Traversal takes O(n) steps and O(log n) temporary stack space.
-pub fn fold_asc[K][V][Acc](d: Dict(K, V), initial: Acc, step: (Acc & K & V) -> Acc) -> Acc {
+pub fn fold_asc[K][V][Acc](d: Dict[K][V], initial: Acc, step: (Acc & K & V) -> Acc) -> Acc {
   loop(
-  , .(state: Traversal(K, V, Acc)) -> Traversal(K, V, Acc) | Acc {
+  , .(state: Traversal[K][V][Acc]) -> Traversal[K][V][Acc] | Acc {
       match(state) {
-        .(current: Dict(K, V), work: Work(K, V), carry: Acc) {
+        .(current: Dict[K][V], work: Work[K][V], carry: Acc) {
           match(un_node(current)) {
             (
-            , .(n: Colour & K & V & Dict(K, V) & Dict(K, V)) {
+            , .(n: Colour & K & V & Dict[K][V] & Dict[K][V]) {
                 match(n) {
-                  .(_colour: Colour, key: K, val: V, left: Dict(K, V), right: Dict(K, V)) {
-                    widen_sum(
-                    , (left, push_work(key, val, right, work), carry)
-                    , Traversal(K, V, Acc) | Acc
-                    )
+                  .(_colour: Colour, key: K, val: V, left: Dict[K][V], right: Dict[K][V]) {
+                    widen_sum((left, push_work(key, val, right, work), carry))[| Traversal[K][V][Acc]
+                    | Acc]
                   }
                 }
               }
             , .(_empty: .) {
                 match(work.>Work.unpack) {
                   (
-                  , .(frame: K & V & Dict(K, V) & Work(K, V)) {
+                  , .(frame: K & V & Dict[K][V] & Work[K][V]) {
                       match(frame) {
-                        .(key: K, val: V, right: Dict(K, V), rest: Work(K, V)) {
-                          widen_sum(
-                          , (right, rest, step(carry, key, val))
-                          , Traversal(K, V, Acc) | Acc
-                          )
+                        .(key: K, val: V, right: Dict[K][V], rest: Work[K][V]) {
+                          widen_sum((right, rest, step(carry, key, val)))[Traversal[K][V][Acc] | Acc]
                         }
                       }
                     }
-                  , .(_done: .) { widen_sum(carry, Traversal(K, V, Acc) | Acc) }
+                  , .(_done: .) { widen_sum(carry)[Traversal[K][V][Acc] | Acc] }
                   )
                 }
               }
@@ -532,42 +527,42 @@ pub fn fold_asc[K][V][Acc](d: Dict(K, V), initial: Acc, step: (Acc & K & V) -> A
         }
       }
     }
-  , (d, no_work(_, _), initial)
+  , (d, no_work[_][_], initial)
   )
 }
 
 /// Counts the bindings without requiring a comparator.
-pub fn size[K][V](d: Dict(K, V)) -> I32 {
+pub fn size[K][V](d: Dict[K][V]) -> I32 {
   fold_asc(d, 0, .(n: I32, _key: K, _val: V) -> I32 { add(n, 1) })
 }
 
 /// Removes a key by folding surviving bindings into a fresh tree.
 /// The rebuild takes O(n log n) comparisons under the same ordering.
-pub fn delete[K][V](cmp: Compare(K), d: Dict(K, V), target: K) -> Dict(K, V) {
+pub fn delete[K][V](cmp: Compare[K], d: Dict[K][V], target: K) -> Dict[K][V] {
   fold_asc(
   , d
-  , empty(_, _)
-  , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
+  , empty[_][_]
+  , .(acc: Dict[K][V], key: K, val: V) -> Dict[K][V] {
       ord_select(insert(cmp, acc, key, val), acc, insert(cmp, acc, key, val), cmp(key, target))
     }
   )
 }
 
 /// Transforms values while preserving keys and their ordering.
-pub fn map_values[K][V][W](cmp: Compare(K), f: V -> W, d: Dict(K, V)) -> Dict(K, W) {
+pub fn map_values[K][V][W](cmp: Compare[K], f: V -> W, d: Dict[K][V]) -> Dict[K][W] {
   fold_asc(
   , d
-  , empty(_, _)
-  , .(acc: Dict(K, W), key: K, val: V) -> Dict(K, W) { insert(cmp, acc, key, f(val)) }
+  , empty[_][_]
+  , .(acc: Dict[K][W], key: K, val: V) -> Dict[K][W] { insert(cmp, acc, key, f(val)) }
   )
 }
 
 /// Keeps bindings whose values satisfy the predicate under the same key ordering.
-pub fn filter[K][V](cmp: Compare(K), pred: V -> Flag, d: Dict(K, V)) -> Dict(K, V) {
+pub fn filter[K][V](cmp: Compare[K], pred: V -> Flag, d: Dict[K][V]) -> Dict[K][V] {
   fold_asc(
   , d
-  , empty(_, _)
-  , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
+  , empty[_][_]
+  , .(acc: Dict[K][V], key: K, val: V) -> Dict[K][V] {
       bool_select(insert(cmp, acc, key, val), acc, pred(val))
     }
   )
@@ -575,11 +570,11 @@ pub fn filter[K][V](cmp: Compare(K), pred: V -> Flag, d: Dict(K, V)) -> Dict(K, 
 
 /// Left-biased union: the first dictionary wins when both contain a key.
 /// Both inputs and the comparator must use compatible lawful key orderings.
-pub fn union[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V) {
+pub fn union[K][V](cmp: Compare[K], d1: Dict[K][V], d2: Dict[K][V]) -> Dict[K][V] {
   fold_asc(
   , d2
   , d1
-  , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
+  , .(acc: Dict[K][V], key: K, val: V) -> Dict[K][V] {
       bool_select(acc, insert(cmp, acc, key, val), has_key(cmp, acc, key))
     }
   )
@@ -587,28 +582,25 @@ pub fn union[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V
 
 /// Keeps the first dictionary's values whose keys also occur in the second.
 /// Both inputs and the comparator must use compatible lawful key orderings.
-pub fn intersection[K][V](cmp: Compare(K), d1: Dict(K, V), d2: Dict(K, V)) -> Dict(K, V) {
+pub fn intersection[K][V](cmp: Compare[K], d1: Dict[K][V], d2: Dict[K][V]) -> Dict[K][V] {
   fold_asc(
   , d1
-  , empty(_, _)
-  , .(acc: Dict(K, V), key: K, val: V) -> Dict(K, V) {
+  , empty[_][_]
+  , .(acc: Dict[K][V], key: K, val: V) -> Dict[K][V] {
       bool_select(insert(cmp, acc, key, val), acc, has_key(cmp, d2, key))
     }
   )
 }
 
 /// Produces an empty comparator-applied dictionary builder.
-pub fn empty_builder[K][V]() -> Compare(K) -> Dict(K, V) {
-  .(_cmp: Compare(K)) -> Dict(K, V) { empty(_, _) }
+pub fn empty_builder[K][V]() -> Compare[K] -> Dict[K][V] {
+  .(_cmp: Compare[K]) -> Dict[K][V] { empty[_][_] }
 }
 
 /// Appends one source-order insertion to a dictionary builder.
 /// Later entries with equal keys replace earlier values.
-pub fn insert_entry[K][V](build: Compare(K) -> Dict(K, V), key: K, val: V) -> Compare(K) -> Dict(
-, K
-, V
-) {
-  .(cmp: Compare(K)) -> Dict(K, V) { insert(cmp, build(cmp), key, val) }
+pub fn insert_entry[K][V](build: Compare[K] -> Dict[K][V], key: K, val: V) -> Compare[K] -> Dict[K][V] {
+  .(cmp: Compare[K]) -> Dict[K][V] { insert(cmp, build(cmp), key, val) }
 }
 
 /// Constructs a key/value pair for a dictionary literal.
@@ -649,7 +641,7 @@ equiv bool_select_no[A](t: A, f: A) {
 
 // ---- Structural ops on the empty / singleton spines ----
 equiv is_empty_of_empty[K][V]() {
-  is_empty(empty(K, V));
+  is_empty(empty[K][V]);
   yes()
 }
 
@@ -660,14 +652,14 @@ equiv is_empty_of_singleton[K][V](key: K, val: V) {
 
 // `un_node(empty)` is the empty arm.
 equiv un_node_empty[K][V]() {
-  un_node(empty(K, V));
-  widen_sum((), . | (Colour & K & V & Dict(K, V) & Dict(K, V)))
+  un_node(empty[K][V]);
+  widen_sum(())[. | (Colour & K & V & Dict[K][V] & Dict[K][V])]
 }
 
 // `paint(c, empty) ≡ empty` — recolouring the empty tree is a no-op.
 equiv paint_empty[K][V](c: Colour) {
-  paint(c, empty(K, V));
-  empty(K, V)
+  paint(c, empty[K][V]);
+  empty[K][V]
 }
 
 // `paint(black, singleton(k, v)) ≡ singleton(k, v)` — singletons are
@@ -691,32 +683,32 @@ equiv is_red_black() {
 // `balance` with no red-red violation rebuilds the node unchanged: a
 // black node over two empty children is already balanced.
 equiv balance_leaf[K][V](key: K, val: V) {
-  balance(c_black(), key, val, empty(_, _), empty(_, _));
-  node(c_black(), key, val, empty(_, _), empty(_, _))
+  balance(c_black(), key, val, empty[_][_], empty[_][_]);
+  node(c_black(), key, val, empty[_][_], empty[_][_])
 }
 
 // `rebuild_step` over a left breadcrumb re-attaches the child on the
 // left and rebalances; with empty sibling and a black crumb it is just a
 // node rebuild.
-equiv rebuild_step_left[K][V](key: K, val: V, child: Dict(K, V)) {
-  rebuild_step(crumb_left(c_black(), key, val, empty(_, _)), child);
-  balance(c_black(), key, val, child, empty(_, _))
+equiv rebuild_step_left[K][V](key: K, val: V, child: Dict[K][V]) {
+  rebuild_step(crumb_left(c_black(), key, val, empty[_][_]), child);
+  balance(c_black(), key, val, child, empty[_][_])
 }
 
-equiv rebuild_step_right[K][V](key: K, val: V, child: Dict(K, V)) {
-  rebuild_step(crumb_right(c_black(), key, val, empty(_, _)), child);
-  balance(c_black(), key, val, empty(_, _), child)
+equiv rebuild_step_right[K][V](key: K, val: V, child: Dict[K][V]) {
+  rebuild_step(crumb_right(c_black(), key, val, empty[_][_]), child);
+  balance(c_black(), key, val, empty[_][_], child)
 }
 
 // `lookup_step` at an empty node takes the `on_empty` continuation.
 equiv lookup_step_empty[K][V][R](
 , cmp_at: K -> Ordering
 , on_found: V -> R
-, go_left: Dict(K, V) -> R
-, go_right: Dict(K, V) -> R
+, go_left: Dict[K][V] -> R
+, go_right: Dict[K][V] -> R
 , on_empty: . -> R
 ) {
-  lookup_step(cmp_at, on_found, go_left, go_right, on_empty, empty(_, _));
+  lookup_step(cmp_at, on_found, go_left, go_right, on_empty, empty[_][_]);
   on_empty()
 }
 
@@ -724,8 +716,8 @@ equiv lookup_step_empty[K][V][R](
 // its black ancestor. The bool_select true branch must therefore be the
 // unchanged node, not the black-parent rotation.
 equiv balance_red_leaf[K][V](key: K, val: V) {
-  balance(c_red(), key, val, empty(_, _), empty(_, _));
-  node(c_red(), key, val, empty(_, _), empty(_, _))
+  balance(c_red(), key, val, empty[_][_], empty[_][_]);
+  node(c_red(), key, val, empty[_][_], empty[_][_])
 }
 
 equiv balance_black_left_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
@@ -733,15 +725,15 @@ equiv balance_black_left_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
   , c_black()
   , zk
   , zv
-  , node(c_red(), yk, yv, node(c_red(), xk, xv, empty(_, _), empty(_, _)), empty(_, _))
-  , empty(_, _)
+  , node(c_red(), yk, yv, node(c_red(), xk, xv, empty[_][_], empty[_][_]), empty[_][_])
+  , empty[_][_]
   );
   node(
   , c_red()
   , yk
   , yv
-  , node(c_black(), xk, xv, empty(_, _), empty(_, _))
-  , node(c_black(), zk, zv, empty(_, _), empty(_, _))
+  , node(c_black(), xk, xv, empty[_][_], empty[_][_])
+  , node(c_black(), zk, zv, empty[_][_], empty[_][_])
   )
 }
 
@@ -750,15 +742,15 @@ equiv balance_black_left_right[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
   , c_black()
   , zk
   , zv
-  , node(c_red(), xk, xv, empty(_, _), node(c_red(), yk, yv, empty(_, _), empty(_, _)))
-  , empty(_, _)
+  , node(c_red(), xk, xv, empty[_][_], node(c_red(), yk, yv, empty[_][_], empty[_][_]))
+  , empty[_][_]
   );
   node(
   , c_red()
   , yk
   , yv
-  , node(c_black(), xk, xv, empty(_, _), empty(_, _))
-  , node(c_black(), zk, zv, empty(_, _), empty(_, _))
+  , node(c_black(), xk, xv, empty[_][_], empty[_][_])
+  , node(c_black(), zk, zv, empty[_][_], empty[_][_])
   )
 }
 
@@ -767,15 +759,15 @@ equiv balance_black_right_left[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) {
   , c_black()
   , xk
   , xv
-  , empty(_, _)
-  , node(c_red(), zk, zv, node(c_red(), yk, yv, empty(_, _), empty(_, _)), empty(_, _))
+  , empty[_][_]
+  , node(c_red(), zk, zv, node(c_red(), yk, yv, empty[_][_], empty[_][_]), empty[_][_])
   );
   node(
   , c_red()
   , yk
   , yv
-  , node(c_black(), xk, xv, empty(_, _), empty(_, _))
-  , node(c_black(), zk, zv, empty(_, _), empty(_, _))
+  , node(c_black(), xk, xv, empty[_][_], empty[_][_])
+  , node(c_black(), zk, zv, empty[_][_], empty[_][_])
   )
 }
 
@@ -784,14 +776,14 @@ equiv balance_black_right_right[K][V](xk: K, xv: V, yk: K, yv: V, zk: K, zv: V) 
   , c_black()
   , xk
   , xv
-  , empty(_, _)
-  , node(c_red(), yk, yv, empty(_, _), node(c_red(), zk, zv, empty(_, _), empty(_, _)))
+  , empty[_][_]
+  , node(c_red(), yk, yv, empty[_][_], node(c_red(), zk, zv, empty[_][_], empty[_][_]))
   );
   node(
   , c_red()
   , yk
   , yv
-  , node(c_black(), xk, xv, empty(_, _), empty(_, _))
-  , node(c_black(), zk, zv, empty(_, _), empty(_, _))
+  , node(c_black(), xk, xv, empty[_][_], empty[_][_])
+  , node(c_black(), zk, zv, empty[_][_], empty[_][_])
   )
 }

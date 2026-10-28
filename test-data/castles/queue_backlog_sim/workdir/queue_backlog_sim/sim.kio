@@ -65,7 +65,7 @@ fn initial_state() -> State {
   {
   , current_tick = 0
   , next_ticket = 1
-  , job_queue = empty(Job)
+  , job_queue = empty[Job]
   , backlog_count = 0
   , total_wait = 0
   , max_backlog = 0
@@ -75,7 +75,7 @@ fn initial_state() -> State {
   }
 }
 
-rec(loop) fn enqueue_arrivals(remaining: I32, tick_value: I32, next_id: I32, q: Queue(Job)) -> Enqueue_result {
+rec(loop) fn enqueue_arrivals(remaining: I32, tick_value: I32, next_id: I32, q: Queue[Job]) -> Enqueue_result {
   if(leq_i32(remaining, 0)) {
     {enqueued_queue = q, enqueued_next = next_id}
   } else {
@@ -88,12 +88,12 @@ rec(loop) fn enqueue_arrivals(remaining: I32, tick_value: I32, next_id: I32, q: 
   }
 }
 
-fn serve_one(tick_value: I32, q: Queue(Job)) -> Serve_result {
+fn serve_one(tick_value: I32, q: Queue[Job]) -> Serve_result {
   let empty_result = {served_queue = q, served_jobs = 0, served_wait = 0, served_effort = 0};
   fold_result(
   , empty_result
-  , .(pair: Job & Queue(Job)) {
-      let .(job: Job, rest: Queue(Job)) = pair;
+  , .(pair: Job & Queue[Job]) {
+      let .(job: Job, rest: Queue[Job]) = pair;
       {
       , served_queue = rest
       , served_jobs = 1
@@ -108,7 +108,7 @@ fn serve_one(tick_value: I32, q: Queue(Job)) -> Serve_result {
 rec(loop) fn serve_capacity(
 , remaining: I32
 , tick_value: I32
-, q: Queue(Job)
+, q: Queue[Job]
 , jobs: I32
 , wait: I32
 , effort_units: I32
@@ -132,7 +132,7 @@ rec(loop) fn serve_capacity(
   }
 }
 
-fn serve_tick(capacity: I32, tick_value: I32, q: Queue(Job)) -> Serve_result {
+fn serve_tick(capacity: I32, tick_value: I32, q: Queue[Job]) -> Serve_result {
   serve_capacity(capacity, tick_value, q, 0, 0, 0)
 }
 

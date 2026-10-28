@@ -538,9 +538,9 @@ fn lsp_label_payload_context_clears_a_conflicting_factory_argument() {
     let source = concat!(
         "module pkg/main;\n",
         "newtype Box[A] : . { pub constructor make; pub projector unpack }\n",
-        "fn empty[A]() -> Box(A) { Box.make(()) }\n",
-        "labels { first: Box(. -> .) };\n",
-        "fn run() -> First { {first = empty(., ())} }\n",
+        "fn empty[A]() -> Box[A] { Box.make(()) }\n",
+        "labels { first: Box[. -> .] };\n",
+        "fn run() -> First { {first = empty[.](())} }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -573,7 +573,7 @@ fn lsp_label_payload_context_clears_a_conflicting_factory_argument() {
         "textDocument/didChange",
         json!({
             "textDocument": { "uri": uri, "version": 2 },
-            "contentChanges": [{ "text": source.replace("empty(., ())", "empty()") }]
+            "contentChanges": [{ "text": source.replace("empty[.](())", "empty()") }]
         }),
     );
     let cleared = wait_for_publish_version(&mut lsp, &uri, 2);
@@ -1254,7 +1254,8 @@ fn lsp_symmetric_common_results_refresh_hover_and_inlay_hints() {
         "    };\n",
         "  let fill_thunk =\n",
         "    common(\n",
-        "      .() { make() },\n",
+        "      .() { make() }\n",
+        "    )(\n",
         "      .() { witness() }\n",
         "    );\n",
         "  let _fill_result = fill_thunk();\n",
@@ -4588,13 +4589,13 @@ fn lsp_incomplete_generic_recursive_labels_complete_their_generated_heads() {
     for (case, source, expected, excluded) in [
         (
             "anonymous",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels { list[A] <U> : Pair(A, bogus[B]: ",
+            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels { list[A] <U> : Pair[A][bogus[B]: ",
             vec!["A", "U", "List", "Imported"],
             vec!["B", "Bogus"],
         ),
         (
             "named",
-            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels Tree[A] = { list[B] <U> : Pair(B, bogus[C]: ",
+            "module pkg/main;\nimport pkg/dep(Imported);\nrec labels Tree[A] = { list[B] <U> : Pair[B][bogus[C]: ",
             vec!["A", "B", "U", "Tree", "List", "Imported"],
             vec!["C", "Bogus"],
         ),
@@ -5207,7 +5208,7 @@ fn lsp_type_binders_shadow_same_named_recursive_group_heads() {
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "  type Universal = Ubox(.);\n",
+        "  type Universal = Ubox[.];\n",
         "  newtype Ubox[Universal] : Universal & Utail { constructor mk_u; projector un_u; };\n",
         "  type Utail = Universal;\n",
         "}\n",
@@ -5270,7 +5271,7 @@ fn lsp_recursive_singleton_binders_shadow_outer_type_heads() {
         "module pkg/main;\n",
         "type Universal = .;\n",
         "type Existential = .;\n",
-        "rec newtype Ubox[Universal] : . | Ubox(Universal) { constructor mk_u; projector un_u; };\n",
+        "rec newtype Ubox[Universal] : . | Ubox[Universal] { constructor mk_u; projector un_u; };\n",
         "rec newtype Ebox <Existential> : . | (Ebox & Existential) { constructor mk_e; projector un_e; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -5285,8 +5286,8 @@ fn lsp_recursive_singleton_binders_shadow_outer_type_heads() {
         (
             "Ubox[Universal]",
             "Ubox[",
-            "Ubox(Universal)",
-            "Ubox(",
+            ". | Ubox[Universal]",
+            ". | Ubox[",
             "Universal",
         ),
         (
@@ -7356,7 +7357,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "type Pair = Token & Token;\n",
         "type Choice = Token | .;\n",
         "type Applied[A] = A;\n",
-        "type Nested = Applied(Token);\n",
+        "type Nested = Applied[Token];\n",
         "type Transform = Token -> Token;\n",
         "type Scheme = [A] A -> Token;\n",
         "type Shadow = [Token] Token -> Token;\n",
@@ -7365,7 +7366,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "fn generic[Token](value: Token) -> Token { value }\n",
         "fn make() -> Token { Token.mk(()) }\n",
         "fn project(value: Token) -> . { Token.get(value) }\n",
-        "fn explicit(value: Token) -> Token { generic(Token, value) }\n",
+        "fn explicit(value: Token) -> Token { generic[Token](value) }\n",
     );
     let consumer = concat!(
         "module pkg/main;\n",
@@ -7375,7 +7376,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "type Pair = Token & Token;\n",
         "type Choice = Token | .;\n",
         "type Applied[A] = A;\n",
-        "type Nested = Applied(Token);\n",
+        "type Nested = Applied[Token];\n",
         "type Transform = Token -> Token;\n",
         "type Scheme = [A] A -> Token;\n",
         "type Shadow = [Token] Token -> Token;\n",
@@ -7384,7 +7385,7 @@ fn lsp_ordinary_newtype_head_rename_covers_checked_type_positions() {
         "fn generic[Token](value: Token) -> Token { value }\n",
         "fn make() -> Token { Token.mk(()) }\n",
         "fn project(value: Token) -> . { Token.get(value) }\n",
-        "fn explicit(value: Token) -> Token { generic(Token, value) }\n",
+        "fn explicit(value: Token) -> Token { generic[Token](value) }\n",
     );
     let qualified = concat!(
         "module pkg/qualified;\n",
@@ -9049,15 +9050,15 @@ fn lsp_higher_kinded_type_group_fix_applies_and_retracts_the_diagnostic() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "type A[*F] = B(F);\n",
-        "newtype B[*G] : A(G) { constructor mk_b; projector un_b; };\n",
+        "type A[*F] = B[F];\n",
+        "newtype B[*G] : A[G] { constructor mk_b; projector un_b; };\n",
     );
     let repaired = concat!(
         "module pkg/main;\n",
         "\n",
         "rec {\n",
-        "type A[*F] = B(F);\n",
-        "newtype B[*G] : A(G) { constructor mk_b; projector un_b; };\n",
+        "type A[*F] = B[F];\n",
+        "newtype B[*G] : A[G] { constructor mk_b; projector un_b; };\n",
         "}\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
@@ -9121,8 +9122,8 @@ fn lsp_higher_kinded_type_group_fix_is_withheld_when_invalid() {
     let source = concat!(
         "module pkg/main;\n",
         "\n",
-        "type A[X] = B(X);\n",
-        "newtype B[*G] : A(.) { constructor mk_b; projector un_b; };\n",
+        "type A[X] = B[X];\n",
+        "newtype B[*G] : A[.] { constructor mk_b; projector un_b; };\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     dir.write_pkg_root_package();
@@ -10453,8 +10454,8 @@ fn lsp_unit_and_product_type_repairs_apply_and_reanalyse() {
         ),
         (
             "product",
-            "module pkg/main;\npub type Pack[A,B] = A & B;\npub type T = (Pack(., .), // keep separator\n .);\n",
-            "module pkg/main;\npub type Pack[A,B] = A & B;\npub type T = (Pack(., .) &  // keep separator\n .);\n",
+            "module pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.], // keep separator\n .);\n",
+            "module pkg/main;\npub type Pack[A][B] = A & B;\npub type T = (Pack[.][.] &  // keep separator\n .);\n",
             "commas form tuple values, not product types; write `A & B`",
             "Use `&` for the product type",
         ),

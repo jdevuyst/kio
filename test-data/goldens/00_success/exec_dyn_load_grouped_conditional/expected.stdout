@@ -1,0 +1,6 @@
+nested head: parsed
+split groups: parsed
+group in argument: parsed
+lexical scope: parsed
+call delimiter: expected `[` with the concrete Boolean type after `__if_then_else__`
+wrong role: `__if_then_else__` requires a concrete `role(bool)` type as its first type argument

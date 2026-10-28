@@ -2,4 +2,4 @@ module lib/combine;
 
 import lib(identity);
 
-pub fn keep_first[A](x: A, y: A) -> A { identity(A, x) }
+pub fn keep_first[A](x: A, y: A) -> A { identity[A](x) }

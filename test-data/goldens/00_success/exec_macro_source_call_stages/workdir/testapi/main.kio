@@ -1,0 +1,52 @@
+module testapi/main;
+
+import __comptime__;
+import testapi(I32, String);
+import testapi/fmt(print_i32);
+import testapi/io(print);
+
+pure fn keep_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, _marker: __Type__) -> __Checked_term__ {
+  value
+}
+
+macro keep : [Source] Source -> [Marker] Source { impl keep_impl }
+
+pure fn retain_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _source: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let result =
+    __if_then_else__(
+    , __type_equal__(ct, __reflect_type__(ct)[I32], __term_type__(ct, value))
+    , .() -> __Checked_term__ { value }
+    , .() -> __Checked_term__ {
+        __macro_error__(ct, "wrong reflected source type"[__Diagnostic_text__])
+      }
+    );
+  (result, fills)
+}
+
+macro retain_i32 : [Source] Source -> I32 { impl(fills) retain_impl }
+
+fn ordinary[Source](value: Source)[Marker] -> Source { value }
+
+fn value() -> I32 { print("V"); 7 }
+
+pub fn main() {
+  print("I:");
+  let inferred = retain_i32(keep(value())[String]);
+  print_i32(inferred);
+  print("|E:");
+  let explicit = retain_i32(keep[I32](value())[String]);
+  print_i32(explicit);
+  print("|B:");
+  let source = keep(value())[String];
+  let bound = retain_i32(source);
+  print_i32(bound);
+  print("|O:");
+  let normal = retain_i32(ordinary(value())[String]);
+  print_i32(normal);
+  print("\n")
+}

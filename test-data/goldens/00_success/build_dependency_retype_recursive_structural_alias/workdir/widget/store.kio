@@ -8,4 +8,4 @@ pub type Node = _rehost_gdgphcgfcphdhegphcgf.Node;
 
 pub type Payload = . | Node;
 
-pub fn make() -> Node { Node.mk(__left__(., Node, ())) }
+pub fn make() -> Node { Node.mk(__left__[.][Node](())) }

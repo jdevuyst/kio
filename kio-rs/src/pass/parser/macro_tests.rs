@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Item};
+use crate::ast::{CallArg, Expr, Item};
 
 fn body(source: &str) -> Expr {
     let module = super::parse(source).unwrap();
@@ -25,14 +25,18 @@ fn qualified_boolean_names_keep_path_ownership() {
             eager
         );
     }
-    for prefix in [".f", ".t", ".f(Bool)"] {
+    for prefix in [".f", ".t", ".f[Bool]"] {
         let source = format!(
             "module main; import provider(macro choose); fn run() {{ choose({prefix}) {{ () }} }}"
         );
         let Expr::BlockCall { prefix, .. } = body(&source) else {
             panic!("macro block")
         };
-        assert!(matches!(prefix.as_slice(), [Expr::BoolLit { .. }]));
+        assert_eq!(prefix.len(), 1);
+        assert!(matches!(
+            prefix[0].args.as_slice(),
+            [CallArg::Value(Expr::BoolLit { .. })]
+        ));
     }
 }
 
@@ -93,7 +97,7 @@ fn exclamation_keeps_ordinary_operator_ownership() {
 fn macro_ufcs_boolean_prefix_stays_a_value() {
     let source = "module main; import provider(macro choose); fn run(value: .) { value.>choose (.f) { () } }";
     assert!(
-        matches!(body(source), Expr::BlockCall { prefix, .. } if matches!(prefix.as_slice(), [Expr::Path { .. }, Expr::BoolLit { .. }]))
+        matches!(body(source), Expr::BlockCall { prefix, .. } if prefix.len() == 1 && matches!(prefix[0].args.as_slice(), [CallArg::Value(Expr::Path { .. }), CallArg::Value(Expr::BoolLit { .. })]))
     );
 }
 
@@ -107,7 +111,7 @@ fn every_written_block_prefix_uses_an_argument_list() {
         "-1.5",
         "\"text\"",
         ".t",
-        ".f(Bool)",
+        ".f[Bool]",
         "convert(value)",
         "A.member(value)",
     ] {
@@ -119,16 +123,35 @@ fn every_written_block_prefix_uses_an_argument_list() {
         let bare = format!("module main; fn run() {{ selected {prefix} {{ () }} }}");
         assert!(super::parse(&bare).is_err(), "{bare}");
     }
-    for (call, count) in [
-        ("selected { () }", 0),
-        ("selected() { () }", 1),
-        ("selected(a, b) { () }", 2),
-        ("selected((a, b)) { () }", 1),
+    for (call, group_sizes) in [
+        ("selected { () }", &[][..]),
+        ("selected() { () }", &[0][..]),
+        ("selected(a, b) { () }", &[2][..]),
+        ("selected((a, b)) { () }", &[1][..]),
+        ("selected(a)(b) { () }", &[1, 1][..]),
     ] {
         let Expr::BlockCall { prefix, .. } = body(&format!("module main; fn run() {{ {call} }}"))
         else {
             panic!("block call")
         };
-        assert_eq!(prefix.len(), count, "{call}");
+        assert_eq!(
+            prefix
+                .iter()
+                .map(|stage| stage.args.len())
+                .collect::<Vec<_>>(),
+            group_sizes,
+            "{call}"
+        );
+        assert!(prefix.iter().all(|stage| {
+            stage
+                .args
+                .iter()
+                .all(|arg| matches!(arg, CallArg::Value(_)))
+        }));
+        if call == "selected((a, b)) { () }" {
+            assert!(
+                matches!(prefix[0].args.as_slice(), [CallArg::Value(Expr::Tuple { items, .. })] if items.len() == 2)
+            );
+        }
     }
 }

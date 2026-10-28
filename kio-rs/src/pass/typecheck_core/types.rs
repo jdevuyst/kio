@@ -24,42 +24,10 @@ use crate::error::Error;
 use crate::pass::resolve::{NominalDeclaration, NominalProvider, NominalSelection};
 use crate::span::Span;
 
-pub fn value_arg_looks_like_type_arg<P>(e: &crate::ast::Expr<P>) -> bool
-where
-    P: crate::ast::Phase,
-{
-    fn segment_starts_like_type(segment: &crate::ast::PathSegment) -> bool {
-        crate::naming::starts_like_type_name(segment.name.as_str())
-    }
-
-    match e {
-        crate::ast::Expr::Path { segments, .. } => {
-            segments.last().is_some_and(segment_starts_like_type)
-        }
-        crate::ast::Expr::Call { callee, .. } => match callee.as_ref() {
-            crate::ast::Expr::Path { segments, .. } => {
-                segments.last().is_some_and(segment_starts_like_type)
-            }
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallArgSlotKind {
     Type,
     Value,
-}
-
-pub fn call_arg_type_slot_candidate<P>(arg: &crate::ast::CallArg<P>) -> bool
-where
-    P: crate::ast::Phase,
-{
-    match arg {
-        crate::ast::CallArg::Type(_) => true,
-        crate::ast::CallArg::Value(value) => value_arg_looks_like_type_arg(value),
-    }
 }
 
 pub fn call_arg_to_type_arg<P>(arg: &crate::ast::CallArg<P>) -> Result<crate::ast::Type<P>, Error>
@@ -68,101 +36,9 @@ where
 {
     match arg {
         crate::ast::CallArg::Type(t) => Ok(t.clone()),
-        crate::ast::CallArg::Value(e) => expr_to_type_arg(e),
-    }
-}
-
-fn validate_reinterpreted_type_path(
-    segments: &[crate::ast::PathSegment],
-    fallback_span: Span,
-) -> Result<(), Error> {
-    let Some(leaf) = segments.last() else {
-        return Err(Error::type_(fallback_span, "expected a type name"));
-    };
-    let name = leaf.name.as_str();
-    if crate::naming::is_type_reference_name(name) {
-        return Ok(());
-    }
-    if crate::naming::is_value_reference_name(name) {
-        return Err(Error::type_(
-            leaf.span,
-            "expected a type argument here, got a value argument",
-        ));
-    }
-    crate::naming::validate_reference_name(name, crate::naming::NameRole::Type, leaf.span)
-}
-
-/// Reinterpret a value-position expression as a type argument at a
-/// call site's type-arg slot. Handles single- / multi-segment paths
-/// (`a`, `m.Foo`) and parametric type applications (`Foo(A, B)`).
-/// Everything else surfaces a kind error pinned to the offending
-/// node's span. In particular, `()` is always the Unit value; the
-/// explicit Unit type is `.`.
-///
-/// This is the typer's bridge between the parser's backtracking-
-/// friendly "try expr first" call-arg dispatch and type-arg slots:
-/// forms that look like values syntactically but belong as types
-/// here get rewritten without a separate parser pass.
-///
-/// Phase-polymorphic — the matched variants (`Expr::Path`,
-/// `Expr::Call`) exist on every phase, and surface-only variants fall
-/// through to the catch-all kind error.
-pub fn expr_to_type_arg<P>(e: &crate::ast::Expr<P>) -> Result<crate::ast::Type<P>, Error>
-where
-    P: crate::ast::Phase + Clone,
-{
-    match e {
-        crate::ast::Expr::Path {
-            segments,
-            meta: Meta { span, .. },
-            ..
-        } => {
-            validate_reinterpreted_type_path(segments, *span)?;
-            Ok(crate::ast::Type::synth_path_segments(
-                segments.clone(),
-                Vec::new(),
-                *span,
-            ))
-        }
-        crate::ast::Expr::Call {
-            callee,
-            args,
-            meta: Meta { span, .. },
-            ..
-        } => {
-            // `Foo(A, B)` parses as `Call(Path[Foo], [Value(A), Value(B)])`
-            // when the parser's expr-first attempt succeeds.
-            // Reinterpret recursively: the callee must itself
-            // reinterpret as a path-shaped type, and each
-            // value-arg as a type-arg.
-            let head = match callee.as_ref() {
-                crate::ast::Expr::Path { segments, .. } => segments.clone(),
-                _ => {
-                    return Err(Error::type_(
-                        callee.span(),
-                        "expected a type argument here, got a value argument",
-                    ));
-                }
-            };
-            validate_reinterpreted_type_path(&head, callee.span())?;
-            let mut type_args: Vec<crate::ast::Type<P>> = Vec::with_capacity(args.len());
-            for a in args {
-                match a {
-                    crate::ast::CallArg::Type(t) => type_args.push(t.clone()),
-                    crate::ast::CallArg::Value(v) => type_args.push(expr_to_type_arg(v)?),
-                }
-            }
-            // Higher-kinded type application in a value-position
-            // type-arg slot is the ordinary parametric `Type::Path`
-            // (`F(A)`, `Either(String)`); the kind discipline decides
-            // admissibility downstream.
-            Ok(crate::ast::Type::synth_path_segments(
-                head, type_args, *span,
-            ))
-        }
-        other => Err(Error::type_(
-            other.span(),
-            "expected a type argument here, got a value argument",
+        crate::ast::CallArg::Value(e) => Err(Error::type_(
+            e.span(),
+            "expected a type argument, found a value operand",
         )),
     }
 }
@@ -1838,7 +1714,7 @@ where
 
 /// Apply a type-parameter substitution throughout a type. A keyed bare
 /// single-segment path is replaced directly. A keyed applied head such as
-/// `F(A)` is replaced by a path-like substitute with the recursively
+/// `F[A]` is replaced by a path-like substitute with the recursively
 /// substituted use-site arguments appended; qualified heads are unchanged.
 /// Substitution under `Forall` alpha-renames a binder when necessary to keep
 /// free names in replacement types free.
@@ -1965,7 +1841,7 @@ pub(crate) fn collect_free_type_vars<P>(
         crate::ast::Type::Unit { .. } | crate::ast::Type::Bottom { .. } => {}
         crate::ast::Type::Path { segments, args, .. } => {
             // A single-segment head is a free type variable — whether
-            // bare (`A`) or applied as a higher-kinded brand (`F(A)`,
+            // bare (`A`) or applied as a higher-kinded brand (`F[A]`,
             // where the kind-`*→*` binder `f` is itself free). Collect
             // it, then descend into any arguments.
             if segments.len() == 1 {
@@ -2245,15 +2121,10 @@ fn write_type_with_path_style<P>(
                     }
                 }
             }
-            if !args.is_empty() {
-                out.push('(');
-                for (i, a) in args.iter().enumerate() {
-                    if i > 0 {
-                        out.push_str(", ");
-                    }
-                    write_type_with_path_style(a, out, path_style, names);
-                }
-                out.push(')');
+            for arg in args {
+                out.push('[');
+                write_type_with_path_style(arg, out, path_style, names);
+                out.push(']');
             }
         }
         crate::ast::Type::Forall { param, body, .. } => {
@@ -2292,15 +2163,10 @@ fn write_type_with_path_style<P>(
         crate::ast::Type::Infer { .. } => out.push('_'),
         crate::ast::Type::Goal { args, .. } => {
             out.push('_');
-            if !args.is_empty() {
-                out.push('(');
-                for (index, arg) in args.iter().enumerate() {
-                    if index > 0 {
-                        out.push_str(", ");
-                    }
-                    write_type_with_path_style(arg, out, path_style, names);
-                }
-                out.push(')');
+            for arg in args {
+                out.push('[');
+                write_type_with_path_style(arg, out, path_style, names);
+                out.push(']');
             }
         }
     }
@@ -2818,27 +2684,6 @@ mod tests {
         Span::new(0, 0)
     }
 
-    #[test]
-    fn mixed_call_argument_heads_use_case_without_builtin_name_lookup() {
-        for (name, is_type) in [
-            ("__Unlisted_type", true),
-            ("___Unlisted_type__", true),
-            ("__unlisted_value", false),
-            ("_Item_type", true),
-            ("item_value", false),
-        ] {
-            let path: crate::ast::Expr<Lowered> = crate::ast::Expr::Path {
-                occurrence: Default::default(),
-                segments: vec![crate::ast::PathSegment::new(name.to_owned(), sp())],
-                meta: Meta::new(sp()),
-                ext: (),
-            };
-            assert_eq!(value_arg_looks_like_type_arg(&path), is_type, "{name}");
-            let call = crate::ast::Expr::synth_call(path, Vec::new(), sp());
-            assert_eq!(value_arg_looks_like_type_arg(&call), is_type, "{name}");
-        }
-    }
-
     #[cfg(feature = "surface")]
     fn parse_module(src: &str) -> crate::ast::Module<Lowered> {
         let surface = crate::pass::parser::parse(src).expect("parse");
@@ -2994,7 +2839,7 @@ mod tests {
     #[cfg(feature = "surface")]
     #[test]
     fn source_kind_walk_consumes_the_singular_complete_scheme_summary() {
-        let module = parse_module("module source; type Scheme = [*F] F(.) -> F(.);");
+        let module = parse_module("module source; type Scheme = [*F] F[.] -> F[.];");
         let scheme = module
             .items
             .iter()
@@ -3755,13 +3600,11 @@ mod tests {
     }
 
     #[test]
-    fn write_type_separates_multiple_path_args_with_commas() {
-        // `Foo(A, B, C)` renders each argument after the first behind a
-        // `", "` separator; a mis-indexed guard would front-load or drop
-        // the separators.
+    fn write_type_delimits_each_path_argument() {
+        // Every type argument owns one bracket pair, including adjacent applications.
         assert_eq!(
             display_type(&applied("Foo", vec![path("A"), path("B"), path("C")])),
-            "Foo(A, B, C)"
+            "Foo[A][B][C]"
         );
     }
 
@@ -3797,19 +3640,19 @@ mod tests {
             ("(A & (B -> C))", "A & (B -> C)"),
             ("((A -> B) | C)", "(A -> B) | C"),
             ("(A | (B -> C))", "A | (B -> C)"),
-            ("[A][*F] (A & (F(A) & A))", "[A][*F] A & F(A) & A"),
+            ("[A][*F] (A & (F[A] & A))", "[A][*F] A & F[A] & A"),
             ("([A] A -> A) -> B", "([A] A -> A) -> B"),
             ("A -> [B] (B | B)", "A -> [B] B | B"),
             ("([A] A -> A) & B", "([A] A -> A) & B"),
             ("A & ([B] B -> B)", "A & ([B] B -> B)"),
             ("([A] A -> A) | B", "([A] A -> A) | B"),
             ("A | ([B] B -> B)", "A | ([B] B -> B)"),
-            ("Box((A & (B & C)))", "Box(A & B & C)"),
-            ("Box((A | B), ((C & D) & E))", "Box(A | B, (C & D) & E)"),
-            ("Box([A] A -> A, B -> C)", "Box([A] A -> A, B -> C)"),
+            ("Box[(A & (B & C))]", "Box[A & B & C]"),
+            ("Box[(A | B)][((C & D) & E)]", "Box[A | B][(C & D) & E]"),
+            ("Box[[A] A -> A][B -> C]", "Box[[A] A -> A][B -> C]"),
             (
-                "Alias & (provider.Item(A) & Alias)",
-                "Alias & provider.Item(A) & Alias",
+                "Alias & (provider.Item[A] & Alias)",
+                "Alias & provider.Item[A] & Alias",
             ),
             (". & (! | .)", ". & (! | .)"),
         ] {
@@ -3836,11 +3679,11 @@ mod tests {
         let ty = product(alias, product(qualified, path("A")));
         assert_eq!(
             display_type(&ty),
-            "alias.Item & provider.nested.Item(A & B) & A"
+            "alias.Item & provider.nested.Item[A & B] & A"
         );
         assert_eq!(
             display_reflected_type(&ty),
-            "alias.Item & provider/nested.Item(A & B) & A"
+            "alias.Item & provider/nested.Item[A & B] & A"
         );
     }
 

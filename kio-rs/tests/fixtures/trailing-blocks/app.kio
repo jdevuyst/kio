@@ -13,6 +13,6 @@ pub fn branch() {
   two { () } fallback { () }
 }
 
-pub fn action() -> Box(.) {
+pub fn action() -> Box[.] {
   sequence(box_bind) { let .(value: .) <- box_pure(()); box_pure(value) }
 }

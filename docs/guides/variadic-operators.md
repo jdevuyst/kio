@@ -30,23 +30,23 @@ import it with `import macros/spine_macros(macro widen_sum);` when the dependenc
 is named `macros`:
 
 ```kio {@collections}
-rec newtype List[A] : . | (A & List(A)) { pub constructor pack; pub projector unpack }
+rec newtype List[A] : . | (A & List[A]) { pub constructor pack; pub projector unpack }
 
-fn nil[A]() -> List(A) { List.pack(widen_sum((), . | (A & List(A)))) }
+fn nil[A]() -> List[A] { List.pack(widen_sum(())[. | (A & List[A])]) }
 
-fn cons[A](head: A, tail: List(A)) -> List(A) {
-  List.pack(widen_sum((head, tail), . | (A & List(A))))
+fn cons[A](head: A, tail: List[A]) -> List[A] {
+  List.pack(widen_sum((head, tail))[. | (A & List[A])])
 }
 
 varop [* *] { foldr cons nil }
 
-fn empty_list() -> List(I32) { [* *] }
+fn empty_list() -> List[I32] { [* *] }
 
-fn three_items() -> List(I32) { [* 1, 2, 3 *] }
+fn three_items() -> List[I32] { [* 1, 2, 3 *] }
 ```
 
 The `()` in `nil[A]()` is intentional: `foldr` requires a base it can call
-with Unit. A type-only constructor `fn nil[A] -> List(A)` has a different
+with Unit. A type-only constructor `fn nil[A] -> List[A]` has a different
 type and is not that base; wrap it in a function with a written `()` when
 using it here. See [Type-only values](../tutorials/language.md#type-only-values).
 
@@ -59,7 +59,7 @@ The clause `foldr cons nil` combines elements from the right:
 [* 1, 2, 3 *]  → cons(1, cons(2, cons(3, nil())))
 ```
 
-The return type `List(I32)` supplies the element type for the empty literal.
+The return type `List[I32]` supplies the element type for the empty literal.
 Each element is a value expression; a raw type such as `I32` is not an
 element, even when parenthesized. Commas are the fixed separator;
 leading, repeated, and trailing commas are allowed, as in tuples.
@@ -84,7 +84,7 @@ spelling:
 ```kio {@collections}
 varop [] { foldr cons nil }
 
-fn plain_items() -> List(I32) { [1, 2, 3] }
+fn plain_items() -> List[I32] { [1, 2, 3] }
 ```
 
 Compact forms are accepted too: `[**]` is empty marker `*`, `[****]` is empty
@@ -199,11 +199,11 @@ import dict(Compare, Dict, op _ => _, varop [% %]);
 
 host type I32 role(i32);
 
-fn two_entries(compare: Compare(I32)) -> Dict(I32, I32) { [% 1 => 10, 2 => 20 %](compare) }
+fn two_entries(compare: Compare[I32]) -> Dict[I32][I32] { [% 1 => 10, 2 => 20 %](compare) }
 
-fn no_entries(compare: Compare(I32)) -> Dict(I32, I32) { [% %](compare) }
+fn no_entries(compare: Compare[I32]) -> Dict[I32][I32] { [% %](compare) }
 
-fn replace_entry(compare: Compare(I32)) -> Dict(I32, I32) { [% 1 => 10, 1 => 20 %](compare) }
+fn replace_entry(compare: Compare[I32]) -> Dict[I32][I32] { [% 1 => 10, 1 => 20 %](compare) }
 ```
 
 This library uses `foldl insert_entry empty_builder`. The literal produces a

@@ -12,7 +12,7 @@ pub newtype Capture[T] : [A] A -> T { pub constructor mk_capture; pub projector 
 // instantiation substitutes only the value slot and leaves the identity
 // function polymorphic. The `Capture(T)` slot also exercises substitution
 // of a type containing an outer binder beneath another nested forall.
-pub newtype Shadow[T] : T & ([T] T -> T) & Capture(T) {
+pub newtype Shadow[T] : T & ([T] T -> T) & Capture[T] {
   pub constructor mk_shadow;
   pub projector un_shadow
   }
@@ -21,7 +21,7 @@ pub newtype Shadow[T] : T & ([T] T -> T) & Capture(T) {
 // `fmap` lifts a shadow-bearing `F(A)` through the carrier to `F(B)`.
 // This is the value that crosses the host boundary in this case — an
 // ordinary record-of-functions, never a host typeclass instance.
-pub newtype Functor[*F] : [A][B] ((Shadow(F(A)) -> Shadow(F(B))) & F(A)) -> F(B) {
+pub newtype Functor[*F] : [A][B] ((Shadow[F[A]] -> Shadow[F[B]]) & F[A]) -> F[B] {
   pub constructor mk_functor;
   pub projector fmap
   }

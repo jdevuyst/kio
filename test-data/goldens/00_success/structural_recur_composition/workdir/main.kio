@@ -73,7 +73,7 @@ pure fn siblings(ct: __Comptime__) -> __Type_arity__ {
           __if_then_else__(
           , __type_arity_equal__(ct, first, second)
           , .() -> __Type_arity__ { __type_arity_succ__(ct, second) }
-          , .() -> __Type_arity__ { s.reject(__Type_arity__, ct) }
+          , .() -> __Type_arity__ { s.reject[__Type_arity__](ct) }
           )
         }
       )

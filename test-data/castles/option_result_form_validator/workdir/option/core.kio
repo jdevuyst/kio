@@ -31,7 +31,7 @@ import option/macros/spine_macros(
 pub labels { present[A]: A };
 
 /// Option shape whose labeled present arm distinguishes a value from the bare absent unit.
-pub type Option[A] = Present(A) | .;
+pub type Option[A] = Present[A] | .;
 
 // =====================================================================
 // Constructors
@@ -39,10 +39,10 @@ pub type Option[A] = Present(A) | .;
 /// `some(x)` is the present case carrying `x`: `{present = x}` builds the
 /// labeled value and `widen_sum` injects it as the left arm of the
 /// `Present(A) | .` sum (target inferred from the return type).
-pub fn some[A](x: A) -> Option(A) { widen_sum({present = x}) }
+pub fn some[A](x: A) -> Option[A] { widen_sum({present = x}) }
 
 /// `none(A)` is the absent case - the bare `()` arm on the right.
-pub fn none[A] -> Option(A) { widen_sum(()) }
+pub fn none[A] -> Option[A] { widen_sum(()) }
 
 // =====================================================================
 // Eliminators
@@ -52,17 +52,17 @@ pub fn none[A] -> Option(A) { widen_sum(()) }
 /// payload, or fall back to `default` when absent. Every other
 /// eliminator could be written in terms of it; the module spells them
 /// out directly so each reduces cleanly under `kio test`.
-pub fn option[A][B](default: B, f: A -> B, m: Option(A)) -> B {
+pub fn option[A][B](default: B, f: A -> B, m: Option[A]) -> B {
   match(m) {
-    (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { default })
+    (.(p: Present[A]) { f(Present.get(p)) }, .(_u: .) { default })
   }
 }
 
 /// `from_option(default, m)` projects the present payload, or returns
 /// `default` when absent.
-pub fn from_option[A](default: A, m: Option(A)) -> A {
+pub fn from_option[A](default: A, m: Option[A]) -> A {
   match(m) {
-    (.(p: Present(A)) { Present.get(p) }, .(_u: .) { default })
+    (.(p: Present[A]) { Present.get(p) }, .(_u: .) { default })
   }
 }
 
@@ -70,30 +70,30 @@ pub fn from_option[A](default: A, m: Option(A)) -> A {
 // Functor / applicative / monad
 // =====================================================================
 /// Transforms present payloads and leaves absent options unchanged.
-pub fn map[A][B](f: A -> B, m: Option(A)) -> Option(B) {
+pub fn map[A][B](f: A -> B, m: Option[A]) -> Option[B] {
   match(m) {
-    (.(p: Present(A)) { some(f(Present.get(p))) }, .(_u: .) { none(B) })
+    (.(p: Present[A]) { some(f(Present.get(p))) }, .(_u: .) { none[B] })
   }
 }
 
 /// `bind` (monadic `>>=`) chains an `A -> Option(B)` over `Option(A)`.
-pub fn bind[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) {
+pub fn bind[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] {
   match(m) {
-    (.(p: Present(A)) { f(Present.get(p)) }, .(_u: .) { none(B) })
+    (.(p: Present[A]) { f(Present.get(p)) }, .(_u: .) { none[B] })
   }
 }
 
 /// `apply` is applicative `<*>`: an `Option(A -> B)` applied to an
 /// `Option(A)`. Present only when both operands are present.
-pub fn apply[A][B](mf: Option(A -> B), m: Option(A)) -> Option(B) {
-  bind(mf, .(f: A -> B) -> Option(B) { map(f, m) })
+pub fn apply[A][B](mf: Option[A -> B], m: Option[A]) -> Option[B] {
+  bind(mf, .(f: A -> B) -> Option[B] { map(f, m) })
 }
 
 /// `then` sequences two options, keeping the second when the first is
 /// present (monadic `>>` - the first option's payload is discarded but
 /// its presence still gates the result).
-pub fn then[A][B](m: Option(A), n: Option(B)) -> Option(B) {
-  bind(m, .(_x: A) -> Option(B) { n })
+pub fn then[A][B](m: Option[A], n: Option[B]) -> Option[B] {
+  bind(m, .(_x: A) -> Option[B] { n })
 }
 
 // =====================================================================
@@ -101,30 +101,30 @@ pub fn then[A][B](m: Option(A), n: Option(B)) -> Option(B) {
 // =====================================================================
 /// `or_else(m, alt)` keeps `m` when it is present, falling back to the
 /// alternative `alt` when `m` is absent.
-pub fn or_else[A](m: Option(A), alt: Option(A)) -> Option(A) {
+pub fn or_else[A](m: Option[A], alt: Option[A]) -> Option[A] {
   match(m) {
-    (.(_p: Present(A)) { m }, .(_u: .) { alt })
+    (.(_p: Present[A]) { m }, .(_u: .) { alt })
   }
 }
 
 /// `and_then` is `bind` with the arguments named for the fluent
 /// "if present, continue with" reading common at callsites.
-pub fn and_then[A][B](m: Option(A), f: A -> Option(B)) -> Option(B) { bind(m, f) }
+pub fn and_then[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] { bind(m, f) }
 
 // =====================================================================
 // Bridge to native sums
 // =====================================================================
 /// `to_sum(m)` drops the `present` label, yielding the bare `A | .`.
-pub fn to_sum[A](m: Option(A)) -> A | . {
+pub fn to_sum[A](m: Option[A]) -> A | . {
   match(m) {
-    (.(p: Present(A)) { widen_sum(Present.get(p), A | .) }, .(_u: .) { widen_sum((), A | .) })
+    (.(p: Present[A]) { widen_sum(Present.get(p))[A | .] }, .(_u: .) { widen_sum(())[A | .] })
   }
 }
 
 /// `from_sum(s)` re-labels a bare `A | .` as an `Option(A)`.
-pub fn from_sum[A](s: A | .) -> Option(A) {
+pub fn from_sum[A](s: A | .) -> Option[A] {
   match(s) {
-    (.(v: A) { some(v) }, .(_u: .) { none(A) })
+    (.(v: A) { some(v) }, .(_u: .) { none[A] })
   }
 }
 
@@ -134,14 +134,14 @@ pub fn from_sum[A](s: A | .) -> Option(A) {
 /// `cat_step(carry, step, m)` is the pure per-element step `cat_options`
 /// folds: append the present payload (via the caller's `step`), or leave
 /// `carry` untouched for a `none`.
-pub fn cat_step[A][Acc](carry: Acc, step: (Acc & A) -> Acc, m: Option(A)) -> Acc {
+pub fn cat_step[A][Acc](carry: Acc, step: (Acc & A) -> Acc, m: Option[A]) -> Acc {
   option(carry, .(x: A) -> Acc { step(carry, x) }, m)
 }
 
 /// `map_step(carry, f, step, x)` is the pure per-element step
 /// `map_option` folds: run the partial `f`, appending only when it is
 /// present (the filtering-map, "mapMaybe").
-pub fn map_step[A][B][Acc](carry: Acc, f: A -> Option(B), step: (Acc & B) -> Acc, x: A) -> Acc {
+pub fn map_step[A][B][Acc](carry: Acc, f: A -> Option[B], step: (Acc & B) -> Acc, x: A) -> Acc {
   option(carry, .(y: B) -> Acc { step(carry, y) }, f(x))
 }
 
@@ -150,6 +150,6 @@ pub fn map_step[A][B][Acc](carry: Acc, f: A -> Option(B), step: (Acc & B) -> Acc
 /// it onto `carry` with the caller-supplied `concat`; a `none`
 /// contributes nothing. `concat` is passed in (it is the host string
 /// append injected into the driver), keeping this step pure.
-pub fn join_step[A][Str](carry: Str, show: A -> Str, concat: (Str & Str) -> Str, m: Option(A)) -> Str {
+pub fn join_step[A][Str](carry: Str, show: A -> Str, concat: (Str & Str) -> Str, m: Option[A]) -> Str {
   option(carry, .(x: A) -> Str { concat(carry, show(x)) }, m)
 }

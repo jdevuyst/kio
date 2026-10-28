@@ -15,15 +15,15 @@ import testapi(Array, I32);
 /// chosen at each depth and the digit currently placed there, which is
 /// also the undo trail, since undoing a frame needs exactly that pair.
 pub labels Work = {
-, board: Array(I32)
-, row_of: Array(I32)
-, col_of: Array(I32)
-, box_of: Array(I32)
-, used_row: Array(I32)
-, used_col: Array(I32)
-, used_box: Array(I32)
-, stack_cell: Array(I32)
-, stack_digit: Array(I32)
+, board: Array[I32]
+, row_of: Array[I32]
+, col_of: Array[I32]
+, box_of: Array[I32]
+, used_row: Array[I32]
+, used_col: Array[I32]
+, used_box: Array[I32]
+, stack_cell: Array[I32]
+, stack_digit: Array[I32]
 };
 
 /// What the search proved. `Exhausted` means the step budget ran out

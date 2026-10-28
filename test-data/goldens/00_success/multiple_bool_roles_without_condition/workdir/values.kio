@@ -4,6 +4,6 @@ host type First role(bool);
 
 host type Second role(bool);
 
-fn first() -> First { .t(First) }
+fn first() -> First { .t[First] }
 
-fn second() -> Second { .f(Second) }
+fn second() -> Second { .f[Second] }

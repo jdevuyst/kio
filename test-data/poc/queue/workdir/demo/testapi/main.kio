@@ -28,9 +28,9 @@ import testapi/text(string_concat);
 
 fn cat(a: String, b: String) -> String { string_concat(a, b) }
 
-fn present[A](value: A) -> A | . { widen_sum(value, A | .) }
+fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
 
-fn absent[A]() -> A | . { widen_sum((), A | .) }
+fn absent[A]() -> A | . { widen_sum(())[A | .] }
 
 fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   match(result) {
@@ -38,13 +38,13 @@ fn fold_result[A][B](default: B, present_value: A -> B, result: A | .) -> B {
   }
 }
 
-fn show_queue(q: Queue(I32)) -> String {
+fn show_queue(q: Queue[I32]) -> String {
   let rendered =
     lists.foldl(
     , .(carry: Bool & String, x: I32) -> Bool & String {
         match(carry) {
           .(first: Bool, text: String) {
-            let sep = bool_to(""(String), ", ", first);
+            let sep = bool_to(""[String], ", ", first);
             (no(), int_to_string(x).>>cat(sep).>>cat(text))
           }
         }
@@ -74,9 +74,9 @@ fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
 fn line(label: String, value: String) { print(value.>cat("\n").>>cat(" = ").>>cat(label)) }
 
 pub fn main() {
-  let e = empty(I32);
-  let s = singleton(7(I32));
-  let q3 = from_list([* 1(I32), 2, 3 *]);
+  let e = empty[I32];
+  let s = singleton(7[I32]);
+  let q3 = from_list([* 1[I32], 2, 3 *]);
   line("empty", show_queue(e));
   line("singleton(7)", show_queue(s));
   line("from_list([1, 2, 3])", show_queue(q3));
@@ -91,9 +91,9 @@ pub fn main() {
   , "dequeue([1, 2, 3, 4]).head"
   , show_opt(fold_result(
     , absent()
-    , .(p: I32 & Queue(I32)) {
+    , .(p: I32 & Queue[I32]) {
         match(p) {
-          .(h: I32, _r: Queue(I32)) { present(h) }
+          .(h: I32, _r: Queue[I32]) { present(h) }
         }
       }
     , dequeue(q4)
@@ -103,9 +103,9 @@ pub fn main() {
   , "dequeue([1, 2, 3, 4]).rest"
   , fold_result(
     , "none"
-    , .(p: I32 & Queue(I32)) {
+    , .(p: I32 & Queue[I32]) {
         match(p) {
-          .(_h: I32, r: Queue(I32)) { show_queue(r) }
+          .(_h: I32, r: Queue[I32]) { show_queue(r) }
         }
       }
     , dequeue(q4)
@@ -121,43 +121,43 @@ pub fn main() {
   , "([1, 2, 3] <<).head"
   , show_opt(fold_result(
     , absent()
-    , .(p: I32 & Queue(I32)) {
+    , .(p: I32 & Queue[I32]) {
         match(p) {
-          .(h: I32, _r: Queue(I32)) { present(h) }
+          .(h: I32, _r: Queue[I32]) { present(h) }
         }
       }
     , q3 <<
     ))
   );
   line("[1, 2, 3] ++ [4, 5]", show_queue(q3 ++ from_list([* 4, 5 *])));
-  let .(source_list: List(I32)) = [* 1, 2, 3 *];
-  let .(roundtrip: List(I32)) = to_list(from_list(source_list));
+  let .(source_list: List[I32]) = [* 1, 2, 3 *];
+  let .(roundtrip: List[I32]) = to_list(from_list(source_list));
   line("canonical list roundtrip", lists.to_string(int_to_string, roundtrip));
-  let .(no_items: List(I32)) = [* *];
+  let .(no_items: List[I32]) = [* *];
   line("canonical empty list length", int_to_string(length(from_list(no_items))));
-  let .(unit_queue: Queue(.)) = from_list([* () *]);
-  let .(no_units: Queue(.)) = empty(_);
+  let .(unit_queue: Queue[.]) = from_list([* () *]);
+  let .(no_units: Queue[.]) = empty[_];
   line("peek(unit)", show_result(peek(unit_queue), .(_unit: .) { "unit" }));
   line("peek(empty Unit)", show_result(peek(no_units), .(_unit: .) { "unit" }));
   let show_unit_pair =
-    .(pair: . & Queue(.)) -> String {
-      let .(_unit: ., rest: Queue(.)) = pair;
+    .(pair: . & Queue[.]) -> String {
+      let .(_unit: ., rest: Queue[.]) = pair;
       cat("unit, remaining ", int_to_string(length(rest)))
     };
   line("dequeue(unit)", show_result(dequeue(unit_queue), show_unit_pair));
   line("dequeue(empty Unit)", show_result(dequeue(no_units), show_unit_pair));
-  let .(sum_queue: Queue(I32 | .)) =
-    from_list([* widen_sum(7(I32), I32 | .), widen_sum((), I32 | .) *]);
+  let .(sum_queue: Queue[I32 | .]) =
+    from_list([* widen_sum(7[I32])[I32 | .], widen_sum(())[I32 | .] *]);
   line("peek(nested number)", show_result(peek(sum_queue), render_sum));
   let sum_tail =
     fold_result(
-    , empty(I32 | .)
-    , .(pair: (I32 | .) & Queue(I32 | .)) {
-        let .(_value: I32 | ., rest: Queue(I32 | .)) = pair;
+    , empty[I32 | .]
+    , .(pair: (I32 | .) & Queue[I32 | .]) {
+        let .(_value: I32 | ., rest: Queue[I32 | .]) = pair;
         rest
       }
     , dequeue(sum_queue)
     );
   line("peek(nested Unit)", show_result(peek(sum_tail), render_sum));
-  line("peek(empty nested)", show_result(peek(empty(I32 | .)), render_sum))
+  line("peek(empty nested)", show_result(peek(empty[I32 | .]), render_sum))
 }

@@ -10,8 +10,8 @@ type Target = . | (Token & Token);
 
 type Precondition = . | !;
 
-fn through_precondition(_precondition: Precondition) -> Target { __left__(., Token & Token, ()) }
+fn through_precondition(_precondition: Precondition) -> Target { __left__[.][Token & Token](()) }
 
-fn bad() -> Target { derive(through_precondition, Target) }
+fn bad() -> Target { derive(through_precondition)[Target] }
 
 pub fn main() { () }

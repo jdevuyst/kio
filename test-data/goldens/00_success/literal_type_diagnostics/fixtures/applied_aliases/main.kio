@@ -3,40 +3,40 @@ module main;
 import numbers as n;
 import numbers(Int as Imported_int);
 
-type Int = n.Identity(n.Int);
+type Int = n.Identity[n.Int];
 
-type Same_int = n.Identity(n.Int);
+type Same_int = n.Identity[n.Int];
 
-type Float = n.Identity(n.Float);
+type Float = n.Identity[n.Float];
 
-type Bool = n.Identity(n.Bool);
+type Bool = n.Identity[n.Bool];
 
-type String = n.Identity(n.String);
+type String = n.Identity[n.String];
 
-pure fn integer() -> Int { let value = 42(Int); value }
+pure fn integer() -> Int { let value = 42[Int]; value }
 
-pure fn float() -> Float { let value = 42.0(Float); value }
+pure fn float() -> Float { let value = 42.0[Float]; value }
 
-pure fn flag() -> Bool { let value = .t(Bool); value }
+pure fn flag() -> Bool { let value = .t[Bool]; value }
 
-pure fn text() -> String { let value = "alias"(String); value }
+pure fn text() -> String { let value = "alias"[String]; value }
 
 equiv int_annotated() {
   integer();
-  42(Imported_int)
+  42[Imported_int]
 }
 
 equiv float_annotated() {
   float();
-  42.0(n.Float)
+  42.0[n.Float]
 }
 
 equiv bool_annotated() {
   flag();
-  .t(n.Bool)
+  .t[n.Bool]
 }
 
 equiv string_annotated() {
   text();
-  "alias"(n.String)
+  "alias"[n.String]
 }

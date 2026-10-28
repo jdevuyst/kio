@@ -100,12 +100,12 @@ fn repl_literal_inference_keeps_categories_and_ordinary_default_names() {
         package.write(path, source);
     }
     let queries = [
-        "42(Int)",
-        "42.0e0(Float)",
-        "42.0E+3(Float)",
-        "42.0(Float)",
-        "42.0e-3(Float)",
-        ".t(Bool)",
+        "42[Int]",
+        "42.0e0[Float]",
+        "42.0E+3[Float]",
+        "42.0[Float]",
+        "42.0e-3[Float]",
+        ".t[Bool]",
         "default()",
         "same(42, default())",
         "same(42.0, floating())",
@@ -133,7 +133,7 @@ fn repl_literal_inference_keeps_categories_and_ordinary_default_names() {
             "{query}: {output}"
         );
     }
-    assert!(output.lines().any(|line| line == "42(Int)"), "{output}");
+    assert!(output.lines().any(|line| line == "42[Int]"), "{output}");
     assert!(
         output
             .lines()
@@ -147,7 +147,7 @@ fn repl_literal_inference_keeps_categories_and_ordinary_default_names() {
         ".t",
         "same(42.0, 42)",
         "same(42, 42.0)",
-        "42(Float)",
+        "42[Float]",
     ] {
         let output = run_repl(
             package.path(),
@@ -352,7 +352,7 @@ fn repl_block_ufcs_types_and_normalizes_all_four_directions() {
     package.write(
         "provider.kio",
         &format!(
-            "{}\npub macro prefixed : (. & . & . & .) -> . {{ trailing product; trailing product fallback; impl first_checked }}",
+            "{}\npub macro prefixed : (. & .) -> . -> . -> . {{ trailing product; trailing product fallback; impl first_checked }}",
             include_str!("fixtures/trailing-blocks/provider.kio")
         ),
     );
@@ -411,7 +411,7 @@ fn repl_types_and_normalizes_all_three_trailing_block_exposures() {
         output.contains("enter { let value = (); value } : ."),
         "{output}"
     );
-    assert!(output.contains("provider.Box(.)"), "{output}");
+    assert!(output.contains("provider.Box[.]"), "{output}");
     assert_eq!(
         output.lines().filter(|line| *line == "()").count(),
         2,
@@ -1757,7 +1757,7 @@ fn repl_type_only_named_and_anonymous_types() {
         &[
             ":load demo/main",
             ":type mark",
-            ":type mark(.)",
+            ":type mark[.]",
             ":type .[B] { () }",
             ":type .[B] { .(value: B) { value } }",
             ":quit",
@@ -1765,7 +1765,7 @@ fn repl_type_only_named_and_anonymous_types() {
     );
     for expected in [
         "mark : [A] .",
-        "mark(.) : .",
+        "mark[.] : .",
         ".[B] { () } : [B] .",
         ".[B] { .(value: B) { value } } : [B] B -> B",
     ] {
@@ -1788,17 +1788,17 @@ fn repl_type_only_normalization_preserves_written_applications() {
         pkg.path(),
         &[
             ":load demo/main",
-            ":normalize mark(.)",
-            ":normalize nested(.)",
-            ":normalize nested(.)(.)",
-            ":type .[A] { .(value: A) { value } }(., ())",
-            ":normalize .[A] { .(value: A) { value } }(., ())",
+            ":normalize mark[.]",
+            ":normalize nested[.]",
+            ":normalize nested[.][.]",
+            ":type .[A] { .(value: A) { value } }[.](())",
+            ":normalize .[A] { .(value: A) { value } }[.](())",
             ":quit",
         ],
     );
     assert!(
         out.lines()
-            .any(|line| line == ".[A] { .(value: A) { value } }(., ()) : ."),
+            .any(|line| line == ".[A] { .(value: A) { value } }[.](()) : ."),
         "{out}"
     );
     assert_eq!(out.lines().filter(|line| *line == "()").count(), 3, "{out}");
@@ -1823,17 +1823,17 @@ fn repl_type_only_explicit_unit_residual_query() {
         &[
             ":load demo/main",
             ":type delayed",
-            ":type delayed(.)",
-            ":normalize delayed(.)",
-            ":type delayed(., ())",
-            ":normalize delayed(., ())",
+            ":type delayed[.]",
+            ":normalize delayed[.]",
+            ":type delayed[.](())",
+            ":normalize delayed[.](())",
             ":quit",
         ],
     );
     for expected in [
         "delayed : [A] . -> .",
-        "delayed(.) : . -> .",
-        "delayed(., ()) : .",
+        "delayed[.] : . -> .",
+        "delayed[.](()) : .",
     ] {
         assert!(out.lines().any(|line| line == expected), "{out}");
     }

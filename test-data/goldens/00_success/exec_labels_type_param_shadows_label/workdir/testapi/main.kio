@@ -19,14 +19,14 @@ fn id_fn[A](x: A) -> A { x }
 // `type` header `[A]` shadows label `a` in the body.
 type Id[A] = A;
 
-fn use_id(x: Id(String)) -> Id(String) { x }
+fn use_id(x: Id[String]) -> Id[String] { x }
 
 // `newtype` header `[A]` shadows label `a` in the payload.
 newtype Wrap[A] : A { pub constructor mk_wrap; pub projector un_wrap }
 
-fn make_wrap(s: String) -> Wrap(String) { Wrap.mk_wrap(s) }
+fn make_wrap(s: String) -> Wrap[String] { Wrap.mk_wrap(s) }
 
-fn open_wrap(w: Wrap(String)) -> String { Wrap.un_wrap(w) }
+fn open_wrap(w: Wrap[String]) -> String { Wrap.un_wrap(w) }
 
 // A function-type `[A] A -> A` mid-type binder shadows label `a`
 // inside the annotation. Defined but not called: a higher-rank

@@ -12,8 +12,8 @@ fn consume_poly(_value: [B] B -> .) { () }
 
 fn inferred_from_nested_result() { consume_any(make_poly(())) }
 
-fn placeholder_from_nested_result() { consume_any(_, make_poly(())) }
+fn placeholder_from_nested_result() { consume_any[_](make_poly(())) }
 
 fn inferred_from_expected_polytype() { consume_poly(identity(make_poly(()))) }
 
-fn placeholder_from_expected_polytype() { consume_poly(identity(_, make_poly(()))) }
+fn placeholder_from_expected_polytype() { consume_poly(identity[_](make_poly(()))) }

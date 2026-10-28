@@ -61,9 +61,9 @@ fn skew_inc(actual: I32 | ., delta: I32) -> I32 {
 fn reconcile_item(
 , name: String
 , key: I32
-, base: Dict(I32, I32)
-, actual: Dict(I32, I32)
-, adjustments: Dict(I32, I32)
+, base: Dict[I32][I32]
+, actual: Dict[I32][I32]
+, adjustments: Dict[I32][I32]
 ) -> Line {
   let expected = add_i32(get_or_i32(base, key, 0), get_or_i32(adjustments, key, 0));
   let actual_value = lookup_count(actual, key);
@@ -72,7 +72,7 @@ fn reconcile_item(
   line(name, expected, actual_count, delta, status_for(actual_value, delta))
 }
 
-fn unknown_count(catalogue: Dict(I32, String), key: I32) -> I32 {
+fn unknown_count(catalogue: Dict[I32][String], key: I32) -> I32 {
   match(lookup_name(catalogue, key)) {
     (.(_name: String) { 0 }, .(_missing: .) { 1 })
   }

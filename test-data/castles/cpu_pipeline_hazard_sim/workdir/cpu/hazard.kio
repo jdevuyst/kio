@@ -55,11 +55,11 @@ pub labels Read = { value: I32, hit_ex_mem: I32, hit_mem_wb: I32 };
 /// makes the pipeline diagram's event column checkable by hand.
 pub labels Verdict = { proceed: . } | { raw_stall: I32 } | { load_use_stall: I32 };
 
-fn proceed() -> Verdict { {proceed=}.>widen_sum(Verdict) }
+fn proceed() -> Verdict { ({proceed=}.>widen_sum)[Verdict] }
 
-fn raw_stall(r: I32) -> Verdict { {raw_stall = r}.>widen_sum(Verdict) }
+fn raw_stall(r: I32) -> Verdict { ({raw_stall = r}.>widen_sum)[Verdict] }
 
-fn load_use_stall(r: I32) -> Verdict { {load_use_stall = r}.>widen_sum(Verdict) }
+fn load_use_stall(r: I32) -> Verdict { ({load_use_stall = r}.>widen_sum)[Verdict] }
 
 fn reading(v: I32, ex_hit: I32, mem_hit: I32) -> Read {
   {value = v, hit_ex_mem = ex_hit, hit_mem_wb = mem_hit}
@@ -69,7 +69,7 @@ fn reading(v: I32, ex_hit: I32, mem_hit: I32) -> Read {
 /// nothing, and the guard has to be an `if` rather than an `and`: a call
 /// evaluates both its arguments, and indexing the code array with an
 /// empty stage's negative slot would fault.
-fn produces(code: Array(Instr), slot: I32, r: I32) -> Bool {
+fn produces(code: Array[Instr], slot: I32, r: I32) -> Bool {
   if(stage_empty(slot)) { .f } else { writes_reg(array_get(code, slot), r) }
 }
 
@@ -77,14 +77,14 @@ fn select(cpu: Cpu, m: Machine, r: I32) -> Operand {
   let code = cpu.?{prog};
   if(cpu.?{forwarding}) {
     if(produces(code, m.?{st_mem}, r)) {
-      {from_ex_mem = m.?{ex_mem}}.>widen_sum(Operand)
+      ({from_ex_mem = m.?{ex_mem}}.>widen_sum)[Operand]
     } else if(produces(code, m.?{st_wb}, r)) {
-      {from_mem_wb = m.?{mem_wb}}.>widen_sum(Operand)
+      ({from_mem_wb = m.?{mem_wb}}.>widen_sum)[Operand]
     } else {
-      {from_reg = array_get(cpu.?{regs}, r)}.>widen_sum(Operand)
+      ({from_reg = array_get(cpu.?{regs}, r)}.>widen_sum)[Operand]
     }
   } else {
-    {from_reg = array_get(cpu.?{regs}, r)}.>widen_sum(Operand)
+    ({from_reg = array_get(cpu.?{regs}, r)}.>widen_sum)[Operand]
   }
 }
 
@@ -107,15 +107,15 @@ pub fn read_source(cpu: Cpu, m: Machine, r: I32) -> Read {
 }
 
 /// The register a producer in `slot` still owes `consumer`, if any.
-fn owed(code: Array(Instr), consumer: Instr, slot: I32) -> I32 | . {
+fn owed(code: Array[Instr], consumer: Instr, slot: I32) -> I32 | . {
   if(stage_empty(slot)) {
-    widen_sum((), I32 | .)
+    widen_sum(())[I32 | .]
   } else match(dest_of(array_get(code, slot))) {
     (
     , .(d: I32) {
-        if(reads_reg(consumer, d)) { widen_sum(d, I32 | .) } else { widen_sum((), I32 | .) }
+        if(reads_reg(consumer, d)) { widen_sum(d)[I32 | .] } else { widen_sum(())[I32 | .] }
       }
-    , .(_writes_nothing: .) { widen_sum((), I32 | .) }
+    , .(_writes_nothing: .) { widen_sum(())[I32 | .] }
     )
   }
 }

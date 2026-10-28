@@ -37,9 +37,9 @@ import testapi/iter(loop);
 
 labels Maybe_subst = { some_subst: subst.Subst } | { no_subst: . };
 
-fn some_subst(s: subst.Subst) -> Maybe_subst { {some_subst = s}.>widen_sum(Maybe_subst) }
+fn some_subst(s: subst.Subst) -> Maybe_subst { ({some_subst = s}.>widen_sum)[Maybe_subst] }
 
-fn no_subst() -> Maybe_subst { {no_subst=}.>widen_sum(Maybe_subst) }
+fn no_subst() -> Maybe_subst { ({no_subst=}.>widen_sum)[Maybe_subst] }
 
 /// A stored fact's arguments are constants by construction. A variable
 /// reaching here would mean a non-ground atom was stored, so the term
@@ -140,7 +140,7 @@ rec(loop) {
             )
           }
         }
-      , .(_empty: .) { list.nil(subst.Subst) }
+      , .(_empty: .) { list.nil[subst.Subst] }
       )
     }
   }
@@ -164,7 +164,7 @@ rec(loop) {
           , recur(cont) scan_old(goal, rest, old, db, old, delta, s)
           )
         }
-      , .(_empty: .) { list.nil(subst.Subst) }
+      , .(_empty: .) { list.nil[subst.Subst] }
       )
     }
   };
@@ -186,7 +186,7 @@ rec(loop) {
             )
           }
         }
-      , .(_empty: .) { list.nil(subst.Subst) }
+      , .(_empty: .) { list.nil[subst.Subst] }
       )
     }
   };
@@ -217,7 +217,7 @@ rec(loop) {
             )
           }
         }
-      , .(_empty: .) { list.nil(subst.Subst) }
+      , .(_empty: .) { list.nil[subst.Subst] }
       )
     }
   }

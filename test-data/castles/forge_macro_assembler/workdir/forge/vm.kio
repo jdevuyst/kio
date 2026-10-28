@@ -44,7 +44,7 @@ import testapi/iter(loop);
 
 /// A list of machine words. The operand stack and the emit log are both
 /// one of these.
-pub type Words = l.List(I32);
+pub type Words = l.List[I32];
 
 /// Integer equality, out of the antisymmetry of `<=`: this host tier
 /// supplies the comparisons but no `eq_i32`.
@@ -102,32 +102,32 @@ pub fn boot() -> Vm {
   {
   , pc = 0
   , bank = zeroed()
-  , stack = l.nil(I32)
+  , stack = l.nil[I32]
   , depth = 0
   , high = 0
   , fuel = budget()
-  , out = l.nil(I32)
+  , out = l.nil[I32]
   }
 }
 
 /// Why the machine stopped.
 pub labels Stop = { halted: . } | { ran_off: . } | { out_of_fuel: . } | { faulted: String };
 
-fn halted() -> Stop { {halted=}.>widen_sum(Stop) }
+fn halted() -> Stop { ({halted=}.>widen_sum)[Stop] }
 
-fn ran_off() -> Stop { {ran_off=}.>widen_sum(Stop) }
+fn ran_off() -> Stop { ({ran_off=}.>widen_sum)[Stop] }
 
-fn out_of_fuel() -> Stop { {out_of_fuel=}.>widen_sum(Stop) }
+fn out_of_fuel() -> Stop { ({out_of_fuel=}.>widen_sum)[Stop] }
 
-fn faulted(why: String) -> Stop { {faulted = why}.>widen_sum(Stop) }
+fn faulted(why: String) -> Stop { ({faulted = why}.>widen_sum)[Stop] }
 
 /// One step's result: the machine carries on, or it is finished and hands
 /// back its final state together with the reason.
 labels Outcome = { going: Vm } | { done: Vm & Stop };
 
-fn going(m: Vm) -> Outcome { {going = m}.>widen_sum(Outcome) }
+fn going(m: Vm) -> Outcome { ({going = m}.>widen_sum)[Outcome] }
 
-fn stop(m: Vm, why: Stop) -> Outcome { {done = (m, why)}.>widen_sum(Outcome) }
+fn stop(m: Vm, why: Stop) -> Outcome { ({done = (m, why)}.>widen_sum)[Outcome] }
 
 fn set_pc(m: Vm, at: I32) -> Vm { m.!{pc = at} }
 

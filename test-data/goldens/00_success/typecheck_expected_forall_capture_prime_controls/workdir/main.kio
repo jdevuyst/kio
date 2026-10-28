@@ -3,9 +3,9 @@ module main;
 fn consume[A](seed: A, f: [X] (A & X) -> A) { () }
 
 fn annotated[A](seed: A) {
-  consume(A, seed, .[A](left, right: A) { seed })
+  consume[A](seed, .[A](left, right: A) { seed })
 }
 
 fn inferred[A](seed: A) {
-  consume(A, seed, .[A](left, right) { seed })
+  consume[A](seed, .[A](left, right) { seed })
 }

@@ -199,6 +199,14 @@ impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for OccurrenceEraser {
 
     fn visit_expr(&mut self, expr: &mut crate::ast::Expr<P>) {
         *expr.occurrence_mut() = Default::default();
+        if let crate::ast::Expr::UserMacro { stages, .. }
+        | crate::ast::Expr::RecCall { stages, .. }
+        | crate::ast::Expr::BlockCall { prefix: stages, .. } = expr
+        {
+            for stage in stages {
+                stage.occurrence = Default::default();
+            }
+        }
         crate::pass::visit_mut::walk_expr(self, expr);
     }
 }
@@ -434,6 +442,14 @@ impl<P: TypecheckVisitPhase> TypecheckVisitMut<P> for BinderNormalizer<'_> {
     fn visit_expr(&mut self, expr: &mut crate::ast::Expr<P>) {
         if matches!(self.occurrences, OccurrencePolicy::Refresh) {
             *expr.occurrence_mut() = crate::ast::ExpressionOccurrenceCarrier::fresh();
+            if let crate::ast::Expr::UserMacro { stages, .. }
+            | crate::ast::Expr::RecCall { stages, .. }
+            | crate::ast::Expr::BlockCall { prefix: stages, .. } = expr
+            {
+                for stage in stages {
+                    stage.occurrence = crate::ast::ExpressionOccurrenceCarrier::fresh();
+                }
+            }
         }
         if let crate::ast::Expr::Path { segments, .. } = expr
             && let [segment] = segments.as_mut_slice()
@@ -478,13 +494,13 @@ mod tests {
     fn retained_type_argument_package() -> Package<crate::ast::Prime> {
         let source = r#"module main;
 
-fn outer[*F][A](value: F(A)) -> F(A) {
-    let occupied = identity(A_n2, ());
-    let inner = .[*F][A](other: F(A)) -> F(A) {
-        let qualified = identity(types.A, ());
-        identity(F(A), other)
+fn outer[*F][A](value: F[A]) -> F[A] {
+    let occupied = identity[A_n2](());
+    let inner = .[*F][A](other: F[A]) -> F[A] {
+        let qualified = identity[types.A](());
+        identity[F[A]](other)
     };
-    inner(F, A, value)
+    inner[F][A](value)
 }
 "#;
         let module = parse(source).expect("parse");
@@ -498,6 +514,7 @@ fn outer[*F][A](value: F(A)) -> F(A) {
     struct LexicalNames {
         binders: Vec<String>,
         paths: Vec<(Span, String)>,
+        call_type_paths: bool,
     }
 
     impl TypecheckVisitMut<crate::ast::Prime> for LexicalNames {
@@ -505,7 +522,38 @@ fn outer[*F][A](value: F(A)) -> F(A) {
             self.binders.push(param.name.clone());
         }
 
+        fn visit_type(&mut self, ty: &mut Type<crate::ast::Prime>) {
+            if self.call_type_paths
+                && let Type::Path { segments, .. } = ty
+            {
+                self.paths.push((
+                    segments[0].span,
+                    segments
+                        .iter()
+                        .map(|segment| segment.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("."),
+                ));
+            }
+            crate::pass::visit_mut::walk_type(self, ty);
+        }
+
         fn visit_expr(&mut self, expr: &mut Expr<crate::ast::Prime>) {
+            if let Expr::Call { callee, args, .. } = expr {
+                self.visit_expr(callee);
+                for arg in args {
+                    match arg {
+                        crate::ast::CallArg::Type(ty) => {
+                            let previous = self.call_type_paths;
+                            self.call_type_paths = true;
+                            self.visit_type(ty);
+                            self.call_type_paths = previous;
+                        }
+                        crate::ast::CallArg::Value(value) => self.visit_expr(value),
+                    }
+                }
+                return;
+            }
             if let Expr::Path { segments, .. } = expr {
                 self.paths.push((
                     segments[0].span,
@@ -578,6 +626,54 @@ fn outer[*F][A](value: F(A)) -> F(A) {
             erased.module("main").expect("main").module,
             first.package().module("main").expect("main").module,
         );
+    }
+
+    #[cfg(feature = "surface")]
+    #[test]
+    fn call_stages_occurrences_refresh_and_erase_with_their_root() {
+        #[derive(Default)]
+        struct Occurrences(Vec<Option<crate::ast::ExpressionOccurrenceId>>, usize);
+        impl TypecheckVisitMut<crate::ast::Lowered> for Occurrences {
+            fn visit_expr(&mut self, expr: &mut Expr<crate::ast::Lowered>) {
+                self.0.push(expr.occurrence().assigned_key());
+                if let Expr::UserMacro { stages, .. } = expr {
+                    assert_eq!(stages.len(), 2);
+                    self.1 += stages.len();
+                    self.0
+                        .extend(stages.iter().map(|stage| stage.occurrence.assigned_key()));
+                }
+                crate::pass::visit_mut::walk_expr(self, expr);
+            }
+        }
+        let module = parse("module main; import __comptime__; pure fn implementation(_ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value } macro identity : [A] A -> A { impl implementation; }; fn run(f: . -> .) -> . { identity(f)(()) }").unwrap();
+        let (modules, _) =
+            FullPipeline::lower_package(vec![(PathBuf::from("main.kio"), module)], None).unwrap();
+        let raw = Package::build(Path::new(""), modules, None).unwrap();
+        let first = normalize_package(&raw);
+        let mut ids = Occurrences::default();
+        ids.visit_package(&mut first.package().clone());
+        assert_eq!(
+            ids.1, 2,
+            "the macro retains both original written application stages"
+        );
+        let unique = ids.0.iter().copied().collect::<HashSet<_>>();
+        assert_eq!(unique.len(), ids.0.len());
+        assert!(!unique.contains(&None));
+        let cloned = first.package().clone();
+        let mut clone_ids = Occurrences::default();
+        clone_ids.visit_package(&mut cloned.clone());
+        assert_eq!(ids.0, clone_ids.0);
+        let second = normalize_package(&cloned);
+        let mut refreshed = Occurrences::default();
+        refreshed.visit_package(&mut second.package().clone());
+        assert_eq!(ids.0.len(), refreshed.0.len());
+        assert!(refreshed.0.iter().all(|id| !unique.contains(id)));
+        let mut erased = cloned;
+        erase_package_occurrences(&mut erased);
+        let mut erased_ids = Occurrences::default();
+        erased_ids.visit_package(&mut erased);
+        assert_eq!(ids.0.len(), erased_ids.0.len());
+        assert!(erased_ids.0.iter().all(Option::is_none));
     }
 
     #[cfg(feature = "surface")]

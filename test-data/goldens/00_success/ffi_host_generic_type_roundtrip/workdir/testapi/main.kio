@@ -5,10 +5,10 @@ import testapi/arith(box_get, box_make);
 import testapi/fmt(i32_to_string);
 import testapi/io(print);
 
-fn keep[T](b: Box(T)) -> Box(T) { b }
+fn keep[T](b: Box[T]) -> Box[T] { b }
 
 pub fn main() {
-  let b = keep(box_make(42(I32)));
+  let b = keep(box_make(42[I32]));
   print(i32_to_string(box_get(b)));
-  print("\n"(String))
+  print("\n"[String])
 }

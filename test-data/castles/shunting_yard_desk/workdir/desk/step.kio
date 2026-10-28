@@ -19,9 +19,9 @@ pub labels Action = { lit: I32 } | { app: Op };
 /// rather than the RPN slot the `/` happened to land in.
 pub labels Step = { act: Action, spot: I32 };
 
-fn lit_action(n: I32) -> Action { {lit = n}.>widen_sum(Action) }
+fn lit_action(n: I32) -> Action { ({lit = n}.>widen_sum)[Action] }
 
-fn app_action(op: Op) -> Action { {app = op}.>widen_sum(Action) }
+fn app_action(op: Op) -> Action { ({app = op}.>widen_sum)[Action] }
 
 pub fn lit_step(n: I32, spot: I32) -> Step { {act = lit_action(n), spot} }
 

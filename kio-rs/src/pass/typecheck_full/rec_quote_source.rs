@@ -420,12 +420,9 @@ pub(super) fn compose(
                             None
                         }
                     },
-                    Expr::UserMacro { ext, .. }
-                    | Expr::Ufcs {
-                        ext,
-                        macro_call: Some(_),
-                        ..
-                    } => replay.elaborations.rec_quote_computation(*ext).cloned(),
+                    Expr::UserMacro { ext, .. } => {
+                        replay.elaborations.rec_quote_computation(*ext).cloned()
+                    }
                     _ => {
                         pending.push(Work::Finish(node, ready.len()));
                         let start = pending.len();

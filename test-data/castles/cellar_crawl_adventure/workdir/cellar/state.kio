@@ -16,9 +16,9 @@ import testapi/arith(add, mul, sub);
 
 pub labels Loc = { in_room: ids.Room_id } | { held: . };
 
-fn at_room(r: ids.Room_id) -> Loc { {in_room = r}.>widen_sum(Loc) }
+fn at_room(r: ids.Room_id) -> Loc { ({in_room = r}.>widen_sum)[Loc] }
 
-fn carried() -> Loc { {held=}.>widen_sum(Loc) }
+fn carried() -> Loc { ({held=}.>widen_sum)[Loc] }
 
 pub labels Game = {
 , room: ids.Room_id

@@ -8,14 +8,14 @@ import testapi(I32, String);
 import testapi/fmt as fmt;
 import testapi/text as text;
 
-pub rec labels Value = { number: I32 } | { closure: String & ast.Expr & lists.List(String & Value) };
+pub rec labels Value = { number: I32 } | { closure: String & ast.Expr & lists.List[String & Value] };
 
-pub type Environment = lists.List(String & Value);
+pub type Environment = lists.List[String & Value];
 
-pub fn integer(n: I32) -> Value { {number = n}.>widen_sum(Value) }
+pub fn integer(n: I32) -> Value { ({number = n}.>widen_sum)[Value] }
 
 pub fn capture(parameter: String, body: ast.Expr, environment: Environment) -> Value {
-  {closure = (parameter, body, environment)}.>widen_sum(Value)
+  ({closure = (parameter, body, environment)}.>widen_sum)[Value]
 }
 
 pub fn render(value: Value) -> String {

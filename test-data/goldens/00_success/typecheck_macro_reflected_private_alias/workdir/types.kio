@@ -1,0 +1,5 @@
+module types;
+
+host type Actual role(i64);
+
+pub fn polymorphic[A](value: A) -> A { value }

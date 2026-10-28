@@ -335,17 +335,14 @@ pub fn wrapper_env(surface_mode: bool) -> Vec<(String, Type)> {
 }
 
 /// Pick a simple Kio' type — Base, Unit, a nullary nominal from
-/// the catalog, or a `Box(simple)` instantiation of the parametric
-/// newtype in the generated root module. These are the types that can appear as type
-/// arguments at a polymorphic call site: kio-rs's parser routes exact
-/// type-name idents to a type expression, and a parametric type written
-/// `Box(I32)` parses cleanly because its leading token is also type-shaped.
+/// the catalog, or a `Box[simple]` instantiation of the parametric
+/// newtype in the generated root module.
 fn arbitrary_simple_type<R: Rng>(rng: &mut R, surface_mode: bool) -> Type {
     arbitrary_simple_type_at_depth(rng, 1, surface_mode)
 }
 
 /// Inner picker with a depth budget so parametric types don't nest
-/// without bound (`Box(Box(Box(…)))`). Label types are only available
+/// without bound (`Box[Box[Box[…]]]`). Label types are only available
 /// when `surface_mode` is true — Kio'-only programs never see a
 /// `Type::Label` because emit.rs omits generated labels.
 fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32, surface_mode: bool) -> Type {
@@ -365,8 +362,8 @@ fn arbitrary_simple_type_at_depth<R: Rng>(rng: &mut R, depth: u32, surface_mode:
             labels.choose(rng).unwrap().clone()
         }
         _ => {
-            // Parametric `Box(X)` where X is also simple. Bound the
-            // recursion so we don't wander into Box(Box(Box(…))).
+            // Parametric `Box[X]` where X is also simple. Bound the
+            // recursion so we don't wander into Box[Box[Box[…]]].
             let inner = if depth == 0 {
                 Type::Base(*Base::all().choose(rng).unwrap())
             } else {
@@ -526,7 +523,7 @@ fn box_param(payload: Type) -> Type {
 /// reject the literal as out-of-range. Floats render as
 /// `<digits>.<digits>` so they lex as float literals without
 /// exponent-form complexity; the rendered form pins the host
-/// type with an explicit `(Type)` annotation.
+/// type with an explicit `[Type]` annotation.
 ///
 /// When `surface_mode` is on and the base has a matching literal
 /// alias declared in the generated root module, the generator occasionally substitutes
@@ -1475,7 +1472,7 @@ fn intro<R: Rng>(
         Type::Product(a, b) => Term::PolyCall {
             // Don't wrap the value-args in `into` / `onto`
             // here: when surface mode is on, the renderer collapses
-            // `__pair__(T1, T2, a, b)` into the surface tuple
+            // `__pair__[T1][T2](a, b)` into the surface tuple
             // literal `(a, b)`, where the leading type-args are
             // *inferred* from the value-args' synthesised types. That makes
             // the value-arg slots synth positions, and `into` /
@@ -1492,12 +1489,12 @@ fn intro<R: Rng>(
         },
         Type::Sum(a, b) => {
             // Three productions, each 1/3:
-            //   - __left__(A, B, x: A)
-            //   - __right__(a, b, y:b)
+            //   - __left__[A][B](x: A)
+            //   - __right__[A][B](y: B)
             //   - IfElse(cond, x:target, y:target) — a surface-form
             //     node that renders as `if(c) { x } else { y }` when
             //     surface mode is on, and as
-            //     `__if_then_else__(Bool, target, c, .(){x}, .(){y})`
+            //     `__if_then_else__[Bool][target](c, .(){x}, .(){y})`
             //     otherwise. Including it as a Kio'-mode-renderable
             //     production keeps the body-level Kio' render signal
             //     honest: a program with IfElse renders the function

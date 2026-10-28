@@ -9,15 +9,15 @@ pub newtype Box : Value_alias { pub constructor mk_box; pub projector un_box }
 
 pub type Box_alias = Box;
 
-pub fn literal() -> h.Value { 7(h.Value) }
+pub fn literal() -> h.Value { 7[h.Value] }
 
 pub fn call() -> h.Value { h.ping() }
 
-pub fn staged() -> h.Value { h.staged(5(h.Value), 6(h.Value))(7(h.Value)) }
+pub fn staged() -> h.Value { h.staged(5[h.Value], 6[h.Value])(7[h.Value]) }
 
-pub fn staged_alias() -> h.Value { let call = h.staged; call(5(h.Value), 6(h.Value))(7(h.Value)) }
+pub fn staged_alias() -> h.Value { let call = h.staged; call(5[h.Value], 6[h.Value])(7[h.Value]) }
 
-pub fn call_polymorphic_identity(callback: [A] A -> A) -> h.Value { callback(h.Value, 7(h.Value)) }
+pub fn call_polymorphic_identity(callback: [A] A -> A) -> h.Value { callback[h.Value](7[h.Value]) }
 
 pub fn echo_qualified(x: h.Value) -> h.Value { x }
 

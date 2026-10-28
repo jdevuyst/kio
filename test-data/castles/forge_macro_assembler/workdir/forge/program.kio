@@ -16,10 +16,10 @@ import testapi/iter(loop);
 import testapi/text(string_eq);
 
 /// A straight-line instruction sequence, before jump resolution.
-pub type Srcs = l.List(Src);
+pub type Srcs = l.List[Src];
 
 /// A runnable image's code: every jump carries an address.
-pub type Prog = l.List(Ins);
+pub type Prog = l.List[Ins];
 
 /// One item of a source program. A `mark` names the address the *next*
 /// instruction will occupy; it emits no code of its own.
@@ -30,33 +30,33 @@ pub labels Item = { instr: Src } | { mark: String } | { call: String };
 /// expansion left no call behind.
 pub labels Flat = { instr: _ } | { mark: _ };
 
-pub type Items = l.List(Item);
+pub type Items = l.List[Item];
 
-pub type Flats = l.List(Flat);
+pub type Flats = l.List[Flat];
 
-pub fn instr(i: Src) -> Item { {instr = i}.>widen_sum(Item) }
+pub fn instr(i: Src) -> Item { ({instr = i}.>widen_sum)[Item] }
 
-pub fn mark(name: String) -> Item { {mark = name}.>widen_sum(Item) }
+pub fn mark(name: String) -> Item { ({mark = name}.>widen_sum)[Item] }
 
-pub fn call(name: String) -> Item { {call = name}.>widen_sum(Item) }
+pub fn call(name: String) -> Item { ({call = name}.>widen_sum)[Item] }
 
-pub fn flat_instr(i: Src) -> Flat { {instr = i}.>widen_sum(Flat) }
+pub fn flat_instr(i: Src) -> Flat { ({instr = i}.>widen_sum)[Flat] }
 
-pub fn flat_mark(name: String) -> Flat { {mark = name}.>widen_sum(Flat) }
+pub fn flat_mark(name: String) -> Flat { ({mark = name}.>widen_sum)[Flat] }
 
 /// A macro: a name and the instructions it stands for. A body is plain
 /// straight-line code - no label marks, no nested macro calls - which is
 /// what makes expansion one terminating pass rather than a fixpoint.
 pub labels Macro = { macro_name: String, macro_body: Srcs };
 
-pub type Macros = l.List(Macro);
+pub type Macros = l.List[Macro];
 
 pub fn macro_def(name: String, body: Srcs) -> Macro { {macro_name = name, macro_body = body} }
 
 /// A placed label: the address pass one gave a mark.
 pub labels Symbol = { sym_name: String, sym_addr: I32 };
 
-pub type Symbols = l.List(Symbol);
+pub type Symbols = l.List[Symbol];
 
 pub fn symbol(name: String, at: I32) -> Symbol { {sym_name = name, sym_addr = at} }
 

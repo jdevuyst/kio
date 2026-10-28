@@ -9,7 +9,7 @@ import testapi(Bool, I32);
 import testapi/arith as a;
 import testapi/iter(loop);
 
-pub type Polynomial = c.List(I32);
+pub type Polynomial = c.List[I32];
 
 fn coefficient(poly: Polynomial, index: I32) -> I32 {
   match(l.at(index, poly)) {
@@ -18,7 +18,7 @@ fn coefficient(poly: Polynomial, index: I32) -> I32 {
   }
 }
 
-pub fn indices(count: I32) -> c.List(I32) {
+pub fn indices(count: I32) -> c.List[I32] {
   l.iterate(count, .(n) { a.add_i32(n, 1) }, 0)
 }
 

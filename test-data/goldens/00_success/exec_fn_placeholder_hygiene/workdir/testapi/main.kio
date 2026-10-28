@@ -8,7 +8,7 @@ import testapi/io(print);
 fn id[A](x: A) -> A { x }
 
 pub fn main() {
-  let captured = "outer\n"(String);
-  let f = id(String -> String, .x. { let _x = x1; captured });
+  let captured = "outer\n"[String];
+  let f = id[String -> String](.x. { let _x = x1; captured });
   print(f("placeholder argument ignored\n"))
 }

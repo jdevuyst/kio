@@ -22,9 +22,9 @@ fn before(a: model.Event, b: model.Event) -> Bool {
   }
 }
 
-pub rec(loop) fn insert(event: model.Event, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+pub rec(loop) fn insert(event: model.Event, queue: lists.List[model.Event]) -> lists.List[model.Event] {
   match(lists.uncons(queue)) {
-    .(head: model.Event, tail: lists.List(model.Event)) {
+    .(head: model.Event, tail: lists.List[model.Event]) {
       if(before(event, head)) {
         lists.cons(event, queue)
       } else {
@@ -35,11 +35,11 @@ pub rec(loop) fn insert(event: model.Event, queue: lists.List(model.Event)) -> l
   }
 }
 
-pub fn for_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+pub fn for_wire(id: I32, queue: lists.List[model.Event]) -> lists.List[model.Event] {
   traversal.filter(.(event: model.Event) { numbers.eq_i32(event.?{model.target}, id) }, queue)
 }
 
-pub fn without_wire(id: I32, queue: lists.List(model.Event)) -> lists.List(model.Event) {
+pub fn without_wire(id: I32, queue: lists.List[model.Event]) -> lists.List[model.Event] {
   traversal.filter(
   , .(event: model.Event) {
       if(numbers.eq_i32(event.?{model.target}, id)) { .f } else { .t }

@@ -67,7 +67,7 @@ pub fn addr_name(a: Addr) -> String {
 /// Every address, row-major. The canonical order: the grid renders in it, the
 /// ready queue is seeded in it, a dirty set is reported in it — nothing
 /// downstream has to sort.
-rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
+rec(loop) fn addrs_onto(row: I32, col: I32, acc: List[Addr]) -> List[Addr] {
   if(lt_i32(row, 0)) {
     acc
   } else if(lt_i32(col, 0)) {
@@ -77,12 +77,12 @@ rec(loop) fn addrs_onto(row: I32, col: I32, acc: List(Addr)) -> List(Addr) {
   }
 }
 
-pub fn all_addrs() -> List(Addr) { addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil(Addr)) }
+pub fn all_addrs() -> List[Addr] { addrs_onto(sub_i32(rows(), 1), sub_i32(cols(), 1), nil[Addr]) }
 
-pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
+pub rec(loop) fn mem(xs: List[Addr], a: Addr) -> Bool {
   match(xs.>List.unpack) {
     (
-    , .(head: Addr, rest: List(Addr)) {
+    , .(head: Addr, rest: List[Addr]) {
         if(addr_eq(head, a)) { .t } else { recur mem(rest, a) }
       }
     , .(_empty: .) { .f }
@@ -92,15 +92,15 @@ pub rec(loop) fn mem(xs: List(Addr), a: Addr) -> Bool {
 
 /// Precedent sets are built with this, so a formula naming the same cell
 /// twice still counts as one graph edge.
-pub fn add_unique(xs: List(Addr), a: Addr) -> List(Addr) {
+pub fn add_unique(xs: List[Addr], a: Addr) -> List[Addr] {
   if(mem(xs, a)) { xs } else { append(xs, one(a)) }
 }
 
 /// Union `ys` into `xs`, keeping the order the two lists already have.
-pub rec(loop) fn add_all(xs: List(Addr), ys: List(Addr)) -> List(Addr) {
+pub rec(loop) fn add_all(xs: List[Addr], ys: List[Addr]) -> List[Addr] {
   match(ys.>List.unpack) {
     (
-    , .(head: Addr, rest: List(Addr)) { recur add_all(add_unique(xs, head), rest) }
+    , .(head: Addr, rest: List[Addr]) { recur add_all(add_unique(xs, head), rest) }
     , .(_empty: .) { xs }
     )
   }

@@ -9,6 +9,6 @@ import testapi/io(print);
 // through the re-pin). The subject under test is `kio dep update`'s
 // contract-honesty gate; this build+run only confirms the re-pinned
 // dependency still materializes and the consumer links against it.
-pub fn greeting() -> String { first("git dependency works\n"(String), "discarded\n"(String)) }
+pub fn greeting() -> String { first("git dependency works\n"[String], "discarded\n"[String]) }
 
 pub fn main() { print(greeting()) }

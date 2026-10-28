@@ -26,7 +26,7 @@ fn read_integer() -> I32 | String {
         .() { text.string_concat("expected integer token, received ", line).>widen_sum }
       }
     };
-    .() { "unexpected end of input".>widen_sum }
+    .() { "unexpected end of input"[String].>widen_sum }
   }
 }
 
@@ -34,9 +34,9 @@ fn dimension() -> I32 | String {
   match(read_integer()) {
     .(n: I32) {
       if(a.lt_i32(n, 1)) {
-        "dimensions must be between 1 and 3".>widen_sum
+        "dimensions must be between 1 and 3"[String].>widen_sum
       } else if(a.lt_i32(3, n)) {
-        "dimensions must be between 1 and 3".>widen_sum
+        "dimensions must be between 1 and 3"[String].>widen_sum
       } else {
         n.>widen_sum
       }
@@ -51,9 +51,9 @@ rec(loop) fn values(remaining: I32, reversed: m.Row) -> m.Row | String {
   } else match(read_integer()) {
     .(n: I32) {
       if(a.lt_i32(n, -8)) {
-        "entries must be between -8 and 8".>widen_sum
+        "entries must be between -8 and 8"[String].>widen_sum
       } else if(a.lt_i32(8, n)) {
-        "entries must be between -8 and 8".>widen_sum
+        "entries must be between -8 and 8"[String].>widen_sum
       } else {
         recur values(a.sub_i32(remaining, 1), c.cons(q.integer(n), reversed))
       }
@@ -72,9 +72,9 @@ rec(loop) fn rows(flat: m.Row, width: I32, reversed: m.Matrix) -> m.Matrix {
 
 fn contents(name: String, count: I32, variables: I32) -> Read_result {
   let width = a.add_i32(variables, 1);
-  match(values(a.mul_i32(count, width), c.nil(_))) {
+  match(values(a.mul_i32(count, width), c.nil[_])) {
     .(flat: m.Row) {
-      {loaded = {name, variables, original = rows(flat, width, c.nil(_))}}.>widen_sum
+      {loaded = {name, variables, original = rows(flat, width, c.nil[_])}}.>widen_sum
     };
     .(error: String) { {input_error = error}.>widen_sum }
   }

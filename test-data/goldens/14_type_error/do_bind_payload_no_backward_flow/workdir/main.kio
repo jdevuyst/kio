@@ -4,11 +4,11 @@ import macros/sequence(macro do);
 
 newtype Box[A] : A { constructor mk_box; projector un_box }
 
-fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
+fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
 
-fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.un_box(value)) }
+fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.un_box(value)) }
 
-fn caller() -> Box(.) {
+fn caller() -> Box[.] {
   do(box_bind) {
     let identity <- box_pure(.(value) { value });
     box_pure(identity(()))

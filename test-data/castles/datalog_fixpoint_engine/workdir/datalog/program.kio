@@ -29,7 +29,7 @@ import testapi(I32);
 /// live in the extensional database instead, so every rule has a body.
 pub labels Rule = { r_head: Atom, r_body: Atoms };
 
-pub type Rules = list.List(Rule);
+pub type Rules = list.List[Rule];
 
 fn rule(head: Atom, body: Atoms) -> Rule { {r_head = head, r_body = body} }
 
@@ -142,7 +142,7 @@ pub fn rules() -> Rules {
   )
 }
 
-pub fn idb_preds() -> list.List(I32) {
+pub fn idb_preds() -> list.List[I32] {
   list.of6(p_reach, p_oddhop, p_evenhop, p_samezone, p_hubserved, p_depotzone)
 }
 

@@ -761,7 +761,7 @@ host fn print(s: Str);
 module app/main;
 import app(Str);
 import app(print);
-pub fn main() { print("hello\n"(Str)) }
+pub fn main() { print("hello\n"[Str]) }
 ```
 
 `kio build go` writes `out/go/{pkg.go, host.go, shapes.go, ffi.go,

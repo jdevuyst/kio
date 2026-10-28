@@ -7,6 +7,6 @@ host type String role(str);
 host fn apply[A](function: . -> A) -> A;
 
 fn allowed() -> String {
-  let source = apply(.(_unit: .) { "hoisted"(String) });
+  let source = apply(.(_unit: .) { "hoisted"[String] });
   infer(source)
 }

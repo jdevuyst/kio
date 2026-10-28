@@ -87,7 +87,7 @@ rec(loop) fn place(fs: Flats, at: I32, code: Srcs, syms: Symbols) -> Placed {
 /// Pass one. A mark takes no address of its own; it names the address the
 /// next instruction will occupy, which is why a mark at the very end binds
 /// one past the last instruction.
-fn pass_one(fs: Flats) -> Placed { place(fs, 0, l.nil(Src), l.nil(Symbol)) }
+fn pass_one(fs: Flats) -> Placed { place(fs, 0, l.nil[Src], l.nil[Symbol]) }
 
 /// Pass two's result: runnable code, or the label a jump named that pass
 /// one never placed.
@@ -102,7 +102,7 @@ fn addr_of(syms: Symbols, name: String) -> I32 | Undefined_label {
   }
 }
 
-fn carried(i: Ins) -> Fix { widen_sum(p.fixed(i), Fix) }
+fn carried(i: Ins) -> Fix { widen_sum(p.fixed(i))[Fix] }
 
 /// Resolve one source instruction. The two jumps consult the symbol table;
 /// every other opcode is already an `Ins` arm and only has to be widened
@@ -121,17 +121,17 @@ fn fix(i: Src, syms: Symbols) -> Fix {
           (.(at: I32) { carried(isa.jmpz_at(r, at)) }, .(err: Undefined_label) { widen_sum(err) })
         }
       }
-    , .(x: Loadi) { carried(widen_sum(x, Ins)) }
-    , .(x: Mov) { carried(widen_sum(x, Ins)) }
-    , .(x: Add) { carried(widen_sum(x, Ins)) }
-    , .(x: Sub) { carried(widen_sum(x, Ins)) }
-    , .(x: Mul) { carried(widen_sum(x, Ins)) }
-    , .(x: Div) { carried(widen_sum(x, Ins)) }
-    , .(x: Mod) { carried(widen_sum(x, Ins)) }
-    , .(x: Push) { carried(widen_sum(x, Ins)) }
-    , .(x: Pop) { carried(widen_sum(x, Ins)) }
-    , .(x: Emit) { carried(widen_sum(x, Ins)) }
-    , .(x: Halt) { carried(widen_sum(x, Ins)) }
+    , .(x: Loadi) { carried(widen_sum(x)[Ins]) }
+    , .(x: Mov) { carried(widen_sum(x)[Ins]) }
+    , .(x: Add) { carried(widen_sum(x)[Ins]) }
+    , .(x: Sub) { carried(widen_sum(x)[Ins]) }
+    , .(x: Mul) { carried(widen_sum(x)[Ins]) }
+    , .(x: Div) { carried(widen_sum(x)[Ins]) }
+    , .(x: Mod) { carried(widen_sum(x)[Ins]) }
+    , .(x: Push) { carried(widen_sum(x)[Ins]) }
+    , .(x: Pop) { carried(widen_sum(x)[Ins]) }
+    , .(x: Emit) { carried(widen_sum(x)[Ins]) }
+    , .(x: Halt) { carried(widen_sum(x)[Ins]) }
     )
   }
 }
@@ -153,7 +153,7 @@ rec(loop) fn resolve(code: Srcs, syms: Symbols, acc: Prog) -> Resolved {
 }
 
 /// Pass two.
-fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil(Ins)) }
+fn pass_two(code: Srcs, syms: Symbols) -> Resolved { resolve(code, syms, l.nil[Ins]) }
 
 /// The whole build: expand the macros, place the labels, resolve the jumps.
 /// Each phase can only fail its own way, and every failure widens into the

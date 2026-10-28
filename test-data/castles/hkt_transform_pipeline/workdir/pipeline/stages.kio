@@ -65,12 +65,10 @@ fn score_and_adjust(event: Form_event) -> Telemetry_sample {
   }
 }
 
-fn run_pipeline[*F](monad: Monad(F), functor: Functor(F), pur: Pure(F), seed: F(Form_event)) -> F(Telemetry_sample) {
+fn run_pipeline[*F](monad: Monad[F], functor: Functor[F], pur: Pure[F], seed: F[Form_event]) -> F[Telemetry_sample] {
   do(Monad.bind(monad)) {
-    let normalized <- Functor.fmap(functor)(Form_event, Form_event, .(event) { event }, seed);
-    Functor.fmap(functor)(
-    , Form_event
-    , Telemetry_sample
+    let normalized <- Functor.fmap(functor)[Form_event][Form_event](.(event) { event }, seed);
+    Functor.fmap(functor)[Form_event][Telemetry_sample](
     , .(event) { score_and_adjust(event) }
     , Pure.lift(pur)(normalized)
     )
@@ -78,10 +76,10 @@ fn run_pipeline[*F](monad: Monad(F), functor: Functor(F), pur: Pure(F), seed: F(
 }
 
 fn extract_pipeline[*F](
-, monad: Monad(F)
-, functor: Functor(F)
-, pur: Pure(F)
-, ext: Extract(F)
+, monad: Monad[F]
+, functor: Functor[F]
+, pur: Pure[F]
+, ext: Extract[F]
 , event: Form_event
 ) -> Telemetry_sample {
   Extract.peel(ext)(run_pipeline(monad, functor, pur, Pure.lift(pur)(event)))

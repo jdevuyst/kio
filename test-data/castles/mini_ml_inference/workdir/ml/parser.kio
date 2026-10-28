@@ -9,7 +9,7 @@ import testapi(Bool, String);
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub type Tokens = lists.List(String);
+pub type Tokens = lists.List[String];
 
 type Parsed = (ast.Expr & Tokens) | String;
 
@@ -23,7 +23,7 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
       } else if(text.string_eq(token, "var")) {
         match(lists.uncons(rest)) {
           .(name: String, after: Tokens) { (ast.variable_expr(name), after).>widen_sum };
-          .() { "missing variable name".>widen_sum }
+          .() { "missing variable name"[String].>widen_sum }
         }
       } else if(text.string_eq(token, "lam")) {
         match(lists.uncons(rest)) {
@@ -35,7 +35,7 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
               .(error: String) { error.>widen_sum }
             }
           };
-          .() { "missing lambda name".>widen_sum }
+          .() { "missing lambda name"[String].>widen_sum }
         }
       } else if(text.string_eq(token, "let")) {
         match(lists.uncons(rest)) {
@@ -52,7 +52,7 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
               .(error: String) { error.>widen_sum }
             }
           };
-          .() { "missing let name".>widen_sum }
+          .() { "missing let name"[String].>widen_sum }
         }
       } else {
         let binary = if(text.string_eq(token, "app")) { .t } else { text.string_eq(token, "pair") };
@@ -79,7 +79,7 @@ rec(loop) fn expression(tokens: Tokens) -> Parsed {
         }
       }
     };
-    .() { "incomplete expression".>widen_sum }
+    .() { "incomplete expression"[String].>widen_sum }
   }
 }
 
@@ -87,7 +87,7 @@ pub fn parse(tokens: Tokens) -> String | ast.Expr {
   match(expression(tokens)) {
     .(expr: ast.Expr, remaining: Tokens) {
       match(lists.uncons(remaining)) {
-        .(_token: String, _rest: Tokens) { "trailing tokens".>widen_sum };
+        .(_token: String, _rest: Tokens) { "trailing tokens"[String].>widen_sum };
         .() { expr.>widen_sum }
       }
     };

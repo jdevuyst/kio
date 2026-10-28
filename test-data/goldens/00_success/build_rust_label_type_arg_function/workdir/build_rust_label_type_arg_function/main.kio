@@ -5,6 +5,6 @@ labels { greet: . };
 fn id[A](x: A) -> A { x }
 
 pub fn main() {
-  let f = id(Greet -> ., .(_g) { () });
+  let f = id[Greet -> .](.(_g) { () });
   ()
 }

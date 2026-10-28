@@ -21,7 +21,7 @@ pub fn compatible(a: String, b: String) -> Bool {
   }
 }
 
-pub fn pair_allowed(sequence: Array(String), i: I32, j: I32, min_loop: I32) -> Bool {
+pub fn pair_allowed(sequence: Array[String], i: I32, j: I32, min_loop: I32) -> Bool {
   if(arith.leq_i32(arith.add_i32(i, arith.add_i32(min_loop, 1)), j)) {
     compatible(array.array_get(sequence, i), array.array_get(sequence, j))
   } else {
@@ -29,7 +29,7 @@ pub fn pair_allowed(sequence: Array(String), i: I32, j: I32, min_loop: I32) -> B
   }
 }
 
-rec(loop) fn join_from(sequence: Array(String), i: I32, acc: String) -> String {
+rec(loop) fn join_from(sequence: Array[String], i: I32, acc: String) -> String {
   if(arith.leq_i32(array.array_len(sequence), i)) {
     acc
   } else {
@@ -41,4 +41,4 @@ rec(loop) fn join_from(sequence: Array(String), i: I32, acc: String) -> String {
   }
 }
 
-pub fn join(sequence: Array(String)) -> String { join_from(sequence, 0, "") }
+pub fn join(sequence: Array[String]) -> String { join_from(sequence, 0, "") }

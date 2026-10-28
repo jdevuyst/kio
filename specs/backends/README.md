@@ -25,7 +25,7 @@ limitation.
 - [`rust.md`](rust.md) — Rust backend. Family `erased-static`. A statically-typed host with a typed FFI skin over an *erased* body (an opaque reference-counted `Any` token: `Rc` by default, `Arc + Send + Sync` under the thread-safe option); HKT is carried dynamically in that erased rep. Reference-counted, not GC.
 - [`go.md`](go.md) — Go backend. Family `erased-static`. A statically-typed host with a generic typed FFI facade over an *erased* body (`interface{}` / `[]any`); products use generic record shells and concrete sums use row-anchored `KioSum` values. HKT is carried dynamically in the erased rep.
 - [`swift.md`](swift.md) — Swift backend. Family `erased-static`. A statically-typed host with an exact typed FFI skin over canonical native values stored as `Any`. Private lexical type witnesses construct the same typed products, sums, and constructor applications used at the public boundary. Sums use native enums with payloads.
-- [`haskell.md`](haskell.md) — Haskell backend. Family `native-HKT`. A statically-typed host whose own kind system carries HKT directly (`F(A)` → `f a`); exact host types selected through a package-qualified marker class; products and sums as transparent pair / `Either` folds with flat boundary patterns; monad-polymorphic exports over a value host-function record. The first native-HKT member; its per-backend concern is forcing Kio's strict evaluation in a lazy host.
+- [`haskell.md`](haskell.md) — Haskell backend. Family `native-HKT`. A statically-typed host whose own kind system carries HKT directly (`F[A]` → `f a`); exact host types selected through a package-qualified marker class; products and sums as transparent pair / `Either` folds with flat boundary patterns; monad-polymorphic exports over a value host-function record. The first native-HKT member; its per-backend concern is forcing Kio's strict evaluation in a lazy host.
 
 ## Host API stability
 
@@ -132,7 +132,7 @@ exact nameable relationship, private body erasure does not authorize replacing
 it with `any`, `Any`, `Object`, or an unchecked cast. The current combinations
 are:
 
-- **native-HKT** — the host's own type system has higher-kinded types, so Kio maps a kind-`*→*` type constructor directly to a host type constructor (`F(A)` → `f a`); no wrapper, no boundary erasure. **Haskell is the first member** (`RankNTypes` carries rank-N payloads; closed type families and patterns present structural values); the other static hosts whose type systems admit HKT and rank-N polymorphism (PureScript, Scala, Idris) would carry this same strategy. A native-HKT host that is *lazy* (Haskell) additionally forces Kio's strict evaluation in its body — the per-backend runtime concern, not an HKT one.
+- **native-HKT** — the host's own type system has higher-kinded types, so Kio maps a kind-`*→*` type constructor directly to a host type constructor (`F[A]` → `f a`); no wrapper, no boundary erasure. **Haskell is the first member** (`RankNTypes` carries rank-N payloads; closed type families and patterns present structural values); the other static hosts whose type systems admit HKT and rank-N polymorphism (PureScript, Scala, Idris) would carry this same strategy. A native-HKT host that is *lazy* (Haskell) additionally forces Kio's strict evaluation in its body — the per-backend runtime concern, not an HKT one.
 - **type-erased body** — a host whose universal value carries higher-kinded values. A dynamic host (JS) is type-erased throughout. A *static* host with a genuine dynamic universal carrier can erase the body to that carrier (Java's `Object`, Go's `interface{}` / `[]any`, Swift's `Any`, Rust's opaque reference-counted `Any` token). Type application does not itself traverse or rewrap an opaque value; ordinary nominal construction and projection still follow the backend's representation contract. Erasure does not prove that an arbitrary native facade application has the same type as the erased value, or eliminate the typed conversion at the facade boundary. The erased-static FFI restores every host-nameable exact constructor/application relation with the host's ordinary generic, marker, witness, or declaration-owned carrier mechanisms.
 - **natural-exact skin** — the runtime remains type-erased, but a paired static
   declaration skin preserves each higher-kinded binder and application as an
@@ -190,7 +190,7 @@ Polymorphic items — `[A]`-quantified exports, host fns with rank-N value
 parameters, and function values flowing in either direction — do not add
 runtime Kio type values or host-supplied representation codecs to carry their
 type arguments across the FFI. A
-`fn run[A](cfg: Config(A)) -> A` has only `cfg` as its Kio value argument.
+`fn run[A](cfg: Config[A]) -> A` has only `cfg` as its Kio value argument.
 A typed backend maps a direct declaration binder to its host language's
 generic surface where one exists; JavaScript removes the type choice entirely.
 
@@ -742,8 +742,8 @@ interface; separately usable but incompatible public and private shapes do not
 satisfy this rule.
 
 A host-selected constructor `F` is opaque unless its declared contract supplies
-an operation. For example, substituting `T = Int` in `F(T & Bool)` cannot require
-the backend to inspect or map `F` to convert its payload into `F(Int & Bool)`.
+an operation. For example, substituting `T = Int` in `F[T & Bool]` cannot require
+the backend to inspect or map `F` to convert its payload into `F[Int & Bool]`.
 The same rule applies when the host constructs the payload and Kio later
 receives it through a generic operation. Representations and typed adapters
 must preserve this relation without assuming container operations, guessing
@@ -1182,10 +1182,10 @@ and
 
 ## Higher-kinded types
 
-Kio expresses higher-kinded types through kind-annotated binders and direct type application (`F(A)`, `Either(String)`; see [`prime.md` § Higher-kinded types](../prime.md#higher-kinded-types)). How a backend carries the kind-`*→…→*` identity through to host code follows from its family's **HKT strategy** (§ Language families):
+Kio expresses higher-kinded types through kind-annotated binders and direct type application (`F[A]`, `Either[String]`; see [`prime.md` § Higher-kinded types](../prime.md#higher-kinded-types)). How a backend carries the kind-`*→…→*` identity through to host code follows from its family's **HKT strategy** (§ Language families):
 
-- **native-HKT** backends map a kind-`*→*` type constructor straight onto a host type constructor (`F(A)` → `f a`). No value wrapper, no boundary erasure: the host's own kind system carries the identity.
-- **type-erased** backends carry values through the universal execution interface (`Object` / `interface{}` / `Any` / Rust's opaque reference-counted token). Type application `F(A)` introduces no implicit traversal or rewrapping of an opaque value. Nominal constructors and projectors retain their backend-defined carriers and operations; erasure does not make all such operations runtime identities. Nor does it imply native facade equality or eliminate typed boundary conversion. The callable that carries a polymorphic operation retains its application stages (§ Polymorphic newtype payloads below). The dictionary that underwrites a `Functor` / `Monad` instance is an ordinary value the body builds and applies; a static backend's FFI surface preserves the exact marker, application carrier, and conversion relation its host can name.
+- **native-HKT** backends map a kind-`*→*` type constructor straight onto a host type constructor (`F[A]` → `f a`). No value wrapper, no boundary erasure: the host's own kind system carries the identity.
+- **type-erased** backends carry values through the universal execution interface (`Object` / `interface{}` / `Any` / Rust's opaque reference-counted token). Type application `F[A]` introduces no implicit traversal or rewrapping of an opaque value. Nominal constructors and projectors retain their backend-defined carriers and operations; erasure does not make all such operations runtime identities. Nor does it imply native facade equality or eliminate typed boundary conversion. The callable that carries a polymorphic operation retains its application stages (§ Polymorphic newtype payloads below). The dictionary that underwrites a `Functor` / `Monad` instance is an ordinary value the body builds and applies; a static backend's FFI surface preserves the exact marker, application carrier, and conversion relation its host can name.
 
 **Erasure handles the private HKT body with no HKT-specific walk.** A
 type-erased backend — including a static host that erases its body to a dynamic
@@ -1201,20 +1201,20 @@ What every backend keeps, regardless of strategy, is **explicit dictionary threa
 Each backend page documents its own realization under a § Higher-kinded types section:
 
 - **JS** ([`js.md`](js.md)) — type-erased; type application does not rewrap values. Nominal construction and projection preserve the complete nominal carrier, including when it is transported through an opaque host constructor; callable payloads retain their stages.
-- **TypeScript** ([`ts.md`](ts.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; the runtime body is the JS backend's `.js` verbatim, so `F(A)` carries no additional runtime representation, while the `.d.ts` preserves the exact constructor/application relation through its structural `TypeLambda`, `Apply`, and `Bind` protocol.
+- **TypeScript** ([`ts.md`](ts.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; the runtime body is the JS backend's `.js` verbatim, so `F[A]` carries no additional runtime representation, while the `.d.ts` preserves the exact constructor/application relation through its structural `TypeLambda`, `Apply`, and `Bind` protocol.
 - **Python** ([`python.md`](python.md#higher-kinded-types)) — natural-exact skin over a type-erased runtime; type application does not rewrap values, while the typed-stub package preserves its declaration-owned constructor and application relation. Nominal construction and projection follow the declared carrier and visibility contract, and a polymorphic newtype payload retains its staged callable shape.
-- **Java** ([`java.md`](java.md#higher-kinded-types)) — the private body uses `Object`; the exact public skin names each declaration with a constructor marker, records `F(A)` through its typed application witness, and owns the conversion to that carrier. Private body identity does not replace the public witness relation.
+- **Java** ([`java.md`](java.md#higher-kinded-types)) — the private body uses `Object`; the exact public skin names each declaration with a constructor marker, records `F[A]` through its typed application witness, and owns the conversion to that carrier. Private body identity does not replace the public witness relation.
 - **Rust** ([`rust.md`](rust.md#higher-kinded-types)) — the body is type-erased; the exact public skin represents every saturated value type with a `KioType` marker and `Facade`, represents an abstract constructor application with `KioAppliedN<F, ...>` / `KioApplyN<F, ...>`, and converts explicitly through the opaque stored representation. Rust does not require or claim native `F::Apply` equality.
 - **Go** ([`go.md`](go.md#higher-kinded-types)) — the private body uses `any`; the public skin uses exact kind-constrained type indices, `Prepared[I]`, free slot/declaration boundary conversion functions, declaration-owned application carriers, and typed selection helpers for first-class `TypeStage` values. Selection preserves each application stage and its captured host conversion context without traversing opaque host storage.
 - **Swift** ([`swift.md`](swift.md)) — the private body stores canonical native values as `Any`; the exact public skin uses declaration-owned constructor markers and unary application carriers. Private lexical type witnesses construct those same native types; opaque host-owned payloads are neither traversed nor reindexed.
-- **Haskell** ([`haskell.md`](haskell.md#body-model)) — native-HKT; `F(A)` maps to `f a`. Direct known declarations may use consecutive native `forall`s, while escaped polymorphic values have one internal monadic stage per binder.
+- **Haskell** ([`haskell.md`](haskell.md#body-model)) — native-HKT; `F[A]` maps to `f a`. Direct known declarations may use consecutive native `forall`s, while escaped polymorphic values have one internal monadic stage per binder.
 
 ## Polymorphic newtype payloads
 
 A newtype payload may itself be a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and similar instance-style abstractions:
 
 ```kio
-pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;  pub projector bind;  };
 ```
 

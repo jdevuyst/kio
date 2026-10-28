@@ -46,11 +46,11 @@ fn banner() {
 /// A pid tag padded to the three-character `pid` column.
 fn pid_cell(pid: I32) -> String { text.cat(proc.pid_tag(pid), " ") }
 
-rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> String {
+rec(loop) fn program_text(program: Array[proc.Phase], i: I32, acc: String) -> String {
   if(num.geq(i, array_len(program))) {
     acc
   } else {
-    let sep = if(num.eq(i, 0)) { "" } else { " " };
+    let .(sep: String) = if(num.eq(i, 0)) { "" } else { " " };
     recur program_text(
     , program
     , add_i32(i, 1)
@@ -59,7 +59,7 @@ rec(loop) fn program_text(program: Array(proc.Phase), i: I32, acc: String) -> St
   }
 }
 
-rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid: I32) {
+rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array[Array[proc.Phase]], pid: I32) {
   if(leq_i32(config.proc_count(), pid)) {
     ()
   } else {
@@ -73,7 +73,7 @@ rec(loop) fn fixture_rows(pcb: proc.Pcb, programs: Array(Array(proc.Phase)), pid
   }
 }
 
-fn fixture_table(pcb: proc.Pcb, programs: Array(Array(proc.Phase))) {
+fn fixture_table(pcb: proc.Pcb, programs: Array[Array[proc.Phase]]) {
   line("-- process fixture --");
   line("pid  arrive  program");
   fixture_rows(pcb, programs, 0)
@@ -139,7 +139,7 @@ rec(loop) fn order_text(q: queue.Queues, i: I32, acc: String) -> String {
   if(num.geq(i, queue.retired_len(q))) {
     acc
   } else {
-    let sep = if(num.eq(i, 0)) { "" } else { " " };
+    let .(sep: String) = if(num.eq(i, 0)) { "" } else { " " };
     recur order_text(q, add_i32(i, 1), text.cat3(acc, sep, proc.pid_tag(queue.retired_at(q, i))))
   }
 }

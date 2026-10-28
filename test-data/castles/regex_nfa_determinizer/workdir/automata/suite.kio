@@ -35,7 +35,7 @@ fn tail_class() -> Pattern { cat(a(), plus(alt(b(), c()))) }
 /// wrong.
 fn optional_prefix() -> Pattern { cat(opt(cat(a(), b())), star(c())) }
 
-pub fn patterns() -> List(Pattern) {
+pub fn patterns() -> List[Pattern] {
   cons(classic(), cons(converge(), cons(tail_class(), one(optional_prefix()))))
 }
 
@@ -53,6 +53,6 @@ fn w_abcc() -> Ints { cons(code_a(), cons(code_b(), cons(code_c(), one(code_c())
 /// pipeline's oracle: each of the twenty-four cells is fixed by what the
 /// pattern *means*, and a determinization or a refinement that lost the
 /// language would have to flip one of them.
-pub fn probes() -> List(Ints) {
+pub fn probes() -> List[Ints] {
   cons(empty(), cons(w_abb(), cons(w_aabb(), cons(w_ac(), cons(w_bc(), one(w_abcc()))))))
 }

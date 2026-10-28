@@ -4,13 +4,13 @@ import earley/arrays(varop [* *]);
 import earley/model as model;
 import testapi(Array, I32, String);
 
-pub labels Example = { name: String, tokens: Array(I32) };
+pub labels Example = { name: String, tokens: Array[I32] };
 
-fn example(title: String, input: Array(I32)) -> Example { {name = title, tokens = input} }
+fn example(title: String, input: Array[I32]) -> Example { {name = title, tokens = input} }
 
 pub fn title(value: Example) -> String { value.?{name} }
 
-pub fn input(value: Example) -> Array(I32) { value.?{tokens} }
+pub fn input(value: Example) -> Array[I32] { value.?{tokens} }
 
 pub fn nullable() -> model.Grammar {
   [*
@@ -20,7 +20,7 @@ pub fn nullable() -> model.Grammar {
   *]
 }
 
-pub fn nullable_examples() -> Array(Example) {
+pub fn nullable_examples() -> Array[Example] {
   [*
   , example("epsilon", [* *])
   , example("a", [* 1 *])
@@ -37,7 +37,7 @@ pub fn balanced() -> model.Grammar {
   *]
 }
 
-pub fn balanced_examples() -> Array(Example) {
+pub fn balanced_examples() -> Array[Example] {
   [*
   , example("epsilon", [* *])
   , example("()", [* 1, 2 *])
@@ -58,7 +58,7 @@ pub fn cyclic() -> model.Grammar {
   *]
 }
 
-pub fn cyclic_examples() -> Array(Example) {
+pub fn cyclic_examples() -> Array[Example] {
   [*
   , example("epsilon", [* *])
   , example("b", [* 3 *])

@@ -22,7 +22,7 @@ fn flag(label: String, value: Bool) {
   io.print("\n")
 }
 
-rec(loop) fn print_history(history: Array(solver.Augmentation), index: I32) {
+rec(loop) fn print_history(history: Array[solver.Augmentation], index: I32) {
   if(math.less(index, ar.array_len(history))) {
     let step = ar.array_get(history, index);
     io.print("  augment ");
@@ -40,7 +40,7 @@ rec(loop) fn print_history(history: Array(solver.Augmentation), index: I32) {
   }
 }
 
-rec(loop) fn print_edges(network: net.Network, residual: Array(I32), index: I32) {
+rec(loop) fn print_edges(network: net.Network, residual: Array[I32], index: I32) {
   if(math.less(index, ar.array_len(network.?{net.edges}))) {
     let edge = ar.array_get(network.?{net.edges}, index);
     if(edge.?{net.backward}) {
@@ -62,7 +62,7 @@ rec(loop) fn print_edges(network: net.Network, residual: Array(I32), index: I32)
   }
 }
 
-rec(loop) fn print_side(side: Array(Bool), node: I32, separator: String) {
+rec(loop) fn print_side(side: Array[Bool], node: I32, separator: String) {
   if(math.less(node, ar.array_len(side))) {
     if(ar.array_get(side, node)) {
       io.print(separator);

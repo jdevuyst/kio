@@ -17,31 +17,31 @@ fn zero() -> Nat {
 }
 
 fn succ(n: Nat) -> Nat {
-  .[A](f, x) { f(n(A, f, x)) }
+  .[A](f, x) { f(n[A](f, x)) }
 }
 
 fn plus(m: Nat, n: Nat) -> Nat {
-  .[A](f, x) { m(A, f, n(A, f, x)) }
+  .[A](f, x) { m[A](f, n[A](f, x)) }
 }
 
 // `mul m n = ΛA. λf. λx. m A (n A f) x`. Within-layer partial
 // application is rejected, so `n A f` is wrapped as a closure
-// `.(y) { n(A, f, y) }` that re-applies all three args.
+// `.(y) { n[A](f, y) }` that applies one type and two value operands.
 fn mul(m: Nat, n: Nat) -> Nat {
   .[A](f, x) {
-    m(A, .(y) { n(A, f, y) }, x)
+    m[A](.(y) { n[A](f, y) }, x)
   }
 }
 
 fn to_int(n: Nat) -> I32 {
-  n(I32, .(x) { add_i32(x, 1(I32)) }, 0(I32))
+  n[I32](.(x) { add_i32(x, 1[I32]) }, 0[I32])
 }
 
 pub fn main() {
   let two = succ(succ(zero()));
   let three = succ(succ(succ(zero())));
   print(int_to_string(to_int(plus(two, three))));
-  print("\n"(String));
+  print("\n"[String]);
   print(int_to_string(to_int(mul(two, three))));
-  print("\n"(String))
+  print("\n"[String])
 }

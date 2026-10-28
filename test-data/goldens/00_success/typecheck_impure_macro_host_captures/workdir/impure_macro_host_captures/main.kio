@@ -3,4 +3,4 @@ module impure_macro_host_captures/main;
 import impure_macro_host_captures(I32);
 import impure_macro_host_captures/macros(macro checked);
 
-fn keep(value: I32) -> I32 { checked(value, I32) }
+fn keep(value: I32) -> I32 { checked(value)[I32] }

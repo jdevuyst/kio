@@ -60,45 +60,122 @@ struct Projection<'a> {
 }
 
 impl Projection<'_> {
+    /// UFCS placement is entirely determined by its selected written group.
+    /// Normalize the full head spine before classifying a direct macro envelope.
+    fn normalize_call_spine(expr: &mut Expr<Surface>) {
+        match expr {
+            Expr::Call { callee, .. } => Self::normalize_call_spine(callee),
+            Expr::Ufcs { .. } => {
+                let span = expr.span();
+                let Expr::Ufcs {
+                    mut callee,
+                    receiver,
+                    mut args,
+                    flavor,
+                    source_trivia,
+                    meta,
+                    ..
+                } = std::mem::replace(expr, unit(span))
+                else {
+                    unreachable!()
+                };
+                Self::normalize_call_spine(&mut callee);
+                if flavor.inserts_first() {
+                    args.insert(0, CallArg::Value(*receiver));
+                } else {
+                    args.push(CallArg::Value(*receiver));
+                }
+                *expr = Expr::Call {
+                    callee,
+                    args,
+                    source_trivia,
+                    meta,
+                    occurrence: Default::default(),
+                    diagnostic: Default::default(),
+                    ext: (),
+                };
+            }
+            _ => {}
+        }
+    }
+
+    fn pack_value_stage(stage: &mut CallStage<Surface>) {
+        if matches!(stage.args.first(), Some(CallArg::Type(_))) {
+            return;
+        }
+        let mut values = std::mem::take(&mut stage.args)
+            .into_iter()
+            .map(|arg| {
+                let CallArg::Value(value) = arg else {
+                    unreachable!("a value stage contains only values")
+                };
+                value
+            })
+            .collect::<Vec<_>>();
+        let value = match values.len() {
+            0 => unit(stage.meta.span),
+            1 => values.pop().unwrap(),
+            _ => Expr::Tuple {
+                occurrence: Default::default(),
+                items: values,
+                meta: stage.meta.clone(),
+                ext: (),
+            },
+        };
+        stage.args.push(CallArg::Value(value));
+    }
+
     fn expr(&mut self, expr: &mut Expr<Surface>) -> Result<(), Error> {
-        if let Expr::Call { meta, .. } = expr
-            && let Some(name) = self.macros.direct.get(&meta.span)
-        {
-            let span = meta.span;
-            let Expr::Call {
+        Self::normalize_call_spine(expr);
+        let mut head = &*expr;
+        while let Expr::Call { callee, .. } = head {
+            head = callee;
+        }
+        let macro_name = match head {
+            Expr::Path { segments, .. } if matches!(expr, Expr::Call { .. }) => {
+                match segments.as_slice() {
+                    [head] if self.macros.contains(head.span) => Some(head.name.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some(name) = macro_name {
+            let span = expr.span();
+            let meta = expr.meta().clone();
+            let mut current = std::mem::replace(expr, unit(span));
+            let mut stages = Vec::new();
+            while let Expr::Call {
+                callee,
                 args,
                 source_trivia,
                 meta,
                 ..
-            } = std::mem::replace(expr, unit(span))
-            else {
-                unreachable!()
-            };
+            } = current
+            {
+                stages.push(CallStage {
+                    occurrence: Default::default(),
+                    args,
+                    source_trivia,
+                    meta,
+                });
+                current = *callee;
+            }
+            stages.reverse();
             assert!(
-                self.next_node_id < crate::ast::SYNTHESIZED_NODE_ID_START,
+                self.next_node_id < SYNTHESIZED_NODE_ID_START,
                 "source NodeId space exhausted"
             );
             let id = NodeId(self.next_node_id);
             self.next_node_id += 1;
             *expr = Expr::UserMacro {
-                source_trivia,
                 occurrence: Default::default(),
-                name: name.clone(),
-                args,
+                name,
+                stages,
                 form: UserMacroCallForm::Ordinary,
                 meta,
                 ext: id,
             };
-        }
-        if let Expr::Ufcs {
-            callee_segments,
-            macro_call,
-            ..
-        } = expr
-            && let [head] = callee_segments.as_slice()
-            && self.macros.contains(head.span)
-        {
-            *macro_call = Some(head.span);
         }
         if let Expr::BlockCall { .. } = expr {
             let span = expr.span();
@@ -189,7 +266,7 @@ impl Projection<'_> {
                 }
                 return Err(error);
             }
-            let mut args: Vec<_> = prefix.into_iter().map(CallArg::Value).collect();
+            let mut stages = prefix;
             for (index, (block, descriptor)) in
                 blocks.into_iter().zip(&declaration.blocks).enumerate()
             {
@@ -214,19 +291,19 @@ impl Projection<'_> {
                     }
                     return Err(error);
                 }
-                args.push(CallArg::Value(project_block(
-                    block,
-                    descriptor.exposure,
-                    declaration,
-                    id,
-                    index,
-                )?));
+                let value = project_block(block, descriptor.exposure, declaration, id, index)?;
+                let meta = Meta::new(value.span());
+                stages.push(CallStage {
+                    occurrence: Default::default(),
+                    args: vec![CallArg::Value(value)],
+                    source_trivia: None,
+                    meta,
+                });
             }
             *expr = Expr::UserMacro {
-                source_trivia: Default::default(),
                 occurrence: Default::default(),
                 name: head.name,
-                args,
+                stages,
                 form: UserMacroCallForm::TrailingBlocks,
                 meta,
                 ext: id,
@@ -244,11 +321,18 @@ impl Projection<'_> {
                 self.expr(callee)?;
                 self.args(args)?;
             }
-            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => self.args(args)?,
-            Expr::Ufcs { receiver, args, .. } => {
-                self.expr(receiver)?;
-                self.args(args)?;
+            Expr::RecCall { stages, .. } => {
+                for stage in stages {
+                    self.args(&mut stage.args)?;
+                }
             }
+            Expr::UserMacro { stages, .. } => {
+                for stage in stages {
+                    self.args(&mut stage.args)?;
+                    Self::pack_value_stage(stage);
+                }
+            }
+            Expr::Ufcs { .. } => unreachable!("UFCS is normalized before projection"),
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => self.expr(body)?,
             Expr::Let { value, body, .. }
             | Expr::RowLet { value, body, .. }

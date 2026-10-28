@@ -46,8 +46,8 @@
 //! Prime check.
 
 use crate::ast::{
-    CallArg, Equiv, Expr, Item, LabelSugarLabel, LabelValueLabel, Labels, LiteralAlias, Meta,
-    Module, Op, PackageFile, PathSegment, PlaceholderState, Prime, RecGroup, Surface, Type,
+    Equiv, Expr, Item, LabelSugarLabel, LabelValueLabel, Labels, LiteralAlias, Meta, Module, Op,
+    PackageFile, PathSegment, PlaceholderState, Prime, RecGroup, Surface, Type,
 };
 use crate::error::Error;
 use crate::prime::walk::SurfaceToPrime;
@@ -170,7 +170,7 @@ impl SurfaceToPrime for PrimeLower {
     fn rewrite_expr_rec_call(
         &mut self,
         _callee: PathSegment,
-        _args: Vec<CallArg<Surface>>,
+        _stages: Vec<crate::ast::CallStage<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error> {
         Err(prime_reject("`recur` call", meta.span))
@@ -200,7 +200,7 @@ impl SurfaceToPrime for PrimeLower {
     fn rewrite_expr_user_macro(
         &mut self,
         name: String,
-        _args: Vec<crate::ast::CallArg<Surface>>,
+        _stages: Vec<crate::ast::CallStage<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error> {
         Err(prime_reject(&format!("`{name}` macro call"), meta.span))

@@ -56,22 +56,20 @@ type Pair[A][B] = .;
 
 fn parameter(
 // Before the colon.
-, x: Pair(
-  // Inside the parameter type.
-  , .
-  , .
-  )
+, x: Pair[
+    // Inside the parameter type.
+    .
+  ][.]
 ) { x }
 
 fn return_order() -> (
   // Before the arrow.
 
   // Before the return type.
-  Pair(
-  // Inside the return type.
-  , .
-  , .
-  )
+  Pair[
+    // Inside the return type.
+    .
+  ][.]
   ) {
   // Before the body.
 
@@ -90,8 +88,7 @@ fn grouped() {
 }
 
 fn grouped_argument() {
-  id(
-  , .
+  id[.](
   , last(
     // Inner call.
     )
@@ -170,22 +167,20 @@ type Pair[A][B] = .;
 
 fn parameter(
 // Before the colon.
-, x: Pair(
-  // Inside the parameter type.
-  , .
-  , .
-  )
+, x: Pair[
+    // Inside the parameter type.
+    .
+  ][.]
 ) { x }
 
 fn return_order() -> (
   // Before the arrow.
 
   // Before the return type.
-  Pair(
-  // Inside the return type.
-  , .
-  , .
-  )
+  Pair[
+    // Inside the return type.
+    .
+  ][.]
   ) {
   // Before the body.
 
@@ -204,8 +199,7 @@ fn grouped() {
 }
 
 fn grouped_argument() {
-  id(
-  , .
+  id[.](
   , last(
     // Inner call.
     )

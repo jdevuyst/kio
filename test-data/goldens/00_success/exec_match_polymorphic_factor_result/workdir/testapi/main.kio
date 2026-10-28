@@ -8,9 +8,9 @@ newtype Box[A] : A { pub constructor make; pub projector unpack }
 
 labels { tag: . };
 
-fn project(input: Box(String) & Tag) -> String {
+fn project(input: Box[String] & Tag) -> String {
   match(input) {
-    .[A](slot: Box(A)) -> A { slot.>Box.unpack }
+    .[A](slot: Box[A]) -> A { slot.>Box.unpack }
   }
 }
 

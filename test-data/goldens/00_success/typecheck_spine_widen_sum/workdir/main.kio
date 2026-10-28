@@ -24,4 +24,4 @@ fn extend_sum(x: A | B) -> A | B | C { widen_sum(x) }
 fn add_bottom_arm(a: A) -> A | ! { widen_sum(a) }
 
 // UFCS spelling — same rule, postfix form.
-fn ufcs(a: A) -> A | B { a.>widen_sum(A | B) }
+fn ufcs(a: A) -> A | B { (a.>widen_sum)[A | B] }

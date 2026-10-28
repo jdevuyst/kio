@@ -8,7 +8,7 @@ import testapi/arith as num;
 import testapi/array as arr;
 import testapi/iter(loop);
 
-labels Ring = { before: Array(I32), after: Array(I32), active: Array(Bool) };
+labels Ring = { before: Array[I32], after: Array[I32], active: Array[Bool] };
 
 rec(loop) fn link_ring(ring: Ring, i: I32, n: I32) {
   if(geo.equal(i, n)) {
@@ -27,7 +27,7 @@ fn inside_triangle(p: geo.Point, a: geo.Point, b: geo.Point, c: geo.Point) -> Bo
   )
 }
 
-rec(loop) fn contains_vertex(points: Array(geo.Point), ring: Ring, a: I32, b: I32, c: I32, i: I32) -> Bool {
+rec(loop) fn contains_vertex(points: Array[geo.Point], ring: Ring, a: I32, b: I32, c: I32, i: I32) -> Bool {
   if(geo.equal(i, arr.array_len(points))) {
     .f
   } else if(geo.either(geo.either(geo.equal(i, a), geo.equal(i, b)), geo.equal(i, c))) {
@@ -47,7 +47,7 @@ rec(loop) fn contains_vertex(points: Array(geo.Point), ring: Ring, a: I32, b: I3
   }
 }
 
-fn is_ear(points: Array(geo.Point), ring: Ring, a: I32, b: I32, c: I32) -> Bool {
+fn is_ear(points: Array[geo.Point], ring: Ring, a: I32, b: I32, c: I32) -> Bool {
   if(geo.less(
   , 0
   , geo.cross(arr.array_get(points, a), arr.array_get(points, b), arr.array_get(points, c))
@@ -59,13 +59,13 @@ fn is_ear(points: Array(geo.Point), ring: Ring, a: I32, b: I32, c: I32) -> Bool 
 }
 
 rec(loop) fn clip_ring(
-, points: Array(geo.Point)
+, points: Array[geo.Point]
 , ring: Ring
-, triangles: Array(geo.Triangle)
+, triangles: Array[geo.Triangle]
 , cursor: I32
 , remaining: I32
 , misses: I32
-) -> Array(geo.Triangle) | String {
+) -> Array[geo.Triangle] | String {
   let a = arr.array_get(ring.?{before}, cursor);
   let c = arr.array_get(ring.?{after}, cursor);
   if(geo.equal(remaining, 3)) {
@@ -84,7 +84,7 @@ rec(loop) fn clip_ring(
   }
 }
 
-pub fn triangulate(points: Array(geo.Point)) -> Array(geo.Triangle) | String {
+pub fn triangulate(points: Array[geo.Point]) -> Array[geo.Triangle] | String {
   let n = arr.array_len(points);
   let ring =
     {

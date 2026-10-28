@@ -52,16 +52,16 @@ pub labels { token: Tk_word | Tk_num | Tk_str | Tk_punct };
 pub type Token_shape = Tk_word | Tk_num | Tk_str | Tk_punct;
 
 /// Builds a word token from its spelling.
-pub fn tk_word(s: String) -> Token { {token = widen_sum({tk_word = s}, Token_shape)} }
+pub fn tk_word(s: String) -> Token { {token = widen_sum({tk_word = s})[Token_shape]} }
 
 /// Builds a numeric-literal token from its raw source text.
-pub fn tk_num(s: String) -> Token { {token = widen_sum({tk_num = s}, Token_shape)} }
+pub fn tk_num(s: String) -> Token { {token = widen_sum({tk_num = s})[Token_shape]} }
 
 /// Builds a string-literal token from its decoded content.
-pub fn tk_str(s: String) -> Token { {token = widen_sum({tk_str = s}, Token_shape)} }
+pub fn tk_str(s: String) -> Token { {token = widen_sum({tk_str = s})[Token_shape]} }
 
 /// Builds a punctuation token from its character code.
-pub fn tk_punct(c: I32) -> Token { {token = widen_sum({tk_punct = c}, Token_shape)} }
+pub fn tk_punct(c: I32) -> Token { {token = widen_sum({tk_punct = c})[Token_shape]} }
 
 /// One-step destructor on a `Token`: projects out the token sum for dispatch.
 pub fn un_token(t: Token) -> Token_shape { Token.get(t) }
@@ -80,11 +80,11 @@ pub fn un_token(t: Token) -> Token_shape { Token.get(t) }
 pub rec labels { toks: . | (Token & I32 & Toks) };
 
 /// The empty token list.
-pub fn toks_nil() -> Toks { {toks = widen_sum((), . | (Token & I32 & Toks))} }
+pub fn toks_nil() -> Toks { {toks = widen_sum(())[. | (Token & I32 & Toks)]} }
 
 /// Prepends one token with its source byte offset.
 pub fn toks_cons(head: Token, pos: I32, tail: Toks) -> Toks {
-  {toks = widen_sum((head, (pos, tail)), . | (Token & I32 & Toks))}
+  {toks = widen_sum((head, (pos, tail)))[. | (Token & I32 & Toks)]}
 }
 
 /// One-step destructor on a token list.
@@ -99,30 +99,30 @@ pub fn un_toks(ts: Toks) -> . | (Token & I32 & Toks) { Toks.get(ts) }
 // payload in the expected arm, and the list constructors round-trip.
 equiv un_word(s: String) {
   un_token(tk_word(s));
-  widen_sum({tk_word = s}, Token_shape)
+  widen_sum({tk_word = s})[Token_shape]
 }
 
 equiv un_num_tok(s: String) {
   un_token(tk_num(s));
-  widen_sum({tk_num = s}, Token_shape)
+  widen_sum({tk_num = s})[Token_shape]
 }
 
 equiv un_str_tok(s: String) {
   un_token(tk_str(s));
-  widen_sum({tk_str = s}, Token_shape)
+  widen_sum({tk_str = s})[Token_shape]
 }
 
 equiv un_punct_tok(c: I32) {
   un_token(tk_punct(c));
-  widen_sum({tk_punct = c}, Token_shape)
+  widen_sum({tk_punct = c})[Token_shape]
 }
 
 equiv un_toks_cons(h: Token, p: I32, t: Toks) {
   un_toks(toks_cons(h, p, t));
-  widen_sum((h, (p, t)), . | (Token & I32 & Toks))
+  widen_sum((h, (p, t)))[. | (Token & I32 & Toks)]
 }
 
 equiv un_toks_nil() {
   un_toks(toks_nil());
-  widen_sum((), . | (Token & I32 & Toks))
+  widen_sum(())[. | (Token & I32 & Toks)]
 }

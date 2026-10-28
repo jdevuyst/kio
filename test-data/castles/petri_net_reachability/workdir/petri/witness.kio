@@ -14,9 +14,9 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub type Path = lists.List(I32);
+pub type Path = lists.List[I32];
 
-pub rec(loop) fn reconstruct(nodes: lists.List(search.Node), node: search.Node, path: Path) ->
+pub rec(loop) fn reconstruct(nodes: lists.List[search.Node], node: search.Node, path: Path) ->
   Path | .
    {
   if(arithmetic.eq_i32(node.?{search.depth}, 0)) {

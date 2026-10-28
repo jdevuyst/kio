@@ -21,21 +21,21 @@ pub labels Vacuum = {
 , faults: I32
 };
 
-pub fn north_direction() -> Direction { {north=}.>widen_sum(Direction) }
+pub fn north_direction() -> Direction { ({north=}.>widen_sum)[Direction] }
 
-pub fn east_direction() -> Direction { {east=}.>widen_sum(Direction) }
+pub fn east_direction() -> Direction { ({east=}.>widen_sum)[Direction] }
 
-pub fn south_direction() -> Direction { {south=}.>widen_sum(Direction) }
+pub fn south_direction() -> Direction { ({south=}.>widen_sum)[Direction] }
 
-pub fn west_direction() -> Direction { {west=}.>widen_sum(Direction) }
+pub fn west_direction() -> Direction { ({west=}.>widen_sum)[Direction] }
 
-pub fn docked_mode() -> Run_mode { {docked=}.>widen_sum(Run_mode) }
+pub fn docked_mode() -> Run_mode { ({docked=}.>widen_sum)[Run_mode] }
 
-pub fn idle_mode() -> Run_mode { {idle=}.>widen_sum(Run_mode) }
+pub fn idle_mode() -> Run_mode { ({idle=}.>widen_sum)[Run_mode] }
 
-pub fn cleaning_mode() -> Run_mode { {cleaning=}.>widen_sum(Run_mode) }
+pub fn cleaning_mode() -> Run_mode { ({cleaning=}.>widen_sum)[Run_mode] }
 
-pub fn paused_mode() -> Run_mode { {paused=}.>widen_sum(Run_mode) }
+pub fn paused_mode() -> Run_mode { ({paused=}.>widen_sum)[Run_mode] }
 
 pub fn initial_vacuum() -> Vacuum {
   {

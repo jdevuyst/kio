@@ -115,7 +115,7 @@ an optional block was present when it was absent.
 In type position, empty value parentheses are diagnosed with the unit type
 spelling `.`. A balanced tuple-shaped group offers a structured product-type
 repair when all its components parse: each top-level comma becomes `&`, with
-component grouping and nested type-argument commas preserved. Zero-component
+component grouping and nested singleton type applications preserved. Zero-component
 groups instead offer the unit type. Repairs preserve comments and separate
 replacement tokens from adjacent operators. An incomplete or malformed
 component does not receive a partial product repair. These explicit edits do

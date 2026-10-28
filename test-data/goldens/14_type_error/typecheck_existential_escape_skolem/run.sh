@@ -8,7 +8,7 @@
 # any body whose synthesized type mentions the skolem outside the
 # continuation's scope — the witnesses cannot leak into the
 # projector's result type. The case constructs exactly that
-# escape: the continuation returns `__snd__(A, U, pair) : U` while
+# escape: the continuation returns `__snd__[A][U](pair) : U` while
 # the outer call's result type is `A`. The typer must surface a
 # structured user error (exit 14), not a panic.
 set -u

@@ -186,15 +186,15 @@ suite("Kio extension — activation & highlighting", () => {
     assert.strictEqual(semanticTokenTypeAt(doc, decoded, "Box.un_box"), 2);
     assert.strictEqual(semanticTokenTypeAt(doc, decoded, "_Box.un_marked"), 2);
     assert.strictEqual(
-      semanticTokenTypeAt(doc, decoded, "un_box(A, Box", "un_box(".length),
+      semanticTokenTypeAt(doc, decoded, "un_box[A](Box", "un_box[".length),
       2,
     );
     assert.strictEqual(
       semanticTokenTypeAt(
         doc,
         decoded,
-        "un_marked(_A, _Box",
-        "un_marked(".length,
+        "un_marked[_A](_Box",
+        "un_marked[".length,
       ),
       2,
     );
@@ -231,7 +231,7 @@ suite("Kio extension — activation & highlighting", () => {
   });
 
   test("macro calls follow lexical scope and import edits without a language server", async () => {
-    const source = "module source; import helpers(macro make as choose, macro x1, macro x0); fn run() { choose(()); .(choose: . -> .) { choose(()) }; .x. { x1(()); x0(()) }; ((choose))(()); (,choose,)(()); (,,(choose),,,)(()); x1(()) }";
+    const source = "module source; import helpers(macro make as choose, macro x1, macro x0); fn run() { choose(()); .(choose: . -> .) { choose(()) }; .x. { x1(()); x0(()) }; ((choose))(()); (,choose,)(()); (,,(choose),,,)(()); choose[A](())[B](()); receiver.>choose[A](()); choose(())(()) { () }; x1(()) }";
     const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
     await vscode.window.showTextDocument(doc);
     await vscode.extensions.getExtension("kio-lang.kio")!.activate();
@@ -247,6 +247,9 @@ suite("Kio extension — activation & highlighting", () => {
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "((choose", 2), macro);
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "(,choose,", 2), macro);
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "(,,(choose", 4), macro);
+      for (const marker of ["; choose[A]", ".>choose[A]", "; choose(())(())"]) {
+        assert.strictEqual(semanticTokenTypeAt(doc, tokens, marker, marker.indexOf("choose")), macro);
+      }
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "; x0", 2), 11);
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "{ x1", 2), 11);
       assert.strictEqual(semanticTokenTypeAt(doc, tokens, "; x1", 2), 1);
@@ -266,6 +269,9 @@ suite("Kio extension — activation & highlighting", () => {
       assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "((choose", 2), 11);
       assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "(,choose,", 2), 11);
       assert.strictEqual(semanticTokenTypeAt(doc, ordinary, "(,,(choose", 4), 11);
+      for (const marker of ["; choose[A]", ".>choose[A]", "; choose(())(())"]) {
+        assert.strictEqual(semanticTokenTypeAt(doc, ordinary, marker, marker.indexOf("choose")), 11);
+      }
       await replace("      make as choose", "macro make as choose");
       await assertKinds(1);
     } finally { await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor"); }
@@ -443,7 +449,7 @@ fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
   }
 
   test("semantic tokens retain roles across incremental delimiter and keyword edits", async () => {
-    const source = "module source; import helpers(macro if); fn run() { id([*F] F(.) -> F(.)) }";
+    const source = "module source; import helpers(macro if); fn run() { id[[*F] F[.] -> F[.]] }";
     const doc = await vscode.workspace.openTextDocument({ language: "kio", content: source });
     await vscode.window.showTextDocument(doc);
     const read = async () => {
@@ -460,16 +466,16 @@ fn shadow(call: . -> ., left: ., right: .) { (left, right).>call(()) }`;
       edit.replace(doc.uri, new vscode.Range(doc.positionAt(start), doc.positionAt(start + before.length)), after);
       assert.strictEqual(await vscode.workspace.applyEdit(edit), true);
     };
-    await replace("[*F] F(.) -> F(.)", "[* let(x) *]");
+    await replace("id[[*F] F[.] -> F[.]]", "id([* let(x) *])");
     assert.ok((await read()).some((token) => token.text === "let" && token.type === 11));
     await replace("let(x)", "if(x) { x } else { x }");
     assert.ok((await read()).some((token) => token.text === "if" && token.type === 1));
     assert.ok((await read()).some((token) => token.text === "else" && token.type === 0));
     await replace("if(x) { x } else { x }", "ordinary(x)");
     assert.ok((await read()).some((token) => token.text === "ordinary" && token.type === 11));
-    await replace("[* ordinary(x) *]", "[*F] F(.) -> F(.)");
+    await replace("id([* ordinary(x) *])", "id[[*F] F[.] -> F[.]]");
     assert.ok((await read()).some((token) => token.text === "F" && token.type === 9));
-    await replace("[*F] F(.) -> F(.)", "recur");
+    await replace("id[[*F] F[.] -> F[.]]", "id(recur)");
     assert.ok((await read()).some((token) => token.text === "recur" && token.type === 3));
     await replace("recur", "recur(poly)");
     assert.ok((await read()).some((token) => token.text === "recur" && token.type === 11));

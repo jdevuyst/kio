@@ -8,7 +8,7 @@ import g_pkg(g);
 
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box; };
 
-rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list; };
+rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list; };
 
 type Logger = String -> .;
 
@@ -36,16 +36,16 @@ fn use_call(s: String) -> . { print(s) }
 
 fn use_let_simple() -> . { let x = (); x }
 
-fn use_fn_simple() -> . { .(x) { print(x) }("hi"(String)) }
+fn use_fn_simple() -> . { .(x) { print(x) }("hi"[String]) }
 
-fn dotted_callee() -> . { Box.mk_box(String, "hi"(String)) }
+fn dotted_callee() -> . { Box.mk_box[String]("hi"[String]) }
 
-fn mixed_args() -> . { id(String, "hi"(String)) }
+fn mixed_args() -> . { id[String]("hi"[String]) }
 
 fn literals() -> . {
-  let s = "hi"(String);
-  let n = 42(I32);
-  let f = 3.14(F64);
-  let b = .t(Bool);
+  let s = "hi"[String];
+  let n = 42[I32];
+  let f = 3.14[F64];
+  let b = .t[Bool];
   ()
 }

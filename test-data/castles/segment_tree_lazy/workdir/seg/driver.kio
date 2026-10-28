@@ -36,10 +36,10 @@ import testapi/iter(loop);
 /// the two answers a query drew from the two structures.
 labels Outcome = { settled: String } | { answered: String & I32 & I32 };
 
-fn settled(text: String) -> Outcome { {settled = text}.>widen_sum(Outcome) }
+fn settled(text: String) -> Outcome { ({settled = text}.>widen_sum)[Outcome] }
 
 fn answered(text: String, from_tree: I32, from_ref: I32) -> Outcome {
-  {answered = (text, from_tree, from_ref)}.>widen_sum(Outcome)
+  ({answered = (text, from_tree, from_ref)}.>widen_sum)[Outcome]
 }
 
 /// Run one operation against both structures. The two calls are always
@@ -97,7 +97,7 @@ fn record(k: I32, outcome: Outcome, spent: String) -> Bool {
 
 /// One scripted step: snapshot both meters, run the operation on both
 /// structures, and charge the difference to this line of the transcript.
-fn step(t: Tree, base: Brute, table: Array(I32), k: I32) -> Bool {
+fn step(t: Tree, base: Brute, table: Array[I32], k: I32) -> Bool {
   let seen_before = visits(t);
   let pushed_before = tag_pushes(t);
   let touched_before = touches(base);
@@ -111,7 +111,7 @@ fn step(t: Tree, base: Brute, table: Array(I32), k: I32) -> Bool {
   record(k, outcome, spent)
 }
 
-rec(loop) fn step_from(t: Tree, base: Brute, table: Array(I32), k: I32, agreed: Bool) -> Bool {
+rec(loop) fn step_from(t: Tree, base: Brute, table: Array[I32], k: I32, agreed: Bool) -> Bool {
   if(leq_i32(op_count(), k)) {
     agreed
   } else {
@@ -122,4 +122,4 @@ rec(loop) fn step_from(t: Tree, base: Brute, table: Array(I32), k: I32, agreed: 
 
 /// Replay the whole script. The result is the conjunction of every query's
 /// agreement, and it is the castle's verdict.
-pub fn replay(t: Tree, base: Brute, table: Array(I32)) -> Bool { step_from(t, base, table, 0, .t) }
+pub fn replay(t: Tree, base: Brute, table: Array[I32]) -> Bool { step_from(t, base, table, 0, .t) }

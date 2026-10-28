@@ -706,7 +706,7 @@ first-class realization independently and record it in the decision ledger;
 do not infer a family-wide callable ABI from that mechanism. Boundary adapters
 retain the documented facade and evaluation behavior for that backend.
 
-A higher-kinded carrier `F(A)` adds no HKT-specific representation to an
+A higher-kinded carrier `F[A]` adds no HKT-specific representation to an
 **erased body**. JS realizes that fact directly. Static members of the family
 also use one private universal representation, but that does not make an
 arbitrary native facade application equal to the universal value and does not
@@ -734,7 +734,7 @@ realization evidence.
 Allocation, cloning, performance, debugging, and layout effects remain
 separate observable questions and require their own evidence.
 
-**Rust erased-mode body lowering at the construction site.** When a Kio lambda literal flows into a polymorphic-newtype-payload constructor — `Monad.mk_monad(Box, .[A][B](m, k) { k(Box.un_box(m)) })` — the bound types and value parameters use the universal representation while the nested callable stages follow the payload type. The concrete constructor's generated adapter performs its marker-directed lift / project while the body retains the opaque token. This behaves identically to a typed-throughout version because the typer rejects any operation that depends on a specific instantiation of `[A]` or `[B]` (binder-uniformity).
+**Rust erased-mode body lowering at the construction site.** When a Kio lambda literal flows into a polymorphic-newtype-payload constructor — `Monad.mk_monad[Box](.[A][B](m, k) { k(Box.un_box(m)) })` — the bound types and value parameters use the universal representation while the nested callable stages follow the payload type. The concrete constructor's generated adapter performs its marker-directed lift / project while the body retains the opaque token. This behaves identically to a typed-throughout version because the typer rejects any operation that depends on a specific instantiation of `[A]` or `[B]` (binder-uniformity).
 
 The `RuntimeSupport::EmbeddedFile` convention names shared body fragments once in an emitter-written file rather than inlining them at every call site. Rust uses it for the private storage operations behind `KioStoredValue`; generated `KioType` conversions are the typed seam and raw erased-token construction/downcast remains crate-private (default `Rc`, thread-safe `Arc + Send + Sync`). Go's erased body uses the same convention to name the canonical `Unit` (`struct{}` — Go has no built-in unit value) once in `kio_runtime.go`.
 

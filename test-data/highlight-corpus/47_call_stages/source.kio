@@ -1,0 +1,34 @@
+module call_stages;
+
+import operators(varop []);
+import macros(macro invoke, macro form);
+
+type Applied[*F][A] = F[A];
+type Nested = Map[Key][List[Value]];
+type Poly = [A] A -> [B] B -> A;
+literal count = 42;
+
+fn run(value: A, other: B) {
+  ordinary[A](value)[B](other);
+  ordinary(value, other);
+  ordinary((value, other));
+  ordinary(value)(other);
+  (factory(value))[A](other);
+  ordinary [A] (value);
+  ordinary[
+    // type-stage trivia
+    A
+  ](value);
+  invoke[A](value)[B](other);
+  value.>invoke[A](other);
+  value.>>invoke[A](other);
+  invoke[A](other).<value;
+  invoke[A](other)[B].<<value;
+  form(value)(other) { value } then { other };
+  [value, other];
+  42[Int];
+  4.0[Float];
+  "text"[String];
+  .t[Bool];
+  count[Int]
+}

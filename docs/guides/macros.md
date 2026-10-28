@@ -17,6 +17,23 @@ for ordinary functions, generic types, sums, and imports. For a complete package
 that generates and tests lets, lambdas, calls, type walks, fills, and blocks,
 follow [Building and testing macros](macro-authoring.md).
 
+## Calling a macro in stages
+
+The macro's public type exposes the same stages as an ordinary callable.
+For `[Source] Source -> [Target] Target`, `convert(value)[Target]` supplies
+the source and then its target type. `convert(value)` can omit the target when
+local context determines it. A receiver spelling is `(value.>convert)[Target]`;
+brackets on the UFCS callee itself would instantiate a binder before the
+receiver instead.
+
+The compiler checks the whole written chain against the macro's declared
+type before running its implementation. Later stages can supply type
+information needed by earlier arguments; grouping the chain does not force an
+early expansion. The generated code cannot make an otherwise invalid input
+valid. If that code returns an ordinary function, later calls on it are normal
+function calls, rather than extra inputs to the macro. A `let` ends the
+connection, and the macro itself is never a first-class value.
+
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="a-complete-checked-macro"></a>
 
@@ -54,13 +71,9 @@ pure fn checked_impl(
   , value: __Checked_term__
   , target: Target_request
   ) -> __Checked_term__ {
-  __either__(
-    , __Type__
-    , .
-    , __Checked_term__
-    , target
+  __either__[__Type__][.][__Checked_term__](target
     , .(_target: __Type__) -> __Checked_term__ { value }
-    , .() -> __Checked_term__ { __macro_error__(ct, "identity needs a target type"(__Diagnostic_text__)) }
+    , .() -> __Checked_term__ { __macro_error__(ct, "identity needs a target type"[__Diagnostic_text__]) }
     )
 }
 
@@ -83,7 +96,7 @@ __INSERT_CODE_HERE__
 -->
 
 ```kio {@identity_consumer}
-pure fn keep_unit(value: .) { identity(value, .) }
+pure fn keep_unit(value: .) { identity(value)[.] }
 ```
 
 For a generic consumer, the same import and trailing target slot look like:
@@ -99,7 +112,7 @@ fn check_keep() { keep(()) }
 ```kio {@generic_consumer}
 import library/identity(macro identity);
 
-fn keep[A](value: A) -> A { identity(value, A) }
+fn keep[A](value: A) -> A { identity(value)[A] }
 ```
 
 The `macro identity` selector identifies the declaration kind. The call uses
@@ -146,8 +159,9 @@ There are three ways for a declaration to expose a block:
   binding or non-final action. Pure `let` bindings remain local, and the block
   ends with an explicit final action.
 
-Descriptors belong to the end of the macro's public value arguments, in
-the written descriptor order. The first is unlabelled; later descriptors have
+Descriptors correspond to successive final function stages in the macro's
+public type, in written descriptor order. Each projects one value for the
+whole domain of its stage, rather than one component of a shared product. The first is unlabelled; later descriptors have
 distinct labels, such as `trailing thunk else`. Other declaration entries can
 appear between descriptors without changing that order. A block call must
 supply every required block and cannot leave an ordinary argument group
@@ -170,13 +184,16 @@ syntax; use `let(value) { body }` or an import alias for a macro named `let`.
 
 Written ordinary values between the head and first block are prefix arguments
 and always use an argument list: `match(value) { clauses }` and
-`form(left, right) { body() }`. One product needs its own parentheses inside
-the prefix list: `form((left, right)) { body() }`. Direct `form() { body() }`
-passes one unit value, whereas `form { body() }` has no prefix value.
+`form(left, right) { body() }`. The latter supplies one product, exactly as
+`form((left, right)) { body() }` does. To apply two prefix function stages,
+write `form(left)(right) { body() }`. Direct `form() { body() }` supplies one
+Unit stage, whereas `form { body() }` has no prefix stage.
 Block calls infer all type arguments; their explicit prefixes contain only
 values. Names, literals and operator expressions all follow the same rule.
 UFCS can supply a receiver without a written prefix list, for example
-`value.>match { clauses }`; the receiver is inserted before the block arguments.
+`value.>match { clauses }`; the receiver creates a prefix stage before the
+blocks. With several written prefix groups, forward UFCS inserts into the
+first and reverse UFCS into the last. Neither inserts into a projected block.
 
 The list also makes nested ownership clear. In
 `outer(convert(value)) { body() }`, `convert(value)` is a blockless prefix
@@ -313,7 +330,7 @@ relation to append.
 
 Before that implementation runs, every computed input needs a determined type,
 even if the implementation will ignore the value. A known generic type such as
-`Box(A)` is determined when `A` is a declared parameter; a factory call whose
+`Box[A]` is determined when `A` is a declared parameter; a factory call whose
 type argument is still being inferred is not. The outside expected result and
 already known sibling arguments may supply that information through the public
 call type, but a later fill or callback body cannot supply it afterward.
@@ -341,7 +358,7 @@ to make an unfinished producer ready for the macro.
 A polymorphic lambda literal can omit its return annotation, or write `-> _`,
 when its type binders and parameter types are written completely and the result
 can be determined without reading its body. For example, a surrounding
-`String` result can constrain the result of `.[A](boxed: Box(A)) { label(boxed) }`
+`String` result can constrain the result of `.[A](boxed: Box[A]) { label(boxed) }`
 through the macro's fills. The implementation runs over the provisional
 header first; then the compiler checks the one generic body against that
 independently determined result. Ignoring a source does not excuse checking
@@ -400,7 +417,7 @@ inspection does not evaluate a source argument twice.
 Every callable helper takes `__Comptime__` first. Only `__fill__` additionally
 takes `__Fill_ctx__` second and returns the descendant context.
 
-`__reflect_type__(ct, T)` reflects a solved type argument. `__type_view__`
+`__reflect_type__(ct)[T]` reflects a solved type argument. `__type_view__`
 decomposes a type into the complete structural view: unit, bottom, product,
 sum, function, forall, type variable, or named head. Equality helpers preserve
 nominal and host identities; transparent aliases unfold.

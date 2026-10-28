@@ -113,8 +113,8 @@ rec(loop) fn seed(work: Work, cell: I32) -> Work {
 /// array — the search mutates it in place — and the tables start seeded
 /// from its givens, which is the only time they are built from the board
 /// rather than maintained against it.
-pub fn new_work(puzzle: Array(I32)) -> Work {
-  let .(rows: Array(I32), cols: Array(I32), boxes: Array(I32)) = geo.build_coords();
+pub fn new_work(puzzle: Array[I32]) -> Work {
+  let .(rows: Array[I32], cols: Array[I32], boxes: Array[I32]) = geo.build_coords();
   let work =
     {
     , board = puzzle
@@ -124,8 +124,8 @@ pub fn new_work(puzzle: Array(I32)) -> Work {
     , used_row = array_make_filled(geo.flag_count(), 0)
     , used_col = array_make_filled(geo.flag_count(), 0)
     , used_box = array_make_filled(geo.flag_count(), 0)
-    , stack_cell = array_make_empty(I32, ())
-    , stack_digit = array_make_empty(I32, ())
+    , stack_cell = array_make_empty[I32](())
+    , stack_digit = array_make_empty[I32](())
     };
   seed(work, 0)
 }

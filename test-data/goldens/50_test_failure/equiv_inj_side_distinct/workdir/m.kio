@@ -3,6 +3,6 @@ module m;
 import __intrinsics__;
 
 equiv inj_side() {
-  __left__(_, ., ());
-  __right__(., _, ())
+  __left__[_][.](());
+  __right__[.][_](())
 }

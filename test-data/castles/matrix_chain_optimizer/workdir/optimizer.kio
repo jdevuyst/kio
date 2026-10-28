@@ -9,7 +9,7 @@ import testapi/array as arrays;
 import testapi/iter(loop);
 import tree as tree;
 
-pub labels Plan = { costs: Array(I32), splits: Array(I32), size: I32 };
+pub labels Plan = { costs: Array[I32], splits: Array[I32], size: I32 };
 
 fn cell(plan: Plan, first: I32, last: I32) -> I32 {
   math.add_i32(math.mul_i32(first, plan.?{size}), last)
@@ -23,7 +23,7 @@ pub fn split(plan: Plan, first: I32, last: I32) -> I32 {
   arrays.array_get(plan.?{splits}, cell(plan, first, last))
 }
 
-fn trial(matrices: Array(Matrix), plan: Plan, first: I32, last: I32, middle: I32) -> I32 {
+fn trial(matrices: Array[Matrix], plan: Plan, first: I32, last: I32, middle: I32) -> I32 {
   let rows = arrays.array_get(matrices, first).?{rows};
   let inner = arrays.array_get(matrices, middle).?{cols};
   let cols = arrays.array_get(matrices, last).?{cols};
@@ -34,7 +34,7 @@ fn trial(matrices: Array(Matrix), plan: Plan, first: I32, last: I32, middle: I32
 }
 
 rec(loop) fn choose(
-, matrices: Array(Matrix)
+, matrices: Array[Matrix]
 , plan: Plan
 , first: I32
 , last: I32
@@ -55,7 +55,7 @@ rec(loop) fn choose(
   }
 }
 
-rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I32) {
+rec(loop) fn intervals(matrices: Array[Matrix], plan: Plan, width: I32, first: I32) {
   let last = math.sub_i32(math.add_i32(first, width), 1);
   if(math.leq_i32(plan.?{size}, last)) {
     ()
@@ -76,7 +76,7 @@ rec(loop) fn intervals(matrices: Array(Matrix), plan: Plan, width: I32, first: I
   }
 }
 
-rec(loop) fn widths(matrices: Array(Matrix), plan: Plan, width: I32) -> Plan {
+rec(loop) fn widths(matrices: Array[Matrix], plan: Plan, width: I32) -> Plan {
   if(math.leq_i32(width, plan.?{size})) {
     intervals(matrices, plan, width, 0);
     recur widths(matrices, plan, math.add_i32(width, 1))
@@ -85,7 +85,7 @@ rec(loop) fn widths(matrices: Array(Matrix), plan: Plan, width: I32) -> Plan {
   }
 }
 
-pub fn optimize(matrices: Array(Matrix)) -> Plan {
+pub fn optimize(matrices: Array[Matrix]) -> Plan {
   let size = arrays.array_len(matrices);
   let count = math.mul_i32(size, size);
   widths(

@@ -37,56 +37,35 @@ pure fn type_name_required(ct: __Comptime__, source: __Type__) -> __Checked_term
 }
 
 pure fn keep_type_name(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> __Checked_term__ {
-  __either__(
-  , .
-  , Type_view_tail1
-  , __Checked_term__
+  __either__[.][Type_view_tail1][__Checked_term__](
   , __type_view__(ct, source)
   , .(_unit: .) -> __Checked_term__ { type_name_required(ct, source) }
   , .(tail1: Type_view_tail1) -> __Checked_term__ {
-      __either__(
-      , .
-      , Type_view_tail2
-      , __Checked_term__
+      __either__[.][Type_view_tail2][__Checked_term__](
       , tail1
       , .(_bottom: .) -> __Checked_term__ { type_name_required(ct, source) }
       , .(tail2: Type_view_tail2) -> __Checked_term__ {
-          __either__(
-          , Type_pair
-          , Type_view_tail3
-          , __Checked_term__
+          __either__[Type_pair][Type_view_tail3][__Checked_term__](
           , tail2
           , .(_product: Type_pair) -> __Checked_term__ { type_name_required(ct, source) }
           , .(tail3: Type_view_tail3) -> __Checked_term__ {
-              __either__(
-              , Type_pair
-              , Type_view_tail4
-              , __Checked_term__
+              __either__[Type_pair][Type_view_tail4][__Checked_term__](
               , tail3
               , .(_sum: Type_pair) -> __Checked_term__ { type_name_required(ct, source) }
               , .(tail4: Type_view_tail4) -> __Checked_term__ {
-                  __either__(
-                  , Function_view
-                  , Type_view_tail5
-                  , __Checked_term__
+                  __either__[Function_view][Type_view_tail5][__Checked_term__](
                   , tail4
                   , .(_function: Function_view) -> __Checked_term__ {
                       type_name_required(ct, source)
                     }
                   , .(tail5: Type_view_tail5) -> __Checked_term__ {
-                      __either__(
-                      , Forall_view
-                      , Type_view_tail6
-                      , __Checked_term__
+                      __either__[Forall_view][Type_view_tail6][__Checked_term__](
                       , tail5
                       , .(_forall: Forall_view) -> __Checked_term__ {
                           type_name_required(ct, source)
                         }
                       , .(tail6: Type_view_tail6) -> __Checked_term__ {
-                          __either__(
-                          , __Type_var__
-                          , __Type_name__
-                          , __Checked_term__
+                          __either__[__Type_var__][__Type_name__][__Checked_term__](
                           , tail6
                           , .(_var: __Type_var__) -> __Checked_term__ {
                               type_name_required(ct, source)
@@ -128,9 +107,9 @@ pub pure fn captured_keep_impl(
       , __type_equal__(ct, expected, reflected_actual(ct))
       , .() -> __Checked_term__ {
           __if_then_else__(
-          , __type_equal__(ct, reflected_actual(ct), __reflect_type__(ct, types.Actual))
+          , __type_equal__(ct, reflected_actual(ct), __reflect_type__(ct)[types.Actual])
           , .() -> __Checked_term__ {
-              __macro_error__(ct, __type_display__(ct, __reflect_type__(ct, types.Actual)))
+              __macro_error__(ct, __type_display__(ct, __reflect_type__(ct)[types.Actual]))
             }
           , .() -> __Checked_term__ {
               __term_call__(ct, __term_type__(ct, checked_keep), checked_keep, value)

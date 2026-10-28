@@ -58,7 +58,7 @@ pub fn choose_let(flag: Unused, yes: Token, no: Token) -> Token {
 }
 
 pub fn choose_literal(yes: Token, no: Token) -> Token {
-  if(.t(Unused)) { yes } else { no }
+  if(.t[Unused]) { yes } else { no }
 }
 
 pub fn choose_closure(flag: Unused, yes: Token, no: Token) -> Token {

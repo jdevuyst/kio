@@ -65,7 +65,7 @@ function ordinaryAtoms($) {
     $.recursive_call_expression, $.incomplete_recursive_call_expression,
     $.call_expr, $.ufcs_expr, $.block_ufcs_expr, alias($.block_ufcs_result_call, $.call_expr),
     $.expression_path, $.grouped_expression, $.unit_expression,
-    $.bool_literal, $.number_literal, $.string_literal,
+    $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation,
     $.fn_lambda_expr, $.label_value_expr, $.field_expression,
     $.placeholder_expression,
   );
@@ -92,6 +92,7 @@ module.exports = grammar({
   conflicts: ($) => [
     [$.block_value_arguments, $.expression_arguments],
     [$.block_call, $._ufcs_callable],
+    [$.call_expr, $.typed_ufcs_callable],
     [$.import_macro_item, $.keyword_declaration],
     [$._expression_atom, $.block_call, $.call_expr],
     [$.operator_expression, $._closed_operator_expression],
@@ -703,31 +704,31 @@ module.exports = grammar({
     // name/operator/label interpretation of the same words.
     block_call: ($) => prec.dynamic(30, prec.right(seq(
       field('head', choice($.call_callee, $.grouped_expression)),
-      optional(field('prefix', $.block_value_arguments)),
+      repeat(field('prefix', $.block_value_arguments)),
       field('first', $.neutral_block),
       repeat(field('labelled', $.labelled_block)),
       optional(field('elided', $.elided_block)),
     ))),
-    block_value_arguments: ($) => prec(1, seq(
+    block_value_arguments: ($) => seq(
       $.bracket_lparen,
       repeat($.separator_comma),
       optional(seq($._expression,
         repeat(seq(repeat1($.separator_comma), $._expression)),
         repeat($.separator_comma))),
       $.bracket_rparen,
-    )),
+    ),
     labelled_block: ($) => seq(field('label', alias($.identifier, $.block_label)), field('body', $.neutral_block)),
     elided_block: ($) => prec.right(seq(field('label', alias($.identifier, $.block_label)), field('body', $.block_call))),
     // Retain suffix ownership while editing missing final-label braces. The
     // compiler rejects that combination and supplies the brace-insertion fix.
-    block_ufcs_expr: ($) => choice(
+    block_ufcs_expr: ($) => prec.dynamic(1, choice(
       $._forward_block_ufcs_expr,
       prec.left(20, seq(
         field('call', $._grouped_block_call),
         alias($._left_ufcs_arrow, $.operator_arrow_ufcs),
         field('receiver', $._block_splice_receiver),
       )),
-    ),
+    )),
     _forward_block_ufcs_expr: ($) => prec.right(20, seq(
       field('receiver', choice($._expression_atom, alias($._closed_operator_expression, $.operator_expression))),
       alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
@@ -747,11 +748,11 @@ module.exports = grammar({
     block_receiver_call: ($) => prec.left(seq(
       choice($.block_call, $.label_value_expr, $.unit_expression, $.placeholder_expression,
         $.recursive_call_expression, alias($.block_receiver_call, $.call_expr)),
-      $.expression_arguments,
+      choice($.expression_arguments, $.call_type_arguments),
     )),
     block_ufcs_result_call: ($) => prec.left(seq(
       choice(alias($._forward_block_ufcs_expr, $.block_ufcs_expr), alias($.block_ufcs_result_call, $.call_expr)),
-      $.expression_arguments,
+      choice($.expression_arguments, $.call_type_arguments),
     )),
     neutral_block: ($) => choice($._complete_neutral_block, $.incomplete_neutral_block),
     _complete_neutral_block: ($) => prec(2, seq(
@@ -822,11 +823,11 @@ module.exports = grammar({
     type_path: ($) => prec.dynamic(1, prec.right(seq(
       repeat(seq(alias($._expression_name, $.identifier), $.separator_dot)),
       alias($.uppercase_identifier, $.entity_name_type),
-      optional(choice($.type_arguments, $.incomplete_type_arguments)),
+      repeat(choice($.type_arguments, $.incomplete_type_arguments)),
     ))),
-    type_arguments: ($) => seq($.bracket_lparen, sep1($._type, $.separator_comma), $.bracket_rparen),
+    type_arguments: ($) => seq($.bracket_lbracket, $._type, $.bracket_rbracket),
     incomplete_type_arguments: ($) => seq(
-      $.bracket_lparen, optional(sep1($._type, $.separator_comma)), $._editor_block_boundary,
+      $.bracket_lbracket, optional($._type), $._editor_block_boundary,
     ),
     type_group: ($) => seq($.bracket_lparen, $._type, $.bracket_rparen),
     type_arrow: ($) => prec.right(1, seq(
@@ -854,9 +855,16 @@ module.exports = grammar({
 
     expression_arguments: ($) => seq(
       $.bracket_lparen,
-      optional(sep1(choice($._expression, $._type, $.incomplete_forall_type), $.separator_comma)),
+      optional(sep1($._expression, $.separator_comma)),
       $.bracket_rparen,
     ),
+    call_type_arguments: ($) => seq(
+      $.bracket_lbracket, choice($._type, $.incomplete_forall_type), $.bracket_rbracket,
+    ),
+    literal_annotation: ($) => prec(2, seq(
+      choice($.number_literal, $.string_literal, $.bool_literal),
+      $.bracket_lbracket, $._type, $.bracket_rbracket,
+    )),
 
     recursive_call_expression: ($) =>
       prec.dynamic(10, seq(
@@ -967,15 +975,12 @@ module.exports = grammar({
 
     _type_param_group_after_open: ($) =>
       seq(
-        repeat($.separator_comma),
         $.type_param_binder,
         $._type_param_group_after_first_binder,
       ),
 
     _type_param_group_after_first_binder: ($) =>
       seq(
-        repeat(seq(repeat1($.separator_comma), $.type_param_binder)),
-        repeat($.separator_comma),
         $.bracket_rbracket,
       ),
     fn_lambda_expr: ($) => prec.dynamic(20, seq(
@@ -986,29 +991,31 @@ module.exports = grammar({
 
     _raw_call_expr: ($) => prec.left(seq(
       choice($.call_callee, alias($._raw_call_expr, $.call_expr),
+        alias($._raw_ufcs_expr, $.ufcs_expr), $.literal_annotation,
         $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal),
-      $.expression_arguments,
+      choice($.expression_arguments, $.call_type_arguments),
     )),
     _raw_native_atom: ($) => choice(
       $.variadic_expression, $.incomplete_variadic_expression,
       $.recursive_call_expression, $.incomplete_recursive_call_expression,
       alias($._raw_call_expr, $.call_expr), alias($._raw_ufcs_expr, $.ufcs_expr),
       $.expression_path, $.grouped_expression, $.unit_expression,
-      $.bool_literal, $.number_literal, $.string_literal, $.fn_lambda_expr,
+      $.bool_literal, $.number_literal, $.string_literal, $.literal_annotation, $.fn_lambda_expr,
       $.label_value_expr, $.placeholder_expression,
     ),
     _raw_ufcs_expr: ($) => choice(
       prec.right(20, seq(field("receiver", $._raw_native_atom),
         alias($._right_ufcs_arrow, $.operator_arrow_ufcs),
         field("callee", $._ufcs_callable), optional($._call_args_group))),
-      prec.left(20, seq(field("callee", $.call_callee), optional($._call_args_group),
+      prec.left(20, seq(field("callee", choice($.call_callee, alias($._raw_call_expr, $.call_expr), $.grouped_expression)),
         alias($._left_ufcs_arrow, $.operator_arrow_ufcs), field("receiver", $._expression_atom))),
     ),
     call_expr: ($) => prec.left(seq(
       choice($.call_callee, $.call_expr,
         $.grouped_expression, $.fn_lambda_expr, $.number_literal, $.string_literal, $.bool_literal,
+        $.literal_annotation, $.ufcs_expr,
         $.variadic_expression, alias($._closed_operator_expression, $.operator_expression)),
-      $.expression_arguments,
+      choice($.expression_arguments, $.call_type_arguments),
     )),
     call_callee: ($) => choice(
       alias($._value_identifier_like, $.entity_name_function),
@@ -1031,15 +1038,17 @@ module.exports = grammar({
         prec.left(
           20,
           seq(
-            field("callee", $.call_callee),
-            optional($._call_args_group),
+            field("callee", choice($.call_callee, $.call_expr, $.grouped_expression)),
             alias($._left_ufcs_arrow, $.operator_arrow_ufcs),
             field("receiver", $._expression_atom),
           ),
         ),
       ),
 
-    _ufcs_callable: ($) => choice($.call_callee, $.grouped_ufcs_callable),
+    _ufcs_callable: ($) => choice($.call_callee, $.grouped_ufcs_callable, $.typed_ufcs_callable),
+    typed_ufcs_callable: ($) => prec(2, seq(
+      choice($.call_callee, $.grouped_ufcs_callable), repeat1($.call_type_arguments),
+    )),
     grouped_ufcs_callable: ($) => seq($.bracket_lparen, $._ufcs_callable, $.bracket_rparen),
 
     _right_ufcs_arrow: ($) => token(prec(2, choice(".>", ".>>"))),

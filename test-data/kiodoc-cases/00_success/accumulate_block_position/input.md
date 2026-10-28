@@ -23,7 +23,7 @@ __INSERT_CODE_HERE__
 First, a let binding.
 
 ```kio {@block}
-let greeting = "hello\n"(S);
+let greeting = "hello\n"[S];
 ```
 
 Then a final expression to flush the block.

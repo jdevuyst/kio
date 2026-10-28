@@ -17,12 +17,12 @@ pub type Surface[P] = (String -> P) & (P -> String);
 
 /// The existential boundary — hides the representation `P` behind the
 /// surface record.
-pub labels { boxed <P> : Surface(P) };
+pub labels { boxed <P> : Surface[P] };
 
 /// The concrete surface over `String`: `P` is `String`, so wrap / unwrap
 /// are the identity. Packing this as `Surface(P)` is the no-op
 /// existential pack.
-fn string_surface() -> Surface(String) {
+fn string_surface() -> Surface[String] {
   (.(s: String) -> String { s }, .(p: String) -> String { p })
 }
 
@@ -33,9 +33,9 @@ pub fn pack() -> Boxed { Boxed.mk(string_surface()) }
 /// Opens the existential and round-trips a string through it: applies the
 /// hidden `wrap` then `unwrap`. The host never learns `P` is `String`.
 pub fn round_trip(b: Boxed, s: String) -> String {
-  Boxed.get(b)(.[P](surf: Surface(P)) {
-    let wrap = __fst__(String -> P, P -> String, surf);
-    let unwrap = __snd__(String -> P, P -> String, surf);
+  Boxed.get(b)(.[P](surf: Surface[P]) {
+    let wrap = __fst__[String -> P][P -> String](surf);
+    let unwrap = __snd__[String -> P][P -> String](surf);
     unwrap(wrap(s))
   })
 }

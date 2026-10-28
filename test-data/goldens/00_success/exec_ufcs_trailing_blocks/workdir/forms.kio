@@ -4,18 +4,26 @@ import __comptime__;
 
 pure fn arrange_impl(
 , ct: __Comptime__
-, _a: __Type__
-, _b: __Type__
+, a: __Type__
+, b: __Type__
 , _c: __Type__
-, left: __Checked_term__
-, right: __Checked_term__
+, prefix: __Checked_term__
 , body: __Checked_term__
-) -> __Checked_term__ { __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body)) }
-
-pub macro arrange : [A][B][C] A -> B -> C -> (A & (B & C)) {
-  trailing product;
-  impl arrange_impl
+) -> __Checked_term__ {
+  let prefix_type = __type_product__(ct, a, b);
+  __term_let__(
+  , ct
+  , prefix_type
+  , prefix
+  , .(bound: __Checked_term__) {
+      let left = __intrinsic_fst__(ct, prefix_type, bound);
+      let right = __intrinsic_snd__(ct, prefix_type, bound);
+      __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, body))
+    }
+  )
 }
+
+pub macro arrange : [A][B][C] (A & B) -> C -> (A & B & C) { trailing product; impl arrange_impl }
 
 pure fn packet_impl(
 , ct: __Comptime__
@@ -26,10 +34,7 @@ pure fn packet_impl(
 , body: __Checked_term__
 ) -> __Checked_term__ { __intrinsic_pair__(ct, prefix, body) }
 
-pub macro packet : [A][B][C] (A & B) -> C -> ((A & B) & C) {
-  trailing product;
-  impl packet_impl
-}
+pub macro packet : [A][B][C] (A & B) -> C -> ((A & B) & C) { trailing product; impl packet_impl }
 
 pure fn pair_impl(
 , ct: __Comptime__
@@ -41,7 +46,11 @@ pure fn pair_impl(
 
 pub macro block_pair : [A][B] A -> B -> (A & B) { trailing product; impl pair_impl }
 
-pub macro pair_prefix : [A][B] A -> B -> (A & B) { impl pair_impl }
+pure fn pair_prefix_impl(_ct: __Comptime__, _a: __Type__, _b: __Type__, prefix: __Checked_term__) -> __Checked_term__ {
+  prefix
+}
+
+pub macro pair_prefix : [A][B] (A & B) -> (A & B) { impl pair_prefix_impl }
 
 pure fn discard_impl(
 , ct: __Comptime__
@@ -53,32 +62,37 @@ pure fn discard_impl(
 
 pub macro discard : [A][B] A -> B -> B { trailing product; impl discard_impl }
 
-pub macro last_blocks : [A][B] A -> B -> B {
-  trailing product;
-  trailing product after;
-  impl discard_impl
-}
+pub macro last_blocks : [A][B] A -> B -> B { trailing product; trailing product after; impl discard_impl }
 
 pure fn outer_impl(
 , ct: __Comptime__
-, _a: __Type__
-, _b: __Type__
+, a: __Type__
+, b: __Type__
 , _c: __Type__
 , _d: __Type__
-, left: __Checked_term__
-, right: __Checked_term__
+, prefix: __Checked_term__
 , body: __Checked_term__
 , tail: __Checked_term__
 ) -> __Checked_term__ {
+  let prefix_type = __type_product__(ct, a, b);
   let result = __term_call__(ct, __term_type__(ct, tail), tail, __term_unit__(ct));
-  __intrinsic_pair__(ct, left, __intrinsic_pair__(ct, right, __intrinsic_pair__(ct, body, result)))
+  __term_let__(
+  , ct
+  , prefix_type
+  , prefix
+  , .(bound: __Checked_term__) {
+      let left = __intrinsic_fst__(ct, prefix_type, bound);
+      let right = __intrinsic_snd__(ct, prefix_type, bound);
+      __intrinsic_pair__(
+      , ct
+      , left
+      , __intrinsic_pair__(ct, right, __intrinsic_pair__(ct, body, result))
+      )
+    }
+  )
 }
 
-pub macro outer : [A][B][C][D] A -> B -> C -> (. -> D) -> (A & (B & (C & D))) {
-  trailing product;
-  trailing thunk after;
-  impl outer_impl
-}
+pub macro outer : [A][B][C][D] (A & B) -> C -> (. -> D) -> (A & B & C & D) { trailing product; trailing thunk after; impl outer_impl }
 
 pure fn sequence_impl(
 , ct: __Comptime__
@@ -92,7 +106,4 @@ pure fn sequence_impl(
   (result, __fill__(ct, fills, result_type, __term_type__(ct, result)))
 }
 
-pub macro run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result {
-  trailing sequence;
-  impl(fills) sequence_impl
-}
+pub macro run_sequence : [Receiver][Result] Receiver -> (Receiver -> Result) -> Result { trailing sequence; impl(fills) sequence_impl }

@@ -10,7 +10,7 @@ pure fn duplicate[A](value: A) -> A & A { (value, value) }
 fn mark(event: String, value: String) -> String { print(event); value }
 
 pub fn main() {
-  print(first(duplicate(first(("pure result\n", "discarded\n"(String))))));
+  print(first(duplicate(first(("pure result\n", "discarded\n"[String])))));
   print(first(mark("left argument\n", "chosen\n"), mark("right argument\n", "ignored\n")));
   let callback = .(value: String) -> String { print("callback\n"); value };
   let callbacks = duplicate(callback);
@@ -23,5 +23,5 @@ pub fn main() {
       .(value: A) -> A { value }
     }(());
   print("before type stage\n");
-  print(staged(String)(mark("staged argument\n", "staged result\n")))
+  print(staged[String](mark("staged argument\n", "staged result\n")))
 }

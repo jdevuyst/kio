@@ -19,7 +19,7 @@ rec(iter.loop_reentry) fn ticket(value: I32, remaining: I32, delayed: Bool) -> I
 }
 
 fn ordinary_loop[S][R](step: S -> (S | R), state: S) -> R {
-  iter.loop_reentry(S, R, .(_reenter: S -> R, current: S) -> S | R { step(current) }, state)
+  iter.loop_reentry[S][R](.(_reenter: S -> R, current: S) -> S | R { step(current) }, state)
 }
 
 rec(ordinary_loop) fn countdown(remaining: I32) -> I32 {

@@ -4,6 +4,6 @@ import macros/derive(macro derive);
 
 newtype Token : . { constructor make_token; projector read_token }
 
-fn bad() -> Token { derive((), Token) }
+fn bad() -> Token { derive(())[Token] }
 
 pub fn main() { () }

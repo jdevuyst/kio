@@ -1,14 +1,14 @@
 duplicate module identity: dyn_load_prime: malformed image — duplicate module `same` at line 2, column 1
 duplicate host declaration identity: dyn_load_prime: malformed image — duplicate host declaration `Value` in one module at line 3, column 1
-malformed host type binder: dyn_load_prime: malformed host type `same.Box`: unterminated type-parameter list
+malformed host type binder: dyn_load_prime: malformed host type `same.Box`: expected `]` after one type parameter
 later local host type in literal: dyn_load_prime: malformed image — module `later_literal`, fn `literal`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling at line 3, column 33
 later local host type in host function signature: dyn_load_prime: malformed host function `later_host_signature.consume`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling
 alias reaching later local host type: dyn_load_prime: malformed host function `later_alias.consume`: dyn_load_prime: cannot resolve exact type `Number`: no type binding has that spelling
 earlier local host function: accepted
 later local host function: dyn_load_prime: malformed image — module `later_function`, fn `call`: unbound name `ping` at line 2, column 22
 omitted host result: accepted
-unterminated declaration type binders: dyn_load_prime: malformed image — unterminated type-binder group at line 2, column 14
-unterminated lambda type binders: dyn_load_prime: malformed image — module `bad`, fn `broken`: unterminated type-binder group in a lambda at line 2, column 25
+unterminated declaration type binders: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 2, column 16
+unterminated lambda type binders: dyn_load_prime: malformed image — module `bad`, fn `broken`: expected one kind-marked type binder inside `[...]` at line 2, column 27
 type-only lambda: accepted
 bare transparent alias: dyn_load_prime: malformed host function `alias_bare.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 0 were supplied
 local undersaturated transparent alias: dyn_load_prime: malformed host function `alias_partial.rejected`: dyn_load_prime: malformed exact host-function signature: type alias `Pair` requires 2 type arguments, but 1 was supplied
@@ -22,7 +22,7 @@ construct-only self-shadowing nominal header: accepted
 inspect-only self-shadowing nominal header: accepted
 public-member self-shadowing nominal header: accepted
 ambient-decoy self-shadowing nominal header: accepted
-malformed opaque nominal header: dyn_load_prime: public nominal type `guest.Box`: expected `,` or `]` after a type parameter
+malformed opaque nominal header: dyn_load_prime: malformed image — expected one kind-marked type binder inside `[...]` at line 2, column 19
 private nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
 scoped nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches non-public nominal type `guest.Hidden`
 unbridged nominal in export signature: dyn_load_prime: export signature `guest.expose` reaches unbridged nominal type `hidden.Hidden`

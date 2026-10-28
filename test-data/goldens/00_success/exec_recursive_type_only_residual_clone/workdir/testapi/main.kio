@@ -8,5 +8,5 @@ fn touch[A](_unit: .) { () }
 
 rec(loop) {
   pub fn main() { recur walk(()) };
-  fn walk(_value: .) { touch(Token)() }
+  fn walk(_value: .) { touch[Token]() }
 }

@@ -10,9 +10,9 @@ import testapi/iter(loop);
 
 labels Found = { value: I32 } | { absent: . };
 
-fn not_found() -> Found { {absent=}.>widen_sum(Found) }
+fn not_found() -> Found { ({absent=}.>widen_sum)[Found] }
 
-fn found_value(value: I32) -> Found { {value}.>widen_sum(Found) }
+fn found_value(value: I32) -> Found { ({value}.>widen_sum)[Found] }
 
 labels Many =
   { zero: . }
@@ -22,7 +22,7 @@ labels Many =
   | { fourth: . }
   | { fifth: . };
 
-fn zero_many() -> Many { {zero=}.>widen_sum(Many) }
+fn zero_many() -> Many { ({zero=}.>widen_sum)[Many] }
 
 rec(loop) fn score_many(outer: I32, step: Many) -> I32 {
   let selected =
@@ -47,6 +47,6 @@ rec(loop) fn score_many(outer: I32, step: Many) -> I32 {
 pub fn main() {
   print(int_to_string(score_many(10, zero_many())));
   print("\n");
-  print(int_to_string(score_many(10, {fifth=}.>widen_sum(Many))));
+  print(int_to_string(score_many(10, ({fifth=}.>widen_sum)[Many])));
   print("\n")
 }

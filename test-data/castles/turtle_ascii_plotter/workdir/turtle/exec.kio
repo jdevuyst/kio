@@ -73,10 +73,10 @@ rec(loop) fn do_move(s: st.State, n: I32) -> st.State {
 
 rec(loop) {
   /// Run every command of `b`, in order.
-  pub fn run_block(b: list.List(cmd.Command), s: st.State) -> st.State {
+  pub fn run_block(b: list.List[cmd.Command], s: st.State) -> st.State {
     match(list.uncons(b)) {
       (
-      , .(c: cmd.Command, rest: list.List(cmd.Command)) {
+      , .(c: cmd.Command, rest: list.List[cmd.Command]) {
           let next = recur(cont) run_command(c, s);
           recur run_block(rest, next)
         }
@@ -96,7 +96,7 @@ rec(loop) {
       , .(g: cmd.Goto_cmd) { let .(x: I32, y: I32) = g.?{cmd.goto_cmd}; do_goto(st.tick(s), x, y) }
       , .(k: cmd.Mark_cmd) { do_mark(st.tick(s), k.?{cmd.mark_cmd}) }
       , .(r: cmd.Repeat_cmd) {
-          let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
+          let .(n: I32, body: list.List[cmd.Command]) = r.?{cmd.repeat_cmd};
           recur run_repeat(n, body, s)
         }
       , .(_u: cmd.Unknown_cmd) { st.tick(s) }
@@ -105,7 +105,7 @@ rec(loop) {
   };
   /// Run `body` `n` times, threading the state through each pass. A count of
   /// zero or less runs it no times at all.
-  fn run_repeat(n: I32, body: list.List(cmd.Command), s: st.State) -> st.State {
+  fn run_repeat(n: I32, body: list.List[cmd.Command], s: st.State) -> st.State {
     if(leq_i32(n, 0)) {
       s
     } else {

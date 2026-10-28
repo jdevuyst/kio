@@ -13,6 +13,6 @@ import testapi/io(print);
 // edges away. Materialization re-roots the whole committed tree under
 // the consumer (`geo/area`, `geo/units/scalar`), so a value flowing
 // through `box` then `unbox` rides the transitive surface end to end.
-pub fn greeting() -> String { unbox(box("transitive dependency works\n"(String))) }
+pub fn greeting() -> String { unbox(box("transitive dependency works\n"[String])) }
 
 pub fn main() { print(greeting()) }

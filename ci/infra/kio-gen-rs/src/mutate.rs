@@ -120,7 +120,7 @@ fn wrap_with_unbound_let(prog: &Program) -> Program {
 
 fn wrap_with_type_mismatch_let(prog: &Program) -> Program {
     let mut p = prog.clone();
-    // RHS is `__left__(I32, Bool, "wrong")` — `[A]` binds to `I32`,
+    // RHS is `__left__[I32][Bool]("wrong")` — `[A]` binds to `I32`,
     // the value-arg is `String`, mismatch at the intrinsic's value
     // slot. Forward-flow only, independent of checked-let semantics:
     // this mutation should fail because the call is malformed, not
@@ -231,7 +231,7 @@ fn corrupt_macro(files: &mut Vec<(String, String)>) {
         }
     }
     source.push_str(
-        "\npub fn kio_gen_macro_bug() -> I32 {\n  into(\"kio_gen_macro_bug\"(String))\n}\n",
+        "\npub fn kio_gen_macro_bug() -> I32 {\n  into(\"kio_gen_macro_bug\"[String])\n}\n",
     );
 }
 
@@ -376,7 +376,7 @@ mod tests {
                     source.contains("import __intrinsics__;\nimport algebraic_macros(macro into);")
                 );
             }
-            assert!(source.contains("into(\"kio_gen_macro_bug\"(String))"));
+            assert!(source.contains("into(\"kio_gen_macro_bug\"[String])"));
         }
     }
 }

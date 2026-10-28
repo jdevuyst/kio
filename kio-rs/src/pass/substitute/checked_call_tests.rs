@@ -121,7 +121,7 @@ fn recorded_call_stages_move_each_owned_argument_and_preserve_exact_tree() {
 }
 
 #[test]
-fn checked_call_replay_preserves_written_inferred_and_reclassified_slots() {
+fn checked_call_replay_preserves_written_inferred_and_inserted_slots() {
     use crate::ast::{ExpressionOccurrence, ExpressionSite};
     use crate::pass::typecheck_core::InternedType;
     let span = Span::new(10, 20);
@@ -140,12 +140,11 @@ fn checked_call_replay_preserves_written_inferred_and_reclassified_slots() {
     };
     let mut elabs = Elaborations::new();
     elabs.record_call_implicit_unit_slot("m", site.id, 0);
-    // Explicit types win, inferred placeholders consume, reclassified values
-    // consume, and omitted/trailing types do not consume written arguments.
+    // Explicit types and inferred placeholders consume written slots;
+    // omitted and trailing types do not consume value operands.
     for slot in [1, 2, 3, 4, 6] {
         elabs.record_type_resolution("m", site.id, slot, InternedType::fresh(ty()));
     }
-    elabs.mark_value_at_type_slot("m", site.id, 3);
     let call = Expr::Call {
         source_trivia: Default::default(),
         occurrence,
@@ -156,7 +155,7 @@ fn checked_call_replay_preserves_written_inferred_and_reclassified_slots() {
                 ext: (),
                 meta: Meta::new(span),
             }),
-            CallArg::Value(value()),
+            CallArg::Type(ty()),
             CallArg::Value(value()),
         ],
         diagnostic: Default::default(),

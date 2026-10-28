@@ -20,11 +20,11 @@ fn show(entry: Import) {
   match(un_import(entry)) {
     .(local: String, provider: String) {
       print(local);
-      print(":"(String));
+      print(":"[String]);
       print(import_source(entry));
-      print("@"(String));
+      print("@"[String]);
       print(provider);
-      print("\n"(String))
+      print("\n"[String])
     }
   }
 }
@@ -32,47 +32,47 @@ fn show(entry: Import) {
 fn load_result(source: String) {
   match(un_load_outcome(load_package(source))) {
     (
-    , .(_loaded: Lr_image) { print("ok\n"(String)) }
-    , .(_diagnostic: Lr_diag) { print("rejected\n"(String)) }
+    , .(_loaded: Lr_image) { print("ok\n"[String]) }
+    , .(_diagnostic: Lr_diag) { print("rejected\n"[String]) }
     )
   }
 }
 
 pub fn main() {
-  show(mk_import("same"(String), "origin"(String)));
-  show(mk_import_as("local"(String), "source"(String), "origin"(String)));
-  show(mk_import_as("Selected"(String), "Number"(String), "origin"(String)));
-  let raw = {import = ("raw"(String), "source"(String), "origin"(String))};
+  show(mk_import("same"[String], "origin"[String]));
+  show(mk_import_as("local"[String], "source"[String], "origin"[String]));
+  show(mk_import_as("Selected"[String], "Number"[String], "origin"[String]));
+  let raw = {import = ("raw"[String], "source"[String], "origin"[String])};
   show(raw);
   match(Import.get(raw)) {
     .(local: String, original: String, provider: String) {
       print(local);
-      print("\n"(String));
+      print("\n"[String]);
       print(original);
-      print("\n"(String));
+      print("\n"[String]);
       print(provider);
-      print("\n"(String))
+      print("\n"[String])
     }
   };
   load_result("module origin; pub fn source() { () } module consumer; import "
               "origin(source as first, source as second); pub fn run() { first(); "
-              "second() } package guest; bridge { consumer; }"(String));
+              "second() } package guest; bridge { consumer; }"[String]);
   load_result("module origin; pub fn op() { () } pub fn source() { () } module "
               "consumer; import origin(op as local, source as op); pub fn run() { "
-              "local(); op() } package guest; bridge { consumer; }"(String));
+              "local(); op() } package guest; bridge { consumer; }"[String]);
   load_result("module origin; pub fn source() { () } module consumer; import "
               "origin(source as local, source as local); pub fn run() { local() } "
-              "package guest; bridge { consumer; }"(String));
+              "package guest; bridge { consumer; }"[String]);
   load_result("module origin; fn hidden() { () } pub fn local() { () } module consumer; "
               "import origin(hidden as local); pub fn run() { local() } package guest; "
-              "bridge { consumer; }"(String));
+              "bridge { consumer; }"[String]);
   load_result("module origin; pub fn local() { () } module consumer; import "
               "origin(missing as local); pub fn run() { local() } package guest; bridge "
-              "{ consumer; }"(String));
+              "{ consumer; }"[String]);
   load_result("module origin; pub fn default() { () } module consumer; import "
               "origin(default); pub fn run() { default() } package guest; bridge { "
-              "consumer; }"(String));
+              "consumer; }"[String]);
   load_result("module origin; host type Number role(i32); module consumer; import "
               "origin(default Number); pub fn run(value: Number) -> Number { value } "
-              "package guest; bridge { origin; consumer; }"(String))
+              "package guest; bridge { origin; consumer; }"[String])
 }

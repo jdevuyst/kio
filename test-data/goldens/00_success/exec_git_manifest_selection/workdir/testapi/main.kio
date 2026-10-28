@@ -6,6 +6,6 @@ import testapi(String);
 import testapi/io(print);
 
 pub fn main() {
-  print(left.marker("left-before\n"(String), "left-after\n"(String)));
-  print(right.marker("right-before\n"(String), "right-after\n"(String)))
+  print(left.marker("left-before\n"[String], "left-after\n"[String]));
+  print(right.marker("right-before\n"[String], "right-after\n"[String]))
 }

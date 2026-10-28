@@ -7,15 +7,15 @@ import testapi/io(print);
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn label[A](value: Box(A)) -> String { "matched\n" }
+fn label[A](value: Box[A]) -> String { "matched\n" }
 
-fn handle(value: Box(I32) | Box(String)) -> String {
+fn handle(value: Box[I32] | Box[String]) -> String {
   match(value) {
-    .[A](boxed: Box(A)) { label(boxed) }
+    .[A](boxed: Box[A]) { label(boxed) }
   }
 }
 
 pub fn main() {
-  print(handle(widen_sum(Box.box(42(I32)))));
-  print(handle(widen_sum(Box.box("text"(String)))))
+  print(handle(widen_sum(Box.box(42[I32]))));
+  print(handle(widen_sum(Box.box("text"[String]))))
 }

@@ -16,7 +16,7 @@ import testapi/iter(loop);
 
 pub labels Word = { text: String, width: I32 };
 
-pub type Words = List(Word);
+pub type Words = List[Word];
 
 pub fn make_word(text: String, width: I32) -> Word { {text, width} }
 

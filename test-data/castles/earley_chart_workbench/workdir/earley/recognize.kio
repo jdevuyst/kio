@@ -10,7 +10,7 @@ import testapi/arith as arith;
 import testapi/array as arrays;
 import testapi/iter(loop);
 
-rec(loop) fn columns(grammar: model.Grammar, tokens: Array(I32), table: model.Chart, position: I32) {
+rec(loop) fn columns(grammar: model.Grammar, tokens: Array[I32], table: model.Chart, position: I32) {
   if(arith.leq_i32(arrays.array_len(table), position)) {
     ()
   } else {
@@ -42,7 +42,7 @@ rec(loop) fn accepted(grammar: model.Grammar, column: model.Column, category: I3
   }
 }
 
-pub fn run(grammar: model.Grammar, category: I32, tokens: Array(I32)) -> model.Chart & Bool {
+pub fn run(grammar: model.Grammar, category: I32, tokens: Array[I32]) -> model.Chart & Bool {
   let table = chart.create(arrays.array_len(tokens));
   chart.seed(grammar, arrays.array_get(table, 0), category);
   columns(grammar, tokens, table, 0);

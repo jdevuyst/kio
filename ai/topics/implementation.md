@@ -35,11 +35,11 @@ The macro-specific purity, immutable-fill, retained-source, and cache
 boundaries are collected in [`macros.md`](macros.md). The rules below
 place those constraints in the complete compiler pipeline.
 
-The forms whose removal needs completed typing information — imported macro calls (including `if`, `scope`, `do`, and `match`), field access/update, and UFCS normalization — use the boundary-local `typecheck_full::Elaborations` table and are swapped into the AST by the Lowered → Prime substitute pass. That pass also materializes inferred literal annotations, call arguments, implicit Unit slots, and checked lambda parameter types. Earlier front-end passes remove other surface syntax: `op_fold` rewrites operator chains; package-scoped `block_projection` projects generic trailing blocks according to the resolved ordinary macro declaration's product, thunk, or sequence descriptors before `desugar`; `desugar` removes tuples, placeholder lambdas, recursive-call syntax, and literal aliases, using its boundary-local `RecOrder` carrier where recursive continuation ordering needs checking; label elaboration removes label declarations and label-value/type sugar. Sequence projection builds ordinary nested bind calls inside a function; the imported `do` macro calls that function with the receiver, evaluating the receiver expression exactly once. Neither the projection nor typing grants a primitive by the spelling of an ordinary library declaration. `RecOrder` and recorded elaborations are consumed before Prime. The standalone Prime checker uses its narrower `PrimeElaborations` table for Kio'-admitted call/lambda completion and already-checked intrinsic-value schemes, then bakes those records before returning. Post-typecheck passes that stay inside strict Kio' (`prime::canonical`, `structural_recovery`, `route`, the `capabilities::annotate_*` suite) introduce no surface forms and don't bear on the boundary rule. Scheduled cache misses run `prime::canonical` after completion baking and before storing a typed module; the assembled package then runs standalone Prime validation and the idempotent canonicalizer again. Package-level typecheck and defensive Kio' emission likewise leave both direct compilation and emitted/reparsed Kio' with the same capture-safe statement spine.
+The forms whose removal needs completed typing information — imported macro calls (including `if`, `scope`, `do`, and `match`), and field access/update — use the boundary-local `typecheck_full::Elaborations` table and are swapped into the AST by the Lowered → Prime substitute pass. That pass also materializes inferred literal annotations, call arguments, implicit Unit slots, and checked lambda parameter types. Earlier front-end passes remove other surface syntax: `op_fold` rewrites operator chains; package-scoped `block_projection` normalizes UFCS into its written ordinary application stages and projects generic trailing blocks according to the resolved ordinary macro declaration's product, thunk, or sequence descriptors before `desugar`; `desugar` removes tuples, placeholder lambdas, recursive-call syntax, and literal aliases, using its boundary-local `RecOrder` carrier where recursive continuation ordering needs checking; label elaboration removes label declarations and label-value/type sugar. Sequence projection builds ordinary nested bind calls inside a function; the imported `do` macro calls that function with the receiver, evaluating the receiver expression exactly once. Neither the projection nor typing grants a primitive by the spelling of an ordinary library declaration. `RecOrder` and recorded elaborations are consumed before Prime. The standalone Prime checker uses its narrower `PrimeElaborations` table for Kio'-admitted call/lambda completion and already-checked intrinsic-value schemes, then bakes those records before returning. Post-typecheck passes that stay inside strict Kio' (`prime::canonical`, `structural_recovery`, `route`, the `capabilities::annotate_*` suite) introduce no surface forms and don't bear on the boundary rule. Scheduled cache misses run `prime::canonical` after completion baking and before storing a typed module; the assembled package then runs standalone Prime validation and the idempotent canonicalizer again. Package-level typecheck and defensive Kio' emission likewise leave both direct compilation and emitted/reparsed Kio' with the same capture-safe statement spine.
 
-Trailing-block UFCS is composed earlier: the Surface block call retains its
-splice direction for formatting, while the receiver is already arranged
-first/last among value-only prefixes. `block_projection` appends the projected
+Trailing-block UFCS is composed in that source-aware projection pass: the
+Surface block call retains its splice direction for formatting until the
+receiver is arranged first/last among the selected value-only prefix group. `block_projection` appends the projected
 blocks and produces the ordinary user-macro call. Its spelling metadata does
 not reach Lowered typing or create another call planner. The macro expansion
 still follows the ordinary Lowered → Prime substitution boundary above.
@@ -76,13 +76,13 @@ The language contract and lowering inventory are in
 [`specs/language.md` § Labels](../../specs/language.md#labels) and
 [`specs/prime.md` § What's not in Kio'](../../specs/prime.md#whats-not-in-kio).
 
-Recursive CPS lowering uses one narrow boundary-local `Expr::RecOrder` carrier. `desugar` creates it only at `Desugared` and `Lowered` through `Phase::ExprRecOrder`, with one pending value and one already-built continuation body. The `Ordered` disposition retains three flows: `ExpectedFromBody` checks the continuation body first and obtains the pending value's exact type from the generated binder's classified use; `SynthesizedValue` synthesizes the pending value first, validates any partial source `let` annotation against that exact type, and exposes the type while checking the body; and `ElaboratedValue` checks the pending value at its ordinary source type while exposing its separately validated elaborated runtime type to the continuation binding. An exact compiler-generated `ExpectedFromBody` shape carries an annotation `(_input) -> runtime_ty`: after structural preflight, the ordinary driver reserves one input goal in that carrier's live owner delta and exposes the resulting function shell as a normal local value while checking the body. If the original continuation is an already-bound lexical path, its exact retained type is transported to that owner; a goal-free ordinary function header constrains the shell before the body starts. Open headers, function schemes, and incomplete lambda continuations retain body-first inference. Direct calls and ordinary value occurrences of the local constrain that one goal through normal typing. The input goal must be closed when the body completes; after its scope unwinds, the driver checks the sole original continuation against the same now-concrete shell. Other `ExpectedFromBody` annotations are an internal invariant failure; the legacy annotation-free pending-binding path is unchanged. A value-shaped type argument classified while checking an expected-flow body instead records a type-only disposition. Continuations with a fully concrete parameter type remain ordinary calls; in particular, expression sequencing gives its generated parameter the exact Unit type.
+Recursive CPS lowering uses one narrow boundary-local `Expr::RecOrder` carrier. `desugar` creates it only at `Desugared` and `Lowered` through `Phase::ExprRecOrder`, with one pending value and one already-built continuation body. The `Ordered` disposition retains three flows: `ExpectedFromBody` checks the continuation body first and obtains the pending value's exact type from the generated binder's classified use; `SynthesizedValue` synthesizes the pending value first, validates any partial source `let` annotation against that exact type, and exposes the type while checking the body; and `ElaboratedValue` checks the pending value at its ordinary source type while exposing its separately validated elaborated runtime type to the continuation binding. An exact compiler-generated `ExpectedFromBody` shape carries an annotation `(_input) -> runtime_ty`: after structural preflight, the ordinary driver reserves one input goal in that carrier's live owner delta and exposes the resulting function shell as a normal local value while checking the body. If the original continuation is an already-bound lexical path, its exact retained type is transported to that owner; a goal-free ordinary function header constrains the shell before the body starts. Open headers, function schemes, and incomplete lambda continuations retain body-first inference. Direct calls and ordinary value occurrences of the local constrain that one goal through normal typing. The input goal must be closed when the body completes; after its scope unwinds, the driver checks the sole original continuation against the same now-concrete shell. Other `ExpectedFromBody` annotations are an internal invariant failure; the legacy annotation-free pending-binding path is unchanged. Continuations with a fully concrete parameter type remain ordinary calls; in particular, expression sequencing gives its generated parameter the exact Unit type.
 
 For recursive-source lambdas staged through a marked macro, `DeferredTail` privately records a `Required` or `Optional` candidate and the ordered flow used if the candidate is lifted. Recursive CPS lowering binds the sole unknown-input continuation with the exact function-shell carrier above. Hoisting one continuation subtree and passing only its generated path through every candidate is a private generated-tree/layout invariant, not source-language behavior; the continuation subtree is never cloned beneath candidate binders. The rare unknown-input typer state keeps the hot `RecOrderContinuation` size unchanged and costs one reusable box, one required owner-local goal, and one interned shell per active carrier. After result validation, the typer accepts only a checked recipe sealed for that invocation as structural evidence, then traces each candidate's exact `TemplateValue` identity through pairs and projections, lexical `let` aliases, and type specialization. `Either` and `If` propagate tail position into their branches; opaque subterms and non-tail uses mark escapes. Every candidate is classified successfully before any resolution is installed. A terminal-only candidate lifts with its recorded flow; an `Optional` candidate with no terminal use bypasses the wrapper, while a candidate with both terminal and escaping uses or a `Required` candidate without a terminal-only proof is rejected. This proof follows structural recipe identities and exact carrier tokens, never declaration spelling, library identity, or raw argument indices.
 
 Materializing a classified lifted callback walks the authenticated checked-term recipe and retypes every occurrence of its exact template identity. The walk keeps subtree change propagation separate from result selection: an optional rebuilt `Arc` records whether any descendant changed, while copyable symbols in an invocation-local pair arena record only whether the node's result is public, is the selected lifted callback, or retains product-selection topology. Thus an opaque call argument, scrutinee, condition, function body, injection, or absurd input rebuilds each affected ancestor without falsely turning the enclosing public result into a selected callback. Lexical binders restore their prior symbol mapping, unchanged children remain shared, and one pair occurrence allocates at most one arena node. Since classifier success authenticates this topology before materialization, a missing template slot or a classifier/materializer disagreement is an internal invariant failure rather than a source diagnostic. The arena and rebuilt-term state are transient and are consumed before substitution closes the Lowered → Prime boundary.
 
-`substitute` materializes one typed ordinary `let` only for a runtime value, substitutes the recorded type-only body or bypassed value otherwise, and removes every carrier before Prime. `RecOrder` is neither a surface syntax form nor a Kio' form. The parser, formatter, Kio' verifier grammar, normalizer, generator, syntax tooling, LSP, and `kio sig` therefore gain no new spelling or contract surface. Ordering, deferred-tail classification, and type-flow selection depend only on the local expression and checked recipe structure, so adding declarations to any module cannot change them.
+`substitute` materializes the typed ordinary `let` for an ordered runtime value, substitutes a bypassed value for an unlifted optional candidate, and removes every carrier before Prime. Retained runtime observations carry the exact scoped type and whether the pending source has already been checked; explicit type applications need no value-to-type disposition. `RecOrder` is neither a surface syntax form nor a Kio' form. The parser, formatter, Kio' verifier grammar, normalizer, generator, syntax tooling, LSP, and `kio sig` therefore gain no new spelling or contract surface. Ordering, deferred-tail classification, and type-flow selection depend only on the local expression and checked recipe structure, so adding declarations to any module cannot change them.
 
 An `Optional` carrier reached inside an ordinary computed source, outside the
 macro's staged callback slots, also consumes its ordinary value through
@@ -208,17 +208,20 @@ a special clause inference rule. Named or already-typed polymorphic values
 remain admissible when their types are closed; ordinary synthesis and top-level
 unit return defaults are unchanged.
 
-The shared surface-call selector is lexical and greedy. After pending type
-slots, every non-final written value consumes one right-spine product slot;
-only the final value before a type argument, explicit nested call, or end of
-the list may fill the remaining product packet. Do not probe an argument's
-type, search suffix fits, or retry a different packet split. Ordinary, macro,
-and every UFCS direction feed this one selector. At a UFCS receiver boundary,
-reserve type-looking candidates for the consecutive binder run immediately
-after the receiver; the adjacent leading binder run consumes only the surplus.
-An unfilled value layer is a hard boundary, so reservation never crosses it.
-The reservation depends only on the resolved call slots and written argument
-kinds, never on a candidate's inferred type or ambient declarations.
+Written groups select applications before inference. Explicit type arguments
+use nonempty square groups; every ordinary parenthesized value group supplies
+one right-associated product to exactly one Function layer. `f(a,b)` and
+`f((a,b))` agree; neither spills values into a returned function. Each type or binder group has exactly one entry; comma lists and empty
+groups reject, rather than being normalized by the formatter. Omitted type
+arguments retain the finite connected-domain relation across written stages.
+Forward UFCS selects the immediately following value group, reverse UFCS the
+immediately preceding outermost value application. A trailing type application
+ends that selection: `f(a)[B].<r` plans `f(a)[B](r)`, not `f(a,r)[B]`.
+Whole-expression grouping is transparent; `(f(a).<r)(b)` explicitly selects an
+earlier stage. Block splices use first/last prefix groups and never enter a
+projected block; every descriptor supplies its own successive Function layer.
+Do not recover old flat curry crossing or receiver-relative type reservation
+from inferred types, declaration groups, callee identity or private ABI.
 Here, resolved call slots are the semantic public type after ordinary alias
 unfolding and substitution. Signature parameter grouping,
 `Type::Function.abi_arity`, callee identity or provenance, and a macro's
@@ -229,31 +232,41 @@ grouping, residualization, or UFCS placement. Counterfactual tests must give
 ordinary functions and Required/Optional macros with the same
 public type the same call result.
 
+A maximal direct-macro application chain is one public inference/admission
+unit through transparent grouping. Plan its written stages and gather finite
+public constraints before source admission and the one implementation action.
+Later applications to a generated ordinary function remain result calls, not
+extra reflected operands. Stop contextual lookahead when the public result
+has no known callable shape; expand after ordinary admission, then continue
+ordinary application if possible. A let ends the connected unit. This must
+not create first-class macro values, replay input admission, or let generated
+body behavior decide public input validity.
+
 #### Written application authority
 
 A syntactically empty direct/prefix surface call list materializes one ordinary
 Unit value argument before the phase boundary while omitting leading type
 arguments. The written Unit and the call's local constraints must solve those
-omissions. Thus `nil()` for `nil : [A] . -> List(A)` succeeds only in a checked
-position that solves `A`, and lowers to explicit `nil(A, ())`.
+omissions. Thus `nil()` for `nil : [A] . -> List[A]` succeeds only in a checked
+position that solves `A`, and lowers to explicit `nil[A](())`.
 
-A nonempty packet containing only type arguments or `_` placeholders is
+A singleton square group containing a type or a whole-slot `_` placeholder is
 different: it performs only those type applications and leaves the selected
 value function residual. Substitution or alias unfolding may expose a Unit
-domain, but never authorizes an unwritten Unit application. `identity(_)`
-checked against `. -> .` therefore lowers to residual `identity(.)`, while
-`nil(A)()` and `nil(A, ())` contain the written Unit application and saturate
+domain, but never authorizes an unwritten Unit application. `identity[_]`
+checked against `. -> .` therefore lowers to residual `identity[.]`, while
+`nil[A]()` and `nil[A](())` contain the written Unit application and saturate
 the Unit layer. UFCS first inserts its receiver and only then submits the
 resulting prefix plan to application checking. The receiver-only spelling
 omits its list, so `r.>f` normalizes to `f(r)`; a present list must be nonempty,
 and `r.>f(())` normalizes to `f(r, ())`. The parser rejects `r.>f()` before the
-omitted/present distinction could be erased. `().>nil(A)` normalizes to
-`nil(A, ())` and saturates because the receiver itself is Unit. Every selected
+omitted/present distinction could be erased. `().>nil[A]` normalizes to
+`nil[A](())` and saturates because the receiver itself is Unit. Every selected
 type stage remains before its written value stage.
 
 Application and UFCS selection read only the resolved callee type and written
 packet. They must never consult declaration arity or grouping, parameter
-spelling, `Signature` / `HostFn` fields, named-callee identity, provenance, an
+spelling, `Signature` / `HostFn` fields, named-callee identity, provenance, a
 macro's private ABI, or parallel metadata to decide whether a value
 application exists. These facts may adapt an already-selected runtime calling
 convention, but they cannot change completion or residualization.

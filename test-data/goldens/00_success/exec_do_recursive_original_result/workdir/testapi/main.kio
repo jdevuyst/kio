@@ -9,7 +9,7 @@ import testapi/iter(loop);
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) { next(Box.unbox(value)) }
+fn bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] { next(Box.unbox(value)) }
 
 rec(loop) fn go(n: I32) {
   if(leq_i32(n, 0)) {

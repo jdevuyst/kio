@@ -11,8 +11,8 @@ pub fn main() {
   observe(());
   let value = produce(());
   observe(());
-  value(.);
+  value[.];
   observe(());
-  value(.);
+  value[.];
   observe(())
 }

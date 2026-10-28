@@ -2,4 +2,4 @@ module outside;
 
 import scope/box(Box);
 
-fn bad(value: .) -> Box(.) { Box.mk(value) }
+fn bad(value: .) -> Box[.] { Box.mk(value) }

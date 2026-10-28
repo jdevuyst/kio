@@ -11684,10 +11684,10 @@ mod tests {
     fn routed_nominal_identity_is_not_reexpanded_in_rust_contract() {
         let pkg = build_multi_module_package(
             &[
-                "module list/core; pub rec newtype List[A] : . | (A & List(A)) { \
+                "module list/core; pub rec newtype List[A] : . | (A & List[A]) { \
                  pub constructor mk_list; pub projector un_list; };",
                 "module model; import list/core as list; \
-                 pub type Row = list.List(.); \
+                 pub type Row = list.List[.]; \
                  pub fn keep(row: Row) -> Row { row }",
                 "module facade; import model as model; \
                  pub fn keep(row: model.Row) -> model.Row { model.keep(row) }",
@@ -11733,13 +11733,13 @@ mod tests {
              pub newtype Const[A] : . { \
                pub constructor make_const; pub projector read_const; \
              }; \
-             pub rec newtype Finite : Const(Finite) { \
+             pub rec newtype Finite : Const[Finite] { \
                pub constructor make_finite; pub projector read_finite; \
              }; \
              pub newtype Id[A] : A { \
                pub constructor make_id; pub projector read_id; \
              }; \
-             pub rec newtype Recursive : Id(.) & Id(Recursive) { \
+             pub rec newtype Recursive : Id[.] & Id[Recursive] { \
                pub constructor make_recursive; pub projector read_recursive; \
              };",
             Some("bridge { main; }"),
@@ -11894,7 +11894,7 @@ mod tests {
                  pub constructor make_generic_parameter; \
                  pub projector read_generic_parameter; \
              }; \
-             pub newtype Polymorphic[*F] : [A][B] ((A -> B) & F(A)) -> F(B) { \
+             pub newtype Polymorphic[*F] : [A][B] ((A -> B) & F[A]) -> F[B] { \
                  pub constructor make_polymorphic; \
                  pub projector read_polymorphic; \
              }; \
@@ -12074,7 +12074,7 @@ mod tests {
             "module api; \
              pub newtype Comptime_bool[A] : A { constructor make_bool; projector read_bool; }; \
              pub newtype Comptime_str : . { pub constructor make_str; pub projector read_str; }; \
-             pub fn keep_bool[A](value: Comptime_bool(A)) -> Comptime_bool(A) { value } \
+             pub fn keep_bool[A](value: Comptime_bool[A]) -> Comptime_bool[A] { value } \
              pub fn keep_str(value: Comptime_str) -> Comptime_str { value } \
              pub fn keep_binder[Comptime_bool](value: Comptime_bool) -> Comptime_bool { value }",
             Some("bridge { api; }"),
@@ -12506,13 +12506,13 @@ mod tests {
                  import lib as lib; \
                  host type String role(str); \
                  host type Box[T]; \
-                 host fn read_string(x: Box(String)) -> String; \
-                 pub fn relay(x: lib.Box(lib.String)) -> lib.String { lib.read_string(x) }",
+                 host fn read_string(x: Box[String]) -> String; \
+                 pub fn relay(x: lib.Box[lib.String]) -> lib.String { lib.read_string(x) }",
                 "module lib; \
                  host type String role(str); \
                  host type Box[T]; \
-                 host fn read_string(x: Box(String)) -> String; \
-                 pub fn unbox(x: Box(String)) -> String { read_string(x) }",
+                 host fn read_string(x: Box[String]) -> String; \
+                 pub fn unbox(x: Box[String]) -> String { read_string(x) }",
             ],
             Some("bridge { app; lib; }"),
         );
@@ -12587,10 +12587,10 @@ mod tests {
         let pkg = build_package(
             "module api; \
              host type Box[T]; \
-             pub type Wrapped[T] = Box(T); \
-             host fn direct[T](value: T, boxed: Box(T)) -> Box(T); \
-             host fn through_alias[T](boxed: Wrapped(T)) -> Wrapped(T); \
-             host fn compound[A][B](boxed: Box(A & B)) -> Box(A & B); \
+             pub type Wrapped[T] = Box[T]; \
+             host fn direct[T](value: T, boxed: Box[T]) -> Box[T]; \
+             host fn through_alias[T](boxed: Wrapped[T]) -> Wrapped[T]; \
+             host fn compound[A][B](boxed: Box[A & B]) -> Box[A & B]; \
              fn dummy() -> . { () }",
             Some("bridge { api; }"),
         );
@@ -13072,8 +13072,8 @@ mod tests {
         let pkg = build_package(
             "module main; \
              host type Box[A]; \
-             host fn boxed[H](value: Box(H)) -> Box(H); \
-             host fn hkt[*F](value: F(.)) -> F(.); \
+             host fn boxed[H](value: Box[H]) -> Box[H]; \
+             host fn hkt[*F](value: F[.]) -> F[.]; \
              host fn staged[A](poly: [X](X) -> X)[B](second: B) -> A; \
              host fn repeated[A](first: A)[A](second: A) -> A; \
              pub newtype Shadow[A][A] : A { \
@@ -13083,11 +13083,11 @@ mod tests {
                  pub constructor make_witness; pub projector read_witness; \
              }; \
              newtype Keyword[Self] : Self { constructor make_keyword; projector read_keyword; }; \
-             fn hold_keyword(value: .) -> Keyword(.) { \
-                 Keyword.make_keyword(., value) \
+             fn hold_keyword(value: .) -> Keyword[.] { \
+                 Keyword.make_keyword[.]( value) \
              } \
              pub fn call_staged[A](poly: [X](X) -> X)[B](second: B) -> A { \
-                 staged(A, poly, B, second) \
+                 staged[A]( poly)[ B]( second) \
              } \
              pub fn identity[H](value: H) -> H { value }",
             Some("bridge { main; }"),
@@ -13364,7 +13364,7 @@ mod tests {
              host type Text role(str); \
              pub type Callback[A] = A -> Text; \
              host fn direct_callback(callback: . -> Text) -> Text; \
-             host fn substituted_callback(callback: Callback(.)) -> Text; \
+             host fn substituted_callback(callback: Callback[.]) -> Text; \
              host fn nested_product(value: (. -> Text) & Text) -> Text; \
              host fn nested_sum(value: (. -> Text) | Text) -> Text; \
              pub newtype Direct_callback : . -> Text { \
@@ -13376,7 +13376,7 @@ mod tests {
                  constructor make_existential_callback; \
                  pub projector read_existential_callback; \
              }; \
-             host fn nested_hkt[*F](value: F(. -> Text)) -> F(. -> Text); \
+             host fn nested_hkt[*F](value: F[. -> Text]) -> F[. -> Text]; \
              fn dummy() -> . { () }",
             Some("bridge { main; }"),
         );
@@ -13588,12 +13588,12 @@ mod tests {
         let pkg = build_package(
             "module main; \
              host type N; host type Box[A]; \
-             host fn exchange[Outer, More]( \
+             host fn exchange[Outer][ More]( \
                  choice: (. -> N) | ([A] A -> A), \
                  product: (Outer -> More) & ([B] B -> Outer), \
-                 wrapped: Box([C] C -> Outer), \
+                 wrapped: Box[[C] C -> Outer], \
                  callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
-             ) -> Box([R] R -> More); \
+             ) -> Box[[R] R -> More]; \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
              pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
@@ -13701,9 +13701,9 @@ mod tests {
             "module main; \
              host type Box[A]; host type Pair[A][B]; \
              pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
-             host fn higher[*F](bound: Holder(F, [A] A -> A), \
-                 nominal: Holder(Box, [B] B -> B), \
-                 partial: Holder(Pair([C] C -> C), .)) -> .;",
+             host fn higher[*F](bound: Holder[F][ [A] A -> A], \
+                 nominal: Holder[Box][ [B] B -> B], \
+                 partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
             Some("bridge { main; }"),
         );
         let krate = lower_package(&pkg, "test_pkg").expect("emit higher-kinded alias paths");
@@ -13835,7 +13835,7 @@ mod tests {
         let pkg = build_package(
             "module main; \
              host fn visit(step: [A] A -> A) -> .; \
-             host fn map(step: [*F][Z][A] ((Z -> A) & F(Z)) -> F(A)) -> .; \
+             host fn map(step: [*F][Z][A] ((Z -> A) & F[Z]) -> F[A]) -> .; \
              pub fn identity() -> [A] A -> A { .[A](value: A) { value } } \
              pub fn callback() -> . -> ([A] A -> A) { .() { identity() } }",
             Some("bridge { main; }"),
@@ -13911,23 +13911,23 @@ mod tests {
         let pkg = build_package(
             "module api; \
              pub newtype Cell[A] : A { constructor mk; projector get; }; \
-             pub rec newtype Chain[A] : . | (A & Chain(A)) { constructor mk; projector get; }; \
-             pub newtype Applied[*F][A] : F(A) { constructor mk; projector get; }; \
-             newtype Direct[A] : Cell(A) { constructor mk; projector get; }; \
-             newtype Nested[A] : A & Cell(A) { constructor mk; projector get; }; \
-             newtype Callback[A] : Cell(A) -> Cell(A) { constructor mk; projector get; }; \
-             newtype Recursive[A] : Chain(A) { constructor mk; projector get; }; \
-             newtype Higher[A] : Applied(Cell, A) { constructor mk; projector get; }; \
-             newtype Concrete : Cell(.) { constructor mk; projector get; }; \
+             pub rec newtype Chain[A] : . | (A & Chain[A]) { constructor mk; projector get; }; \
+             pub newtype Applied[*F][A] : F[A] { constructor mk; projector get; }; \
+             newtype Direct[A] : Cell[A] { constructor mk; projector get; }; \
+             newtype Nested[A] : A & Cell[A] { constructor mk; projector get; }; \
+             newtype Callback[A] : Cell[A] -> Cell[A] { constructor mk; projector get; }; \
+             newtype Recursive[A] : Chain[A] { constructor mk; projector get; }; \
+             newtype Higher[A] : Applied[Cell][ A] { constructor mk; projector get; }; \
+             newtype Concrete : Cell[.] { constructor mk; projector get; }; \
              newtype Native[A] : A { constructor mk; projector get; }; \
-             fn direct[A](v: Cell(A)) -> Direct(A) { Direct.mk(v) } \
-             fn nested[A](v: A & Cell(A)) -> Nested(A) { Nested.mk(v) } \
-             fn callback[A](v: Cell(A) -> Cell(A)) -> Callback(A) { Callback.mk(v) } \
-             fn recursive[A](v: Chain(A)) -> Recursive(A) { Recursive.mk(v) } \
-             fn higher[A](v: Applied(Cell, A)) -> Higher(A) { Higher.mk(v) } \
-             fn concrete(v: Cell(.)) -> Concrete { Concrete.mk(v) } \
-             fn native[A](v: A) -> Native(A) { Native.mk(v) } \
-             pub fn keep[A](v: Cell(A)) -> Cell(A) { v }",
+             fn direct[A](v: Cell[A]) -> Direct[A] { Direct.mk(v) } \
+             fn nested[A](v: A & Cell[A]) -> Nested[A] { Nested.mk(v) } \
+             fn callback[A](v: Cell[A] -> Cell[A]) -> Callback[A] { Callback.mk(v) } \
+             fn recursive[A](v: Chain[A]) -> Recursive[A] { Recursive.mk(v) } \
+             fn higher[A](v: Applied[Cell][ A]) -> Higher[A] { Higher.mk(v) } \
+             fn concrete(v: Cell[.]) -> Concrete { Concrete.mk(v) } \
+             fn native[A](v: A) -> Native[A] { Native.mk(v) } \
+             pub fn keep[A](v: Cell[A]) -> Cell[A] { v }",
             Some("bridge { api; }"),
         );
         let krate = lower_package(&pkg, "storage").expect("emit private nominal storage");
@@ -13974,10 +13974,10 @@ mod tests {
              newtype Binary[A][B] : A & B { constructor mk; projector get; }; \
              newtype Unary_holder[*F] : . { constructor mk; projector get; }; \
              newtype Binary_holder[**F] : . { constructor mk; projector get; }; \
-             newtype Applied[*F] : F(.) { constructor mk; projector get; }; \
-             fn hold_unary() -> Unary_holder(Unary) { Unary_holder.mk(Unary, ()) } \
-             fn hold_binary() -> Binary_holder(Binary) { Binary_holder.mk(Binary, ()) } \
-             fn hold_applied(value: Applied(Unary)) -> Applied(Unary) { value } \
+             newtype Applied[*F] : F[.] { constructor mk; projector get; }; \
+             fn hold_unary() -> Unary_holder[Unary] { Unary_holder.mk[Unary]( ()) } \
+             fn hold_binary() -> Binary_holder[Binary] { Binary_holder.mk[Binary]( ()) } \
+             fn hold_applied(value: Applied[Unary]) -> Applied[Unary] { value } \
              pub fn run() -> . { () }",
             Some("bridge { api; }"),
         );
@@ -14019,7 +14019,7 @@ mod tests {
              host type Array[A]; \
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
-             labels Array_state = { cells: Array(I32) }; \
+             labels Array_state = { cells: Array[I32] }; \
              labels Scalar_state = { done: Bool }; \
              rec(loop) fn keep_array_once(done: Bool, state: Array_state, scalar: Scalar_state) -> Array_state { \
                if (done) { state } else { recur keep_array_once(.t, state, scalar) } \
@@ -14238,8 +14238,8 @@ mod tests {
              host type Host_pair[A][B]; \
              pub newtype Pair[A][B] : A & B { pub constructor make_pair; pub projector read_pair; }; \
              pub newtype Higher[*F] : . { pub constructor make_higher; pub projector read_higher; }; \
-             host fn live_host(value: Higher(Host_pair(.))) -> .; \
-             host fn live_new(value: Higher(Pair(.))) -> .;",
+             host fn live_host(value: Higher[Host_pair[.]]) -> .; \
+             host fn live_new(value: Higher[Pair[.]]) -> .;",
             Some("bridge { api; }"),
         );
         let live = lower_package(&pkg, "test_pkg").expect("emit live partial constructors");
@@ -14261,8 +14261,8 @@ mod tests {
              host type Host_pair[A][B];\n        \
              newtype Pair[A][B] : A & B { pub constructor make_pair; pub projector read_pair; };\n        \
              newtype Higher[*F] : . { pub constructor make_higher; pub projector read_higher; };\n        \
-             host fn old_host(value: Higher(Host_pair(.))) -> .;\n        \
-             host fn old_new(value: Higher(Pair(.))) -> .;\n      }\n    }\n  }\n}\n\
+             host fn old_host(value: Higher[Host_pair[.]]) -> .;\n        \
+             host fn old_new(value: Higher[Pair[.]]) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        old_host;\n        old_new;\n      }\n    }\n  }\n}\n",
         );
         for (method, marker) in [
@@ -14363,7 +14363,7 @@ mod tests {
             "signature pkg v(3);\n\
              v(1) {\n  nonbreaking {\n    add {\n      module api {\n        \
              newtype Token[A][A] : A { pub constructor make_token; projector read_token; };\n        \
-             host fn old(value: Token(., .)) -> .;\n      }\n    }\n  }\n}\n\
+             host fn old(value: Token[.][ .]) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module api {\n        Token;\n        old;\n      }\n    }\n  }\n}\n",
         );
 
@@ -14642,7 +14642,7 @@ mod tests {
              host type Handle;\n        host type Gone;\n        host type Oldbox[A];\n        \
              newtype Token : Gone { pub constructor wrap; pub projector unwrap; };\n        \
              host fn open() -> Handle;\n        host fn old(value: Gone) -> .;\n        \
-             host fn old_box(value: Oldbox(Handle)) -> .;\n        host fn old_token(value: Token) -> .;\n      }\n    }\n  }\n}\n\
+             host fn old_box(value: Oldbox[Handle]) -> .;\n        host fn old_token(value: Token) -> .;\n      }\n    }\n  }\n}\n\
              v(2) {\n  nonbreaking {\n    remove {\n      module main {\n        Gone;\n        \
              Oldbox;\n        Token;\n        old;\n        old_box;\n        old_token;\n      }\n    }\n  }\n}\n",
         );

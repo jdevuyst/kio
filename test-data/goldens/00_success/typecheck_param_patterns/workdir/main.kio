@@ -37,12 +37,12 @@ fn use_nested_let[A][B][C](triple: (A & B) & C) -> B { let .((_: A, y: B), _: C)
 fn apply[A][B](f: (A & B) -> A, x: A & B) -> A { f(x) }
 
 fn use_anon_fn_pattern[A][B](p: A & B) -> A {
-  apply(A, B, .((x, _: B)) -> A { x }, p)
+  apply[A][B](.((x, _: B)) -> A { x }, p)
 }
 
 // The same shape with a direct nested-`_` annotation (no parameter
 // pattern). Pins the typer's structural-against-expected rule
 // independently of the pattern-desugar surface.
 fn use_anon_fn_nested_infer[A][B](p: A & B) -> A {
-  apply(A, B, .(pair: _ & B) -> A { one_prod(pair) }, p)
+  apply[A][B](.(pair: _ & B) -> A { one_prod(pair) }, p)
 }

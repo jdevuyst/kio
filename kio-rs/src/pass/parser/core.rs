@@ -18,8 +18,8 @@
 // off the sequential arm needs no import and rayon is absent.
 use crate::ast::{
     BlockFieldValue, BridgeBlock, BridgeGlob, BridgeGlobSegment, BuildBlock, BuildBlockCache,
-    CallArg, CallableSpec, DependencyFile, DocComment, ElaboratorCall, ElaboratorKind, Expr,
-    FieldAccessLabel, FieldUpdateLabel, FnDef, GitManifestPath, GitSource, HostFn,
+    CallArg, CallStage, CallableSpec, DependencyFile, DocComment, ElaboratorCall, ElaboratorKind,
+    Expr, FieldAccessLabel, FieldUpdateLabel, FnDef, GitManifestPath, GitSource, HostFn,
     HostFnParamGroup, HostFnValueParam, HostType, Import, ImportItem, ImportKind, Item, LabelEntry,
     LabelForward, LabelValueLabel, Labels, LabelsArm, LiteralAlias, LiteralAliasValue, LockFile,
     Meta, Module, ModulePath, Newtype, Op, OpBody, OpChainKind, OpPart, OperatorDispatchKey,
@@ -45,12 +45,7 @@ use rayon::prelude::*;
 type SigBlockEntries<T> = (Vec<T>, Vec<SigItemRef>, Vec<Trivia>);
 type ParsedCallArgs = (Vec<CallArg>, u32, Option<Box<DelimitedTrivia>>);
 type ParsedLabelList<T> = (Vec<T>, u32, Option<Box<DelimitedTrivia>>);
-type ParsedLeftSplice = (
-    Vec<PathSegment>,
-    Span,
-    Vec<CallArg>,
-    Option<Box<DelimitedTrivia>>,
-);
+type ParsedLeftSplice = (Expr, Span, Vec<CallArg>, Option<Box<DelimitedTrivia>>);
 
 /// Prepend `trivia` to the expression's `meta.leading_trivia` —
 /// used by `let_statement` / `block_body_continuation` /
@@ -1094,9 +1089,6 @@ pub(super) struct Parser<'a> {
     /// its own AST node, so left-splice validation consults this parse-local
     /// provenance to distinguish `(f()).<x` from the bare `f.<x` form.
     empty_path_call_arg_lists: std::collections::HashMap<Span, Span>,
-    /// Direct block calls materialize an empty prefix list as Unit. Preserve
-    /// the written list for a later reverse splice, even through grouping.
-    empty_block_prefix_lists: std::collections::HashMap<crate::ast::NodeId, Span>,
     /// Trivia after the last meaningful token, before end-of-file —
     /// taken from the skeleton (see
     /// [`crate::pass::tree_skeleton::build_with_trailing`]). The
@@ -1571,7 +1563,6 @@ impl<'a> Parser<'a> {
             recover_import_errors: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
-            empty_block_prefix_lists: std::collections::HashMap::new(),
             file_trailing_trivia: skeleton.trailing_trivia.clone(),
         }
     }
@@ -1633,7 +1624,6 @@ impl<'a> Parser<'a> {
             recover_import_errors: None,
             tooling: None,
             empty_path_call_arg_lists: std::collections::HashMap::new(),
-            empty_block_prefix_lists: std::collections::HashMap::new(),
             file_trailing_trivia: Vec::new(),
         }
     }
@@ -8797,8 +8787,7 @@ impl<'a> Parser<'a> {
 
     /// Type-parameter-only groups used by type aliases, newtypes,
     /// host types, and label heads. Adjacent bracket binders (`[A][B]`)
-    /// are canonical; a comma group (`[A, B]`) parses to the same
-    /// ordered binder run and the formatter prints the canonical form.
+    /// each bind one parameter; comma-separated binder groups are rejected.
     fn type_param_list(&mut self) -> Result<Vec<TypeParam>, Error> {
         let mut params = Vec::new();
         while self.peek_starts_type_param() {
@@ -8817,88 +8806,42 @@ impl<'a> Parser<'a> {
     ) -> Result<Vec<TypeParam>, Error> {
         let group_start = self.peek_span().start;
         self.expect_type_param_open()?;
-        let mut pending = if trivia.is_some() {
-            self.peek_leading_trivia()
-        } else {
-            Vec::new()
-        };
-        while matches!(self.peek(), Some(TokenKind::Comma)) {
-            self.advance();
-            if trivia.is_some() {
-                append_relocated_trivia(&mut pending, self.peek_leading_trivia());
-            }
-        }
+        let mut pending = self.peek_leading_trivia();
         if self.at_type_param_close() {
-            let end = self.expect_type_param_close()?.end;
-            return Err(self.err(
-                Span::new(group_start, end),
-                "type-parameter group cannot be empty",
-            ));
+            return Err(self.err_here("a type-parameter bracket requires exactly one binder"));
         }
-        let mut params = Vec::new();
-        while !self.at_type_param_close() {
-            let param_start = self.peek_span().start;
-            let star_count = self.consume_leading_stars();
-            if let Some(trivia) = &mut trivia {
-                if star_count > 0 {
-                    append_relocated_trivia(&mut pending, self.peek_leading_trivia());
-                }
-                trivia.push(
-                    params.len(),
-                    SignatureTriviaPosition::InsideOpen,
-                    std::mem::take(&mut pending),
-                );
-            }
-            if self.at_fragment_eof() {
-                self.record_unclosed_structural_forall_at_eof();
-            }
-            let (name, name_span) = self.expect_binder()?;
-            Self::validate_type_name(&name, name_span)?;
-            self.record_source_name(name_span, SourceNameRole::Parameter);
-            let kind = if star_count == 0 {
-                None
-            } else {
-                Some(crate::ast::Kind::arrow_chain(star_count))
-            };
-            params.push(TypeParam {
-                presentation: crate::ast::TypeParamPresentation::written(),
-                name,
-                span: Span::new(param_start, name_span.end),
-                kind: kind.map(Box::new),
-            });
-            if trivia.is_some() {
-                pending = self.peek_leading_trivia();
-            }
-            let mut saw_comma = false;
-            while matches!(self.peek(), Some(TokenKind::Comma)) {
-                self.advance();
-                saw_comma = true;
-                if trivia.is_some() {
-                    append_relocated_trivia(&mut pending, self.peek_leading_trivia());
-                }
-            }
-            if self.at_type_param_close() {
-                break;
-            }
-            if !saw_comma {
-                if self.at_fragment_eof() {
-                    self.record_unclosed_structural_forall_at_eof();
-                }
-                return Err(self.err_here("expected `,` or `]`"));
-            }
+        let star_count = self.consume_leading_stars();
+        if star_count > 0 {
+            append_relocated_trivia(&mut pending, self.peek_leading_trivia());
+        }
+        if let Some(trivia) = &mut trivia {
+            trivia.push(0, SignatureTriviaPosition::InsideOpen, pending);
+        }
+        if self.at_fragment_eof() {
+            self.record_unclosed_structural_forall_at_eof();
+        }
+        let (name, name_span) = self.expect_binder()?;
+        Self::validate_type_name(&name, name_span)?;
+        self.record_source_name(name_span, SourceNameRole::Parameter);
+        if matches!(self.peek(), Some(TokenKind::Comma)) {
+            return Err(self.err_here(
+                "each bracket contains one type binder; write `[A][B]` instead of `[A, B]`",
+            ));
         }
         if let Some(trivia) = trivia {
             trivia.push(
-                params.len() - 1,
+                0,
                 SignatureTriviaPosition::InsideClose,
-                pending,
+                self.peek_leading_trivia(),
             );
         }
         let end = self.expect_type_param_close()?.end;
-        if let [param] = params.as_mut_slice() {
-            param.span = Span::new(group_start, end);
-        }
-        Ok(params)
+        Ok(vec![TypeParam {
+            presentation: crate::ast::TypeParamPresentation::written(),
+            name,
+            span: Span::new(group_start, end),
+            kind: (star_count > 0).then(|| Box::new(crate::ast::Kind::arrow_chain(star_count))),
+        }])
     }
 
     /// Consume a leading run of `*` characters inside a type binder
@@ -8942,6 +8885,9 @@ impl<'a> Parser<'a> {
     }
 
     fn expect_type_param_close(&mut self) -> Result<Span, Error> {
+        if self.at_fragment_eof() {
+            self.record_unclosed_structural_forall_at_eof();
+        }
         let span = match self.peek() {
             Some(TokenKind::SymbolRun(run)) if run == "]" && self.at_type_param_close() => {
                 Ok(self.advance().span)
@@ -9749,8 +9695,10 @@ impl<'a> Parser<'a> {
             .map(|s| s.span.end)
             .unwrap_or(first_span.end);
         let mut leading = Vec::new();
-        let (args, end, trailing) = if matches!(self.peek(), Some(TokenKind::LParen)) {
-            Self::collect_line_comments(&mut path_cursor, self.peek_span().end, &mut leading);
+        let (args, end, trailing) = if self.at_sym("[") {
+            // Preserve comments within qualified path segments; trivia after
+            // the final name belongs to the first bracket's type argument.
+            Self::collect_line_comments(&mut path_cursor, span_end, &mut leading);
             self.type_arg_list()?
         } else {
             Self::collect_line_comments(&mut path_cursor, span_end, &mut leading);
@@ -9766,42 +9714,46 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// `(T, T, ...)` — comma-separated type arguments. Each captured
-    /// per-arg leading-trivia run is injected onto that arg's
-    /// `meta.leading_trivia` (so the pretty-printer reads it from
-    /// the inner node). Returns the argument list and the end
-    /// byte-offset of the closing paren.
+    /// Adjacent single-argument brackets belong to one named type application.
+    /// Kind and transparent-alias arity checking observes their combined list.
     fn type_arg_list(&mut self) -> Result<(Vec<Type>, u32, Vec<Trivia>), Error> {
-        self.expect_kind(TokenKind::LParen, "`(`")?;
         let mut args = Vec::new();
-        let mut pending_trivia = self.peek_leading_trivia();
-        self.skip_commas_with_trivia(&mut pending_trivia);
-        while !matches!(self.peek(), Some(TokenKind::RParen)) {
-            let leading = std::mem::take(&mut pending_trivia);
-            let mut arg = self.type_expr()?;
-            inject_meta_trivia(arg.meta_mut(), leading);
-            args.push(arg);
-            pending_trivia = self.peek_leading_trivia();
-            let saw_comma = self.skip_commas_with_trivia(&mut pending_trivia);
-            if matches!(self.peek(), Some(TokenKind::RParen)) {
-                break;
-            }
-            if !saw_comma {
-                return Err(self.err_here("expected `,` or `)`"));
-            }
+        let mut end = self.peek_span().start;
+        while self.at_sym("[") {
+            let (argument, close) = self.type_argument_bracket()?;
+            args.push(argument);
+            end = close;
         }
-        // Last type-arg's trailing / dangling comment run before the
-        // `)` — stash on the last arg's trailing slot so the formatter
-        // keeps it across the round-trip.
-        let mut closing_trivia = std::mem::take(&mut pending_trivia);
-        if let Some(last) = args.last_mut() {
-            append_relocated_trivia(
-                &mut last.meta_mut().trailing_trivia,
-                std::mem::take(&mut closing_trivia),
+        Ok((args, end, Vec::new()))
+    }
+
+    fn type_argument_bracket(&mut self) -> Result<(Type, u32), Error> {
+        let mut leading = self.peek_leading_trivia();
+        self.expect_type_param_open()?;
+        append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+        if self.at_type_param_close() {
+            return Err(
+                self.err_here("a type-argument bracket requires one type; use `[_]` to infer it")
             );
         }
-        let end = self.expect_kind(TokenKind::RParen, "`)`")?.end;
-        Ok((args, end, closing_trivia))
+        self.cursor_choices(CursorSlot::Type, &[]);
+        let mut argument = self.type_expr()?;
+        append_relocated_trivia(
+            &mut leading,
+            std::mem::take(&mut argument.meta_mut().leading_trivia),
+        );
+        argument.meta_mut().leading_trivia = leading;
+        if matches!(self.peek(), Some(TokenKind::Comma)) {
+            return Err(self.err_here(
+                "each bracket contains one type argument; write `[A][B]` instead of `[A, B]`",
+            ));
+        }
+        append_relocated_trivia(
+            &mut argument.meta_mut().trailing_trivia,
+            self.peek_leading_trivia(),
+        );
+        let end = self.expect_type_param_close()?.end;
+        Ok((argument, end))
     }
 
     fn type_prefix_signature(&mut self) -> Result<Type, Error> {
@@ -11006,6 +10958,19 @@ impl<'a> Parser<'a> {
     fn expr_suffixes(&mut self, mut e: Expr) -> Result<Expr, Error> {
         loop {
             match self.peek() {
+                Some(kind) if kind.is_sym("[") => {
+                    let start = e.span().start;
+                    let (ty, end) = self.type_argument_bracket()?;
+                    e = Expr::Call {
+                        source_trivia: Default::default(),
+                        occurrence: Default::default(),
+                        diagnostic: Default::default(),
+                        callee: Box::new(e),
+                        args: vec![CallArg::Type(ty)],
+                        meta: Meta::new(Span::new(start, end)),
+                        ext: (),
+                    };
+                }
                 Some(TokenKind::LParen) => {
                     if let Expr::BlockCall { blocks, meta, .. } = &e
                         && blocks
@@ -11026,14 +10991,11 @@ impl<'a> Parser<'a> {
                         self.peek_leading_trivia(),
                     );
                     let (args, end, source_trivia) = self.call_arg_list(Some(&e), Vec::new())?;
-                    if args.is_empty()
-                        && self.peek_left_call_splice_flavor().is_some()
-                        && matches!(&e, Expr::Path { .. })
-                    {
+                    if args.is_empty() && self.peek_left_call_splice_flavor().is_some() {
                         return Err(empty_ufcs_arg_list_error(Span::new(list_start, end)));
                     }
                     let call_span = Span::new(start, end);
-                    if args.is_empty() && matches!(&e, Expr::Path { .. }) {
+                    if args.is_empty() {
                         self.empty_path_call_arg_lists
                             .insert(call_span, Span::new(list_start, end));
                     }
@@ -11129,17 +11091,26 @@ impl<'a> Parser<'a> {
                             ));
                         };
                         let mut call = self.block_call_tail(head.name.clone(), head.span)?;
-                        let Expr::BlockCall { id, .. } = &call else {
-                            unreachable!()
-                        };
-                        if let Some(span) = self.empty_block_prefix_lists.get(id) {
-                            return Err(empty_ufcs_arg_list_error(*span));
-                        }
                         let end = call.span().end;
                         self.splice_block_call(&mut call, e, flavor, Span::new(start, end))?;
                         e = call;
                         continue;
                     }
+                    let mut callee = Expr::Path {
+                        occurrence: Default::default(),
+                        segments,
+                        meta: Meta::new(callee_span),
+                        ext: (),
+                    };
+                    while self.at_sym("[") {
+                        let (ty, end) = self.type_argument_bracket()?;
+                        callee = Expr::synth_call(
+                            callee,
+                            vec![CallArg::Type(ty)],
+                            Span::new(callee_span.start, end),
+                        );
+                    }
+                    let callee_span_end = callee.span().end;
                     // Optional argument list. A bare `r.>f` (no
                     // parens) builds a zero-arg UFCS, mirroring
                     // projector-style calls.
@@ -11160,7 +11131,7 @@ impl<'a> Parser<'a> {
                         source_trivia,
                         occurrence: Default::default(),
                         receiver: Box::new(e),
-                        callee_segments: segments,
+                        callee: Box::new(callee),
                         callee_span,
                         args,
                         flavor,
@@ -11188,18 +11159,19 @@ impl<'a> Parser<'a> {
     fn left_call_splice(&mut self, mut lhs: Expr, flavor: UfcsFlavor) -> Result<Expr, Error> {
         let splice_span = self.peek_span();
         let start = lhs.span().start;
-        if let Expr::BlockCall {
-            id, splice, blocks, ..
-        } = &lhs
-        {
+        let mut head = &lhs;
+        while let Expr::Call { callee, .. } = head {
+            head = callee;
+        }
+        if let Expr::Path { segments, .. } = head {
+            Self::validate_reference_value_path_leaf(segments)?;
+        }
+        if let Expr::BlockCall { splice, blocks, .. } = &lhs {
             if splice.is_some() {
                 return Err(self.err(splice_span, "a block call permits only one UFCS splice"));
             }
             if let Some(block) = blocks.last().filter(|block| block.elided) {
                 return Err(elided_block_reverse_splice_error(block, splice_span));
-            }
-            if let Some(span) = self.empty_block_prefix_lists.get(id) {
-                return Err(empty_ufcs_arg_list_error(*span));
             }
             let leading = self.peek_leading_trivia();
             self.advance();
@@ -11209,7 +11181,7 @@ impl<'a> Parser<'a> {
             self.splice_block_call(&mut lhs, receiver, flavor, Span::new(start, end))?;
             return Ok(lhs);
         }
-        let (segments, callee_span, args, source_trivia) =
+        let (callee, callee_span, args, source_trivia) =
             self.split_left_call_splice(lhs, splice_span)?;
         if let Some(context) = self
             .tooling
@@ -11222,7 +11194,6 @@ impl<'a> Parser<'a> {
         {
             context.call = None;
         }
-        Self::validate_reference_value_path_leaf(&segments)?;
         let leading = self.peek_leading_trivia();
         self.advance();
         let mut inserted = self.expr_tight_call_arg()?;
@@ -11232,7 +11203,7 @@ impl<'a> Parser<'a> {
             source_trivia,
             occurrence: Default::default(),
             receiver: Box::new(inserted),
-            callee_segments: segments,
+            callee: Box::new(callee),
             callee_span,
             args,
             flavor,
@@ -11430,8 +11401,13 @@ impl<'a> Parser<'a> {
         } else {
             self.expr_primary()?
         };
-        while matches!(self.peek(), Some(TokenKind::LParen)) {
+        while matches!(self.peek(), Some(TokenKind::LParen)) || self.at_sym("[") {
             let start = e.span().start;
+            if self.at_sym("[") {
+                let (ty, end) = self.type_argument_bracket()?;
+                e = Expr::synth_call(e, vec![CallArg::Type(ty)], Span::new(start, end));
+                continue;
+            }
             append_relocated_trivia(
                 &mut e.meta_mut().trailing_trivia,
                 self.peek_leading_trivia(),
@@ -11451,59 +11427,36 @@ impl<'a> Parser<'a> {
         Ok(e)
     }
 
-    /// Split the already-parsed left side of `.<` / `.<<` into a
-    /// path-shaped callee and its existing direct-call arguments.
-    /// This keeps the splice syntactic: `f.<x` and `f(a).<x` are
-    /// accepted, but an arbitrary expression on the left is not
-    /// retroactively treated as a function by type.
+    /// Select the nearest written value group, or start a new group after
+    /// a type stage. Parentheses used only for grouping are already transparent.
     fn split_left_call_splice(
         &self,
         lhs: Expr,
-        splice_span: Span,
+        _splice_span: Span,
     ) -> Result<ParsedLeftSplice, Error> {
         match lhs {
-            Expr::Path { segments, meta, .. } => Ok((segments, meta.span, Vec::new(), None)),
             Expr::Call {
                 callee,
-                mut args,
+                args,
                 meta,
                 source_trivia,
                 ..
-            } => match *callee {
-                Expr::Path {
-                    segments,
-                    meta: callee_meta,
-                    ..
-                } => {
-                    if args.is_empty() {
-                        let list_span = self
-                            .empty_path_call_arg_lists
-                            .get(&meta.span)
-                            .copied()
-                            .unwrap_or_else(|| Span::new(callee_meta.span.end, meta.span.end));
-                        return Err(empty_ufcs_arg_list_error(list_span));
-                    }
-                    // The splice stores the path without its Meta; its nonempty
-                    // argument list keeps the preceding callee comments in order.
-                    let mut leading = callee_meta.leading_trivia;
-                    append_relocated_trivia(&mut leading, callee_meta.trailing_trivia);
-                    let first = args[0].meta_mut();
-                    append_relocated_trivia(
-                        &mut leading,
-                        std::mem::take(&mut first.leading_trivia),
-                    );
-                    first.leading_trivia = leading;
-                    Ok((segments, callee_meta.span, args, source_trivia))
+            } if !matches!(args.first(), Some(CallArg::Type(_))) => {
+                if args.is_empty() {
+                    let list_span = self
+                        .empty_path_call_arg_lists
+                        .get(&meta.span)
+                        .copied()
+                        .unwrap_or_else(|| Span::new(callee.span().end, meta.span.end));
+                    return Err(empty_ufcs_arg_list_error(list_span));
                 }
-                _ => Err(Error::parse(
-                    splice_span,
-                    "`.<` / `.<<` require a path or direct path call on the left",
-                )),
-            },
-            _ => Err(Error::parse(
-                splice_span,
-                "`.<` / `.<<` require a path or direct path call on the left",
-            )),
+                let callee_span = callee.span();
+                Ok((*callee, callee_span, args, source_trivia))
+            }
+            callee => {
+                let span = callee.span();
+                Ok((callee, span, Vec::new(), None))
+            }
         }
     }
 
@@ -11569,28 +11522,10 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// The optional trailing `(Type)` of a `LiteralCall` — the
-    /// explicit type annotation on a literal (`100(I32)`, `"hi"(Str)`,
-    /// `.t(Bool)`). A literal is never a callee, so `(` immediately
-    /// after a literal form unambiguously opens the annotation, not a
-    /// call.
+    /// A literal's optional single carrier annotation, such as `42[I32]`.
     fn parse_literal_annotation(&mut self) -> Result<Option<Type>, Error> {
-        if matches!(self.peek(), Some(TokenKind::LParen)) {
-            let mut leading = self.peek_leading_trivia();
-            self.expect_kind(TokenKind::LParen, "`(` opening a literal's type annotation")?;
-            append_relocated_trivia(&mut leading, self.peek_leading_trivia());
-            let mut ty = self.type_expr()?;
-            append_relocated_trivia(
-                &mut leading,
-                std::mem::take(&mut ty.meta_mut().leading_trivia),
-            );
-            ty.meta_mut().leading_trivia = leading;
-            append_relocated_trivia(
-                &mut ty.meta_mut().trailing_trivia,
-                self.peek_leading_trivia(),
-            );
-            self.expect_kind(TokenKind::RParen, "`)` closing a literal's type annotation")?;
-            Ok(Some(ty))
+        if self.at_sym("[") {
+            self.type_argument_bracket().map(|(ty, _)| Some(ty))
         } else {
             Ok(None)
         }
@@ -11640,7 +11575,7 @@ impl<'a> Parser<'a> {
                 _ => None,
             }
         }
-        let [head, next, rest @ ..] = self.cursor.remaining_current_frame() else {
+        let [head, rest @ ..] = self.cursor.remaining_current_frame() else {
             return false;
         };
         let Some(head) = direct_head(head) else {
@@ -11652,25 +11587,22 @@ impl<'a> Parser<'a> {
         if Self::validate_value_name(name, head.span).is_err() {
             return false;
         }
-        match next {
-            SkeletonNode::Group {
-                kind: GroupKind::Brace,
-                ..
-            } => true,
-            SkeletonNode::Group {
-                kind: GroupKind::Paren,
-                close: Some(_),
-                recovered: false,
-                ..
-            } => matches!(
-                rest.first(),
-                Some(SkeletonNode::Group {
+        for node in rest {
+            match node {
+                SkeletonNode::Group {
+                    kind: GroupKind::Paren,
+                    close: Some(_),
+                    recovered: false,
+                    ..
+                } => {}
+                SkeletonNode::Group {
                     kind: GroupKind::Brace,
                     ..
-                })
-            ),
-            _ => false,
+                } => return true,
+                _ => return false,
+            }
         }
+        false
     }
 
     fn record_block_cursor(
@@ -11800,10 +11732,32 @@ impl<'a> Parser<'a> {
             blocks,
             receiver.span(),
         );
-        if flavor.inserts_first() {
-            prefix.insert(0, receiver);
+        if prefix.is_empty() {
+            prefix.push(CallStage {
+                occurrence: Default::default(),
+                args: Vec::new(),
+                source_trivia: None,
+                meta: Meta::new(receiver.span()),
+            });
         } else {
-            prefix.push(receiver);
+            let target = if flavor.callee_on_right() {
+                &prefix[0]
+            } else {
+                prefix.last().unwrap()
+            };
+            if target.args.is_empty() {
+                return Err(empty_ufcs_arg_list_error(target.meta.span));
+            }
+        }
+        let target = if flavor.callee_on_right() {
+            &mut prefix[0]
+        } else {
+            prefix.last_mut().unwrap()
+        };
+        if flavor.inserts_first() {
+            target.args.insert(0, CallArg::Value(receiver));
+        } else {
+            target.args.push(CallArg::Value(receiver));
         }
         *splice = Some(flavor);
         meta.span = span;
@@ -11812,12 +11766,12 @@ impl<'a> Parser<'a> {
 
     fn block_call_tail(&mut self, name: String, head_span: Span) -> Result<Expr, Error> {
         let start = head_span.start;
+        self.record_source_name(head_span, SourceNameRole::FunctionReference);
         let mut prefix = Vec::new();
-        let mut empty_prefix_list = None;
-        if matches!(self.peek(), Some(TokenKind::LParen)) {
+        while matches!(self.peek(), Some(TokenKind::LParen)) {
             let list_start = self.peek_span().start;
-            let list_leading = self.peek_leading_trivia();
-            let result = self.call_arg_list(None, Vec::new());
+            let leading = self.peek_leading_trivia();
+            let result = self.call_arg_list(None, leading);
             self.record_block_cursor(
                 &name,
                 head_span,
@@ -11825,37 +11779,13 @@ impl<'a> Parser<'a> {
                 &[],
                 Span::new(list_start + 1, self.peek_span().start),
             );
-            let (args, end, mut source_trivia) = result?;
-            if args.is_empty() {
-                empty_prefix_list = Some(Span::new(list_start, end));
-                prefix.push(Expr::Unit {
-                    source_trivia: source_trivia.take(),
-                    occurrence: (),
-                    meta: Meta::new(Span::new(list_start, end)),
-                });
-            }
-            for arg in args {
-                match arg {
-                    CallArg::Value(value) => prefix.push(self.block_prefix_value(value)?),
-                    CallArg::Type(ty) => {
-                        return Err(self.err(
-                            ty.span(),
-                            "block prefix requires a value argument; type arguments are inferred",
-                        ));
-                    }
-                }
-            }
-            if let Some(last) = prefix.last_mut()
-                && let Some(trivia) = source_trivia
-            {
-                append_relocated_trivia(&mut last.meta_mut().trailing_trivia, trivia.closing);
-            }
-            if let Some(first) = prefix.first_mut() {
-                inject_leading_trivia(first, list_leading);
-            }
-        }
-        if matches!(self.peek(), Some(TokenKind::LBrace)) {
-            self.record_source_name(head_span, SourceNameRole::FunctionReference);
+            let (args, end, source_trivia) = result?;
+            prefix.push(CallStage {
+                occurrence: Default::default(),
+                args,
+                source_trivia,
+                meta: Meta::new(Span::new(list_start, end)),
+            });
         }
         self.block_body_cursor(&name, head_span, &[]);
         let mut blocks = vec![self.neutral_block(None)?];
@@ -11897,9 +11827,6 @@ impl<'a> Parser<'a> {
         }
         let end = blocks.last().unwrap().close.end;
         let id = self.fresh_node_id();
-        if let Some(span) = empty_prefix_list {
-            self.empty_block_prefix_lists.insert(id, span);
-        }
         Ok(Expr::BlockCall {
             occurrence: (),
             id,
@@ -12275,37 +12202,48 @@ impl<'a> Parser<'a> {
                      write `recur name(...)`, not a dotted path",
                 ));
             }
-            let (args, end, source_trivia) = if matches!(self.peek(), Some(TokenKind::LParen)) {
-                let mut leading = Vec::new();
-                Self::collect_line_comments(
-                    &mut header_cursor,
-                    self.peek_span().start,
-                    &mut leading,
-                );
-                append_relocated_trivia(&mut leading, self.peek_leading_trivia());
-                self.call_arg_list(None, leading)?
-            } else {
-                return Err(self.err_here("expected argument list after `recur` callee"));
-            };
+            let mut stages = Vec::new();
+            let mut saw_value = false;
+            while self.at_sym("[") || matches!(self.peek(), Some(TokenKind::LParen)) {
+                let group_start = self.peek_span().start;
+                let (args, end, source_trivia) = if self.at_sym("[") {
+                    let (ty, end) = self.type_argument_bracket()?;
+                    (vec![CallArg::Type(ty)], end, None)
+                } else {
+                    saw_value = true;
+                    let mut leading = Vec::new();
+                    Self::collect_line_comments(&mut header_cursor, group_start, &mut leading);
+                    append_relocated_trivia(&mut leading, self.peek_leading_trivia());
+                    self.call_arg_list(None, leading)?
+                };
+                stages.push(CallStage {
+                    occurrence: Default::default(),
+                    args,
+                    source_trivia,
+                    meta: Meta::new(Span::new(group_start, end)),
+                });
+            }
+            if !saw_value {
+                return Err(self.err_here("expected a value argument group after `recur` callee"));
+            }
+            let end = stages.last().unwrap().meta.span.end;
             Ok((
                 modes,
                 annotations,
                 PathSegment::new(name, name_span),
-                args,
+                stages,
                 end,
-                source_trivia,
             ))
         })();
         if let Some(error) = annotation_error {
             return Err(error);
         }
-        let (modes, annotations, callee, args, end, source_trivia) = parsed?;
+        let (modes, annotations, callee, stages, end) = parsed?;
         Ok(Expr::RecCall {
-            source_trivia,
             occurrence: Default::default(),
             modes,
             callee,
-            args,
+            stages,
             meta: Meta::new(Span::new(start, end)),
             ext: RecCallSyntax {
                 keyword,
@@ -13514,8 +13452,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// `(arg, arg, ...)` at a call site. Each arg is dispatched to either
-    /// `type_expr` or `expr` based on syntactic shape. Each arg's
+    /// `(arg, arg, ...)` supplies one value packet. Each argument's
     /// captured leading trivia is injected onto the arg's
     /// `meta.leading_trivia`; the pretty-printer reads it from there.
     ///
@@ -13583,207 +13520,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Dispatch one positional call argument to either `expr` or
-    /// `type_expr` based on its syntactic shape. Forms that are
-    /// unambiguously one or the other route directly; the few
-    /// genuinely ambiguous shapes (type-shaped paths, parens,
-    /// braces, and symbol-led forms) use **backtracking** — try as
-    /// expression first, fall back to type on failure, restoring lexer
-    /// state and parser-confirmed structural facts in between. The cost is
-    /// bounded at one alternative per slot (so 2× worst-case work, not
-    /// exponential).
-    ///
-    /// Backtracking replaces the older type-head heuristic that
-    /// used to route `List.un_list(a, xs)` (a value-position member
-    /// call whose head spells like a type) to `type_expr` and then
-    /// surface a kind error. The expr-first attempt now succeeds for
-    /// such forms. Type-only shapes like `(A) -> B` fall back when
-    /// the expression parse leaves unconsumed tokens, while structural
-    /// type shapes like `A & B` are re-parsed as types when the type
-    /// parse consumes the same range.
+    /// Parentheses contain values; explicit type arguments use brackets.
     fn call_arg(&mut self) -> Result<CallArg, Error> {
         self.cursor_choices(CursorSlot::Argument, &["recur"]);
         self.validate_call_arg_path_names()?;
-        let parsed = match self.peek() {
-            // `_` is the type-inference placeholder; in call-arg
-            // position it is always a `CallArg::Type` (Kio has no
-            // value-level wildcard syntax).
-            Some(TokenKind::Slot1) => Ok(CallArg::Type(self.type_expr()?)),
-            // Unambiguous value forms — route directly. Literals
-            // and the surface-keyword expressions can't be types.
-            Some(TokenKind::StrLit(_))
-            | Some(TokenKind::IntLit { .. })
-            | Some(TokenKind::FloatLit { .. })
-            | Some(TokenKind::BoolLit(_)) => Ok(CallArg::Value(self.expr()?)),
-            Some(TokenKind::Ident(s)) if s == "fn" || s == "let" || s == "recur" => {
-                Ok(CallArg::Value(self.expr()?))
-            }
-            // Ambiguous symbol runs — try expression first for
-            // leading-dot forms, variadic bracket-fold literals, and
-            // prefix operators, then fall back to type syntax for
-            // leading `& A & B` / `| A | B` chains.
-            Some(TokenKind::SymbolRun(_)) => self.try_call_arg_alts(),
-            // Ambiguous — try expr first, fall back to type.
-            Some(TokenKind::Ident(_)) | Some(TokenKind::LParen) | Some(TokenKind::LBrace) => {
-                self.try_call_arg_alts()
-            }
-            _ => Err(self.err_here("expected call argument")),
-        };
-        if let Ok(CallArg::Type(ty)) = &parsed
-            && !matches!(ty, Type::Infer { .. })
-            && let Some(tooling) = &mut self.tooling
-            && let Some(cursor) = tooling.cursor
-            && ty.span().start <= cursor
-            && cursor <= ty.span().end
-            && let Some(context) = &mut tooling.facts.cursor
-            && context.slot == CursorSlot::Argument
-        {
-            context.slot = CursorSlot::Type;
-            context.keywords.clear();
-        }
-        parsed
-    }
-
-    /// Backtracking dispatch: try parsing as a value expression
-    /// first; if that fails — *or* if it succeeds but leaves the
-    /// parser at a token the surrounding call-arg list can't
-    /// continue from — restore parser state and try as a type
-    /// expression. If both fail, return whichever attempt consumed
-    /// more tokens (the "deeper failure" is usually the more
-    /// informative diagnostic).
-    ///
-    /// The post-state check matters for forms like `(String) -> .`:
-    /// `expr_paren` parses `(String)` as a successful single-element
-    /// grouping and leaves `.> ()` unconsumed, which would break the
-    /// surrounding `call_arg_list` ("expected `,` or `)`" at the
-    /// arrow). The type-side parser handles the whole function-type
-    /// shape in one go, so falling back gets the right structure.
-    fn try_call_arg_alts(&mut self) -> Result<CallArg, Error> {
-        let saved_cursor = self.cursor.clone();
-        let checkpoint = self.tooling_checkpoint();
-        let expr_attempt = self.expr();
-        if let Ok(e) = &expr_attempt
-            && self.call_arg_list_continues()
-        {
-            if Self::expr_can_be_type_arg_candidate(e) {
-                let expr_end_cursor = self.cursor.clone();
-                let expr_end_consumed = self.cursor.consumed();
-                let value_attempt = e.clone();
-                if let Some(t) = self.try_type_arg_same_span(
-                    saved_cursor.clone(),
-                    expr_end_cursor.clone(),
-                    expr_end_consumed,
-                    &checkpoint,
-                ) {
-                    return Ok(CallArg::Type(t));
-                }
-                return Ok(CallArg::Value(value_attempt));
-            }
-            // Special case: a top-level UFCS expression is
-            // syntactically indistinguishable from a function-type
-            // (`(A) -> B` vs. `A.>B`). When both parses consume the
-            // same range and the type-side parses cleanly, prefer
-            // the type interpretation — UFCS in argument position
-            // most commonly means the user wrote a function type
-            // like `(I32) -> Strbox` for a polymorphic call's
-            // type-argument slot. The typer's UFCS dispatch is
-            // unforgiving on type-shaped receivers, so this also
-            // produces clearer diagnostics than letting the typer
-            // try and fail.
-            if matches!(e, Expr::Ufcs { .. }) {
-                let expr_end_cursor = self.cursor.clone();
-                let expr_end_consumed = self.cursor.consumed();
-                let value_attempt = e.clone();
-                if let Some(t) = self.try_type_arg_same_span(
-                    saved_cursor,
-                    expr_end_cursor.clone(),
-                    expr_end_consumed,
-                    &checkpoint,
-                ) {
-                    return Ok(CallArg::Type(t));
-                }
-                return Ok(CallArg::Value(value_attempt));
-            }
-            return Ok(CallArg::Value(e.clone()));
-        }
-        // At EOF an otherwise complete value argument is authoritative even
-        // though the surrounding call still lacks its closing `)`. The
-        // missing outer delimiter does not change a parsed value into a type.
-        if let Ok(e) = &expr_attempt
-            && self.peek().is_none()
-        {
-            return Ok(CallArg::Value(e.clone()));
-        }
-        // Either the expr attempt failed outright, or it succeeded
-        // but left the parser at a token that can't continue the
-        // surrounding call-arg list. Restore and try as a type.
-        let expr_err = expr_attempt.err();
-        let expr_facts = self.take_tooling_suffix(&checkpoint);
-        self.cursor = saved_cursor;
-        let type_attempt = self.type_expr().and_then(|ty| {
-            if self.call_arg_list_continues() || self.peek().is_none() {
-                Ok(ty)
-            } else {
-                Err(self.err_here("expected `,` or `)`"))
-            }
-        });
-        match type_attempt {
-            Ok(t) => Ok(CallArg::Type(t)),
-            Err(type_err) => {
-                let type_reached_unclosed_forall = self
-                    .tooling
-                    .as_ref()
-                    .is_some_and(|tooling| tooling.facts.structural_forall.unclosed_at_eof);
-                match expr_err {
-                    // Entering an actual structural binder and reaching EOF
-                    // is the deeper call-argument branch even when the two
-                    // diagnostics happen to end at the same byte.
-                    Some(_) if type_reached_unclosed_forall => Err(type_err),
-                    Some(expr_err) => {
-                        let expr_end = expr_err.diag().0.end;
-                        let type_end = type_err.diag().0.end;
-                        if expr_end >= type_end {
-                            self.restore_tooling_suffix(&checkpoint, expr_facts);
-                            Err(expr_err)
-                        } else {
-                            Err(type_err)
-                        }
-                    }
-                    None => Err(type_err),
-                }
-            }
-        }
-    }
-
-    fn try_type_arg_same_span(
-        &mut self,
-        saved_cursor: SkeletonCursor<'a>,
-        expr_end_cursor: SkeletonCursor<'a>,
-        expr_end_consumed: u64,
-        checkpoint: &Option<ToolingCheckpoint>,
-    ) -> Option<Type> {
-        let expr_facts = self.take_tooling_suffix(checkpoint);
-        self.cursor = saved_cursor;
-        if let Ok(t) = self.type_expr()
-            && self.call_arg_list_continues()
-            && self.cursor.consumed() == expr_end_consumed
-        {
-            return Some(t);
-        }
-        self.cursor = expr_end_cursor;
-        self.restore_tooling_suffix(checkpoint, expr_facts);
-        None
-    }
-
-    /// True if the next token can validly continue a call-arg list —
-    /// i.e., either `,` (next arg) or `)` (end of args). Used by the
-    /// expr-first backtracking step in [`try_call_arg_alts`] to detect
-    /// successful-but-stuck parses like `(String)` followed by `->`.
-    fn call_arg_list_continues(&self) -> bool {
-        matches!(
-            self.peek(),
-            Some(TokenKind::Comma) | Some(TokenKind::RParen)
-        )
+        let value = self.expr()?;
+        Self::ensure_value_operand(&value).map_err(|error| {
+            error.with_help("write an explicit type argument in brackets, such as `f[T](value)`")
+        })?;
+        Ok(CallArg::Value(value))
     }
 
     fn ensure_value_operand(expr: &Expr) -> Result<(), Error> {
@@ -13812,73 +13557,6 @@ impl<'a> Parser<'a> {
         }
         Ok(())
     }
-
-    fn expr_can_be_type_arg_candidate(expr: &Expr) -> bool {
-        fn walk(expr: &Expr) -> (bool, bool) {
-            match expr {
-                Expr::Tuple { items, .. } => {
-                    let mut saw_type_path = false;
-                    for item in items {
-                        let (ok, has_type_path) = walk(item);
-                        if !ok {
-                            return (false, false);
-                        }
-                        saw_type_path |= has_type_path;
-                    }
-                    (true, saw_type_path)
-                }
-                Expr::Unit { .. } => (true, false),
-                Expr::Path { segments, .. } => {
-                    let is_type_path = segments
-                        .last()
-                        .is_some_and(|segment| crate::naming::starts_like_type_name(&segment.name));
-                    (is_type_path, is_type_path)
-                }
-                Expr::OpChain {
-                    kind: OpChainKind::Normal { pattern, slots, .. },
-                    ..
-                } if op_chain_pattern_is_type_chain(pattern) => {
-                    let mut saw_type_path = false;
-                    for slot in slots {
-                        let (ok, has_type_path) = walk(slot);
-                        if !ok {
-                            return (false, false);
-                        }
-                        saw_type_path |= has_type_path;
-                    }
-                    (true, saw_type_path)
-                }
-                _ => (false, false),
-            }
-        }
-
-        matches!(expr, Expr::Tuple { .. } | Expr::OpChain { .. }) && {
-            let (ok, saw_type_path) = walk(expr);
-            ok && saw_type_path
-        }
-    }
-}
-
-fn op_chain_pattern_is_type_chain(pattern: &[OpPart]) -> bool {
-    let mut kind: Option<ChainKind> = None;
-    for part in pattern {
-        let OpPart::Token { content, .. } = part else {
-            continue;
-        };
-        let token_kind = if !content.is_empty() && content.chars().all(|c| c == '&') {
-            ChainKind::Amp
-        } else if !content.is_empty() && content.chars().all(|c| c == '|') {
-            ChainKind::Pipe
-        } else {
-            return false;
-        };
-        match kind {
-            Some(existing) if existing != token_kind => return false,
-            Some(_) => {}
-            None => kind = Some(token_kind),
-        }
-    }
-    kind.is_some()
 }
 
 /// Stride between per-item parallel-task `NodeId` ranges. Each

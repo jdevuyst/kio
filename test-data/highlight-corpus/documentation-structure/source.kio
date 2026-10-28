@@ -15,7 +15,7 @@ module documentation;
 /// > quoted text
 /// [ordinary](https://example.invalid)
 /// ```kio {@}
-/// let value = 1(Int);
+/// let value = 1[Int];
 /// value
 /// ```
 fn entry() {

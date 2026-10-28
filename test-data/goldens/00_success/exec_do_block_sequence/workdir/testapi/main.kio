@@ -9,14 +9,14 @@ import testapi/io(print);
 // do-block requires `e : M(.)`, which `Box(.)` satisfies.
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
 
-fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
 
 // Each step prints its message and returns `Box(.)`. The do-block
 // sequence form discards each step's unit payload and threads the
 // chain — same effect as Haskell's `>>` sequencing.
-fn step(s: String) -> Box(.) { print(s); Box.mk_box(()) }
+fn step(s: String) -> Box[.] { print(s); Box.mk_box(()) }
 
 // Three sequence statements followed by a final expression. The
 // elaborated tree nests two `box_bind`s with unit-typed
@@ -29,7 +29,7 @@ fn step(s: String) -> Box(.) { print(s); Box.mk_box(()) }
 //           box_pure("final\n")
 //         })
 //     })
-fn run() -> Box(String) {
+fn run() -> Box[String] {
   do(box_bind) { step("step1\n"); step("step2\n"); box_pure("final\n") }
 }
 

@@ -23,7 +23,7 @@ belongs to [`style.md`](style.md), not input grammar. Order within entry operand
 ordinary declaration and statement sequences, and signature history replay keeps
 its separately specified meaning.
 
-**Comma and operator runs.** Every comma-separated production in this file — uses of `(',' X)*` — is shorthand for `(','+ X)* ','*` with an optional leading `','*` immediately after the opener: items are separated by *one or more* commas, with optional comma runs at either edge. Tuple forms collapse zero items to `()`, one item to grouping, and two or more items to Kio's right-associated binary tuple shape. Product types do not use commas; they use `&`. The type-chain productions (both the unparenthesized `TypeChainTail` and the parenthesized `'(' Type '&' Type ')'` / `'(' Type '|' Type ')'` forms) admit any number of operators in any position (leading, interior, trailing) — `A & B & C`, `(A & B & C)`, `& A & B`, and `( &&& A &&& B &&& )` all parse to the same product. Empty product chains parse as `.`, empty sum chains parse as `!`, and one-item chains parse as grouping. Adjacent `STR_LIT` tokens fold into a single literal. These rules collapse to the canonical one-separator-per-item layout at the AST level — they exist so `kio fmt` can emit the leading-comma + leading-operator multi-line layouts uniformly. See [`language.md` § Comma-separated lists and operator chains](language.md#comma-separated-lists-and-operator-chains) and [`language.md` § Literals](language.md#literals).
+**Comma and operator runs.** Type-supply brackets and binder brackets each contain exactly one entry; they admit no commas, including edge commas. Every comma-separated production in this file — uses of `(',' X)*` — is shorthand for `(','+ X)* ','*` with an optional leading `','*` immediately after the opener: items are separated by *one or more* commas, with optional comma runs at either edge. Tuple forms collapse zero items to `()`, one item to grouping, and two or more items to Kio's right-associated binary tuple shape. Product types do not use commas; they use `&`. The type-chain productions (both the unparenthesized `TypeChainTail` and the parenthesized `'(' Type '&' Type ')'` / `'(' Type '|' Type ')'` forms) admit any number of operators in any position (leading, interior, trailing) — `A & B & C`, `(A & B & C)`, `& A & B`, and `( &&& A &&& B &&& )` all parse to the same product. Empty product chains parse as `.`, empty sum chains parse as `!`, and one-item chains parse as grouping. Adjacent `STR_LIT` tokens fold into a single literal. These rules collapse to the canonical one-separator-per-item layout at the AST level — they exist so `kio fmt` can emit the leading-comma + leading-operator multi-line layouts uniformly. See [`language.md` § Comma-separated lists and operator chains](language.md#comma-separated-lists-and-operator-chains) and [`language.md` § Literals](language.md#literals).
 
 **Semicolon boundaries.** A complete outer braced declaration or section
 accepts at most one redundant suffix `;`. Nonbraced outer entries retain their
@@ -145,7 +145,7 @@ SignatureParamList ::= SignatureParam (',' SignatureParam)*
 SignatureParam    ::= IDENT ':' Type                      (* value parameter *)
 FnSignatureParamList ::= FnSignatureParam (',' FnSignatureParam)*
 FnSignatureParam  ::= IDENT (':' Type)?                   (* value parameter; annotation optional *)
-TypeBinderGroup   ::= '[' TypeBinder (',' TypeBinder)* ']'
+TypeBinderGroup   ::= '[' TypeBinder ']'
 TypeBinder        ::= '*'* IDENT                          (* kind-annotated binder; n leading stars = n arrows *)
 
 Type              ::= TypeArrow
@@ -164,11 +164,11 @@ TypeAtom          ::= '!'                                 (* bottom             
                     | '(' Type ('|' Type)+ ')'            (* parens sum chain   *)
                     | '(' Type ('&' Type)+ ')'            (* parens product     *)
                     | TypePath
-TypePath          ::= TypeName TypeArgList?
-                    | ModulePath '.' TypeName TypeArgList?
+TypePath          ::= TypeName TypeArgList*
+                    | ModulePath '.' TypeName TypeArgList*
 TypeName          ::= IDENT                               (* type-word shape, with user or reserved underscore prefix *)
 ExistsBinder      ::= '<' IDENT '>'
-TypeArgList       ::= '(' Type (',' Type)* ')'
+TypeArgList       ::= '[' Type ']'
 
 Block             ::= '{' BlockBody '}'
 BlockBody         ::= ';'* (Stmt ';'*)* Expr ';'*
@@ -178,14 +178,15 @@ LetBinder         ::= IDENT | '_'
 ExprStmt          ::= Expr ';'
 Expr              ::= ExprPostfix
 ExprPostfix       ::= ExprAtom ExprSuffix*
-ExprSuffix        ::= '(' (CallArg (',' CallArg)*)? ')'
-CallArg           ::= Expr | Type                       (* see notes below  *)
+ExprSuffix        ::= ValueApplication | TypeApplication
+ValueApplication  ::= '(' (Expr (',' Expr)*)? ')'
+TypeApplication   ::= '[' Type ']'                       (* exactly one type *)
 ExprAtom          ::= LiteralCall
                     | '(' ')'                             (* unit value       *)
                     | '(' Expr ')'                        (* grouping         *)
                     | ValuePath
                     | FnExpr
-LiteralCall       ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '(' Type ')'
+LiteralCall       ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '[' Type ']'
 BoolLit           ::= '.' ('t' | 'f')                     (* token sequence: `.` plus identifier `t` / `f` *)
 FnExpr            ::= '.' FnSignature ('->' Type)? Block
 ```
@@ -202,9 +203,11 @@ FnExpr            ::= '.' FnSignature ('->' Type)? Block
   the path, not general member access on an arbitrary expression. A
   slash-separated `ModulePath` is not a value expression; importing the item
   or module establishes the cross-module binding first.
-- Call-argument lists are uniform in `ExprSuffix`: type arguments and value arguments share one comma-separated list. The typer pairs them positionally against the callee's signature. For identifier-shaped spellings admissible as both a value and a type (a plain identifier or a parametric call like `Foo(A, B)`), the spelling resolves the ambiguity before declaration lookup: an exact type-name spelling (`A`, `_A`, `Foo123_bar4`) is type-shaped, while an exact value-name spelling (`x`, `_x`, `foo123_bar4`) is value-shaped. A spelling matching neither role is rejected rather than falling back to the other namespace. The unit spelling `()` parses only as a value; its type is `.`. For slots that can only be a type (the bottom `!`, paren-wrapped type forms `(A & B)` / `(A | B)`, function types `T -> R` / `(T & U) -> R`), only the `Type` reading parses.
-- `LiteralCall` is a literal token or parser-recognized literal token sequence with a mandatory trailing `'(' Type ')'` annotation — `42(I32)`, `3.14(F64)`, `"hi"(String)`, `.t(Bool)`. The annotation pins the literal's role-bearing host type. See [`language.md` § Literals](language.md#literals); Kio' admits no unannotated-literal form. The annotation is parsed by the same `'(' … ')'` machinery as a call-argument list, so a parser may treat it as an `ExprSuffix` on the literal rather than as a distinct production; either way the result is one literal node carrying its annotation. The Kio-surface extensions section below re-introduces the unannotated form additively for the full surface language, where the literal-type selection rule in [`language.md` § Literals](language.md#literals) uses an explicit annotation or concrete contextual inference.
-- **Higher-kinded type application** is the ordinary `TypePath` shape applied to a kind-`*→*`-or-higher binder or newtype head: `F(A)` where `[*F]` is a kind-`*→*` binder, `Either(String)` where `Either` is an arity-2 newtype. Both parse to one `Type::Path { segments, args }`; there is no dedicated application node and no `__App__` keyword. The kind discipline (§ Kind grammar) decides admissibility — a kind-`*` head applied to an argument is a kind error, surfaced by semantic kind checking rather than the parser. A parametric transparent alias uses the same parsed shape but is well-formed only when every parameter declared by that alias has an argument; underapplication cannot retain the alias's own binders. See [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω) and [`language.md` § Higher-kinded types](language.md#higher-kinded-types).
+- Value applications and type applications have distinct delimiters. One `ValueApplication` supplies one right-associated product to one `Function` layer; it cannot continue into a returned function. One component is that value, no components supply Unit, and several components form the ordinary product. `f(a, b)` and `f((a, b))` therefore agree. A `TypeApplication` supplies one type to an exposed universal binder and never inserts Unit. Kio' writes every universal argument explicitly. Surface Kio may omit them or use whole-slot `_` inference as specified below.
+- A square pair after a completed expression is a type-application suffix, regardless of whitespace or comments. A square pair at expression start retains its Surface variadic-frame role. Thus `f[A]` and `f [A]` agree, `f[a]` rejects a value in type position, and `f([a])` passes a variadic value. Parsing never retries the frame interpretation after an invalid type argument. `f[]` is rejected. The full type grammar applies inside a suffix, including nested forall types such as `f[[A] A -> A]`.
+- `LiteralCall` is a literal token or parser-recognized literal token sequence with a mandatory trailing `'[' Type ']'` annotation — `42[I32]`, `3.14[F64]`, `"hi"[String]`, `.t[Bool]`. The annotation pins the literal's role-bearing host type. See [`language.md` § Literals](language.md#literals); Kio' admits no unannotated-literal form. This is a literal annotation, distinct from the value-only application list; its result is one literal node carrying the annotation. The Kio-surface extensions section below re-introduces the unannotated form additively for the full surface language, where the literal-type selection rule in [`language.md` § Literals](language.md#literals) uses an explicit annotation or concrete contextual inference.
+- A named type path collects its consecutive singleton argument groups before kind and exact-arity checks. `Pair[A][B]` supplies two arguments to the one named head; it does not validate an intermediate undersaturated alias. Existing nominal partial application and transparent-alias exact saturation rules remain unchanged. Grouped types still use parentheses, while arbitrary type expressions do not acquire a new postfix-application production.
+- **Higher-kinded type application** is the ordinary `TypePath` shape applied to a kind-`*→*`-or-higher binder or newtype head: `F[A]` where `[*F]` is a kind-`*→*` binder, `Either[String]` where `Either` is an arity-2 newtype. Both parse to one `Type::Path { segments, args }`; there is no dedicated application node and no `__App__` keyword. The kind discipline (§ Kind grammar) decides admissibility — a kind-`*` head applied to an argument is a kind error, surfaced by semantic kind checking rather than the parser. A parametric transparent alias uses the same parsed shape but is well-formed only when every parameter declared by that alias has an argument; underapplication cannot retain the alias's own binders. See [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω) and [`language.md` § Higher-kinded types](language.md#higher-kinded-types).
 - `pub` is a contextual keyword only in two positions: leading an `Item` and leading a `NewtypeMember`. Elsewhere the same spelling is an `IDENT`.
 - A `NewtypeBody` holds an **unordered set** of members: exactly one `constructor` and exactly one `projector`, in **either order** (`constructor` then `projector`, or `projector` then `constructor`). Both must be present and neither may be duplicated; the order carries no meaning. `kio fmt` canonicalizes the pair to `constructor`-then-`projector` (see [`style.md`](style.md)).
 - `RecursiveNewtype` is the singleton recursive-data spelling. Its `rec` follows visibility (`pub rec newtype`); a self-recursive newtype requires it, while a marker on an acyclic newtype is rejected as redundant. An ordinary `Newtype` has no own-head or later-declaration scope.
@@ -224,7 +227,7 @@ Kind              ::= '*'                                 (* the kind of ordinar
                     | '*' '→' Kind                        (* a type-level function, right-associative *)
 ```
 
-So `*` is the kind of a fully-applied type (`String`, `(A | B)`, `Box(A)`), `*→*` is the kind of an arity-1 constructor (`Box`, `List`, a `[*F]` binder), `*→*→*` is the kind of an arity-2 constructor (`Either`, `Result`, a `[**G]` binder), and so on. The chain is right-associative: `*→*→*` parses as `*→(*→*)`. There are **no kind variables** and **no higher-order kinds** — the domain of every arrow is `*`, never another arrow. Each kind is a finite chain, and equality is decided by comparing those chains structurally (see [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω)).
+So `*` is the kind of a fully-applied type (`String`, `(A | B)`, `Box[A]`), `*→*` is the kind of an arity-1 constructor (`Box`, `List`, a `[*F]` binder), `*→*→*` is the kind of an arity-2 constructor (`Either`, `Result`, a `[**G]` binder), and so on. The chain is right-associative: `*→*→*` parses as `*→(*→*)`. There are **no kind variables** and **no higher-order kinds** — the domain of every arrow is `*`, never another arrow. Each kind is a finite chain, and equality is decided by comparing those chains structurally (see [`prime.md` § Kio' as Church-style fragment of System F-ω](prime.md#kio-as-church-style-fragment-of-system-f-ω)).
 
 The **binder-annotation surface** encodes a kind as a run of leading `*` characters before the binder name inside a `TypeBinderGroup`. The star count `n` is the number of arrows:
 
@@ -235,9 +238,9 @@ The **binder-annotation surface** encodes a kind as a run of leading `*` charact
 | `[**G]` | `*→*→*` | arity-2 type constructor |
 | `[***H]` | `*→*→*→*` | arity-3 type constructor |
 
-A newtype's kind is read from its declared parameter list, not annotated separately. Each parameter carries its own kind (the default `*`, or a starred annotation), and the newtype accepts one argument per parameter, checked against that parameter's kind. An ordinary arity-`n` newtype whose parameters are all kind-`*` (`List[A]`, `Either[E][A]`) accepts `n` kind-`*` arguments and saturates to kind `*`. A *dictionary* newtype takes a higher-kinded parameter — `Monad[*F]` accepts one kind-`*→*` argument (a one-argument type constructor) and saturates to `*` — so `Monad(Maybe)` and `Monad(Either(String))` check the argument's kind (`*→*`) against the `[*F]` parameter. (This per-parameter check is the newtype's signature; it is *not* a higher-order kind in the `κ` language above — a binder still cannot be annotated `[(*→*)→* …]`.) **Kind annotations are part of a type's public signature** — they carry unchanged across package boundaries; see [`package.md`](package.md). Kinds are never inferred: the user writes the stars at every higher-kinded binder, and a binder with no stars is kind `*`.
+A newtype's kind is read from its declared parameter list, not annotated separately. Each parameter carries its own kind (the default `*`, or a starred annotation), and the newtype accepts one argument per parameter, checked against that parameter's kind. An ordinary arity-`n` newtype whose parameters are all kind-`*` (`List[A]`, `Either[E][A]`) accepts `n` kind-`*` arguments and saturates to kind `*`. A *dictionary* newtype takes a higher-kinded parameter — `Monad[*F]` accepts one kind-`*→*` argument (a one-argument type constructor) and saturates to `*` — so `Monad[Maybe]` and `Monad[Either[String]]` check the argument's kind (`*→*`) against the `[*F]` parameter. (This per-parameter check is the newtype's signature; it is *not* a higher-order kind in the `κ` language above — a binder still cannot be annotated `[(*→*)→* …]`.) **Kind annotations are part of a type's public signature** — they carry unchanged across package boundaries; see [`package.md`](package.md). Kinds are never inferred: the user writes the stars at every higher-kinded binder, and a binder with no stars is kind `*`.
 
-**Type application consumes one parameter per argument, matching kinds.** A binder or newtype head whose parameters are `*→*→*`-shaped (`Either[E][A]`) applied to one argument (`Either(String)`) leaves the remaining parameter, so the partial application has kind `*→*`; applied to two (`Either(String, I32)`) it saturates to `*`. A parametric transparent alias instead requires exactly one argument per declared parameter: both its bare name and every undersaturated application are type errors. Applying a kind-`*` head to any argument, supplying more arguments than parameters, or supplying an argument whose kind doesn't match the parameter's kind, is a kind error.
+**Type application consumes one parameter per argument, matching kinds.** A binder or newtype head whose parameters are `*→*→*`-shaped (`Either[E][A]`) applied to one argument (`Either[String]`) leaves the remaining parameter, so the partial application has kind `*→*`; applied to two (`Either[String][ I32]`) it saturates to `*`. A parametric transparent alias instead requires exactly one argument per declared parameter: both its bare name and every undersaturated application are type errors. Applying a kind-`*` head to any argument, supplying more arguments than parameters, or supplying an argument whose kind doesn't match the parameter's kind, is a kind error.
 
 ## Kio surface extensions
 
@@ -396,7 +399,7 @@ The Kio' item grammar has no `macro`, `impl`, or `impl(fills)` production.
 
 `OpPattern` requires alternating single words and value slots, with at least one of each. Adjacent slots, adjacent words, zero-slot patterns, and pattern parentheses containing slots are rejected. Arbitrary numbers of `_`, `__`, and `___` are admitted subject to [`language.md` § Operators](language.md#operators): every `__` must be useful, and an operand-ending non-prefix pattern cannot have chain permission at both exposed ends. Dots and square brackets are forbidden in quoted and unquoted words. A word contains at most one `/`; comment spellings do not become operator words.
 
-The `type` declaration is a Kio' type alias. The `literal` declaration is surface-only: it binds a lowercase name to one bare literal token and is expanded by the desugar pass at reference sites. A bare reference expands to the stored literal; `name(Type)` expands to the stored literal carrying that annotation. See [`language.md` § Type and literal aliases](language.md#type-and-literal-aliases).
+The `type` declaration is a Kio' type alias. The `literal` declaration is surface-only: it binds a lowercase name to one bare literal token and is expanded by the desugar pass at reference sites. A bare reference expands to the stored literal; `name[Type]` expands to the stored literal carrying that annotation. See [`language.md` § Type and literal aliases](language.md#type-and-literal-aliases).
 
 ### Surface parameter additions
 
@@ -419,7 +422,7 @@ A bare `IDENT` or `'_'` (no `: T`) is equivalent to `IDENT : _` / `'_' : _` — 
 
 A `ParamPatternTuple` always carries at least one `ParamPatternElem`; the unary case `(a: A)` is admissible (single-slot product) and shares its leading-`(` and per-element shape with the n-ary form.
 
-Within a value group, `SignatureParam` / `FnSignatureParam` and `ParamPatternElem` each disambiguate from their leading token: `(` is a tuple pattern (bare top, or nested elem); `_` is a wildcard slot; an `IDENT` is followed by either `:` `Type` (regular annotation), `:` `ParamPatternTuple` (as-pattern), or (in the `FnSignatureParam` case) nothing (un-annotated). At the surrounding signature level, `[` starts a type-binder group and `(` starts a value group. A type-binder group may contain comma-separated binders; canonical formatting uses adjacent singleton groups. The disambiguation between `IDENT ':' Type` and `IDENT ':' ParamPatternTuple` is one-token lookahead past the `:`: a following `(` whose contents begin with `IDENT ':'` or `'_' ':'` or `(` is a `ParamPatternTuple`; anything else parses as `Type`.
+Within a value group, `SignatureParam` / `FnSignatureParam` and `ParamPatternElem` each disambiguate from their leading token: `(` is a tuple pattern (bare top, or nested elem); `_` is a wildcard slot; an `IDENT` is followed by either `:` `Type` (regular annotation), `:` `ParamPatternTuple` (as-pattern), or (in the `FnSignatureParam` case) nothing (un-annotated). At the surrounding signature level, `[` starts a type-binder group and `(` starts a value group. A type-binder group contains exactly one binder. Multiple binders use adjacent groups; empty groups and comma-separated binder lists are rejected. The disambiguation between `IDENT ':' Type` and `IDENT ':' ParamPatternTuple` is one-token lookahead past the `:`: a following `(` whose contents begin with `IDENT ':'` or `'_' ':'` or `(` is a `ParamPatternTuple`; anything else parses as `Type`.
 
 The form `ParamPatternTuple ':' Type` — pinning an outer annotation onto a destructuring pattern — is **not** admissible. The pattern's slot types already constitute the product type; an outer annotation would be redundant. Parsers reject the form with a pointer to the corresponding `IDENT ':' ParamPatternTuple` (if the user meant the as-pattern) or to the bare `ParamPatternTuple` (if the user meant the destructuring alone).
 
@@ -510,7 +513,7 @@ annotation (see [`language.md` § Type system](language.md#type-system)). The
 grammar does not decide that predicate. Kio' does not include this alternative. `labels`
 introduces generated nominal type names, so it adds no other type grammar.
 Type positions use the existing type-path production with generated names such
-as `Foo` and `Foo(T)`. Lowercase labels and braced label forms are value syntax;
+as `Foo` and `Foo[T]`. Lowercase labels and braced label forms are value syntax;
 `{foo}`, `{foo: T}`, and `foo` as a type spelling are rejected.
 
 ### Surface expression additions
@@ -531,9 +534,9 @@ FieldUpdate       ::= '.!' '{' (FieldUpdateLabel (',' FieldUpdateLabel)* ','?)? 
 FieldUpdateLabel  ::= LabelPath ('=' Expr?)?                                  (* bare means local payload; bare `=` means `= ()` *)
 
 MacroHead         ::= IDENT | '(' MacroHead ')'
-MacroCall         ::= MacroHead CallArgList
+MacroCall         ::= MacroHead (TypeApplication | ValueApplication)+
 BlockMacroCall    ::= MacroHead BlockPrefix? NeutralBlock LabelledBlock* FinalElidedBlock?
-BlockPrefix       ::= BlockValueArgs
+BlockPrefix       ::= BlockValueArgs+
 BlockValueArgs    ::= '(' (Expr (',' Expr)*)? ','? ')'
 LabelledBlock     ::= IDENT NeutralBlock
 FinalElidedBlock  ::= IDENT BlockMacroCall
@@ -541,11 +544,11 @@ NeutralBlock      ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding    ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind       ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder     ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
-RecCall           ::= 'recur' RecCallAnnotationList? IDENT CallArgList       (* group-local callee *)
+RecCall           ::= 'recur' RecCallAnnotationList? IDENT (TypeApplication | ValueApplication)+       (* group-local callee *)
 RecCallAnnotationList ::= '(' RecCallAnnotation (',' RecCallAnnotation)* ','? ')'
 RecCallAnnotation ::= 'poly' | 'cont' | 'escape'
-CallArgList       ::= '(' (CallArg (',' CallArg)*)? ','? ')'
-NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
+CallArgList       ::= ValueApplication
+NonemptyCallArgList ::= '(' Expr (',' Expr)* ','? ')'
                                                                              (* MacroCall's IDENT is any in-scope user-defined macro name —
                                                                                 there are no reserved macro keywords; see the prose above *)
 
@@ -563,10 +566,10 @@ selected exposure determines their meaning or rejection.
 
 Every nonempty written prefix is a parenthesized value-argument list, including a
 single name, literal or expression. `outer(value) { body }` has one prefix,
-`outer(a, b) { body }` has two, and `outer((a, b)) { body }` has one product
-prefix. Direct `outer() { body }` has one unit prefix; `outer { body }` has
+`outer(a, b) { body }` and `outer((a, b)) { body }` have one product
+prefix stage. `outer(a)(b) { body }` has two successive prefix stages. Direct `outer() { body }` has one unit prefix; `outer { body }` has
 none. Type-shaped argument roots are rejected; type arguments inside ordinary
-value expressions such as `outer(f(A)) { body }` remain admissible.
+value expressions such as `outer(f[A]) { body }` remain admissible.
 
 The prefix list fixes ownership of nested expressions before the following
 block. `outer(convert(value)) { body }` contains a blockless `convert` call;
@@ -600,19 +603,13 @@ FixedOperatorUse ::= OpUsePart+                        (* exactly one scoped pat
 OpUsePart        ::= FixedOpToken | Expr               (* each Expr satisfies its selected slot permission *)
 
 Expr += PrefixOpExpr
-ExprSuffix += DotSpliceSuffix | OperatorTail
-ExprPostfix += LeftCallSplice ExprSuffix*
+ExprSuffix += DotSpliceSuffix | ReverseSpliceSuffix | OperatorTail
 
 DotSpliceSuffix   ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList?
                    | ('.>' | '.>>') BlockMacroCall
-DotSpliceCallee   ::= GroupedValuePath                                     (* ordinary path or direct local macro name *)
-LeftCallSplice    ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
-LeftSpliceCallee  ::= LeftSplicePathCallee
-                   | LeftSpliceBlockCallee
-LeftSpliceBlockCallee ::= BlockMacroCall | '(' LeftSpliceBlockCallee ')'
-LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList?
-                      | '(' LeftSplicePathCallee ')'                         (* grouping is transparent *)
-TightCallArg      ::= ExprAtom CallArgList*                                   (* stops before another ExprSuffix *)
+DotSpliceCallee   ::= GroupedValuePath TypeApplication*                       (* ordinary path or direct local macro name *)
+ReverseSpliceSuffix ::= ('.<' | '.<<') TightCallArg
+TightCallArg      ::= ExprAtom (TypeApplication | ValueApplication)*          (* stops before another splice *)
 
 OperatorTail     ::= FixedOperatorUse                  (* selected non-prefix pattern continues a preceding Expr *)
 ```
@@ -643,9 +640,10 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
 
 ### Notes (Kio surface)
 
-- The surface `LiteralCall` extension makes the trailing `'(' Type ')'` annotation optional — the unannotated literal is admissible in any expression position. The literal-type selection rule in [`language.md` § Literals](language.md#literals) uses an explicit annotation or concrete contextual inference while checking the Lowered tree. Kio' requires the annotation; the Lowered → Prime substitute pass materializes the typer's recorded resolution, so the Prime artifact is fully annotated.
+- The surface `LiteralCall` extension makes the trailing `'[' Type ']'` annotation optional — the unannotated literal is admissible in any expression position. The literal-type selection rule in [`language.md` § Literals](language.md#literals) uses an explicit annotation or concrete contextual inference while checking the Lowered tree. Kio' requires the annotation; the Lowered → Prime substitute pass materializes the typer's recorded resolution, so the Prime artifact is fully annotated.
 - A `LiteralAliasValue` accepts exactly one bare literal token. Adjacent string-literal folding applies to expression literals, not to `literal` declaration bodies; write the complete literal in one string token.
-- The dot-splice forms are one syntax family. `.>` and `.>>` take a path-shaped callee, single-name macro callee, or complete block call on the right; `.<` and `.<<` take a path, single-name macro callee, direct path call, or complete block call on the left and a tight value expression on the right. An omitted UFCS argument list is the receiver-only form. A present UFCS argument list must be nonempty: `r.>f()`, `r.>>f()`, `f().<r`, and `f().<<r` are rejected, as are their member- and macro callee analogues. The argument list immediately adjacent to a UFCS callee belongs to that splice and cannot be reinterpreted as a direct call on the splice result. `TightCallArg` deliberately stops before another suffix: `f.<x.>g` parses as `(f.<x).>g`; use `f.<(x.>g)` when the inserted value is itself a UFCS expression.
+- The dot-splice forms are one syntax family. Forward forms take a path-shaped callee with optional explicit type applications and select its immediately following value group. Reverse forms are suffixes on the preceding expression and select its outermost value application. Whole-expression grouping is transparent; a trailing type application is a boundary that makes the receiver a new value stage. Complete block calls instead use first/last prefix insertion. An omitted selected UFCS value group is receiver-only; a present selected group must be nonempty. `r.>f()`, `r.>>f()`, `f().<r` and `f().<<r` reject, including member/macro analogues. An earlier ordinary empty group is unaffected: `factory()(b).<r` modifies `(b)`. The forward callee's adjacent group belongs to that splice, and cannot be reinterpreted as a call on its result. A tight reverse receiver stops before another splice: `f.<x.>g` means `(f.<x).>g`; use `f.<(x.>g)` to insert a splice result.
+
 - A block-call splice inserts its receiver first (`.>` / `.<<`) or last
   (`.>>` / `.<`) among the prefix values, before all projected block arguments.
   Reverse splices follow the complete block chain, not its prefix:
@@ -662,12 +660,7 @@ At statement start, `let` is structural before a name/wildcard binder, before `.
   `f() { B }.<r` rejects; use `f { B }.<r` for no additional prefix value,
   or `f(()) { B }.<r` for an additional Unit. Direct `f() { B }` keeps its
   ordinary Unit meaning.
-- Non-block dot-splice argument lists use ordinary `CallArg` parsing.
-  The typer resolves which surface arguments are type arguments and which are
-  values against the resolved callee type, then inserts the receiver into the
-  first value slot for `.>` / `.<<` or the last value slot for `.>>` /
-  `.<`. Declaration parameter groups and callee provenance are not inputs.
-  Type slots are never filled by the receiver.
+- Non-block dot-splice value lists contain values only. Brackets on the written callee instantiate its exposed binders before receiver insertion. Forward `.>` / `.>>` select the immediately following value group; reverse `.<` / `.<<` select the immediately preceding outermost value application. Insertion is first for `.>` / `.<<`, last for `.>>` / `.<`. A trailing type application is a boundary: `f(a)[B].<r` applies the instantiated result to `r`; it never searches backward to modify `(a)`. Written stages, not declaration groups or inferred argument types, select the receiver's stage.
 - A braced label-value prefix is parenthesized, as in `outer({field = value}) { body }`.
 - `rec(loop)` items and `recur` calls are surface-only. Groups lower to state-packet `newtype`, ordinary `fn`, closure, and call forms before Kio'; generated packets use `rec newtype` or one minimal bare `rec { ... }` type group when their payload graph is cyclic. `rec labels` likewise preserves genuine recursive components through those ordinary Kio' declarations. The capability-free data forms are not recursive-function syntax. A recursive function call uses `recur`; `poly` marks a type-changing call, `cont` marks a non-tail call, and `escape` marks a call captured across an ordinary closure boundary. `escape` entails `cont`; both may be written, while canonical formatting omits the entailed `cont`. Each annotation must satisfy the contextual rules in [`language.md` § Recursive functions](language.md#recursive-functions).
 - An expression's fixed-operator scope contains exactly its written imports and local declarations preceding the enclosing item, including lazily parsed bodies. A leading word without a registered prefix pattern is rejected. Native atom introducers, whole pending following words, and square-frame edges have their source-local roles before custom dispatch. The signed-number rule includes expression-ending `]`, so `[a, b]-1` has subtraction shape and `[-1]` remains a signed-literal frame. Missing variadic bindings never change a frame's marker.

@@ -13,7 +13,7 @@ import testapi/array(array_get);
 
 pub labels Census = { live_objects: I32, dead_objects: I32, live_cells: I32, dead_cells: I32 };
 
-pub fn sweep(cells: Array(I32), marks: Array(Bool)) -> Census {
+pub fn sweep(cells: Array[I32], marks: Array[Bool]) -> Census {
   fold_objects(
   , cells
   , .(census, addr) {

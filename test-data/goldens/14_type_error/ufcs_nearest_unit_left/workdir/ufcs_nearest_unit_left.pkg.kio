@@ -1,0 +1,12 @@
+package ufcs_nearest_unit_left;
+
+build {
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}
+
+bridge {
+  main
+}

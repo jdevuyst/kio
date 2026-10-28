@@ -18,9 +18,9 @@ import testapi/iter(loop);
 
 pub labels Cell = { cell_col: schema.Col, cell_val: value.Value };
 
-pub type Row = list.List(Cell);
+pub type Row = list.List[Cell];
 
-pub type Table = list.List(Row);
+pub type Table = list.List[Row];
 
 pub labels Relation = { rel_cols: schema.Col_list, rel_rows: Table };
 
@@ -40,9 +40,9 @@ pub fn rel_cols_of(r: Relation) -> schema.Col_list { r.?{rel_cols} }
 
 pub fn rel_rows_of(r: Relation) -> Table { r.?{rel_rows} }
 
-fn some_value(v: value.Value) -> Maybe_value { {some_value = v}.>widen_sum(Maybe_value) }
+fn some_value(v: value.Value) -> Maybe_value { ({some_value = v}.>widen_sum)[Maybe_value] }
 
-fn no_value() -> Maybe_value { {no_value=}.>widen_sum(Maybe_value) }
+fn no_value() -> Maybe_value { ({no_value=}.>widen_sum)[Maybe_value] }
 
 /// The association-list lookup every operator is built on: walk the
 /// row's cells until one carries the wanted column.
@@ -90,7 +90,7 @@ pub rec(loop) fn project_row(cols: schema.Col_list, row: Row) -> Row {
     , .(c: schema.Col, rest: schema.Col_list) {
         list.cons(cell(c, row_cell(row, c)), recur(cont) project_row(rest, row))
       }
-    , .(_empty: .) { list.nil(Cell) }
+    , .(_empty: .) { list.nil[Cell] }
     )
   }
 }

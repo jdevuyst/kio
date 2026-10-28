@@ -1435,7 +1435,7 @@ v(1) {
         host type Box[A];
         host type Unused[A];
         newtype Token[A] : A { pub constructor make_token; projector read_token; };
-        host fn old(value: Box(Token(.))) -> Box(Token(.));
+        host fn old(value: Box[Token[.]]) -> Box[Token[.]];
       }
     }
   }
@@ -1464,7 +1464,7 @@ v(1) {
       module api {
         host type Str role(str);
         newtype Token[A] : A { pub constructor make_token; pub projector read_token; };
-        host fn old(value: Token(Str)) -> Token(Str);
+        host fn old(value: Token[Str]) -> Token[Str];
       }
     }
   }
@@ -1491,8 +1491,8 @@ v(1) {
       module api {
         host type Str role(str);
         newtype Wrap[A] : A { pub constructor make_wrap; pub projector read_wrap; };
-        newtype Lift[*F] : F(Str) { pub constructor make_lift; pub projector read_lift; };
-        host fn old(value: Lift(Wrap)) -> Lift(Wrap);
+        newtype Lift[*F] : F[Str] { pub constructor make_lift; pub projector read_lift; };
+        host fn old(value: Lift[Wrap]) -> Lift[Wrap];
       }
     }
   }
@@ -1828,7 +1828,7 @@ v(2) {
                host type Token; \
                host type Box[A]; \
                host fn round_token(value: Token) -> Token; \
-               host fn box[A](value: A) -> Box(A); \
+               host fn box[A](value: A) -> Box[A]; \
                pub fn keep[A](value: A) -> A { value }"],
             "bridge { api; }",
         );
@@ -2115,7 +2115,7 @@ v(2) {
         let source = "module api; \
             host type Text role(str); \
             host fn use[Demo_callable](value: Demo_callable, callback: . -> .) -> Demo_callable; \
-            host fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda(Demo_apply)) -> Demo_type_lambda(Demo_apply); \
+            host fn higher[*Demo_type_lambda][Demo_apply](value: Demo_type_lambda[Demo_apply]) -> Demo_type_lambda[Demo_apply]; \
             host fn nested[Demo_poly](value: Demo_poly, callback: [Demo_callable] Demo_callable -> Demo_poly) -> Demo_poly; \
             host fn primitive[String](value: String, text: Text) -> String;";
         let pkg = build_package(&[source], "bridge { api; }");
@@ -2175,7 +2175,7 @@ v(2) {
                pub newtype Shadow[T] : T & ([T] T -> T) { pub constructor make_shadow; pub projector un_shadow; }; \
                pub newtype Pack <T> : T { pub constructor make_pack; pub projector un_pack; }; \
                host fn apply_poly(f: [T] T -> T) -> Str; \
-               host fn round_shadow(value: Shadow(Box(Str))) -> Shadow(Box(Str)); \
+               host fn round_shadow(value: Shadow[Box[Str]]) -> Shadow[Box[Str]]; \
                host fn round_pack(value: Pack) -> Pack; \
                pub fn ordered(value: T)[T](later: T) -> T { later }"],
             "bridge { main; }",
@@ -2276,7 +2276,7 @@ v(2) {
                import __intrinsics__; \
                host type I32 role(i32); host type Str role(str); \
                pub fn split(p: (I32 & Str)) -> (I32 | Str) { \
-                 __left__(I32, Str, __fst__(I32, Str, p)) }"],
+                 __left__[I32][ Str]( __fst__[I32][ Str]( p)) }"],
             "bridge { main; }",
         );
         let dts = lower_package_to_dts(&pkg, "greeter").expect("render");
@@ -2357,7 +2357,7 @@ v(2) {
                  pub constructor wrap_word; pub projector unwrap_word; \
                }; \
                pub newtype Hidden[Item_type] : . { constructor hide; projector reveal; }; \
-               pub rec newtype _Root_word_ : Hidden(_Root_word_) { \
+               pub rec newtype _Root_word_ : Hidden[_Root_word_] { \
                  pub constructor make_root; pub projector read_root; \
                }; \
                pub fn keep_word(value: _Root_word_) -> _Root_word_ { value }"],
@@ -2488,7 +2488,7 @@ v(2) {
         let pkg = build_package(
             &["module main; \
                pub newtype Hidden[A] : . { constructor make_hidden; projector read_hidden; }; \
-               pub rec newtype Root : Hidden(Root) { \
+               pub rec newtype Root : Hidden[Root] { \
                  pub constructor make_root; pub projector read_root; \
                }; \
                pub fn keep(value: Root) -> Root { value }"],

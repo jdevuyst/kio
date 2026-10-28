@@ -8,8 +8,8 @@ import testapi(Array, I32, String);
 import testapi/array as a;
 import testapi/io as io;
 
-fn branching() -> Array(I32) {
-  let symbols = a.array_make_empty(I32, ());
+fn branching() -> Array[I32] {
+  let symbols = a.array_make_empty[I32](());
   a.array_push(symbols, 0);
   a.array_push(symbols, 1);
   a.array_push(symbols, 1);
@@ -31,27 +31,27 @@ fn run_branching() {
   report.query(source, index, scan.slice(source, 3, 6));
   report.query(source, index, a.array_make_filled(2, 0));
   report.query(source, index, a.array_make_filled(1, 3));
-  report.query(source, index, a.array_make_empty(I32, ()))
+  report.query(source, index, a.array_make_empty[I32](()))
 }
 
 fn run_overlapping() {
-  let source = a.array_make_filled(4, 0);
+  let .(source: Array[I32]) = a.array_make_filled(4, 0);
   let index = sam.build(source);
   analysis.finalize(index);
   report.heading("overlapping", source, index);
   report.query(source, index, a.array_make_filled(2, 0));
   report.query(source, index, a.array_make_filled(3, 0));
   report.query(source, index, a.array_make_filled(5, 0));
-  report.query(source, index, a.array_make_empty(I32, ()))
+  report.query(source, index, a.array_make_empty[I32](()))
 }
 
 fn run_empty() {
-  let source = a.array_make_empty(I32, ());
+  let source = a.array_make_empty[I32](());
   let index = sam.build(source);
   analysis.finalize(index);
   report.heading("empty", source, index);
   report.query(source, index, a.array_make_filled(1, 0));
-  report.query(source, index, a.array_make_empty(I32, ()))
+  report.query(source, index, a.array_make_empty[I32](()))
 }
 
 pub fn main() {

@@ -891,7 +891,7 @@ mod tests {
             (
                 "consumer.kio",
                 "module consumer; import dep as dep; \
-                 newtype Link : dep.Contra(Loop) { \
+                 newtype Link : dep.Contra[Loop] { \
                    pub constructor mk_link; pub projector un_link; \
                  }; \
                  newtype Loop : Link { \
@@ -939,7 +939,7 @@ mod tests {
             "consumer.kio",
             "module consumer; \
              newtype F[A] : A { pub constructor mk_f; pub projector un_f; }; \
-             newtype Wrapper[*F][A] : F(A) { \
+             newtype Wrapper[*F][A] : F[A] { \
                pub constructor mk_wrapper; pub projector un_wrapper; \
              };",
         )]);
@@ -974,11 +974,11 @@ mod tests {
             (
                 "consumer.kio",
                 "module consumer; import positive as positive; import nonpositive as nonpositive; \
-                 newtype Good : positive.Wrap(Good) { constructor mk_good; projector un_good; }; \
-                 newtype Bad_contra : nonpositive.Wrap(Bad_contra) { \
+                 newtype Good : positive.Wrap[Good] { constructor mk_good; projector un_good; }; \
+                 newtype Bad_contra : nonpositive.Wrap[Bad_contra] { \
                    constructor mk_bad_contra; projector un_bad_contra; \
                  }; \
-                 newtype Bad_invariant : nonpositive.Invariant(Bad_invariant) { \
+                 newtype Bad_invariant : nonpositive.Invariant[Bad_invariant] { \
                    constructor mk_bad_invariant; projector un_bad_invariant; \
                  };",
             ),
@@ -1025,35 +1025,35 @@ mod tests {
             (
                 "p1.kio",
                 "module p1; import p0 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap(A) & previous.Wrap(A) { \
+                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
                    constructor mk_wrap; projector un_wrap; \
                  };",
             ),
             (
                 "p2.kio",
                 "module p2; import p1 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap(A) & previous.Wrap(A) { \
+                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
                    constructor mk_wrap; projector un_wrap; \
                  };",
             ),
             (
                 "p3.kio",
                 "module p3; import p2 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap(A) & previous.Wrap(A) { \
+                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
                    constructor mk_wrap; projector un_wrap; \
                  };",
             ),
             (
                 "p4.kio",
                 "module p4; import p3 as previous; \
-                 pub newtype Wrap[A] : previous.Wrap(A) & previous.Wrap(A) { \
+                 pub newtype Wrap[A] : previous.Wrap[A] & previous.Wrap[A] { \
                    constructor mk_wrap; projector un_wrap; \
                  };",
             ),
             (
                 "consumer.kio",
                 "module consumer; import p4 as outer; \
-                 newtype Good : outer.Wrap(outer.Wrap(Good)) { \
+                 newtype Good : outer.Wrap[outer.Wrap[Good]] { \
                    constructor mk_good; projector un_good; \
                  };",
             ),

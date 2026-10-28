@@ -4,11 +4,11 @@ import macros(macro polymorphic_unit, macro projected_polymorphic);
 
 fn make_polymorphic_unit() -> [A] . { polymorphic_unit() }
 
-fn make_projected_polymorphic[Ct](value: Ct) -> [A] Ct { projected_polymorphic(value) }
+fn make_projected_polymorphic[Ct](value: Ct) -> [A] Ct { projected_polymorphic(value)[_] }
 
 pub fn main() {
   let direct = make_polymorphic_unit();
-  direct(.);
+  direct[.];
   let projected = make_projected_polymorphic(());
-  projected(.)
+  projected[.]
 }

@@ -11,6 +11,6 @@ import testapi/io(print);
 fn id[A](x: A) -> A { x }
 
 pub fn main() {
-  let p = id(String -> ., .x. { print(x1) });
+  let p = id[String -> .](.x. { print(x1) });
   p("hello .#\n")
 }

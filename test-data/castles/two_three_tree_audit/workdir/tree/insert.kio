@@ -36,9 +36,9 @@ labels Ins = { fitted: Node } | { split: Node & I32 & String & Node };
 
 type Ins_out = Ins & Tally;
 
-fn fitted(n: Node) -> Ins { {fitted = n}.>widen_sum(Ins) }
+fn fitted(n: Node) -> Ins { ({fitted = n}.>widen_sum)[Ins] }
 
-fn promoted(l: Node, k: I32, v: String, r: Node) -> Ins { {split = (l, k, v, r)}.>widen_sum(Ins) }
+fn promoted(l: Node, k: I32, v: String, r: Node) -> Ins { ({split = (l, k, v, r)}.>widen_sum)[Ins] }
 
 /// A 2-node has room for a promotion: it becomes a 3-node and nothing climbs.
 fn absorb_two_left(i: Ins, k1: I32, v1: String, r: Node) -> Ins {
@@ -159,7 +159,7 @@ rec(loop) fn ins(t: Node, k: I32, v: String) -> Ins_out {
 /// stored-size invariant something to be wrong about.
 pub fn insert(t: Tree, k: I32, v: String) -> Tree & Tally {
   let root = root_of(t);
-  let grew = if(contains(root, k)) { 0 } else { 1 };
+  let .(grew: I32) = if(contains(root, k)) { 0 } else { 1 };
   let size = add_i32(size_of(t), grew);
   let .(i: Ins, acc: Tally) = ins(root, k, v);
   match(i) {

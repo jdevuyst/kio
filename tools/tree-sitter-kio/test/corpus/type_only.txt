@@ -2,7 +2,7 @@
 type-only named declarations
 ================================================================================
 module m;
-pure fn nil[A] -> List(A) { empty(A) }
+pure fn nil[A] -> List[A] { empty[A] }
 fn unit[A] { () }
 fn repeated[A][B] -> A -> B -> A { .(a: A)(b: B) { a } }
 fn explicit[A]() -> . { () }
@@ -29,20 +29,20 @@ fn explicit[A]() -> . { () }
       (type_path
         (entity_name_type)
         (type_arguments
-          (bracket_lparen)
+          (bracket_lbracket)
           (type_path
             (entity_name_type))
-          (bracket_rparen))))
+          (bracket_rbracket))))
     (expression_block
       (bracket_lbrace)
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (type_path
             (entity_name_type))
-          (bracket_rparen)))
+          (bracket_rbracket)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -146,7 +146,7 @@ fn run() {
   let repeated = .[A][B] -> . { () };
   let mixed = .[A](a: A)[B] { a };
   let explicit = .[A]() { () };
-  direct(.)
+  direct[.]
 }
 --------------------------------------------------------------------------------
 
@@ -268,10 +268,10 @@ fn run() {
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (separator_dot)
-          (bracket_rparen)))
+          (bracket_rbracket)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -279,7 +279,7 @@ type-only groups and dot trivia
 ================================================================================
 module m;
 fn named // header
-[,A,,] // stages
+[A] // stages
 [B] -> . { () }
 fn run() {
   . // dot
@@ -303,11 +303,8 @@ fn run() {
       (fn_signature
         (type_param_group
           (bracket_lbracket)
-          (separator_comma)
           (type_param_binder
             (variable_parameter))
-          (separator_comma)
-          (separator_comma)
           (bracket_rbracket))
         (comment_line)
         (type_param_group
@@ -363,8 +360,8 @@ fn run() {
 type-only higher-kinded function value
 ================================================================================
 module m;
-fn value[*F] -> F(.) -> F(.) { .(x: F(.)) { x } }
-fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
+fn value[*F] -> F[.] -> F[.] { .(x: F[.]) { x } }
+fn run() { .[*F] -> F[.] -> F[.] { .(x: F[.]) { x } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -389,16 +386,16 @@ fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
         (type_path
           (entity_name_type)
           (type_arguments
-            (bracket_lparen)
+            (bracket_lbracket)
             (separator_dot)
-            (bracket_rparen)))
+            (bracket_rbracket)))
         (operator_arrow_type)
         (type_path
           (entity_name_type)
           (type_arguments
-            (bracket_lparen)
+            (bracket_lbracket)
             (separator_dot)
-            (bracket_rparen)))))
+            (bracket_rbracket)))))
     (expression_block
       (bracket_lbrace)
       (fn_lambda_expr
@@ -413,9 +410,9 @@ fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
                 (type_path
                   (entity_name_type)
                   (type_arguments
-                    (bracket_lparen)
+                    (bracket_lbracket)
                     (separator_dot)
-                    (bracket_rparen)))))
+                    (bracket_rbracket)))))
             (bracket_rparen)))
         (expression_block
           (bracket_lbrace)
@@ -447,16 +444,16 @@ fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
           (type_path
             (entity_name_type)
             (type_arguments
-              (bracket_lparen)
+              (bracket_lbracket)
               (separator_dot)
-              (bracket_rparen)))
+              (bracket_rbracket)))
           (operator_arrow_type)
           (type_path
             (entity_name_type)
             (type_arguments
-              (bracket_lparen)
+              (bracket_lbracket)
               (separator_dot)
-              (bracket_rparen))))
+              (bracket_rbracket))))
         (expression_block
           (bracket_lbrace)
           (fn_lambda_expr
@@ -471,9 +468,9 @@ fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
                     (type_path
                       (entity_name_type)
                       (type_arguments
-                        (bracket_lparen)
+                        (bracket_lbracket)
                         (separator_dot)
-                        (bracket_rparen)))))
+                        (bracket_rbracket)))))
                 (bracket_rparen)))
             (expression_block
               (bracket_lbrace)
@@ -487,7 +484,7 @@ fn run() { .[*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }
 type-only export signature
 ================================================================================
 signature app v(1);
-v(1) { breaking { add { module api { fn nil[A] -> List(A); fn thunk[A]() -> List(A); } } } }
+v(1) { breaking { add { module api { fn nil[A] -> List[A]; fn thunk[A]() -> List[A]; } } } }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -532,10 +529,10 @@ v(1) { breaking { add { module api { fn nil[A] -> List(A); fn thunk[A]() -> List
                 (type_path
                   (entity_name_type)
                   (type_arguments
-                    (bracket_lparen)
+                    (bracket_lbracket)
                     (type_path
                       (entity_name_type))
-                    (bracket_rparen))))
+                    (bracket_rbracket))))
               (separator_semicolon)
               (fn_decl_head
                 (keyword_fn)
@@ -553,10 +550,10 @@ v(1) { breaking { add { module api { fn nil[A] -> List(A); fn thunk[A]() -> List
                 (type_path
                   (entity_name_type)
                   (type_arguments
-                    (bracket_lparen)
+                    (bracket_lbracket)
                     (type_path
                       (entity_name_type))
-                    (bracket_rparen))))
+                    (bracket_rbracket))))
               (separator_semicolon)
               (bracket_rbrace)))
           (bracket_rbrace))

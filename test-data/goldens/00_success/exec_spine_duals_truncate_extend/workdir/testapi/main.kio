@@ -20,5 +20,5 @@ pub fn main() {
   // it back to `String` — the `!` arm is uninhabited, so it drops
   // freely under narrow_sum.
   let widened = extend("extend: added bottom arm\n");
-  print(widened.>narrow_sum(String))
+  print((widened.>narrow_sum)[String])
 }

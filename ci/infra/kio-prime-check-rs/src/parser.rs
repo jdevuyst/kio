@@ -7,14 +7,14 @@
 //! the value level), type-expression naming-rule violations, or any
 //! other parse failure — is reported as `ParseError`.
 //!
-//! Call-argument lists accept either expressions or types (per
-//! `specs/prime.md` § Grammar's `CallArg` production), since the
-//! spelling-defined type and value roles disambiguate name-shaped arguments
-//! before declaration lookup.
+//! Postfix square brackets supply explicit type arguments; parentheses
+//! supply one value packet. Each square pair contains exactly one type;
+//! type-constructor applications and literal annotations use the same delimiter.
 //!
 //! Naming-convention enforcement is syntax-local: declaration heads,
-//! binders, type-expression paths, selective imports, and ambiguous raw
-//! call arguments are checked against their exact admitted name roles.
+//! binders, type-expression paths, selective imports, and value paths are
+//! checked against their exact admitted name roles. Value-packet operands
+//! additionally reject type-shaped paths.
 //! Reserved compiler-internal type spellings remain admissible in phase
 //! artifacts, but reservation supplies hygiene rather than privilege.
 
@@ -74,8 +74,8 @@ struct Parser {
     src_len: usize,
     /// The unconsumed suffix of the token at `pos` after a contextual
     /// structural peel. The lexed token vector stays immutable, so a parser
-    /// checkpoint is only `(pos, current_residual)` and speculative call-arg
-    /// parsing cannot leak a peeled spelling into its fallback branch.
+    /// checkpoint is only `(pos, current_residual)`; restoring it also restores
+    /// the current structural token suffix.
     current_residual: Option<Token>,
     tokens: Vec<Token>,
     pos: usize,
@@ -230,14 +230,12 @@ impl Parser {
         any
     }
 
-    /// Returns true if the next operator run starts with the structural
-    /// `[` required by a universal type binder. Brackets otherwise join
-    /// ordinary maximal operator runs; only this binder context peels one.
-    fn peek_starts_type_param(&self) -> bool {
+    /// Type contexts peel one structural bracket from a maximal symbol run.
+    fn peek_starts_type_bracket(&self) -> bool {
         matches!(self.peek_kind(), Some(TokenKind::SymbolRun(run)) if run.starts_with('['))
     }
 
-    fn expect_type_param_open(&mut self) -> Result<(), ParseError> {
+    fn expect_type_bracket_open(&mut self) -> Result<(), ParseError> {
         match self.peek_kind() {
             Some(TokenKind::SymbolRun(run)) if run == "[" => {
                 self.advance();
@@ -247,15 +245,11 @@ impl Parser {
                 self.split_current_sym(1);
                 Ok(())
             }
-            _ => self.err("expected `[` opening forall binder"),
+            _ => self.err("expected `[` opening a type bracket"),
         }
     }
 
-    fn at_type_param_close(&self) -> bool {
-        matches!(self.peek_kind(), Some(TokenKind::SymbolRun(run)) if run.starts_with(']'))
-    }
-
-    fn expect_type_param_close(&mut self) -> Result<(), ParseError> {
+    fn expect_type_bracket_close(&mut self) -> Result<(), ParseError> {
         match self.peek_kind() {
             Some(TokenKind::SymbolRun(run)) if run == "]" => {
                 self.advance();
@@ -265,7 +259,7 @@ impl Parser {
                 self.split_current_sym(1);
                 Ok(())
             }
-            _ => self.err("expected `]` closing forall binder"),
+            _ => self.err("expected `]` after one type or binder"),
         }
     }
 
@@ -277,35 +271,13 @@ impl Parser {
             )
     }
 
-    /// Consume one universal type-binder group. `[A][B]` is canonical,
-    /// while `[A, B]` is accepted as shorthand for the same ordered
-    /// binder run. Leading `*` characters encode the binder's kind
-    /// (`[*F]` ⇒ `*→*`, `[**G]` ⇒ `*→*→*`; see `specs/grammar.md`
-    /// § Kind grammar). The verifier only checks acceptance, so it
-    /// discards the star count.
+    /// Each square pair binds one name; leading stars encode its kind.
     fn consume_type_param_binder_group(&mut self, what: &str) -> Result<(), ParseError> {
-        self.expect_type_param_open()?;
-        self.skip_commas();
-        if self.at_type_param_close() {
-            return self.err("type-parameter group cannot be empty");
-        }
-        while !self.at_type_param_close() {
-            // A leading run of `*` kind-marker stars lexes as one
-            // greedy `SymbolRun` (`*` / `**` / `***`); consume the
-            // whole run before the binder name.
-            self.consume_leading_stars();
-            let (name, span) = self.expect_ident_with_span(what)?;
-            Self::validate_type_name(&name, span)?;
-            let saw_comma = self.skip_commas();
-            if self.at_type_param_close() {
-                break;
-            }
-            if !saw_comma {
-                return self.err("expected `,` or `]` in type-parameter group");
-            }
-        }
-        self.expect_type_param_close()?;
-        Ok(())
+        self.expect_type_bracket_open()?;
+        self.consume_leading_stars();
+        let (name, span) = self.expect_ident_with_span(what)?;
+        Self::validate_type_name(&name, span)?;
+        self.expect_type_bracket_close()
     }
 
     /// Consume one StrLit token and any immediately-following adjacent
@@ -693,40 +665,6 @@ impl Parser {
         }
     }
 
-    /// Validate every segment of a path-shaped raw call argument against the
-    /// exact spelling union admitted before its namespace/type/member role is
-    /// established. This remains permissive about the role of each valid
-    /// segment, preserving qualified type arguments (`m._Foo`) and value-member
-    /// calls (`Formtype.member(...)`), but no declaration can make a spelling
-    /// outside both user namespaces legal.
-    fn validate_call_arg_path_names(&self) -> Result<(), ParseError> {
-        let Some(Token {
-            kind: TokenKind::Ident(head),
-            span: head_span,
-        }) = self.peek_token_at(0)
-        else {
-            return Ok(());
-        };
-        Self::validate_path_segment_name(head, *head_span)?;
-
-        let mut offset = 0usize;
-        while self
-            .peek_kind_at(offset + 1)
-            .is_some_and(|kind| kind.is_sym("."))
-        {
-            let Some(Token {
-                kind: TokenKind::Ident(name),
-                span,
-            }) = self.peek_token_at(offset + 2)
-            else {
-                break;
-            };
-            Self::validate_path_segment_name(name, *span)?;
-            offset += 2;
-        }
-        Ok(())
-    }
-
     fn validate_type_path_name(name: &str, span: Span) -> Result<(), ParseError> {
         if Self::has_name_shape(name, true) {
             return Ok(());
@@ -1024,7 +962,7 @@ impl Parser {
     fn type_alias_body(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `type`")?;
         Self::validate_type_name(&name, span)?;
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             self.type_param_list()?;
         }
         self.expect_sym("=", "`=` in `type`")?;
@@ -1058,7 +996,7 @@ impl Parser {
     fn host_type_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `host type`")?;
         Self::validate_type_name(&name, span)?;
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             self.type_param_list()?;
         }
         if self.eat_ident_named("role") {
@@ -1135,7 +1073,7 @@ impl Parser {
     fn newtype_after_keyword(&mut self) -> Result<(), ParseError> {
         let (name, span) = self.expect_ident_with_span("name after `newtype`")?;
         Self::validate_type_name(&name, span)?;
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             self.type_param_list()?;
         }
         while self.at_sym("<") {
@@ -1190,7 +1128,7 @@ impl Parser {
 
     /// `TypeParamList ::= UniversalBinder*`
     fn type_param_list(&mut self) -> Result<(), ParseError> {
-        while self.peek_starts_type_param() {
+        while self.peek_starts_type_bracket() {
             self.consume_type_param_binder_group("type-parameter name")?;
         }
         Ok(())
@@ -1204,7 +1142,7 @@ impl Parser {
         let mut saw_group = false;
         let mut saw_value_group = false;
         loop {
-            if self.peek_starts_type_param() {
+            if self.peek_starts_type_bracket() {
                 saw_group = true;
                 self.type_param_list()?;
             } else if matches!(self.peek_kind(), Some(TokenKind::LParen)) {
@@ -1243,7 +1181,7 @@ impl Parser {
     }
 
     fn signature_value_param(&mut self) -> Result<(), ParseError> {
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             return self.err("type binders in signatures must be written before a value group");
         }
         let (name, span) = self.expect_ident_with_span("parameter name")?;
@@ -1253,7 +1191,7 @@ impl Parser {
     }
 
     fn fn_signature_value_param(&mut self) -> Result<(), ParseError> {
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             return self.err("type binders in lambdas must be written before a value group");
         }
         let (name, span) = self.expect_ident_with_span("parameter name")?;
@@ -1266,7 +1204,7 @@ impl Parser {
     }
 
     fn type_signature_prefix(&mut self) -> Result<(), ParseError> {
-        while self.peek_starts_type_param() {
+        while self.peek_starts_type_bracket() {
             self.type_param_list()?;
         }
         if self.at_arrow() {
@@ -1290,7 +1228,7 @@ impl Parser {
     }
 
     fn type_with_chain(&mut self, allow_chain: bool) -> Result<(), ParseError> {
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             return self.type_signature_prefix();
         }
 
@@ -1373,7 +1311,7 @@ impl Parser {
     fn peek_starts_type_atom(&self) -> bool {
         self.at_unit_type_dot()
             || self.at_sym("!")
-            || self.peek_starts_type_param()
+            || self.peek_starts_type_bracket()
             || matches!(
                 self.peek_kind(),
                 Some(TokenKind::LParen) | Some(TokenKind::Ident(_))
@@ -1403,7 +1341,7 @@ impl Parser {
             }
             Some(TokenKind::LParen) => self.paren_type(),
             Some(TokenKind::Ident(_)) => self.type_path(),
-            Some(_) if self.peek_starts_type_param() => self.type_signature_prefix(),
+            Some(_) if self.peek_starts_type_bracket() => self.type_signature_prefix(),
             _ => self.err("expected a type"),
         }
     }
@@ -1439,7 +1377,7 @@ impl Parser {
         };
 
         Self::validate_type_path_name(&name, name_span)?;
-        if matches!(self.peek_kind(), Some(TokenKind::LParen)) {
+        while self.peek_starts_type_bracket() {
             self.type_arg_list()?;
         }
         Ok(())
@@ -1478,7 +1416,7 @@ impl Parser {
 
         // A parenthesized grouped function type is ordinary grouping
         // around the binder-prefix syntax.
-        if self.peek_starts_type_param() {
+        if self.peek_starts_type_bracket() {
             self.type_()?;
             self.expect_kind(&TokenKind::RParen, "`)` closing parenthesized type")?;
             if self.eat_arrow() {
@@ -1587,26 +1525,11 @@ impl Parser {
         Ok(())
     }
 
-    /// `TypeArgList ::= '(' ','* Type (','+ Type)* ','* ')'`
+    /// One explicit type argument, shared by named types and value stages.
     fn type_arg_list(&mut self) -> Result<(), ParseError> {
-        self.expect_kind(&TokenKind::LParen, "`(`")?;
-        self.skip_commas();
-        if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
-            return self.err("type-argument list cannot be empty");
-        }
+        self.expect_type_bracket_open()?;
         self.type_()?;
-        loop {
-            let saw_comma = self.skip_commas();
-            if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
-                break;
-            }
-            if !saw_comma {
-                return self.err("expected `,` or `)`");
-            }
-            self.type_()?;
-        }
-        self.expect_kind(&TokenKind::RParen, "`)` closing type-argument list")?;
-        Ok(())
+        self.expect_type_bracket_close()
     }
 
     /// `Block ::= '{' BlockBody '}'`
@@ -1689,22 +1612,41 @@ impl Parser {
     /// has recognized a full let-statement shape; otherwise it is a
     /// value identifier like any other contextual word.
     fn expr(&mut self) -> Result<(), ParseError> {
-        self.expr_postfix()
+        self.expr_postfix().map(|_| ())
     }
 
     /// `ExprPostfix ::= ValuePath CallSuffix* | ExprAtom CallSuffix*`
     ///
     /// Dotted segments belong only to an identifier-led value path and are
     /// consumed before any call suffix. They are not a generic expression
-    /// suffix: `(f).g` and `f().g` are outside both Kio and Kio'. A trailing
-    fn expr_postfix(&mut self) -> Result<(), ParseError> {
-        let identifier_led = matches!(self.peek_kind(), Some(TokenKind::Ident(_)));
-        self.expr_atom()?;
-        if identifier_led {
+    /// suffix: `(f).g` and `f().g` are outside both Kio and Kio'.
+    // Retain only the type-shaped head, if any, through grouping and call
+    // suffixes. A value packet rejects that head; other expression contexts
+    // leave namespace resolution to the consumer.
+    fn expr_postfix(&mut self) -> Result<Option<Span>, ParseError> {
+        let mut final_name = self.peek_token_at(0).and_then(|token| {
+            if let TokenKind::Ident(name) = &token.kind {
+                Some((name.clone(), token.span))
+            } else {
+                None
+            }
+        });
+        let mut type_head = if matches!(self.peek_kind(), Some(TokenKind::LParen)) {
+            self.paren_expr()?
+        } else {
+            self.expr_atom()?;
+            None
+        };
+        if final_name.is_some() {
             while self.peek_kind().is_some_and(|kind| kind.is_sym(".")) {
                 self.advance();
                 let (name, span) = self.expect_ident_with_span("identifier after `.`")?;
                 Self::validate_path_segment_name(&name, span)?;
+                final_name = Some((name, span));
+            }
+            let (name, span) = final_name.expect("identifier-led expression has a final name");
+            if Self::starts_like_type_name(&name) {
+                type_head = Some(span);
             }
         }
         loop {
@@ -1717,6 +1659,7 @@ impl Parser {
                 Some(TokenKind::LParen) => {
                     self.call_args()?;
                 }
+                Some(_) if self.peek_starts_type_bracket() => self.type_arg_list()?,
                 Some(k)
                     if k.is_sym(".>") || k.is_sym(".>>") || k.is_sym(".<") || k.is_sym(".<<") =>
                 {
@@ -1727,13 +1670,10 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(())
+        Ok(type_head)
     }
 
-    /// `'(' ','* (CallArg (','+ CallArg)* ','*)? ')'` in suffix position.
-    /// `CallArg ::= Expr | Type` — type arguments and value arguments
-    /// share one positional list; the typer pairs them against the
-    /// callee's signature.
+    /// A parenthesized suffix is one value packet; an empty packet is Unit.
     fn call_args(&mut self) -> Result<(), ParseError> {
         self.expect_kind(&TokenKind::LParen, "`(`")?;
         self.skip_commas();
@@ -1741,7 +1681,7 @@ impl Parser {
             self.advance();
             return Ok(());
         }
-        self.call_arg()?;
+        self.value_operand()?;
         loop {
             let saw_comma = self.skip_commas();
             if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
@@ -1750,45 +1690,25 @@ impl Parser {
             if !saw_comma {
                 return self.err("expected `,` or `)`");
             }
-            self.call_arg()?;
+            self.value_operand()?;
         }
         self.expect_kind(&TokenKind::RParen, "`)` closing call argument list")?;
         Ok(())
     }
 
-    /// One call argument. Tries `Expr` first; if that fails — or
-    /// succeeds but doesn't land on a list-continuation token (`,` /
-    /// `)`) — backtracks and parses as `Type`. Slots whose surface
-    /// spelling is admissible as both (bare identifier, parametric
-    /// call) take the expr reading; type-only slots (`.`, `!`,
-    /// paren-wrapped binary types, function types) fall through.
-    fn call_arg(&mut self) -> Result<(), ParseError> {
-        self.validate_call_arg_path_names()?;
-        let saved = (self.pos, self.current_residual.clone());
-        let expr_result = self.expr();
-        if expr_result.is_ok()
-            && matches!(self.peek_kind(), Some(TokenKind::Comma | TokenKind::RParen))
-        {
-            return Ok(());
+    fn value_operand(&mut self) -> Result<(), ParseError> {
+        if let Some(span) = self.expr_postfix()? {
+            return self.err_at(span, "expected a value operand, found a type path");
         }
-        (self.pos, self.current_residual) = saved;
-        match self.type_() {
-            Ok(()) => Ok(()),
-            // Both arms rejected. Prefer the expr-side diagnostic —
-            // the call-arg position reads as an expression, so its
-            // message lines up with what the user wrote. (Matters
-            // for `_`, which both arms reject with slightly
-            // different wording.)
-            Err(type_err) => Err(expr_result.err().unwrap_or(type_err)),
-        }
+        Ok(())
     }
 
     fn expr_atom(&mut self) -> Result<(), ParseError> {
         match self.peek_kind() {
             Some(TokenKind::IntLit | TokenKind::FloatLit) => {
                 // A numeric literal. Kio' mandates the trailing
-                // `(Type)` annotation (specs/grammar.md § Kio' grammar
-                // — `LiteralCall ::= LITERAL '(' Type ')'`). The
+                // `[Type]` annotation (specs/grammar.md § Kio' grammar
+                // — `LiteralCall ::= LITERAL '[' Type ']'`). The
                 // `LiteralCall` annotation is consumed inline here so
                 // a bare literal surfaces a Kio'-specific rejection
                 // rather than reaching `expr_postfix` and looking
@@ -1801,12 +1721,12 @@ impl Parser {
                 // rule (specs/language.md § Literals): two or more
                 // StrLit tokens with only trivia between them produce a
                 // single AST literal with the concatenated value. The
-                // trailing `(Type)` annotation is mandatory in Kio'.
+                // trailing `[Type]` annotation is mandatory in Kio'.
                 self.advance();
                 self.skip_adjacent_str_lits();
                 self.expect_literal_annotation("string")
             }
-            Some(TokenKind::LParen) => self.paren_expr(),
+            Some(TokenKind::LParen) => self.paren_expr().map(|_| ()),
             Some(TokenKind::SymbolRun(run)) if run == "." || run.starts_with(".[") => {
                 let dot_end = self.current_offset() + 1;
                 if run == "." {
@@ -1831,13 +1751,13 @@ impl Parser {
                         self.fn_after_dot()
                     }
                     Some(TokenKind::LParen) => self.err("expected `.t`, `.f`, or `.(...) { ... }`"),
-                    _ if self.peek_starts_type_param() => self.fn_after_dot(),
+                    _ if self.peek_starts_type_bracket() => self.fn_after_dot(),
                     _ => self.err("expected `.t`, `.f`, or `.(...) { ... }`"),
                 }
             }
             Some(TokenKind::Ident(s)) if s == "_" => {
                 // `_` in expression position is surface sugar for elided
-                // type-arg slots at a polymorphic call (`__left__(_, _, x)`).
+                // type-arg slots at a polymorphic call (`__left__[_][_](x)`).
                 // Kio' has no inference, so `_` has no role here. The
                 // type-position spelling is rejected in `type_atom` too.
                 self.err("`_` placeholder is not in Kio'")
@@ -1850,30 +1770,28 @@ impl Parser {
         }
     }
 
-    /// Consume the trailing `'(' Type ')'` annotation of a
+    /// Consume the trailing `'[' Type ']'` annotation of a
     /// `LiteralCall`. Kio' makes the annotation mandatory (see
     /// `specs/grammar.md` § Kio' grammar — `LiteralCall ::= LITERAL
-    /// '(' Type ')'`); a bare literal is rejected here so the user
+    /// '[' Type ']'`); a bare literal is rejected here so the user
     /// sees a Kio'-specific diagnostic rather than the generic
     /// "expected `,` or `)`" from the surrounding call-args parser.
     fn expect_literal_annotation(&mut self, kind: &str) -> Result<(), ParseError> {
-        if !matches!(self.peek_kind(), Some(TokenKind::LParen)) {
+        if !self.peek_starts_type_bracket() {
             return self.err(format!(
-                "a {kind} literal must carry a `(Type)` annotation in Kio' \
-                 (specs/grammar.md § Kio' grammar — `LiteralCall ::= LITERAL '(' Type ')'`); \
-                 surface tier-2 / tier-3 resolution does not apply"
+                "a {kind} literal must carry a `[Type]` annotation in Kio' \
+                 (specs/grammar.md § Kio' grammar — `LiteralCall ::= LITERAL '[' Type ']'`); \
+                 contextual literal inference does not apply"
             ));
         }
-        self.expect_kind(&TokenKind::LParen, "`(` opening literal annotation")?;
-        self.type_()?;
-        self.expect_kind(&TokenKind::RParen, "`)` closing literal annotation")?;
+        self.type_arg_list()?;
         Ok(())
     }
 
     /// `(  )` (unit), `( Expr )` (grouping). Comma-runs around zero
     /// or one expression collapse to the same shapes; `(a, b, …)`
     /// n-ary tuple literals are surface sugar and rejected.
-    fn paren_expr(&mut self) -> Result<(), ParseError> {
+    fn paren_expr(&mut self) -> Result<Option<Span>, ParseError> {
         let open_span = self.tokens.get(self.pos).map(|t| t.span).unwrap_or(Span {
             start: self.src_len,
             end: self.src_len,
@@ -1882,10 +1800,10 @@ impl Parser {
         self.skip_commas();
         if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
             self.advance();
-            return Ok(());
+            return Ok(None);
         }
         let mut item_count = 1usize;
-        self.expr()?;
+        let type_head = self.expr_postfix()?;
         loop {
             let saw_comma = self.skip_commas();
             if matches!(self.peek_kind(), Some(TokenKind::RParen)) {
@@ -1904,7 +1822,7 @@ impl Parser {
                 "n-ary tuple literal `(a, b, …)` is surface sugar — not in Kio' (use `__pair__` after `import __intrinsics__;`)",
             );
         }
-        Ok(())
+        Ok(type_head)
     }
 
     /// After consuming `.`: `SignatureGroups ('->' Type)? Block`
@@ -1989,20 +1907,20 @@ mod tests {
     fn boolean_literals_require_adjacent_marker() {
         for literal in [". t", ".\nf", ".// keep\nt"] {
             assert!(
-                err(&format!("module x; fn f() {{ {literal}(Bool) }}"))
+                err(&format!("module x; fn f() {{ {literal}[Bool] }}"))
                     .contains("immediately after `.`")
             );
         }
-        ok("module x; fn f() { .t(Bool) } fn g() { .f(Bool) }");
+        ok("module x; fn f() { .t[Bool] } fn g() { .f[Bool] }");
     }
 
     #[test]
     fn numeric_separators_stay_between_digits() {
         for literal in ["1__0", "1_", "1.0__1", "1.0e1__0", "1e1_", "2e3", "2E-3"] {
-            let _ = err(&format!("module x; fn f() {{ {literal}(Number) }}"));
+            let _ = err(&format!("module x; fn f() {{ {literal}[Number] }}"));
         }
         for literal in ["1_0", "1.0_1", "1.0e1_0", "2.0e3", "2.0E-3"] {
-            ok(&format!("module x; fn f() {{ {literal}(Number) }}"));
+            ok(&format!("module x; fn f() {{ {literal}[Number] }}"));
         }
     }
 
@@ -2035,7 +1953,7 @@ mod tests {
         // items are ordinary module items (`host type` / `host fn`).
         // See specs/prime.md § Host declarations — there is no `env` block.
         err("module foo; \
-             env { type String role(str); type Box[A]; fn read(x: Box(String)) -> String; } \
+             env { type String role(str); type Box[A]; fn read(x: Box[String]) -> String; } \
              fn id(x: String) -> String { x }");
         err("module foo; \
              env { type Token; fn print(s: String) -> .; } \
@@ -2046,7 +1964,7 @@ mod tests {
     fn host_items_as_module_items() {
         ok("module foo; \
              host type String role(str); host type Box[A]; \
-             host fn read(x: Box(String)) -> String; \
+             host fn read(x: Box[String]) -> String; \
              fn id(x: String) -> String { x }");
     }
 
@@ -2204,7 +2122,7 @@ mod tests {
 
     #[test]
     fn type_expr_qualified_type_path_accepted() {
-        ok("module m; type T = pkg/types.Box(A);");
+        ok("module m; type T = pkg/types.Box[A];");
     }
 
     #[test]
@@ -2224,8 +2142,26 @@ mod tests {
     }
 
     #[test]
-    fn comma_binder_group_accepts_shorthand() {
-        ok("module m; type Id = [A, B] A -> B;");
+    fn square_pairs_have_exactly_one_binder_or_type() {
+        for source in [
+            "module m; type Id = [A, B] A -> B;",
+            "module m; fn pair[A, B](a: A) -> A { a }",
+            "module m; host type Pair[A, B];",
+            "module m; newtype Pair[A, B] : A { constructor mk; projector get; };",
+            "module m; type Pair[A, B] = A & B;",
+            "module m; fn run() { .[A, B](a: A) { a } }",
+            "module m; type Applied = Pair[A, B];",
+            "module m; type Applied = Pair[];",
+            "module m; type Applied = Pair[,A];",
+            "module m; type Applied = Pair[A,];",
+            "module m; type Applied = Pair(A);",
+            "module m; type Applied = (Pair)[A];",
+            "module m; fn run() { 42[I32, I64] }",
+            "module m; fn run() { 42(I32) }",
+        ] {
+            err(source);
+        }
+        ok("module m; type Pair[A][B] = A & B; type Applied = Pair[List[I32]][[T] T -> T];");
     }
 
     #[test]
@@ -2308,7 +2244,7 @@ mod tests {
     fn compact_forall_brackets_peel_from_maximal_runs() {
         ok("module m; fn higher[A][*F][**G](x: A) -> A { x }");
         ok("module m; type Nested = [A][B] A -> B;");
-        ok("module m; fn lambda() -> . { .[*F](x: F(.)) -> F(.) { x } }");
+        ok("module m; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
     }
 
     #[test]
@@ -2383,7 +2319,7 @@ mod tests {
         ok("module m; \
              host type Box[T]; \
              host type File { owned }; \
-             host fn read_string(x: Box(String)) -> String;");
+             host fn read_string(x: Box[String]) -> String;");
     }
 
     #[test]
@@ -2575,7 +2511,7 @@ mod tests {
     #[test]
     fn newtype_recursive_self_ref() {
         ok(
-            "module m; rec newtype List[A] : (. | (A & List(A))) { pub constructor cons; pub projector un_list; };",
+            "module m; rec newtype List[A] : (. | (A & List[A])) { pub constructor cons; pub projector un_list; };",
         );
     }
 
@@ -2804,7 +2740,7 @@ mod tests {
             "do bind { () }",
             "if() { () }",
             "do() { () }",
-            "if! .t(Bool) { () } else { () }",
+            "if! .t[Bool] { () } else { () }",
             "do! bind { () }",
             "if.value!()",
             "do.value() { () }",
@@ -2937,9 +2873,9 @@ mod tests {
 
     #[test]
     fn bare_literal_rejected() {
-        // Kio' mandates the `(Type)` annotation on every literal
+        // Kio' mandates the `[Type]` annotation on every literal
         // (specs/grammar.md § Kio' grammar — `LiteralCall ::= LITERAL
-        // '(' Type ')'`); the bare-literal form is surface-only.
+        // '[' Type ']'`); the bare-literal form is surface-only.
         let m = err("module m; fn f() -> . { 42; () }");
         assert!(m.contains("annotation") || m.contains("Kio'"), "msg = {m}");
         let m = err("module m; fn f() -> . { 3.14; () }");
@@ -2952,14 +2888,14 @@ mod tests {
 
     #[test]
     fn literal_call_annotation_accepted() {
-        // The trailing `(Type)` annotation form — `42(I32)`,
-        // `"hi"(String)`, `.t(Bool)` — is mandatory on every Kio'
+        // The trailing `[Type]` annotation form — `42[I32]`,
+        // `"hi"[String]`, `.t[Bool]` — is mandatory on every Kio'
         // literal.
-        ok("module m; fn f() -> . { 42(I32); () }");
-        ok("module m; fn f() -> . { 3.14(F64); () }");
-        ok("module m; fn f() -> . { \"hi\"(String); () }");
-        ok("module m; fn f() -> . { .t(Bool); () }");
-        ok("module m; fn f() -> . { .f(Bool); () }");
+        ok("module m; fn f() -> . { 42[I32]; () }");
+        ok("module m; fn f() -> . { 3.14[F64]; () }");
+        ok("module m; fn f() -> . { \"hi\"[String]; () }");
+        ok("module m; fn f() -> . { .t[Bool]; () }");
+        ok("module m; fn f() -> . { .f[Bool]; () }");
     }
 
     #[test]
@@ -3054,50 +2990,126 @@ mod tests {
     }
 
     #[test]
-    fn call_arg_accepts_compound_product_type() {
-        // `(String & String)` at call-arg position is type-only — the
-        // expr-first attempt fails on `&`, parser backtracks to type.
-        ok("module m; import __intrinsics__; fn a(p: (. & .)) -> . { __snd__(., ., p) }");
+    fn explicit_type_stage_accepts_compound_product_type() {
+        // Type operands belong to the explicit square stage.
+        ok("module m; import __intrinsics__; fn a(p: (. & .)) -> . { __snd__[.][.](p) }");
     }
 
     #[test]
-    fn call_arg_accepts_compound_sum_type() {
+    fn explicit_type_stage_accepts_compound_sum_type() {
         ok(
-            "module m; import __intrinsics__; fn a(s: (. | .)) -> . { __either__(., ., ., s, .(_l) { () }, .(_r) { () }) }",
+            "module m; import __intrinsics__; fn a(s: (. | .)) -> . { __either__[.][.][.](s, .(_l) { () }, .(_r) { () }) }",
         );
     }
 
     #[test]
-    fn call_arg_accepts_function_type() {
-        // `. -> .` at call-arg position is type-only.
+    fn explicit_type_stage_accepts_function_type() {
+        // A function type stays inside the explicit type stage.
         ok(
-            "module m; import __intrinsics__; fn a() -> . { __pair__((. -> .), ., .(_x) { () }, ()) }",
+            "module m; import __intrinsics__; fn a() -> . { __pair__[(. -> .)][.](.(_x) { () }, ()) }",
         );
     }
 
     #[test]
-    fn call_arg_accepts_bottom_type() {
-        ok("module m; import __intrinsics__; fn a(b: !) -> . { __absurd__(., b) }");
+    fn explicit_type_stage_accepts_bottom_type() {
+        ok("module m; import __intrinsics__; fn a(b: !) -> . { __absurd__[.](b) }");
     }
 
     #[test]
-    fn call_arg_bare_identifier_still_works() {
-        // The most common case: a bare type-arg like `String` at a
-        // call-arg slot parses as Expr (single ident) and is
-        // reinterpreted by the typer.
-        ok("module m; fn a() -> . { f(A, b) }");
+    fn explicit_type_stage_and_value_packet_have_separate_roles() {
+        // Name roles follow written stage delimiters, before lookup.
+        ok("module m; fn a() -> . { f[A](b) }");
+    }
+
+    #[test]
+    fn explicit_call_stages_compose_without_whitespace_dispatch() {
+        for expression in [
+            "f[A][B](a)[C](b)",
+            "f [ A ] [ B ] (a) [C] (b)",
+            "f[A]",
+            "f[A][B](a, b)",
+            "f(a)(b)",
+            "(f)[A](a)",
+            "(f(a))[B](b)",
+            "(.[A](x: A) { x })[.](())",
+            "f[(A & B)][(! | C)][D[E]][[F] F -> F](value)",
+            "f[A][B](, a,, b,)",
+            "f[A]()(())",
+            "f // type stage follows trivia\n [A](value)",
+        ] {
+            ok(&format!("module m; fn run() {{ {expression} }}"));
+        }
+        // Type arguments and literal annotations share the square delimiter;
+        // declaration brackets continue to bind names.
+        ok(
+            "module m; host type Number role(i32); type Alias[A] = A; fn id[A](x: A) -> A { x } fn run() { id[Alias[Number]](42[Number]) }",
+        );
+    }
+
+    #[test]
+    fn type_shaped_paths_are_rejected_only_as_value_packet_operands() {
+        for expr in [
+            "A",
+            "m.A",
+            "(A)",
+            "A[B]",
+            "m.A[B](())",
+            "f(A.member)",
+            "f(.[A](v: A) -> A { A })",
+            "f(__value)",
+        ] {
+            ok(&format!("module m; fn run() {{ {expr} }}"));
+        }
+        for expr in [
+            "f(A)",
+            "f(m.A)",
+            "f((A))",
+            "f(A[B])",
+            "f(m.A[B]())",
+            "f(g(A))",
+            "f(__Type__)",
+            "f((A)[B]())",
+            "f(.() { g(A) })",
+        ] {
+            err(&format!("module m; fn run() {{ {expr} }}"));
+        }
+    }
+
+    #[test]
+    fn explicit_call_stages_reject_empty_types_and_mixed_value_packets() {
+        for expression in [
+            "f[]",
+            "f[,](value)",
+            "f[x]",
+            "f[A, value](x)",
+            "f[A, B](x)",
+            "f[, A](x)",
+            "f[A,](x)",
+            "f[A B](x)",
+            "f[_](x)",
+            "f(A, x)",
+            "f(m.A, x)",
+            "f(.)",
+            "f(!)",
+            "f((A & B))",
+            "f([A] A -> A)",
+            "f(.[A] A)",
+            "f[A].member",
+        ] {
+            err(&format!("module m; fn run() {{ {expression} }}"));
+        }
     }
 
     #[test]
     fn call_args_accept_exact_name_roles_only() {
         ok("module ok; fn id[A](x: A) -> A { x } \
-             fn ordinary[A](value: A) -> A { id(A, value) } \
-             fn marked[_A](_value: _A) -> _A { id(_A, _value) } \
+             fn ordinary[A](value: A) -> A { id[A](value) } \
+             fn marked[_A](_value: _A) -> _A { id[_A](_value) } \
              fn qualified[_A](_value: _A) -> _A { \
-                 id(m._Foo, _value); \
-                 let _ = id(_A, Formtype.member(_A, _value)); \
-                 let _ = id(_A, m._value1.member(_value)); \
-                 id(_A, m._Foo.member(_value)) \
+                 id[m._Foo](_value); \
+                 let _ = id[_A](Formtype.member[_A](_value)); \
+                 let _ = id[_A](m._value1.member(_value)); \
+                 id[_A](m._Foo.member(_value)) \
              }");
         for (argument, invalid_name) in [
             ("_FooBar", "_FooBar"),
@@ -3126,8 +3138,8 @@ mod tests {
 
     #[test]
     fn expression_paths_accept_exact_name_roles_only() {
-        ok("module ok; fn f[_A](_value: .) -> . { m._Foo.member(_A, _value) }");
-        ok("module ok; fn f[_A](_value: .) -> . { __pair__(_A, _A, _value, _value) }");
+        ok("module ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
+        ok("module ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
         ok("module ok; fn f() -> . { __Foo.member(__value) }");
         for (expression, invalid_name) in [
             ("_FooBar", "_FooBar"),
@@ -3155,7 +3167,7 @@ mod tests {
         }
 
         ok(
-            "module good; import __intrinsics__; type T = __Type__; fn f(x: ., y: .) -> . { __pair__(., ., x, y) }",
+            "module good; import __intrinsics__; type T = __Type__; fn f(x: ., y: .) -> . { __pair__[.][.](x, y) }",
         );
     }
 
@@ -3286,11 +3298,9 @@ mod tests {
     }
 
     #[test]
-    fn failed_dot_lambda_call_arg_does_not_forge_a_forall_type() {
-        // The expr-first attempt peels `.` from the maximal `.[` run, then
-        // rejects the malformed polymorphic lambda. Restoring the call-arg
-        // checkpoint must restore that residual too: otherwise the type
-        // fallback sees a forged `[A] A` and accepts a Prime-only spelling.
+    fn malformed_lambda_value_never_becomes_a_type_argument() {
+        // A malformed lambda remains a rejected value; it cannot fall back
+        // to a type argument after consuming its structural dot.
         let _message = err("module m; fn a() -> . { f(.[A] A) }");
     }
 

@@ -4,7 +4,7 @@
 // For each fixture under test-data/highlight-corpus/, compare:
 //   - kio debug tokens (the oracle, re-derived from the kio binary)
 //   - tree-sitter WASM parser (exact positive kinds/spans, explicit neutral
-//     line-local literal fallback)
+//     line-local literal fallback and two named malformed fixture scopes)
 //   - vscode-textmate tokenization (positive roles must agree; neutrality
 //     covers later-line evidence and explicit regex-capacity limits)
 //
@@ -499,6 +499,8 @@ function checkTextMateLabelFixture(grammar, name, source, tokens) {
 // Tree-sitter preserves positive kinds and covered spans; adjacent equal doc
 // roles coalesce. Explicit literal fallback and the named malformed embedded
 // context fixture have separately bounded, source-authenticated exceptions.
+// The operator-token stream and malformed call-stage prefix compare lexical
+// conservation; the latter resumes exact roles at its following declaration.
 const TEXTMATE_NORMALIZATION = new Set([
   "entity.name.module",
   "entity.name.function",
@@ -512,6 +514,47 @@ function normalizeFor(tokens, set) {
   return tokens.map((t) =>
     set.has(t.kind) ? { ...t, kind: "identifier" } : t,
   );
+}
+
+// These two authored fixtures exercise lexing and error containment. Independent
+// parsers may retain different entity roles inside their malformed source; every
+// token boundary and lexical kind still agrees. Complete examples remain exact.
+function malformedFixtureEnd(name, source) {
+  if (name === "04_operators_and_brackets") return source.length;
+  if (name !== "48_call_stage_recovery") return 0;
+  const following = "\nfn following(value: A) -> A { value }\n";
+  const start = source.indexOf(following);
+  assert.ok(start >= 0 && source.indexOf(following, start + 1) < 0 && source.endsWith(following),
+    "malformed call-stage fixture retains one complete following declaration");
+  return start + 1;
+}
+
+function malformedFixtureTokens(tokens, end) {
+  return tokens.map((token) => token.end <= end && TEXTMATE_NORMALIZATION.has(token.kind)
+    ? { ...token, kind: "identifier" } : token);
+}
+
+function checkMalformedFixtureConservation(reference, treeSitter, source, end) {
+  const agrees = (tokens) => treeSitterTokensAgree(reference, tokens);
+  const bracket = treeSitter.findIndex((token) => token.kind === "punctuation.bracket" && token.end <= end);
+  assert.ok(bracket >= 0, "malformed fixture exercises bracket conservation");
+  assert.equal(agrees(treeSitter.filter((_, index) => index !== bracket)), false,
+    "a dropped bracket must fail malformed-fixture agreement");
+  assert.equal(agrees(treeSitter.map((token, index) => index === bracket
+    ? { ...token, kind: "punctuation.separator" } : token)), false,
+  "a changed bracket kind must fail malformed-fixture agreement");
+  assert.equal(agrees(treeSitter.map((token, index) => index === bracket
+    ? { ...token, end: token.end + 1 } : token)), false,
+  "a changed bracket span must fail malformed-fixture agreement");
+  if (end < source.length) {
+    const following = treeSitter.findIndex((token) => token.start >= end
+      && source.slice(token.start, token.end) === "following");
+    assert.ok(following >= 0 && treeSitter[following].kind === "entity.name.function",
+      "following declaration must recover its function role");
+    assert.equal(agrees(treeSitter.map((token, index) => index === following
+      ? { ...token, kind: "identifier" } : token)), false,
+    "a lost following-declaration role must fail malformed-fixture agreement");
+  }
 }
 
 function treeSitterTokensAgree(reference, treeSitter, malformedDocContext = false) {
@@ -635,11 +678,33 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
   );
   const refTokens = sourceTokenCoordinates(JSON.parse(refRaw), source);
 
+  const malformedEnd = malformedFixtureEnd(name, source);
+  if (malformedEnd > 0) {
+    const requiresSyntaxError = (input) => {
+      treeSitterParser.reset();
+      const tree = treeSitterParser.parse(input);
+      try {
+        const errors = tree?.rootNode.descendantsOfType("ERROR") ?? [];
+        assert.ok(errors.some((error) => error.startIndex < malformedEnd),
+          "named malformed region must still contain a syntax error");
+      } finally { tree?.delete(); }
+    };
+    requiresSyntaxError(source);
+    const validSource = malformedEnd < source.length
+      ? "module clean;\n" + source.slice(malformedEnd)
+      : "module clean; fn run[A](value: A) -> A { value }\n";
+    assert.throws(() => requiresSyntaxError(validSource),
+      /named malformed region must still contain a syntax error/,
+      "repairing the malformed source must retire its lexical-only comparison");
+  }
+  const comparisonReference = malformedFixtureTokens(refTokens, malformedEnd);
   const refForTextMate = normalizeFor(refTokens, TEXTMATE_NORMALIZATION);
 
-  // (2) Tree-sitter — every kind and every token boundary must agree.
+  // (2) Tree-sitter — exact roles except the two named malformed regions;
+  // token boundaries and lexical kinds are conserved throughout both regions.
   const tsTokens = treeSitterTokens(treeSitterParser, source);
-  if (!treeSitterTokensAgree(refTokens, tsTokens, malformedDocContext)) {
+  const comparisonTreeSitter = malformedFixtureTokens(tsTokens, malformedEnd);
+  if (!treeSitterTokensAgree(comparisonReference, comparisonTreeSitter, malformedDocContext)) {
     return {
       name,
       kind: "tree-sitter",
@@ -648,6 +713,17 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
         `reference:\n${fmtTokens(refTokens)}\n` +
         `tree-sitter:\n${fmtTokens(tsTokens)}`,
     };
+  }
+
+  if (malformedEnd > 0) {
+    checkMalformedFixtureConservation(comparisonReference, comparisonTreeSitter, source, malformedEnd);
+  }
+  if (name === "47_call_stages") {
+    const callable = tsTokens.findIndex((token) => token.kind === "entity.name.function");
+    assert.ok(callable >= 0, "valid stage fixture exercises callable classification");
+    assert.equal(treeSitterTokensAgree(refTokens, tsTokens.map((token, index) => index === callable
+      ? { ...token, kind: "identifier" } : token)), false,
+    "valid call-stage roles must not use malformed-fixture normalization");
   }
 
   // (3) TextMate — silence-allowed agreement at the lexical layer.
@@ -673,7 +749,7 @@ async function checkFixture(treeSitterParser, tmGrammar, fixtureDir, malformedDo
   }
   const tmLabelFailures = checkTextMateAgreement(
     refTokens,
-    tmTokens.filter((token) => token.kind === "entity.name.label"),
+    tmTokens.filter((token) => token.kind === "entity.name.label" && token.start >= malformedEnd),
     source,
   );
   if (tmLabelFailures.length > 0) {
@@ -764,6 +840,18 @@ async function main() {
       fs.writeFileSync(path.join(directory, "source.kio"), fixture.source);
       const result = await checkFixture(treeSitterParser, tmGrammar, directory, fixture.malformedContext ?? false);
       assert.equal(result, null, JSON.stringify(result));
+    }
+    const recoverySourcePath = path.join(corpusDir, "48_call_stage_recovery", "source.kio");
+    if (fs.existsSync(recoverySourcePath)) {
+      const recoverySource = fs.readFileSync(recoverySourcePath, "utf8");
+      const prefixEnd = recoverySource.indexOf("// Each bracket is deliberately malformed;");
+      assert.ok(prefixEnd > 0, "recovery fixture keeps its completed module/import prefix");
+      const directory = path.join(styleRoot, "call_stage_valid_prefix");
+      fs.mkdirSync(directory);
+      fs.writeFileSync(path.join(directory, "source.kio"), recoverySource.slice(0, prefixEnd));
+      const result = await checkFixture(treeSitterParser, tmGrammar, directory);
+      assert.equal(result, null, "completed call-stage import prefix stays exact: " + JSON.stringify(result));
+      console.log("call-stage-highlighting: completed import prefix exact");
     }
   } finally { fs.rmSync(styleRoot, { recursive: true, force: true }); }
   const repoRoot = new URL("../../../", import.meta.url);

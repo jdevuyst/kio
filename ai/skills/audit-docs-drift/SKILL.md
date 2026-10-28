@@ -85,6 +85,14 @@ Start at `docs/README.md` and follow the order and branches it recommends as a n
   flag prose such as a host learning a requirement from a guide when a developer
   must read and configure it. Retain genuine automated reads and checks;
   report the obscured actor or missing user step, not a verb alone.
+- Check whether the first call-model explanation enables a reader to
+  distinguish supplying a type, supplying one product and calling a returned
+  function.
+  Require visible examples of singleton brackets, omitted types, tuple versus
+  successive value stages, residual functions and adjacent-stage UFCS. Follow
+  that model into macros: each projected block is its own function stage, and
+  multiple prefix groups do not merge. Flag examples or prose that quietly
+  restore flat curry crossing; passing fragments alone do not teach the rule.
 - Audit tutorials as a sequence. Audit each guide as a standalone topic: it must either explain its prerequisites or link to where the learning path teaches them. Treat case studies and host guides according to the specialized audiences in `ai/topics/docs.md`.
 - For each tutorial, identify its learner goal, prerequisites, and progression.
   Check consecutive `## Chapter N — Title` headings starting at 1, and whether

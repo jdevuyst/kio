@@ -133,7 +133,7 @@ impl PositionIndex {
         module: &str,
         path: Span,
         terminal: Span,
-        call: Span,
+        _call: Span,
     ) -> Option<(&Type, &TypeBinderScope, &ResolvedBinder)> {
         let facts = self.refactoring.as_ref()?;
         let key = (module.to_owned(), path);
@@ -143,10 +143,6 @@ impl PositionIndex {
             || facts.conflicts.contains(&key)
             || facts.conflicts.contains(&terminal_key)
             || !self.canonical_types.contains(&key)
-            || self
-                .value_at_type_slots
-                .iter()
-                .any(|(owner, span, _)| owner == module && *span == call)
         {
             return None;
         }
@@ -492,21 +488,6 @@ mod tests {
             collision
                 .authenticated_callee("x", new, new, CALL)
                 .is_none()
-        );
-    }
-
-    #[test]
-    fn ufcs_authentication_any_positive_role_observation_vetoes_the_call() {
-        let mut index = clean();
-        let mut role = PositionIndex::for_refactoring();
-        role.record_value_at_type_slot("x", CALL, 99);
-        index.merge(role);
-        index.merge(clean());
-        assert!(!accepts(&index));
-        assert!(
-            index
-                .authenticated_callee("x", SITE, SITE, Span::new(31, 40))
-                .is_some()
         );
     }
 

@@ -6,7 +6,7 @@ host type Box[T];
 
 pub newtype Token : . { pub constructor make; pub projector read }
 
-pub fn box_id[T](value: Box(T)) -> Box(T) { value }
+pub fn box_id[T](value: Box[T]) -> Box[T] { value }
 
 pub fn poly() -> [T] T -> T {
   .[T] {

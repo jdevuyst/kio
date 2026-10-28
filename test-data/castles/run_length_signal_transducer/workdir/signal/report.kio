@@ -15,9 +15,9 @@ import testapi/iter(loop);
 
 fn integer(value: I32) { io.print(fmt.int_to_string(value)) }
 
-rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32) {
+rec(loop) fn packets(rest: lists.List[codec.Run], previous: I32 | ., index: I32) {
   match(lists.uncons(rest)) {
-    .(run: codec.Run, tail: lists.List(codec.Run)) {
+    .(run: codec.Run, tail: lists.List[codec.Run]) {
       let value = run.?{codec.sample};
       io.print("run ");
       integer(index);
@@ -32,13 +32,13 @@ rec(loop) fn packets(rest: lists.List(codec.Run), previous: I32 | ., index: I32)
         };
         .() { io.print("start\n") }
       };
-      recur packets(tail, value.>widen_sum(I32 | .), arith.add_i32(index, 1))
+      recur packets(tail, (value.>widen_sum)[I32 | .], arith.add_i32(index, 1))
     };
     .() { () }
   }
 }
 
-pub fn encoding(state: codec.Encoder, runs: lists.List(codec.Run)) {
+pub fn encoding(state: codec.Encoder, runs: lists.List[codec.Run]) {
   io.print("Run-length signal codec: cap=");
   integer(codec.cap());
   io.print("\nsamples=");
@@ -50,14 +50,14 @@ pub fn encoding(state: codec.Encoder, runs: lists.List(codec.Run)) {
   io.print(" packets=");
   integer(traversal.length(runs));
   io.print("\n");
-  packets(runs, ().>widen_sum(I32 | .), 1)
+  packets(runs, (().>widen_sum)[I32 | .], 1)
 }
 
-rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index: I32, valid: Bool) -> Bool {
+rec(loop) fn compare(original: lists.List[I32], decoded: lists.List[I32], index: I32, valid: Bool) -> Bool {
   match(lists.uncons(original)) {
-    .(expected: I32, original_tail: lists.List(I32)) {
+    .(expected: I32, original_tail: lists.List[I32]) {
       match(lists.uncons(decoded)) {
-        .(actual: I32, decoded_tail: lists.List(I32)) {
+        .(actual: I32, decoded_tail: lists.List[I32]) {
           let equal = numbers.eq_i32(expected, actual);
           io.print("sample ");
           integer(index);
@@ -78,7 +78,7 @@ rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index:
     };
     .() {
       match(lists.uncons(decoded)) {
-        .(_extra: I32, _tail: lists.List(I32)) {
+        .(_extra: I32, _tail: lists.List[I32]) {
           io.print("decoded stream has extra samples\n");
           .f
         };
@@ -88,7 +88,7 @@ rec(loop) fn compare(original: lists.List(I32), decoded: lists.List(I32), index:
   }
 }
 
-pub fn roundtrip(original: lists.List(I32), decoded: lists.List(I32)) {
+pub fn roundtrip(original: lists.List[I32], decoded: lists.List[I32]) {
   let valid = compare(original, decoded, 1, .t);
   io.print(if(valid) { "roundtrip=ok\n" } else { "roundtrip=FAILED\n" })
 }

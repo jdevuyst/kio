@@ -128,8 +128,8 @@ import token(toks_cons, toks_nil, un_token, un_toks);
 fn peek(ts: Toks) -> . | Token {
   match(un_toks(ts)) {
     (
-    , .(h: Token, _p: I32, _t: Toks) { widen_sum(h, . | Token) }
-    , .(_e: .) { widen_sum((), . | Token) }
+    , .(h: Token, _p: I32, _t: Toks) { widen_sum(h)[. | Token] }
+    , .(_e: .) { widen_sum(())[. | Token] }
     )
   }
 }
@@ -137,7 +137,7 @@ fn peek(ts: Toks) -> . | Token {
 /// The head token's source byte offset, or `()` at end-of-input.
 fn head_pos(ts: Toks) -> . | I32 {
   match(un_toks(ts)) {
-    (.(_h: Token, p: I32, _t: Toks) { widen_sum(p, . | I32) }, .(_e: .) { widen_sum((), . | I32) })
+    (.(_h: Token, p: I32, _t: Toks) { widen_sum(p)[. | I32] }, .(_e: .) { widen_sum(())[. | I32] })
   }
 }
 
@@ -155,14 +155,14 @@ fn head_word(ts: Toks) -> . | String {
     , .(t: Token) {
         match(un_token(t)) {
           (
-          , .(w: Tk_word) { widen_sum(Tk_word.get(w), . | String) }
-          , .(_i: Tk_num) { widen_sum((), . | String) }
-          , .(_s: Tk_str) { widen_sum((), . | String) }
-          , .(_p: Tk_punct) { widen_sum((), . | String) }
+          , .(w: Tk_word) { widen_sum(Tk_word.get(w))[. | String] }
+          , .(_i: Tk_num) { widen_sum(())[. | String] }
+          , .(_s: Tk_str) { widen_sum(())[. | String] }
+          , .(_p: Tk_punct) { widen_sum(())[. | String] }
           )
         }
       }
-    , .(_e: .) { widen_sum((), . | String) }
+    , .(_e: .) { widen_sum(())[. | String] }
     )
   }
 }
@@ -174,14 +174,14 @@ fn head_is(ts: Toks, code: I32) -> Bool {
     , .(t: Token) {
         match(un_token(t)) {
           (
-          , .(_w: Tk_word) { .f(Bool) }
-          , .(_i: Tk_num) { .f(Bool) }
-          , .(_s: Tk_str) { .f(Bool) }
+          , .(_w: Tk_word) { .f[Bool] }
+          , .(_i: Tk_num) { .f[Bool] }
+          , .(_s: Tk_str) { .f[Bool] }
           , .(p: Tk_punct) { eq_i32(Tk_punct.get(p), code) }
           )
         }
       }
-    , .(_e: .) { .f(Bool) }
+    , .(_e: .) { .f[Bool] }
     )
   }
 }
@@ -189,7 +189,7 @@ fn head_is(ts: Toks, code: I32) -> Bool {
 // Whether the head word equals `kw` (false when the head is not a word).
 fn head_word_is(ts: Toks, kw: String) -> Bool {
   match(head_word(ts)) {
-    (.(w: String) { string_eq(w, kw) }, .(_e: .) { .f(Bool) })
+    (.(w: String) { string_eq(w, kw) }, .(_e: .) { .f[Bool] })
   }
 }
 
@@ -209,39 +209,35 @@ fn read_module_path(ts: Toks) -> . | Mod_path {
   match(head_word(ts)) {
     (
     , .(first: String) {
-        widen_sum(
-        , loop(
-          , .(st: Toks & String) {
-              match(st) {
-                .(cur: Toks, acc: String) {
-                  let after_word = rest(cur);
-                  if(head_is(after_word, c_slash())) {
-                    let after_slash = rest(after_word);
-                    match(head_word(after_slash)) {
-                      (
-                      , .(seg: String) {
-                          widen_sum(
-                          , (after_slash, string_concat(acc, string_concat("/"(String), seg)))
-                          , (Toks & String) | Mod_path
-                          )
-                        }
-                      , .(_noseg: .) {
-                          widen_sum({mod_path = (acc, after_word)}, (Toks & String) | Mod_path)
-                        }
-                      )
-                    }
-                  } else {
-                    widen_sum({mod_path = (acc, after_word)}, (Toks & String) | Mod_path)
+        widen_sum(loop(
+        , .(st: Toks & String) {
+            match(st) {
+              .(cur: Toks, acc: String) {
+                let after_word = rest(cur);
+                if(head_is(after_word, c_slash())) {
+                  let after_slash = rest(after_word);
+                  match(head_word(after_slash)) {
+                    (
+                    , .(seg: String) {
+                        widen_sum((after_slash, string_concat(acc, string_concat("/"[String], seg))))[| (& Toks
+                        & String)
+                        | Mod_path]
+                      }
+                    , .(_noseg: .) {
+                        widen_sum({mod_path = (acc, after_word)})[(Toks & String) | Mod_path]
+                      }
+                    )
                   }
+                } else {
+                  widen_sum({mod_path = (acc, after_word)})[(Toks & String) | Mod_path]
                 }
               }
             }
-          , (ts, first)
-          )
-        , . | Mod_path
-        )
+          }
+        , (ts, first)
+        ))[. | Mod_path]
       }
-    , .(_e: .) { widen_sum((), . | Mod_path) }
+    , .(_e: .) { widen_sum(())[. | Mod_path] }
     )
   }
 }
@@ -262,39 +258,31 @@ fn read_visibility(ts0: Toks, exported: Bool) -> Visibility_read | Diag {
             match(Mod_path.get(path)) {
               .(root: String, after_path: Toks) {
                 if(head_is(after_path, c_rparen())) {
-                  widen_sum(
-                  , {visibility_read = (scoped_visibility(root), rest(after_path))}
-                  , Visibility_read | Diag
-                  )
+                  widen_sum({visibility_read = (scoped_visibility(root), rest(after_path))})[| Visibility_read
+                  | Diag]
                 } else {
-                  widen_sum(
-                  , mk_diag_at(
-                    , "dyn_load_prime: malformed image — unterminated `pub(path)` visibility"(String)
-                    , head_pos(ts0)
-                    )
-                  , Visibility_read | Diag
-                  )
+                  widen_sum(mk_diag_at(
+                  , "dyn_load_prime: malformed image — unterminated `pub(path)` visibility"[String]
+                  , head_pos(ts0)
+                  ))[Visibility_read | Diag]
                 }
               }
             }
           }
         , .(_missing_path: .) {
-            widen_sum(
-            , mk_diag_at(
-              , "dyn_load_prime: malformed image — `pub()` visibility names no module "
-                "path"(String)
-              , head_pos(ts0)
-              )
-            , Visibility_read | Diag
-            )
+            widen_sum(mk_diag_at(
+            , "dyn_load_prime: malformed image — `pub()` visibility names no module "
+              "path"[String]
+            , head_pos(ts0)
+            ))[Visibility_read | Diag]
           }
         )
       }
     } else {
-      widen_sum({visibility_read = (public_visibility(), ts0)}, Visibility_read | Diag)
+      widen_sum({visibility_read = (public_visibility(), ts0)})[Visibility_read | Diag]
     }
   } else {
-    widen_sum({visibility_read = (private_visibility(), ts0)}, Visibility_read | Diag)
+    widen_sum({visibility_read = (private_visibility(), ts0)})[Visibility_read | Diag]
   }
 }
 
@@ -313,9 +301,9 @@ fn skip_semis(ts: Toks) -> Toks {
   After_semis.get(loop(
   , .(cur: Toks) {
       if(head_is(cur, c_semi())) {
-        widen_sum(rest(cur), Toks | After_semis)
+        widen_sum(rest(cur))[Toks | After_semis]
       } else {
-        widen_sum({after_semis = cur}, Toks | After_semis)
+        widen_sum({after_semis = cur})[Toks | After_semis]
       }
     }
   , ts
@@ -333,9 +321,9 @@ fn skip_semis(ts: Toks) -> Toks {
 // Whether a punctuation code opens a bracket nesting.
 fn open_code(code: I32) -> Bool {
   if(eq_i32(code, c_lparen())) {
-    .t(Bool)
+    .t[Bool]
   } else if(eq_i32(code, c_lbrack())) {
-    .t(Bool)
+    .t[Bool]
   } else {
     eq_i32(code, c_lbrace())
   }
@@ -344,9 +332,9 @@ fn open_code(code: I32) -> Bool {
 // Whether a punctuation code closes a bracket nesting.
 fn close_code(code: I32) -> Bool {
   if(eq_i32(code, c_rparen())) {
-    .t(Bool)
+    .t[Bool]
   } else if(eq_i32(code, c_rbrack())) {
-    .t(Bool)
+    .t[Bool]
   } else {
     eq_i32(code, c_rbrace())
   }
@@ -363,9 +351,9 @@ fn depth_delta(t: Token, depth: I32) -> I32 {
     , .(p: Tk_punct) {
         let code = Tk_punct.get(p);
         if(open_code(code)) {
-          add_i32(depth, 1(I32))
+          add_i32(depth, 1[I32])
         } else if(close_code(code)) {
-          sub_i32(depth, 1(I32))
+          sub_i32(depth, 1[I32])
         } else {
           depth
         }
@@ -391,23 +379,23 @@ fn skip_to_semi(ts: Toks) -> Toks {
           match(peek(cur)) {
             (
             , .(t: Token) {
-                if(eq_i32(depth, 0(I32))) {
+                if(eq_i32(depth, 0[I32])) {
                   if(head_is(cur, c_semi())) {
-                    widen_sum(rest(cur), (Toks & I32) | Toks)
+                    widen_sum(rest(cur))[(Toks & I32) | Toks]
                   } else {
-                    widen_sum((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                    widen_sum((rest(cur), depth_delta(t, depth)))[(Toks & I32) | Toks]
                   }
                 } else {
-                  widen_sum((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                  widen_sum((rest(cur), depth_delta(t, depth)))[(Toks & I32) | Toks]
                 }
               }
-            , .(_e: .) { widen_sum(cur, (Toks & I32) | Toks) }
+            , .(_e: .) { widen_sum(cur)[(Toks & I32) | Toks] }
             )
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   )
 }
 
@@ -415,15 +403,15 @@ fn skip_to_semi(ts: Toks) -> Toks {
 fn is_type_delim(t: Token) -> Bool {
   match(un_token(t)) {
     (
-    , .(_w: Tk_word) { .f(Bool) }
-    , .(_i: Tk_num) { .f(Bool) }
-    , .(_s: Tk_str) { .f(Bool) }
+    , .(_w: Tk_word) { .f[Bool] }
+    , .(_i: Tk_num) { .f[Bool] }
+    , .(_s: Tk_str) { .f[Bool] }
     , .(p: Tk_punct) {
         let code = Tk_punct.get(p);
         if(eq_i32(code, c_comma())) {
-          .t(Bool)
+          .t[Bool]
         } else if(eq_i32(code, c_rparen())) {
-          .t(Bool)
+          .t[Bool]
         } else {
           eq_i32(code, c_lbrace())
         }
@@ -444,23 +432,23 @@ fn skip_to_delim(ts: Toks) -> Toks {
           match(peek(cur)) {
             (
             , .(t: Token) {
-                if(eq_i32(depth, 0(I32))) {
+                if(eq_i32(depth, 0[I32])) {
                   if(is_type_delim(t)) {
-                    widen_sum(cur, (Toks & I32) | Toks)
+                    widen_sum(cur)[(Toks & I32) | Toks]
                   } else {
-                    widen_sum((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                    widen_sum((rest(cur), depth_delta(t, depth)))[(Toks & I32) | Toks]
                   }
                 } else {
-                  widen_sum((rest(cur), depth_delta(t, depth)), (Toks & I32) | Toks)
+                  widen_sum((rest(cur), depth_delta(t, depth)))[(Toks & I32) | Toks]
                 }
               }
-            , .(_e: .) { widen_sum(cur, (Toks & I32) | Toks) }
+            , .(_e: .) { widen_sum(cur)[(Toks & I32) | Toks] }
             )
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   )
 }
 
@@ -477,19 +465,19 @@ fn skip_group(ts: Toks) -> Toks {
             (
             , .(t: Token) {
                 let d1 = depth_delta(t, depth);
-                if(leq_i32(d1, 0(I32))) {
-                  widen_sum(rest(cur), (Toks & I32) | Toks)
+                if(leq_i32(d1, 0[I32])) {
+                  widen_sum(rest(cur))[(Toks & I32) | Toks]
                 } else {
-                  widen_sum((rest(cur), d1), (Toks & I32) | Toks)
+                  widen_sum((rest(cur), d1))[(Toks & I32) | Toks]
                 }
               }
-            , .(_e: .) { widen_sum(cur, (Toks & I32) | Toks) }
+            , .(_e: .) { widen_sum(cur)[(Toks & I32) | Toks] }
             )
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   )
 }
 
@@ -497,11 +485,8 @@ fn skip_group(ts: Toks) -> Toks {
 // Counting type binders
 // =====================================================================
 //
-// A binder group may contain several unary `forall` binders (`[A, B]`).
-// The erased evaluator keeps one Unit stage per binder, so counting bracket
-// groups would collapse observable application boundaries. The scanner
-// therefore counts the binders inside each balanced group and returns the
-// cursor after that group.
+// Every bracket group contains one kind-marked binder and contributes one
+// erased Unit stage. The scanner validates the group before retaining it.
 /// Wraps one binder-group scan's `(arity, remaining-tokens)`.
 labels { binder_group_scan: I32 & Toks };
 
@@ -515,34 +500,53 @@ fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
             (
             , .(_token: Token) {
                 if(head_is(cur, c_rbrack())) {
-                  widen_sum(
-                  , {binder_group_scan = (n, rest(cur))}
-                  , (Toks & I32) | Binder_group_scan | Diag
-                  )
-                } else if(head_is(cur, c_comma())) {
-                  widen_sum(
-                  , (rest(cur), add_i32(n, 1(I32)))
-                  , (Toks & I32) | Binder_group_scan | Diag
-                  )
+                  if(eq_i32(n, 1[I32])) {
+                    widen_sum({binder_group_scan = (n, rest(cur))})[| (Toks & I32)
+                    | Binder_group_scan
+                    | Diag]
+                  } else {
+                    widen_sum(mk_diag_at(
+                    , "dyn_load_prime: malformed image — expected one type binder inside "
+                      "`[...]`"[String]
+                    , head_pos(cur)
+                    ))[(Toks & I32) | Binder_group_scan | Diag]
+                  }
                 } else {
-                  widen_sum((rest(cur), n), (Toks & I32) | Binder_group_scan | Diag)
+                  let next = match(head_word(cur)) {
+                    (
+                    , .(_name: String) { add_i32(n, 1[I32]) }
+                    , .(_not_word: .) {
+                        if(eq_i32(n, 0[I32])) {
+                          if(head_is(cur, c_star())) { n } else { 2[I32] }
+                        } else {
+                          2[I32]
+                        }
+                      }
+                    )
+                  };
+                  if(leq_i32(next, 1[I32])) {
+                    widen_sum((rest(cur), next))[(Toks & I32) | Binder_group_scan | Diag]
+                  } else {
+                    widen_sum(mk_diag_at(
+                    , "dyn_load_prime: malformed image — expected one kind-marked type binder "
+                      "inside `[...]`"[String]
+                    , head_pos(cur)
+                    ))[(Toks & I32) | Binder_group_scan | Diag]
+                  }
                 }
               }
             , .(_eof: .) {
-                widen_sum(
-                , mk_diag_at(
-                  , "dyn_load_prime: malformed image — unterminated type-binder group"(String)
-                  , pos
-                  )
-                , (Toks & I32) | Binder_group_scan | Diag
-                )
+                widen_sum(mk_diag_at(
+                , "dyn_load_prime: malformed image — unterminated type-binder group"[String]
+                , pos
+                ))[(Toks & I32) | Binder_group_scan | Diag]
               }
             )
           }
         }
       }
     }
-  , (rest(ts), 1(I32))
+  , (rest(ts), 0[I32])
   )
 }
 
@@ -550,7 +554,7 @@ fn scan_binder_group(ts: Toks) -> Binder_group_scan | Diag {
 /// arm differs structurally from its `(toks, count)` continue arm.
 labels { tyargs: I32 & Toks };
 
-// Count and skip the leading type binders `[A][B]…` / `[A, B]…`, returning
+// Count and skip the leading type binders `[A][B]…`, returning
 // `(count, tokens-after-the-last-group)`.
 fn scan_tyarity(ts: Toks) -> (I32 & Toks) | Diag {
   let loop_result =
@@ -564,25 +568,25 @@ fn scan_tyarity(ts: Toks) -> (I32 & Toks) | Diag {
                 , .(group: Binder_group_scan) {
                     match(Binder_group_scan.get(group)) {
                       .(group_arity: I32, after: Toks) {
-                        widen_sum((after, add_i32(n, group_arity)), (Toks & I32) | Tyargs | Diag)
+                        widen_sum((after, add_i32(n, group_arity)))[(Toks & I32) | Tyargs | Diag]
                       }
                     }
                   }
-                , .(diag: Diag) { widen_sum(diag, (Toks & I32) | Tyargs | Diag) }
+                , .(diag: Diag) { widen_sum(diag)[(Toks & I32) | Tyargs | Diag] }
                 )
               }
             } else {
-              widen_sum({tyargs = (n, cur)}, (Toks & I32) | Tyargs | Diag)
+              widen_sum({tyargs = (n, cur)})[(Toks & I32) | Tyargs | Diag]
             }
           }
         }
       }
-    , (ts, 0(I32))
+    , (ts, 0[I32])
     );
   match(loop_result) {
     (
-    , .(done: Tyargs) { widen_sum(Tyargs.get(done), (I32 & Toks) | Diag) }
-    , .(diag: Diag) { widen_sum(diag, (I32 & Toks) | Diag) }
+    , .(done: Tyargs) { widen_sum(Tyargs.get(done))[(I32 & Toks) | Diag] }
+    , .(diag: Diag) { widen_sum(diag)[(I32 & Toks) | Diag] }
     )
   }
 }
@@ -607,12 +611,12 @@ fn skip_to_gt(ts: Toks) -> Toks {
         (
         , .(_t: Token) {
             if(head_is(cur, c_gt())) {
-              widen_sum({toks_done = rest(cur)}, Toks | Toks_done)
+              widen_sum({toks_done = rest(cur)})[Toks | Toks_done]
             } else {
-              widen_sum(rest(cur), Toks | Toks_done)
+              widen_sum(rest(cur))[Toks | Toks_done]
             }
           }
-        , .(_e: .) { widen_sum({toks_done = cur}, Toks | Toks_done) }
+        , .(_e: .) { widen_sum({toks_done = cur})[Toks | Toks_done] }
         )
       }
     }
@@ -630,14 +634,14 @@ fn scan_existentials(ts: Toks) -> I32 & Toks {
         .(cur: Toks, count: I32) {
           if(head_is(cur, c_lt())) {
             let after = skip_to_gt(rest(cur));
-            widen_sum((after, add_i32(count, 1(I32))), (Toks & I32) | Exi_scan)
+            widen_sum((after, add_i32(count, 1[I32])))[(Toks & I32) | Exi_scan]
           } else {
-            widen_sum({exi_scan = (count, cur)}, (Toks & I32) | Exi_scan)
+            widen_sum({exi_scan = (count, cur)})[(Toks & I32) | Exi_scan]
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   ))) {
     .(count: I32, after: Toks) { (count, after) }
   }
@@ -675,10 +679,8 @@ fn scan_params(ts: Toks) -> Pnames & Toks {
           // leading-comma style), so a comma may precede any param.
           let cur = drop_comma(cur0);
           if(head_is(cur, c_rparen())) {
-            widen_sum(
-            , {plist = (pnames_reverse(acc, pnames_nil()), rest(cur))}
-            , (Toks & Pnames) | Plist
-            )
+            widen_sum({plist = (pnames_reverse(acc, pnames_nil()), rest(cur))})[| (Toks & Pnames)
+            | Plist]
           } else match(head_word(cur)) {
             (
             , .(name: String) {
@@ -686,13 +688,11 @@ fn scan_params(ts: Toks) -> Pnames & Toks {
                 let after_colon = drop(after_name, c_colon());
                 let after_type = skip_to_delim(after_colon);
                 let after_comma = drop_comma(after_type);
-                widen_sum((after_comma, pnames_cons(name, acc)), (Toks & Pnames) | Plist)
+                widen_sum((after_comma, pnames_cons(name, acc)))[(Toks & Pnames) | Plist]
               }
             , .(_notword: .) {
-                widen_sum(
-                , {plist = (pnames_reverse(acc, pnames_nil()), cur)}
-                , (Toks & Pnames) | Plist
-                )
+                widen_sum({plist = (pnames_reverse(acc, pnames_nil()), cur)})[| (Toks & Pnames)
+                | Plist]
               }
             )
           }
@@ -719,9 +719,9 @@ fn toks_rev(ts: Toks) -> Toks {
           match(un_toks(rem)) {
             (
             , .(h: Token, p: I32, t: Toks) {
-                widen_sum((t, toks_cons(h, p, acc)), (Toks & Toks) | Toks)
+                widen_sum((t, toks_cons(h, p, acc)))[(Toks & Toks) | Toks]
               }
-            , .(_e: .) { widen_sum(acc, (Toks & Toks) | Toks) }
+            , .(_e: .) { widen_sum(acc)[(Toks & Toks) | Toks] }
             )
           }
         }
@@ -746,31 +746,31 @@ fn collect_header(ts: Toks) -> Toks & Toks {
           match(un_toks(cur)) {
             (
             , .(t: Token, p: I32, after: Toks) {
-                if(eq_i32(depth, 0(I32))) {
+                if(eq_i32(depth, 0[I32])) {
                   if(head_is(cur, c_lbrace())) {
-                    widen_sum({header_run = (toks_rev(acc), cur)}, (Toks & I32 & Toks) | Header_run)
+                    widen_sum({header_run = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Header_run]
                   } else {
-                    widen_sum(
-                    , (after, (depth_delta(t, depth), toks_cons(t, p, acc)))
-                    , (Toks & I32 & Toks) | Header_run
-                    )
+                    widen_sum((after, (depth_delta(t, depth), toks_cons(t, p, acc))))[| (& Toks
+                    & I32
+                    & Toks)
+                    | Header_run]
                   }
                 } else {
-                  widen_sum(
-                  , (after, (depth_delta(t, depth), toks_cons(t, p, acc)))
-                  , (Toks & I32 & Toks) | Header_run
-                  )
+                  widen_sum((after, (depth_delta(t, depth), toks_cons(t, p, acc))))[| (& Toks
+                  & I32
+                  & Toks)
+                  | Header_run]
                 }
               }
             , .(_e: .) {
-                widen_sum({header_run = (toks_rev(acc), cur)}, (Toks & I32 & Toks) | Header_run)
+                widen_sum({header_run = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Header_run]
               }
             )
           }
         }
       }
     }
-  , (ts, (0(I32), toks_nil()))
+  , (ts, (0[I32], toks_nil()))
   ))) {
     .(header: Toks, after: Toks) { (header, after) }
   }
@@ -796,21 +796,21 @@ fn scan_body(ts0: Toks) -> Toks & Toks {
             (
             , .(t: Token, p: I32, after: Toks) {
                 let d1 = depth_delta(t, depth);
-                if(leq_i32(d1, 0(I32))) {
-                  widen_sum({bodytoks = (toks_rev(acc), after)}, (Toks & I32 & Toks) | Bodytoks)
+                if(leq_i32(d1, 0[I32])) {
+                  widen_sum({bodytoks = (toks_rev(acc), after)})[(Toks & I32 & Toks) | Bodytoks]
                 } else {
-                  widen_sum((after, (d1, toks_cons(t, p, acc))), (Toks & I32 & Toks) | Bodytoks)
+                  widen_sum((after, (d1, toks_cons(t, p, acc))))[(Toks & I32 & Toks) | Bodytoks]
                 }
               }
             , .(_e: .) {
-                widen_sum({bodytoks = (toks_rev(acc), cur)}, (Toks & I32 & Toks) | Bodytoks)
+                widen_sum({bodytoks = (toks_rev(acc), cur)})[(Toks & I32 & Toks) | Bodytoks]
               }
             )
           }
         }
       }
     }
-  , (ts, (1(I32), toks_nil()))
+  , (ts, (1[I32], toks_nil()))
   ))) {
     .(body: Toks, after: Toks) { (body, after) }
   }
@@ -835,9 +835,9 @@ fn pgroups_reverse_scan(gs: Pgroups) -> Pgroups {
           match(un_pgroups(rem)) {
             (
             , .(g: Pnames, rest_g: Pgroups) {
-                widen_sum((rest_g, pgroups_cons(g, acc)), (Pgroups & Pgroups) | Pgroups)
+                widen_sum((rest_g, pgroups_cons(g, acc)))[(Pgroups & Pgroups) | Pgroups]
               }
-            , .(_e: .) { widen_sum(acc, (Pgroups & Pgroups) | Pgroups) }
+            , .(_e: .) { widen_sum(acc)[(Pgroups & Pgroups) | Pgroups] }
             )
           }
         }
@@ -857,13 +857,12 @@ fn pgroups_prepend_empty(count: I32, groups: Pgroups) -> Pgroups {
   , .(st: I32 & Pgroups) {
       match(st) {
         .(remaining: I32, acc: Pgroups) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(acc, (I32 & Pgroups) | Pgroups)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(acc)[(I32 & Pgroups) | Pgroups]
           } else {
-            widen_sum(
-            , (sub_i32(remaining, 1(I32)), pgroups_cons(pnames_nil(), acc))
-            , (I32 & Pgroups) | Pgroups
-            )
+            widen_sum((sub_i32(remaining, 1[I32]), pgroups_cons(pnames_nil(), acc)))[| (& I32
+            & Pgroups)
+            | Pgroups]
           }
         }
       }
@@ -881,7 +880,7 @@ fn scan_groups(ts: Toks) -> Pgroups | Diag {
             if(head_is(cur, c_lparen())) {
               match(scan_params(rest(cur))) {
                 .(names: Pnames, after: Toks) {
-                  widen_sum((after, pgroups_cons(names, acc)), (Toks & Pgroups) | Groups_run | Diag)
+                  widen_sum((after, pgroups_cons(names, acc)))[(Toks & Pgroups) | Groups_run | Diag]
                 }
               }
             } else if(head_is(cur, c_lbrack())) {
@@ -890,18 +889,17 @@ fn scan_groups(ts: Toks) -> Pgroups | Diag {
                 , .(group: Binder_group_scan) {
                     match(Binder_group_scan.get(group)) {
                       .(arity: I32, after: Toks) {
-                        widen_sum(
-                        , (after, pgroups_prepend_empty(arity, acc))
-                        , (Toks & Pgroups) | Groups_run | Diag
-                        )
+                        widen_sum((after, pgroups_prepend_empty(arity, acc)))[| (Toks & Pgroups)
+                        | Groups_run
+                        | Diag]
                       }
                     }
                   }
-                , .(diag: Diag) { widen_sum(diag, (Toks & Pgroups) | Groups_run | Diag) }
+                , .(diag: Diag) { widen_sum(diag)[(Toks & Pgroups) | Groups_run | Diag] }
                 )
               }
             } else {
-              widen_sum({groups_run = (acc, cur)}, (Toks & Pgroups) | Groups_run | Diag)
+              widen_sum({groups_run = (acc, cur)})[(Toks & Pgroups) | Groups_run | Diag]
             }
           }
         }
@@ -913,11 +911,11 @@ fn scan_groups(ts: Toks) -> Pgroups | Diag {
     , .(done: Groups_run) {
         match(Groups_run.get(done)) {
           .(revgroups: Pgroups, _after: Toks) {
-            widen_sum(pgroups_reverse_scan(revgroups), Pgroups | Diag)
+            widen_sum(pgroups_reverse_scan(revgroups))[Pgroups | Diag]
           }
         }
       }
-    , .(diag: Diag) { widen_sum(diag, Pgroups | Diag) }
+    , .(diag: Diag) { widen_sum(diag)[Pgroups | Diag] }
     )
   }
 }
@@ -942,10 +940,10 @@ labels { fs_err: Diag };
 type Fn_scan = Fs_ok | Fs_err;
 
 fn fs_ok(d: Decl, after: Toks) -> Fn_scan {
-  widen_sum({fs_ok = {fn_decl = (d, after)}}, Fs_ok | Fs_err)
+  widen_sum({fs_ok = {fn_decl = (d, after)}})[Fs_ok | Fs_err]
 }
 
-fn fs_err(d: Diag) -> Fn_scan { widen_sum({fs_err = d}, Fs_ok | Fs_err) }
+fn fs_err(d: Diag) -> Fn_scan { widen_sum({fs_err = d})[Fs_ok | Fs_err] }
 
 fn un_fn_scan(r: Fn_scan) -> Fs_ok | Fs_err { r }
 
@@ -974,7 +972,7 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
                           , body_toks
                           , visibility
                           , match(head_pos(after_fn)) {
-                              (.(pos: I32) { pos }, .(_impossible: .) { 0(I32) })
+                              (.(pos: I32) { pos }, .(_impossible: .) { 0[I32] })
                             }
                           )
                         , drop(after_body, c_semi())
@@ -988,8 +986,8 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
             } else {
               fs_err(mk_diag_at(
               , string_concat(
-                , "dyn_load_prime: malformed image — fn `"(String)
-                , string_concat(name, "` has no body"(String))
+                , "dyn_load_prime: malformed image — fn `"[String]
+                , string_concat(name, "` has no body"[String])
                 )
               , head_pos(after_fn)
               ))
@@ -999,7 +997,7 @@ fn scan_fn(ts0: Toks, visibility: Visibility) -> Fn_scan {
       }
     , .(_noname: .) {
         fs_err(mk_diag_at(
-        , "dyn_load_prime: malformed image — `fn` is not followed by a name"(String)
+        , "dyn_load_prime: malformed image — `fn` is not followed by a name"[String]
         , head_pos(ts0)
         ))
       }
@@ -1033,10 +1031,10 @@ labels { ns_err: Diag };
 type Nt_scan = Ns_ok | Ns_err;
 
 fn ns_ok(md: Member_decl, after: Toks) -> Nt_scan {
-  widen_sum({ns_ok = {nt_decl = (md, after)}}, Ns_ok | Ns_err)
+  widen_sum({ns_ok = {nt_decl = (md, after)}})[Ns_ok | Ns_err]
 }
 
-fn ns_err(d: Diag) -> Nt_scan { widen_sum({ns_err = d}, Ns_ok | Ns_err) }
+fn ns_err(d: Diag) -> Nt_scan { widen_sum({ns_err = d})[Ns_ok | Ns_err] }
 
 fn un_nt_scan(r: Nt_scan) -> Ns_ok | Ns_err { r }
 
@@ -1049,9 +1047,9 @@ fn read_nt_member_name(is_proj: Bool, visibility: Visibility, ts: Toks) -> . | N
   match(head_word(ts)) {
     (
     , .(name: String) {
-        widen_sum({nt_member = (is_proj, (visibility, (name, rest(ts))))}, . | Nt_member | Diag)
+        widen_sum({nt_member = (is_proj, (visibility, (name, rest(ts))))})[. | Nt_member | Diag]
       }
-    , .(_noname: .) { widen_sum((), . | Nt_member | Diag) }
+    , .(_noname: .) { widen_sum(())[. | Nt_member | Diag] }
     )
   }
 }
@@ -1059,7 +1057,7 @@ fn read_nt_member_name(is_proj: Bool, visibility: Visibility, ts: Toks) -> . | N
 // Read one newtype body member: `[pub[(a/b)]] ('constructor' | 'projector')
 // NAME`. Returns `()` when the head is not a member keyword.
 fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
-  let exported = head_word_is(ts0, "pub"(String));
+  let exported = head_word_is(ts0, "pub"[String]);
   let after_pub = if(exported) { rest(ts0) } else { ts0 };
   match(read_visibility(after_pub, exported)) {
     (
@@ -1067,32 +1065,29 @@ fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
         match(Visibility_read.get(read)) {
           .(visibility: Visibility, ts: Toks) {
             if(visibility_valid_for_owner(visibility, owner)) {
-              let is_ctor = head_word_is(ts, "constructor"(String));
-              let is_proj = head_word_is(ts, "projector"(String));
+              let is_ctor = head_word_is(ts, "constructor"[String]);
+              let is_proj = head_word_is(ts, "projector"[String]);
               if(is_ctor) {
-                read_nt_member_name(.f(Bool), visibility, rest(ts))
+                read_nt_member_name(.f[Bool], visibility, rest(ts))
               } else if(is_proj) {
-                read_nt_member_name(.t(Bool), visibility, rest(ts))
+                read_nt_member_name(.t[Bool], visibility, rest(ts))
               } else {
-                widen_sum((), . | Nt_member | Diag)
+                widen_sum(())[. | Nt_member | Diag]
               }
             } else {
-              widen_sum(
-              , mk_diag_at(
-                , string_concat(
-                  , "dyn_load_prime: malformed image — a `pub(path)` member scope is not an "
-                    "ancestor of module `"(String)
-                  , string_concat(owner, "`"(String))
-                  )
-                , head_pos(ts0)
+              widen_sum(mk_diag_at(
+              , string_concat(
+                , "dyn_load_prime: malformed image — a `pub(path)` member scope is not an "
+                  "ancestor of module `"[String]
+                , string_concat(owner, "`"[String])
                 )
-              , . | Nt_member | Diag
-              )
+              , head_pos(ts0)
+              ))[. | Nt_member | Diag]
             }
           }
         }
       }
-    , .(d: Diag) { widen_sum(d, . | Nt_member | Diag) }
+    , .(d: Diag) { widen_sum(d)[. | Nt_member | Diag] }
     )
   }
 }
@@ -1100,7 +1095,7 @@ fn read_nt_member(ts0: Toks, owner: String) -> . | Nt_member | Diag {
 // Exactly one of the two members is the projector.
 fn xor_members(a: Bool, b: Bool) -> Bool {
   if(a) {
-    if(b) { .f(Bool) } else { .t(Bool) }
+    if(b) { .f[Bool] } else { .t[Bool] }
   } else {
     b
   }
@@ -1109,8 +1104,8 @@ fn xor_members(a: Bool, b: Bool) -> Bool {
 fn nt_body_diag(name: String, ts0: Toks) -> Nt_scan {
   ns_err(mk_diag_at(
   , string_concat(
-    , "dyn_load_prime: malformed image — newtype `"(String)
-    , string_concat(name, "`'s body must declare a constructor and a projector"(String))
+    , "dyn_load_prime: malformed image — newtype `"[String]
+    , string_concat(name, "`'s body must declare a constructor and a projector"[String])
     )
   , head_pos(ts0)
   ))
@@ -1152,7 +1147,7 @@ fn scan_newtype_body(
                             , mk_member_decl(
                               , name
                               , match(head_pos(rest(ts0))) {
-                                  (.(pos: I32) { pos }, .(_impossible: .) { 0(I32) })
+                                  (.(pos: I32) { pos }, .(_impossible: .) { 0[I32] })
                                 }
                               , mk_nt_info(arity, existential_arity, ctor, proj)
                               , visibility
@@ -1166,10 +1161,10 @@ fn scan_newtype_body(
                           } else {
                             ns_err(mk_diag_at(
                             , string_concat(
-                              , "dyn_load_prime: malformed image — newtype `"(String)
+                              , "dyn_load_prime: malformed image — newtype `"[String]
                               , string_concat(
                                 , name
-                                , "` must declare exactly one constructor and one projector"(String)
+                                , "` must declare exactly one constructor and one projector"[String]
                                 )
                               )
                             , head_pos(ts0)
@@ -1178,8 +1173,8 @@ fn scan_newtype_body(
                         } else {
                           ns_err(mk_diag_at(
                           , string_concat(
-                            , "dyn_load_prime: malformed image — newtype `"(String)
-                            , string_concat(name, "` has no closing `}` after its members"(String))
+                            , "dyn_load_prime: malformed image — newtype `"[String]
+                            , string_concat(name, "` has no closing `}` after its members"[String])
                             )
                           , head_pos(at_close)
                           ))
@@ -1193,7 +1188,7 @@ fn scan_newtype_body(
               }
             } else {
               ns_err(mk_diag_at(
-              , "dyn_load_prime: malformed image — expected `;` between newtype members"(String)
+              , "dyn_load_prime: malformed image — expected `;` between newtype members"[String]
               , head_pos(after1)
               ))
             }
@@ -1234,8 +1229,8 @@ fn scan_newtype(
                         if(head_is(payload, c_lbrace())) {
                           ns_err(mk_diag_at(
                           , string_concat(
-                            , "dyn_load_prime: malformed image — newtype `"(String)
-                            , string_concat(name, "` has no payload type"(String))
+                            , "dyn_load_prime: malformed image — newtype `"[String]
+                            , string_concat(name, "` has no payload type"[String])
                             )
                           , head_pos(after_exi)
                           ))
@@ -1254,8 +1249,8 @@ fn scan_newtype(
                         } else {
                           ns_err(mk_diag_at(
                           , string_concat(
-                            , "dyn_load_prime: malformed image — newtype `"(String)
-                            , string_concat(name, "` has no member body"(String))
+                            , "dyn_load_prime: malformed image — newtype `"[String]
+                            , string_concat(name, "` has no member body"[String])
                             )
                           , head_pos(after_kw)
                           ))
@@ -1263,8 +1258,8 @@ fn scan_newtype(
                       } else {
                         ns_err(mk_diag_at(
                         , string_concat(
-                          , "dyn_load_prime: malformed image — newtype `"(String)
-                          , string_concat(name, "` has no `:` before its payload"(String))
+                          , "dyn_load_prime: malformed image — newtype `"[String]
+                          , string_concat(name, "` has no `:` before its payload"[String])
                           )
                         , head_pos(after_exi)
                         ))
@@ -1280,7 +1275,7 @@ fn scan_newtype(
       }
     , .(_noname: .) {
         ns_err(mk_diag_at(
-        , "dyn_load_prime: malformed image — `newtype` is not followed by a name"(String)
+        , "dyn_load_prime: malformed image — `newtype` is not followed by a name"[String]
         , head_pos(ts0)
         ))
       }
@@ -1303,11 +1298,11 @@ type Import_outcome = Import_scan | Import_err;
 labels { names_scan: Imports & Toks };
 
 fn import_diag(ts: Toks, message: String) -> Diag {
-  mk_diag_at(string_concat("dyn_load_prime: malformed image — "(String), message), head_pos(ts))
+  mk_diag_at(string_concat("dyn_load_prime: malformed image — "[String], message), head_pos(ts))
 }
 
 fn import_error(ts: Toks, message: String) -> Import_outcome {
-  widen_sum({import_err = import_diag(ts, message)}, Import_scan | Import_err)
+  widen_sum({import_err = import_diag(ts, message)})[Import_scan | Import_err]
 }
 
 fn import_name_tail(name: String, start: I32, has_lower: Bool) -> Bool {
@@ -1319,16 +1314,16 @@ fn import_name_tail(name: String, start: I32, has_lower: Bool) -> Bool {
             (
             , .(code: I32) {
                 if(is_lower(code)) {
-                  widen_sum((add_i32(index, 1(I32)), .t(Bool)), (I32 & Bool) | Bool)
+                  widen_sum((add_i32(index, 1[I32]), .t[Bool]))[(I32 & Bool) | Bool]
                 } else if(is_digit(code)) {
-                  widen_sum((add_i32(index, 1(I32)), lower), (I32 & Bool) | Bool)
+                  widen_sum((add_i32(index, 1[I32]), lower))[(I32 & Bool) | Bool]
                 } else if(eq_i32(code, c_under())) {
-                  widen_sum((add_i32(index, 1(I32)), lower), (I32 & Bool) | Bool)
+                  widen_sum((add_i32(index, 1[I32]), lower))[(I32 & Bool) | Bool]
                 } else {
-                  widen_sum(.f(Bool), (I32 & Bool) | Bool)
+                  widen_sum(.f[Bool])[(I32 & Bool) | Bool]
                 }
               }
-            , .(_end: .) { widen_sum(lower, (I32 & Bool) | Bool) }
+            , .(_end: .) { widen_sum(lower)[(I32 & Bool) | Bool] }
             )
           }
         }
@@ -1339,31 +1334,31 @@ fn import_name_tail(name: String, start: I32, has_lower: Bool) -> Bool {
 }
 
 fn import_value_name(name: String) -> Bool {
-  match(string_code_at(name, 0(I32))) {
+  match(string_code_at(name, 0[I32])) {
     (
     , .(first: I32) {
         if(is_lower(first)) {
-          import_name_tail(name, 1(I32), .t(Bool))
+          import_name_tail(name, 1[I32], .t[Bool])
         } else if(eq_i32(first, c_under())) {
-          match(string_code_at(name, 1(I32))) {
+          match(string_code_at(name, 1[I32])) {
             (
             , .(second: I32) {
                 if(is_lower(second)) {
-                  import_name_tail(name, 2(I32), .t(Bool))
+                  import_name_tail(name, 2[I32], .t[Bool])
                 } else if(is_digit(second)) {
-                  import_name_tail(name, 2(I32), .f(Bool))
+                  import_name_tail(name, 2[I32], .f[Bool])
                 } else {
-                  .f(Bool)
+                  .f[Bool]
                 }
               }
-            , .(_end: .) { .f(Bool) }
+            , .(_end: .) { .f[Bool] }
             )
           }
         } else {
-          .f(Bool)
+          .f[Bool]
         }
       }
-    , .(_end: .) { .f(Bool) }
+    , .(_end: .) { .f[Bool] }
     )
   }
 }
@@ -1373,29 +1368,29 @@ fn import_type_name_at(name: String, start: I32) -> Bool {
     (
     , .(first: I32) {
         if(is_upper(first)) {
-          import_name_tail(name, add_i32(start, 1(I32)), .t(Bool))
+          import_name_tail(name, add_i32(start, 1[I32]), .t[Bool])
         } else {
-          .f(Bool)
+          .f[Bool]
         }
       }
-    , .(_end: .) { .f(Bool) }
+    , .(_end: .) { .f[Bool] }
     )
   }
 }
 
 fn import_item_name(name: String) -> Bool {
   if(import_value_name(name)) {
-    .t(Bool)
-  } else match(string_code_at(name, 0(I32))) {
+    .t[Bool]
+  } else match(string_code_at(name, 0[I32])) {
     (
     , .(first: I32) {
         if(eq_i32(first, c_under())) {
-          import_type_name_at(name, 1(I32))
+          import_type_name_at(name, 1[I32])
         } else {
-          import_type_name_at(name, 0(I32))
+          import_type_name_at(name, 0[I32])
         }
       }
-    , .(_end: .) { .f(Bool) }
+    , .(_end: .) { .f[Bool] }
     )
   }
 }
@@ -1410,24 +1405,24 @@ fn import_provider_name(name: String) -> Bool {
             , .(code: I32) {
                 if(eq_i32(code, c_slash())) {
                   if(import_value_name(string_slice(name, start, index))) {
-                    let next = add_i32(index, 1(I32));
-                    widen_sum((next, next), (I32 & I32) | Bool)
+                    let next = add_i32(index, 1[I32]);
+                    widen_sum((next, next))[(I32 & I32) | Bool]
                   } else {
-                    widen_sum(.f(Bool), (I32 & I32) | Bool)
+                    widen_sum(.f[Bool])[(I32 & I32) | Bool]
                   }
                 } else {
-                  widen_sum((add_i32(index, 1(I32)), start), (I32 & I32) | Bool)
+                  widen_sum((add_i32(index, 1[I32]), start))[(I32 & I32) | Bool]
                 }
               }
             , .(_end: .) {
-                widen_sum(import_value_name(string_slice(name, start, index)), (I32 & I32) | Bool)
+                widen_sum(import_value_name(string_slice(name, start, index)))[(I32 & I32) | Bool]
               }
             )
           }
         }
       }
     }
-  , (0(I32), 0(I32))
+  , (0[I32], 0[I32])
   )
 }
 
@@ -1435,9 +1430,9 @@ fn skip_import_commas(ts: Toks) -> Toks {
   Toks_done.get(loop(
   , .(cur: Toks) {
       if(head_is(cur, c_comma())) {
-        widen_sum(rest(cur), Toks | Toks_done)
+        widen_sum(rest(cur))[Toks | Toks_done]
       } else {
-        widen_sum({toks_done = cur}, Toks | Toks_done)
+        widen_sum({toks_done = cur})[Toks | Toks_done]
       }
     }
   , ts
@@ -1450,7 +1445,7 @@ fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
     , .(original: String) {
         if(import_item_name(original)) {
           let after = rest(ts);
-          if(head_word_is(after, "as"(String))) {
+          if(head_word_is(after, "as"[String])) {
             let destination = rest(after);
             match(head_word(destination)) {
               (
@@ -1459,54 +1454,44 @@ fn scan_import_item(ts: Toks, provider: String) -> (Import & Toks) | Diag {
                     let same_class = if(import_value_name(original)) {
                       import_value_name(local)
                     } else if(import_value_name(local)) {
-                      .f(Bool)
+                      .f[Bool]
                     } else {
-                      .t(Bool)
+                      .t[Bool]
                     };
                     if(same_class) {
-                      widen_sum(
-                      , (mk_import_as(local, original, provider), rest(destination))
-                      , (Import & Toks) | Diag
-                      )
+                      widen_sum((mk_import_as(local, original, provider), rest(destination)))[| (& Import
+                      & Toks)
+                      | Diag]
                     } else {
-                      widen_sum(
-                      , import_diag(
-                        , destination
-                        , "import alias must keep its identifier class"(String)
-                        )
-                      , (Import & Toks) | Diag
-                      )
+                      widen_sum(import_diag(
+                      , destination
+                      , "import alias must keep its identifier class"[String]
+                      ))[(Import & Toks) | Diag]
                     }
                   } else {
-                    widen_sum(
-                    , import_diag(destination, "expected an ordinary import alias"(String))
-                    , (Import & Toks) | Diag
-                    )
+                    widen_sum(import_diag(destination, "expected an ordinary import alias"[String]))[| (& Import
+                    & Toks)
+                    | Diag]
                   }
                 }
               , .(_missing: .) {
-                  widen_sum(
-                  , import_diag(destination, "expected an import alias after `as`"(String))
-                  , (Import & Toks) | Diag
-                  )
+                  widen_sum(import_diag(destination, "expected an import alias after `as`"[String]))[| (& Import
+                  & Toks)
+                  | Diag]
                 }
               )
             }
           } else {
-            widen_sum((mk_import_as(original, original, provider), after), (Import & Toks) | Diag)
+            widen_sum((mk_import_as(original, original, provider), after))[(Import & Toks) | Diag]
           }
         } else {
-          widen_sum(
-          , import_diag(ts, "expected an ordinary imported identifier"(String))
-          , (Import & Toks) | Diag
-          )
+          widen_sum(import_diag(ts, "expected an ordinary imported identifier"[String]))[| (& Import
+          & Toks)
+          | Diag]
         }
       }
     , .(_missing: .) {
-        widen_sum(
-        , import_diag(ts, "expected an imported identifier"(String))
-        , (Import & Toks) | Diag
-        )
+        widen_sum(import_diag(ts, "expected an imported identifier"[String]))[(Import & Toks) | Diag]
       }
     )
   }
@@ -1522,56 +1507,52 @@ fn scan_import_names(ts: Toks, provider: String) -> Names_scan | Diag {
             match(un_imports(names)) {
               (
               , .(_entry: Import, _tail: Imports) {
-                  widen_sum({names_scan = (names, rest(cur))}, (Toks & Imports) | Names_scan | Diag)
+                  widen_sum({names_scan = (names, rest(cur))})[(Toks & Imports) | Names_scan | Diag]
                 }
               , .(_empty: .) {
-                  widen_sum(
-                  , import_diag(cur, "expected at least one imported identifier"(String))
-                  , (Toks & Imports) | Names_scan | Diag
-                  )
+                  widen_sum(import_diag(cur, "expected at least one imported identifier"[String]))[| (& Toks
+                  & Imports)
+                  | Names_scan
+                  | Diag]
                 }
               )
             }
           } else if(head_is(cur, c_lbrace())) {
-            widen_sum(
-            , import_diag(cur, "braced label imports are not in Kio'"(String))
-            , (Toks & Imports) | Names_scan | Diag
-            )
+            widen_sum(import_diag(cur, "braced label imports are not in Kio'"[String]))[| (& Toks
+            & Imports)
+            | Names_scan
+            | Diag]
           } else match(scan_import_item(cur, provider)) {
             (
             , .(entry: Import, after: Toks) {
                 let operator_item =
-                  if(head_word_is(rest(cur), "as"(String))) {
-                    .f(Bool)
+                  if(head_word_is(rest(cur), "as"[String])) {
+                    .f[Bool]
                   } else {
-                    head_word_is(cur, "op"(String))
+                    head_word_is(cur, "op"[String])
                   };
                 if(head_is(after, c_rparen())) {
-                  widen_sum(
-                  , {names_scan = (imports_cons(entry, names), rest(after))}
-                  , (Toks & Imports) | Names_scan | Diag
-                  )
+                  widen_sum({names_scan = (imports_cons(entry, names), rest(after))})[| (& Toks
+                  & Imports)
+                  | Names_scan
+                  | Diag]
                 } else if(head_is(after, c_comma())) {
-                  widen_sum(
-                  , (after, imports_cons(entry, names))
-                  , (Toks & Imports) | Names_scan | Diag
-                  )
+                  widen_sum((after, imports_cons(entry, names)))[| (Toks & Imports)
+                  | Names_scan
+                  | Diag]
                 } else if(operator_item) {
-                  widen_sum(
-                  , import_diag(cur, "operator imports are not in Kio'"(String))
-                  , (Toks & Imports) | Names_scan | Diag
-                  )
+                  widen_sum(import_diag(cur, "operator imports are not in Kio'"[String]))[| (& Toks
+                  & Imports)
+                  | Names_scan
+                  | Diag]
                 } else {
-                  widen_sum(
-                  , import_diag(
-                    , after
-                    , "expected comma or closing parenthesis in import list"(String)
-                    )
-                  , (Toks & Imports) | Names_scan | Diag
-                  )
+                  widen_sum(import_diag(
+                  , after
+                  , "expected comma or closing parenthesis in import list"[String]
+                  ))[(Toks & Imports) | Names_scan | Diag]
                 }
               }
-            , .(diag: Diag) { widen_sum(diag, (Toks & Imports) | Names_scan | Diag) }
+            , .(diag: Diag) { widen_sum(diag)[(Toks & Imports) | Names_scan | Diag] }
             )
           }
         }
@@ -1590,9 +1571,9 @@ fn prepend_imports(names: Imports, acc: Imports) -> Imports {
           match(un_imports(rem)) {
             (
             , .(entry: Import, rest_n: Imports) {
-                widen_sum((rest_n, imports_cons(entry, out)), (Imports & Imports) | Imports)
+                widen_sum((rest_n, imports_cons(entry, out)))[(Imports & Imports) | Imports]
               }
-            , .(_e: .) { widen_sum(out, (Imports & Imports) | Imports) }
+            , .(_e: .) { widen_sum(out)[(Imports & Imports) | Imports] }
             )
           }
         }
@@ -1609,43 +1590,40 @@ fn scan_import_alias(ts: Toks, target: String, imports: Imports, aliases: Aliase
         if(import_value_name(alias)) {
           let after = rest(ts);
           if(head_is(after, c_semi())) {
-            widen_sum(
-            , {import_scan = (
-              , imports
-              , (aliases_cons(mk_alias(alias, target), aliases), rest(after))
-              )}
-            , Import_scan | Import_err
-            )
+            widen_sum({import_scan = (
+            , imports
+            , (aliases_cons(mk_alias(alias, target), aliases), rest(after))
+            )})[Import_scan | Import_err]
           } else {
-            import_error(after, "expected semicolon after import alias"(String))
+            import_error(after, "expected semicolon after import alias"[String])
           }
         } else {
-          import_error(ts, "expected a value-shaped import alias"(String))
+          import_error(ts, "expected a value-shaped import alias"[String])
         }
       }
-    , .(_missing: .) { import_error(ts, "expected a value-shaped alias after `as`"(String)) }
+    , .(_missing: .) { import_error(ts, "expected a value-shaped alias after `as`"[String]) }
     )
   }
 }
 
 fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
   let after_import = rest(ts);
-  if(head_word_is(after_import, "__intrinsics__"(String))) {
+  if(head_word_is(after_import, "__intrinsics__"[String])) {
     let after = rest(after_import);
     if(head_is(after, c_semi())) {
-      widen_sum({import_scan = (imports, (aliases, rest(after)))}, Import_scan | Import_err)
+      widen_sum({import_scan = (imports, (aliases, rest(after)))})[Import_scan | Import_err]
     } else {
-      import_error(after, "expected semicolon after import __intrinsics__"(String))
+      import_error(after, "expected semicolon after import __intrinsics__"[String])
     }
-  } else if(head_word_is(after_import, "__comptime__"(String))) {
-    import_error(after_import, "import __comptime__ is not in Kio'"(String))
+  } else if(head_word_is(after_import, "__comptime__"[String])) {
+    import_error(after_import, "import __comptime__ is not in Kio'"[String])
   } else match(un_mod_path(read_module_path(after_import))) {
     (
     , .(path: Mod_path) {
         match(Mod_path.get(path)) {
           .(provider: String, after_path: Toks) {
             if(import_provider_name(provider)) {
-              if(head_word_is(after_path, "as"(String))) {
+              if(head_word_is(after_path, "as"[String])) {
                 scan_import_alias(rest(after_path), provider, imports, aliases)
               } else if(head_is(after_path, c_lparen())) {
                 match(scan_import_names(rest(after_path), provider)) {
@@ -1654,34 +1632,31 @@ fn scan_import(ts: Toks, imports: Imports, aliases: Aliases) -> Import_outcome {
                       match(Names_scan.get(selected)) {
                         .(names: Imports, after: Toks) {
                           if(head_is(after, c_semi())) {
-                            widen_sum(
-                            , {import_scan = (
-                              , prepend_imports(names, imports)
-                              , (aliases, rest(after))
-                              )}
-                            , Import_scan | Import_err
-                            )
+                            widen_sum({import_scan = (
+                            , prepend_imports(names, imports)
+                            , (aliases, rest(after))
+                            )})[Import_scan | Import_err]
                           } else {
-                            import_error(after, "expected semicolon after import list"(String))
+                            import_error(after, "expected semicolon after import list"[String])
                           }
                         }
                       }
                     }
                   , .(diagnostic: Diag) {
-                      widen_sum({import_err = diagnostic}, Import_scan | Import_err)
+                      widen_sum({import_err = diagnostic})[Import_scan | Import_err]
                     }
                   )
                 }
               } else {
-                import_error(after_path, "expected `(` or `as` after import provider"(String))
+                import_error(after_path, "expected `(` or `as` after import provider"[String])
               }
             } else {
-              import_error(after_import, "expected a value-shaped import provider path"(String))
+              import_error(after_import, "expected a value-shaped import provider path"[String])
             }
           }
         }
       }
-    , .(_missing: .) { import_error(after_import, "expected a provider after import"(String)) }
+    , .(_missing: .) { import_error(after_import, "expected a provider after import"[String]) }
     )
   }
 }
@@ -1696,9 +1671,9 @@ fn toks_rev_scan(ts0: Toks) -> Toks {
           match(un_toks(rem)) {
             (
             , .(t: Token, pos: I32, tail: Toks) {
-                widen_sum((tail, toks_cons(t, pos, acc)), (Toks & Toks) | Toks)
+                widen_sum((tail, toks_cons(t, pos, acc)))[(Toks & Toks) | Toks]
               }
-            , .(_e: .) { widen_sum(acc, (Toks & Toks) | Toks) }
+            , .(_e: .) { widen_sum(acc)[(Toks & Toks) | Toks] }
             )
           }
         }
@@ -1720,27 +1695,24 @@ fn read_decl_body(ts0: Toks, in_group: Bool) -> . | Semi_run {
             (
             , .(t: Token, pos: I32, tail: Toks) {
                 if(head_is(cur, c_semi())) {
-                  widen_sum(
-                  , widen_sum(
-                    , {semi_run = (toks_rev_scan(acc), if(in_group) { cur } else { tail })}
-                    , . | Semi_run
-                    )
-                  , (Toks & Toks) | . | Semi_run
-                  )
+                  widen_sum(widen_sum({semi_run = (
+                  , toks_rev_scan(acc)
+                  , if(in_group) { cur } else { tail }
+                  )})[. | Semi_run])[(Toks & Toks) | . | Semi_run]
                 } else if(in_group) {
                   if(head_is(cur, c_rbrace())) {
-                    widen_sum(
-                    , widen_sum({semi_run = (toks_rev_scan(acc), cur)}, . | Semi_run)
-                    , (Toks & Toks) | . | Semi_run
-                    )
+                    widen_sum(widen_sum({semi_run = (toks_rev_scan(acc), cur)})[. | Semi_run])[| (& Toks
+                    & Toks)
+                    | .
+                    | Semi_run]
                   } else {
-                    widen_sum((tail, toks_cons(t, pos, acc)), (Toks & Toks) | . | Semi_run)
+                    widen_sum((tail, toks_cons(t, pos, acc)))[(Toks & Toks) | . | Semi_run]
                   }
                 } else {
-                  widen_sum((tail, toks_cons(t, pos, acc)), (Toks & Toks) | . | Semi_run)
+                  widen_sum((tail, toks_cons(t, pos, acc)))[(Toks & Toks) | . | Semi_run]
                 }
               }
-            , .(_e: .) { widen_sum(widen_sum((), . | Semi_run), (Toks & Toks) | . | Semi_run) }
+            , .(_e: .) { widen_sum(widen_sum(())[. | Semi_run])[(Toks & Toks) | . | Semi_run] }
             )
           }
         }
@@ -1750,7 +1722,7 @@ fn read_decl_body(ts0: Toks, in_group: Bool) -> . | Semi_run {
   )
 }
 
-fn read_to_semi(ts0: Toks) -> . | Semi_run { read_decl_body(ts0, .f(Bool)) }
+fn read_to_semi(ts0: Toks) -> . | Semi_run { read_decl_body(ts0, .f[Bool]) }
 
 // =====================================================================
 // Scanning `host` declarations
@@ -1782,45 +1754,34 @@ fn scan_host_name(is_fn: Bool, ts: Toks, ts0: Toks) -> Host_scan {
                 , .(body: Semi_run) {
                     match(Semi_run.get(body)) {
                       .(header: Toks, after: Toks) {
-                        widen_sum(
-                        , {host_decl = (is_fn, name, header, decl_pos, after)}
-                        , Host_decl | Hs_err
-                        )
+                        widen_sum({host_decl = (is_fn, name, header, decl_pos, after)})[| Host_decl
+                        | Hs_err]
                       }
                     }
                   }
                 , .(_unterminated: .) {
-                    widen_sum(
-                    , {hs_err = mk_diag_at(
-                      , "dyn_load_prime: malformed image — unterminated `host` declaration"(String)
-                      , head_pos(ts0)
-                      )}
-                    , Host_decl | Hs_err
-                    )
+                    widen_sum({hs_err = mk_diag_at(
+                    , "dyn_load_prime: malformed image — unterminated `host` declaration"[String]
+                    , head_pos(ts0)
+                    )})[Host_decl | Hs_err]
                   }
                 )
               }
             }
           , .(_missing_pos: .) {
-              widen_sum(
-              , {hs_err = mk_diag_at(
-                , "dyn_load_prime: malformed image — a `host` declaration names no item"(String)
-                , head_pos(ts0)
-                )}
-              , Host_decl | Hs_err
-              )
+              widen_sum({hs_err = mk_diag_at(
+              , "dyn_load_prime: malformed image — a `host` declaration names no item"[String]
+              , head_pos(ts0)
+              )})[Host_decl | Hs_err]
             }
           )
         }
       }
     , .(_noname: .) {
-        widen_sum(
-        , {hs_err = mk_diag_at(
-          , "dyn_load_prime: malformed image — a `host` declaration names no item"(String)
-          , head_pos(ts0)
-          )}
-        , Host_decl | Hs_err
-        )
+        widen_sum({hs_err = mk_diag_at(
+        , "dyn_load_prime: malformed image — a `host` declaration names no item"[String]
+        , head_pos(ts0)
+        )})[Host_decl | Hs_err]
       }
     )
   }
@@ -1830,22 +1791,19 @@ fn scan_host_name(is_fn: Bool, ts: Toks, ts0: Toks) -> Host_scan {
 fn scan_host(ts0: Toks) -> Host_scan {
   let after_host = rest(ts0);
   let after_vis =
-    if(head_word_is(after_host, "pub"(String))) { rest(after_host) } else { after_host };
-  let is_fn = head_word_is(after_vis, "fn"(String));
-  let is_type = head_word_is(after_vis, "type"(String));
+    if(head_word_is(after_host, "pub"[String])) { rest(after_host) } else { after_host };
+  let is_fn = head_word_is(after_vis, "fn"[String]);
+  let is_type = head_word_is(after_vis, "type"[String]);
   if(is_fn) {
-    scan_host_name(.t(Bool), rest(after_vis), ts0)
+    scan_host_name(.t[Bool], rest(after_vis), ts0)
   } else if(is_type) {
-    scan_host_name(.f(Bool), rest(after_vis), ts0)
+    scan_host_name(.f[Bool], rest(after_vis), ts0)
   } else {
-    widen_sum(
-    , {hs_err = mk_diag_at(
-      , "dyn_load_prime: malformed image — `host` is not followed by `fn` or "
-        "`type`"(String)
-      , head_pos(ts0)
-      )}
-    , Host_decl | Hs_err
-    )
+    widen_sum({hs_err = mk_diag_at(
+    , "dyn_load_prime: malformed image — `host` is not followed by `fn` or "
+      "`type`"[String]
+    , head_pos(ts0)
+    )})[Host_decl | Hs_err]
   }
 }
 
@@ -2064,7 +2022,7 @@ fn wip_has_host_decl(w: Wip, name: String) -> Bool {
     , _ta: Tyaliases
     , _hh: Host_headers
     ) {
-      if(pnames_has(hostfns, name)) { .t(Bool) } else { pnames_has(typenames, name) }
+      if(pnames_has(hostfns, name)) { .t[Bool] } else { pnames_has(typenames, name) }
     }
   }
 }
@@ -2112,9 +2070,9 @@ fn imports_reverse(im: Imports) -> Imports {
           match(un_imports(rem)) {
             (
             , .(h: Import, t: Imports) {
-                widen_sum((t, imports_cons(h, acc)), (Imports & Imports) | Imports)
+                widen_sum((t, imports_cons(h, acc)))[(Imports & Imports) | Imports]
               }
-            , .(_e: .) { widen_sum(acc, (Imports & Imports) | Imports) }
+            , .(_e: .) { widen_sum(acc)[(Imports & Imports) | Imports] }
             )
           }
         }
@@ -2132,8 +2090,8 @@ fn decls_reverse(ds: Decls) -> Decls {
         .(rem: Decls, acc: Decls) {
           match(un_decls(rem)) {
             (
-            , .(h: Decl, t: Decls) { widen_sum((t, decls_cons(h, acc)), (Decls & Decls) | Decls) }
-            , .(_e: .) { widen_sum(acc, (Decls & Decls) | Decls) }
+            , .(h: Decl, t: Decls) { widen_sum((t, decls_cons(h, acc)))[(Decls & Decls) | Decls] }
+            , .(_e: .) { widen_sum(acc)[(Decls & Decls) | Decls] }
             )
           }
         }
@@ -2198,9 +2156,9 @@ type Decl_scan = Wip_and_toks | Diag;
 fn is_punct_code(t: Token, code: I32) -> Bool {
   match(un_token(t)) {
     (
-    , .(_w: Tk_word) { .f(Bool) }
-    , .(_i: Tk_num) { .f(Bool) }
-    , .(_s: Tk_str) { .f(Bool) }
+    , .(_w: Tk_word) { .f[Bool] }
+    , .(_i: Tk_num) { .f[Bool] }
+    , .(_s: Tk_str) { .f[Bool] }
     , .(p: Tk_punct) { eq_i32(Tk_punct.get(p), code) }
     )
   }
@@ -2214,14 +2172,14 @@ fn read_stars(ts0: Toks) -> Star_read {
       match(st) {
         .(cur: Toks, stars: I32) {
           if(head_is(cur, c_star())) {
-            widen_sum((rest(cur), add_i32(stars, 1(I32))), (Toks & I32) | Star_read)
+            widen_sum((rest(cur), add_i32(stars, 1[I32])))[(Toks & I32) | Star_read]
           } else {
-            widen_sum({star_read = (stars, cur)}, (Toks & I32) | Star_read)
+            widen_sum({star_read = (stars, cur)})[(Toks & I32) | Star_read]
           }
         }
       }
     }
-  , (ts0, 0(I32))
+  , (ts0, 0[I32])
   )
 }
 
@@ -2229,56 +2187,23 @@ fn read_stars(ts0: Toks) -> Star_read {
 /// after the closing bracket, and whether the group was valid.
 labels { tab_one: Binders & Toks & Bool };
 
-// Reads one comma-framed binder group after its opening `[`, retaining every
-// binder name. Alias kinds are checked by offline Prime validation.
+// Read exactly one kind-marked binder after its opening `[`. Alias kinds
+// are checked by offline Prime validation and the canonical contract parser.
 fn read_binder_group(ts0: Toks, binders0: Binders) -> Tab_one {
-  loop(
-  , .(st: Toks & Binders & Bool & Bool) {
-      match(st) {
-        .(cur: Toks, binders: Binders, seen: Bool, after_binder: Bool) {
-          if(head_is(cur, c_rbrack())) {
-            widen_sum(
-            , {tab_one = (binders, (rest(cur), seen))}
-            , (Toks & Binders & Bool & Bool) | Tab_one
-            )
-          } else if(head_is(cur, c_comma())) {
-            widen_sum(
-            , (rest(cur), (binders, (seen, .f(Bool))))
-            , (Toks & Binders & Bool & Bool) | Tab_one
-            )
-          } else if(after_binder) {
-            widen_sum(
-            , {tab_one = (binders, (cur, .f(Bool)))}
-            , (Toks & Binders & Bool & Bool) | Tab_one
-            )
-          } else match(Star_read.get(read_stars(cur))) {
-            .(stars: I32, after_stars: Toks) {
-              match(head_word(after_stars)) {
-                (
-                , .(name: String) {
-                    widen_sum(
-                    , (
-                      , rest(after_stars)
-                      , (binders_cons({binder_info = (name, stars)}, binders), (.t(Bool), .t(Bool)))
-                      )
-                    , (Toks & Binders & Bool & Bool) | Tab_one
-                    )
-                  }
-                , .(_missing: .) {
-                    widen_sum(
-                    , {tab_one = (binders, (after_stars, .f(Bool)))}
-                    , (Toks & Binders & Bool & Bool) | Tab_one
-                    )
-                  }
-                )
-              }
-            }
-          }
+  let .(stars, after_stars) = Star_read.get(read_stars(ts0));
+  match(head_word(after_stars)) {
+    (
+    , .(name: String) {
+        let after = rest(after_stars);
+        if(head_is(after, c_rbrack())) {
+          {tab_one = (binders_cons({binder_info = (name, stars)}, binders0), rest(after), .t[Bool])}
+        } else {
+          {tab_one = (binders0, after, .f[Bool])}
         }
       }
-    }
-  , (ts0, (binders0, (.f(Bool), .f(Bool))))
-  )
+    , .(_missing: .) { {tab_one = (binders0, after_stars, .f[Bool])} }
+    )
+  }
 }
 
 /// Wraps the binder-run read: binders in declaration order, tokens after the
@@ -2295,20 +2220,17 @@ fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
             match(Tab_one.get(read_binder_group(rest(cur), binders))) {
               .(next: Binders, after: Toks, valid: Bool) {
                 if(valid) {
-                  widen_sum((after, next), (Toks & Binders) | Tab_binders)
+                  widen_sum((after, next))[(Toks & Binders) | Tab_binders]
                 } else {
-                  widen_sum(
-                  , {tab_binders = (binders_reverse(next), (after, .f(Bool)))}
-                  , (Toks & Binders) | Tab_binders
-                  )
+                  widen_sum({tab_binders = (binders_reverse(next), (after, .f[Bool]))})[| (& Toks
+                  & Binders)
+                  | Tab_binders]
                 }
               }
             }
           } else {
-            widen_sum(
-            , {tab_binders = (binders_reverse(binders), (cur, .t(Bool)))}
-            , (Toks & Binders) | Tab_binders
-            )
+            widen_sum({tab_binders = (binders_reverse(binders), (cur, .t[Bool]))})[| (Toks & Binders)
+            | Tab_binders]
           }
         }
       }
@@ -2318,10 +2240,10 @@ fn read_tyalias_binders(ts0: Toks) -> Tab_binders {
 }
 
 fn ds_ok(w: Wip, after: Toks) -> Decl_scan {
-  widen_sum({wip_and_toks = (w, after)}, Wip_and_toks | Diag)
+  widen_sum({wip_and_toks = (w, after)})[Wip_and_toks | Diag]
 }
 
-fn ds_err(d: Diag) -> Decl_scan { widen_sum(d, Wip_and_toks | Diag) }
+fn ds_err(d: Diag) -> Decl_scan { widen_sum(d)[Wip_and_toks | Diag] }
 
 fn un_decl_scan(r: Decl_scan) -> Wip_and_toks | Diag { r }
 
@@ -2368,22 +2290,22 @@ fn scan_visible_decl(
 , w: Wip
 ) -> Decl_scan {
   if(pure) {
-    if(head_word_is(ts, "fn"(String))) {
+    if(head_word_is(ts, "fn"[String])) {
       scan_visible_fn(ts, visibility, w)
     } else {
       ds_err(mk_diag_at(
       , "dyn_load_prime: malformed image — `pure` is valid only on ordinary `fn` "
-        "declarations"(String)
+        "declarations"[String]
       , head_pos(ts)
       ))
     }
-  } else if(head_word_is(ts, "fn"(String))) {
+  } else if(head_word_is(ts, "fn"[String])) {
     scan_visible_fn(ts, visibility, w)
-  } else if(head_word_is(ts, "newtype"(String))) {
+  } else if(head_word_is(ts, "newtype"[String])) {
     scan_visible_newtype(ts, visibility, recursive_scope, in_group, w)
-  } else if(head_word_is(ts, "rec"(String))) {
+  } else if(head_word_is(ts, "rec"[String])) {
     let after_rec = rest(ts);
-    if(head_word_is(after_rec, "newtype"(String))) {
+    if(head_word_is(after_rec, "newtype"[String])) {
       scan_visible_newtype(
       , after_rec
       , visibility
@@ -2393,25 +2315,25 @@ fn scan_visible_decl(
       , in_group
       , w
       )
-    } else if(head_word_is(after_rec, "type"(String))) {
+    } else if(head_word_is(after_rec, "type"[String])) {
       ds_err(mk_diag_at(
-      , "dyn_load_prime: malformed image — `rec type` is not a Kio' declaration"(String)
+      , "dyn_load_prime: malformed image — `rec type` is not a Kio' declaration"[String]
       , head_pos(ts)
       ))
     } else if(head_is(after_rec, c_lbrace())) {
       ds_err(mk_diag_at(
       , "dyn_load_prime: malformed image — a recursive type group has no "
-        "group-level visibility"(String)
+        "group-level visibility"[String]
       , head_pos(ts)
       ))
     } else {
       ds_err(mk_diag_at(
       , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
-        "a type group"(String)
+        "a type group"[String]
       , head_pos(ts)
       ))
     }
-  } else if(head_word_is(ts, "type"(String))) {
+  } else if(head_word_is(ts, "type"[String])) {
     match(head_word(rest(ts))) {
       (
       , .(name: String) {
@@ -2448,8 +2370,8 @@ fn scan_visible_decl(
                                     , .(_empty_body: .) {
                                         ds_err(mk_diag_at(
                                         , string_concat(
-                                          , "dyn_load_prime: malformed image — type alias `"(String)
-                                          , string_concat(name, "` has no body"(String))
+                                          , "dyn_load_prime: malformed image — type alias `"[String]
+                                          , string_concat(name, "` has no body"[String])
                                           )
                                         , head_pos(at_eq)
                                         ))
@@ -2462,8 +2384,8 @@ fn scan_visible_decl(
                           , .(_eof: .) {
                               ds_err(mk_diag_at(
                               , string_concat(
-                                , "dyn_load_prime: malformed image — type alias `"(String)
-                                , string_concat(name, "` has no terminating `;`"(String))
+                                , "dyn_load_prime: malformed image — type alias `"[String]
+                                , string_concat(name, "` has no terminating `;`"[String])
                                 )
                               , head_pos(at_eq)
                               ))
@@ -2473,15 +2395,15 @@ fn scan_visible_decl(
                       } else {
                         ds_err(mk_diag_at(
                         , string_concat(
-                          , "dyn_load_prime: malformed image — type alias `"(String)
-                          , string_concat(name, "` has no `=`"(String))
+                          , "dyn_load_prime: malformed image — type alias `"[String]
+                          , string_concat(name, "` has no `=`"[String])
                           )
                         , head_pos(at_eq)
                         ))
                       }
                     } else {
                       ds_err(mk_diag_at(
-                      , "dyn_load_prime: malformed image — malformed type-parameter list"(String)
+                      , "dyn_load_prime: malformed image — malformed type-parameter list"[String]
                       , head_pos(rest(ts))
                       ))
                     }
@@ -2490,7 +2412,7 @@ fn scan_visible_decl(
               }
             , .(_missing_pos: .) {
                 ds_err(mk_diag_at(
-                , "dyn_load_prime: malformed image — `type` is not followed by a name"(String)
+                , "dyn_load_prime: malformed image — `type` is not followed by a name"[String]
                 , head_pos(ts)
                 ))
               }
@@ -2499,17 +2421,17 @@ fn scan_visible_decl(
         }
       , .(_noname: .) {
           ds_err(mk_diag_at(
-          , "dyn_load_prime: malformed image — `type` is not followed by a name"(String)
+          , "dyn_load_prime: malformed image — `type` is not followed by a name"[String]
           , head_pos(ts)
           ))
         }
       )
     }
-  } else if(head_word_is(ts, "host"(String))) {
+  } else if(head_word_is(ts, "host"[String])) {
     if(visibility_is_scoped(visibility)) {
       ds_err(mk_diag_at(
       , "dyn_load_prime: malformed image — host declarations cannot use "
-        "`pub(path)` visibility"(String)
+        "`pub(path)` visibility"[String]
       , head_pos(ts)
       ))
     } else match(un_host_scan(scan_host(ts))) {
@@ -2520,8 +2442,8 @@ fn scan_visible_decl(
               if(wip_has_host_decl(w, name)) {
                 ds_err(mk_diag_at(
                 , string_concat(
-                  , "dyn_load_prime: malformed image — duplicate host declaration `"(String)
-                  , string_concat(name, "` in one module"(String))
+                  , "dyn_load_prime: malformed image — duplicate host declaration `"[String]
+                  , string_concat(name, "` in one module"[String])
                   )
                 , head_pos(ts)
                 ))
@@ -2537,16 +2459,16 @@ fn scan_visible_decl(
   } else {
     ds_err(mk_diag_at(
     , "dyn_load_prime: malformed image — `pub` is not followed by `fn`, `rec "
-      "newtype`, `newtype`, `type`, or `host`"(String)
+      "newtype`, `newtype`, `type`, or `host`"[String]
     , head_pos(ts)
     ))
   }
 }
 
 fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
-  let local_pub = head_word_is(ts0, "pub"(String));
+  let local_pub = head_word_is(ts0, "pub"[String]);
   let before_visibility = if(local_pub) { rest(ts0) } else { ts0 };
-  let visible = if(local_pub) { .t(Bool) } else { exported };
+  let visible = if(local_pub) { .t[Bool] } else { exported };
   match(read_visibility(before_visibility, visible)) {
     (
     , .(read: Visibility_read) {
@@ -2554,39 +2476,39 @@ fn scan_decl(ts0: Toks, exported: Bool, pure: Bool, w: Wip) -> Decl_scan {
           .(visibility: Visibility, ts: Toks) {
             if(visibility_valid_for_owner(visibility, wip_name(w))) {
               if(pure) {
-                if(head_word_is(ts, "pure"(String))) {
+                if(head_word_is(ts, "pure"[String])) {
                   ds_err(mk_diag_at(
-                  , "dyn_load_prime: malformed image — duplicate `pure` declaration modifier"(String)
+                  , "dyn_load_prime: malformed image — duplicate `pure` declaration modifier"[String]
                   , head_pos(ts)
                   ))
                 } else {
                   scan_visible_decl(
                   , ts
                   , visibility
-                  , .t(Bool)
+                  , .t[Bool]
                   , no_recursive_type_scope()
-                  , .f(Bool)
+                  , .f[Bool]
                   , w
                   )
                 }
-              } else if(head_word_is(ts, "pure"(String))) {
+              } else if(head_word_is(ts, "pure"[String])) {
                 scan_visible_decl(
                 , rest(ts)
                 , visibility
-                , .t(Bool)
+                , .t[Bool]
                 , no_recursive_type_scope()
-                , .f(Bool)
+                , .f[Bool]
                 , w
                 )
               } else {
-                scan_visible_decl(ts, visibility, .f(Bool), no_recursive_type_scope(), .f(Bool), w)
+                scan_visible_decl(ts, visibility, .f[Bool], no_recursive_type_scope(), .f[Bool], w)
               }
             } else {
               ds_err(mk_diag_at(
               , string_concat(
                 , "dyn_load_prime: malformed image — a `pub(path)` declaration scope is not "
-                  "an ancestor of module `"(String)
-                , string_concat(wip_name(w), "`"(String))
+                  "an ancestor of module `"[String]
+                , string_concat(wip_name(w), "`"[String])
                 )
               , head_pos(ts0)
               ))
@@ -2608,7 +2530,7 @@ labels { type_group_read: Wip & Toks };
 type Type_group_scan = Type_group_read | Diag;
 
 fn type_group_diag(message: String, ts: Toks) -> Type_group_scan {
-  widen_sum(mk_diag_at(message, head_pos(ts)), Type_group_read | Diag)
+  widen_sum(mk_diag_at(message, head_pos(ts)))[Type_group_read | Diag]
 }
 
 // A group member carries its own ordinary visibility and must be either a
@@ -2616,7 +2538,7 @@ fn type_group_diag(message: String, ts: Toks) -> Type_group_scan {
 // compile-time property; the runtime loader retains the same alias/newtype
 // records as it does for ordinary declarations.
 fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, w: Wip) -> Decl_scan {
-  let exported = head_word_is(ts0, "pub"(String));
+  let exported = head_word_is(ts0, "pub"[String]);
   let after_pub = if(exported) { rest(ts0) } else { ts0 };
   match(read_visibility(after_pub, exported)) {
     (
@@ -2624,14 +2546,14 @@ fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, 
         match(Visibility_read.get(read)) {
           .(visibility: Visibility, ts: Toks) {
             if(visibility_valid_for_owner(visibility, wip_name(w))) {
-              if(head_word_is(ts, "type"(String))) {
-                scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
-              } else if(head_word_is(ts, "newtype"(String))) {
-                scan_visible_decl(ts, visibility, .f(Bool), recursive_scope, .t(Bool), w)
+              if(head_word_is(ts, "type"[String])) {
+                scan_visible_decl(ts, visibility, .f[Bool], recursive_scope, .t[Bool], w)
+              } else if(head_word_is(ts, "newtype"[String])) {
+                scan_visible_decl(ts, visibility, .f[Bool], recursive_scope, .t[Bool], w)
               } else {
                 ds_err(mk_diag_at(
                 , "dyn_load_prime: malformed image — a recursive type group member must be "
-                  "`type` or `newtype`"(String)
+                  "`type` or `newtype`"[String]
                 , head_pos(ts)
                 ))
               }
@@ -2639,8 +2561,8 @@ fn scan_type_group_member(ts0: Toks, recursive_scope: . | Recursive_type_scope, 
               ds_err(mk_diag_at(
               , string_concat(
                 , "dyn_load_prime: malformed image — a `pub(path)` declaration scope is not "
-                  "an ancestor of module `"(String)
-                , string_concat(wip_name(w), "`"(String))
+                  "an ancestor of module `"[String]
+                , string_concat(wip_name(w), "`"[String])
                 )
               , head_pos(ts0)
               ))
@@ -2670,31 +2592,20 @@ fn scan_type_group(ts0: Toks, w0: Wip) -> Type_group_scan {
               (
               , .(_token: Token) {
                   if(head_is(cur, c_rbrace())) {
-                    if(eq_i32(member_count, 0(I32))) {
-                      widen_sum(
-                      , type_group_diag(
-                        , "dyn_load_prime: malformed image — a recursive type group is empty"(String)
-                        , cur
-                        )
-                      , (Toks & Wip & I32) | Type_group_read | Diag
-                      )
-                    } else if(eq_i32(member_count, 1(I32))) {
-                      widen_sum(
-                      , type_group_diag(
-                        , "dyn_load_prime: malformed image — a recursive type group must contain at "
-                          "least two declarations"(String)
-                        , cur
-                        )
-                      , (Toks & Wip & I32) | Type_group_read | Diag
-                      )
+                    if(eq_i32(member_count, 0[I32])) {
+                      widen_sum(type_group_diag(
+                      , "dyn_load_prime: malformed image — a recursive type group is empty"[String]
+                      , cur
+                      ))[(Toks & Wip & I32) | Type_group_read | Diag]
+                    } else if(eq_i32(member_count, 1[I32])) {
+                      widen_sum(type_group_diag(
+                      , "dyn_load_prime: malformed image — a recursive type group must contain at "
+                        "least two declarations"[String]
+                      , cur
+                      ))[(Toks & Wip & I32) | Type_group_read | Diag]
                     } else {
-                      widen_sum(
-                      , widen_sum(
-                        , {type_group_read = (w, drop(rest(cur), c_semi()))}
-                        , Type_group_read | Diag
-                        )
-                      , (Toks & Wip & I32) | Type_group_read | Diag
-                      )
+                      widen_sum(widen_sum({type_group_read = (w, drop(rest(cur), c_semi()))})[| Type_group_read
+                      | Diag])[(Toks & Wip & I32) | Type_group_read | Diag]
                     }
                   } else match(un_decl_scan(scan_type_group_member(cur, recursive_scope, w))) {
                     (
@@ -2702,57 +2613,52 @@ fn scan_type_group(ts0: Toks, w0: Wip) -> Type_group_scan {
                         match(Wip_and_toks.get(done)) {
                           .(w1: Wip, after: Toks) {
                             if(head_is(after, c_semi())) {
-                              widen_sum(
-                              , (rest(after), (w1, add_i32(member_count, 1(I32))))
-                              , (Toks & Wip & I32) | Type_group_read | Diag
-                              )
+                              widen_sum((rest(after), (w1, add_i32(member_count, 1[I32]))))[| (& Toks
+                              & Wip
+                              & I32)
+                              | Type_group_read
+                              | Diag]
                             } else if(head_is(after, c_rbrace())) {
-                              widen_sum(
-                              , (after, (w1, add_i32(member_count, 1(I32))))
-                              , (Toks & Wip & I32) | Type_group_read | Diag
-                              )
+                              widen_sum((after, (w1, add_i32(member_count, 1[I32]))))[| (& Toks
+                              & Wip
+                              & I32)
+                              | Type_group_read
+                              | Diag]
                             } else {
-                              widen_sum(
-                              , type_group_diag(
-                                , "dyn_load_prime: malformed image — expected `;` between recursive type "
-                                  "group members"(String)
-                                , after
-                                )
-                              , (Toks & Wip & I32) | Type_group_read | Diag
-                              )
+                              widen_sum(type_group_diag(
+                              , "dyn_load_prime: malformed image — expected `;` between recursive type "
+                                "group members"[String]
+                              , after
+                              ))[(Toks & Wip & I32) | Type_group_read | Diag]
                             }
                           }
                         }
                       }
                     , .(d: Diag) {
-                        widen_sum(
-                        , widen_sum(d, Type_group_read | Diag)
-                        , (Toks & Wip & I32) | Type_group_read | Diag
-                        )
+                        widen_sum(widen_sum(d)[Type_group_read | Diag])[| (Toks & Wip & I32)
+                        | Type_group_read
+                        | Diag]
                       }
                     )
                   }
                 }
               , .(_end: .) {
-                  widen_sum(
-                  , type_group_diag(
-                    , "dyn_load_prime: malformed image — an unterminated recursive type group"(String)
-                    , cur
-                    )
-                  , (Toks & Wip & I32) | Type_group_read | Diag
-                  )
+                  widen_sum(type_group_diag(
+                  , "dyn_load_prime: malformed image — an unterminated recursive type group"[String]
+                  , cur
+                  ))[(Toks & Wip & I32) | Type_group_read | Diag]
                 }
               )
             }
           }
         }
       }
-    , (drop(rest(after_rec), c_semi()), (w0, 0(I32)))
+    , (drop(rest(after_rec), c_semi()), (w0, 0[I32]))
     )
   } else {
     type_group_diag(
     , "dyn_load_prime: malformed image — `rec` is not followed by `newtype` or "
-      "a type group"(String)
+      "a type group"[String]
     , ts0
     )
   }
@@ -2797,16 +2703,16 @@ fn wip_aliases(w: Wip) -> Aliases {
 // Whether the head word opens a declaration (`fn` / `newtype` / `type` /
 // `host`).
 fn is_decl_head(ts: Toks) -> Bool {
-  if(head_word_is(ts, "fn"(String))) {
-    .t(Bool)
-  } else if(head_word_is(ts, "newtype"(String))) {
-    .t(Bool)
-  } else if(head_word_is(ts, "type"(String))) {
-    .t(Bool)
-  } else if(head_word_is(ts, "host"(String))) {
-    .t(Bool)
+  if(head_word_is(ts, "fn"[String])) {
+    .t[Bool]
+  } else if(head_word_is(ts, "newtype"[String])) {
+    .t[Bool]
+  } else if(head_word_is(ts, "type"[String])) {
+    .t[Bool]
+  } else if(head_word_is(ts, "host"[String])) {
+    .t[Bool]
   } else {
-    .f(Bool)
+    .f[Bool]
   }
 }
 
@@ -2831,10 +2737,10 @@ labels { pscan_err: Diag };
 type Pscan_outcome = Pscan_ok | Pscan_err;
 
 fn pscan_ok(ms: Modules, bridge: Bridge) -> Pscan_outcome {
-  widen_sum({pscan_ok = (ms, bridge)}, Pscan_ok | Pscan_err)
+  widen_sum({pscan_ok = (ms, bridge)})[Pscan_ok | Pscan_err]
 }
 
-fn pscan_err(d: Diag) -> Pscan_outcome { widen_sum({pscan_err = d}, Pscan_ok | Pscan_err) }
+fn pscan_err(d: Diag) -> Pscan_outcome { widen_sum({pscan_err = d})[Pscan_ok | Pscan_err] }
 
 /// One-step destructor on a package-scan outcome.
 fn un_pscan_outcome(o: Pscan_outcome) -> Pscan_ok | Pscan_err { o }
@@ -2850,12 +2756,12 @@ labels { scan_bridge_globs: Pnames };
 
 type Bridge_scan = Scan_no_manifest | Scan_manifest_without_bridge | Scan_bridge_globs;
 
-fn bridge_scan_no_manifest() -> Bridge_scan { widen_sum({scan_no_manifest=}, Bridge_scan) }
+fn bridge_scan_no_manifest() -> Bridge_scan { widen_sum({scan_no_manifest=})[Bridge_scan] }
 
 fn bridge_scan_note_manifest(bridge: Bridge_scan) -> Bridge_scan {
   match(bridge) {
     (
-    , .(_none: Scan_no_manifest) { widen_sum({scan_manifest_without_bridge=}, Bridge_scan) }
+    , .(_none: Scan_no_manifest) { widen_sum({scan_manifest_without_bridge=})[Bridge_scan] }
     , .(_manifest: Scan_manifest_without_bridge) { bridge }
     , .(_globs: Scan_bridge_globs) { bridge }
     )
@@ -2865,23 +2771,23 @@ fn bridge_scan_note_manifest(bridge: Bridge_scan) -> Bridge_scan {
 fn bridge_scan_has_block(bridge: Bridge_scan) -> Bool {
   match(bridge) {
     (
-    , .(_none: Scan_no_manifest) { .f(Bool) }
-    , .(_manifest: Scan_manifest_without_bridge) { .f(Bool) }
-    , .(_globs: Scan_bridge_globs) { .t(Bool) }
+    , .(_none: Scan_no_manifest) { .f[Bool] }
+    , .(_manifest: Scan_manifest_without_bridge) { .f[Bool] }
+    , .(_globs: Scan_bridge_globs) { .t[Bool] }
     )
   }
 }
 
 fn bridge_scan_with_globs(globs: Pnames) -> Bridge_scan {
-  widen_sum({scan_bridge_globs = globs}, Bridge_scan)
+  widen_sum({scan_bridge_globs = globs})[Bridge_scan]
 }
 
 fn bridge_scan_finish(bridge: Bridge_scan) -> Bridge {
   match(bridge) {
     (
-    , .(_none: Scan_no_manifest) { widen_sum((), . | Pnames) }
-    , .(_manifest: Scan_manifest_without_bridge) { widen_sum(pnames_nil(), . | Pnames) }
-    , .(globs: Scan_bridge_globs) { widen_sum(Scan_bridge_globs.get(globs), . | Pnames) }
+    , .(_none: Scan_no_manifest) { widen_sum(())[. | Pnames] }
+    , .(_manifest: Scan_manifest_without_bridge) { widen_sum(pnames_nil())[. | Pnames] }
+    , .(globs: Scan_bridge_globs) { widen_sum(Scan_bridge_globs.get(globs))[. | Pnames] }
     )
   }
 }
@@ -2895,9 +2801,9 @@ fn modules_reverse(ms: Modules) -> Modules {
           match(un_modules(rem)) {
             (
             , .(m: Module, rest_m: Modules) {
-                widen_sum((rest_m, modules_cons(m, acc)), (Modules & Modules) | Modules)
+                widen_sum((rest_m, modules_cons(m, acc)))[(Modules & Modules) | Modules]
               }
-            , .(_e: .) { widen_sum(acc, (Modules & Modules) | Modules) }
+            , .(_e: .) { widen_sum(acc)[(Modules & Modules) | Modules] }
             )
           }
         }
@@ -2911,7 +2817,7 @@ fn modules_reverse(ms: Modules) -> Modules {
 // a name. An unnamed record is contentless by construction (every
 // content-adding arm requires a named module first).
 fn flush_wip(w: Wip, ms_rev: Modules) -> Modules {
-  if(string_eq(wip_name(w), ""(String))) { ms_rev } else { modules_cons(finish_wip(w), ms_rev) }
+  if(string_eq(wip_name(w), ""[String])) { ms_rev } else { modules_cons(finish_wip(w), ms_rev) }
 }
 
 fn modules_have_name(modules: Modules, name: String) -> Bool {
@@ -2921,12 +2827,12 @@ fn modules_have_name(modules: Modules, name: String) -> Bool {
         (
         , .(module_: Module, rest: Modules) {
             if(string_eq(module_name(module_), name)) {
-              widen_sum(.t(Bool), Modules | Bool)
+              widen_sum(.t[Bool])[Modules | Bool]
             } else {
-              widen_sum(rest, Modules | Bool)
+              widen_sum(rest)[Modules | Bool]
             }
           }
-        , .(_empty: .) { widen_sum(.f(Bool), Modules | Bool) }
+        , .(_empty: .) { widen_sum(.f[Bool])[Modules | Bool] }
         )
       }
     }
@@ -2935,7 +2841,7 @@ fn modules_have_name(modules: Modules, name: String) -> Bool {
 }
 
 fn module_name_seen(w: Wip, modules: Modules, name: String) -> Bool {
-  if(string_eq(wip_name(w), name)) { .t(Bool) } else { modules_have_name(modules, name) }
+  if(string_eq(wip_name(w), name)) { .t[Bool] } else { modules_have_name(modules, name) }
 }
 
 // The package scanner's loop state: the remaining tokens, the in-progress
@@ -2947,14 +2853,11 @@ type Pscan_step = Pscan_state | Pscan_outcome;
 // The declaration-before-header diagnostic (a whole-package image opens
 // every module file with its `module` header).
 fn pre_module_diag(ts: Toks) -> Pscan_step {
-  widen_sum(
-  , pscan_err(mk_diag_at(
-    , "dyn_load_prime: malformed image — a declaration appears before the first "
-      "`module` header"(String)
-    , head_pos(ts)
-    ))
-  , Pscan_state | Pscan_outcome
-  )
+  widen_sum(pscan_err(mk_diag_at(
+  , "dyn_load_prime: malformed image — a declaration appears before the first "
+    "`module` header"[String]
+  , head_pos(ts)
+  )))[Pscan_state | Pscan_outcome]
 }
 
 fn pscan_decl_step(
@@ -2970,11 +2873,11 @@ fn pscan_decl_step(
     , .(ok: Wip_and_toks) {
         match(Wip_and_toks.get(ok)) {
           .(w1: Wip, after: Toks) {
-            widen_sum((after, (w1, (ms_rev, bridge))), Pscan_state | Pscan_outcome)
+            widen_sum((after, (w1, (ms_rev, bridge))))[Pscan_state | Pscan_outcome]
           }
         }
       }
-    , .(d: Diag) { widen_sum(pscan_err(d), Pscan_state | Pscan_outcome) }
+    , .(d: Diag) { widen_sum(pscan_err(d))[Pscan_state | Pscan_outcome] }
     )
   }
 }
@@ -2985,11 +2888,11 @@ fn pscan_type_group(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> P
     , .(done: Type_group_read) {
         match(Type_group_read.get(done)) {
           .(w1: Wip, after: Toks) {
-            widen_sum((after, (w1, (ms_rev, bridge))), Pscan_state | Pscan_outcome)
+            widen_sum((after, (w1, (ms_rev, bridge))))[Pscan_state | Pscan_outcome]
           }
         }
       }
-    , .(d: Diag) { widen_sum(pscan_err(d), Pscan_state | Pscan_outcome) }
+    , .(d: Diag) { widen_sum(pscan_err(d))[Pscan_state | Pscan_outcome] }
     )
   }
 }
@@ -3011,17 +2914,17 @@ labels { glob_read: String & Toks };
 fn read_glob_segment(ts: Toks) -> . | Glob_read {
   match(head_word(ts)) {
     (
-    , .(seg: String) { widen_sum({glob_read = (seg, rest(ts))}, . | Glob_read) }
+    , .(seg: String) { widen_sum({glob_read = (seg, rest(ts))})[. | Glob_read] }
     , .(_notword: .) {
         if(head_is(ts, c_star())) {
           let after1 = rest(ts);
           if(head_is(after1, c_star())) {
-            widen_sum({glob_read = ("**"(String), rest(after1))}, . | Glob_read)
+            widen_sum({glob_read = ("**"[String], rest(after1))})[. | Glob_read]
           } else {
-            widen_sum({glob_read = ("*"(String), after1)}, . | Glob_read)
+            widen_sum({glob_read = ("*"[String], after1)})[. | Glob_read]
           }
         } else {
-          widen_sum((), . | Glob_read)
+          widen_sum(())[. | Glob_read]
         }
       }
     )
@@ -3035,43 +2938,40 @@ fn read_glob(ts: Toks) -> . | Glob_read {
     , .(first: Glob_read) {
         match(Glob_read.get(first)) {
           .(seg0: String, after0: Toks) {
-            widen_sum(
-            , loop(
-              , .(st: String & Toks) {
-                  match(st) {
-                    .(acc: String, cur: Toks) {
-                      if(head_is(cur, c_slash())) {
-                        match(read_glob_segment(rest(cur))) {
-                          (
-                          , .(nxt: Glob_read) {
-                              match(Glob_read.get(nxt)) {
-                                .(seg: String, after: Toks) {
-                                  widen_sum(
-                                  , (string_concat(acc, string_concat("/"(String), seg)), after)
-                                  , (String & Toks) | Glob_read
-                                  )
-                                }
+            widen_sum(loop(
+            , .(st: String & Toks) {
+                match(st) {
+                  .(acc: String, cur: Toks) {
+                    if(head_is(cur, c_slash())) {
+                      match(read_glob_segment(rest(cur))) {
+                        (
+                        , .(nxt: Glob_read) {
+                            match(Glob_read.get(nxt)) {
+                              .(seg: String, after: Toks) {
+                                widen_sum((
+                                , string_concat(acc, string_concat("/"[String], seg))
+                                , after
+                                ))[(String & Toks) | Glob_read]
                               }
                             }
-                          , .(_bad: .) {
-                              widen_sum({glob_read = (acc, cur)}, (String & Toks) | Glob_read)
-                            }
-                          )
-                        }
-                      } else {
-                        widen_sum({glob_read = (acc, cur)}, (String & Toks) | Glob_read)
+                          }
+                        , .(_bad: .) {
+                            widen_sum({glob_read = (acc, cur)})[(String & Toks) | Glob_read]
+                          }
+                        )
                       }
+                    } else {
+                      widen_sum({glob_read = (acc, cur)})[(String & Toks) | Glob_read]
                     }
                   }
                 }
-              , (seg0, after0)
-              )
-            , . | Glob_read
-            )
+              }
+            , (seg0, after0)
+            ))[. | Glob_read]
           }
         }
       }
-    , .(_bad: .) { widen_sum((), . | Glob_read) }
+    , .(_bad: .) { widen_sum(())[. | Glob_read] }
     )
   }
 }
@@ -3087,48 +2987,35 @@ fn read_bridge_entries(ts0: Toks) -> Bridge_read | Diag {
       match(st) {
         .(cur: Toks, acc: Pnames) {
           if(head_is(cur, c_rbrace())) {
-            widen_sum(
-            , widen_sum({bridge_read = (acc, rest(cur))}, Bridge_read | Diag)
-            , (Toks & Pnames) | Bridge_read | Diag
-            )
+            widen_sum(widen_sum({bridge_read = (acc, rest(cur))})[Bridge_read | Diag])[| (& Toks
+            & Pnames)
+            | Bridge_read
+            | Diag]
           } else match(read_glob(cur)) {
             (
             , .(g: Glob_read) {
                 match(Glob_read.get(g)) {
                   .(glob: String, after: Toks) {
                     let at_boundary =
-                      if(head_is(after, c_semi())) { .t(Bool) } else { head_is(after, c_rbrace()) };
+                      if(head_is(after, c_semi())) { .t[Bool] } else { head_is(after, c_rbrace()) };
                     if(at_boundary) {
-                      widen_sum(
-                      , (drop(after, c_semi()), pnames_cons(glob, acc))
-                      , (Toks & Pnames) | Bridge_read | Diag
-                      )
+                      widen_sum((drop(after, c_semi()), pnames_cons(glob, acc)))[| (Toks & Pnames)
+                      | Bridge_read
+                      | Diag]
                     } else {
-                      widen_sum(
-                      , widen_sum(
-                        , mk_diag_at(
-                          , "dyn_load_prime: malformed image — expected `;` between bridge entries"(String)
-                          , head_pos(after)
-                          )
-                        , Bridge_read | Diag
-                        )
-                      , (Toks & Pnames) | Bridge_read | Diag
-                      )
+                      widen_sum(widen_sum(mk_diag_at(
+                      , "dyn_load_prime: malformed image — expected `;` between bridge entries"[String]
+                      , head_pos(after)
+                      ))[Bridge_read | Diag])[(Toks & Pnames) | Bridge_read | Diag]
                     }
                   }
                 }
               }
             , .(_bad: .) {
-                widen_sum(
-                , widen_sum(
-                  , mk_diag_at(
-                    , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"(String)
-                    , head_pos(cur)
-                    )
-                  , Bridge_read | Diag
-                  )
-                , (Toks & Pnames) | Bridge_read | Diag
-                )
+                widen_sum(widen_sum(mk_diag_at(
+                , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"[String]
+                , head_pos(cur)
+                ))[Bridge_read | Diag])[(Toks & Pnames) | Bridge_read | Diag]
               }
             )
           }
@@ -3143,13 +3030,10 @@ fn read_bridge_globs(ts: Toks) -> Bridge_read | Diag {
   if(head_is(ts, c_semi())) {
     let after = rest(ts);
     if(head_is(after, c_rbrace())) {
-      widen_sum(
-      , mk_diag_at(
-        , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"(String)
-        , head_pos(ts)
-        )
-      , Bridge_read | Diag
-      )
+      widen_sum(mk_diag_at(
+      , "dyn_load_prime: malformed image — a `bridge` entry is not a module glob"[String]
+      , head_pos(ts)
+      ))[Bridge_read | Diag]
     } else {
       read_bridge_entries(after)
     }
@@ -3161,13 +3045,10 @@ fn read_bridge_globs(ts: Toks) -> Bridge_read | Diag {
 // Parse the bridge block's glob list, the head at the `bridge` keyword.
 fn pscan_bridge(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> Pscan_step {
   if(bridge_scan_has_block(bridge)) {
-    widen_sum(
-    , pscan_err(mk_diag_at(
-      , "dyn_load_prime: malformed image — a second `bridge` block"(String)
-      , head_pos(ts)
-      ))
-    , Pscan_state | Pscan_outcome
-    )
+    widen_sum(pscan_err(mk_diag_at(
+    , "dyn_load_prime: malformed image — a second `bridge` block"[String]
+    , head_pos(ts)
+    )))[Pscan_state | Pscan_outcome]
   } else {
     let after_kw = rest(ts);
     if(head_is(after_kw, c_lbrace())) {
@@ -3176,24 +3057,19 @@ fn pscan_bridge(ts: Toks, w: Wip, ms_rev: Modules, bridge: Bridge_scan) -> Pscan
         , .(done: Bridge_read) {
             match(Bridge_read.get(done)) {
               .(globs: Pnames, after: Toks) {
-                widen_sum(
-                , (drop(after, c_semi()), (w, (ms_rev, bridge_scan_with_globs(globs))))
-                , Pscan_state | Pscan_outcome
-                )
+                widen_sum((drop(after, c_semi()), (w, (ms_rev, bridge_scan_with_globs(globs)))))[| Pscan_state
+                | Pscan_outcome]
               }
             }
           }
-        , .(d: Diag) { widen_sum(pscan_err(d), Pscan_state | Pscan_outcome) }
+        , .(d: Diag) { widen_sum(pscan_err(d))[Pscan_state | Pscan_outcome] }
         )
       }
     } else {
-      widen_sum(
-      , pscan_err(mk_diag_at(
-        , "dyn_load_prime: malformed image — `bridge` is not followed by a block"(String)
-        , head_pos(ts)
-        ))
-      , Pscan_state | Pscan_outcome
-      )
+      widen_sum(pscan_err(mk_diag_at(
+      , "dyn_load_prime: malformed image — `bridge` is not followed by a block"[String]
+      , head_pos(ts)
+      )))[Pscan_state | Pscan_outcome]
     }
   }
 }
@@ -3204,147 +3080,124 @@ fn pscan_step(st: Pscan_state) -> Pscan_step {
       match(peek(ts)) {
         (
         , .(_t: Token) {
-            if(head_word_is(ts, "module"(String))) {
+            if(head_word_is(ts, "module"[String])) {
               match(un_mod_path(read_module_path(rest(ts)))) {
                 (
                 , .(p: Mod_path) {
                     match(Mod_path.get(p)) {
                       .(modname: String, _after: Toks) {
                         if(module_name_seen(w, ms_rev, modname)) {
-                          widen_sum(
-                          , pscan_err(mk_diag_at(
-                            , string_concat(
-                              , "dyn_load_prime: malformed image — duplicate module `"(String)
-                              , string_concat(modname, "`"(String))
-                              )
-                            , head_pos(ts)
-                            ))
-                          , Pscan_state | Pscan_outcome
-                          )
+                          widen_sum(pscan_err(mk_diag_at(
+                          , string_concat(
+                            , "dyn_load_prime: malformed image — duplicate module `"[String]
+                            , string_concat(modname, "`"[String])
+                            )
+                          , head_pos(ts)
+                          )))[Pscan_state | Pscan_outcome]
                         } else {
-                          widen_sum(
-                          , (skip_to_semi(ts), (fresh_wip(modname), (flush_wip(w, ms_rev), bridge)))
-                          , Pscan_state | Pscan_outcome
-                          )
+                          widen_sum((
+                          , skip_to_semi(ts)
+                          , (fresh_wip(modname), (flush_wip(w, ms_rev), bridge))
+                          ))[Pscan_state | Pscan_outcome]
                         }
                       }
                     }
                   }
                 , .(_noname: .) {
-                    widen_sum(
-                    , pscan_err(mk_diag_at(
-                      , "dyn_load_prime: malformed image — `module` names no module"(String)
-                      , head_pos(ts)
-                      ))
-                    , Pscan_state | Pscan_outcome
-                    )
+                    widen_sum(pscan_err(mk_diag_at(
+                    , "dyn_load_prime: malformed image — `module` names no module"[String]
+                    , head_pos(ts)
+                    )))[Pscan_state | Pscan_outcome]
                   }
                 )
               }
-            } else if(head_word_is(ts, "package"(String))) {
+            } else if(head_word_is(ts, "package"[String])) {
               match(head_word(rest(ts))) {
                 (
                 , .(_pkgname: String) {
-                    widen_sum(
-                    , (skip_to_semi(ts), (w, (ms_rev, bridge_scan_note_manifest(bridge))))
-                    , Pscan_state | Pscan_outcome
-                    )
+                    widen_sum((skip_to_semi(ts), (w, (ms_rev, bridge_scan_note_manifest(bridge)))))[| Pscan_state
+                    | Pscan_outcome]
                   }
                 , .(_noname: .) {
-                    widen_sum(
-                    , pscan_err(mk_diag_at(
-                      , "dyn_load_prime: malformed image — `package` names no package"(String)
-                      , head_pos(ts)
-                      ))
-                    , Pscan_state | Pscan_outcome
-                    )
+                    widen_sum(pscan_err(mk_diag_at(
+                    , "dyn_load_prime: malformed image — `package` names no package"[String]
+                    , head_pos(ts)
+                    )))[Pscan_state | Pscan_outcome]
                   }
                 )
               }
-            } else if(head_word_is(ts, "build"(String))) {
+            } else if(head_word_is(ts, "build"[String])) {
               let after_kw = rest(ts);
               if(head_is(after_kw, c_lbrace())) {
-                widen_sum(
-                , (drop(skip_group(after_kw), c_semi()), (w, (ms_rev, bridge)))
-                , Pscan_state | Pscan_outcome
-                )
+                widen_sum((drop(skip_group(after_kw), c_semi()), (w, (ms_rev, bridge))))[| Pscan_state
+                | Pscan_outcome]
               } else {
-                widen_sum(
-                , pscan_err(mk_diag_at(
-                  , "dyn_load_prime: malformed image — `build` is not followed by a block"(String)
-                  , head_pos(ts)
-                  ))
-                , Pscan_state | Pscan_outcome
-                )
+                widen_sum(pscan_err(mk_diag_at(
+                , "dyn_load_prime: malformed image — `build` is not followed by a block"[String]
+                , head_pos(ts)
+                )))[Pscan_state | Pscan_outcome]
               }
-            } else if(head_word_is(ts, "bridge"(String))) {
+            } else if(head_word_is(ts, "bridge"[String])) {
               pscan_bridge(ts, w, ms_rev, bridge)
-            } else if(head_word_is(ts, "import"(String))) {
-              if(string_eq(wip_name(w), ""(String))) {
+            } else if(head_word_is(ts, "import"[String])) {
+              if(string_eq(wip_name(w), ""[String])) {
                 pre_module_diag(ts)
               } else match(un_import_outcome(scan_import(ts, wip_imports(w), wip_aliases(w)))) {
                 (
                 , .(u: Import_scan) {
                     match(Import_scan.get(u)) {
                       .(i2: Imports, a2: Aliases, after: Toks) {
-                        widen_sum(
-                        , (after, (with_imports_and_aliases(w, i2, a2), (ms_rev, bridge)))
-                        , Pscan_state | Pscan_outcome
-                        )
+                        widen_sum((after, (with_imports_and_aliases(w, i2, a2), (ms_rev, bridge))))[| Pscan_state
+                        | Pscan_outcome]
                       }
                     }
                   }
                 , .(e: Import_err) {
-                    widen_sum(pscan_err(Import_err.get(e)), Pscan_state | Pscan_outcome)
+                    widen_sum(pscan_err(Import_err.get(e)))[Pscan_state | Pscan_outcome]
                   }
                 )
               }
-            } else if(head_word_is(ts, "rec"(String))) {
-              if(string_eq(wip_name(w), ""(String))) {
+            } else if(head_word_is(ts, "rec"[String])) {
+              if(string_eq(wip_name(w), ""[String])) {
                 pre_module_diag(ts)
               } else if(head_is(rest(ts), c_lbrace())) {
                 pscan_type_group(ts, w, ms_rev, bridge)
               } else {
-                pscan_decl_step(ts, .f(Bool), .f(Bool), w, ms_rev, bridge)
+                pscan_decl_step(ts, .f[Bool], .f[Bool], w, ms_rev, bridge)
               }
-            } else if(head_word_is(ts, "pub"(String))) {
-              if(string_eq(wip_name(w), ""(String))) {
+            } else if(head_word_is(ts, "pub"[String])) {
+              if(string_eq(wip_name(w), ""[String])) {
                 pre_module_diag(ts)
               } else {
-                pscan_decl_step(rest(ts), .t(Bool), .f(Bool), w, ms_rev, bridge)
+                pscan_decl_step(rest(ts), .t[Bool], .f[Bool], w, ms_rev, bridge)
               }
-            } else if(head_word_is(ts, "pure"(String))) {
-              if(string_eq(wip_name(w), ""(String))) {
+            } else if(head_word_is(ts, "pure"[String])) {
+              if(string_eq(wip_name(w), ""[String])) {
                 pre_module_diag(ts)
               } else {
                 let after_pure = rest(ts);
-                if(head_word_is(after_pure, "pub"(String))) {
-                  pscan_decl_step(rest(after_pure), .t(Bool), .t(Bool), w, ms_rev, bridge)
+                if(head_word_is(after_pure, "pub"[String])) {
+                  pscan_decl_step(rest(after_pure), .t[Bool], .t[Bool], w, ms_rev, bridge)
                 } else {
-                  pscan_decl_step(after_pure, .f(Bool), .t(Bool), w, ms_rev, bridge)
+                  pscan_decl_step(after_pure, .f[Bool], .t[Bool], w, ms_rev, bridge)
                 }
               }
             } else if(is_decl_head(ts)) {
-              if(string_eq(wip_name(w), ""(String))) {
+              if(string_eq(wip_name(w), ""[String])) {
                 pre_module_diag(ts)
               } else {
-                pscan_decl_step(ts, .f(Bool), .f(Bool), w, ms_rev, bridge)
+                pscan_decl_step(ts, .f[Bool], .f[Bool], w, ms_rev, bridge)
               }
             } else {
-              widen_sum(
-              , pscan_err(mk_diag_at(
-                , "dyn_load_prime: malformed image — unexpected top-level token"(String)
-                , head_pos(ts)
-                ))
-              , Pscan_state | Pscan_outcome
-              )
+              widen_sum(pscan_err(mk_diag_at(
+              , "dyn_load_prime: malformed image — unexpected top-level token"[String]
+              , head_pos(ts)
+              )))[Pscan_state | Pscan_outcome]
             }
           }
         , .(_e: .) {
-            widen_sum(
-            , pscan_ok(modules_reverse(flush_wip(w, ms_rev)), bridge_scan_finish(bridge))
-            , Pscan_state | Pscan_outcome
-            )
+            widen_sum(pscan_ok(modules_reverse(flush_wip(w, ms_rev)), bridge_scan_finish(bridge)))[| Pscan_state
+            | Pscan_outcome]
           }
         )
       }
@@ -3361,13 +3214,13 @@ fn scan_package(source: String) -> Pscan_outcome {
     , .(ts: Toks) {
         loop(
         , .(st: Pscan_state) { pscan_step(st) }
-        , (ts, (fresh_wip(""(String)), (modules_nil(), bridge_scan_no_manifest())))
+        , (ts, (fresh_wip(""[String]), (modules_nil(), bridge_scan_no_manifest())))
         )
       }
     , .(e: Lex_err) {
         pscan_err(mk_diag_at(
-        , string_concat("dyn_load_prime: malformed image — "(String), lex_err_message(e))
-        , widen_sum(lex_err_pos(e), . | I32)
+        , string_concat("dyn_load_prime: malformed image — "[String], lex_err_message(e))
+        , widen_sum(lex_err_pos(e))[. | I32]
         ))
       }
     )
@@ -3393,28 +3246,28 @@ fn line_col(source: String, off: I32) -> I32 & I32 {
               match(string_code_at(source, pos)) {
                 (
                 , .(c: I32) {
-                    if(eq_i32(c, 10(I32))) {
-                      widen_sum(
-                      , (add_i32(pos, 1(I32)), (add_i32(line, 1(I32)), 1(I32)))
-                      , (I32 & I32 & I32) | (I32 & I32)
-                      )
+                    if(eq_i32(c, 10[I32])) {
+                      widen_sum((add_i32(pos, 1[I32]), (add_i32(line, 1[I32]), 1[I32])))[| (& I32
+                      & I32
+                      & I32)
+                      | (I32 & I32)]
                     } else {
-                      widen_sum(
-                      , (add_i32(pos, 1(I32)), (line, add_i32(col, 1(I32))))
-                      , (I32 & I32 & I32) | (I32 & I32)
-                      )
+                      widen_sum((add_i32(pos, 1[I32]), (line, add_i32(col, 1[I32]))))[| (& I32
+                      & I32
+                      & I32)
+                      | (I32 & I32)]
                     }
                   }
-                , .(_end: .) { widen_sum((line, col), (I32 & I32 & I32) | (I32 & I32)) }
+                , .(_end: .) { widen_sum((line, col))[(I32 & I32 & I32) | (I32 & I32)] }
                 )
               }
             } else {
-              widen_sum((line, col), (I32 & I32 & I32) | (I32 & I32))
+              widen_sum((line, col))[(I32 & I32 & I32) | (I32 & I32)]
             }
           }
         }
       }
-    , (0(I32), (1(I32), 1(I32)))
+    , (0[I32], (1[I32], 1[I32]))
     );
   match(loop_result) {
     .(line: I32, col: I32) { (line, col) }
@@ -3431,10 +3284,10 @@ fn localize_diag(source: String, d: Diag) -> Diag {
             mk_diag(string_concat(
             , diag_bare_message(d)
             , string_concat(
-              , " at line "(String)
+              , " at line "[String]
               , string_concat(
                 , int_to_string(line)
-                , string_concat(", column "(String), int_to_string(col))
+                , string_concat(", column "[String], int_to_string(col))
                 )
               )
             ))
@@ -3450,7 +3303,7 @@ fn localize_diag(source: String, d: Diag) -> Diag {
 fn localize(source: String, out: Load_outcome) -> Load_outcome {
   match(un_load_outcome(out)) {
     (
-    , .(im: Lr_image) { widen_sum(im, Load_outcome) }
+    , .(im: Lr_image) { widen_sum(im)[Load_outcome] }
     , .(d: Lr_diag) { lr_diag(localize_diag(source, Lr_diag.get(d))) }
     )
   }

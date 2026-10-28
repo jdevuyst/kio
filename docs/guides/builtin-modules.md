@@ -89,7 +89,7 @@ __if_then_else__ : [B][A](B & (. -> A) & (. -> A)) -> A
 
 Checks a concrete Boolean specialization before branching. The true and false branches are thunks so only the selected branch is invoked.
 
-The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__(Bool)` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked.
+The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__[Bool]` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked.
 
 #### `__absurd__`
 
@@ -179,7 +179,7 @@ type __Diagnostic_text__
 
 Compile-time text used in macro diagnostics.
 
-Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `"message"(__Diagnostic_text__)`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string.
+Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `"message"[__Diagnostic_text__]`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string.
 
 #### `Comptime_bool`
 
@@ -484,9 +484,7 @@ module builtin_type_fold_example;
 import __comptime__;
 
 fn product_arity(ct: __Comptime__, typ: __Type__) -> __Type_arity__ {
-  __type_product_spine_fold__(
-  , ct
-  , __Type_arity__
+  __type_product_spine_fold__(ct)[__Type_arity__](
   , typ
   , __type_arity_zero__(ct)
   , .(count: __Type_arity__, _member: __Type__) -> __Type_arity__ { __type_arity_succ__(ct, count) }
@@ -653,23 +651,16 @@ import __comptime__;
 
 rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
 
-fn stop() -> Fuel { Fuel.mk_fuel(__left__(., Fuel, ())) }
+fn stop() -> Fuel { Fuel.mk_fuel(__left__[.][Fuel](())) }
 
-fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__(., Fuel, rest)) }
+fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__[.][Fuel](rest)) }
 
 fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
-  __structural_recur__(
-  , ct
-  , Fuel
-  , .
-  , __Type_arity__
+  __structural_recur__(ct)[Fuel][.][__Type_arity__](
   , fuel
   , ()
   , .(recur: (Fuel & .) -> __Type_arity__, current: Fuel, _input: .) -> __Type_arity__ {
-      __either__(
-      , .
-      , Fuel
-      , __Type_arity__
+      __either__[.][Fuel][__Type_arity__](
       , Fuel.un_fuel(current)
       , .(_done: .) -> __Type_arity__ { __type_arity_zero__(ct) }
       , .(rest: Fuel) -> __Type_arity__ { __type_arity_succ__(ct, recur(rest, ())) }

@@ -384,11 +384,10 @@ pub trait DesugaredToLowered {
 
     fn visit_expr_user_macro(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
         let Expr::UserMacro {
-            source_trivia: _,
             occurrence: _,
             name,
             form,
-            args,
+            stages,
             meta: Meta { span, .. },
             ext,
         } = e
@@ -396,62 +395,34 @@ pub trait DesugaredToLowered {
             unreachable!()
         };
         Ok(Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
-            args: args
+            stages: stages
                 .into_iter()
-                .map(|arg| match arg {
-                    crate::ast::CallArg::Value(e) => {
-                        self.walk_expr(e).map(crate::ast::CallArg::Value)
-                    }
-                    crate::ast::CallArg::Type(t) => {
-                        self.walk_type(t).map(crate::ast::CallArg::Type)
-                    }
+                .map(|stage| {
+                    Ok(crate::ast::CallStage {
+                        occurrence: Default::default(),
+                        args: stage
+                            .args
+                            .into_iter()
+                            .map(|arg| self.walk_call_arg(arg))
+                            .collect::<Result<_, _>>()?,
+                        source_trivia: Default::default(),
+                        meta: Meta::new(stage.meta.span),
+                    })
                 })
-                .collect::<Result<_, _>>()?,
+                .collect::<Result<_, Error>>()?,
             meta: Meta::new(span),
             ext,
         })
     }
 
     fn visit_expr_ufcs(&mut self, e: Expr<Desugared>) -> Result<Expr<Lowered>, Error> {
-        let Expr::Ufcs {
-            source_trivia: _,
-            occurrence: _,
-            receiver,
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
+        let Expr::Ufcs { ext, .. } = e else {
             unreachable!()
         };
-        let receiver = Box::new(self.walk_expr(*receiver)?);
-        let args = args
-            .into_iter()
-            .map(|arg| match arg {
-                crate::ast::CallArg::Value(e) => self.walk_expr(e).map(crate::ast::CallArg::Value),
-                crate::ast::CallArg::Type(t) => self.walk_type(t).map(crate::ast::CallArg::Type),
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Expr::Ufcs {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            receiver,
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta: Meta::new(span),
-            ext,
-        })
+        match ext {}
     }
 
     fn visit_type_path(&mut self, ty: Type<Desugared>) -> Result<Type<Lowered>, Error> {

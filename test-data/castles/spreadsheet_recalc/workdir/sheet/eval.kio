@@ -26,9 +26,9 @@ labels Ev = { ok: I32 } | { bad: . };
 /// What one cell contributes to an aggregate.
 labels Slot = { got: I32 } | { none: . } | { err: . };
 
-fn ok(n: I32) -> Ev { {ok = n}.>widen_sum(Ev) }
+fn ok(n: I32) -> Ev { ({ok = n}.>widen_sum)[Ev] }
 
-fn bad() -> Ev { {bad=}.>widen_sum(Ev) }
+fn bad() -> Ev { ({bad=}.>widen_sum)[Ev] }
 
 fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
   match(e) {
@@ -39,9 +39,9 @@ fn fold_ev[R](e: Ev, on_ok: I32 -> R, on_bad: R) -> R {
 fn slot_at(vals: Values, a: Addr) -> Slot {
   fold_value(
   , value_at(vals, a)
-  , .(n: I32) { {got = n}.>widen_sum(Slot) }
-  , {none=}.>widen_sum(Slot)
-  , {err=}.>widen_sum(Slot)
+  , .(n: I32) { ({got = n}.>widen_sum)[Slot] }
+  , ({none=}.>widen_sum)[Slot]
+  , ({err=}.>widen_sum)[Slot]
   )
 }
 
@@ -62,10 +62,10 @@ fn bin(left: Ev, right: Ev, op: (I32 & I32) -> I32) -> Ev {
 }
 
 /// `SUM`: blanks contribute nothing, one error poisons the total.
-rec(loop) fn sum_onto(vals: Values, cells: List(Addr), acc: I32) -> Ev {
+rec(loop) fn sum_onto(vals: Values, cells: List[Addr], acc: I32) -> Ev {
   match(cells.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) {
+    , .(a: Addr, rest: List[Addr]) {
         match(slot_at(vals, a)) {
           (
           , .(g: Got) { recur sum_onto(vals, rest, add_i32(acc, g.?{got})) }
@@ -80,10 +80,10 @@ rec(loop) fn sum_onto(vals: Values, cells: List(Addr), acc: I32) -> Ev {
 }
 
 /// `MAX`: blanks are not candidates, and a range with no number is zero.
-rec(loop) fn max_onto(vals: Values, cells: List(Addr), best: I32, seen: Bool) -> Ev {
+rec(loop) fn max_onto(vals: Values, cells: List[Addr], best: I32, seen: Bool) -> Ev {
   match(cells.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) {
+    , .(a: Addr, rest: List[Addr]) {
         match(slot_at(vals, a)) {
           (
           , .(g: Got) {

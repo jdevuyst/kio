@@ -362,7 +362,7 @@ fn parser_context_repl_routes_expression_operators() {
 #[test]
 fn parser_context_repl_newtype_and_identity_alias_members() {
     let names = NameSet {
-        current_module_src: Some("module app; newtype Box[A] : A { constructor make; projector read; }; type Alias[A] = Box(A); type Partial = Box;".to_owned()),
+        current_module_src: Some("module app; newtype Box[A] : A { constructor make; projector read; }; type Alias[A] = Box[A]; type Partial = Box;".to_owned()),
         ..Default::default()
     };
     let provider = AstScopeProvider::new(&names);

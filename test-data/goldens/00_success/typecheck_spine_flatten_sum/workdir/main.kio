@@ -30,4 +30,4 @@ fn multi_step(s: ((A | B) | C) | D) -> A | B | C | D { flatten_sum(s) }
 fn identity_short_circuit(s: A | B | C) -> A | B | C { flatten_sum(s) }
 
 // UFCS spelling — same rule, postfix form.
-fn ufcs(s: (A | B) | C) -> A | B | C { s.>flatten_sum(A | B | C) }
+fn ufcs(s: (A | B) | C) -> A | B | C { (s.>flatten_sum)[A | B | C] }

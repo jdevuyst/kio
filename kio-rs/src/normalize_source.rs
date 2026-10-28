@@ -228,7 +228,7 @@ host type Str role(str);
 
 literal greeting = \"hi\";
 
-fn main() -> Str { greeting(Str) }
+fn main() -> Str { greeting[Str] }
 ";
         let rendered = normalize_source(package, module).expect("normalize_source should succeed");
         assert_eq!(rendered, "\"hi\"");
@@ -297,7 +297,7 @@ newtype Rep : . { constructor mk_rep; projector un_rep; };
 macro make_rep : [T] . -> Rep { captures (Rep, Rep.mk_rep); impl make_rep_impl; };
 
 pure fn main() -> . {
-  let rep = make_rep(., ());
+  let rep = make_rep[.](());
   rep.>Rep.un_rep
 }
 ";
@@ -350,11 +350,7 @@ module main;
 import __comptime__;
 
 pure fn run(ct: __Comptime__, k: . -> .) -> . {
-  __structural_recur__(
-    , ct
-    , __Type__
-    , .
-    , .
+  __structural_recur__(ct)[__Type__][.][.](
     , __type_unit__(ct)
     , ()
     , .(

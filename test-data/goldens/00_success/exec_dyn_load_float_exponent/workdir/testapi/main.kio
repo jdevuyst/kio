@@ -55,16 +55,16 @@ fn call_export(im: Image, name: String, make_lit: (String & Host_type) -> Value)
           , .(v: Ev_done) {
               match(prime_apply(serve_default, make_lit, test_bool_default, Ev_done.get(v), vunit())) {
                 (
-                , .(result: Ev_done) { widen_sum(Ev_done.get(result), . | Value) }
-                , .(_stuck: Ev_stuck) { widen_sum((), . | Value) }
+                , .(result: Ev_done) { widen_sum(Ev_done.get(result))[. | Value] }
+                , .(_stuck: Ev_stuck) { widen_sum(())[. | Value] }
                 )
               }
             }
-          , .(_stuck: Ev_stuck) { widen_sum((), . | Value) }
+          , .(_stuck: Ev_stuck) { widen_sum(())[. | Value] }
           )
         }
       }
-    , .(_absent: .) { widen_sum((), . | Value) }
+    , .(_absent: .) { widen_sum(())[. | Value] }
     )
   }
 }
@@ -80,7 +80,7 @@ fn difference(label: String, result: . | Value, expected: F64) {
               match(scalar_as_f64(s)) {
                 (
                 , .(actual: F64) {
-                    print(f64_to_string(add_f64(sub_f64(actual, expected), 0.0(F64))))
+                    print(f64_to_string(add_f64(sub_f64(actual, expected), 0.0[F64])))
                   }
                 , .(_no: .) { print("<not an f64>") }
                 )
@@ -101,42 +101,42 @@ pub fn main() {
     (
     , .(loaded: Lr_image) {
         let im = Lr_image.get(loaded);
-        difference("emitted exponent = ", call_export(im, "tiny", make_literal), 250.0015(F64));
-        difference("raw exponent = ", call_export(im, "lexical", make_literal), 250.0015(F64));
+        difference("emitted exponent = ", call_export(im, "tiny", make_literal), 250.0015[F64]);
+        difference("raw exponent = ", call_export(im, "lexical", make_literal), 250.0015[F64]);
         difference(
         , "f32 tenth = "
         , call_export(im, "tenth", make_literal)
-        , 0.100000001490116119384765625(F64)
+        , 0.100000001490116119384765625[F64]
         );
         difference(
         , "f32 above midpoint = "
         , call_export(im, "above", make_literal)
-        , 1.00000011920928955078125(F64)
+        , 1.00000011920928955078125[F64]
         );
         difference(
         , "f32 subnormal = "
         , call_export(im, "subnormal", make_literal)
-        , 1.4012984643248170709237295832899161312802619418765e-45(F64)
+        , 1.4012984643248170709237295832899161312802619418765e-45[F64]
         );
         difference(
         , "f32 negative zero = "
         , call_export(im, "negative_zero", observe_literal)
-        , 0.0(F64)
+        , 0.0[F64]
         );
         difference(
         , "f32 negative underflow = "
         , call_export(im, "negative_underflow", observe_literal)
-        , 0.0(F64)
+        , 0.0[F64]
         );
         difference(
         , "f32 positive underflow = "
         , call_export(im, "positive_underflow", observe_literal)
-        , 0.0(F64)
+        , 0.0[F64]
         );
         difference(
         , "f64 negative underflow = "
         , call_export(im, "negative_underflow64", observe_literal)
-        , 0.0(F64)
+        , 0.0[F64]
         )
       }
     , .(d: Lr_diag) {

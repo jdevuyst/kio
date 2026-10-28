@@ -2,6 +2,7 @@ module testapi/main;
 
 import choice as choice;
 import game as game;
+import list/core as lists;
 import list/list(varop [] as [* *]);
 import report as report;
 import testapi(Bool, I32, String);
@@ -12,7 +13,7 @@ import testapi/io as io;
 pub fn main() {
   let loadouts = game.loadouts();
   let attacks = loadouts.>choice.map(game.attack_score);
-  let scores = [* 0, 1, 2, 3, 4 *];
+  let .(scores: lists.List[I32]) = [* 0, 1, 2, 3, 4 *];
   let ready = loadouts.>choice.condition(game.ready);
   io.print("weighted loot and charm audit\n");
   report.integer_distribution("attack", attacks, scores);
@@ -31,14 +32,14 @@ pub fn main() {
   , game.guaranteed().>choice.map(game.attack_score)
   , [* 3 *]
   );
-  report.integer_distribution("empty attack", choice.empty(_), scores);
+  report.integer_distribution("empty attack", choice.empty[_], scores);
   report.count(
   , "empty left total="
-  , choice.independent(choice.empty(_), game.charms(), game.equip).>choice.total
+  , choice.independent(choice.empty[_], game.charms(), game.equip).>choice.total
   );
   report.count(
   , "empty right total="
-  , choice.independent(game.loot(), choice.empty(_), game.equip).>choice.total
+  , choice.independent(game.loot(), choice.empty[_], game.equip).>choice.total
   );
   report.count(
   , "impossible condition total="

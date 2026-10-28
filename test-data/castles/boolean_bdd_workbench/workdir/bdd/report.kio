@@ -93,7 +93,7 @@ pub fn diagram(
   io.print("\n")
 }
 
-pub fn formulas(fixtures: lists.List(String & expr.Expression)) -> engine.Manager {
+pub fn formulas(fixtures: lists.List[String & expr.Expression]) -> engine.Manager {
   walk.foldl(
   , .(manager: engine.Manager, name: String, expression: expr.Expression) {
       let .(next: engine.Manager, root: table.Node_id) = compiler.compile(manager, expression);

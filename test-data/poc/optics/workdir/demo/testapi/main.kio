@@ -94,7 +94,7 @@ op _ ## _ { impl review }
 // concrete link between optics and row types.
 labels { hed: I32, mid: String, tal: I32 };
 
-fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x, R)) }
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x)[R]) }
 
 op __ %% _ { impl set_hed }
 
@@ -117,9 +117,9 @@ fn show_hmt(x: Hed & Mid & Tal) {
 fn tour() {
   let inc = .(n: I32) -> I32 { add(n, 1) };
   // ---------- Lens basics ----------
-  let p = (42(I32), "hello"(String));
-  let l_fst = fst_lens(I32, String);
-  let l_snd = snd_lens(I32, String);
+  let p = (42[I32], "hello"[String]);
+  let l_fst = fst_lens[I32][String];
+  let l_snd = snd_lens[I32][String];
   say_i32(view(l_fst, p));
   say_str(view(l_snd, p));
   // set fst
@@ -135,19 +135,19 @@ fn tour() {
   // ---------- Lens compose ----------
   // outer : (I32 & String) & I32; reach the inner String via
   // fst_lens(I32 & String, I32) >>> snd_lens(I32, String).
-  let outer = ((42(I32), "hello"(String)), 7(I32));
-  let l_outer = fst_lens(I32 & String, I32);
-  let l_inner = snd_lens(I32, String);
+  let outer = ((42[I32], "hello"[String]), 7[I32]);
+  let l_outer = fst_lens[I32 & String][I32];
+  let l_inner = snd_lens[I32][String];
   let l_deep = compose_lens(l_outer, l_inner);
   say_str(view(l_deep, outer));
   // set through the composed lens
   let outer2 = set(l_deep, "world", outer);
   say_str(view(l_deep, outer2));
   // ---------- Prism basics ----------
-  let p_left = left_prism(I32, String);
-  let p_right = right_prism(I32, String);
-  let v_left = widen_sum(42(I32), I32 | String);
-  let v_right = widen_sum("kio"(String), I32 | String);
+  let p_left = left_prism[I32][String];
+  let p_right = right_prism[I32][String];
+  let v_left = widen_sum(42[I32])[I32 | String];
+  let v_right = widen_sum("kio"[String])[I32 | String];
   // preview: hit
   say_opt_i32(preview(p_left, v_left));
   // preview: miss (left prism on right value)
@@ -165,8 +165,8 @@ fn tour() {
   // ---------- Prism compose ----------
   // Outer sum is (I32 | String) | I32; reach the inner I32 via
   // left_prism((I32 | String), I32) >>> left_prism(I32, String).
-  let p_outer = left_prism(I32 | String, I32);
-  let p_deep = compose_prism(p_outer, left_prism(_, _));
+  let p_outer = left_prism[I32 | String][I32];
+  let p_deep = compose_prism(p_outer, left_prism[_][_]);
   // The `deep_hit` / `deep_inner_miss` constructions need the *whole*
   // source value (a `(I32 | String)` already built) to land in the
   // outer-left arm of `(I32 | String) | I32`. A monomorphic spine
@@ -178,12 +178,12 @@ fn tour() {
   // generated against the abstract `A` (a single opaque spine slot), so
   // its `__left__` glue stays valid when `A` is instantiated to the
   // sum `I32 | String`. No intrinsic or macro from `algebraic_macros`.
-  let deep_hit = review(p_outer, widen_sum(5(I32), I32 | String));
-  let deep_inner_miss = review(p_outer, widen_sum("no"(String), I32 | String));
+  let deep_hit = review(p_outer, widen_sum(5[I32])[I32 | String]);
+  let deep_inner_miss = review(p_outer, widen_sum("no"[String])[I32 | String]);
   // The outer-right arm IS reachable via `widen_sum` directly: source
   // `100: I32` finds a like-typed target arm in `(I32 | String) | I32`'s
   // outer spine at position 1 (the outer-right `I32`).
-  let deep_outer_miss = widen_sum(100(I32), (I32 | String) | I32);
+  let deep_outer_miss = widen_sum(100[I32])[(I32 | String) | I32];
   say_opt_i32(preview(p_deep, deep_hit));
   say_opt_i32(preview(p_deep, deep_inner_miss));
   say_opt_i32(preview(p_deep, deep_outer_miss));
@@ -193,30 +193,30 @@ fn tour() {
   // ---------- Iso basics ----------
   // swap_iso forward: (42, "hello") → ("hello", 42); project the
   // first String of the swapped pair.
-  let si = swap_iso(I32, String);
+  let si = swap_iso[I32][String];
   let swapped = view_iso(si, p);
-  say_str(view(fst_lens(_, _), swapped));
+  say_str(view(fst_lens[_][_], swapped));
   // review (backward): ("world", 7) → (7, "world"); project the I32.
   let unswapped = review_iso(si, ("world", 7));
   say_i32(view(l_fst, unswapped));
   // ---------- Iso compose ----------
   // swap >>> swap = identity. Round-tripped value matches the input.
-  let double_swap = compose_iso(si, swap_iso(_, _));
+  let double_swap = compose_iso(si, swap_iso[_][_]);
   let round_trip = view_iso(double_swap, p);
   print(int_to_string(view(l_fst, round_trip)));
   print(", ");
   say_str(view(l_snd, round_trip));
   // assoc_iso: ((1, 2), 3) → (1, (2, 3)). Project the new head and the
   // head of the inner pair.
-  let triple = ((1(I32), 2(I32)), 3(I32));
-  let ai = assoc_iso(I32, I32, I32);
+  let triple = ((1[I32], 2[I32]), 3[I32]);
+  let ai = assoc_iso[I32][I32][I32];
   let reassoc = view_iso(ai, triple);
-  print(int_to_string(view(fst_lens(_, _), reassoc)));
+  print(int_to_string(view(fst_lens[_][_], reassoc)));
   print(", ");
-  let inner23 = view(snd_lens(_, _), reassoc);
-  print(int_to_string(view(fst_lens(_, _), inner23)));
+  let inner23 = view(snd_lens[_][_], reassoc);
+  print(int_to_string(view(fst_lens[_][_], inner23)));
   print(", ");
-  say_i32(view(snd_lens(_, _), inner23));
+  say_i32(view(snd_lens[_][_], inner23));
   // ---------- over_iso ----------
   // Map through the iso: increment the I32 component, observed back on
   // the original side via l_snd (post-swap → pre-swap).
@@ -235,14 +235,14 @@ fn tour() {
   say_str(view(l_snd, bumped_via_iso));
   // ---------- id_lens ----------
   // view returns the value unchanged; set replaces it.
-  let il = id_lens(I32);
+  let il = id_lens[I32];
   print(int_to_string(view(il, 7)));
   print(", ");
   say_i32(set(il, 100, 7));
   // ---------- iso_to_lens composed with a lens ----------
   // swap then fst-of-swapped = "snd of original" — the coercion lets a
   // swap iso slot into a lens compose chain.
-  let lens_via_iso = compose_lens(iso_to_lens(si), fst_lens(_, _));
+  let lens_via_iso = compose_lens(iso_to_lens(si), fst_lens[_][_]);
   say_str(view(lens_via_iso, p));
   // ---------- iso_to_prism: review round-trip ----------
   // An iso-derived prism always hits on preview. Test via a review
@@ -260,7 +260,7 @@ fn tour() {
   say_str(l_snd ^ p);
   // Compose chain: outer is `((I32 & String) & I32)`; reach the inner
   // String via fst_lens >>> snd_lens, expressed with `**`.
-  let l_chain = fst_lens(I32 & String, I32) ** snd_lens(I32, String);
+  let l_chain = fst_lens[I32 & String][I32] ** snd_lens[I32][String];
   say_str(l_chain ^ outer);
   // Prism preview via `^?`. Hit, then miss.
   say_opt_i32(p_left ^? v_left);

@@ -16,8 +16,8 @@ fn widen_to_cnf(p: I32 & String) -> I32 & (String | I32) { into(p) }
 pub fn main() {
   let widened = widen_to_cnf((42, "hello\n"));
   // Project the components: `onto` drops one factor at a time.
-  let i = onto(widened, I32);
-  let inner = onto(widened, String | I32);
+  let i = onto(widened)[I32];
+  let inner = onto(widened)[String | I32];
   let s =
     match(inner) {
       (.(s: String) { s }, .(_n: I32) { "wrong\n" })

@@ -23,12 +23,12 @@ import testapi/io(print);
 // Kio' emission without losing the elided type-arg.
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn label[A](b: Box(A)) -> String { "matched\n" }
+fn label[A](b: Box[A]) -> String { "matched\n" }
 
-fn handle(p: Box(I32) | Box(String)) -> String {
+fn handle(p: Box[I32] | Box[String]) -> String {
   match(p) {
-    .[A](b: Box(A)) { label(b) }
+    .[A](b: Box[A]) { label(b) }
   }
 }
 
-pub fn main() { print(handle(widen_sum(Box.mk_box("hi"(String))))) }
+pub fn main() { print(handle(widen_sum(Box.mk_box("hi"[String])))) }

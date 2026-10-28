@@ -5,14 +5,14 @@ import macros/control(macro if);
 import testapi(Bool, String);
 
 pub fn literals(flag: Bool) -> String {
-  let result = if(flag) { "left"(String) } else { "right" };
+  let result = if(flag) { "left"[String] } else { "right" };
   result
 }
 
 pub fn required_first(flag: Bool) -> String {
   let selected =
     if(flag) {
-      keep(.() { "macro"(String) })
+      keep(.() { "macro"[String] })
     } else {
       .() { "fallback" }
     };
@@ -24,7 +24,7 @@ pub fn required_last(flag: Bool) -> String {
     if(flag) {
       .() { "fallback" }
     } else {
-      keep(.() { "macro"(String) })
+      keep(.() { "macro"[String] })
     };
   selected()
 }

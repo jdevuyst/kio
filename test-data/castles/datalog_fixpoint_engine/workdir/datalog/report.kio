@@ -161,10 +161,10 @@ pub fn agreement(semi: eval.Run, naive: eval.Run) {
   ))
 }
 
-rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) {
+rec(loop) fn print_tallies(db: Atoms, preds: list.List[I32]) {
   match(preds.>list.List.un_list) {
     (
-    , .(p: I32, rest: list.List(I32)) {
+    , .(p: I32, rest: list.List[I32]) {
         tally(sym.pred_name(p), count_pred(db, p));
         recur print_tallies(db, rest)
       }
@@ -173,7 +173,7 @@ rec(loop) fn print_tallies(db: Atoms, preds: list.List(I32)) {
   }
 }
 
-pub fn derived(db: Atoms, preds: list.List(I32)) {
+pub fn derived(db: Atoms, preds: list.List[I32]) {
   print_tallies(db, preds);
   tally(
   , "derived total"

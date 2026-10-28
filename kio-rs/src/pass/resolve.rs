@@ -6793,7 +6793,7 @@ impl<'m> Resolver<'m> {
                 self.check_expr(&plan.body, &body_locals)
             }
             crate::ast::Expr::UserMacro {
-                name, args, meta, ..
+                name, stages, meta, ..
             } => {
                 if !self.macros_in_scope.contains(name.as_str()) {
                     return Err(Error::name_res(
@@ -6802,35 +6802,44 @@ impl<'m> Resolver<'m> {
                     )
                     .with_help(format!("import it with `import <module>(macro {name});`")));
                 }
-                for arg in args {
-                    self.check_call_arg(arg, locals)?;
+                for stage in stages {
+                    for arg in &stage.args {
+                        self.check_call_arg(arg, locals)?;
+                    }
                 }
                 Ok(())
             }
             crate::ast::Expr::Ufcs {
                 receiver,
-                callee_segments,
+                callee,
                 args,
                 macro_call,
                 ..
             } => {
                 self.check_expr(receiver, locals)?;
                 if macro_call.is_some() {
-                    debug_assert_eq!(
-                        callee_segments.len(),
-                        1,
-                        "macro_call UFCS must have a single-segment callee — parser invariant"
-                    );
-                    let name = callee_segments[0].as_str();
+                    let crate::ast::Expr::Path { segments, .. } = callee.as_ref() else {
+                        return Err(Error::name_res(
+                            callee.span(),
+                            "macro UFCS callee must be a direct path",
+                        ));
+                    };
+                    let [head] = segments.as_slice() else {
+                        return Err(Error::name_res(
+                            callee.span(),
+                            "macro UFCS callee must be a direct name",
+                        ));
+                    };
+                    let name = head.as_str();
                     if !self.macros_in_scope.contains(name) {
                         return Err(Error::name_res(
-                            callee_segments[0].span,
+                            head.span,
                             format!("macro `{name}` is not in scope"),
                         )
                         .with_help(format!("import it with `import <module>(macro {name});`")));
                     }
                 } else {
-                    self.lookup_value_path(callee_segments, callee_segments[0].span, locals)?;
+                    self.check_expr(callee, locals)?;
                 }
                 for arg in args {
                     self.check_call_arg(arg, locals)?;
@@ -6869,30 +6878,10 @@ impl<'m> Resolver<'m> {
         arg: &'m crate::ast::CallArg<P>,
         locals: &HashMap<&'m str, Binding>,
     ) -> Result<(), Error> {
-        let value = match arg {
-            crate::ast::CallArg::Type(ty) => return self.check_type(ty, locals),
-            crate::ast::CallArg::Value(value) => value,
-        };
-        let head = match value {
-            crate::ast::Expr::Path { segments, .. } => segments.as_slice(),
-            crate::ast::Expr::Call { callee, .. } => match callee.as_ref() {
-                crate::ast::Expr::Path { segments, .. } => segments.as_slice(),
-                _ => &[],
-            },
-            _ => &[],
-        };
-        // Parsed expression-shaped arguments can become types only when the
-        // resolved call type selects that slot. Check their names here without
-        // preempting that decision. Exact lexical binders also cover hygienic
-        // type names in fresh phase artifacts.
-        let bound_type_head = matches!(head, [head]
-            if matches!(locals.get(head.as_str()), Some(Binding::TypeParam(_))));
-        if (crate::pass::typecheck_core::value_arg_looks_like_type_arg(value) || bound_type_head)
-            && let Ok(ty) = crate::pass::typecheck_core::expr_to_type_arg(value)
-        {
-            return self.check_type(&ty, locals);
+        match arg {
+            crate::ast::CallArg::Type(ty) => self.check_type(ty, locals),
+            crate::ast::CallArg::Value(value) => self.check_expr(value, locals),
         }
-        self.check_expr(value, locals)
     }
 
     /// Resolve a name's first segment. Order of lookup: locals (params,
@@ -7174,7 +7163,7 @@ mod tests {
 
     #[test]
     fn unresolved_qualified_head_fix_preserves_primary_span_and_suffix() {
-        for (expression, primary_width) in [("Alia.mk(())", 7), ("().>Alia.mk", 4)] {
+        for (expression, primary_width) in [("Alia.mk(())", 7), ("().>Alia.mk", 7)] {
             let source = format!(
                 "module main; newtype Wrapper : . {{ constructor mk; projector get; }}; \
                  type Alias = Wrapper; fn main() -> Wrapper {{ {expression} }}"
@@ -7188,10 +7177,12 @@ mod tests {
                 panic!("one head replacement")
             };
             assert_eq!(fix.edits[0].span, Span::new(start, start + 4));
-            assert_eq!(
-                apply_source_fix(&source, fix),
-                source.replace("Alia.mk", "Alias.mk")
-            );
+            let repaired = apply_source_fix(&source, fix);
+            assert_eq!(repaired, source.replace("Alia.mk", "Alias.mk"));
+            pkg(vec![&repaired])
+                .unwrap()
+                .check_in_body_resolution()
+                .unwrap();
         }
     }
 
@@ -8092,11 +8083,11 @@ mod tests {
              pub newtype Higher[*F] : . { pub constructor make; pub projector open; };",
             "module relay; \
              import origin as source; \
-             pub type Exact[A][B] = source.Pair(A, B); \
-             pub type Partial[A] = source.Pair(A); \
-             pub type Reordered[A][B] = source.Pair(B, A); \
-             pub type Wrong_kind[A] = source.Higher(A);",
-            "module facade; import relay as source; pub type Exact[X][Y] = source.Exact(X, Y);",
+             pub type Exact[A][B] = source.Pair[A][ B]; \
+             pub type Partial[A] = source.Pair[A]; \
+             pub type Reordered[A][B] = source.Pair[B][ A]; \
+             pub type Wrong_kind[A] = source.Higher[A];",
+            "module facade; import relay as source; pub type Exact[X][Y] = source.Exact[X][ Y];",
         ])
         .expect("package");
         p.resolve_imports().expect("uses");
@@ -8304,20 +8295,20 @@ mod tests {
         let grouped = parse(
             "module grouped; \
              rec { \
-               labels Exact[A][B] = { link[A][B]: Peer(A, B) }; \
-               newtype Peer[A][B] : Exact(A, B) { constructor make; projector open; }; \
+               labels Exact[A][B] = { link[A][B]: Peer[A][ B] }; \
+               newtype Peer[A][B] : Exact[A][ B] { constructor make; projector open; }; \
              } \
              rec { \
-               labels Reordered[A][B] = { back[B][A]: Other(B, A) }; \
-               newtype Other[A][B] : Reordered(A, B) { constructor make; projector open; }; \
+               labels Reordered[A][B] = { back[B][A]: Other[B][ A] }; \
+               newtype Other[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
              }",
         )
         .expect("parse recursive labels aliases");
         check(
             "module valid_group; \
              rec { \
-               labels Reordered[A][B] = { swapped[B][A]: Peer(B, A) }; \
-               newtype Peer[A][B] : Reordered(A, B) { constructor make; projector open; }; \
+               labels Reordered[A][B] = { swapped[B][A]: Peer[B][ A] }; \
+               newtype Peer[A][B] : Reordered[A][ B] { constructor make; projector open; }; \
              }",
         )
         .expect("the binder-permuting recursive declaration remains structurally valid");
@@ -9108,9 +9099,9 @@ mod tests {
              host type I32 role(i32); \
              host fn loop[S][R](step: S -> (S | R), state: S) -> R; \
              newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-             fn choose_box[A](tag: I32, value: Box(A)) -> Box(A) { value } \
-             rec(loop) fn value(n: I32) -> Box(I32) { \
-               let .(result: Box(_)) = choose_box(0, recur(cont) value(0)); \
+             fn choose_box[A](tag: I32, value: Box[A]) -> Box[A] { value } \
+             rec(loop) fn value(n: I32) -> Box[I32] { \
+               let .(result: Box[_]) = choose_box(0, recur(cont) value(0)); \
                result \
              }",
         );
@@ -9150,10 +9141,10 @@ mod tests {
     #[test]
     fn literal_annotations_require_qualified_imports() {
         for literal in [
-            "42(provider.Int)",
-            "3.14(provider.Float)",
-            "\"text\"(provider.Text)",
-            ".t(provider.Bool)",
+            "42[provider.Int]",
+            "3.14[provider.Float]",
+            "\"text\"[provider.Text]",
+            ".t[provider.Bool]",
         ] {
             let msg = check_err(&format!(
                 "module main; fn f() -> . {{ let value = {literal}; () }}"
@@ -9643,8 +9634,8 @@ mod tests {
     fn mutual_group_fix_accepts_matching_higher_kinds() {
         let valid = check(
             "module x; \
-             type A[*F] = B(F); \
-             newtype B[*G] : A(G) { constructor mk_b; projector un_b; };",
+             type A[*F] = B[F]; \
+             newtype B[*G] : A[G] { constructor mk_b; projector un_b; };",
         )
         .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(valid) = valid else {
@@ -9658,8 +9649,8 @@ mod tests {
     fn mutual_group_fix_rejects_mismatched_higher_kinds() {
         let invalid = check(
             "module x; \
-             type A[X] = B(X); \
-             newtype B[*G] : A(.) { constructor mk_b; projector un_b; };",
+             type A[X] = B[X]; \
+             newtype B[*G] : A[.] { constructor mk_b; projector un_b; };",
         )
         .expect_err("mutual declarations need an explicit group");
         let Error::NameRes(invalid) = invalid else {

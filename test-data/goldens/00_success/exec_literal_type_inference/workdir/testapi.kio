@@ -8,8 +8,8 @@ host type Int role(i32);
 
 host type String role(str);
 
-pub pure fn integer() -> I32 { let value = 7(I32); value }
+pub pure fn integer() -> I32 { let value = 7[I32]; value }
 
-pub pure fn text() -> String { let value = "provider"(String); value }
+pub pure fn text() -> String { let value = "provider"[String]; value }
 
-pub pure fn flag() -> Bool { let value = .t(Bool); value }
+pub pure fn flag() -> Bool { let value = .t[Bool]; value }

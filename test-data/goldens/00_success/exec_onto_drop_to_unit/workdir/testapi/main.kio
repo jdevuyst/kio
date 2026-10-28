@@ -19,7 +19,7 @@ pub fn main() {
   // Product → (): projection drops all factors.
   drop_pair(("x", 42));
   // Sum left arm → (): the `String` arm projects to `()`.
-  drop_sum(into("left"(String)));
+  drop_sum(into("left"[String]));
   // Sum right arm → (): the `()` arm is identity.
   drop_sum(into(()));
   print("all narrowed to unit\n")

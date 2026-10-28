@@ -752,7 +752,7 @@ rec {
             "api",
             r#"module api;
 
-pub rec newtype List[A] : . | (A & List(A)) {
+pub rec newtype List[A] : . | (A & List[A]) {
   pub constructor mk_list;
   pub projector un_list;
 };
@@ -1504,8 +1504,8 @@ v(1) {
       module api {
         import left(Same);
         import right as r;
-        pub type Selected[Value] = Same(Value);
-        pub type Qualified[Item] = r.Same(Item);
+        pub type Selected[Value] = Same[Value];
+        pub type Qualified[Item] = r.Same[Item];
       }
     }
   }

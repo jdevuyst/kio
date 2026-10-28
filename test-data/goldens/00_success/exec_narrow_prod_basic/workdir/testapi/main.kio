@@ -16,7 +16,7 @@ pub fn main() {
   let kept = project(("narrow_prod: kept ", .t, 7));
   // The kept pair is `(String & I32)` — pick each slot with
   // `one_prod` and print.
-  let s = one_prod(kept, String);
-  let n = one_prod(kept, I32);
+  let s = one_prod(kept)[String];
+  let n = one_prod(kept)[I32];
   print(string_concat(s, string_concat(int_to_string(n), "\n")))
 }

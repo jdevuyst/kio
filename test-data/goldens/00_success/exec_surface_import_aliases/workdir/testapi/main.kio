@@ -20,5 +20,5 @@ pub fn main() {
   print(retain(-- other));
   print([% message %]);
   print(keep(other));
-  print(shadow(., ()))
+  print(shadow[.](()))
 }

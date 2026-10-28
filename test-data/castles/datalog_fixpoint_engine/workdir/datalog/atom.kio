@@ -15,15 +15,15 @@ import testapi/iter(loop);
 
 pub labels Term = { t_const: I32 } | { t_var: I32 };
 
-pub type Args = list.List(Term);
+pub type Args = list.List[Term];
 
 pub labels Atom = { a_pred: I32, a_args: Args };
 
-pub type Atoms = list.List(Atom);
+pub type Atoms = list.List[Atom];
 
-pub fn tconst(code: I32) -> Term { {t_const = code}.>widen_sum(Term) }
+pub fn tconst(code: I32) -> Term { ({t_const = code}.>widen_sum)[Term] }
 
-pub fn tvar(code: I32) -> Term { {t_var = code}.>widen_sum(Term) }
+pub fn tvar(code: I32) -> Term { ({t_var = code}.>widen_sum)[Term] }
 
 pub fn mk_atom(pred: I32, args: Args) -> Atom { {a_pred = pred, a_args = args} }
 

@@ -575,6 +575,15 @@ impl CheckedTerm {
         CheckedTermNameCanonicalizer::default().term(self)
     }
 
+    pub(crate) fn canonicalize_template(&self, ctx: &EvalCtx<'_>) -> Self {
+        let materialize = |ty: &EvalAstType| expand_eval_canonical_alias_refs(ty, ctx);
+        CheckedTermNameCanonicalizer {
+            materialize_type: Some(&materialize),
+            ..Default::default()
+        }
+        .term(self)
+    }
+
     #[cfg(test)]
     pub(crate) fn checked_error_for_test(
         kind: CheckedTermErrorKind,
@@ -1698,7 +1707,8 @@ impl PartialEq for CheckedTerm {
 impl Eq for CheckedTerm {}
 
 #[derive(Default)]
-struct CheckedTermNameCanonicalizer {
+struct CheckedTermNameCanonicalizer<'a> {
+    materialize_type: Option<&'a dyn Fn(&EvalAstType) -> EvalAstType>,
     value_names: HashMap<String, Vec<String>>,
     type_names: HashMap<String, Vec<String>>,
     value_counters: HashMap<String, usize>,
@@ -1711,7 +1721,7 @@ struct CanonicalBinding {
     pushed: bool,
 }
 
-impl CheckedTermNameCanonicalizer {
+impl CheckedTermNameCanonicalizer<'_> {
     fn term(&mut self, term: &CheckedTerm) -> CheckedTerm {
         checked_traversal::canonicalize(term, self)
     }
@@ -1727,7 +1737,7 @@ impl CheckedTermNameCanonicalizer {
                 .iter()
                 .map(|param| match param {
                     SignatureParam::Type(param) => {
-                        let mut param = param.clone();
+                        let mut param = Self::type_param(param);
                         if let Some(binding) = self.push_type_name(&param.name) {
                             param.rename(binding.canonical.clone());
                             type_bindings.push(binding);
@@ -1735,8 +1745,12 @@ impl CheckedTermNameCanonicalizer {
                         SignatureParam::Type(param)
                     }
                     SignatureParam::Value(param) => {
-                        let mut param = param.clone();
-                        param.ty = param.ty.as_ref().map(|ty| self.ty(ty));
+                        let mut param = Param {
+                            name: param.name.clone(),
+                            ty: param.ty.as_ref().map(|ty| self.ty(ty)),
+                            pattern: param.pattern,
+                            meta: param.meta.clone(),
+                        };
                         if let Some(binding) = self.push_value_name(&param.name) {
                             param.name = binding.canonical.clone();
                             value_bindings.push(binding);
@@ -1750,68 +1764,135 @@ impl CheckedTermNameCanonicalizer {
     }
 
     fn ty(&mut self, ty: &Type<EvalPhase>) -> Type<EvalPhase> {
-        match ty {
-            Type::Path {
-                segments,
-                args,
-                meta,
-            } => {
-                let args = args.iter().map(|arg| self.ty(arg)).collect();
-                let mut segments = segments.clone();
-                if let [segment] = segments.as_mut_slice()
-                    && let Some(name) = self.type_name(&segment.name)
-                {
-                    segment.name = name;
+        let materialized = self
+            .materialize_type
+            .map(|materialize| ownership::Owned::new(materialize(ty)));
+        self.rename_type(materialized.as_deref().unwrap_or(ty))
+    }
+
+    fn rename_type(&mut self, root: &Type<EvalPhase>) -> Type<EvalPhase> {
+        enum Work<'a> {
+            Enter(&'a Type<EvalPhase>),
+            Finish(&'a Type<EvalPhase>, usize),
+            Forall(&'a TypeParam, &'a Meta<EvalPhase>, Option<CanonicalBinding>),
+        }
+        let mut pending = vec![Work::Enter(root)];
+        let mut values: Vec<ownership::Owned<Type<EvalPhase>>> = Vec::new();
+        while let Some(work) = pending.pop() {
+            let (ty, base) = match work {
+                Work::Enter(ty) => {
+                    if let Type::Forall { param, body, meta } = ty {
+                        let binding = self.push_type_name(&param.name);
+                        pending.push(Work::Forall(param, meta, binding));
+                        pending.push(Work::Enter(body));
+                        continue;
+                    }
+                    pending.push(Work::Finish(ty, values.len()));
+                    match ty {
+                        Type::Path { args, .. } => {
+                            pending.extend(args.iter().rev().map(Work::Enter));
+                        }
+                        Type::Function { param, ret, .. } => {
+                            pending.push(Work::Enter(ret));
+                            pending.push(Work::Enter(param));
+                        }
+                        Type::Product { left, right, .. } | Type::Sum { left, right, .. } => {
+                            pending.push(Work::Enter(right));
+                            pending.push(Work::Enter(left));
+                        }
+                        Type::Unit { .. } | Type::Bottom { .. } => {}
+                        Type::Forall { .. } => unreachable!("forall owns its binder frame"),
+                        Type::LabelSugar { ext, .. }
+                        | Type::Infer { ext, .. }
+                        | Type::Goal { ext, .. } => match *ext {},
+                    }
+                    continue;
                 }
+                Work::Forall(param, meta, binding) => {
+                    let body = values.pop().expect("forall body was renamed").take();
+                    let mut param = Self::type_param(param);
+                    if let Some(binding) = &binding {
+                        param.rename(binding.canonical.clone());
+                    }
+                    self.pop_type_binding(binding);
+                    values.push(ownership::Owned::new(Type::Forall {
+                        param,
+                        body: Box::new(body),
+                        meta: meta.clone(),
+                    }));
+                    continue;
+                }
+                Work::Finish(ty, base) => (ty, base),
+            };
+            let mut ready = values.drain(base..);
+            let mut child = || ready.next().expect("canonical type child exists").take();
+            let result = match ty {
                 Type::Path {
                     segments,
                     args,
-                    meta: meta.clone(),
+                    meta,
+                } => {
+                    let mut segments = segments.clone();
+                    if let [segment] = segments.as_mut_slice()
+                        && let Some(name) = self.type_name(&segment.name)
+                    {
+                        segment.name = name;
+                    }
+                    Type::Path {
+                        segments,
+                        args: args.iter().map(|_| child()).collect(),
+                        meta: meta.clone(),
+                    }
                 }
-            }
-            Type::Function {
-                param,
-                ret,
-                meta,
-                abi_arity,
-                caps,
-            } => {
-                let param = self.ty(param);
                 Type::Function {
-                    param: Box::new(param),
-                    ret: Box::new(self.ty(ret)),
+                    meta,
+                    abi_arity,
+                    caps,
+                    ..
+                } => Type::Function {
+                    param: Box::new(child()),
+                    ret: Box::new(child()),
                     meta: meta.clone(),
                     abi_arity: *abi_arity,
                     caps: *caps,
-                }
-            }
-            Type::Product { left, right, meta } => Type::Product {
-                left: Box::new(self.ty(left)),
-                right: Box::new(self.ty(right)),
-                meta: meta.clone(),
-            },
-            Type::Sum { left, right, meta } => Type::Sum {
-                left: Box::new(self.ty(left)),
-                right: Box::new(self.ty(right)),
-                meta: meta.clone(),
-            },
-            Type::Forall { param, body, meta } => {
-                let mut param = param.clone();
-                let binding = self.push_type_name(&param.name);
-                if let Some(binding) = &binding {
-                    param.rename(binding.canonical.clone());
-                }
-                let body = Box::new(self.ty(body));
-                self.pop_type_binding(binding);
-                Type::Forall {
-                    param,
-                    body,
+                },
+                Type::Product { meta, .. } => Type::Product {
+                    left: Box::new(child()),
+                    right: Box::new(child()),
                     meta: meta.clone(),
+                },
+                Type::Sum { meta, .. } => Type::Sum {
+                    left: Box::new(child()),
+                    right: Box::new(child()),
+                    meta: meta.clone(),
+                },
+                Type::Unit { meta } => Type::Unit { meta: meta.clone() },
+                Type::Bottom { meta } => Type::Bottom { meta: meta.clone() },
+                Type::Forall { .. } => unreachable!("forall owns its binder frame"),
+                Type::LabelSugar { ext, .. } | Type::Infer { ext, .. } | Type::Goal { ext, .. } => {
+                    match *ext {}
                 }
-            }
-            Type::Unit { .. } | Type::Bottom { .. } | Type::Infer { .. } => ty.clone(),
-            Type::LabelSugar { ext, .. } => match *ext {},
-            Type::Goal { ext, .. } => match *ext {},
+            };
+            assert!(
+                ready.next().is_none(),
+                "canonical type consumed every child"
+            );
+            drop(ready);
+            values.push(ownership::Owned::new(result));
+        }
+        values.pop().expect("canonical type root exists").take()
+    }
+
+    fn type_param(param: &TypeParam) -> TypeParam {
+        TypeParam {
+            name: param.name.clone(),
+            span: param.span,
+            kind: param
+                .kind
+                .as_deref()
+                .map(type_traversal::clone_kind)
+                .map(Box::new),
+            presentation: param.presentation.clone(),
         }
     }
 
@@ -3984,6 +4065,8 @@ fn compile_eval_expr(
             }
             if let Some(core) = compile_core_intrinsic_call(callee, args, state) {
                 core
+            } else if let Some(direct) = compile_staged_comptime_call(callee, args, state) {
+                direct
             } else if let Some(direct) = compile_direct_path_call(callee, args, meta.span, state) {
                 direct?
             } else {
@@ -4812,7 +4895,8 @@ fn compile_core_intrinsic_call(
         "__if_then_else__" | "__either__" => 3,
         _ => return None,
     };
-    omitted_value_args_are_obvious(args, runtime_arity, state)?;
+    let values = structural_packet_arguments(args, runtime_arity)?;
+    let args = values.as_slice();
     match name.as_str() {
         "__left__" | "__right__" => Some(EvalExpr::CoreCtor {
             name: if name.as_str() == "__left__" {
@@ -5130,18 +5214,74 @@ fn is_obvious_eval_value(expr: &EvalExpr) -> bool {
 }
 
 fn omitted_value_args_are_obvious(
-    args: &[EvalAstCallArg],
+    args: &[&EvalAstExpr],
     runtime_arity: usize,
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<()> {
-    let omitted_count = value_arg_count(args).checked_sub(runtime_arity)?;
-    for omitted in args.iter().filter_map(value_arg_expr).take(omitted_count) {
+    let omitted_count = args.len().checked_sub(runtime_arity)?;
+    for omitted in args.iter().take(omitted_count) {
         let omitted = compile_eval_expr(omitted, state)?;
         if !is_obvious_eval_value(&omitted) {
             return None;
         }
     }
     Some(())
+}
+
+/// Borrow constructor components only: an opaque packet stays on the ordinary
+/// evaluation path, where it is evaluated once before its value is projected.
+fn structural_packet_arguments(args: &[EvalAstCallArg], slots: usize) -> Option<Vec<&EvalAstExpr>> {
+    let values: Vec<_> = args.iter().filter_map(value_arg_expr).collect();
+    if values.len() == slots {
+        return Some(values);
+    }
+    let &[mut packet] = values.as_slice() else {
+        return None;
+    };
+    let mut out = Vec::with_capacity(slots);
+    for _ in 1..slots {
+        let Expr::Call { callee, args, .. } = packet else {
+            return None;
+        };
+        if !matches!(callee.as_ref(), Expr::Path { segments, .. }
+            if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__"))
+        {
+            return None;
+        }
+        let mut components = args.iter().filter_map(value_arg_expr);
+        out.push(components.next()?);
+        packet = components.next()?;
+        if components.next().is_some() {
+            return None;
+        }
+    }
+    out.push(packet);
+    Some(out)
+}
+
+fn comptime_packet_width(builtin: ComptimeBuiltin, after_proof: bool) -> Option<usize> {
+    let scheme =
+        crate::pass::typecheck_core::comptime_scheme::<EvalPhase>(builtin, zero_span()).ok()??;
+    let mut ty = scheme.ty.as_type();
+    if after_proof {
+        let Type::Function { ret, .. } = ty else {
+            return None;
+        };
+        ty = ret;
+        while let Type::Forall { body, .. } = ty {
+            ty = body;
+        }
+    }
+    let Type::Function { param, .. } = ty else {
+        return None;
+    };
+    let mut domain = param.as_ref();
+    let mut slots = 1;
+    while let Type::Product { right, .. } = domain {
+        slots += 1;
+        domain = right;
+    }
+    Some(slots)
 }
 
 fn inline_small_eval_args(
@@ -5518,16 +5658,96 @@ fn compile_direct_comptime_call(
     args: &[EvalAstCallArg],
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<EvalExpr> {
+    let values = structural_packet_arguments(args, comptime_packet_width(builtin, false)?)?;
+    compile_direct_comptime_operands(builtin, &values, state)
+}
+
+fn compile_staged_comptime_call(
+    mut callee: &EvalAstExpr,
+    args: &[EvalAstCallArg],
+    state: &mut EvalCompileState<'_, '_>,
+) -> Option<EvalExpr> {
+    let type_prefix = args
+        .iter()
+        .take_while(|arg| matches!(arg, CallArg::Type(_)))
+        .count();
+    let runtime_args = &args[type_prefix..];
+    if runtime_args.is_empty()
+        || runtime_args
+            .iter()
+            .any(|arg| matches!(arg, CallArg::Type(_)))
+    {
+        return None;
+    }
+    let mut supplied_types = type_prefix;
+    while let Expr::Call {
+        callee: inner,
+        args,
+        ..
+    } = callee
+        && !args.is_empty()
+        && args.iter().all(|arg| matches!(arg, CallArg::Type(_)))
+    {
+        supplied_types += args.len();
+        callee = inner;
+    }
+    let Expr::Call {
+        callee: proof_callee,
+        args: proof_args,
+        ..
+    } = callee
+    else {
+        return None;
+    };
+    let [CallArg::Value(proof)] = proof_args.as_slice() else {
+        return None;
+    };
+    let Expr::Path { segments, .. } = proof_callee.as_ref() else {
+        return None;
+    };
+    let ResolvedUnqualifiedEvalValue::Primitive(builtin) =
+        resolve_unqualified_eval_value(segments, state)?
+    else {
+        return None;
+    };
+    direct_comptime_runtime_arity(builtin)?;
+    let scheme =
+        crate::pass::typecheck_core::comptime_scheme::<EvalPhase>(builtin, zero_span()).ok()??;
+    let Type::Function { ret, .. } = scheme.ty.as_type() else {
+        return None;
+    };
+    let mut suffix = ret.as_ref();
+    let mut required_types = 0;
+    while let Type::Forall { body, .. } = suffix {
+        required_types += 1;
+        suffix = body;
+    }
+    if required_types == 0
+        || supplied_types != required_types
+        || !matches!(suffix, Type::Function { .. })
+    {
+        return None;
+    }
+    let mut operands = vec![proof];
+    operands.extend(structural_packet_arguments(
+        runtime_args,
+        comptime_packet_width(builtin, true)?,
+    )?);
+    compile_direct_comptime_operands(builtin, &operands, state)
+}
+
+fn compile_direct_comptime_operands(
+    builtin: ComptimeBuiltin,
+    args: &[&EvalAstExpr],
+    state: &mut EvalCompileState<'_, '_>,
+) -> Option<EvalExpr> {
     let runtime_arity = direct_comptime_runtime_arity(builtin)?;
     omitted_value_args_are_obvious(args, runtime_arity, state)?;
     #[cfg(feature = "surface")]
     let proof = if projected_capable_direct_runtime_arity(builtin)
-        .is_some_and(|arity| value_arg_count(args) == arity + 1)
+        .is_some_and(|arity| args.len() == arity + 1)
     {
-        let proof = args.iter().find_map(|arg| match arg {
-            CallArg::Value(value) => Some(value),
-            CallArg::Type(_) => None,
-        })?;
+        let proof = args.first()?;
         Some(compile_eval_expr(proof, state)?)
     } else {
         None
@@ -5536,8 +5756,8 @@ fn compile_direct_comptime_call(
     let proof: Option<EvalRef<EvalExpr>> = None;
     let name = builtin.public_name();
     let direct = match name {
-        "__type_unit__" if value_arg_count(args) <= 1 => Some(EvalExpr::ReflTypeUnit),
-        "__type_bottom__" if value_arg_count(args) <= 1 => Some(EvalExpr::ReflTypeBottom),
+        "__type_unit__" if args.len() <= 1 => Some(EvalExpr::ReflTypeUnit),
+        "__type_bottom__" if args.len() <= 1 => Some(EvalExpr::ReflTypeBottom),
         "__type_product__" => {
             let (left, right) = trailing_value_arg2(args)?;
             Some(EvalExpr::ReflTypeProduct {
@@ -5650,7 +5870,7 @@ fn compile_direct_comptime_call(
         "__term_type__" => Some(EvalExpr::ReflTermType {
             term: compile_eval_expr(trailing_value_arg1(args)?, state)?,
         }),
-        "__term_unit__" if value_arg_count(args) <= 1 => Some(EvalExpr::ReflTermUnit),
+        "__term_unit__" if args.len() <= 1 => Some(EvalExpr::ReflTermUnit),
         "__term_let__" => {
             let (value_type, value, body) = trailing_value_arg3(args)?;
             let value_type = compile_eval_expr(value_type, state)?;
@@ -6338,33 +6558,33 @@ type FiveValueArgs<'a, P> = (
     &'a Expr<P>,
 );
 
-fn value_arg_count<P: crate::ast::Phase>(args: &[CallArg<P>]) -> usize {
-    args.iter().filter_map(value_arg_expr).count()
+fn trailing_value_arg1<'a, P: crate::ast::Phase>(args: &[&'a Expr<P>]) -> Option<&'a Expr<P>> {
+    args.last().copied()
 }
 
-fn trailing_value_arg1<P: crate::ast::Phase>(args: &[CallArg<P>]) -> Option<&Expr<P>> {
-    args.iter().rev().find_map(value_arg_expr)
-}
-
-fn trailing_value_arg2<P: crate::ast::Phase>(args: &[CallArg<P>]) -> Option<(&Expr<P>, &Expr<P>)> {
-    let mut values = args.iter().rev().filter_map(value_arg_expr);
+fn trailing_value_arg2<'a, P: crate::ast::Phase>(
+    args: &[&'a Expr<P>],
+) -> Option<(&'a Expr<P>, &'a Expr<P>)> {
+    let mut values = args.iter().rev().copied();
     let second = values.next()?;
     let first = values.next()?;
     Some((first, second))
 }
 
-fn trailing_value_arg3<P: crate::ast::Phase>(
-    args: &[CallArg<P>],
-) -> Option<(&Expr<P>, &Expr<P>, &Expr<P>)> {
-    let mut values = args.iter().rev().filter_map(value_arg_expr);
+fn trailing_value_arg3<'a, P: crate::ast::Phase>(
+    args: &[&'a Expr<P>],
+) -> Option<(&'a Expr<P>, &'a Expr<P>, &'a Expr<P>)> {
+    let mut values = args.iter().rev().copied();
     let third = values.next()?;
     let second = values.next()?;
     let first = values.next()?;
     Some((first, second, third))
 }
 
-fn trailing_value_arg4<P: crate::ast::Phase>(args: &[CallArg<P>]) -> Option<FourValueArgs<'_, P>> {
-    let mut values = args.iter().rev().filter_map(value_arg_expr);
+fn trailing_value_arg4<'a, P: crate::ast::Phase>(
+    args: &[&'a Expr<P>],
+) -> Option<FourValueArgs<'a, P>> {
+    let mut values = args.iter().rev().copied();
     let fourth = values.next()?;
     let third = values.next()?;
     let second = values.next()?;
@@ -6372,8 +6592,10 @@ fn trailing_value_arg4<P: crate::ast::Phase>(args: &[CallArg<P>]) -> Option<Four
     Some((first, second, third, fourth))
 }
 
-fn trailing_value_arg5<P: crate::ast::Phase>(args: &[CallArg<P>]) -> Option<FiveValueArgs<'_, P>> {
-    let mut values = args.iter().rev().filter_map(value_arg_expr);
+fn trailing_value_arg5<'a, P: crate::ast::Phase>(
+    args: &[&'a Expr<P>],
+) -> Option<FiveValueArgs<'a, P>> {
+    let mut values = args.iter().rev().copied();
     let fifth = values.next()?;
     let fourth = values.next()?;
     let third = values.next()?;
@@ -6394,11 +6616,7 @@ fn fresh_case_split_payload(tag: &str) -> String {
     format!("__case_{tag}_n{n}__")
 }
 
-/// The *value* arity of a structural-constructor intrinsic — how many
-/// trailing value-args form the constructed payload (the leading args
-/// are erased type-args). `None` for every non-constructor name
-/// (eliminators, `__if_then_else__`, `__absurd__`, host atoms): those
-/// are not constructors and don't build [`Value::Data`].
+/// Operand slots consumed by a saturated structural constructor after typing.
 fn intrinsic_ctor_value_arity(name: &str) -> Option<usize> {
     match name {
         "__left__" | "__right__" => Some(1),
@@ -6407,19 +6625,7 @@ fn intrinsic_ctor_value_arity(name: &str) -> Option<usize> {
     }
 }
 
-/// The *value* arity of a structural-eliminator intrinsic — how many
-/// trailing value-args are the real operands (scrutinee + handlers, or
-/// the single projection target, or condition + thunks), the leading
-/// args being erased type-args. Like constructors, eliminators have no
-/// fn-def signature for the call compiler to filter against, so a
-/// call written with explicit type-args — `__either__(A, B, C, s, fl,
-/// fr)` — reaches `apply` with the three leading type-name atoms still
-/// present. (The real `kio test` path usually strips them upstream via
-/// the typer's value-at-type-slot markers; a raw `eval` over an
-/// explicitly-type-applied intrinsic, e.g. a unit test, does not.) The
-/// ι-rule arms below match a rigid operand slice (`[scrutinee, fl, fr]`,
-/// `[pair]`), which only fits once the type-args are dropped. `None` for
-/// every non-eliminator name.
+/// Operand slots consumed by a saturated structural eliminator after typing.
 fn intrinsic_elim_value_arity(name: &str) -> Option<usize> {
     match name {
         "__either__" => Some(3),
@@ -6432,7 +6638,7 @@ fn intrinsic_elim_value_arity(name: &str) -> Option<usize> {
 fn grouped_reflected_type_arg(args: &[EvalAstCallArg]) -> Option<EvalAstType> {
     match args {
         [CallArg::Type(ty)] => Some(ty.clone()),
-        [CallArg::Value(value)] => crate::pass::typecheck_core::expr_to_type_arg(value).ok(),
+        [CallArg::Value(_)] => None,
         _ => None,
     }
 }
@@ -7645,17 +7851,31 @@ fn is_reflection_proof(value: &Value) -> bool {
     false
 }
 
+fn adapt_reflection_packet(builtin: ComptimeBuiltin, mut args: Vec<Value>) -> Vec<Value> {
+    if let [Value::Data(packet)] = args.as_slice()
+        && packet.ctor() == "__pair__"
+        && packet.args().first().is_some_and(is_reflection_proof)
+        && let Some(slots) = comptime_packet_width(builtin, false)
+        && slots > 1
+    {
+        return split_product_packet_slots(args.pop().expect("one packet"), slots);
+    }
+    if args.len() == 2
+        && is_reflection_proof(&args[0])
+        && let Some(slots) = comptime_packet_width(builtin, true)
+    {
+        let packet = args.pop().expect("runtime packet follows proof");
+        args.extend(split_product_packet_slots(packet, slots));
+    }
+    args
+}
+
 fn reflection_runtime_args(builtin: ComptimeBuiltin, args: &[Value]) -> &[Value] {
     if builtin == ComptimeBuiltin::Fill {
         return args;
     }
-    let args = match args.first() {
+    match args.first() {
         Some(value) if is_reflection_proof(value) => &args[1..],
-        _ => args,
-    };
-    match builtin {
-        builtin if builtin.is_fold() && args.len() == 4 => &args[1..],
-        ComptimeBuiltin::StructuralRecur if args.len() == 6 => &args[3..],
         _ => args,
     }
 }
@@ -8663,40 +8883,15 @@ fn apply_args(callee: Value, args: EvalArgs, ctx: &EvalCtx<'_>) -> Value {
     execution::apply(callee, args, ctx)
 }
 
-fn apply_atom_leaf(atom: AtomCallee<'_>, mut args: Vec<Value>) -> Value {
+fn apply_atom_leaf(atom: AtomCallee<'_>, args: Vec<Value>) -> Value {
     let name = atom.as_str();
     if args.is_empty() {
         return atom.into_value();
     }
-    // ── Constructors build `Value::Data` ────────────────────────────
-    //
-    // A saturated core constructor application is a residual normal form
-    // (specs/formal/equiv.md § 3). Each constructor carries leading *erased*
-    // type-args (the expr-first parse keeps a bare type name as a
-    // `CallArg::Value`; the call compiler can only drop them with a
-    // fn-def signature or a value-at-type-slot marker). So the value payload is the *trailing*
-    // N value-args, where N is the constructor's value arity. Anything
-    // ahead of the payload is an erased type-arg and is dropped here.
     if let Some(arity) = intrinsic_ctor_value_arity(name)
-        && args.len() >= arity
+        && args.len() == arity
     {
-        let payload = args.split_off(args.len() - arity);
-        return data_value(name, payload);
-    }
-    // ── Drop an eliminator's leading erased type-args ───────────────
-    //
-    // `__either__` / `__fst__` / `__snd__` / `__if_then_else__` have no
-    // fn-def signature for the call compiler to filter against, so a
-    // call with explicit type-args — `__either__(A, B, C, s, fl, fr)` —
-    // can reach here with the leading type-name atoms still in `args`. The
-    // ι-rule arms below match a rigid operand slice (`[scrutinee, fl,
-    // fr]`, `[pair]`), which only fits once the type-args are gone. Keep
-    // just the trailing N value-operands, where N is the eliminator's
-    // value arity (constructors were handled above; this is the dual).
-    if let Some(arity) = intrinsic_elim_value_arity(name)
-        && args.len() > arity
-    {
-        args = args.split_off(args.len() - arity);
+        return data_value(name, args);
     }
     // ── ι-Fst / ι-Snd (specs/formal/equiv.md § 2.1) ─────────────────
     //
@@ -9518,6 +9713,7 @@ mod tests {
     mod nf_eq_properties;
     mod reflection_memo;
     mod render;
+    mod template_canonicalization;
 
     #[test]
     fn checked_signature_instantiation_preserves_empty_value_group() {
@@ -9570,7 +9766,35 @@ mod tests {
         let (mut lowered, _) =
             crate::pass::label_elab::elaborate_package(vec![(path, desugared)], None)
                 .expect("label_elab");
-        let module = lowered.pop().expect("at least one module").1;
+        let mut module = lowered.pop().expect("at least one module").1;
+        // These normalization fixtures deliberately admit open, untyped terms.
+        // Pair type operands are erased by evaluation; retain the actual packet
+        // operands without asking empty elaborations to infer their types.
+        struct UntypedPairOperands;
+        impl crate::pass::visit_mut::TypecheckVisitMut<crate::ast::Lowered> for UntypedPairOperands {
+            fn visit_expr(&mut self, expr: &mut Expr<crate::ast::Lowered>) {
+                if let Expr::Call { callee, args, .. } = expr
+                    && matches!(callee.as_ref(), Expr::Path { segments, .. }
+                        if matches!(segments.as_slice(), [name] if name.as_str() == "__pair__"))
+                    && matches!(
+                        args.as_slice(),
+                        [
+                            CallArg::Type(Type::Infer { .. }),
+                            CallArg::Type(Type::Infer { .. }),
+                            CallArg::Value(_),
+                            CallArg::Value(_)
+                        ]
+                    )
+                {
+                    args.drain(..2);
+                }
+                crate::pass::visit_mut::walk_expr(self, expr);
+            }
+        }
+        crate::pass::visit_mut::TypecheckVisitMut::visit_module(
+            &mut UntypedPairOperands,
+            &mut module,
+        );
         let module_path = module
             .path
             .segments
@@ -9685,52 +9909,22 @@ mod tests {
         }
     }
 
-    fn reclassify_grouped_structural_recur_type_stage_for_test(
-        expr: &mut Expr<EvalPhase>,
-    ) -> usize {
-        let Expr::Call { callee, args, .. } = expr else {
-            panic!("expected the grouped helper's outer type application")
-        };
-        let Expr::Call {
-            callee: proof_callee,
-            args: proof_args,
-            ..
-        } = callee.as_ref()
-        else {
-            panic!("expected the grouped helper's proof application")
-        };
-        let Expr::Path { segments, .. } = proof_callee.as_ref() else {
-            panic!("expected the grouped helper's source path")
-        };
-        assert!(matches!(
-            segments.as_slice(),
-            [name] if name.as_str() == "__structural_recur__"
-        ));
-        assert!(matches!(proof_args.as_slice(), [CallArg::Value(_)]));
-        assert!(matches!(
-            args.as_slice(),
-            [
-                CallArg::Value(Expr::Path { segments, .. }),
-                CallArg::Type(Type::Unit { .. }),
-                CallArg::Type(Type::Unit { .. })
-            ] if matches!(segments.as_slice(), [name] if name.as_str() == "Type")
-        ));
-
-        // `parse_module` deliberately stops before the typer's retained call
-        // plan. Recreate only the three type slots that the ordinary typer
-        // authenticates; keep the inner source node in place so its
-        // source occurrence and proof prefix are unchanged.
-        let origin = EvalSourceOccurrence::of(proof_callee.as_ref());
-        let type_args = args
-            .iter()
-            .map(crate::pass::typecheck_core::call_arg_to_type_arg)
-            .collect::<Result<Vec<_>, _>>()
-            .expect("the fixture's three written arguments are types");
-        assert_eq!(type_args.len(), 3);
-        *args = type_args.into_iter().map(CallArg::Type).collect();
-        assert!(args.iter().all(|arg| matches!(arg, CallArg::Type(_))));
-        assert!(EvalSourceOccurrence::of(proof_callee.as_ref()) == origin);
-        args.len()
+    fn assert_grouped_structural_recur_type_stage_for_test(expr: &Expr<EvalPhase>) -> usize {
+        let mut current = expr;
+        let mut count = 0;
+        while let Expr::Call { callee, args, .. } = current {
+            if args.iter().all(|arg| matches!(arg, CallArg::Type(_))) {
+                count += args.len();
+                current = callee;
+            } else {
+                assert!(matches!(args.as_slice(), [CallArg::Value(_)]));
+                assert!(matches!(callee.as_ref(), Expr::Path { segments, .. }
+                    if matches!(segments.as_slice(), [name] if name.as_str() == "__structural_recur__")));
+                assert_eq!(count, 3);
+                return count;
+            }
+        }
+        panic!("expected explicit type stages after the helper's proof application")
     }
 
     fn structural_recur_callback_rejection_for_test(
@@ -10285,10 +10479,10 @@ mod tests {
         let lambda_module = parse_module(
             "module x; import __comptime__; equiv cache { \
              .(fuel: .) { \
-               __structural_recur__(proof, fuel, (), .(recur: ., current: ., input: .) { input }) \
+               __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }) \
              }; \
              .(fuel: .) { \
-               let ignored = __structural_recur__(proof, fuel, (), .(recur: ., current: ., input: .) { input }); \
+               let ignored = __structural_recur__(proof)( fuel, (), .(recur: ., current: ., input: .) { input }); \
                () \
              } \
              }",
@@ -11381,8 +11575,45 @@ mod tests {
         let ctx = EvalCtx::new()
             .with_primitive_env(primitive_env)
             .with_metrics(metrics.clone());
-        let expr = Expr::synth_call(path_expr(builtin.public_name()), call_args, zero_span());
-        let value = eval(&expr, env, &ctx);
+        let proof_name = "fixture_proof";
+        let mut env = env.clone();
+        assert!(
+            env.flattened_bindings()
+                .iter()
+                .all(|(name, _)| name != proof_name)
+        );
+        env.insert(
+            proof_name.into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let scheme =
+            crate::pass::typecheck_core::comptime_scheme::<EvalPhase>(builtin, zero_span())
+                .expect("public builtin scheme")
+                .expect("callable builtin");
+        let Type::Function { ret, .. } = scheme.ty.as_type() else {
+            panic!("direct reflection fixture needs its public proof domain")
+        };
+        let mut suffix = ret.as_ref();
+        let mut type_args = Vec::new();
+        while let Type::Forall { body, .. } = suffix {
+            type_args.push(CallArg::Type(Type::Unit { meta: zero_meta() }));
+            suffix = body;
+        }
+        let expr = if type_args.is_empty() {
+            let mut values = vec![CallArg::Value(path_expr(proof_name))];
+            values.extend(call_args);
+            Expr::synth_call(path_expr(builtin.public_name()), values, zero_span())
+        } else {
+            assert!(matches!(suffix, Type::Function { .. }));
+            let proof = Expr::synth_call(
+                path_expr(builtin.public_name()),
+                vec![CallArg::Value(path_expr(proof_name))],
+                zero_span(),
+            );
+            let specialized = Expr::synth_call(proof, type_args, zero_span());
+            Expr::synth_call(specialized, call_args, zero_span())
+        };
+        let value = eval(&expr, &env, &ctx);
         (value, metrics.snapshot())
     }
 
@@ -11771,7 +12002,19 @@ mod tests {
             };
             let (direct, direct_metrics) =
                 eval_direct_comptime_builtin(case.builtin, &invalid_args, &elaborations);
-            let (generic, generic_metrics) = apply_comptime_builtin(case.builtin, invalid_args);
+            let mut generic_args = invalid_args;
+            if case.builtin == ComptimeBuiltin::TermTypeFn {
+                let Value::Stuck(_, operands) = &direct else {
+                    panic!("invalid type-function reflection must retain its public operands")
+                };
+                assert!(matches!(
+                    operands.first(),
+                    Some(Value::Primitive(ComptimeBuiltin::ComptimeProof))
+                ));
+                // This direct reflection retries with its public proof operand.
+                generic_args.insert(0, Value::Primitive(ComptimeBuiltin::ComptimeProof));
+            }
+            let (generic, generic_metrics) = apply_comptime_builtin(case.builtin, generic_args);
             assert_eq!(direct_metrics.root_eval_calls, 1, "direct invalid `{name}`");
             assert_eq!(
                 direct_metrics.apply_atom_calls, 0,
@@ -12593,7 +12836,7 @@ mod tests {
         let module = parse_module(
             "module x; import __comptime__; \
              fn reject(proof: .) -> . { \
-               __structural_recur__(proof, __type_unit__(), (), \
+               __structural_recur__(proof)( __type_unit__(), (), \
                  .(recur, fuel, input) { recur(fuel, input) }) \
              } \
              fn handler(value: .) -> . { value } \
@@ -13114,8 +13357,8 @@ mod tests {
     fn eval_metrics_inline_small_projection_wrapper_skips_function_apply() {
         let m = parse_module(
             "module x; import __intrinsics__; \
-             fn first(pair: . & .) -> . { __fst__(., ., pair) } \
-             equiv cache(pair: . & .) { first(pair); __fst__(., ., pair) }",
+             fn first(pair: . & .) -> . { __fst__[.][.](pair) } \
+             equiv cache(pair: . & .) { first(pair); __fst__[.][.](pair) }",
         );
         let metrics = std::sync::Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new()
@@ -13275,7 +13518,7 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(k: . -> .) -> . { \
-               __structural_recur__(proof, __type_unit__(), (), .(recur, fuel, input) { k(()) }) \
+               __structural_recur__(proof)( __type_unit__(), (), .(recur, fuel, input) { k(()) }) \
              } \
              fn trigger() -> . { \
                run(.(unit) { run(.(again) { () }) }) \
@@ -14216,7 +14459,7 @@ mod tests {
             "module x; import __comptime__; \
              newtype Box : . { constructor box; projector unbox; }; \
              fn reject(proof: .) -> . { \
-               __structural_recur__(proof, __type_unit__(), (), \
+               __structural_recur__(proof)( __type_unit__(), (), \
                  .(recur, fuel, input) { recur(fuel, input) }) \
              } \
              fn step(recur: ., fuel: ., input: .) -> . { input } \
@@ -14402,19 +14645,19 @@ mod tests {
                helper(fuel, (), .(recur, current, input) { k(current) }) \
              } \
              fn make(proof: .) -> . { \
-               __structural_recur__(proof)(Type, ., .) \
+               __structural_recur__(proof)[Type][.][.] \
              } \
              fn same(proof: .) -> . { \
                let helper = make(proof); \
-               invoke(helper, __type_product__(__type_unit__(), __type_unit__()), \
-                 .(root) { invoke(helper, __type_unit__(), \
-                   .(unit) { invoke(helper, __type_bottom__(), .(bottom) { () }) }) }) \
+               invoke(helper, __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
+                 .(root) { invoke(helper, __type_unit__(proof), \
+                   .(unit) { invoke(helper, __type_bottom__(proof), .(bottom) { () }) }) }) \
              } \
              fn distinct(proof: .) -> . { \
-               let left = __structural_recur__(proof)(Type, ., .); \
-               let right = __structural_recur__(proof)(Type, ., .); \
-               invoke(left, __type_unit__(), \
-                 .(unit) { invoke(right, __type_bottom__(), .(bottom) { () }) }) \
+               let left = __structural_recur__(proof)[Type][.][.]; \
+               let right = __structural_recur__(proof)[Type][.][.]; \
+               invoke(left, __type_unit__(proof), \
+                 .(unit) { invoke(right, __type_bottom__(proof), .(bottom) { () }) }) \
              } \
              equiv origins { same(proof); (); distinct(proof); () }",
         );
@@ -14427,7 +14670,7 @@ mod tests {
             match def.name.as_str() {
                 "make" => {
                     rewritten_args +=
-                        reclassify_grouped_structural_recur_type_stage_for_test(&mut def.body);
+                        assert_grouped_structural_recur_type_stage_for_test(&def.body);
                     rewritten_sites += 1;
                 }
                 "distinct" => {
@@ -14440,9 +14683,8 @@ mod tests {
                     let Expr::Let { value: right, .. } = body.as_mut() else {
                         panic!("distinct must bind its right helper second")
                     };
-                    rewritten_args += reclassify_grouped_structural_recur_type_stage_for_test(left);
-                    rewritten_args +=
-                        reclassify_grouped_structural_recur_type_stage_for_test(right);
+                    rewritten_args += assert_grouped_structural_recur_type_stage_for_test(left);
+                    rewritten_args += assert_grouped_structural_recur_type_stage_for_test(right);
                     rewritten_sites += 2;
                 }
                 _ => {}
@@ -14489,14 +14731,14 @@ mod tests {
         let mut m = parse_module(
             "module x; import __comptime__; \
              fn direct(k: . -> .) -> . { \
-               __structural_recur__(proof, __type_unit__(), k(), \
+               __structural_recur__(proof)( __type_unit__(), k(), \
                  .(recur, fuel, input) { input }) \
              } \
              fn direct_trigger() -> . { \
                direct(.() { direct(.() { () }) }) \
              } \
              fn indirect(proof: ., k: . -> .) -> . { \
-               let helper = __structural_recur__(proof)(Type, ., .); \
+               let helper = __structural_recur__(proof)[Type][.][.]; \
                helper(__type_unit__(), k(), .(recur, fuel, input) { input }) \
              } \
              fn indirect_trigger(proof: .) -> . { \
@@ -14514,7 +14756,7 @@ mod tests {
                 let Expr::Let { value: helper, .. } = &mut def.body else {
                     panic!("indirect must retain its helper in a local")
                 };
-                rewritten_args += reclassify_grouped_structural_recur_type_stage_for_test(helper);
+                rewritten_args += assert_grouped_structural_recur_type_stage_for_test(helper);
                 rewritten_sites += 1;
             }
         }
@@ -14557,15 +14799,15 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(k: Type -> ., fuel: Type) -> . { \
-               __structural_recur__(proof, fuel, (), .(recur, current, input) { \
+               __structural_recur__(proof)( fuel, (), .(recur, current, input) { \
                  __if_then_else__( \
-                   __type_equal__(current, __type_unit__()), \
+                   __type_equal__(proof, current, __type_unit__(proof)), \
                    .() { () }, \
-                   .() { k(__type_unit__()) }) \
+                   .() { k(__type_unit__(proof)) }) \
                }) \
              } \
              fn trigger() -> . { \
-               run(.(next) { run(.(again) { () }, next) }, __type_product__(__type_unit__(), __type_unit__())) \
+               run(.(next) { run(.(again) { () }, next) }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
              } \
              equiv cache { trigger(); () }",
         );
@@ -14581,7 +14823,15 @@ mod tests {
         .with_root_module(&m)
         .with_fn_defs(fn_def_map(&m));
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
@@ -14592,14 +14842,14 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              fn run(k: Type -> ., fuel: Type) -> . { \
-               __structural_recur__(proof, fuel, (), .(recur, current, input) { k(current) }) \
+               __structural_recur__(proof)( fuel, (), .(recur, current, input) { k(current) }) \
              } \
              fn trigger() -> . { \
                run(.(root) { \
                  run(.(unit) { \
-                   run(.(bottom) { () }, __type_bottom__()) \
-                 }, __type_unit__()) \
-               }, __type_product__(__type_unit__(), __type_unit__())) \
+                   run(.(bottom) { () }, __type_bottom__(proof)) \
+                 }, __type_unit__(proof)) \
+               }, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
              } \
              equiv cache { trigger(); () }",
         );
@@ -14615,7 +14865,15 @@ mod tests {
         .with_root_module(&m)
         .with_fn_defs(fn_def_map(&m));
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "nested helper did not reduce: {a:?}");
@@ -14626,12 +14884,11 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              equiv cache { .() { \
-               let attempt = __structural_recur__( \
-                 proof, __type_product__(__type_unit__(), __type_unit__()), (), \
+               let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), \
                  .(recur, fuel, input) { \
                    .() { \
-                     __if_then_else__(__type_equal__(fuel, __type_unit__()), \
-                       .() { () }, .() { recur(__type_unit__(), ())() }) \
+                     __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), \
+                       .() { () }, .() { recur(__type_unit__(proof), ())() }) \
                    } \
                  }); \
                attempt() }(); \
@@ -14649,7 +14906,15 @@ mod tests {
         )
         .with_root_module(&m);
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
@@ -14660,9 +14925,8 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              equiv cache { .() { \
-               let attempt = __structural_recur__( \
-                 proof, __type_product__(__type_unit__(), __type_unit__()), (), \
-                 .(recur, fuel, input) { .() { recur(__type_unit__(), ())() } }); \
+               let attempt = __structural_recur__(proof)( __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), (), \
+                 .(recur, fuel, input) { .() { recur(__type_unit__(proof), ())() } }); \
                attempt() }(); \
                () \
              }",
@@ -14677,7 +14941,15 @@ mod tests {
         )
         .with_root_module(&m);
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, _b) = first_two(&values);
         assert_eq!(
@@ -14694,22 +14966,21 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              equiv cache { \
-               __either__(., ., ., \
-                 __structural_recur__( \
-                   proof, \
-                   __type_product__(__type_unit__(), __type_product__(__type_unit__(), __type_unit__())), \
+               __either__[.][.][.](\
+                 __structural_recur__(proof)( \
+                   __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
                    (), \
                    .(recur, fuel, input) { \
-                     __if_then_else__(__type_equal__(fuel, __type_unit__()), \
-                       .() { __left__(., ., ()) }, \
+                     __if_then_else__(__type_equal__(proof, fuel, __type_unit__(proof)), \
+                       .() { __left__[.][.](()) }, \
                        .() { \
                          __if_then_else__( \
-                           __type_equal__(fuel, __type_product__(__type_unit__(), __type_unit__())), \
-                           .() { __left__(., ., ()) }, \
+                           __type_equal__(proof, fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
+                           .() { __left__[.][.](()) }, \
                            .() { \
-                             __either__(., ., . | ., recur(__type_unit__(), ()), \
-                               .(left_done) { recur(__type_product__(__type_unit__(), __type_unit__()), ()) }, \
-                               .(left_err) { __right__(., ., ()) }) \
+                             __either__[.][.][. | .]( recur(__type_unit__(proof), ()), \
+                               .(left_done) { recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) }, \
+                               .(left_err) { __right__[.][.](()) }) \
                            }) \
                        }) \
                    }), \
@@ -14729,7 +15000,15 @@ mod tests {
         )
         .with_root_module(&m);
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
@@ -14843,33 +15122,31 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              equiv cache { \
-               __either__(., ., ., \
-                 __structural_recur__( \
-                   proof, \
-                   __type_product__(__type_unit__(), __type_product__(__type_unit__(), __type_unit__())), \
+               __either__[.][.][.](\
+                 __structural_recur__(proof)( \
+                   __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
                    (), \
                    .(outer_recur, outer_fuel, outer_input) { \
-                     __if_then_else__(__type_equal__(outer_fuel, __type_unit__()), \
-                       .() { __left__(., ., ()) }, \
+                     __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), \
+                       .() { __left__[.][.](()) }, \
                        .() { \
                          __if_then_else__( \
-                           __type_equal__(outer_fuel, __type_product__(__type_unit__(), __type_unit__())), \
-                           .() { __left__(., ., ()) }, \
+                           __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
+                           .() { __left__[.][.](()) }, \
                            .() { \
-                             __structural_recur__( \
-                               proof, \
-                               __type_product__(__type_unit__(), __type_unit__()), \
+                             __structural_recur__(proof)( \
+                               __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
                                (), \
                                .(inner_recur, inner_fuel, inner_input) { \
                                  __if_then_else__( \
-                                   __type_equal__(inner_fuel, __type_unit__()), \
+                                   __type_equal__(proof, inner_fuel, __type_unit__(proof)), \
                                    .() { \
-                                     outer_recur(__type_product__(__type_unit__(), __type_unit__()), ()) \
+                                     outer_recur(__type_product__(proof, __type_unit__(proof), __type_unit__(proof)), ()) \
                                    }, \
                                    .() { \
-                                     __either__(., ., . | ., outer_recur(__type_unit__(), ()), \
-                                       .(left_done) { inner_recur(__type_unit__(), ()) }, \
-                                       .(left_err) { __right__(., ., ()) }) \
+                                     __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), \
+                                       .(left_done) { inner_recur(__type_unit__(proof), ()) }, \
+                                       .(left_err) { __right__[.][.](()) }) \
                                    }) \
                                }) \
                            }) \
@@ -14891,7 +15168,15 @@ mod tests {
         )
         .with_root_module(&m);
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
@@ -14902,38 +15187,36 @@ mod tests {
         let m = parse_module(
             "module x; import __comptime__; \
              fn walk(outer_recur: (Type & .) -> ., parent: Type) -> . { \
-               __structural_recur__( \
-                 proof, \
-                 __type_product__(__type_unit__(), __type_unit__()), \
+               __structural_recur__(proof)( \
+                 __type_product__(proof, __type_unit__(proof), __type_unit__(proof)), \
                  (), \
                  .(inner_recur, inner_fuel, inner_input) { \
                    __if_then_else__( \
-                     __type_equal__(inner_fuel, __type_unit__()), \
+                     __type_equal__(proof, inner_fuel, __type_unit__(proof)), \
                      .() { outer_recur(parent, ()) }, \
                      .() { \
-                       __either__(., ., . | ., outer_recur(__type_unit__(), ()), \
-                         .(left_done) { inner_recur(__type_unit__(), ()) }, \
+                       __either__[.][.][. | .]( outer_recur(__type_unit__(proof), ()), \
+                         .(left_done) { inner_recur(__type_unit__(proof), ()) }, \
                          .(left_err) { left_err }) \
                      }) \
                  }) \
              } \
              equiv cache { \
-               __either__(., ., ., \
-                 __structural_recur__( \
-                   proof, \
-                   __type_product__( \
-                     __type_unit__(), \
-                     __type_product__(__type_unit__(), __type_product__(__type_unit__(), __type_unit__()))), \
+               __either__[.][.][.](\
+                 __structural_recur__(proof)( \
+                   __type_product__(proof,  \
+                     __type_unit__(proof), \
+                     __type_product__(proof, __type_unit__(proof), __type_product__(proof, __type_unit__(proof), __type_unit__(proof)))), \
                    (), \
                    .(outer_recur, outer_fuel, outer_input) { \
-                     __if_then_else__(__type_equal__(outer_fuel, __type_unit__()), \
-                       .() { __left__(., ., ()) }, \
+                     __if_then_else__(__type_equal__(proof, outer_fuel, __type_unit__(proof)), \
+                       .() { __left__[.][.](()) }, \
                        .() { \
                          __if_then_else__( \
-                           __type_equal__(outer_fuel, __type_product__(__type_unit__(), __type_unit__())), \
-                           .() { __left__(., ., ()) }, \
+                           __type_equal__(proof, outer_fuel, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))), \
+                           .() { __left__[.][.](()) }, \
                            .() { \
-                             walk(outer_recur, __type_product__(__type_unit__(), __type_unit__())) \
+                             walk(outer_recur, __type_product__(proof, __type_unit__(proof), __type_unit__(proof))) \
                            }) \
                        }) \
                    }), \
@@ -14953,7 +15236,15 @@ mod tests {
         )
         .with_root_module(&m);
 
-        let values = eval_each(&equiv_terms(&m), &ctx);
+        let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        let values = equiv_terms(&m)
+            .into_iter()
+            .map(|term| eval(term, &env, &ctx))
+            .collect::<Vec<_>>();
 
         let (a, b) = first_two(&values);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
@@ -14966,14 +15257,14 @@ mod tests {
         let expr = Expr::synth_call(
             path_expr("__either__"),
             vec![
-                CallArg::Value(path_expr("A")),
-                CallArg::Value(path_expr("B")),
-                CallArg::Value(path_expr("C")),
+                CallArg::Type(type_path("A")),
+                CallArg::Type(type_path("B")),
+                CallArg::Type(type_path("C")),
                 CallArg::Value(Expr::synth_call(
                     path_expr("__left__"),
                     vec![
-                        CallArg::Value(path_expr("A")),
-                        CallArg::Value(path_expr("B")),
+                        CallArg::Type(type_path("A")),
+                        CallArg::Type(type_path("B")),
                         CallArg::Value(Expr::Unit {
                             source_trivia: Default::default(),
                             occurrence: Default::default(),
@@ -15099,6 +15390,10 @@ mod tests {
         let unit_ty = Type::Unit { meta: zero_meta() };
         let mut env = Env::new();
         env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        env.insert(
             "left".to_string(),
             checked_term_value(
                 Expr::Unit {
@@ -15123,6 +15418,7 @@ mod tests {
         let expr = Expr::synth_call(
             path_expr("__intrinsic_pair__"),
             vec![
+                CallArg::Value(path_expr("proof")),
                 CallArg::Value(path_expr("left")),
                 CallArg::Value(path_expr("right")),
             ],
@@ -15168,11 +15464,20 @@ mod tests {
             sum_ty.clone(),
         );
         let mut env = Env::new();
+        env.insert(
+            "proof".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
         env.insert("sum_type".to_string(), refl_type_value(sum_ty));
         env.insert("result_type".to_string(), refl_type_value(unit_ty));
         env.insert("value".to_string(), left_value);
-        let unit_term_call =
-            || Expr::synth_call(path_expr("__term_unit__"), Vec::new(), zero_span());
+        let unit_term_call = || {
+            Expr::synth_call(
+                path_expr("__term_unit__"),
+                vec![CallArg::Value(path_expr("proof"))],
+                zero_span(),
+            )
+        };
         let handler = |name: &str| Expr::FnExpr {
             occurrence: Default::default(),
             sig: Signature::new(vec![value_param(name)]),
@@ -15184,6 +15489,7 @@ mod tests {
         let expr = Expr::synth_call(
             path_expr("__intrinsic_either__"),
             vec![
+                CallArg::Value(path_expr("proof")),
                 CallArg::Value(path_expr("sum_type")),
                 CallArg::Value(path_expr("result_type")),
                 CallArg::Value(path_expr("value")),
@@ -16445,6 +16751,71 @@ mod tests {
     }
 
     #[test]
+    fn call_stages_type_fold_preserves_direct_dispatch() {
+        let (module, [body]) = parse_module_with_bodies(
+            "module x; import __comptime__;",
+            [
+                "__type_product_spine_fold__(ct)[.](typ, (), .(acc: ., _item: __Type__) -> . { acc })",
+            ],
+        );
+        let metrics = Arc::new(EvalMetrics::default());
+        let ctx = test_primitive_ctx_for("x", &[ComptimeBuiltin::TypeProductSpineFold])
+            .with_root_module(&module)
+            .with_metrics(metrics.clone());
+        let unit = Type::Unit { meta: zero_meta() };
+        let mut env = Env::new();
+        env.insert(
+            "ct".into(),
+            Value::Primitive(ComptimeBuiltin::ComptimeProof),
+        );
+        env.insert(
+            "typ".into(),
+            refl_type_value(Type::Product {
+                left: Box::new(unit.clone()),
+                right: Box::new(unit),
+                meta: zero_meta(),
+            }),
+        );
+        let value = eval(&body, &env, &ctx);
+        assert!(matches!(value, Value::Unit), "{value:?}");
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.reflection_type_fold_calls, 1, "{snapshot:?}");
+        assert_eq!(snapshot.apply_atom_calls, 0, "{snapshot:?}");
+        assert_eq!(snapshot.closure_builds, 0, "{snapshot:?}");
+    }
+
+    #[test]
+    fn call_stages_type_fold_keeps_proof_packet_and_shadowing_boundaries() {
+        let (module, bodies) = parse_module_with_bodies(
+            "module x; import __comptime__;",
+            [
+                "__type_product_spine_fold__(ct)[.](typ, (), .(acc, _item) { acc })",
+                "__type_product_spine_fold__(.() { ct }())[.](typ, (), .(acc, _item) { acc })",
+                "__type_product_spine_fold__(ct)[.](packet)",
+                "__type_product_spine_fold__(ct)[.]",
+            ],
+        );
+        let ctx = test_primitive_ctx_for("x", &[ComptimeBuiltin::TypeProductSpineFold])
+            .with_root_module(&module);
+        let locals = vec!["ct".into(), "typ".into(), "packet".into()];
+        for (index, body) in bodies.iter().enumerate() {
+            let compiled = compile_eval_root(body, &ctx, locals.clone()).expect("compiled call");
+            assert_eq!(
+                matches!(compiled.as_ref(), EvalExpr::ProofedReflection { .. }),
+                index == 0,
+                "stage {index}: {compiled:?}"
+            );
+        }
+        let mut shadowed = locals;
+        shadowed.push("__type_product_spine_fold__".into());
+        let compiled = compile_eval_root(&bodies[0], &ctx, shadowed).expect("local call");
+        assert!(!matches!(
+            compiled.as_ref(),
+            EvalExpr::ProofedReflection { .. }
+        ));
+    }
+
+    #[test]
     fn eval_metrics_direct_reflection_type_fold_skips_atom_dispatch_and_closure_builds() {
         let metrics = std::sync::Arc::new(EvalMetrics::default());
         let ctx = EvalCtx::new().with_metrics(metrics.clone());
@@ -16618,7 +16989,7 @@ mod tests {
         // reduction; the erased binder contributes no value local.
         let m = parse_module(
             "module x; fn poly_id[T](v: T) -> T { v } \
-             equiv ta { poly_id(A, v); v }",
+             equiv ta { poly_id[A](v); v }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -16630,7 +17001,7 @@ mod tests {
     fn type_only_fn_reduces_to_body() {
         let m = parse_module(
             "module x; fn type_only[T] -> . { () } \
-             equiv tof { type_only(A); () }",
+             equiv tof { type_only[A]; () }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -16642,7 +17013,7 @@ mod tests {
     fn type_only_specialization_retains_explicit_unit_stage() {
         let m = parse_module(
             "module x; fn delayed[T]() -> . { () } \
-             equiv stages { delayed(A); .() { () } }",
+             equiv stages { delayed[A]; .() { () } }",
         );
         let ctx = EvalCtx::new().with_fn_defs(fn_def_map(&m));
         let values = eval_each(&equiv_terms(&m), &ctx);
@@ -16765,10 +17136,9 @@ mod tests {
     }
 
     #[test]
-    fn leftover_args_recurse_into_apply() {
-        // Calling a 1-param closure with 2 args reduces the body, then
-        // re-applies the result to the leftover args.
-        let m = parse_module("module x; equiv leftover { (.(x) { x })(f, a); f(a) }");
+    fn returned_function_application_recurses_into_apply() {
+        // A completed value stage returns the callable for the following stage.
+        let m = parse_module("module x; equiv leftover { (.(x) { x })(f)(a); f(a) }");
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -16975,7 +17345,7 @@ mod tests {
         let m = parse_module(
             "module x; \
              labels { wrap[A]: A }; \
-             equiv nt { Wrap.get(A, Wrap.mk(A, x)); x }",
+             equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
         );
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
@@ -17070,7 +17440,7 @@ mod tests {
                  (); \
                  x \
              }",
-            ["let ctor = Wrap.mk; let proj = Wrap.get; proj(A, ctor(A, x))"],
+            ["let ctor = Wrap.mk; let proj = Wrap.get; proj[A](ctor[A](x))"],
         );
         m.equivs[1].terms[0] = body;
         let ctx = EvalCtx::new().with_root_module(&m);
@@ -17106,10 +17476,10 @@ mod tests {
                 "provider.kio",
                 "module provider; \
                  rec { \
-                   pub newtype Wrap[A] : A & Peer(A) { pub constructor mk; pub projector get; }; \
-                   newtype Peer[A] : Wrap(A) { constructor make_peer; projector un_peer; }; \
+                   pub newtype Wrap[A] : A & Peer[A] { pub constructor mk; pub projector get; }; \
+                   newtype Peer[A] : Wrap[A] { constructor make_peer; projector un_peer; }; \
                  } \
-                 pub type Alias[A] = Wrap(A); \
+                 pub type Alias[A] = Wrap[A]; \
                  pub newtype Hidden[A] : A { constructor mk; projector get; };",
             ),
             (
@@ -17172,14 +17542,14 @@ mod tests {
                 "provider.kio",
                 "module provider; \
                  pub newtype Wrap[A] : A { pub constructor mk; pub projector get; }; \
-                 pub fn wrap[A](x: A) -> Wrap(A) { Wrap.mk(A, x) }",
+                 pub fn wrap[A](x: A) -> Wrap[A] { Wrap.mk[A](x) }",
             ),
             (
                 "consumer.kio",
                 "module consumer; \
                  import provider as p; \
                  newtype Wrap[A] : A { constructor mk; projector get; }; \
-                 fn run[A](x: A) -> A { p.Wrap.get(A, p.wrap(A, x)) }",
+                 fn run[A](x: A) -> A { p.Wrap.get[A](p.wrap[A](x)) }",
             ),
         ]);
         let consumer = &pkg.module("consumer").expect("consumer").module;
@@ -17199,7 +17569,7 @@ mod tests {
     // `Value::Data` construction + case-reduction over the full
     // `__intrinsics__` vocabulary, exercised against the REAL EvalPhase
     // shape: constructors carry LEADING erased type-args
-    // (`__pair__(A, B, x, y)`, `__left__(A, B, x)`). A type-arg-
+    // (`__pair__[A][B](x, y)`, `__left__[A][B](x)`). A type-arg-
     // free spelling cannot distinguish a correct trailing-N extraction
     // from a no-op, so every construction test feeds explicit type-args
     // and asserts the built `Value::Data` payload directly.
@@ -17228,15 +17598,15 @@ mod tests {
     #[test]
     fn raw_numeric_artifact_values_use_their_explicit_roles() {
         for (first, second, equal) in [
-            ("010(I)", "10(I)", true),
-            ("-0(U)", "0(U)", true),
-            ("1.5E+2(F32)", "150.0(F32)", true),
-            ("0.1(Alias(.))", "0.10000000149011612(F32)", true),
-            ("16777217.0(F32)", "16777216.0(F32)", true),
-            ("1.0000000596046448(F32)", "1.0(F32)", false),
-            ("0.1(F64)", "0.10000000149011612(F64)", false),
-            ("-0.0(F32)", "0.0(F32)", false),
-            ("-1.0e-9999(F64)", "-0.0(F64)", true),
+            ("010[I]", "10[I]", true),
+            ("-0[U]", "0[U]", true),
+            ("1.5E+2[F32]", "150.0[F32]", true),
+            ("0.1[Alias[.]]", "0.10000000149011612[F32]", true),
+            ("16777217.0[F32]", "16777216.0[F32]", true),
+            ("1.0000000596046448[F32]", "1.0[F32]", false),
+            ("0.1[F64]", "0.10000000149011612[F64]", false),
+            ("-0.0[F32]", "0.0[F32]", false),
+            ("-1.0e-9999[F64]", "-0.0[F64]", true),
         ] {
             let source = format!(
                 "module x; host type I role(i8); host type U role(u8); host type F32 role(f32); host type F64 role(f64); type Alias[A] = F32; equiv probe {{ {first}; {second} }}"
@@ -17258,7 +17628,7 @@ mod tests {
                 "{first} vs {second}"
             );
         }
-        for value in ["128(I)", "1.0e9999(F32)"] {
+        for value in ["128[I]", "1.0e9999[F32]"] {
             let module = parse_module(&format!(
                 "module x; host type I role(i8); host type F32 role(f32); equiv probe {{ {value}; () }}"
             ));
@@ -17269,9 +17639,9 @@ mod tests {
 
     #[test]
     fn mk_left_builds_data_dropping_leading_type_args() {
-        // `__left__(A, B, x)` — two leading erased type-args, one
+        // `__left__[A][B](x)` — two leading erased type-args, one
         // value payload. Builds `Data { "__left__", [X] }`.
-        let v = eval_one("__left__(A, B, x)");
+        let v = eval_one("__left__[A][B](x)");
         match v {
             Value::Data(data) => {
                 assert_eq!(data.ctor(), "__left__");
@@ -17289,7 +17659,7 @@ mod tests {
 
     #[test]
     fn mk_right_builds_data_dropping_leading_type_args() {
-        let v = eval_one("__right__(A, B, y)");
+        let v = eval_one("__right__[A][B](y)");
         match v {
             Value::Data(data) => {
                 assert_eq!(data.ctor(), "__right__");
@@ -17302,9 +17672,9 @@ mod tests {
 
     #[test]
     fn mk_pair_builds_data_dropping_leading_type_args() {
-        // `__pair__(A, B, x, y)` — two leading erased type-args, two
+        // `__pair__[A][B](x, y)` — two leading erased type-args, two
         // value components. Builds `Data { "__pair__", [x, y] }`.
-        let v = eval_one("__pair__(A, B, x, y)");
+        let v = eval_one("__pair__[A][B](x, y)");
         match v {
             Value::Data(data) => {
                 assert_eq!(data.ctor(), "__pair__");
@@ -17324,13 +17694,13 @@ mod tests {
     #[test]
     fn either_over_data_left_with_type_args_selects_left() {
         // ι-LeftEither against the REAL injection shape: the scrutinee
-        // is `__left__(A, B, x)` (with type-args), built to
+        // is `__left__[A][B](x)` (with type-args), built to
         // `Value::Data`; `__either__(C, D, E, scrut, fl, fr)` selects
         // `fl(x)`. Both arms must reduce to `f(x)`.
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv il { \
-               __either__(A, B, C, __left__(A, B, x), .(l) { f(l) }, .(r) { g(r) }); \
+               __either__[A][B][C](__left__[A][B](x), .(l) { f(l) }, .(r) { g(r) }); \
                f(x) }",
         );
         let ctx = EvalCtx::new();
@@ -17344,7 +17714,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv ir { \
-               __either__(A, B, C, __right__(A, B, y), .(l) { g(l) }, .(r) { f(r) }); \
+               __either__[A][B][C](__right__[A][B](y), .(l) { g(l) }, .(r) { f(r) }); \
                f(y) }",
         );
         let ctx = EvalCtx::new();
@@ -17358,7 +17728,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv unit_handler { \
-               __either__(A, ., C, __right__(A, ., ()), .(l) { f(l) }, .() { done }); \
+               __either__[A][.][C](__right__[A][.](()), .(l) { f(l) }, .() { done }); \
                done }",
         );
         let ctx = EvalCtx::new();
@@ -17370,15 +17740,15 @@ mod tests {
     #[test]
     fn fst_snd_over_data_pair_with_type_args_select_components() {
         // ι-Fst / ι-Snd against the REAL product shape:
-        // `__fst__(A, B, __pair__(A, B, x, y)) → x`,
+        // `__fst__[A][B](__pair__[A][B](x, y)) → x`,
         // `__snd__(...) → y`.
         let m_fst = parse_module(
             "module x; import __intrinsics__; \
-             equiv pf { __fst__(A, B, __pair__(A, B, x, y)); x }",
+             equiv pf { __fst__[A][B](__pair__[A][B](x, y)); x }",
         );
         let m_snd = parse_module(
             "module x; import __intrinsics__; \
-             equiv ps { __snd__(A, B, __pair__(A, B, x, y)); y }",
+             equiv ps { __snd__[A][B](__pair__[A][B](x, y)); y }",
         );
         let ctx = EvalCtx::new();
         for m in [&m_fst, &m_snd] {
@@ -17395,7 +17765,7 @@ mod tests {
         // mints newtype `Wrap` with constructor `mk` + projector
         // `get`. First confirm `Wrap.mk(x)` is built as `Value::Data`,
         // then confirm `Wrap.get(Wrap.mk(x)) → x` (ι-Newtype).
-        let cons_m = parse_module("module x; labels { wrap[A]: A }; equiv c { Wrap.mk(A, x); () }");
+        let cons_m = parse_module("module x; labels { wrap[A]: A }; equiv c { Wrap.mk[A](x); () }");
         let cons_ctx = EvalCtx::new().with_root_module(&cons_m);
         let constructed = eval(equiv_terms(&cons_m)[0], &Env::new(), &cons_ctx);
         assert!(
@@ -17405,7 +17775,7 @@ mod tests {
         );
 
         let m = parse_module(
-            "module x; labels { wrap[A]: A }; equiv nt { Wrap.get(A, Wrap.mk(A, x)); x }",
+            "module x; labels { wrap[A]: A }; equiv nt { Wrap.get[A](Wrap.mk[A](x)); x }",
         );
         let ctx = EvalCtx::new()
             .with_fn_defs(fn_def_map(&m))
@@ -17442,7 +17812,7 @@ mod tests {
         let packet_m = parse_module(
             "module x; import __intrinsics__; \
              newtype Wrap : . & . { pub constructor mk; pub projector get; }; \
-             equiv c { Wrap.mk(__pair__(., ., (), ())); () }",
+             equiv c { Wrap.mk(__pair__[.][.]((), ())); () }",
         );
         let packet_ctx = EvalCtx::new().with_root_module(&packet_m);
         let constructed = eval(equiv_terms(&packet_m)[0], &Env::new(), &packet_ctx);
@@ -17600,10 +17970,10 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv case_closure_alpha { \
-               __either__(A, A, C, s, \
+               __either__[A][A][C](s, \
                  .(left_payload) { .(x) { keep(left_payload, x) } }, \
                  .(right_payload) { .(x) { keep(right_payload, x) } }); \
-               __either__(A, A, C, s, \
+               __either__[A][A][C](s, \
                  .(l) { .(y) { keep(l, y) } }, \
                  .(r) { .(y) { keep(r, y) } }) }",
         );
@@ -17653,8 +18023,8 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv ie { \
-               __either__(A, B, C, c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__(A, B, C, c(), .(l) { g(l) }, .(r) { f(r) }) }",
+               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
+               __either__[A][B][C](c(), .(l) { g(l) }, .(r) { f(r) }) }",
         );
         let ctx = EvalCtx::new();
         let v = eval_each(&equiv_terms(&m), &ctx);
@@ -17704,7 +18074,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv prod_eta(p: T) { \
-               __pair__(A, B, __fst__(A, B, p), __snd__(A, B, p)); \
+               __pair__[A][B](__fst__[A][B](p), __snd__[A][B](p)); \
                p }",
         );
         let ctx = EvalCtx::new();
@@ -17719,7 +18089,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv prod_eta_ne(p: T, q: T) { \
-               __pair__(A, B, __fst__(A, B, p), __snd__(A, B, q)); \
+               __pair__[A][B](__fst__[A][B](p), __snd__[A][B](q)); \
                p }",
         );
         let ctx = EvalCtx::new();
@@ -17736,7 +18106,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv sum_eta(s: T) { \
-               __either__(A, B, C, s, __left__, __right__); \
+               __either__[A][B][C](s, __left__, __right__); \
                s }",
         );
         let ctx = EvalCtx::new();
@@ -17752,7 +18122,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv sum_eta2(s: T) { \
-               __either__(A, B, C, s, .(l) { __left__(l) }, .(r) { __right__(r) }); \
+               __either__[A][B][C](s, .(l) { __left__(l) }, .(r) { __right__(r) }); \
                s }",
         );
         let ctx = EvalCtx::new();
@@ -17770,7 +18140,7 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv sum_eta_ne(s: T) { \
-               __either__(A, B, C, s, __right__, __left__); \
+               __either__[A][B][C](s, __right__, __left__); \
                s }",
         );
         let ctx = EvalCtx::new();
@@ -17916,7 +18286,7 @@ mod tests {
             ValueRenderCase {
                 kind: ValueKind::IntAtom,
                 value: Value::IntAtom("42".into(), Some("numbers.I32".into())),
-                expected: "42(I32)",
+                expected: "42[I32]",
             },
             ValueRenderCase {
                 kind: ValueKind::FloatAtom,
@@ -18079,7 +18449,7 @@ mod tests {
         assert_eq!(value_to_string(&Value::IntAtom("42".into(), None)), "42");
         assert_eq!(
             value_to_string(&Value::FloatAtom("3.14".into(), Some("numbers.F64".into()))),
-            "3.14(F64)"
+            "3.14[F64]"
         );
     }
 
@@ -18803,19 +19173,11 @@ mod tests {
         let ctx = EvalCtx::new();
         let atom = |n: &str| Value::Atom(n.to_string());
 
-        // ι-Fst / ι-Snd with leading erased type-args present — kills the
-        // eliminator type-arg drop and the fst/snd selection flips.
+        // Runtime application receives only the value packet after explicit
+        // type stages have been erased.
         let pair = data_value("__pair__", vec![atom("a"), atom("b")]);
-        let fst = apply(
-            atom("__fst__"),
-            vec![atom("A"), atom("B"), pair.clone()],
-            &ctx,
-        );
-        let snd = apply(
-            atom("__snd__"),
-            vec![atom("A"), atom("B"), pair.clone()],
-            &ctx,
-        );
+        let fst = apply(atom("__fst__"), vec![pair.clone()], &ctx);
+        let snd = apply(atom("__snd__"), vec![pair.clone()], &ctx);
         assert!(matches!(&fst, Value::Atom(n) if n == "a"), "fst: {fst:?}");
         assert!(matches!(&snd, Value::Atom(n) if n == "b"), "snd: {snd:?}");
 
@@ -18824,14 +19186,7 @@ mod tests {
         let ev = |scrut: Value| {
             apply(
                 atom("__either__"),
-                vec![
-                    atom("A"),
-                    atom("B"),
-                    atom("C"),
-                    scrut,
-                    atom("fl"),
-                    atom("fr"),
-                ],
+                vec![scrut, atom("fl"), atom("fr")],
                 &ctx,
             )
         };
@@ -18910,8 +19265,8 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv cs { \
-               __either__(A, B, C, c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__(A, B, C, c(), .(l) { f(l) }, .(r) { g(r) }) }",
+               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
+               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }) }",
         );
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -18928,8 +19283,8 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; \
              equiv cs { \
-               __either__(A, B, C, c(), .(l) { f(l) }, .(r) { g(r) }); \
-               __either__(A, B, C, d(), .(l) { f(l) }, .(r) { g(r) }) }",
+               __either__[A][B][C](c(), .(l) { f(l) }, .(r) { g(r) }); \
+               __either__[A][B][C](d(), .(l) { f(l) }, .(r) { g(r) }) }",
         );
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
@@ -18946,9 +19301,9 @@ mod tests {
             parse_module(&format!(
                 "module x; import __intrinsics__; \
                  equiv cs {{ \
-                   __either__(A, B, C, c(), \
+                   __either__[A][B][C](c(), \
                      .(l) {{ h(l) }}, \
-                     .(r) {{ __either__(A, B, C, r, \
+                     .(r) {{ __either__[A][B][C](r, \
                        .(m) {{ {inner_left} }}, .(n) {{ g(n) }}) }}); \
                    () }}"
             ))
@@ -18973,9 +19328,9 @@ mod tests {
             parse_module(&format!(
                 "module x; import __intrinsics__; \
                  equiv cs {{ \
-                   __either__(A, B, C, c(), \
+                   __either__[A][B][C](c(), \
                      .(l) {{ h(l) }}, \
-                     .(r0) {{ __either__(A, B, C, r0, \
+                     .(r0) {{ __either__[A][B][C](r0, \
                        .(l1) {{ h(l1) }}, \
                        .(r1) {{ {deepest} }}) }}); \
                    () }}"
@@ -19322,13 +19677,18 @@ mod tests {
             let m = parse_module(&format!(
                 "module x; import __intrinsics__; import __comptime__; equiv probe {{ {body}; () }}"
             ));
-            eval(equiv_terms(&m)[0], &Env::new(), &ctx)
+            let mut env = Env::new();
+            env.insert(
+                "ct".to_owned(),
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+            );
+            eval(equiv_terms(&m)[0], &env, &ctx)
         };
 
         // A bare string message coerces to diagnostic text and raises the
         // error value — without the coercion / arm it stays a StrAtom and
         // the builtin sticks.
-        let macro_error_value = eval_body("__macro_error__(\"boom\")");
+        let macro_error_value = eval_body("__macro_error__(ct, \"boom\")");
         let Value::CheckedTerm(term) = &macro_error_value else {
             panic!("__macro_error__ must raise a checked error value, got {macro_error_value:?}");
         };
@@ -19337,7 +19697,7 @@ mod tests {
             Some((CheckedTermErrorKind::Macro, "boom"))
         );
 
-        let type_err = eval_body("__type_error__(\"nope\")");
+        let type_err = eval_body("__type_error__(ct, \"nope\")");
         let Value::CheckedTerm(term) = &type_err else {
             panic!("__type_error__ must raise a checked error value, got {type_err:?}");
         };
@@ -19349,7 +19709,7 @@ mod tests {
 
     #[test]
     fn let_bound_diagnostic_text_literal_keeps_diagnostic_identity() {
-        // An annotated `"…"(__Diagnostic_text__)` literal reaching general
+        // An annotated `"…"[__Diagnostic_text__]` literal reaching general
         // expression compilation through a `let` (not the direct-arm
         // message coercion) must still compile as diagnostic text: the
         // bound value is a DiagnosticText, and `__macro_error__` over the
@@ -19361,16 +19721,21 @@ mod tests {
                 "module x; import __intrinsics__; import __comptime__; equiv probe { (); () }",
                 [body],
             );
-            eval(&extracted, &Env::new(), &ctx)
+            let mut env = Env::new();
+            env.insert(
+                "ct".to_owned(),
+                Value::Primitive(ComptimeBuiltin::ComptimeProof),
+            );
+            eval(&extracted, &env, &ctx)
         };
 
-        let bound = eval_body("let m = \"boom\"(__Diagnostic_text__); m");
+        let bound = eval_body("let m = \"boom\"[__Diagnostic_text__]; m");
         assert!(
             matches!(&bound, Value::DiagnosticText(s) if s == "boom"),
             "let-bound annotated literal must stay diagnostic text, got {bound:?}"
         );
 
-        let raised = eval_body("let m = \"boom\"(__Diagnostic_text__); __macro_error__(m)");
+        let raised = eval_body("let m = \"boom\"[__Diagnostic_text__]; __macro_error__(ct, m)");
         let Value::CheckedTerm(term) = &raised else {
             panic!("__macro_error__ over the bound text must raise, got {raised:?}");
         };
@@ -19909,7 +20274,7 @@ mod tests {
             (
                 "owner.kio",
                 "module owner; host type Box[A]; \
-                 fn keep[A][B](value: Box(A) & Box(B)) -> Box(A) & Box(B) { value }",
+                 fn keep[A][B](value: Box[A] & Box[B]) -> Box[A] & Box[B] { value }",
             ),
             ("other.kio", "module other; host type Box[A];"),
         ]);
@@ -22776,6 +23141,73 @@ mod tests {
     }
 
     #[test]
+    fn call_stages_primitive_packets_preserve_whole_payloads_and_proof_stages() {
+        let ctx = EvalCtx::new();
+        let pair = |left, right| data_value("__pair__", vec![left, right]);
+        let payload = pair(Value::Atom("left".into()), Value::Atom("right".into()));
+        let packet = pair(payload.clone(), Value::Unit);
+        let rebuilt = apply(Value::Atom("__pair__".into()), vec![packet.clone()], &ctx);
+        assert!(nf_eq(&rebuilt, &packet, &ctx));
+        let first = apply(Value::Atom("__fst__".into()), vec![packet], &ctx);
+        assert!(nf_eq(&first, &payload, &ctx));
+        let injected = apply(Value::Atom("__left__".into()), vec![payload.clone()], &ctx);
+        let selected = apply(
+            Value::Atom("__either__".into()),
+            vec![pair(
+                injected,
+                pair(Value::Atom("yes".into()), Value::Atom("no".into())),
+            )],
+            &ctx,
+        );
+        assert!(matches!(&selected, Value::Stuck(callee, args)
+            if matches!(callee.as_ref(), Value::Atom(name) if name == "yes")
+                && args.len() == 1 && nf_eq(&args[0], &payload, &ctx)));
+
+        let proof = Value::Primitive(ComptimeBuiltin::ComptimeProof);
+        let term = reflection_term_unit_value();
+        let typ = apply(
+            Value::Primitive(ComptimeBuiltin::TermType),
+            vec![pair(proof.clone(), term.clone())],
+            &ctx,
+        );
+        assert!(matches!(as_refl_type_ref(&typ), Some(Type::Unit { .. })));
+        let invalid = apply(
+            Value::Primitive(ComptimeBuiltin::TermType),
+            vec![pair(Value::Atom("invalid_proof".into()), term)],
+            &ctx,
+        );
+        assert!(matches!(invalid, Value::Stuck(..)));
+
+        let fold = apply(
+            Value::Primitive(ComptimeBuiltin::TypeArgsFold),
+            vec![proof],
+            &ctx,
+        );
+        assert!(matches!(fold, Value::Stuck(..)), "proof stage is inert");
+        let folded = apply(
+            fold,
+            vec![pair(
+                typ,
+                pair(payload.clone(), Value::Atom("unused_step".into())),
+            )],
+            &ctx,
+        );
+        assert!(
+            nf_eq(&folded, &payload, &ctx),
+            "generic fold state is one slot"
+        );
+        let excess = apply(
+            Value::Atom("__pair__".into()),
+            vec![Value::Unit, Value::Unit, Value::Unit],
+            &ctx,
+        );
+        assert!(
+            matches!(excess, Value::Stuck(..)),
+            "values are never erased as types"
+        );
+    }
+
+    #[test]
     fn apply_reflection_runtime_args_strip_and_fold_arity() {
         let ctx = EvalCtx::new();
 
@@ -23567,7 +23999,7 @@ mod tests {
         let box_unit = nominal("owner", "Box", vec![unit.clone()]);
         assert_eq!(
             compact_refl_type_display(&box_unit, &ctx),
-            "Box(.)",
+            "Box[.]",
             "a later selective import must beat an earlier qualified import without unfolding the alias head"
         );
         assert_eq!(
@@ -23602,11 +24034,11 @@ mod tests {
             &ctx,
         );
         assert!(
-            matches!(&full, Value::DiagnosticText(text) if text == "owner.Box(.)"),
+            matches!(&full, Value::DiagnosticText(text) if text == "owner.Box[.]"),
             "full reflected display changed while short display split away: {full:?}"
         );
         assert!(
-            matches!(&short, Value::DiagnosticText(text) if text == "Box(.)"),
+            matches!(&short, Value::DiagnosticText(text) if text == "Box[.]"),
             "the short-name builtin did not use compact root spelling: {short:?}"
         );
     }
@@ -23638,7 +24070,7 @@ mod tests {
             &ctx,
         );
         assert!(
-            matches!(&display, Value::DiagnosticText(text) if text == "foo/bar.Box(m.Item) & Local"),
+            matches!(&display, Value::DiagnosticText(text) if text == "foo/bar.Box[m.Item] & Local"),
             "reflected nested/applied type did not retain canonical, alias, and local spelling: {display:?}"
         );
     }
@@ -23707,7 +24139,7 @@ mod tests {
         );
         assert_eq!(
             compact_refl_type_display(&structured, &ctx),
-            "o.Choice(Box(.), Local | missing.Hidden) -> o.Item",
+            "o.Choice[Box[.]][Local | missing.Hidden] -> o.Item",
             "short spelling must preserve nested applications, sums, function structure, and alias heads"
         );
 
@@ -23723,7 +24155,7 @@ mod tests {
         };
         assert_eq!(
             compact_refl_type_display(&shadowed_leaf, &ctx),
-            "[Box] o.Box(Box)",
+            "[Box] o.Box[Box]",
             "a forall binder must keep a same-leaf selective import qualified"
         );
 
@@ -23773,7 +24205,7 @@ mod tests {
         );
         assert_eq!(
             compact_refl_type_display(&deep_canonical, &EvalCtx::new()),
-            "foo/bar.Box(owner.Item)",
+            "foo/bar.Box[owner.Item]",
             "a canonical fallback must retain module-path separators throughout a nested application"
         );
     }
@@ -24120,21 +24552,31 @@ mod tests {
         );
 
         let value_shaped = Expr::synth_call(
-            proof_group,
+            proof_group.clone(),
             vec![CallArg::Value(path_expr("Named"))],
             zero_span(),
         );
-        let reflected = eval(&value_shaped, &Env::new(), &ctx);
+        let named = Expr::synth_call(
+            proof_group,
+            vec![CallArg::Type(Type::synth_path(
+                vec!["Named".into()],
+                Vec::new(),
+                zero_span(),
+            ))],
+            zero_span(),
+        );
+        let reflected = eval(&named, &Env::new(), &ctx);
         assert!(
             matches!(
                 as_refl_type_ref(&reflected),
                 Some(Type::Path { segments, .. })
                     if matches!(segments.as_slice(), [name] if name.as_str() == "Named")
             ),
-            "grouped reflection must admit a value-shaped type name: {reflected:?}"
+            "grouped reflection retains the explicit named type: {reflected:?}"
         );
 
         let invalid = [
+            value_shaped,
             Expr::synth_call(
                 path_expr("__reflect_type__"),
                 vec![CallArg::Type(Type::Unit { meta: zero_meta() })],
@@ -24223,7 +24665,7 @@ mod tests {
         let module = parse_module(
             "module x; import __comptime__; \
              fn reject(proof: .) -> . { \
-               __structural_recur__(proof, __type_unit__(), (), \
+               __structural_recur__(proof)( __type_unit__(), (), \
                  .(recur, fuel, input) { recur(fuel, input) }) \
              } \
              equiv keep { (); () }",
@@ -24510,7 +24952,7 @@ mod tests {
                 "a.kio",
                 "module a; \
                  newtype Wrap[A] : A { pub constructor mk; pub projector get; }; \
-                 fn unwrap[A](x: A) -> A { Wrap.get(A, Wrap.mk(A, x)) }",
+                 fn unwrap[A](x: A) -> A { Wrap.get[A](Wrap.mk[A](x)) }",
             ),
             (
                 "unrelated.kio",
@@ -24537,9 +24979,9 @@ mod tests {
             "main.kio",
             "module main; \
              newtype Box[A] : A { constructor make; projector open; }; \
-             type Mid[A] = Box(A); \
-             type Alias[A] = Mid(A); \
-             fn unwrap[A](x: A) -> A { Alias.open(A, Alias.make(A, x)) }",
+             type Mid[A] = Box[A]; \
+             type Alias[A] = Mid[A]; \
+             fn unwrap[A](x: A) -> A { Alias.open[A](Alias.make[A](x)) }",
         )]);
         let module = &pkg.module("main").expect("main module").module;
         let unwrap = find_module_fn(module, "unwrap").expect("unwrap fn");
@@ -24611,8 +25053,8 @@ mod tests {
              host type String; \
              host type N; \
              host type Either[E][A]; \
-             type Unary[E] = Either(E); \
-             type Twice[*F][A] = F(F(A));",
+             type Unary[E] = Either[E]; \
+             type Twice[*F][A] = F[F[A]];",
         )]);
         pkg.resolve_imports().expect("resolve imports");
         let ctx = EvalCtx::new().with_package(Some(&pkg));
@@ -24630,7 +25072,7 @@ mod tests {
         assert_eq!(
             crate::pass::typecheck_core::display_type(&expanded),
             crate::pass::typecheck_core::display_type(&expected),
-            "both formal uses of `Unary(String)` must expand without making source spans part of the semantic assertion"
+            "both formal uses of `Unary[String]` must expand without making source spans part of the semantic assertion"
         );
         assert!(canonical_refl_type_equiv(&source, &expected, &ctx));
     }
@@ -24714,7 +25156,7 @@ mod tests {
             ("base.kio", "module base; pub type Inner[A] = A & A;"),
             (
                 "owner.kio",
-                "module owner; import base(Inner); pub type Outer[A] = Inner(A);",
+                "module owner; import base(Inner); pub type Outer[A] = Inner[A];",
             ),
         ]);
         pkg.resolve_imports().expect("resolve imports");
@@ -24795,7 +25237,7 @@ mod tests {
              newtype A : . { constructor mk_a; projector un_a; }; \
              pub type Pair[T] = T & A; \
              type Inner[T] = T & A; \
-             pub type Outer[A] = Inner(A);",
+             pub type Outer[A] = Inner[A];",
         )]);
         pkg.resolve_imports().expect("resolve imports");
         let ctx = EvalCtx::new().with_package(Some(&pkg));
@@ -25293,7 +25735,7 @@ mod tests {
             // The structurally equivalent one-packet spelling remains
             // valid and suspends at the same boundary.
             "module x; import __intrinsics__; fn pick(a: T, b: T)(u: .) -> T { b } \
-             equiv e(a: T, b: T) { pick(__pair__(T, T, a, b)); .(u: .) -> T { b } }",
+             equiv e(a: T, b: T) { pick(__pair__[T][T](a, b)); .(u: .) -> T { b } }",
             // The same boundary rule holds when the following group has
             // a positive ABI arity.
             "module x; fn pick(a: T, b: T)(c: T) -> T { b } \
@@ -25318,9 +25760,9 @@ mod tests {
         let m = parse_module(
             "module x; import __intrinsics__; equiv e { \
              .(packet: T & T & T) -> T & T & T { packet }; \
-             .(head: T, tail: T & T) -> T & T & T { __pair__(T, T, head, tail) }; \
+             .(head: T, tail: T & T) -> T & T & T { __pair__[T][T](head, tail) }; \
              .(first: T, second: T, third: T) -> T & T & T { \
-               __pair__(T, T, first, __pair__(T, T, second, third)) \
+               __pair__[T][T](first, __pair__[T][T](second, third)) \
              } \
              }",
         );
@@ -25361,8 +25803,8 @@ mod tests {
     fn stuck_final_product_packet_matches_flat_arguments() {
         let m = parse_module(
             "module x; import __intrinsics__; equiv e { \
-             forward(__pair__(T, T, a, __pair__(T, T, b, c))); \
-             forward(a, __pair__(T, T, b, c)); \
+             forward(__pair__[T][T](a, __pair__[T][T](b, c))); \
+             forward(a, __pair__[T][T](b, c)); \
              forward(a, b, c) \
              }",
         );
@@ -25417,7 +25859,7 @@ mod tests {
             .join(", ");
         let mut rebuilt = format!("x{}", EQUIV_WIDTH - 1);
         for index in (0..EQUIV_WIDTH - 1).rev() {
-            rebuilt = format!("__pair__(T, T, x{index}, {rebuilt})");
+            rebuilt = format!("__pair__[T][T](x{index}, {rebuilt})");
         }
         let source = format!(
             "module x; import __intrinsics__; equiv e {{ \
@@ -25467,7 +25909,7 @@ mod tests {
     fn final_packet_equivalence_preserves_other_call_boundaries() {
         for src in [
             "module x; import __intrinsics__; \
-             equiv e { forward(__pair__(T, T, a, b), c); forward(a, b, c) }",
+             equiv e { forward(__pair__[T][T](a, b), c); forward(a, b, c) }",
             "module x; equiv e { forward(packet); forward(a, b) }",
             "module x; equiv e { forward(a)(b); forward(a, b) }",
         ] {

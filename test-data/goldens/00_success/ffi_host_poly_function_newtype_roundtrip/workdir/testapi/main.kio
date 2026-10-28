@@ -11,9 +11,8 @@ fn first_picker() -> Pick_first {
 
 pub fn main() {
   let picker = round_picker(first_picker());
-  print(Pick_first.pick_first(picker)(
-  , String
-  , "polymorphic function newtype roundtrip ok\n"(String)
-  , "wrong\n"(String)
+  print(Pick_first.pick_first(picker)[String](
+  , "polymorphic function newtype roundtrip ok\n"[String]
+  , "wrong\n"[String]
   ))
 }

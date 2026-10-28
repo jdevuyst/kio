@@ -7,4 +7,4 @@ pub pure fn run[S][R](
 , fuel: __Type_arity__
 , state: S
 , step: (((__Type_arity__ & S) -> R) & __Type_arity__ & S) -> R
-) -> R { __structural_recur__(ct, __Type_arity__, S, R, fuel, state, step) }
+) -> R { __structural_recur__(ct)[__Type_arity__][S][R](fuel, state, step) }

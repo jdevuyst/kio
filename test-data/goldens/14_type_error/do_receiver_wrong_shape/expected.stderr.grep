@@ -1,1 +1,1 @@
-this is applied like a function, but its type is `Box\(\.\)`
+type mismatch: expected `Box\[\.\]`, found `a & b`

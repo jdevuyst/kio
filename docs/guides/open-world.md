@@ -106,7 +106,7 @@ language searches globally:
 
 ```text
 # Hypothetical pseudocode — this is not valid Kio.
-formatter = find visible Formatter(Unit)
+formatter = find visible Formatter[Unit]
 ```
 
 Adding a newly visible instance could change the selected implementation or
@@ -132,7 +132,7 @@ host type String role(str);
 __SNIPPET__
 -->
 
-Here `Formatter(A)` packages a function from `A` to the host's `String` type.
+Here `Formatter[A]` packages a function from `A` to the host's `String` type.
 Its constructor stores that function; its projector retrieves it. The example
 uses the imported `derive` macro; [Using libraries](using-libraries.md#the-macro-library)
 shows how to add that library and import `macros/derive(derive)`.
@@ -140,33 +140,33 @@ shows how to add that library and import `macros/derive(derive)`.
 ```kio {@explicit_evidence}
 newtype Formatter[A] : A -> String { constructor mk_formatter; projector format }
 
-fn apply_formatter[A](formatter: Formatter(A), value: A) -> String {
+fn apply_formatter[A](formatter: Formatter[A], value: A) -> String {
   Formatter.format(formatter)(value)
 }
 
-fn listed_text() -> String { "listed"(String) }
+fn listed_text() -> String { "listed"[String] }
 
-fn unlisted_formatter() -> Formatter(String) {
-  Formatter.mk_formatter(.(_value: String) { "unlisted"(String) })
+fn unlisted_formatter() -> Formatter[String] {
+  Formatter.mk_formatter(.(_value: String) { "unlisted"[String] })
 }
 
-fn formatter_from_text(text: String) -> Formatter(String) {
+fn formatter_from_text(text: String) -> Formatter[String] {
   Formatter.mk_formatter(.(_value: String) { text })
 }
 
-fn choose_string_formatter() -> Formatter(String) {
-  derive((formatter_from_text, listed_text), Formatter(String))
+fn choose_string_formatter() -> Formatter[String] {
+  derive((formatter_from_text, listed_text))[Formatter[String]]
 }
 ```
 
 The target requires both listed rules: `listed_text` produces the `String`
 precondition that `formatter_from_text` consumes to produce
-`Formatter(String)`.
+`Formatter[String]`.
 The compatible `unlisted_formatter` rule can produce the requested target
 directly, but it is absent from the tuple. If `derive` searched the module,
 that rule and the listed composition would make the result ambiguous. The
 derivation succeeds because `derive` considers only the literal tuple and
-composes its two listed rules to reach `Formatter(String)`. Adding an unrelated
+composes its two listed rules to reach `Formatter[String]`. Adding an unrelated
 declaration therefore cannot alter this derivation. See the
 [higher-kinded-types case study](../poc/hkt.md#deriving-an-instance-with-derive) for a
 worked instance dictionary and the

@@ -12,7 +12,7 @@ import result/result as result;
 import testapi(Bool, I32);
 import testapi/arith(add_i32, eq_i32, mul_i32);
 
-pub type Member_result = result.Result(Member, Failure);
+pub type Member_result = result.Result[Member][Failure];
 
 pub fn find(members: Member_index, id: I32) -> Member_result {
   let .(missing: Member_result) = result.err(dom.fail_unknown_member(id));

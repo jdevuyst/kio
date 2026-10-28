@@ -51,24 +51,19 @@ fn show_shape(s: Shape) -> String {
   }
 }
 
-fn render[A](show: A -> String, arr: Array(A)) -> String {
-  loop(
-  , String & I32
-  , String
+fn render[A](show: A -> String, arr: Array[A]) -> String {
+  loop[String & I32][String](
   , .(state: String & I32) -> (String & I32) | String {
       match(state) {
         .(acc: String, i: I32) {
           if(leq_i32(i, sub_i32(array_len(arr), 1))) {
-            widen_sum(
-            , if(leq_i32(i, 0)) {
-                (show(array_get(arr, i)), add_i32(i, 1))
-              } else {
-                (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
-              }
-            , (String & I32) | String
-            )
+            widen_sum(if(leq_i32(i, 0)) {
+              (show(array_get(arr, i)), add_i32(i, 1))
+            } else {
+              (string_concat(acc, string_concat(",", show(array_get(arr, i)))), add_i32(i, 1))
+            })[(String & I32) | String]
           } else {
-            widen_sum(acc, (String & I32) | String)
+            widen_sum(acc)[(String & I32) | String]
           }
         }
       }
@@ -79,18 +74,18 @@ fn render[A](show: A -> String, arr: Array(A)) -> String {
 
 pub fn main() {
   // Array(Color): a payload-free labels-derived enum across the FFI.
-  let colors = array_make_empty(Color, ());
-  array_push(colors, widen_sum({green=}, Color));
-  array_push(colors, widen_sum({red=}, Color));
-  array_push(colors, widen_sum({blue=}, Color));
+  let colors = array_make_empty[Color](());
+  array_push(colors, widen_sum({green=})[Color]);
+  array_push(colors, widen_sum({red=})[Color]);
+  array_push(colors, widen_sum({blue=})[Color]);
   print(render(show_color, colors));
   print("\n");
   // Array(Shape): a payload-bearing labels-derived enum across the
   // FFI — each element carries the label's payload alongside its
   // discriminant.
-  let shapes = array_make_empty(Shape, ());
-  array_push(shapes, widen_sum({circle = 5}, Shape));
-  array_push(shapes, widen_sum({square = (3, 7)}, Shape));
+  let shapes = array_make_empty[Shape](());
+  array_push(shapes, widen_sum({circle = 5})[Shape]);
+  array_push(shapes, widen_sum({square = (3, 7)})[Shape]);
   print(render(show_shape, shapes));
   print("\n")
 }

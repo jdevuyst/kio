@@ -40,8 +40,8 @@ pub fn height_of(b: Building) -> I32 { b.?{height} }
 
 /// The skyline the whole program is about. Built back to front and reversed so
 /// the source reads in the same order the report prints.
-pub fn buildings() -> lst.List(Building) {
-  let none = lst.nil(Building);
+pub fn buildings() -> lst.List[Building] {
+  let none = lst.nil[Building];
   let with_spire = lst.cons(building("spire", 1, 5, 11), none);
   let with_annex = lst.cons(building("annex", 2, 7, 6), with_spire);
   let with_kiosk = lst.cons(building("kiosk", 3, 4, 4), with_annex);
@@ -56,11 +56,11 @@ rec(loop) {
   /// The rightmost edge standing anywhere in the city. The raster needs one
   /// unit column per interval `[c, c + 1)` below it, so this is also the
   /// column count.
-  pub fn max_right(bs: lst.List(Building)) -> I32 { recur widest(bs, 0) };
-  fn widest(bs: lst.List(Building), best: I32) -> I32 {
+  pub fn max_right(bs: lst.List[Building]) -> I32 { recur widest(bs, 0) };
+  fn widest(bs: lst.List[Building], best: I32) -> I32 {
     match(bs.>lst.List.un_list) {
       (
-      , .(b: Building, rest: lst.List(Building)) {
+      , .(b: Building, rest: lst.List[Building]) {
           recur widest(rest, logic.max(best, right_of(b)))
         }
       , .(_empty: .) { best }

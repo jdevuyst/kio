@@ -44,7 +44,7 @@ fn print_summary(size_label: String) {
   print("\n")
 }
 
-fn report_frontier(classes: Array(I32)) {
+fn report_frontier(classes: Array[I32]) {
   print("frontier safe=");
   print_i32(count_class(0, classes, class_safe_frontier(), 0));
   print(" mine=");
@@ -56,7 +56,7 @@ fn report_frontier(classes: Array(I32)) {
   print("\n")
 }
 
-fn report_clone(revealed: Array(Bool), best_index: I32) {
+fn report_clone(revealed: Array[Bool], best_index: I32) {
   let plan = array.array_clone(revealed);
   array.array_set(plan, best_index, .t);
   print("clone original=");
@@ -66,7 +66,7 @@ fn report_clone(revealed: Array(Bool), best_index: I32) {
   print("\n")
 }
 
-fn report_recommendation(counts: Array(I32), classes: Array(I32), revealed: Array(Bool)) {
+fn report_recommendation(counts: Array[I32], classes: Array[I32], revealed: Array[Bool]) {
   let .(best_index: I32, best_count: I32) = find_best_safe(0, classes, counts, cell_count(), 9);
   if(arith.leq_i32(best_index, last_index())) {
     print("recommend index=");

@@ -12,11 +12,11 @@ labels Problem = {
 , target: forest.Tree
 , left_width: I32
 , right_width: I32
-, memo: Array(I32)
-, choice: Array(I32)
+, memo: Array[I32]
+, choice: Array[I32]
 };
 
-pub labels Solution = { cost: I32, mapping: Array(I32) };
+pub labels Solution = { cost: I32, mapping: Array[I32] };
 
 fn index(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32) -> I32 {
   let left = arith.add_i32(arith.mul_i32(a, problem.?{left_width}), stop_a);
@@ -59,9 +59,9 @@ rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32)
       , forest.symbol(problem.?{source}, a)
       , forest.symbol(problem.?{target}, b)
       )) {
-        0
+        0[I32]
       } else {
-        1
+        1[I32]
       };
       let paired = arith.add_i32(rename, arith.add_i32(children, siblings));
       let best_other = if(arith.leq_i32(deleted, inserted)) { deleted } else { inserted };
@@ -83,7 +83,7 @@ rec(loop) fn forests(problem: Problem, a: I32, stop_a: I32, b: I32, stop_b: I32)
 
 rec(loop) fn traceback(
 , problem: Problem
-, mapping: Array(I32)
+, mapping: Array[I32]
 , a: I32
 , stop_a: I32
 , b: I32
@@ -133,7 +133,7 @@ pub fn solve(source: forest.Tree, target: forest.Tree) -> Solution {
     , choice = array.array_make_filled(slots, -1)
     };
   let cost = forests(problem, 0, forest.size(source), 0, forest.size(target));
-  let mapping = array.array_make_filled(forest.size(source), -1);
+  let mapping = array.array_make_filled[I32](forest.size(source), -1);
   traceback(problem, mapping, 0, forest.size(source), 0, forest.size(target));
   {cost, mapping}
 }

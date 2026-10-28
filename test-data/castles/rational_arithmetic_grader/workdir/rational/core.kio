@@ -73,7 +73,7 @@ pub fn reduce(value: Fraction) -> Eval {
     let den = if(upright) { written_den } else { negate(written_den) };
     let divisor = gcd(num, den);
     let reduced = fraction(arith.div(num, divisor), arith.div(den, divisor));
-    widen_sum(Rational.of_fraction(reduced), Eval)
+    widen_sum(Rational.of_fraction(reduced))[Eval]
   }
 }
 

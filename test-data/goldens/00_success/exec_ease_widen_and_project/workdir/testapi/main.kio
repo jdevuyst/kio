@@ -25,7 +25,7 @@ pub fn main() {
       (.(s: String) { s }, .(_n: I32) { "unreachable\n" })
     };
   print(s1);
-  let r2 = collapse_and_widen(into(("collapsed-and-widened\n"(String), 0(I32))));
+  let r2 = collapse_and_widen(into(("collapsed-and-widened\n"[String], 0[I32])));
   let s2 =
     match(r2) {
       (.(s: String) { s }, .(_n: I32) { "unreachable\n" })

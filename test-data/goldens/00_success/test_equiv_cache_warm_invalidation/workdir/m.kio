@@ -32,5 +32,5 @@ equiv uses_alias(value: Shape) {
 
 equiv uses_qualified_with_local(q: .) {
   q.answer();
-  .t(q.Bool)
+  .t[q.Bool]
 }

@@ -20,9 +20,9 @@ import testapi/iter(loop);
 /// Which edge of a building an event stands on.
 pub labels Kind = { enter: . } | { leave: . };
 
-pub fn enter_kind() -> Kind { {enter=}.>widen_sum(Kind) }
+pub fn enter_kind() -> Kind { ({enter=}.>widen_sum)[Kind] }
 
-pub fn leave_kind() -> Kind { {leave=}.>widen_sum(Kind) }
+pub fn leave_kind() -> Kind { ({leave=}.>widen_sum)[Kind] }
 
 pub fn is_enter(k: Kind) -> Bool {
   match(k) {
@@ -90,30 +90,30 @@ pub fn event_leq(a: Event, b: Event) -> Bool {
 }
 
 /// Ordered insert: `e` lands in front of the first event it precedes.
-pub rec(loop) fn insert(e: Event, es: lst.List(Event)) -> lst.List(Event) {
+pub rec(loop) fn insert(e: Event, es: lst.List[Event]) -> lst.List[Event] {
   match(es.>lst.List.un_list) {
     (
-    , .(head: Event, rest: lst.List(Event)) {
+    , .(head: Event, rest: lst.List[Event]) {
         if(event_leq(e, head)) {
           lst.cons(e, lst.cons(head, rest))
         } else {
           lst.cons(head, recur(cont) insert(e, rest))
         }
       }
-    , .(_empty: .) { lst.cons(e, lst.nil(Event)) }
+    , .(_empty: .) { lst.cons(e, lst.nil[Event]) }
     )
   }
 }
 
 rec(loop) {
   /// Both edges of every building, insertion-sorted into one sweep order.
-  pub fn schedule(bs: lst.List(city.Building)) -> lst.List(Event) {
-    recur collect(bs, lst.nil(Event))
+  pub fn schedule(bs: lst.List[city.Building]) -> lst.List[Event] {
+    recur collect(bs, lst.nil[Event])
   };
-  fn collect(bs: lst.List(city.Building), acc: lst.List(Event)) -> lst.List(Event) {
+  fn collect(bs: lst.List[city.Building], acc: lst.List[Event]) -> lst.List[Event] {
     match(bs.>lst.List.un_list) {
       (
-      , .(b: city.Building, rest: lst.List(city.Building)) {
+      , .(b: city.Building, rest: lst.List[city.Building]) {
           let opened = insert(left_edge(b), acc);
           let closed = insert(right_edge(b), opened);
           recur collect(rest, closed)

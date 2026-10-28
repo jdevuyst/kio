@@ -1286,7 +1286,7 @@ module m; fn run() { do (bind) { let .(<A> x) = value; x } } fn neighbor() { () 
 ================================================================================
 structural identifier_word_boundaries_keep_raw_tokens
 ================================================================================
-module m; fn run() { consume(http2_client3_(), _x1_y2__, Http_client2(.), HttpClient(), x1y(), a__b()) }
+module m; fn run() { consume[Http_client2[.]](http2_client3_(), _x1_y2__, HttpClient(), x1y(), a__b()) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1306,8 +1306,18 @@ module m; fn run() { consume(http2_client3_(), _x1_y2__, Http_client2(.), HttpCl
     (expression_block
       (bracket_lbrace)
       (call_expr
-        (call_callee
-          (entity_name_function))
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type)
+              (type_arguments
+                (bracket_lbracket)
+                (separator_dot)
+                (bracket_rbracket)))
+            (bracket_rbracket)))
         (expression_arguments
           (bracket_lparen)
           (call_expr
@@ -1319,13 +1329,6 @@ module m; fn run() { consume(http2_client3_(), _x1_y2__, Http_client2(.), HttpCl
           (separator_comma)
           (expression_path
             (identifier))
-          (separator_comma)
-          (type_path
-            (entity_name_type)
-            (type_arguments
-              (bracket_lparen)
-              (separator_dot)
-              (bracket_rparen)))
           (separator_comma)
           (call_expr
             (call_callee

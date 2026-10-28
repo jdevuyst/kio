@@ -63,8 +63,8 @@ pub fn deep_round(value: deep.Token) -> deep.Token { value }
 
 pub fn chain_round(value: Chain) -> Chain { value }
 
-pub fn box_round[T](value: Box(T)) -> Box(T) { value }
+pub fn box_round[T](value: Box[T]) -> Box[T] { value }
 
-pub fn storage_round[T](value: Storage(T)) -> Storage(T) { value }
+pub fn storage_round[T](value: Storage[T]) -> Storage[T] { value }
 
-pub fn deep_box_round[T](value: deep.Box(T)) -> deep.Box(T) { value }
+pub fn deep_box_round[T](value: deep.Box[T]) -> deep.Box[T] { value }

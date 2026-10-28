@@ -214,12 +214,12 @@ do
 done
 for required in \
   'pnames_has(seen,name)' \
-  'leq_i32(32(I32),count)' \
+  'leq_i32(32[I32],count)' \
   'pnames_cons(name,seen)' \
   'type_spelling_scan_names(module_typenames(module),initial)' \
   'type_spelling_scan_members(module_members(module),with_names)' \
   'type_spelling_scan_imports(module_imports(module),with_members)' \
-  'if(module_has_type_spelling_overlap(module)){widen_sum(.t(Bool),Modules|Bool)}'
+  'if(module_has_type_spelling_overlap(module)){widen_sum(.t[Bool])[Modules|Bool]}'
 do
   required_compact=$(printf '%s' "$required" | tr -d '[:space:]') || exit
   case "$type_overlap_compact" in
@@ -231,14 +231,14 @@ do
   esac
 done
 case "$type_overlap_compact" in
-  *'fntype_spelling_scan_add(scan:Type_spelling_scan,name:String)->Type_spelling_scan{match(scan){.(seen:Type_spelling_presence,count:I32,overlap:Bool){if(overlap){scan}elseif(pnames_has(seen,name)){(seen,(count,.t(Bool)))}else{letat_limit=leq_i32(32(I32),count);(pnames_cons(name,seen),(add_i32(count,1(I32)),at_limit))}}}}'*) ;;
+  *'fntype_spelling_scan_add(scan:Type_spelling_scan,name:String)->Type_spelling_scan{match(scan){.(seen:Type_spelling_presence,count:I32,overlap:Bool){if(overlap){scan}elseif(pnames_has(seen,name)){(seen,(count,.t[Bool]))}else{letat_limit=leq_i32(32[I32],count);(pnames_cons(name,seen),(add_i32(count,1[I32]),at_limit))}}}}'*) ;;
   *)
     printf 'dyn_load_prime type-origin overlap predicate must preserve equality and bounded fallback\n' >&2
     exit 1
     ;;
 esac
 case "$type_overlap_compact" in
-  *'fnmodule_has_type_spelling_overlap(module:Module)->Bool{letinitial=(pnames_nil(),(0(I32),.f(Bool)));letwith_names=type_spelling_scan_names(module_typenames(module),initial);letwith_members=type_spelling_scan_members(module_members(module),with_names);match(type_spelling_scan_imports(module_imports(module),with_members)){.(_seen:Type_spelling_presence,_count:I32,overlap:Bool){overlap}}}fnmodules_have_type_spelling_overlap(modules:Modules)->Bool{loop(,.(remaining:Modules){match(un_modules(remaining)){(,.(module:Module,rest:Modules){if(module_has_type_spelling_overlap(module)){widen_sum(.t(Bool),Modules|Bool)}else{widen_sum(rest,Modules|Bool)}},.(_empty:.){widen_sum(.f(Bool),Modules|Bool)})}},modules)}'*) ;;
+  *'fnmodule_has_type_spelling_overlap(module:Module)->Bool{letinitial=(pnames_nil(),(0[I32],.f[Bool]));letwith_names=type_spelling_scan_names(module_typenames(module),initial);letwith_members=type_spelling_scan_members(module_members(module),with_names);match(type_spelling_scan_imports(module_imports(module),with_members)){.(_seen:Type_spelling_presence,_count:I32,overlap:Bool){overlap}}}fnmodules_have_type_spelling_overlap(modules:Modules)->Bool{loop(,.(remaining:Modules){match(un_modules(remaining)){(,.(module:Module,rest:Modules){if(module_has_type_spelling_overlap(module)){widen_sum(.t[Bool])[Modules|Bool]}else{widen_sum(rest)[Modules|Bool]}},.(_empty:.){widen_sum(.f[Bool])[Modules|Bool]})}},modules)}'*) ;;
   *)
     printf 'dyn_load_prime type-origin overlap predicate must preserve firing and no-op arms\n' >&2
     exit 1
@@ -253,11 +253,11 @@ for required in \
   'if(exact_type_index_has_type_binding(index,provider,import_source(one))){' \
   'validate_type_spelling_occurrence(seen,owner,name)' \
   'validate_type_spelling_occurrence(seen,owner,member_name(member))' \
-  'typeValidated_type_spellings=Exact_key_catalog(Bool);' \
-  'match(exact_key_catalog_find(seen,owner,name)){(,.(_prior:Bool){widen_sum(,mk_diag(string_concat(' \
-  '"`introducesvisibletypebinding`"(String)' \
-  'string_concat(name,"`morethanonce"(String))' \
-  '.(_first:.){widen_sum(exact_key_catalog_insert(seen,owner,name,.t(Bool)),Type_spelling_validation)}'
+  'typeValidated_type_spellings=Exact_key_catalog[Bool];' \
+  'match(exact_key_catalog_find(seen,owner,name)){(,.(_prior:Bool){widen_sum(mk_diag(string_concat(' \
+  '"`introducesvisibletypebinding`"[String]' \
+  'string_concat(name,"`morethanonce"[String])' \
+  '.(_first:.){widen_sum(exact_key_catalog_insert(seen,owner,name,.t[Bool]))[Type_spelling_validation]}'
 do
   case "$projection_compact" in
     *"$required"*) ;;
@@ -270,13 +270,13 @@ done
 # shellcheck disable=SC2016 # Backticks are literal diagnostic text.
 for required in \
   'identity_alias_catalog_find(catalog,module_name(owner),tyalias_name(alias))' \
-  'mk_indexed_type_context(,modules,types,module,2147483647(I32),no_recursive_type_scope(),index)' \
+  'mk_indexed_type_context(,modules,types,module,2147483647[I32],no_recursive_type_scope(),index)' \
   'resolve_exact_type_origin_cached(,consumer_context,spelling,' \
   'letterminal=identity_alias_member_terminal(resolved);' \
   'type_origin_eq(origin_terminal_origin(terminal),visible_origin)' \
   'visible_type_binding_origin_diag(consumer,spelling)' \
-  '"`hasvisibletypebindingsnamed`"(String)' \
-  '"`thatdonotshareonedeclarationorigin"(String)' \
+  '"`hasvisibletypebindingsnamed`"[String]' \
+  '"`thatdonotshareonedeclarationorigin"[String]' \
   'letinitial=ntab_for_module(module,modules);'
 do
   case "$projection_compact" in
@@ -305,8 +305,8 @@ do
 done
 for required in \
   'visible_newtypes:Module->(Ntab|Diag)' \
-  'widen_sum(diag,(Modules&Gdecls)|Gdecls|Diag)' \
-  '.(diag:Diag){widen_sum(diag,Gdecls|Diag)}'
+  'widen_sum(diag)[(Modules&Gdecls)|Gdecls|Diag]' \
+  '.(diag:Diag){widen_sum(diag)[Gdecls|Diag]}'
 do
   case "$flatten_compact" in
     *"$required"*) ;;
@@ -318,13 +318,13 @@ do
 done
 for required in \
   'identity_alias_target(alias)' \
-  '.(_target:String){widen_sum(.t(Bool),Tyaliases|Bool)}' \
-  '.(_not_identity:.){widen_sum(rest,Tyaliases|Bool)}' \
-  '.(_empty:.){widen_sum(.f(Bool),Tyaliases|Bool)}' \
+  '.(_target:String){widen_sum(.t[Bool])[Tyaliases|Bool]}' \
+  '.(_not_identity:.){widen_sum(rest)[Tyaliases|Bool]}' \
+  '.(_empty:.){widen_sum(.f[Bool])[Tyaliases|Bool]}' \
   'if(tyaliases_have_identity_member_namespace(module_tyaliases(module)))' \
-  'widen_sum(.t(Bool),Modules|Bool)' \
-  'widen_sum(rest,Modules|Bool)' \
-  '.(_empty:.){widen_sum(.f(Bool),Modules|Bool)}'
+  'widen_sum(.t[Bool])[Modules|Bool]' \
+  'widen_sum(rest)[Modules|Bool]' \
+  '.(_empty:.){widen_sum(.f[Bool])[Modules|Bool]}'
 do
   required_compact=$(printf '%s' "$required" | tr -d '[:space:]') || exit
   case "$identity_shape_compact" in
@@ -336,7 +336,7 @@ do
   esac
 done
 case "$load_compact" in
-  *'letneeds_exact_type_index=if(modules_have_identity_member_namespace(ms)){.t(Bool)}else{modules_have_type_spelling_overlap(ms)};if(needs_exact_type_index){lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum(ntab_for_module(module,ms),Ntab|Diag)}}}'*) ;;
+  *'letneeds_exact_type_index=if(modules_have_identity_member_namespace(ms)){.t[Bool]}else{modules_have_type_spelling_overlap(ms)};if(needs_exact_type_index){lettype_index=exact_type_index_for_modules(ms);letcatalog=identity_alias_catalog_for_modules(,ordered,ms,types,type_index);.(module:Module){ntab_for_module_with_exact_type_origins(,module,ms,types,type_index,catalog)}}else{.(module:Module){widen_sum(ntab_for_module(module,ms))[Ntab|Diag]}}}'*) ;;
   *)
     printf 'dyn_load_prime must build exact type indexes only for aliases or visible type-origin overlap\n' >&2
     exit 1

@@ -20,7 +20,7 @@ fn project(p: String & (I32 | I32)) -> String & I32 { fit(p) }
 
 pub fn main() {
   let r = project(("fit inner-sum: inside ", build_inner(42)));
-  let s = one_prod(r, String);
-  let n = one_prod(r, I32);
+  let s = one_prod(r)[String];
+  let n = one_prod(r)[I32];
   print(string_concat(s, string_concat(int_to_string(n), "\n")))
 }

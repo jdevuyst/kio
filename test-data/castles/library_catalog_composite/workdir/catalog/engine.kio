@@ -41,9 +41,9 @@ fn initial() -> State {
   {
   , books = fixtures.books()
   , members = fixtures.members()
-  , holds = lcore.nil(Hold_rec)
-  , log = lcore.nil(String)
-  , failures = lcore.nil(Failure)
+  , holds = lcore.nil[Hold_rec]
+  , log = lcore.nil[String]
+  , failures = lcore.nil[Failure]
   , step = 0
   }
 }

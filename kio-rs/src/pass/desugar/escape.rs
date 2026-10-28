@@ -43,11 +43,16 @@ fn rec_call(
     let mut pending = vec![source];
     while let Some(source) = pending.pop() {
         match source {
-            Expr::RecCall { modes, args, .. } => {
+            Expr::RecCall { modes, stages, .. } => {
                 if accepts(modes) {
                     return Some(source);
                 }
-                pending.extend(args.iter().filter_map(value_argument));
+                pending.extend(
+                    stages
+                        .iter()
+                        .flat_map(|stage| stage.args.iter())
+                        .filter_map(value_argument),
+                );
             }
             Expr::Call { callee, args, .. } => {
                 pending.extend(args.iter().filter_map(value_argument));
@@ -59,9 +64,20 @@ fn rec_call(
                 pending.push(body);
                 pending.push(value);
             }
-            Expr::UserMacro { args, .. } => pending.extend(args.iter().filter_map(value_argument)),
-            Expr::Ufcs { receiver, args, .. } => {
+            Expr::UserMacro { stages, .. } => pending.extend(
+                stages
+                    .iter()
+                    .flat_map(|stage| stage.args.iter())
+                    .filter_map(value_argument),
+            ),
+            Expr::Ufcs {
+                receiver,
+                callee,
+                args,
+                ..
+            } => {
                 pending.extend(args.iter().filter_map(value_argument));
+                pending.push(callee);
                 pending.push(receiver);
             }
             Expr::Tuple { items, .. } => pending.extend(items),
@@ -423,7 +439,7 @@ impl DesugarVisitor {
         &mut self,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<CallStage<Surface>>,
         syntax: RecCallSyntax,
         span: Span,
     ) -> Result<Expr<Desugared>, Error> {
@@ -434,13 +450,6 @@ impl DesugarVisitor {
             .expect("escaping call has a lexical group");
         let ctx = context.group.clone();
         let current_member = context.member;
-        let site = recursion_fixes::CallSite {
-            syntax: &syntax,
-            callee: callee.span,
-        };
-        if !modes.contains(&RecCallMode::Escape) {
-            return Err(recursion_fixes::mode(Error::parse(span, "recursive call crosses a closure boundary").with_help("write `recur(escape) name(...)` to re-enter this recursive group from the closure"), site, &modes, RecCallMode::Escape, true));
-        }
         let Some(member) = ctx.members.iter().find(|member| member.name == callee.name) else {
             return Err(Error::name_res(
                 callee.span,
@@ -450,7 +459,24 @@ impl DesugarVisitor {
                 ),
             ));
         };
-        let (type_args, values) = self.rec_call_parts(member, args, span, &ctx)?;
+        let RecCallParts {
+            type_args,
+            packets,
+            result_stage_count,
+            ..
+        } = self.rec_call_parts(member, stages.clone(), span)?;
+        if result_stage_count != 0 {
+            let expr =
+                rec_result_application(modes, callee, stages, syntax, span, result_stage_count);
+            return self.walk_expr(expr);
+        }
+        let site = recursion_fixes::CallSite {
+            syntax: &syntax,
+            callee: callee.span,
+        };
+        if !modes.contains(&RecCallMode::Escape) {
+            return Err(recursion_fixes::mode(Error::parse(span, "recursive call crosses a closure boundary").with_help("write `recur(escape) name(...)` to re-enter this recursive group from the closure"), site, &modes, RecCallMode::Escape, true));
+        }
         self.validate_rec_poly_mode(
             member,
             &ctx.members[current_member],
@@ -461,30 +487,24 @@ impl DesugarVisitor {
         )?;
         let answer = instantiate_rec_ret_ty(member, &type_args);
         let entry_ctx = ctx.with_answer(answer.clone());
-        let mut value_tys = instantiate_rec_value_tys(member, &type_args);
-        let mut values = values
+        let packets = packets
             .into_iter()
             .map(|value| self.walk_expr(value))
             .collect::<Result<Vec<_>, _>>()?;
-        values.extend(rec_phantom_witness_values(
-            &type_args,
-            &member.phantom_witness_indices,
-            span,
-        ));
-        value_tys.extend(rec_phantom_witness_tys(
-            &type_args,
-            &member.phantom_witness_indices,
-            span,
-        ));
+        let mut extra_values =
+            rec_phantom_witness_values(&type_args, &member.phantom_witness_indices, span);
+        let mut extra_types =
+            rec_phantom_witness_tys(&type_args, &member.phantom_witness_indices, span);
         let result = format!("__rec_escape_result{}__", span.start);
-        values.push(lambda(
+        extra_values.push(lambda(
             vec![parameter(&result, answer.clone(), span)],
             entry_ctx.step_result_ty.clone(),
             inject_step_return(path_expr(result, span), &entry_ctx.state_ty, &answer, span),
             span,
         ));
-        value_tys.push(rec_cont_fn_type(&answer, &entry_ctx.step_result_ty, span));
-        let payload = product_value_from_values(values, value_tys, span);
+        extra_types.push(rec_cont_fn_type(&answer, &entry_ctx.step_result_ty, span));
+        let payload =
+            self.rec_call_payload(member, &type_args, packets, extra_values, extra_types, span);
         let state = self.rec_wrap_state(
             member,
             entry_ctx.state_type_args.clone(),

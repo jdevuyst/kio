@@ -6,10 +6,7 @@ import testapi(String);
 import testapi/io(print);
 
 pub fn pick_bool[Comptime_bool](value: Comptime_bool | Comptime_bool) -> Comptime_bool {
-  __either__(
-  , Comptime_bool
-  , Comptime_bool
-  , Comptime_bool
+  __either__[Comptime_bool][Comptime_bool][Comptime_bool](
   , value
   , .(left: Comptime_bool) { left }
   , .(right: Comptime_bool) { right }
@@ -17,10 +14,7 @@ pub fn pick_bool[Comptime_bool](value: Comptime_bool | Comptime_bool) -> Comptim
 }
 
 pub fn pick_str[Comptime_str](value: Comptime_str | Comptime_str) -> Comptime_str {
-  __either__(
-  , Comptime_str
-  , Comptime_str
-  , Comptime_str
+  __either__[Comptime_str][Comptime_str][Comptime_str](
   , value
   , .(left: Comptime_str) { left }
   , .(right: Comptime_str) { right }
@@ -28,6 +22,6 @@ pub fn pick_str[Comptime_str](value: Comptime_str | Comptime_str) -> Comptime_st
 }
 
 pub fn main() {
-  print(pick_bool(String, __left__(String, String, "bool\n"(String))));
-  print(pick_str(String, __right__(String, String, "str\n"(String))))
+  print(pick_bool[String](__left__[String][String]("bool\n"[String])));
+  print(pick_str[String](__right__[String][String]("str\n"[String])))
 }

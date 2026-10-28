@@ -20,9 +20,7 @@ pure fn any_product_step(ct: __Comptime__, found: Comptime_bool, typ: __Type__) 
 }
 
 pure fn any_product_member(ct: __Comptime__, typ: __Type__) -> Comptime_bool {
-  __type_product_spine_fold__(
-  , ct
-  , Comptime_bool
+  __type_product_spine_fold__(ct)[Comptime_bool](
   , typ
   , .f
   , .(found: Comptime_bool, member: __Type__) -> Comptime_bool {
@@ -47,7 +45,7 @@ pure fn forall_identity(ct: __Comptime__) -> __Type__ {
 }
 
 pure fn forall_matches_surface(ct: __Comptime__) -> Comptime_bool {
-  __type_equal__(ct, forall_identity(ct), __reflect_type__(ct, [A] A -> A))
+  __type_equal__(ct, forall_identity(ct), __reflect_type__(ct)[[A] A -> A])
 }
 
 pure fn pass_checks(ct: __Comptime__, source: __Type__, target: __Type__) -> Comptime_bool {
@@ -64,10 +62,7 @@ pub pure fn checked_impl(
 , value: __Checked_term__
 , target: Target_request
 ) -> __Checked_term__ {
-  __either__(
-  , __Type__
-  , .
-  , __Checked_term__
+  __either__[__Type__][.][__Checked_term__](
   , target
   , .(target_type: __Type__) -> __Checked_term__ {
       __if_then_else__(

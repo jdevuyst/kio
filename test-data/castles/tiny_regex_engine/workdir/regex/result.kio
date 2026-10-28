@@ -7,9 +7,9 @@ import testapi(String);
 
 pub labels Verdict = { span: String } | { miss: String };
 
-pub fn hit(span: String) -> Verdict { {span}.>widen_sum(Verdict) }
+pub fn hit(span: String) -> Verdict { ({span}.>widen_sum)[Verdict] }
 
-pub fn fail(reason: String) -> Verdict { {miss = reason}.>widen_sum(Verdict) }
+pub fn fail(reason: String) -> Verdict { ({miss = reason}.>widen_sum)[Verdict] }
 
 fn heading(pattern: String, candidate: String) -> String {
   join4("pattern ", pattern, " / ", candidate)

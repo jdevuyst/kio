@@ -87,19 +87,19 @@ labels Overflowtag = { overflow: . };
 
 // step error: Div_by_zero
 // pipeline error: Div_by_zero | Overflow
-fn widen_error(e: Div_by_zero) -> Div_by_zero | Overflow { e.>widen_sum(Div_by_zero | Overflow) }
+fn widen_error(e: Div_by_zero) -> Div_by_zero | Overflow { (e.>widen_sum)[Div_by_zero | Overflow] }
 ```
 
 A `match` on the first step's result either continues with the success value or short-circuits by widening its error into the pipeline's error type. Every arm produces the same `(Result | WideError)` shape, so the dispatch result can flow directly to the next step.
 
-This is the manual version of what monadic `bind` automates in other languages. Imported `do` blocks smooth over exactly this friction for monadic pipelines — the [higher-kinded-types case study](../poc/hkt.md) threads a `do` pipeline over a `Monad(F)` instance. `match` + `widen_sum` remains the explicit idiom when you want the control flow visible.
+This is the manual version of what monadic `bind` automates in other languages. Imported `do` blocks smooth over exactly this friction for monadic pipelines — the [higher-kinded-types case study](../poc/hkt.md) threads a `do` pipeline over a `Monad[F]` instance. `match` + `widen_sum` remains the explicit idiom when you want the control flow visible.
 
 ## Crashing on purpose
 
 `(T | E)` is for failures the caller should *handle*. For failures that mean "this program is broken" — a violated invariant — a package can build a `panic` by sequencing the host's `eprint` and `exit`:
 
 ```kio {@module}
-fn panic[A](msg: String) -> A { eprint(msg); exit(70).>fit(A) }
+fn panic[A](msg: String) -> A { eprint(msg); (exit(70).>fit)[A] }
 ```
 
 `exit` has return type `!`; `fit` handles a `!` source by emitting the bottom eliminator for the requested target type. No value is constructed at runtime because `exit` never returns. `panic` slots in anywhere. Reserve this for genuine bugs; recoverable failure belongs in a `(T | E)` sum.

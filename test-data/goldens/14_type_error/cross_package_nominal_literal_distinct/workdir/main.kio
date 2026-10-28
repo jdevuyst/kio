@@ -6,16 +6,16 @@
 /// `(bdep/text, String)`.
 ///
 /// The argument is a string literal *annotated* with the consumer's own
-/// `String` — `"hi"(String)`. A literal's annotation resolves it to that
+/// `String` — `"hi"[String]`. A literal's annotation resolves it to that
 /// host type's identity-exact `(module, name)`, here `(main, String)`,
 /// so the literal is the consumer's `String`. `dep_take`'s parameter
 /// (qualified in its *declaring* module) wants
 /// `(bdep/text, String)`. The annotated literal is therefore a type
 /// error in the LITERAL-annotation slot — exit 14.
 ///
-/// The annotation is load-bearing: a *bare* `"hi"` would resolve via
-/// tier 2 to the expected `(bdep/text, String)` and be accepted; the
-/// `(String)` annotation forces the consumer's `(main, String)` and
+/// The annotation is load-bearing: a *bare* `"hi"` would be inferred from
+/// the expected parameter type `(bdep/text, String)` and be accepted; the
+/// `[String]` annotation forces the consumer's `(main, String)` and
 /// exposes the distinctness.
 module main;
 
@@ -23,4 +23,4 @@ import bdep/text(dep_take);
 
 host type String role(str);
 
-pub fn mix() -> String { dep_take("hi"(String)) }
+pub fn mix() { let _ = dep_take("hi"[String]); () }

@@ -24,16 +24,16 @@ type Node = Lit | Add | Sub | Mul | Div;
 fn wrap(node: Node) -> Expr { {expr = node} }
 
 pub fn lit(numerator: I32, denominator: I32) -> Expr {
-  wrap({lit = core.fraction(numerator, denominator)}.>widen_sum(Node))
+  wrap(({lit = core.fraction(numerator, denominator)}.>widen_sum)[Node])
 }
 
-pub fn add(left: Expr, right: Expr) -> Expr { wrap({add = (left, right)}.>widen_sum(Node)) }
+pub fn add(left: Expr, right: Expr) -> Expr { wrap(({add = (left, right)}.>widen_sum)[Node]) }
 
-pub fn sub(left: Expr, right: Expr) -> Expr { wrap({sub = (left, right)}.>widen_sum(Node)) }
+pub fn sub(left: Expr, right: Expr) -> Expr { wrap(({sub = (left, right)}.>widen_sum)[Node]) }
 
-pub fn mul(left: Expr, right: Expr) -> Expr { wrap({mul = (left, right)}.>widen_sum(Node)) }
+pub fn mul(left: Expr, right: Expr) -> Expr { wrap(({mul = (left, right)}.>widen_sum)[Node]) }
 
-pub fn div(left: Expr, right: Expr) -> Expr { wrap({div = (left, right)}.>widen_sum(Node)) }
+pub fn div(left: Expr, right: Expr) -> Expr { wrap(({div = (left, right)}.>widen_sum)[Node]) }
 
 /// Thread two evaluated children into a binary operation, stopping at the first
 /// fault. This is the whole of the error propagation: a division by zero found
@@ -46,11 +46,11 @@ fn combine(left: Eval, right: Eval, op: (Rational & Rational) -> Eval) -> Eval {
         match(right) {
           (
           , .(other: Rational) { op(ready, other) }
-          , .(fault: Division_by_zero) { widen_sum(fault, Eval) }
+          , .(fault: Division_by_zero) { widen_sum(fault)[Eval] }
           )
         }
       }
-    , .(fault: Division_by_zero) { widen_sum(fault, Eval) }
+    , .(fault: Division_by_zero) { widen_sum(fault)[Eval] }
     )
   }
 }

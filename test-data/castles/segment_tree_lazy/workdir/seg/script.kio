@@ -39,18 +39,18 @@ pub labels Op =
   | { min_range: I32 & I32 }
   | { set_point: I32 & I32 };
 
-fn add_op(l: I32, r: I32, x: I32) -> Op { {add_range = (l, r, x)}.>widen_sum(Op) }
+fn add_op(l: I32, r: I32, x: I32) -> Op { ({add_range = (l, r, x)}.>widen_sum)[Op] }
 
-fn sum_op(l: I32, r: I32) -> Op { {sum_range = (l, r)}.>widen_sum(Op) }
+fn sum_op(l: I32, r: I32) -> Op { ({sum_range = (l, r)}.>widen_sum)[Op] }
 
-fn min_op(l: I32, r: I32) -> Op { {min_range = (l, r)}.>widen_sum(Op) }
+fn min_op(l: I32, r: I32) -> Op { ({min_range = (l, r)}.>widen_sum)[Op] }
 
-fn set_op(i: I32, v: I32) -> Op { {set_point = (i, v)}.>widen_sum(Op) }
+fn set_op(i: I32, v: I32) -> Op { ({set_point = (i, v)}.>widen_sum)[Op] }
 
 /// A sawtooth: step up by 9 and wrap back down by 37 whenever the value would
 /// leave the band. It spreads the minimum around the array instead of parking
 /// it at one end, so a `min` query has somewhere interesting to look.
-rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I32) {
+rec(loop) fn fill_from(cells: Array[I32], i: I32, n: I32, value: I32) -> Array[I32] {
   if(leq_i32(n, i)) {
     cells
   } else {
@@ -61,9 +61,9 @@ rec(loop) fn fill_from(cells: Array(I32), i: I32, n: I32, value: I32) -> Array(I
   }
 }
 
-pub fn initial() -> Array(I32) { let n = leaf_count(); fill_from(array_make_filled(n, 0), 0, n, 4) }
+pub fn initial() -> Array[I32] { let n = leaf_count(); fill_from(array_make_filled(n, 0), 0, n, 4) }
 
-fn row(table: Array(I32), code: I32, p0: I32, p1: I32, p2: I32) {
+fn row(table: Array[I32], code: I32, p0: I32, p1: I32, p2: I32) {
   array_push(table, code);
   array_push(table, p0);
   array_push(table, p1);
@@ -76,8 +76,8 @@ fn row(table: Array(I32), code: I32, p0: I32, p1: I32, p2: I32) {
 /// range is ragged and settles on several covering nodes instead. Rows 5, 11
 /// and 16 are the ones that then have to walk through those nodes and pay the
 /// deferred bill.
-pub fn script_table() -> Array(I32) {
-  let t = array_make_empty(I32, ());
+pub fn script_table() -> Array[I32] {
+  let t = array_make_empty[I32](());
   row(t, code_sum, 0, 63, 0);
   row(t, code_min, 0, 63, 0);
   row(t, code_add, 0, 31, 3);
@@ -99,7 +99,7 @@ pub fn script_table() -> Array(I32) {
   t
 }
 
-pub fn op_at(table: Array(I32), k: I32) -> Op {
+pub fn op_at(table: Array[I32], k: I32) -> Op {
   let at = mul_i32(row_width, k);
   let code = array_get(table, at);
   let p0 = array_get(table, add_i32(at, 1));

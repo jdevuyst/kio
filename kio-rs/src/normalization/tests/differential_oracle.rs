@@ -612,7 +612,7 @@ fn render_expr(term: &Term, env: &RenderEnv) -> String {
             let left_ty = infer(left, &env.types).expect("well-typed pair left");
             let right_ty = infer(right, &env.types).expect("well-typed pair right");
             format!(
-                "__pair__({}, {}, {}, {})",
+                "__pair__[{}][{}]({}, {})",
                 left_ty.render(),
                 right_ty.render(),
                 render_expr(left, env),
@@ -630,7 +630,7 @@ fn render_expr(term: &Term, env: &RenderEnv) -> String {
                 "__snd__"
             };
             format!(
-                "{intrinsic}({}, {}, {})",
+                "{intrinsic}[{}][{}]({})",
                 left.render(),
                 right.render(),
                 render_expr(pair, env)
@@ -639,7 +639,7 @@ fn render_expr(term: &Term, env: &RenderEnv) -> String {
         Term::Left { value, right } => {
             let left = infer(value, &env.types).expect("well-typed left payload");
             format!(
-                "__left__({}, {}, {})",
+                "__left__[{}][{}]({})",
                 left.render(),
                 right.render(),
                 render_expr(value, env)
@@ -648,7 +648,7 @@ fn render_expr(term: &Term, env: &RenderEnv) -> String {
         Term::Right { left, value } => {
             let right = infer(value, &env.types).expect("well-typed right payload");
             format!(
-                "__right__({}, {}, {})",
+                "__right__[{}][{}]({})",
                 left.render(),
                 right.render(),
                 render_expr(value, env)
@@ -666,7 +666,7 @@ fn render_expr(term: &Term, env: &RenderEnv) -> String {
             };
             let result = infer(term, &env.types).expect("well-typed either result");
             format!(
-                "__either__({}, {}, {}, {}, {}, {})",
+                "__either__[{}][{}][{}]({}, {}, {})",
                 left_payload.render(),
                 right_payload.render(),
                 result.render(),

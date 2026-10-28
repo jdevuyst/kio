@@ -13,7 +13,7 @@ pub pure fn apply_impl(
 , value: __Checked_term__
 , _target: __Type__ | .
 ) -> __Checked_term__ {
-  __term_call__(ct, __reflect_type__(ct, I32 -> I32), captured_id_i32, value)
+  __term_call__(ct, __reflect_type__(ct)[I32 -> I32], captured_id_i32, value)
 }
 
 pub macro apply : [Source] Source -> [Target] Target { captures (I32, id_i32); impl apply_impl }

@@ -8,8 +8,8 @@ import testapi/array as array;
 import testapi/iter(loop);
 
 pub labels Outcome = {
-, partner: Array(I32)
-, holder: Array(I32)
+, partner: Array[I32]
+, holder: Array[I32]
 , proposals: I32
 , switches: I32
 , rejections: I32
@@ -17,9 +17,9 @@ pub labels Outcome = {
 
 labels Work = {
 , preferences: market.Preferences
-, ranks: Array(I32)
-, queue: Array(I32)
-, next_choice: Array(I32)
+, ranks: Array[I32]
+, queue: Array[I32]
+, next_choice: Array[I32]
 , size: I32
 };
 
@@ -27,7 +27,7 @@ fn index(size: I32, recipient: I32, proposer: I32) -> I32 {
   arith.add_i32(arith.mul_i32(recipient, size), proposer)
 }
 
-rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: I32, position: I32) {
+rec(loop) fn rank_row(row: Array[I32], ranks: Array[I32], size: I32, recipient: I32, position: I32) {
   if(market.less(position, size)) {
     array.array_set(ranks, index(size, recipient, array.array_get(row, position)), position);
     recur rank_row(row, ranks, size, recipient, arith.add_i32(position, 1))
@@ -36,7 +36,7 @@ rec(loop) fn rank_row(row: Array(I32), ranks: Array(I32), size: I32, recipient: 
   }
 }
 
-rec(loop) fn rank_all(preferences: market.Preferences, ranks: Array(I32), size: I32, recipient: I32) -> Array(I32) {
+rec(loop) fn rank_all(preferences: market.Preferences, ranks: Array[I32], size: I32, recipient: I32) -> Array[I32] {
   if(market.less(recipient, size)) {
     rank_row(array.array_get(preferences, recipient), ranks, size, recipient, 0);
     recur rank_all(preferences, ranks, size, arith.add_i32(recipient, 1))
@@ -89,7 +89,7 @@ rec(loop) fn process(work: Work, head: I32, outcome: Outcome) -> Outcome {
   }
 }
 
-pub fn solve(proposing: market.Preferences, receiving: market.Preferences, order: Array(I32)) -> Outcome {
+pub fn solve(proposing: market.Preferences, receiving: market.Preferences, order: Array[I32]) -> Outcome {
   let size = array.array_len(proposing);
   let ranks = rank_all(receiving, array.array_make_filled(arith.mul_i32(size, size), 0), size, 0);
   let work =

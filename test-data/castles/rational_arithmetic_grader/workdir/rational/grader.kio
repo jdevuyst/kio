@@ -45,19 +45,19 @@ pub labels Tally = {
 
 pub fn exercise(question: Expr, submitted: Fraction) -> Exercise { {question, submitted} }
 
-pub fn no_exercises() -> Roster { Roster.of_body(widen_sum((), . | (Exercise & Roster))) }
+pub fn no_exercises() -> Roster { Roster.of_body(widen_sum(())[. | (Exercise & Roster)]) }
 
 pub fn with_exercise(head: Exercise, rest: Roster) -> Roster {
-  Roster.of_body(widen_sum((head, rest), . | (Exercise & Roster)))
+  Roster.of_body(widen_sum((head, rest))[. | (Exercise & Roster)])
 }
 
-fn exact_mark(note: String) -> Report { {outcome = widen_sum({exact=}, Verdict), note} }
+fn exact_mark(note: String) -> Report { {outcome = widen_sum({exact=})[Verdict], note} }
 
-fn equivalent_mark(note: String) -> Report { {outcome = widen_sum({equivalent=}, Verdict), note} }
+fn equivalent_mark(note: String) -> Report { {outcome = widen_sum({equivalent=})[Verdict], note} }
 
-fn wrong_mark(note: String) -> Report { {outcome = widen_sum({wrong=}, Verdict), note} }
+fn wrong_mark(note: String) -> Report { {outcome = widen_sum({wrong=})[Verdict], note} }
 
-fn undefined_mark(note: String) -> Report { {outcome = widen_sum({undefined=}, Verdict), note} }
+fn undefined_mark(note: String) -> Report { {outcome = widen_sum({undefined=})[Verdict], note} }
 
 /// Which way the student missed. Nothing else needs an ordering on rationals,
 /// but a grader that can only say "no" is less use than one that can say "high".

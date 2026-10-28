@@ -6,10 +6,10 @@ fn generic[Token](value: Token) -> Token { value }
 
 fn renamed[A](value: A) -> A { value }
 
-fn explicit(value: Token) -> Token { generic(Token, value) }
+fn explicit(value: Token) -> Token { generic[Token](value) }
 
-fn alpha(value: Token) -> Token { renamed(Token, value) }
+fn alpha(value: Token) -> Token { renamed[Token](value) }
 
-fn caller[Token](value: Token) -> Token { generic(Token, value) }
+fn caller[Token](value: Token) -> Token { generic[Token](value) }
 
-pub fn main() { Token.get(caller(Token, alpha(explicit(Token.mk(()))))) }
+pub fn main() { Token.get(caller[Token](alpha(explicit(Token.mk(()))))) }

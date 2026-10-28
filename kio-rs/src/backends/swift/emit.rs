@@ -3328,7 +3328,7 @@ v(1) {
         host type Unused[A];
     host type Unused_nullary;
         newtype Token[A] : A { pub constructor make_token; projector read_token; };
-        host fn old(value: Box(Token(.)) & (. -> .)) -> [A] A -> A;
+        host fn old(value: Box[Token[.]] & (. -> .)) -> [A] A -> A;
         host fn old_text(value: Legacy) -> Legacy;
       }
     }
@@ -3672,7 +3672,7 @@ v(2) {
             "module api; \
              host type Box[A]; \
              pub newtype Token[A] : A { pub constructor make_token; projector read_token; }; \
-             host fn current(value: Box(Token(.)) & (. -> .)) -> [A] A -> A; \
+             host fn current(value: Box[Token[.]] & (. -> .)) -> [A] A -> A; \
              pub fn unit() -> . { () }",
         );
         let sig = retained_carrier_signature();
@@ -3728,7 +3728,7 @@ v(2) {
             host fn host_id[A](value: A) -> A; \
             pub fn id[A](value: A) -> A { value } \
             fn host_value() -> [A] A -> A { host_id } \
-            pub fn call(value: T) -> T { id(T, value) }";
+            pub fn call(value: T) -> T { id[T]( value) }";
         let parsed = vec![(
             PathBuf::from("api.kio"),
             parse(source).expect("parse staged module"),
@@ -3812,7 +3812,7 @@ v(2) {
         let package = single_api_package(
             "module api; \
              host fn staged[A](value: A)[B](unit: .) -> .; \
-             pub fn call() -> . { staged(., (), ., ()) }",
+             pub fn call() -> . { staged[.]( ())[ .]( ()) }",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit staged host function");
 
@@ -3940,7 +3940,7 @@ v(2) {
             } \
             pub rec newtype Direct_recursive : . | Direct_recursive { pub constructor make_direct; pub projector read_direct; }; \
             host fn round_opaque(value: Opaque_a) -> Opaque_a; \
-            host fn round_generic[A](value: Generic(A)) -> Generic(A); \
+            host fn round_generic[A](value: Generic[A]) -> Generic[A]; \
             host fn round_existential(value: Existential) -> Existential; \
             host fn echo_outer(value: Outer) -> Outer; \
             host fn echo_direct(value: Direct_recursive) -> Direct_recursive; \
@@ -4102,7 +4102,7 @@ v(2) {
         let package = single_api_package(
             "module api; \
              host type Box[A]; \
-             host fn round[A](value: Box(A)) -> Box(A);",
+             host fn round[A](value: Box[A]) -> Box[A];",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit Swift");
 
@@ -4224,12 +4224,12 @@ v(2) {
         let package = single_api_package(
             "module api; \
              host type N; host type Box[A]; \
-             host fn exchange[Outer, More]( \
+             host fn exchange[Outer][ More]( \
                  choice: (. -> N) | ([A] A -> A), \
                  product: (Outer -> More) & ([B] B -> Outer), \
-                 wrapped: Box([C] C -> Outer), \
+                 wrapped: Box[[C] C -> Outer], \
                  callback: ((. -> N) | ([D] D -> D)) -> ((. -> N) | ([E] E -> E)) \
-             ) -> Box([R] R -> More); \
+             ) -> Box[[R] R -> More]; \
              host fn nested(value: (([A] A -> A) & N) & ([B] B -> B)) -> .; \
              host fn grouped(callback: ((. -> N) & ([A] A -> A)) -> .) -> .; \
              pub newtype Secret : [A] A -> A { constructor wrap; projector get; }; \
@@ -4344,9 +4344,9 @@ v(2) {
             "module api; \
              host type Box[A]; host type Pair[A][B]; \
              pub newtype Holder[*F][A] : . { constructor wrap; projector get; }; \
-             host fn higher[*F](bound: Holder(F, [A] A -> A), \
-                 nominal: Holder(Box, [B] B -> B), \
-                 partial: Holder(Pair([C] C -> C), .)) -> .;",
+             host fn higher[*F](bound: Holder[F][ [A] A -> A], \
+                 nominal: Holder[Box][ [B] B -> B], \
+                 partial: Holder[Pair[[C] C -> C]][ .]) -> .;",
         );
         let emitted = lower_package(&package, "Pkg").expect("emit higher-kinded alias paths");
         let ffi = &emitted.ffi_swift;
@@ -4402,7 +4402,7 @@ v(2) {
         let base = lower_package(
             &single_api_package(
                 "module api; host type Box[A]; \
-                 host fn round[A](value: Box(A)) -> Box(A);",
+                 host fn round[A](value: Box[A]) -> Box[A];",
             ),
             "Pkg",
         )
@@ -4410,7 +4410,7 @@ v(2) {
         let extended = lower_package(
             &single_api_package(
                 "module api; host type Box[A]; \
-                 host fn round[A](value: Box(A)) -> Box(A); \
+                 host fn round[A](value: Box[A]) -> Box[A]; \
                  host type Extra; host fn extra(value: Extra) -> Extra;",
             ),
             "Pkg",

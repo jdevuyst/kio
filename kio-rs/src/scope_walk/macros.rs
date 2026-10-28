@@ -165,8 +165,8 @@ impl Classifier {
             } => {
                 self.id(*id);
                 self.head(head);
-                for value in prefix {
-                    self.expr(value);
+                for stage in prefix {
+                    self.args(&stage.args);
                 }
                 for block in blocks {
                     self.block(block);
@@ -186,23 +186,32 @@ impl Classifier {
             }
             Expr::Ufcs {
                 receiver,
-                callee_segments,
+                callee,
                 args,
                 ext,
                 ..
             } => {
                 self.id(*ext);
-                if let [head] = callee_segments.as_slice() {
+                self.expr(receiver);
+                if let Expr::Path { segments, .. } = callee.as_ref()
+                    && let [head] = segments.as_slice()
+                {
                     self.head(head);
                 }
-                self.expr(receiver);
+                self.expr(callee);
                 self.args(args);
             }
-            Expr::UserMacro { args, ext, .. } => {
+            Expr::UserMacro { stages, ext, .. } => {
                 self.id(*ext);
-                self.args(args);
+                for stage in stages {
+                    self.args(&stage.args);
+                }
             }
-            Expr::RecCall { args, .. } => self.args(args),
+            Expr::RecCall { stages, .. } => {
+                for stage in stages {
+                    self.args(&stage.args);
+                }
+            }
             Expr::FnExpr { sig, body, .. } => {
                 let mark = self.mark();
                 self.signature(sig);

@@ -13,9 +13,9 @@ import testapi/io as io;
 import testapi/iter(loop);
 import testapi/text as text;
 
-rec(loop) fn events(messages: lists.List(String)) {
+rec(loop) fn events(messages: lists.List[String]) {
   match(lists.uncons(messages)) {
-    .(message: String, tail: lists.List(String)) {
+    .(message: String, tail: lists.List[String]) {
       io.print(message.>text.string_concat("\n").>>text.string_concat("  "));
       recur events(tail)
     };
@@ -24,8 +24,8 @@ rec(loop) fn events(messages: lists.List(String)) {
 }
 
 pub fn tick(number: I32, world: model.World, result: model.Status, state: memory.State) {
-  let hazard = if(world.?{model.hazard}) { "hazard" } else { "clear" };
-  let door = if(world.?{model.blocked}) { "blocked" } else { "open" };
+  let .(hazard: String) = if(world.?{model.hazard}) { "hazard" } else { "clear" };
+  let .(door: String) = if(world.?{model.blocked}) { "blocked" } else { "open" };
   io.print(text.string_concat(
   , "tick "
   , text.string_concat(

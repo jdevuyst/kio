@@ -211,10 +211,7 @@ fn source_infer_user_macro_module() -> &'static str {
      import __comptime__;\n\n\
      pub type Target_request = __Type__ | .;\n\n\
      pub pure fn id_default_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Target_request) -> __Checked_term__ {\n\
-       __either__(\n\
-         , __Type__\n\
-         , .\n\
-         , __Checked_term__\n\
+       __either__[__Type__][.][__Checked_term__](\n\
          , target\n\
          , .(_target: __Type__) -> __Checked_term__ { value }\n\
          , .(_empty: .) -> __Checked_term__ { value }\n\
@@ -240,10 +237,7 @@ fn unit_infer_user_macro_module() -> &'static str {
      import __comptime__;\n\n\
      pub type Target_request = __Type__ | .;\n\n\
      pub pure fn id_default_impl(ct: __Comptime__, _source: __Type__, value: __Checked_term__, target: Target_request) -> __Checked_term__ {\n\
-       __either__(\n\
-         , __Type__\n\
-         , .\n\
-         , __Checked_term__\n\
+       __either__[__Type__][.][__Checked_term__](\n\
          , target\n\
          , .(_target: __Type__) -> __Checked_term__ { value }\n\
          , .(_empty: .) -> __Checked_term__ { __term_unit__(ct) }\n\
@@ -634,14 +628,14 @@ fn frontend_scheduler_keeps_independent_user_macro_consumers_parallel() {
         "module pkg/a;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro id_user);\n\n\
-         pub fn a(s: String) -> String { id_user(s, String) }\n",
+         pub fn a(s: String) -> String { id_user(s)[String] }\n",
     );
     pkg.write(
         "pkg/b.kio",
         "module pkg/b;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro id_user);\n\n\
-         pub fn b(s: String) -> String { id_user(s, String) }\n",
+         pub fn b(s: String) -> String { id_user(s)[String] }\n",
     );
 
     let (code, log) = kio_check_with_frontend_timing(pkg.path(), true);
@@ -678,8 +672,8 @@ fn user_macro_batch_timing_reports_unique_template_keys() {
          import pkg(String);\n\n\
          import elaborators(macro id_user);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_user(s, String);\n\
-           id_user(first, String)\n\
+           let first = id_user(s)[String];\n\
+           id_user(first)[String]\n\
          }\n",
     );
 
@@ -755,8 +749,8 @@ fn user_macro_template_batch_dedupes_repeated_shape_before_memo_lookup() {
          import pkg(String);\n\n\
          import elaborators(macro id_user);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_user(s, String);\n\
-           id_user(first, String)\n\
+           let first = id_user(s)[String];\n\
+           id_user(first)[String]\n\
          }\n",
     );
 
@@ -796,7 +790,7 @@ fn user_macro_template_memo_replays_across_forced_modules() {
         "module pkg/a;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro second_value);\n\n\
-         pub fn a(left: String, from_a: String) -> String { second_value(left, from_a, String) }\n",
+         pub fn a(left: String, from_a: String) -> String { second_value(left)(from_a)[String] }\n",
     );
     pkg.write(
         "pkg/b.kio",
@@ -804,7 +798,7 @@ fn user_macro_template_memo_replays_across_forced_modules() {
          import pkg(String);\n\n\
          import elaborators(macro second_value);\n\n\
          import pkg/a(a);\n\n\
-         pub fn b(left: String, from_b: String) -> String { second_value(a(left, left), from_b, String) }\n",
+         pub fn b(left: String, from_b: String) -> String { second_value(a(left, left))(from_b)[String] }\n",
     );
 
     let (code, log) = kio_build_prime_with_extra_env(
@@ -859,7 +853,7 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
                 "module pkg/{first};\n\
                  import elaborators(macro second_value);\n\
                  pub fn {first}{binders}(left: A, from_{first}: B) -> B {{
-                     second_value(left, from_{first}, B)
+                     second_value(left)(from_{first})[B]
                  }}\n"
             ),
         );
@@ -870,7 +864,7 @@ fn user_macro_template_memo_preserves_free_binders_in_both_forced_orders() {
                  import elaborators(macro second_value);\n\
                  import pkg/{first}({first});\n\
                  pub fn {second}{binders}(left: A, from_{second}: B) -> {target} {{
-                     second_value({first}(A, A, left, left), from_{second}, {target})
+                     second_value({first}[A][A](left, left))(from_{second})[{target}]
                  }}\n"
             ),
         );
@@ -941,8 +935,8 @@ fn user_macro_infer_branch_memo_hits_repeated_shape() {
          import pkg(String);\n\n\
          import elaborators(macro id_default);\n\n\
          pub fn run(s: String) -> String {\n\
-           let first = id_default(s, _);\n\
-           let second = id_default(first, _);\n\
+           let first = id_default(s)[_];\n\
+           let second = id_default(first)[_];\n\
            second\n\
          }\n",
     );
@@ -980,7 +974,7 @@ fn user_macro_rechecks_do_not_write_persistent_template_cache() {
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro id_default);\n\n\
-         pub fn run(s: String) -> String { id_default(s, _) }\n",
+         pub fn run(s: String) -> String { id_default(s)[_] }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -990,7 +984,7 @@ fn user_macro_rechecks_do_not_write_persistent_template_cache() {
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro id_default);\n\n\
-         pub fn run(s: String) -> String { id_default(s, _) }\n\n\
+         pub fn run(s: String) -> String { id_default(s)[_] }\n\n\
          pub fn force_recheck() -> . { () }\n",
     );
     let (code2, log2) = kio_check(pkg.path());
@@ -1020,7 +1014,7 @@ fn typed_cache_misses_when_imported_user_macro_impl_changes() {
         "module pkg/main;\n\n\
          import pkg(String);\n\n\
          import elaborators(macro id_user);\n\n\
-         pub fn run(s: String) -> String { id_user(s, String) }\n",
+         pub fn run(s: String) -> String { id_user(s)[String] }\n",
     );
 
     let (code1, log1) = kio_check(pkg.path());
@@ -1060,7 +1054,7 @@ fn typed_cache_misses_when_imported_user_macro_infer_branch_changes() {
          import pkg(String);\n\n\
          import elaborators(macro id_default);\n\n\
          pub fn run(s: String) -> String {\n\
-           let selected = id_default(s, _);\n\
+           let selected = id_default(s)[_];\n\
            selected\n\
          }\n",
     );

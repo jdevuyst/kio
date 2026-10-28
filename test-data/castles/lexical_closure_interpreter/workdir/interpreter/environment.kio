@@ -9,7 +9,7 @@ import testapi(Bool, String);
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub fn empty() -> values.Environment { lists.nil(_) }
+pub fn empty() -> values.Environment { lists.nil[_] }
 
 pub fn extend(name: String, value: values.Value, environment: values.Environment) -> values.Environment {
   lists.cons((name, value), environment)
@@ -20,11 +20,11 @@ pub rec(loop) fn lookup(name: String, environment: values.Environment) -> String
     .(binding: String & values.Value, remaining: values.Environment) {
       let .(key, value) = binding;
       if(text.string_eq(name, key)) {
-        value.>widen_sum(String | values.Value)
+        (value.>widen_sum)[String | values.Value]
       } else {
         recur lookup(name, remaining)
       }
     };
-    .() { text.string_concat("unbound variable: ", name).>widen_sum(String | values.Value) }
+    .() { (text.string_concat("unbound variable: ", name).>widen_sum)[String | values.Value] }
   }
 }

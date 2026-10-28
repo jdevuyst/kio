@@ -7,4 +7,4 @@ rec {
   pub newtype Odd : . | Even { pub constructor mk_odd; pub projector un_odd }
 }
 
-pub fn make_even() -> Even { Even.mk_even(__left__(., Odd, ())) }
+pub fn make_even() -> Even { Even.mk_even(__left__[.][Odd]( ())) }

@@ -6,7 +6,7 @@ module type_side;
 import operators(id);
 
 fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
-  id([*F].->.)
+  id[[*F].->.]
 }
 --------------------------------------------------------------------------------
 
@@ -77,8 +77,8 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (forall_type
             (type_param_list
               (type_param_group
@@ -91,7 +91,7 @@ fn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {
               (separator_dot)
               (operator_arrow_type)
               (separator_dot)))
-          (bracket_rparen)))
+          (bracket_rbracket)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -430,7 +430,7 @@ fn run() { id([% x, [* y *] %]) }
 structural polymorphic_lambda
 ================================================================================
 module source;
-fn run() { id([ .[*F](x: F(.)) -> F(.) { x } ]) }
+fn run() { id([ .[*F](x: F[.]) -> F[.] { x } ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -477,17 +477,17 @@ fn run() { id([ .[*F](x: F(.)) -> F(.) { x } ]) }
                           (type_path
                             (entity_name_type)
                             (type_arguments
-                              (bracket_lparen)
+                              (bracket_lbracket)
                               (separator_dot)
-                              (bracket_rparen)))))
+                              (bracket_rbracket)))))
                       (bracket_rparen)))
                   (operator_arrow_type)
                   (type_path
                     (entity_name_type)
                     (type_arguments
-                      (bracket_lparen)
+                      (bracket_lbracket)
                       (separator_dot)
-                      (bracket_rparen)))
+                      (bracket_rbracket)))
                   (expression_block
                     (bracket_lbrace)
                     (expression_path
@@ -553,7 +553,7 @@ fn run() { id([ .x. { x1 }, x ]) }
 structural label_and_call
 ================================================================================
 module source;
-fn run() { id([ { field = let(x) }, call([*F] F(.) -> F(.)) ]) }
+fn run() { id([ { field = let(x) }, call[[*F] F[.] -> F[.]] ]) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -602,8 +602,8 @@ fn run() { id([ { field = let(x) }, call([*F] F(.) -> F(.)) ]) }
                 (call_expr
                   (call_callee
                     (entity_name_function))
-                  (expression_arguments
-                    (bracket_lparen)
+                  (call_type_arguments
+                    (bracket_lbracket)
                     (forall_type
                       (type_param_list
                         (type_param_group
@@ -616,17 +616,17 @@ fn run() { id([ { field = let(x) }, call([*F] F(.) -> F(.)) ]) }
                         (type_path
                           (entity_name_type)
                           (type_arguments
-                            (bracket_lparen)
+                            (bracket_lbracket)
                             (separator_dot)
-                            (bracket_rparen)))
+                            (bracket_rbracket)))
                         (operator_arrow_type)
                         (type_path
                           (entity_name_type)
                           (type_arguments
-                            (bracket_lparen)
+                            (bracket_lbracket)
                             (separator_dot)
-                            (bracket_rparen)))))
-                    (bracket_rparen)))))
+                            (bracket_rbracket)))))
+                    (bracket_rbracket)))))
             (variadic_close
               (bracket_rbracket)))
           (bracket_rparen)))
@@ -862,7 +862,7 @@ fn run() { id([ ~let(x), value++ ]) }
 structural bare_type
 ================================================================================
 module source;
-fn run() { id([A] A -> A) }
+fn run() { id[[A] A -> A] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -884,8 +884,8 @@ fn run() { id([A] A -> A) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (forall_type
             (type_param_list
               (type_param_group
@@ -899,14 +899,14 @@ fn run() { id([A] A -> A) }
               (operator_arrow_type)
               (type_path
                 (entity_name_type))))
-          (bracket_rparen)))
+          (bracket_rbracket)))
       (bracket_rbrace))))
 
 ================================================================================
 structural grouped_higher_kind
 ================================================================================
 module source;
-fn run() { id(([*F] F(.) -> F(.))) }
+fn run() { id[([*F] F[.] -> F[.])] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -928,8 +928,8 @@ fn run() { id(([*F] F(.) -> F(.))) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (type_group
             (bracket_lparen)
             (forall_type
@@ -944,18 +944,18 @@ fn run() { id(([*F] F(.) -> F(.))) }
                 (type_path
                   (entity_name_type)
                   (type_arguments
-                    (bracket_lparen)
+                    (bracket_lbracket)
                     (separator_dot)
-                    (bracket_rparen)))
+                    (bracket_rbracket)))
                 (operator_arrow_type)
                 (type_path
                   (entity_name_type)
                   (type_arguments
-                    (bracket_lparen)
+                    (bracket_lbracket)
                     (separator_dot)
-                    (bracket_rparen)))))
+                    (bracket_rbracket)))))
             (bracket_rparen))
-          (bracket_rparen)))
+          (bracket_rbracket)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -1966,7 +1966,7 @@ fn run() { id([* ,,,let(x),,,if((y)) { y } else { y },,, *]) }
 structural type_split_spans
 ================================================================================
 module source;
-fn run() { id([*F] F(.) -> F(.)) }
+fn run() { id[[*F] F[.] -> F[.]] }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -1988,8 +1988,8 @@ fn run() { id([*F] F(.) -> F(.)) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (forall_type
             (type_param_list
               (type_param_group
@@ -2002,17 +2002,17 @@ fn run() { id([*F] F(.) -> F(.)) }
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (separator_dot)
-                  (bracket_rparen)))
+                  (bracket_rbracket)))
               (operator_arrow_type)
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (separator_dot)
-                  (bracket_rparen)))))
-          (bracket_rparen)))
+                  (bracket_rbracket)))))
+          (bracket_rbracket)))
       (bracket_rbrace))))
 
 ================================================================================
@@ -2982,7 +2982,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[*F]
 ================================================================================
-module source; fn broken() { id([*F] }
+module source; fn broken() { id[[*F] }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3005,8 +3005,8 @@ fn after() { let(x) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (incomplete_forall_type
             (type_param_list
               (type_param_group
@@ -3015,7 +3015,7 @@ fn after() { let(x) }
                   (kind_annotation))
                 (variable_parameter)
                 (bracket_rbracket))))
-          (MISSING bracket_rparen)))
+          (MISSING bracket_rbracket)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -3040,7 +3040,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[A]
 ================================================================================
-module source; fn broken() { id([A] }
+module source; fn broken() { id[[A] }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3063,8 +3063,8 @@ fn after() { let(x) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (incomplete_forall_type
             (type_param_list
               (type_param_group
@@ -3072,7 +3072,7 @@ fn after() { let(x) }
                 (type_param_binder
                   (variable_parameter))
                 (bracket_rbracket))))
-          (MISSING bracket_rparen)))
+          (MISSING bracket_rbracket)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -3097,7 +3097,7 @@ fn after() { let(x) }
 ================================================================================
 structural forall_recovery_[*F] ->
 ================================================================================
-module source; fn broken() { id([*F] -> }
+module source; fn broken() { id[[*F] -> }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3120,8 +3120,8 @@ fn after() { let(x) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (incomplete_forall_type
             (type_param_list
               (type_param_group
@@ -3131,7 +3131,7 @@ fn after() { let(x) }
                 (variable_parameter)
                 (bracket_rbracket)))
             (operator_arrow_type))
-          (MISSING bracket_rparen)))
+          (MISSING bracket_rbracket)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -3154,9 +3154,9 @@ fn after() { let(x) }
       (bracket_rbrace))))
 
 ================================================================================
-structural forall_recovery_[*F] F(
+structural forall_recovery_[*F] F[
 ================================================================================
-module source; fn broken() { id([*F] F( }
+module source; fn broken() { id[[*F] F[ }
 fn after() { let(x) }
 --------------------------------------------------------------------------------
 
@@ -3179,8 +3179,8 @@ fn after() { let(x) }
       (call_expr
         (call_callee
           (entity_name_function))
-        (expression_arguments
-          (bracket_lparen)
+        (call_type_arguments
+          (bracket_lbracket)
           (forall_type
             (type_param_list
               (type_param_group
@@ -3192,8 +3192,8 @@ fn after() { let(x) }
             (type_path
               (entity_name_type)
               (incomplete_type_arguments
-                (bracket_lparen))))
-          (MISSING bracket_rparen)))
+                (bracket_lbracket))))
+          (MISSING bracket_rbracket)))
       (bracket_rbrace)))
   (function_definition
     (fn_decl_head
@@ -4875,7 +4875,7 @@ module app; type Alias[A]=A; type Pair[A][B] = A & B;
 ================================================================================
 structural review_uppercase_qualified_nested_callee
 ================================================================================
-module app; fn run() { Box.un_box(A, Box.mk_box(A, value)) }
+module app; fn run() { Box.un_box[A](Box.mk_box[A](value)) }
 --------------------------------------------------------------------------------
 
 (source_file
@@ -4895,25 +4895,31 @@ module app; fn run() { Box.un_box(A, Box.mk_box(A, value)) }
     (expression_block
       (bracket_lbrace)
       (call_expr
-        (call_callee
-          (identifier)
-          (separator_dot)
-          (entity_name_function))
+        (call_expr
+          (call_callee
+            (identifier)
+            (separator_dot)
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
         (expression_arguments
           (bracket_lparen)
-          (type_path
-            (entity_name_type))
-          (separator_comma)
           (call_expr
-            (call_callee
-              (identifier)
-              (separator_dot)
-              (entity_name_function))
+            (call_expr
+              (call_callee
+                (identifier)
+                (separator_dot)
+                (entity_name_function))
+              (call_type_arguments
+                (bracket_lbracket)
+                (type_path
+                  (entity_name_type))
+                (bracket_rbracket)))
             (expression_arguments
               (bracket_lparen)
-              (type_path
-                (entity_name_type))
-              (separator_comma)
               (expression_path
                 (identifier))
               (bracket_rparen)))
@@ -6737,7 +6743,7 @@ fn after() { let(x) }
 structural review_adjacent_marked_function_type_groups
 ================================================================================
 module m;
-fn repeated[*F][A](_x: F(A)) -> F(A) { if(_x) }
+fn repeated[*F][A](_x: F[A]) -> F[A] { if(_x) }
 fn after() { let(_x) }
 --------------------------------------------------------------------------------
 
@@ -6772,19 +6778,19 @@ fn after() { let(_x) }
               (type_path
                 (entity_name_type)
                 (type_arguments
-                  (bracket_lparen)
+                  (bracket_lbracket)
                   (type_path
                     (entity_name_type))
-                  (bracket_rparen)))))
+                  (bracket_rbracket)))))
           (bracket_rparen)))
       (operator_arrow_type)
       (type_path
         (entity_name_type)
         (type_arguments
-          (bracket_lparen)
+          (bracket_lbracket)
           (type_path
             (entity_name_type))
-          (bracket_rparen))))
+          (bracket_rbracket))))
     (expression_block
       (bracket_lbrace)
       (call_expr

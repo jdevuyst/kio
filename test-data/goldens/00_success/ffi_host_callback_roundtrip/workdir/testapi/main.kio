@@ -10,16 +10,16 @@ pub fn main() {
     call_step(
     , .(n: I32, label: String, ok: Bool) -> I32 {
         print(label);
-        print("\n"(String));
+        print("\n"[String]);
         print(bool_to_string(ok));
-        print("\n"(String));
+        print("\n"[String]);
         add_i32(n, 1)
       }
     , 40
     );
   print(i32_to_string(stepped));
-  print("\n"(String));
-  let first = make_pair(.(n: I32) -> I32 & String { (add_i32(n, 2), "callback-pair"(String)) }, 5);
+  print("\n"[String]);
+  let first = make_pair(.(n: I32) -> I32 & String { (add_i32(n, 2), "callback-pair"[String]) }, 5);
   print(i32_to_string(first));
-  print("\n"(String))
+  print("\n"[String])
 }

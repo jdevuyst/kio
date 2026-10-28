@@ -24,13 +24,13 @@ import testapi(I32, String);
 /// instruction names.
 pub labels Reg = { ra: . } | { rb: . } | { rc: . } | { rd: . };
 
-pub fn ra() -> Reg { {ra=}.>widen_sum(Reg) }
+pub fn ra() -> Reg { ({ra=}.>widen_sum)[Reg] }
 
-pub fn rb() -> Reg { {rb=}.>widen_sum(Reg) }
+pub fn rb() -> Reg { ({rb=}.>widen_sum)[Reg] }
 
-pub fn rc() -> Reg { {rc=}.>widen_sum(Reg) }
+pub fn rc() -> Reg { ({rc=}.>widen_sum)[Reg] }
 
-pub fn rd() -> Reg { {rd=}.>widen_sum(Reg) }
+pub fn rd() -> Reg { ({rd=}.>widen_sum)[Reg] }
 
 /// The assembly-language name of a register, as it appears in a listing.
 pub fn reg_name(r: Reg) -> String {
@@ -74,34 +74,34 @@ pub labels Ins =
   | { jmp_addr: I32 }
   | { jmpz_addr: Reg & I32 };
 
-pub fn loadi(r: Reg, n: I32) -> Src { {loadi = (r, n)}.>widen_sum(Src) }
+pub fn loadi(r: Reg, n: I32) -> Src { ({loadi = (r, n)}.>widen_sum)[Src] }
 
-pub fn mov(dst: Reg, src: Reg) -> Src { {mov = (dst, src)}.>widen_sum(Src) }
+pub fn mov(dst: Reg, src: Reg) -> Src { ({mov = (dst, src)}.>widen_sum)[Src] }
 
-pub fn add(dst: Reg, src: Reg) -> Src { {add = (dst, src)}.>widen_sum(Src) }
+pub fn add(dst: Reg, src: Reg) -> Src { ({add = (dst, src)}.>widen_sum)[Src] }
 
-pub fn sub(dst: Reg, src: Reg) -> Src { {sub = (dst, src)}.>widen_sum(Src) }
+pub fn sub(dst: Reg, src: Reg) -> Src { ({sub = (dst, src)}.>widen_sum)[Src] }
 
-pub fn mul(dst: Reg, src: Reg) -> Src { {mul = (dst, src)}.>widen_sum(Src) }
+pub fn mul(dst: Reg, src: Reg) -> Src { ({mul = (dst, src)}.>widen_sum)[Src] }
 
-pub fn div(dst: Reg, src: Reg) -> Src { {div = (dst, src)}.>widen_sum(Src) }
+pub fn div(dst: Reg, src: Reg) -> Src { ({div = (dst, src)}.>widen_sum)[Src] }
 
-pub fn mod(dst: Reg, src: Reg) -> Src { {mod = (dst, src)}.>widen_sum(Src) }
+pub fn mod(dst: Reg, src: Reg) -> Src { ({mod = (dst, src)}.>widen_sum)[Src] }
 
-pub fn push(r: Reg) -> Src { {push = r}.>widen_sum(Src) }
+pub fn push(r: Reg) -> Src { ({push = r}.>widen_sum)[Src] }
 
-pub fn pop(r: Reg) -> Src { {pop = r}.>widen_sum(Src) }
+pub fn pop(r: Reg) -> Src { ({pop = r}.>widen_sum)[Src] }
 
-pub fn emit(r: Reg) -> Src { {emit = r}.>widen_sum(Src) }
+pub fn emit(r: Reg) -> Src { ({emit = r}.>widen_sum)[Src] }
 
-pub fn halt() -> Src { {halt=}.>widen_sum(Src) }
+pub fn halt() -> Src { ({halt=}.>widen_sum)[Src] }
 
-pub fn jmp(target: String) -> Src { {jmp = target}.>widen_sum(Src) }
+pub fn jmp(target: String) -> Src { ({jmp = target}.>widen_sum)[Src] }
 
-pub fn jmpz(r: Reg, target: String) -> Src { {jmpz = (r, target)}.>widen_sum(Src) }
+pub fn jmpz(r: Reg, target: String) -> Src { ({jmpz = (r, target)}.>widen_sum)[Src] }
 
 /// A resolved unconditional jump. Only pass two builds these.
-pub fn jmp_at(addr: I32) -> Ins { {jmp_addr = addr}.>widen_sum(Ins) }
+pub fn jmp_at(addr: I32) -> Ins { ({jmp_addr = addr}.>widen_sum)[Ins] }
 
 /// A resolved jump-if-zero. Only pass two builds these.
-pub fn jmpz_at(r: Reg, addr: I32) -> Ins { {jmpz_addr = (r, addr)}.>widen_sum(Ins) }
+pub fn jmpz_at(r: Reg, addr: I32) -> Ins { ({jmpz_addr = (r, addr)}.>widen_sum)[Ins] }

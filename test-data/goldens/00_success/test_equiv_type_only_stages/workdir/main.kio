@@ -8,7 +8,7 @@ fn identity[A] -> A -> A {
 
 type Id[A] = A -> A;
 
-fn aliased[A] -> Id(A) {
+fn aliased[A] -> Id[A] {
   .(value: A) { value }
 }
 
@@ -20,57 +20,61 @@ fn returned() -> [A] A -> A {
   }
 }
 
-fn invoke(value: [A] A -> A) { value(., ()) }
+fn invoke(value: [A] A -> A) { value[.](()) }
 
-fn local() { let saved = identity; saved(., ()) }
+fn local() { let saved = identity; saved[.](()) }
 
 fn mixed[A](value: A)[B] -> A { value }
+
+fn stored_identity() { let saved = identity[.]; saved(()) }
+
+fn stored_mixed() { let saved = mixed[.]; saved(())[.] }
 
 fn capture[A](value: A) -> [B] A {
   .[B] { value }
 }
 
-fn forward(value: [A] .) { value(.) }
+fn forward(value: [A] .) { value[.] }
 
 fn delayed[A]() { () }
 
 equiv named() {
-  identity(., ());
-  aliased(., ());
-  ordinary(., ());
+  identity[.](());
+  aliased[.](());
+  ordinary[.](());
   ()
 }
 
 equiv anonymous() {
   .[A] {
     .(value: A) { value }
-  }(., ());
+  }[.](());
   ()
 }
 
 equiv combined_and_split() {
-  identity(.)(());
-  identity(., ());
+  identity[.](());
+  stored_identity();
   ()
 }
 
 equiv adjacent_and_nested() {
-  .[A][B] { () }(., .);
+  .[A][B] { () }[.][.];
   .[A] {
     .[B] { () }
-  }(., .);
+  }[.][.];
   forward(empty);
   ()
 }
 
 equiv captured() {
-  capture(., ())(.);
+  capture[.](())[.];
   ()
 }
 
 equiv first_class() {
   local();
-  returned()(., ());
+  returned()[.](());
   invoke(identity);
   invoke(aliased);
   invoke(ordinary);
@@ -82,12 +86,12 @@ equiv first_class() {
 }
 
 equiv interleaved() {
-  mixed(., (), .);
-  mixed(.)(())(.);
+  mixed[.](())[.];
+  stored_mixed();
   ()
 }
 
 equiv explicit_unit() {
-  delayed(.);
+  delayed[.];
   .() { () }
 }

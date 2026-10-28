@@ -18,8 +18,8 @@ import testapi/io(print);
 import testapi/iter(loop);
 import testapi/text(string_concat);
 
-fn readings() -> Array(I32) {
-  let values = array_make_empty(I32, ());
+fn readings() -> Array[I32] {
+  let values = array_make_empty[I32](());
   array_push(values, 72);
   array_push(values, 68);
   array_push(values, 91);
@@ -28,8 +28,8 @@ fn readings() -> Array(I32) {
   values
 }
 
-fn thresholds() -> Array(I32) {
-  let values = array_make_empty(I32, ());
+fn thresholds() -> Array[I32] {
+  let values = array_make_empty[I32](());
   array_push(values, 70);
   array_push(values, 70);
   array_push(values, 90);
@@ -39,9 +39,9 @@ fn thresholds() -> Array(I32) {
 }
 
 rec(loop) fn mark(
-, reads: Array(I32)
-, limits: Array(I32)
-, flags: Array(Bool)
+, reads: Array[I32]
+, limits: Array[I32]
+, flags: Array[Bool]
 , index: I32
 , last: I32
 , count: I32
@@ -63,7 +63,7 @@ fn cat2(a: String, b: String) -> String { string_concat(a, b) }
 
 fn cat3(a: String, b: String, c: String) -> String { cat2(a, cat2(b, c)) }
 
-fn row(reads: Array(I32), limits: Array(I32), flags: Array(Bool), index: I32) -> String {
+fn row(reads: Array[I32], limits: Array[I32], flags: Array[Bool], index: I32) -> String {
   cat3(
   , "sensor "
   , int_to_string(index)
@@ -82,7 +82,7 @@ fn row(reads: Array(I32), limits: Array(I32), flags: Array(Bool), index: I32) ->
 pub fn main() {
   let reads = readings();
   let limits = thresholds();
-  let flags = array_make_filled(array_len(reads), .f);
+  let .(flags: Array[Bool]) = array_make_filled(array_len(reads), .f);
   let count = mark(reads, limits, flags, 0, 4, 0);
   let swapped = array_clone(flags);
   array_swap(swapped, 0, 4);

@@ -630,7 +630,7 @@ host fn print(s: Str);
 module app/main;
 import app(Str);
 import app(print);
-pub fn main() { print("hello\n"(Str)) }
+pub fn main() { print("hello\n"[Str]) }
 ```
 
 `kio build swift` writes `out/swift/{pkg.swift, host.swift,

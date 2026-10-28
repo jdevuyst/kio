@@ -181,7 +181,7 @@ fn value_name_in_type_reference_reports_syntax_not_binding() {
         "module main; fn f(arg: value) -> . { () }",
         "module main; fn f() -> value { () }",
         "module main; fn f() -> . { let .(item: value) = (); () }",
-        "module main; type Result = Box(value);",
+        "module main; type Result = Box[value];",
     ] {
         let error = parse(source).expect_err("the value spelling is invalid in a type reference");
         let lazy_error = if source.contains("let .(item:") {
@@ -573,8 +573,8 @@ fn unit_type_repairs_preserve_complete_spans_and_token_boundaries() {
         ("module m; type U=(,,);", "module m; type U= . ;", "."),
         ("module m; type U=( \n );", "module m; type U= . ;", "."),
         (
-            "module m; type T=F(());",
-            "module m; type T=F( . );",
+            "module m; type T=F[()];",
+            "module m; type T=F[ . ];",
             "F(.)",
         ),
         (
@@ -663,7 +663,7 @@ fn commented_unit_type_repairs_preserve_every_comment_and_existing_space() {
 }
 
 #[test]
-fn product_type_repairs_preserve_components_nested_commas_and_operator_tokens() {
+fn product_type_repairs_preserve_components_nested_applications_and_operator_tokens() {
     for (group, replacement, shape) in [
         ("(A,B)", "(A & B)", "Prod(A,B)"),
         ("(A,)", "(A & )", "A"),
@@ -679,13 +679,17 @@ fn product_type_repairs_preserve_components_nested_commas_and_operator_tokens() 
         ("(A -> B,C)", "((A -> B) & C)", "Prod(Fn(A,B),C)"),
         ("(A,B | C)", "(A & (B | C))", "Prod(A,Sum(B,C))"),
         ("(A & B,C)", "((A & B) & C)", "Prod(Prod(A,B),C)"),
-        ("(F(A,B),C)", "(F(A,B) & C)", "Prod(F(A,B),C)"),
-        ("([A,B] A,C)", "(([A,B] A) & C)", "Prod(All(A,All(B,A)),C)"),
+        ("(F[A][B],C)", "(F[A][B] & C)", "Prod(F(A,B),C)"),
+        (
+            "([A][B] A,C)",
+            "(([A][B] A) & C)",
+            "Prod(All(A,All(B,A)),C)",
+        ),
         ("((A)->B,C)", "(((A)->B) & C)", "Prod(Fn(A,B),C)"),
         ("(((A & B)),C)", "((((A & B))) & C)", "Prod(Prod(A,B),C)"),
         (
-            "(A, // keep separator\nF(B,C))",
-            "(A &  // keep separator\nF(B,C))",
+            "(A, // keep separator\nF[B][C])",
+            "(A &  // keep separator\nF[B][C])",
             "Prod(A,F(B,C))",
         ),
         (
@@ -777,8 +781,8 @@ fn correct_unit_values_tuple_values_and_type_groups_remain_accepted() {
         "module m; type T = (|);",
         "module m; type T = (A & B);",
         "module m; type T = (A | B);",
-        "module m; type T = F(A,B);",
-        "module m; type T = [A,B] A;",
+        "module m; type T = F[A][B];",
+        "module m; type T = [A][B] A;",
     ] {
         parse(source).unwrap_or_else(|error| panic!("legal syntax changed: {source:?}: {error:?}"));
         parse_lazy(source)

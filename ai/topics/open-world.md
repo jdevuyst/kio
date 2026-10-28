@@ -46,9 +46,10 @@ checked term it returns, never an ambient declaration search. Adding an
 unrelated module-body declaration therefore cannot change which goals exist,
 the order in which retained actions are consumed, or the result.
 
-Flat application boundaries use the same finite evidence. Once a callee is
-resolved, written argument and nested-application boundaries determine the
-product packet greedily; an argument's inferred type cannot trigger a suffix
-search or alternate packing. Returned binders may use the local expected
-result only after a written value layer has completed. Neither rule consults
-what other declarations happen to be in scope.
+Written type/value groups fix application boundaries independently of the
+inferred argument types. One value group supplies one product for one Function
+layer; it never selects a curry split by searching for a suffix that fits.
+Bracket ownership is syntactic, without provider/operator fallback. Returned
+binders may use the local expected result after a written value stage. UFCS
+selects its adjacent written stage, not a type-compatible stage elsewhere.
+None of these decisions consult other declarations in scope.

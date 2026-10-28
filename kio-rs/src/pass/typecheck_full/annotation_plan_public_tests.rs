@@ -73,7 +73,7 @@ fn assert_annotation_local_forall_hole(
 #[test]
 fn checked_partial_higher_kinded_function_annotation_rejects_local_forall_hole() {
     let source = "module main; \
-        fn consume(wrapper: (([*F] F(.) -> F(.)) -> .)) -> . { () } \
+        fn consume(wrapper: (([*F] F[.] -> F[.]) -> .)) -> . { () } \
         fn partial() -> . { consume(.(function: [*F] _) { () }) }";
     assert_annotation_local_forall_hole(source, "function: [*F] _", "[*F] _", "F");
 }
@@ -81,7 +81,7 @@ fn checked_partial_higher_kinded_function_annotation_rejects_local_forall_hole()
 #[test]
 fn checked_partial_higher_kinded_function_annotation_alias_expected_rejects_local_forall_hole() {
     let source = "module main; \
-        type Scheme = [*F] F(.) -> F(.); \
+        type Scheme = [*F] F[.] -> F[.]; \
         fn consume(wrapper: (Scheme -> .)) -> . { () } \
         fn partial() -> . { consume(.(function: [*G] _) { () }) }";
     assert_annotation_local_forall_hole(source, "function: [*G] _", "[*G] _", "G");
@@ -153,12 +153,12 @@ fn partial_as_pattern_local_rejects_local_forall_hole() {
 fn partial_monadic_do_unary_rejects_local_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
-        fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
           next(Box.un_box(value))
         }
-        host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
-        fn partial() -> Box(.) {
+        host fn boxed_polymorphic(_token: .) -> Box[[Poly] Poly -> Poly];
+        fn partial() -> Box[.] {
           do (box_bind) {
             let .(function: [Do_bound] _) <- boxed_polymorphic(());
             box_pure(())
@@ -176,12 +176,12 @@ fn partial_monadic_do_unary_rejects_local_forall_hole() {
 fn partial_monadic_do_pattern_rejects_local_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
-        fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
           next(Box.un_box(value))
         }
-        host fn boxed_polymorphic(_token: .) -> Box([Poly] Poly -> Poly);
-        fn partial() -> Box(.) {
+        host fn boxed_polymorphic(_token: .) -> Box[[Poly] Poly -> Poly];
+        fn partial() -> Box[.] {
           do (box_bind) {
             let .((function: [Do_pattern] _)) <- boxed_polymorphic(());
             box_pure(())
@@ -199,11 +199,11 @@ fn partial_monadic_do_pattern_rejects_local_forall_hole() {
 fn alias_root_parameter_rejects_materialized_forall_hole() {
     let source = r#"module main;
         type Wrap[Slot] = [Alias_bound] Slot -> Alias_bound;
-        fn consume(wrapper: (Wrap(.) -> .)) -> . { () }
-        fn partial() -> . { consume(.(function: Wrap(_)) { () }) }"#;
+        fn consume(wrapper: (Wrap[.] -> .)) -> . { () }
+        fn partial() -> . { consume(.(function: Wrap[_]) { () }) }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[Alias_bound]",
         "Alias_bound",
     );
@@ -213,12 +213,12 @@ fn alias_root_parameter_rejects_materialized_forall_hole() {
 fn transitive_alias_parameter_rejects_materialized_forall_hole() {
     let source = r#"module main;
         type Wrap[Slot] = [Transitive_bound] Slot -> Transitive_bound;
-        type Outer[Slot] = Wrap(Slot);
-        fn consume(wrapper: (Outer(.) -> .)) -> . { () }
-        fn partial() -> . { consume(.(function: Outer(_)) { () }) }"#;
+        type Outer[Slot] = Wrap[Slot];
+        fn consume(wrapper: (Outer[.] -> .)) -> . { () }
+        fn partial() -> . { consume(.(function: Outer[_]) { () }) }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Outer(_)",
+        "function: Outer[_]",
         "[Transitive_bound]",
         "Transitive_bound",
     );
@@ -228,11 +228,11 @@ fn transitive_alias_parameter_rejects_materialized_forall_hole() {
 fn duplicated_alias_hole_rejects_once_at_source_occurrence() {
     let source = r#"module main;
         type Mixed[Slot] = Slot & ([Mixed_bound] Slot -> Mixed_bound);
-        fn consume(wrapper: (Mixed(.) -> .)) -> . { () }
-        fn partial() -> . { consume(.(function: Mixed(_)) { () }) }"#;
+        fn consume(wrapper: (Mixed[.] -> .)) -> . { () }
+        fn partial() -> . { consume(.(function: Mixed[_]) { () }) }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Mixed(_)",
+        "function: Mixed[_]",
         "[Mixed_bound]",
         "Mixed_bound",
     );
@@ -242,14 +242,14 @@ fn duplicated_alias_hole_rejects_once_at_source_occurrence() {
 fn reordered_alias_argument_rejects_materialized_forall_hole() {
     let source = r#"module main;
         pub type Reorder[First][Second] = [Reorder_bound] Second -> Reorder_bound;
-        host fn exact(_token: .) -> Reorder(., .);
+        host fn exact(_token: .) -> Reorder[.][.];
         fn partial() -> . {
-          let .(function: Reorder(., _)) = exact(());
+          let .(function: Reorder[.][_]) = exact(());
           ()
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "Reorder(., _)",
+        "Reorder[.][_]",
         "[Reorder_bound]",
         "Reorder_bound",
     );
@@ -259,14 +259,14 @@ fn reordered_alias_argument_rejects_materialized_forall_hole() {
 fn alias_root_return_rejects_materialized_forall_hole() {
     let source = r#"module main;
         pub type Wrap[Slot] = [Return_alias_bound] Slot -> Return_alias_bound;
-        host fn wrapped(_token: .) -> Wrap(.);
-        fn consume(wrapper: (. -> Wrap(.))) -> . { () }
+        host fn wrapped(_token: .) -> Wrap[.];
+        fn consume(wrapper: (. -> Wrap[.])) -> . { () }
         fn partial() -> . {
-          consume(.(token: .) -> Wrap(_) { wrapped(()) })
+          consume(.(token: .) -> Wrap[_] { wrapped(()) })
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "-> Wrap(_)",
+        "-> Wrap[_]",
         "[Return_alias_bound]",
         "Return_alias_bound",
     );
@@ -276,14 +276,14 @@ fn alias_root_return_rejects_materialized_forall_hole() {
 fn alias_root_unary_local_rejects_materialized_forall_hole() {
     let source = r#"module main;
         pub type Wrap[Slot] = [Local_alias_bound] Slot -> Local_alias_bound;
-        host fn wrapped(_token: .) -> Wrap(.);
+        host fn wrapped(_token: .) -> Wrap[.];
         fn partial() -> . {
-          let .(function: Wrap(_)) = wrapped(());
+          let .(function: Wrap[_]) = wrapped(());
           ()
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[Local_alias_bound]",
         "Local_alias_bound",
     );
@@ -293,14 +293,14 @@ fn alias_root_unary_local_rejects_materialized_forall_hole() {
 fn alias_root_destructuring_local_rejects_materialized_forall_hole() {
     let source = r#"module main;
         pub type Wrap[Slot] = [Destruct_alias_bound] Slot -> Destruct_alias_bound;
-        host fn wrapped(_token: .) -> Wrap(.);
+        host fn wrapped(_token: .) -> Wrap[.];
         fn partial() -> . {
-          let .((function: Wrap(_))) = wrapped(());
+          let .((function: Wrap[_])) = wrapped(());
           ()
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[Destruct_alias_bound]",
         "Destruct_alias_bound",
     );
@@ -310,14 +310,14 @@ fn alias_root_destructuring_local_rejects_materialized_forall_hole() {
 fn alias_root_as_pattern_local_rejects_materialized_forall_hole() {
     let source = r#"module main;
         pub type Wrap[Slot] = [As_alias_bound] Slot -> As_alias_bound;
-        host fn wrapped(_token: .) -> Wrap(.);
+        host fn wrapped(_token: .) -> Wrap[.];
         fn partial() -> . {
-          let .(whole: (function: Wrap(_))) = wrapped(());
+          let .(whole: (function: Wrap[_])) = wrapped(());
           ()
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[As_alias_bound]",
         "As_alias_bound",
     );
@@ -328,20 +328,20 @@ fn alias_root_monadic_do_unary_rejects_materialized_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_alias_bound] Slot -> Do_alias_bound;
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
-        fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
           next(Box.un_box(value))
         }
-        host fn boxed_wrapped(_token: .) -> Box(Wrap(.));
-        fn partial() -> Box(.) {
+        host fn boxed_wrapped(_token: .) -> Box[Wrap[.]];
+        fn partial() -> Box[.] {
           do (box_bind) {
-            let .(function: Wrap(_)) <- boxed_wrapped(());
+            let .(function: Wrap[_]) <- boxed_wrapped(());
             box_pure(())
           }
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[Do_alias_bound]",
         "Do_alias_bound",
     );
@@ -352,20 +352,20 @@ fn alias_root_monadic_do_pattern_rejects_materialized_forall_hole() {
     let source = r#"module main; import sequence(macro do);
         pub type Wrap[Slot] = [Do_pattern_alias_bound] Slot -> Do_pattern_alias_bound;
         pub newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn box_pure[A](value: A) -> Box(A) { Box.mk_box(value) }
-        fn box_bind[A][B](value: Box(A), next: A -> Box(B)) -> Box(B) {
+        fn box_pure[A](value: A) -> Box[A] { Box.mk_box(value) }
+        fn box_bind[A][B](value: Box[A], next: A -> Box[B]) -> Box[B] {
           next(Box.un_box(value))
         }
-        host fn boxed_wrapped(_token: .) -> Box(Wrap(.));
-        fn partial() -> Box(.) {
+        host fn boxed_wrapped(_token: .) -> Box[Wrap[.]];
+        fn partial() -> Box[.] {
           do (box_bind) {
-            let .((function: Wrap(_))) <- boxed_wrapped(());
+            let .((function: Wrap[_])) <- boxed_wrapped(());
             box_pure(())
           }
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "function: Wrap(_)",
+        "function: Wrap[_]",
         "[Do_pattern_alias_bound]",
         "Do_pattern_alias_bound",
     );
@@ -378,14 +378,14 @@ fn recursive_alias_partial_let_rejects_once_with_source_provenance() {
         host fn loop[S][R](step: S -> (S | R), state: S) -> R;
         type Wrap[Slot] = [Rec_alias_bound] Slot -> Rec_alias_bound;
         newtype Box[A] : A { constructor mk_box; projector un_box; };
-        fn choose_box[A](_tag: I32, value: Box(A)) -> Box(A) { value }
-        rec(loop) fn recursive(value: I32) -> Box(Wrap(.)) {
-          let .(box: Box(Wrap(_))) = choose_box(value, recur(cont) recursive(value));
+        fn choose_box[A](_tag: I32, value: Box[A]) -> Box[A] { value }
+        rec(loop) fn recursive(value: I32) -> Box[Wrap[.]] {
+          let .(box: Box[Wrap[_]]) = choose_box(value, recur(cont) recursive(value));
           box
         }"#;
     assert_annotation_local_forall_hole(
         source,
-        "Box(Wrap(_))",
+        "Box[Wrap[_]]",
         "[Rec_alias_bound]",
         "Rec_alias_bound",
     );
@@ -458,7 +458,7 @@ fn identity_alias_preserves_ordinary_hole() {
     ok("module main; \
         type Identity[Slot] = Slot; \
         host fn unit(_token: .) -> .; \
-        fn partial() -> . { let .(value: Identity(_)) = unit(()); () }");
+        fn partial() -> . { let .(value: Identity[_]) = unit(()); () }");
 }
 
 #[test]
@@ -466,7 +466,7 @@ fn ordinary_newtype_and_product_holes_remain_admitted() {
     ok("module main; \
         newtype Box[A] : A { constructor mk_box; projector un_box; }; \
         fn partial() -> . { \
-          let .(boxed: Box(_)) = Box.mk_box(()); \
+          let .(boxed: Box[_]) = Box.mk_box(()); \
           let .(pair: . & _) = ((), ()); \
           () \
         }");
@@ -476,22 +476,22 @@ fn ordinary_newtype_and_product_holes_remain_admitted() {
 fn call_type_argument_hole_remains_application_inference() {
     ok("module main; \
         fn identity[A](value: A) -> A { value } \
-        fn partial() -> . { let value = identity(_, ()); () }");
+        fn partial() -> . { let value = identity[_](()); () }");
 }
 
 #[test]
 fn exact_root_literal_hole_uses_expected_type() {
     ok("module main; \
         host type I32 role(i32); \
-        fn value() -> I32 { 1(_) }");
+        fn value() -> I32 { 1[_] }");
 }
 
 #[test]
 fn dropped_alias_hole_remains_admitted_without_an_annotation_goal() {
     ok("module main; \
         pub type Keep[First][Dropped] = First; \
-        host fn exact(_token: .) -> Keep(., .); \
-        fn partial() -> . { let .(value: Keep(., _)) = exact(()); () }");
+        host fn exact(_token: .) -> Keep[.][.]; \
+        fn partial() -> . { let .(value: Keep[.][_]) = exact(()); () }");
 }
 
 #[test]

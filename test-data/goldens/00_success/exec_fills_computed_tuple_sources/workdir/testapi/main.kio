@@ -16,7 +16,7 @@ fn exercise(left: String, right: String) {
   io.print(outer);
   io.print(middle);
   io.print(inner);
-  let .(literal, _unit) = retain(("literal\n"(String).>identity, ()));
+  let .(literal, _unit) = retain(("literal\n"[String].>identity, ()));
   io.print(literal);
   let .(from_callback, from_call) =
     retain((produce(.() -> String { io.print("callback\n"); left }), identity(right)));

@@ -1,6 +1,6 @@
 module main;
 
-import helper(a, b, Bool, pick);
+import helper(Bool, a, b, pick);
 import macros/control(macro if);
 
 equiv main_local_differs() {

@@ -22,17 +22,17 @@ pub labels Event =
   | { amend: Amend_req };
 
 fn limit_event(side: Side, price: I32, qty: I32) -> Event {
-  {limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum(Event)
+  ({limit = {lr_side = side, lr_price = price, lr_qty = qty}}.>widen_sum)[Event]
 }
 
 fn market_event(side: Side, qty: I32) -> Event {
-  {market = {mr_side = side, mr_qty = qty}}.>widen_sum(Event)
+  ({market = {mr_side = side, mr_qty = qty}}.>widen_sum)[Event]
 }
 
-fn cancel_event(id: I32) -> Event { {cancel = id}.>widen_sum(Event) }
+fn cancel_event(id: I32) -> Event { ({cancel = id}.>widen_sum)[Event] }
 
 fn amend_event(id: I32, qty: I32) -> Event {
-  {amend = {ar_id = id, ar_qty = qty}}.>widen_sum(Event)
+  ({amend = {ar_id = id, ar_qty = qty}}.>widen_sum)[Event]
 }
 
 pub fn limit_of(e: Limit) -> Limit_req { e.?{limit} }
@@ -57,9 +57,9 @@ pub fn amend_id(r: Amend_req) -> I32 { r.?{ar_id} }
 
 pub fn amend_qty(r: Amend_req) -> I32 { r.?{ar_qty} }
 
-pub fn event_count(events: Array(Event)) -> I32 { array_len(events) }
+pub fn event_count(events: Array[Event]) -> I32 { array_len(events) }
 
-pub fn event_at(events: Array(Event), index: I32) -> Event { array_get(events, index) }
+pub fn event_at(events: Array[Event], index: I32) -> Event { array_get(events, index) }
 
 /// The arriving flow, in source rather than on stdin so the transcript
 /// stands on its own.
@@ -75,8 +75,8 @@ pub fn event_at(events: Array(Event), index: I32) -> Event { array_get(events, i
 /// walks three price levels; a market order that exhausts its side of the
 /// book and is left unfilled; and a limit order that takes part of a
 /// resting order and leaves the maker resting with the rest.
-pub fn arrivals() -> Array(Event) {
-  let events = array_make_empty(Event, ());
+pub fn arrivals() -> Array[Event] {
+  let events = array_make_empty[Event](());
   array_push(events, limit_event(sell_side(), 101, 5));
   array_push(events, limit_event(sell_side(), 102, 4));
   array_push(events, limit_event(sell_side(), 101, 6));

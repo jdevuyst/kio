@@ -11,36 +11,36 @@ host type Double role(f64);
 literal decimal = 0.1;
 
 equiv integer_decimal() {
-  010(Int);
-  10(Int)
+  010[Int];
+  10[Int]
 }
 
 equiv integer_zero() {
-  -0(Unsigned);
-  0(Unsigned)
+  -0[Unsigned];
+  0[Unsigned]
 }
 
 equiv float_exponent() {
-  1.5e2(Float);
-  150.0(Float)
+  1.5e2[Float];
+  150.0[Float]
 }
 
 equiv float_rounded() {
-  16777217.0(Float);
-  16777216.0(Float)
+  16777217.0[Float];
+  16777216.0[Float]
 }
 
 equiv float_alias() {
-  decimal(Float);
-  0.10000000149011612(Float)
+  decimal[Float];
+  0.10000000149011612[Float]
 }
 
 equiv double_alias() {
-  decimal(Double);
-  0.1(Double)
+  decimal[Double];
+  0.1[Double]
 }
 
 equiv underflow() {
-  -1.0e-9999(Float);
-  -0.0(Float)
+  -1.0e-9999[Float];
+  -0.0[Float]
 }

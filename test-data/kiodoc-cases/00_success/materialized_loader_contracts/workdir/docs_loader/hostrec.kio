@@ -132,14 +132,14 @@ fn prod2(dom: Value) -> . | (Value & Value) {
     (
     , .(p: V_product) {
         match(V_product.get(p)) {
-          .(a: Value, b: Value) { widen_sum((a, b), . | (Value & Value)) }
+          .(a: Value, b: Value) { widen_sum((a, b))[. | (Value & Value)] }
         }
       }
-    , .(_c: V_closure) { widen_sum((), . | (Value & Value)) }
-    , .(_s: V_sum) { widen_sum((), . | (Value & Value)) }
-    , .(_u: V_unit) { widen_sum((), . | (Value & Value)) }
-    , .(_h: V_host) { widen_sum((), . | (Value & Value)) }
-    , .(_f: V_hostfn) { widen_sum((), . | (Value & Value)) }
+    , .(_c: V_closure) { widen_sum(())[. | (Value & Value)] }
+    , .(_s: V_sum) { widen_sum(())[. | (Value & Value)] }
+    , .(_u: V_unit) { widen_sum(())[. | (Value & Value)] }
+    , .(_h: V_host) { widen_sum(())[. | (Value & Value)] }
+    , .(_f: V_hostfn) { widen_sum(())[. | (Value & Value)] }
     )
   }
 }
@@ -156,19 +156,19 @@ fn prod2(dom: Value) -> . | (Value & Value) {
 // scalar is the wrong shape (a well-typed guest never triggers either).
 fn value_i32(v: Value) -> . | I32 {
   match(value_to_scalar(v)) {
-    (.(s: Scalar) { scalar_as_i32(s) }, .(_e: .) { widen_sum((), . | I32) })
+    (.(s: Scalar) { scalar_as_i32(s) }, .(_e: .) { widen_sum(())[. | I32] })
   }
 }
 
 fn value_str(v: Value) -> . | String {
   match(value_to_scalar(v)) {
-    (.(s: Scalar) { scalar_as_str(s) }, .(_e: .) { widen_sum((), . | String) })
+    (.(s: Scalar) { scalar_as_str(s) }, .(_e: .) { widen_sum(())[. | String] })
   }
 }
 
 fn value_f64(v: Value) -> . | F64 {
   match(value_to_scalar(v)) {
-    (.(s: Scalar) { scalar_as_f64(s) }, .(_e: .) { widen_sum((), . | F64) })
+    (.(s: Scalar) { scalar_as_f64(s) }, .(_e: .) { widen_sum(())[. | F64] })
   }
 }
 
@@ -185,8 +185,8 @@ fn vf64(n: F64) -> Value { vhost(scalar_of_f64(n)) }
 // A wrong-shape host call's stuck reason, naming the op and what it expected.
 fn shape_stuck(identity: String, wanted: String) -> Call_result {
   call_stuck(string_concat(
-  , "host fn `"(String)
-  , string_concat(identity, string_concat("` expected "(String), wanted))
+  , "host fn `"[String]
+  , string_concat(identity, string_concat("` expected "[String], wanted))
   ))
 }
 
@@ -202,16 +202,16 @@ fn prod3(dom: Value) -> . | (Value & Value & Value) {
               (
               , .(inner: Value & Value) {
                   match(inner) {
-                    .(b: Value, c: Value) { widen_sum((a, (b, c)), . | (Value & Value & Value)) }
+                    .(b: Value, c: Value) { widen_sum((a, (b, c)))[. | (Value & Value & Value)] }
                   }
                 }
-              , .(_n: .) { widen_sum((), . | (Value & Value & Value)) }
+              , .(_n: .) { widen_sum(())[. | (Value & Value & Value)] }
               )
             }
           }
         }
       }
-    , .(_n: .) { widen_sum((), . | (Value & Value & Value)) }
+    , .(_n: .) { widen_sum(())[. | (Value & Value & Value)] }
     )
   }
 }
@@ -257,17 +257,17 @@ fn bin_i32(identity: String, op: (I32 & I32) -> I32, dom: Value) -> Call_result 
                   match(value_i32(b)) {
                     (
                     , .(y: I32) { call_done(vi32(op(x, y))) }
-                    , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                    , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+              , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+    , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
     )
   }
 }
@@ -288,17 +288,17 @@ fn bin_f64(identity: String, op: (F64 & F64) -> F64, dom: Value) -> Call_result 
                   match(value_f64(b)) {
                     (
                     , .(y: F64) { call_done(vf64(op(x, y))) }
-                    , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+                    , .(_n: .) { shape_stuck(identity, "two f64 arguments"[String]) }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+              , .(_n: .) { shape_stuck(identity, "two f64 arguments"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck(identity, "two f64 arguments"(String)) }
+    , .(_n: .) { shape_stuck(identity, "two f64 arguments"[String]) }
     )
   }
 }
@@ -317,17 +317,17 @@ fn cmp_i32(identity: String, op: (I32 & I32) -> Bool, dom: Value) -> Call_result
                   match(value_i32(b)) {
                     (
                     , .(y: I32) { call_done(vbool(op(x, y))) }
-                    , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+                    , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+              , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck(identity, "two i32 arguments"(String)) }
+    , .(_n: .) { shape_stuck(identity, "two i32 arguments"[String]) }
     )
   }
 }
@@ -347,18 +347,18 @@ fn concat_op(dom: Value) -> Call_result {
                     (
                     , .(s1: String) { call_done(vstr(string_concat(s0, s1))) }
                     , .(_n: .) {
-                        shape_stuck("string_concat"(String), "two string arguments"(String))
+                        shape_stuck("string_concat"[String], "two string arguments"[String])
                       }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck("string_concat"(String), "two string arguments"(String)) }
+              , .(_n: .) { shape_stuck("string_concat"[String], "two string arguments"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck("string_concat"(String), "two string arguments"(String)) }
+    , .(_n: .) { shape_stuck("string_concat"[String], "two string arguments"[String]) }
     )
   }
 }
@@ -377,17 +377,17 @@ fn str_eq_op(dom: Value) -> Call_result {
                   match(value_str(b)) {
                     (
                     , .(s1: String) { call_done(vbool(string_eq(s0, s1))) }
-                    , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
+                    , .(_n: .) { shape_stuck("string_eq"[String], "two string arguments"[String]) }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
+              , .(_n: .) { shape_stuck("string_eq"[String], "two string arguments"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck("string_eq"(String), "two string arguments"(String)) }
+    , .(_n: .) { shape_stuck("string_eq"[String], "two string arguments"[String]) }
     )
   }
 }
@@ -398,7 +398,7 @@ fn to_string_op(dom: Value) -> Call_result {
   match(value_i32(dom)) {
     (
     , .(n: I32) { call_done(vstr(int_to_string(n))) }
-    , .(_x: .) { shape_stuck("int_to_string"(String), "one i32 argument"(String)) }
+    , .(_x: .) { shape_stuck("int_to_string"[String], "one i32 argument"[String]) }
     )
   }
 }
@@ -409,7 +409,7 @@ fn f64_to_string_op(dom: Value) -> Call_result {
   match(value_f64(dom)) {
     (
     , .(n: F64) { call_done(vstr(f64_to_string(n))) }
-    , .(_x: .) { shape_stuck("f64_to_string"(String), "one f64 argument"(String)) }
+    , .(_x: .) { shape_stuck("f64_to_string"[String], "one f64 argument"[String]) }
     )
   }
 }
@@ -419,7 +419,7 @@ fn string_len_op(dom: Value) -> Call_result {
   match(value_str(dom)) {
     (
     , .(s: String) { call_done(vi32(string_len(s))) }
-    , .(_x: .) { shape_stuck("string_len"(String), "one string argument"(String)) }
+    , .(_x: .) { shape_stuck("string_len"[String], "one string argument"[String]) }
     )
   }
 }
@@ -430,7 +430,7 @@ fn print_op(dom: Value) -> Call_result {
   match(value_str(dom)) {
     (
     , .(s: String) { print(s); call_done(vunit()) }
-    , .(_x: .) { shape_stuck("print"(String), "one string argument"(String)) }
+    , .(_x: .) { shape_stuck("print"[String], "one string argument"[String]) }
     )
   }
 }
@@ -454,8 +454,8 @@ fn string_slice_op(dom: Value) -> Call_result {
                           , .(b0: I32) { call_done(vstr(string_slice(s0, a0, b0))) }
                           , .(_n: .) {
                               shape_stuck(
-                              , "string_slice"(String)
-                              , "a string and two i32 arguments"(String)
+                              , "string_slice"[String]
+                              , "a string and two i32 arguments"[String]
                               )
                             }
                           )
@@ -463,22 +463,22 @@ fn string_slice_op(dom: Value) -> Call_result {
                       }
                     , .(_n: .) {
                         shape_stuck(
-                        , "string_slice"(String)
-                        , "a string and two i32 arguments"(String)
+                        , "string_slice"[String]
+                        , "a string and two i32 arguments"[String]
                         )
                       }
                     )
                   }
                 }
               , .(_n: .) {
-                  shape_stuck("string_slice"(String), "a string and two i32 arguments"(String))
+                  shape_stuck("string_slice"[String], "a string and two i32 arguments"[String])
                 }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck("string_slice"(String), "a string and two i32 arguments"(String)) }
+    , .(_n: .) { shape_stuck("string_slice"[String], "a string and two i32 arguments"[String]) }
     )
   }
 }
@@ -498,18 +498,18 @@ fn string_code_at_op(dom: Value) -> Call_result {
                     (
                     , .(i0: I32) { call_done(v_opt_i32(string_code_at(s0, i0))) }
                     , .(_n: .) {
-                        shape_stuck("string_code_at"(String), "a string and an i32"(String))
+                        shape_stuck("string_code_at"[String], "a string and an i32"[String])
                       }
                     )
                   }
                 }
-              , .(_n: .) { shape_stuck("string_code_at"(String), "a string and an i32"(String)) }
+              , .(_n: .) { shape_stuck("string_code_at"[String], "a string and an i32"[String]) }
               )
             }
           }
         }
       }
-    , .(_n: .) { shape_stuck("string_code_at"(String), "a string and an i32"(String)) }
+    , .(_n: .) { shape_stuck("string_code_at"[String], "a string and an i32"[String]) }
     )
   }
 }
@@ -519,7 +519,7 @@ fn string_to_int_op(dom: Value) -> Call_result {
   match(value_str(dom)) {
     (
     , .(s0: String) { call_done(v_opt_i32(string_to_int(s0))) }
-    , .(_x: .) { shape_stuck("string_to_int"(String), "one string argument"(String)) }
+    , .(_x: .) { shape_stuck("string_to_int"[String], "one string argument"[String]) }
     )
   }
 }
@@ -535,11 +535,11 @@ fn bool_to_string_op(dom: Value) -> Call_result {
         match(scalar_as_bool(sc)) {
           (
           , .(b: Bool) { call_done(vstr(bool_to_string(b))) }
-          , .(_n: .) { shape_stuck("bool_to_string"(String), "one bool argument"(String)) }
+          , .(_n: .) { shape_stuck("bool_to_string"[String], "one bool argument"[String]) }
           )
         }
       }
-    , .(_n: .) { shape_stuck("bool_to_string"(String), "one bool argument"(String)) }
+    , .(_n: .) { shape_stuck("bool_to_string"[String], "one bool argument"[String]) }
     )
   }
 }
@@ -549,7 +549,7 @@ fn print_i32_op(dom: Value) -> Call_result {
   match(value_i32(dom)) {
     (
     , .(n: I32) { print_i32(n); call_done(vunit()) }
-    , .(_x: .) { shape_stuck("print_i32"(String), "one i32 argument"(String)) }
+    , .(_x: .) { shape_stuck("print_i32"[String], "one i32 argument"[String]) }
     )
   }
 }
@@ -581,18 +581,18 @@ fn print_i32_op(dom: Value) -> Call_result {
 // standard `call` capability; an unrelated module with the same leaf is never
 // admitted.
 fn descriptor_is_guest_module(id: Host_id, standard_module: String, local_name: String) -> Bool {
-  if(string_eq(standard_module, "testapi/arith"(String))) {
-    host_id_eq(id, mk_host_id("hostapi/arith"(String), local_name))
-  } else if(string_eq(standard_module, "testapi/text"(String))) {
-    host_id_eq(id, mk_host_id("hostapi/text"(String), local_name))
-  } else if(string_eq(standard_module, "testapi/fmt"(String))) {
-    host_id_eq(id, mk_host_id("hostapi/fmt"(String), local_name))
-  } else if(string_eq(standard_module, "testapi/io"(String))) {
-    host_id_eq(id, mk_host_id("hostapi/io"(String), local_name))
-  } else if(string_eq(standard_module, "testapi/iter"(String))) {
-    host_id_eq(id, mk_host_id("hostapi/iter"(String), local_name))
+  if(string_eq(standard_module, "testapi/arith"[String])) {
+    host_id_eq(id, mk_host_id("hostapi/arith"[String], local_name))
+  } else if(string_eq(standard_module, "testapi/text"[String])) {
+    host_id_eq(id, mk_host_id("hostapi/text"[String], local_name))
+  } else if(string_eq(standard_module, "testapi/fmt"[String])) {
+    host_id_eq(id, mk_host_id("hostapi/fmt"[String], local_name))
+  } else if(string_eq(standard_module, "testapi/io"[String])) {
+    host_id_eq(id, mk_host_id("hostapi/io"[String], local_name))
+  } else if(string_eq(standard_module, "testapi/iter"[String])) {
+    host_id_eq(id, mk_host_id("hostapi/iter"[String], local_name))
   } else {
-    .f(Bool)
+    .f[Bool]
   }
 }
 
@@ -600,9 +600,9 @@ fn descriptor_is_guest_module(id: Host_id, standard_module: String, local_name: 
 fn descriptor_is(descriptor: Host_fn, module_name: String, local_name: String) -> Bool {
   let id = host_fn_id(descriptor);
   if(host_id_eq(id, mk_host_id(module_name, local_name))) {
-    .t(Bool)
-  } else if(host_id_eq(id, mk_host_id("hostapi"(String), local_name))) {
-    .t(Bool)
+    .t[Bool]
+  } else if(host_id_eq(id, mk_host_id("hostapi"[String], local_name))) {
+    .t[Bool]
   } else {
     descriptor_is_guest_module(id, module_name, local_name)
   }
@@ -610,14 +610,14 @@ fn descriptor_is(descriptor: Host_fn, module_name: String, local_name: String) -
 
 fn alpha_print_descriptor() -> Host_fn {
   mk_host_fn(
-  , mk_host_id("testapi/alpha"(String), "print"(String))
-  , "(h{testapi.String}) -> ."(String)
+  , mk_host_id("testapi/alpha"[String], "print"[String])
+  , "(h{testapi.String}) -> ."[String]
   )
 }
 
 fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_render(host_fn_id(descriptor));
-  if(descriptor_is(descriptor, "testapi/arith"(String), "add_i32"(String))) {
+  if(descriptor_is(descriptor, "testapi/arith"[String], "add_i32"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -627,7 +627,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "sub_i32"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -637,7 +637,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "mul_i32"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -647,7 +647,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "div_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "div_i32"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -657,7 +657,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mod_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "mod_i32"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -667,7 +667,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "eq_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "eq_i32"[String])) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
@@ -677,7 +677,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "leq_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "leq_i32"[String])) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
@@ -687,7 +687,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "lt_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "lt_i32"[String])) {
     cmp_i32(
     , identity
     , .(p: I32 & I32) {
@@ -697,17 +697,17 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_concat"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/text"[String], "string_concat"[String])) {
     concat_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_eq"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/text"[String], "string_eq"[String])) {
     str_eq_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_len"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/text"[String], "string_len"[String])) {
     string_len_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "int_to_string"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "int_to_string"[String])) {
     to_string_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "i32_to_string"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "i32_to_string"[String])) {
     to_string_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "add_f64"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "add_f64"[String])) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
@@ -717,7 +717,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub_f64"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "sub_f64"[String])) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
@@ -727,7 +727,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul_f64"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "mul_f64"[String])) {
     bin_f64(
     , identity
     , .(p: F64 & F64) {
@@ -737,25 +737,25 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "f64_to_string"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "f64_to_string"[String])) {
     f64_to_string_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/io"(String), "print"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/io"[String], "print"[String])) {
     print_op(dom)
   } else if(host_fn_eq(descriptor, alpha_print_descriptor())) {
     print_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "print_i32"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "print_i32"[String])) {
     print_i32_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "bool_to_string"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "bool_to_string"[String])) {
     bool_to_string_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_slice"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/text"[String], "string_slice"[String])) {
     string_slice_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/text"(String), "string_code_at"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/text"[String], "string_code_at"[String])) {
     string_code_at_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/fmt"(String), "string_to_int"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/fmt"[String], "string_to_int"[String])) {
     string_to_int_op(dom)
-  } else if(descriptor_is(descriptor, "testapi/io"(String), "read_ascii_line"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/io"[String], "read_ascii_line"[String])) {
     read_ascii_line_op()
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "add"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "add"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -765,7 +765,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "sub"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "sub"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -775,7 +775,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mul"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "mul"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -785,7 +785,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "div"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "div"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -795,7 +795,7 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/arith"(String), "mod"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/arith"[String], "mod"[String])) {
     bin_i32(
     , identity
     , .(p: I32 & I32) {
@@ -805,12 +805,12 @@ fn dispatch(descriptor: Host_fn, dom: Value) -> Call_result {
       }
     , dom
     )
-  } else if(descriptor_is(descriptor, "testapi/iter"(String), "loop"(String))) {
+  } else if(descriptor_is(descriptor, "testapi/iter"[String], "loop"[String])) {
     loop_op(dom)
   } else {
     call_stuck(string_concat(
-    , "no host implementation for `"(String)
-    , string_concat(identity, "`"(String))
+    , "no host implementation for `"[String]
+    , string_concat(identity, "`"[String])
     ))
   }
 }
@@ -837,42 +837,42 @@ fn id_is(id: Host_id, module_name: String, local_name: String) -> Bool {
 
 fn literal_representation(host_type: Host_type) -> String {
   let id = host_type_id(host_type);
-  if(id_is(id, "testapi"(String), "I32"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "testapi"(String), "Int"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "hostapi"(String), "I32"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "textapi"(String), "I32"(String))) {
+  if(id_is(id, "testapi"[String], "I32"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "testapi"[String], "Int"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "hostapi"[String], "I32"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "textapi"[String], "I32"[String])) {
     // This host deliberately represents textapi.I32 as text. The shared i32
     // role admits its literal syntax; it does not select representation.
-    "String"(String)
-  } else if(id_is(id, "left"(String), "Shared"(String))) {
-    "String"(String)
-  } else if(id_is(id, "right"(String), "Shared"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "testapi"(String), "String"(String))) {
-    "String"(String)
-  } else if(id_is(id, "testapi"(String), "Str"(String))) {
-    "String"(String)
-  } else if(id_is(id, "hostapi"(String), "String"(String))) {
-    "String"(String)
-  } else if(id_is(id, "elab/testapi"(String), "String"(String))) {
-    "String"(String)
-  } else if(id_is(id, "elab/testapi"(String), "I32"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "elab/testapi"(String), "Int"(String))) {
-    "I32"(String)
-  } else if(id_is(id, "elab/testapi"(String), "Bool"(String))) {
-    "Bool"(String)
-  } else if(id_is(id, "testapi"(String), "Bool"(String))) {
-    "Bool"(String)
-  } else if(id_is(id, "hostapi"(String), "Bool"(String))) {
-    "Bool"(String)
-  } else if(id_is(id, "testapi"(String), "F64"(String))) {
-    "F64"(String)
-  } else if(id_is(id, "hostapi"(String), "F64"(String))) {
-    "F64"(String)
+    "String"[String]
+  } else if(id_is(id, "left"[String], "Shared"[String])) {
+    "String"[String]
+  } else if(id_is(id, "right"[String], "Shared"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "testapi"[String], "String"[String])) {
+    "String"[String]
+  } else if(id_is(id, "testapi"[String], "Str"[String])) {
+    "String"[String]
+  } else if(id_is(id, "hostapi"[String], "String"[String])) {
+    "String"[String]
+  } else if(id_is(id, "elab/testapi"[String], "String"[String])) {
+    "String"[String]
+  } else if(id_is(id, "elab/testapi"[String], "I32"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "elab/testapi"[String], "Int"[String])) {
+    "I32"[String]
+  } else if(id_is(id, "elab/testapi"[String], "Bool"[String])) {
+    "Bool"[String]
+  } else if(id_is(id, "testapi"[String], "Bool"[String])) {
+    "Bool"[String]
+  } else if(id_is(id, "hostapi"[String], "Bool"[String])) {
+    "Bool"[String]
+  } else if(id_is(id, "testapi"[String], "F64"[String])) {
+    "F64"[String]
+  } else if(id_is(id, "hostapi"[String], "F64"[String])) {
+    "F64"[String]
   } else {
     // Preflight keeps unsupported descriptors from reaching the callback. A
     // direct low-level misuse still fails by passing the exact rendered ID to

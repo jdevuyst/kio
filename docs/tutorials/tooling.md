@@ -94,7 +94,7 @@ host type String role(str);
 
 host fn print(p0: String);
 
-pub fn main() { print("hello from Kio\n"(String)) }
+pub fn main() { print("hello from Kio\n"[String]) }
 ```
 
 `String` here names a host-supplied type. `role(str)` admits string literals
@@ -111,7 +111,7 @@ Let's add one function and call it from `main`: a `greeting` function that build
 First, the new function — deliberately typed on one cramped line so we have something for the formatter to fix in the next step:
 
 ```text
-fn greeting(name: String) -> String {string_concat("hello, "(String),name)}
+fn greeting(name: String) -> String {string_concat("hello, "[String],name)}
 ```
 
 `greeting` concatenates a literal prefix with its argument. That call needs one more host capability — string concatenation — so add its declaration alongside the existing `host` lines in `main.kio`:
@@ -131,9 +131,9 @@ host fn string_concat(p0: String, p1: String) -> String;
 Finally, rewrite `main` to call `greeting`:
 
 ```kio {@loop}
-fn greeting(name: String) -> String { string_concat("hello, "(String), name) }
+fn greeting(name: String) -> String { string_concat("hello, "[String], name) }
 
-pub fn main() { print(greeting("Kio"(String))) }
+pub fn main() { print(greeting("Kio"[String])) }
 ```
 
 The module now reads, top to bottom: a `module main;` header, three `host` declarations (`String`, `print`, `string_concat`), then `greeting` and `main`.
@@ -199,8 +199,8 @@ Add a claim to `main.kio` that pins down `greeting`'s behavior:
 
 ```kio {@loop}
 equiv greeting_kio() {
-  greeting("Kio"(String));
-  string_concat("hello, "(String), "Kio"(String))
+  greeting("Kio"[String]);
+  string_concat("hello, "[String], "Kio"[String])
 }
 ```
 

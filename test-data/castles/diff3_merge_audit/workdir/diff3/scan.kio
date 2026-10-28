@@ -15,23 +15,23 @@ import testapi/io(read_ascii_line);
 import testapi/iter(loop);
 import testapi/text(string_eq);
 
-pub labels Doc = { base: list.List(String), ours: list.List(String), theirs: list.List(String) };
+pub labels Doc = { base: list.List[String], ours: list.List[String], theirs: list.List[String] };
 
 /// Sections are collected head-first and reversed once at the end, so a
 /// line costs one cons rather than a walk to the end of a growing list.
 labels Cursor = {
 , section: I32
-, base_rev: list.List(String)
-, ours_rev: list.List(String)
-, theirs_rev: list.List(String)
+, base_rev: list.List[String]
+, ours_rev: list.List[String]
+, theirs_rev: list.List[String]
 };
 
 fn start() -> Cursor {
   {
   , section = 0
-  , base_rev = list.nil(String)
-  , ours_rev = list.nil(String)
-  , theirs_rev = list.nil(String)
+  , base_rev = list.nil[String]
+  , ours_rev = list.nil[String]
+  , theirs_rev = list.nil[String]
   }
 }
 
@@ -76,8 +76,8 @@ pub fn read_document() -> Doc {
   {base = list.reverse(base_rev), ours = list.reverse(ours_rev), theirs = list.reverse(theirs_rev)}
 }
 
-pub fn base_lines(doc: Doc) -> list.List(String) { doc.?{base} }
+pub fn base_lines(doc: Doc) -> list.List[String] { doc.?{base} }
 
-pub fn our_lines(doc: Doc) -> list.List(String) { doc.?{ours} }
+pub fn our_lines(doc: Doc) -> list.List[String] { doc.?{ours} }
 
-pub fn their_lines(doc: Doc) -> list.List(String) { doc.?{theirs} }
+pub fn their_lines(doc: Doc) -> list.List[String] { doc.?{theirs} }

@@ -14,8 +14,8 @@ fn unit_in_let() { let u = (); u }
 // through E-Unit on `()`.
 fn id[T](x: T) -> T { x }
 
-fn unit_as_arg() { id(., ()) }
+fn unit_as_arg() { id[.](()) }
 
 // `()` in a multi-arg position: each `()` synthesizes
 // independently via E-Unit.
-fn unit_pair() -> . & . { __pair__(., ., (), ()) }
+fn unit_pair() -> . & . { __pair__[.][.]((), ()) }

@@ -6,5 +6,5 @@ pure fn inferred() -> Integer { 42 }
 
 equiv contextual_literal() {
   inferred();
-  42(Integer)
+  42[Integer]
 }

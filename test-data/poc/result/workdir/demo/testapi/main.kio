@@ -44,7 +44,7 @@ fn cat(a: String, b: String) -> String { string_concat(a, b) }
 // Render a `Result(I32, String)` for display: `ok(n)` becomes
 // `"ok(<n>)"`, `err(msg)` becomes `"err(<msg>)"`. The library's own
 // `fold` does the dispatch; this wrapper only formats each arm.
-fn show(result: Result(I32, String)) -> String {
+fn show(result: Result[I32][String]) -> String {
   fold(
   , .(v: I32) { cat("ok(", cat(int_to_string(v), ")")) }
   , .(x: String) { cat("err(", cat(x, ")")) }
@@ -59,7 +59,7 @@ fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
 // `swap` flips the arms, so a swapped `Result(I32, String)` is a
 // `Result(String, I32)`. Render it with the flipped formatting.
-fn show_swapped(result: Result(String, I32)) -> String {
+fn show_swapped(result: Result[String][I32]) -> String {
   fold(
   , .(s: String) { cat("ok(", cat(s, ")")) }
   , .(n: I32) { cat("err(", cat(int_to_string(n), ")")) }
@@ -79,8 +79,8 @@ fn run() {
   let inc = .(n: I32) -> I32 { add_i32(n, 1) };
   let shout = .(s: String) -> String { cat(s, "!") };
   // ---------- Constructors + eliminator ----------
-  let good = ok(_, String, 41(I32));
-  let bad = err(I32, _, "boom"(String));
+  let good = ok[_][String](41[I32]);
+  let bad = err[I32][_]("boom"[String]);
   line("ok(41)", show(good));
   line("err(boom)", show(bad));
   // ---------- Predicates ----------
@@ -95,11 +95,11 @@ fn run() {
   // ---------- Monad ----------
   // `bind` chains a fallible step. `checked_inc` only succeeds on the
   // success arm; threading binds shows the short-circuit.
-  let checked_inc = .(n: I32) -> Result(I32, String) { ok(inc(n)) };
+  let checked_inc = .(n: I32) -> Result[I32][String] { ok(inc(n)) };
   line("bind(ok, checked_inc)", show(bind(good, checked_inc)));
   line("bind(err, checked_inc)", show(bind(bad, checked_inc)));
   // `apply`: a Result-wrapped function over a Result-wrapped argument.
-  let rf = ok(_, String, inc);
+  let rf = ok[_][String](inc);
   line("apply(ok(inc), ok(41))", show(apply(rf, good)));
   // ---------- Recovery ----------
   line("or_else(err, ok(7))", show(or_else(bad, ok(7))));

@@ -19,7 +19,7 @@ pub newtype Maybe[A] : . | A { pub constructor mk_maybe; pub projector un_maybe 
 // result. The Forall binders flow to the inherent projector
 // method as generic type-params; the dictionary instance below
 // is the `Maybe` interpretation.
-pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;
   pub projector bind
   }
@@ -28,15 +28,12 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // case-splits on the `. | A` payload (`nothing` short-circuits to
 // `nothing`, `just(v)` hands `v` to the continuation `k`), and
 // re-wraps the continuation's result via `Maybe.mk_maybe`.
-fn maybe_monad() -> Monad(Maybe) {
-  Monad.mk_monad(
-  , Maybe
-  , .[A][B](m, k) {
-      match(Maybe.un_maybe(m)) {
-        (.(av: A) { k(av) }, .(_unit: .) { Maybe.mk_maybe(widen_sum((), . | B)) })
-      }
+fn maybe_monad() -> Monad[Maybe] {
+  Monad.mk_monad[Maybe](.[A][B](m, k) {
+    match(Maybe.un_maybe(m)) {
+      (.(av: A) { k(av) }, .(_unit: .) { Maybe.mk_maybe(widen_sum(())[. | B]) })
     }
-  )
+  })
 }
 
 // Two `just` values composed through `do`-bind: pull each value
@@ -46,11 +43,11 @@ fn maybe_monad() -> Monad(Maybe) {
 // body.
 fn use_dictionary() -> String {
   let monad = maybe_monad();
-  let just_hello = Maybe.mk_maybe(widen_sum("monad on maybe ok\n"(String), . | String));
+  let just_hello = Maybe.mk_maybe(widen_sum("monad on maybe ok\n"[String])[. | String]);
   let result =
-    do(Monad.bind(monad)) { let x <- just_hello; Maybe.mk_maybe(widen_sum(x, . | String)) };
+    do(Monad.bind(monad)) { let x <- just_hello; Maybe.mk_maybe(widen_sum(x)[. | String]) };
   match(Maybe.un_maybe(result)) {
-    (.(s: String) { s }, .(_unit: .) { "absent\n"(String) })
+    (.(s: String) { s }, .(_unit: .) { "absent\n"[String] })
   }
 }
 

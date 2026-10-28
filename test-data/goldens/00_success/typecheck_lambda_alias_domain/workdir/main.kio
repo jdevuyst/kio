@@ -15,7 +15,7 @@ fn product_tail_domain() -> (I32 & Intpair) -> I32 {
 }
 
 fn unit_domain() -> Empty -> I32 {
-  .() { 0(I32) }
+  .() { 0[I32] }
 }
 
 fn main() { () }

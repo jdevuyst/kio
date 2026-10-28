@@ -30,7 +30,7 @@ pub fn main() {
   // Shape 2: prefix-op applied to an identifier. The leading-minus
   // carve-out only applies to digits, so `-` adjacent to an
   // identifier is always its own op-token; `- y` is `neg(y)`.
-  let y = 5(I32);
+  let y = 5[I32];
   print_i32(- y);
   // Shape 3: prefix-then-binary composition. Per `specs/language.md`
   // § Operators — Nesting summary, prefix unary is the lone

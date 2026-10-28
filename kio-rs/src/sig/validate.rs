@@ -1450,7 +1450,7 @@ mod tests {
             ),
             (
                 "higher kind and forall",
-                "module dep { host type Raw; }; module api { import dep(Raw); pub type Wrapped[*F, A] = [Raw] F(Raw) -> A; }",
+                "module dep { host type Raw; }; module api { import dep(Raw); pub type Wrapped[*F][A] = [Raw] F[Raw] -> A; }",
                 true,
             ),
             (
@@ -1633,15 +1633,14 @@ mod tests {
             .map(|index| format!("[A{index}]"))
             .collect::<String>();
         let arguments = (0..parameters)
-            .map(|index| format!("A{index}"))
-            .collect::<Vec<_>>()
-            .join(", ");
+            .map(|index| format!("[A{index}]"))
+            .collect::<String>();
         let mut source = String::from("module api; rec {");
         for index in 0..cycle_members {
             let next = (index + 1) % cycle_members;
             write!(
                 source,
-                " pub newtype N{index}{binders} : api.N{next}({arguments}) {{ pub constructor mk_n{index}; pub projector un_n{index}; }};"
+                " pub newtype N{index}{binders} : api.N{next}{arguments} {{ pub constructor mk_n{index}; pub projector un_n{index}; }};"
             )
             .expect("write recursive type member");
         }

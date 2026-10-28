@@ -12,9 +12,9 @@ import testapi/text(string_concat);
 
 pub literal fine_rate = 25;
 
-pub type Call_list = lcore.List(I32);
+pub type Call_list = lcore.List[I32];
 
-pub type Line_list = lcore.List(String);
+pub type Line_list = lcore.List[String];
 
 pub labels Book = { title: String, copies_total: I32, copies_out: I32 };
 
@@ -35,43 +35,47 @@ pub labels Failure =
   | { not_held: I32 & I32 }
   | { copies_available: I32 };
 
-pub type Book_index = dict.Dict(I32, Book);
+pub type Book_index = dict.Dict[I32][Book];
 
-pub type Member_index = dict.Dict(I32, Member);
+pub type Member_index = dict.Dict[I32][Member];
 
-pub type Hold_list = lcore.List(Hold_rec);
+pub type Hold_list = lcore.List[Hold_rec];
 
-pub type Op_list = lcore.List(Op);
+pub type Op_list = lcore.List[Op];
 
-pub type Audit_list = lcore.List(Failure);
+pub type Audit_list = lcore.List[Failure];
 
 /// The state a fallible circulation step hands back: the three updated
 /// stores plus the transcript note describing what changed.
 pub type Applied = Book_index & Member_index & Hold_list & String;
 
-pub type Outcome = result.Result(Applied, Failure);
+pub type Outcome = result.Result[Applied][Failure];
 
-pub fn op_checkout(member: I32, call: I32) -> Op { {checkout = (member, call)}.>widen_sum(Op) }
+pub fn op_checkout(member: I32, call: I32) -> Op { ({checkout = (member, call)}.>widen_sum)[Op] }
 
 pub fn op_return(member: I32, call: I32, days_late: I32) -> Op {
-  {return = (member, call, days_late)}.>widen_sum(Op)
+  ({return = (member, call, days_late)}.>widen_sum)[Op]
 }
 
-pub fn op_hold(member: I32, call: I32) -> Op { {hold = (member, call)}.>widen_sum(Op) }
+pub fn op_hold(member: I32, call: I32) -> Op { ({hold = (member, call)}.>widen_sum)[Op] }
 
-pub fn op_report() -> Op { {report=}.>widen_sum(Op) }
+pub fn op_report() -> Op { ({report=}.>widen_sum)[Op] }
 
-pub fn fail_unknown_call(call: I32) -> Failure { {unknown_call = call}.>widen_sum(Failure) }
+pub fn fail_unknown_call(call: I32) -> Failure { ({unknown_call = call}.>widen_sum)[Failure] }
 
-pub fn fail_unknown_member(member: I32) -> Failure { {unknown_member = member}.>widen_sum(Failure) }
+pub fn fail_unknown_member(member: I32) -> Failure {
+  ({unknown_member = member}.>widen_sum)[Failure]
+}
 
-pub fn fail_no_copies(call: I32) -> Failure { {no_copies = call}.>widen_sum(Failure) }
+pub fn fail_no_copies(call: I32) -> Failure { ({no_copies = call}.>widen_sum)[Failure] }
 
 pub fn fail_not_held(member: I32, call: I32) -> Failure {
-  {not_held = (member, call)}.>widen_sum(Failure)
+  ({not_held = (member, call)}.>widen_sum)[Failure]
 }
 
-pub fn fail_copies_available(call: I32) -> Failure { {copies_available = call}.>widen_sum(Failure) }
+pub fn fail_copies_available(call: I32) -> Failure {
+  ({copies_available = call}.>widen_sum)[Failure]
+}
 
 pub fn cat(left: String, right: String) -> String { string_concat(left, right) }
 

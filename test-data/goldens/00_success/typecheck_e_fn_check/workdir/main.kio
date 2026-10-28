@@ -30,7 +30,7 @@ fn call_concrete() {
 // is `[A][B](A & B) -> A`; the inner `fn` writes the first
 // binder concretely, leaves the second slot `_`, and drops
 // the return annotation.
-fn use_const_fst(g: [A][B] (A & B) -> A) { g(., ., (), ()) }
+fn use_const_fst(g: [A][B] (A & B) -> A) { g[.][.]((), ()) }
 
 fn call_mixed() {
   use_const_fst(.[P][Q](x: P, _y: _) { x })

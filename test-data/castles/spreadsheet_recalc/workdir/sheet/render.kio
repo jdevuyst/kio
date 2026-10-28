@@ -108,23 +108,23 @@ pub fn grid(vals: Values) -> String {
   cat3("  ", header_onto(0, ""), cat("\n", grid_onto(vals, 0, "")))
 }
 
-rec(loop) fn names_onto(xs: List(Addr), sep: String, acc: String) -> String {
+rec(loop) fn names_onto(xs: List[Addr], sep: String, acc: String) -> String {
   match(xs.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) { recur names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
+    , .(a: Addr, rest: List[Addr]) { recur names_onto(rest, " ", cat3(acc, sep, addr_name(a))) }
     , .(_empty: .) { acc }
     )
   }
 }
 
-pub fn addr_list(xs: List(Addr)) -> String {
+pub fn addr_list(xs: List[Addr]) -> String {
   if(is_empty(xs)) { "(none)" } else { names_onto(xs, "", "") }
 }
 
-rec(loop) fn listing_onto(s: Sheet, todo: List(Addr), acc: String) -> String {
+rec(loop) fn listing_onto(s: Sheet, todo: List[Addr], acc: String) -> String {
   match(todo.>List.unpack) {
     (
-    , .(a: Addr, rest: List(Addr)) {
+    , .(a: Addr, rest: List[Addr]) {
         let line =
           cat3(cat("  ", addr_name(a)), " = ", cat(render_content(content_at(s, a)), "\n"));
         recur listing_onto(s, rest, cat(acc, line))

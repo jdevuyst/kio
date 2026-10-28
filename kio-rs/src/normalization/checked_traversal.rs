@@ -485,43 +485,107 @@ struct CanonicalFrame<'a> {
 }
 
 impl<'a> CanonicalFrame<'a> {
-    fn new(term: &'a CheckedTerm, names: &mut CheckedTermNameCanonicalizer) -> Self {
+    fn new(term: &'a CheckedTerm, names: &mut CheckedTermNameCanonicalizer<'_>) -> Self {
         let mut types = Vec::new();
         let mut values = Vec::new();
-        let mut node = match term.node.as_ref() {
+        let node = match term.node.as_ref() {
             CheckedTermNode::Raw(expr) => CheckedTermNode::Raw(clone_expr(expr)),
-            node => node.clone(),
-        };
-        match &mut node {
-            CheckedTermNode::Local { name } => *name = names.value_name(name),
-            CheckedTermNode::TermFn { sig, .. } => {
-                *sig = names.signature(sig, &mut types, &mut values)
+            CheckedTermNode::Local { name } => CheckedTermNode::Local {
+                name: names.value_name(name),
+            },
+            CheckedTermNode::TemplateValue { index } => {
+                CheckedTermNode::TemplateValue { index: *index }
             }
+            CheckedTermNode::TermLet { name, value, body } => CheckedTermNode::TermLet {
+                name: name.clone(),
+                value: value.clone(),
+                body: body.clone(),
+            },
+            CheckedTermNode::TermFn { sig, body } => CheckedTermNode::TermFn {
+                sig: names.signature(sig, &mut types, &mut values),
+                body: body.clone(),
+            },
+            CheckedTermNode::TermCall {
+                fn_value,
+                arg_packet,
+                ..
+            } => CheckedTermNode::TermCall {
+                fn_value: fn_value.clone(),
+                params: Vec::new(),
+                arg_packet: arg_packet.clone(),
+            },
+            CheckedTermNode::TermTypeApp { fn_value, .. } => CheckedTermNode::TermTypeApp {
+                fn_value: fn_value.clone(),
+                arg: Type::Unit { meta: zero_meta() },
+            },
+            CheckedTermNode::IntrinsicPair { left, right } => CheckedTermNode::IntrinsicPair {
+                left: left.clone(),
+                right: right.clone(),
+            },
             CheckedTermNode::IntrinsicProjection {
-                left_ty, right_ty, ..
-            }
-            | CheckedTermNode::IntrinsicInjection {
-                left_ty, right_ty, ..
-            } => {
-                *left_ty = names.ty(left_ty);
-                *right_ty = names.ty(right_ty);
-            }
+                intrinsic,
+                left_ty,
+                right_ty,
+                value,
+            } => CheckedTermNode::IntrinsicProjection {
+                intrinsic: intrinsic.clone(),
+                left_ty: names.ty(left_ty),
+                right_ty: names.ty(right_ty),
+                value: value.clone(),
+            },
+            CheckedTermNode::IntrinsicInjection {
+                intrinsic,
+                left_ty,
+                right_ty,
+                value,
+            } => CheckedTermNode::IntrinsicInjection {
+                intrinsic: intrinsic.clone(),
+                left_ty: names.ty(left_ty),
+                right_ty: names.ty(right_ty),
+                value: value.clone(),
+            },
             CheckedTermNode::IntrinsicEither {
                 left_ty,
                 right_ty,
                 result_ty,
-                ..
-            } => {
-                *left_ty = names.ty(left_ty);
-                *right_ty = names.ty(right_ty);
-                *result_ty = names.ty(result_ty);
-            }
-            CheckedTermNode::IntrinsicAbsurd { result_ty, .. }
-            | CheckedTermNode::IntrinsicIfThenElse { result_ty, .. } => {
-                *result_ty = names.ty(result_ty)
-            }
-            _ => {}
-        }
+                value,
+                left_name,
+                left_body,
+                right_name,
+                right_body,
+            } => CheckedTermNode::IntrinsicEither {
+                left_ty: names.ty(left_ty),
+                right_ty: names.ty(right_ty),
+                result_ty: names.ty(result_ty),
+                value: value.clone(),
+                left_name: left_name.clone(),
+                left_body: left_body.clone(),
+                right_name: right_name.clone(),
+                right_body: right_body.clone(),
+            },
+            CheckedTermNode::IntrinsicAbsurd {
+                result_ty,
+                bottom_value,
+            } => CheckedTermNode::IntrinsicAbsurd {
+                result_ty: names.ty(result_ty),
+                bottom_value: bottom_value.clone(),
+            },
+            CheckedTermNode::IntrinsicIfThenElse {
+                result_ty,
+                condition,
+                true_body,
+                false_body,
+            } => CheckedTermNode::IntrinsicIfThenElse {
+                result_ty: names.ty(result_ty),
+                condition: condition.clone(),
+                true_body: true_body.clone(),
+                false_body: false_body.clone(),
+            },
+            CheckedTermNode::MacroError { kind, message } => CheckedTermNode::MacroError {
+                kind: *kind,
+                message: message.clone(),
+            },
+        };
         Self {
             term,
             node: EvalRef::new(node),
@@ -543,7 +607,11 @@ impl<'a> CanonicalFrame<'a> {
         found
     }
 
-    fn returned(&mut self, child: EvalRef<CheckedTerm>, names: &mut CheckedTermNameCanonicalizer) {
+    fn returned(
+        &mut self,
+        child: EvalRef<CheckedTerm>,
+        names: &mut CheckedTermNameCanonicalizer<'_>,
+    ) {
         use CheckedTermNode::*;
         let node = EvalRef::make_mut(&mut self.node);
         let slot = match node {
@@ -610,11 +678,19 @@ impl<'a> CanonicalFrame<'a> {
                 }
             }
             TermCall { params, .. } if self.next == 1 => {
-                for ty in params {
-                    *ty = names.ty(ty);
-                }
+                let CheckedTermNode::TermCall { params: source, .. } = self.term.node.as_ref()
+                else {
+                    unreachable!("canonical call retains its source node")
+                };
+                *params = source.iter().map(|ty| names.ty(ty)).collect();
             }
-            TermTypeApp { arg, .. } => *arg = names.ty(arg),
+            TermTypeApp { arg, .. } => {
+                let CheckedTermNode::TermTypeApp { arg: source, .. } = self.term.node.as_ref()
+                else {
+                    unreachable!("canonical type application retains its source node")
+                };
+                *arg = names.ty(source);
+            }
             IntrinsicEither {
                 left_name,
                 right_name,
@@ -637,7 +713,7 @@ impl<'a> CanonicalFrame<'a> {
         }
     }
 
-    fn finish(self, names: &mut CheckedTermNameCanonicalizer) -> EvalRef<CheckedTerm> {
+    fn finish(self, names: &mut CheckedTermNameCanonicalizer<'_>) -> EvalRef<CheckedTerm> {
         let ty = names.ty(self.term.ty());
         names.pop_value_bindings(self.values);
         names.pop_type_bindings(self.types);
@@ -650,7 +726,7 @@ impl<'a> CanonicalFrame<'a> {
 
 pub(super) fn canonicalize(
     term: &CheckedTerm,
-    names: &mut CheckedTermNameCanonicalizer,
+    names: &mut CheckedTermNameCanonicalizer<'_>,
 ) -> CheckedTerm {
     let mut frames = vec![CanonicalFrame::new(term, names)];
     loop {

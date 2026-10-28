@@ -12,17 +12,14 @@ rec {
   pub newtype Root : Leaf | Root_tail { pub constructor make_root; pub projector read_root }
 }
 
-pub fn base_payload() -> Leaf | Root_tail { __left__(Leaf, Root_tail, Leaf.leaf(())) }
+pub fn base_payload() -> Leaf | Root_tail { __left__[Leaf][Root_tail](Leaf.leaf(())) }
 
 pub fn keep(root: Root) -> Root { root }
 
 pub fn accept_payload(payload: Leaf | Root_tail) -> I32 {
-  __either__(
-  , Leaf
-  , Root_tail
-  , I32
+  __either__[Leaf][Root_tail][I32](
   , payload
-  , .(_base: Leaf) -> I32 { 1(I32) }
-  , .(_recursive: Root_tail) -> I32 { 0(I32) }
+  , .(_base: Leaf) -> I32 { 1[I32] }
+  , .(_recursive: Root_tail) -> I32 { 0[I32] }
   )
 }

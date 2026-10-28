@@ -11,7 +11,7 @@ import testapi/io(print);
 // `pair` from the scrutinee's flattened factors via `__pair__`.
 fn handle_product(s: (I32 & String) & Bool) -> String {
   match(s) {
-    .(pair: I32 & String, b: Bool) { one_prod(pair, String) }
+    .(pair: I32 & String, b: Bool) { one_prod(pair)[String] }
   }
 }
 
@@ -29,8 +29,8 @@ fn handle_sum(s: I32 | String | Bool) -> String {
 }
 
 pub fn main() {
-  print(handle_product(((100(I32), "product-slot\n"), .t)));
-  print(handle_sum(widen_sum("string-arm\n"(String))));
-  print(handle_sum(widen_sum(.t(Bool))));
-  print(handle_sum(widen_sum(.f(Bool))))
+  print(handle_product(((100[I32], "product-slot\n"), .t)));
+  print(handle_sum(widen_sum("string-arm\n"[String])));
+  print(handle_sum(widen_sum(.t[Bool])));
+  print(handle_sum(widen_sum(.f[Bool])))
 }

@@ -13,11 +13,11 @@ fn sum5(a: F64, b: F64, c: F64, d: F64, e: F64) -> F64 {
 
 fn weighted_level(s0: F64, s1: F64, s2: F64, s3: F64, s4: F64) -> F64 {
   sum5(
-  , mul_f64(s0, 0.125(F64))
-  , mul_f64(s1, 0.25(F64))
-  , mul_f64(s2, 0.25(F64))
-  , mul_f64(s3, 0.25(F64))
-  , mul_f64(s4, 0.125(F64))
+  , mul_f64(s0, 0.125[F64])
+  , mul_f64(s1, 0.25[F64])
+  , mul_f64(s2, 0.25[F64])
+  , mul_f64(s3, 0.25[F64])
+  , mul_f64(s4, 0.125[F64])
   )
 }
 
@@ -40,6 +40,6 @@ pub fn score_report(calibrated: F64 & F64 & F64 & F64 & F64, smoothed: F64 & F64
   let level = weighted_level(s0, s1, s2, s3, s4);
   let rough = roughness(calibrated, smoothed);
   let trend = sub_f64(s4, s0);
-  let score = sub_f64(sub_f64(100.0(F64), mul_f64(rough, 32.0(F64))), mul_f64(trend, 1.5(F64)));
+  let score = sub_f64(sub_f64(100.0[F64], mul_f64(rough, 32.0[F64])), mul_f64(trend, 1.5[F64]));
   (level, rough, trend, score)
 }

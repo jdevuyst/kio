@@ -13,4 +13,4 @@ fn staged[A] -> [B] . -> . {
 
 fn argument() { consume(); () }
 
-pub fn main() { staged(., ., argument()) }
+pub fn main() { staged[.][.](argument()) }

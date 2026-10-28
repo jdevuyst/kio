@@ -29,6 +29,8 @@ Termination: every body is a closed well-typed Kio' term (parameters substituted
 
 The partial evaluator applies the small-step rules from [`prime.md`](prime.md) § 3 (β / ι), the `__if_then_else__` literal-recognition rule (§ 2.2), and the symbolic case-split over an opaque sum (§ 2.6). **No other rules fire**; in particular, host calls are opaque (§ 2.4) — the evaluator commits to nothing about what a host item computes.
 
+In the rules and residual grammar, a bracketed type vector such as `[T̄]` abbreviates successive singleton type applications, as in the [core notation](prime.md#22-term-typing-rules).
+
 ### 2.1. Inherited rules
 
 ```text
@@ -46,11 +48,11 @@ The partial evaluator applies the small-step rules from [`prime.md`](prime.md) �
 ### 2.2. `__if_then_else__` literal recognition
 
 ```text
-__if_then_else__(B, A, .t(B), t, e)   →  t(())     (ι-IfTrue)
-__if_then_else__(B, A, .f(B), t, e)   →  e(())     (ι-IfFalse)
+__if_then_else__[B][A](.t[B], t, e)   →  t(())     (ι-IfTrue)
+__if_then_else__[B][A](.f[B], t, e)   →  e(())     (ι-IfFalse)
 ```
 
-The two ι rules fire **only** when the condition slot is the parser-recognized bool literal `.t` or `.f` (carrying its mandatory `(B)` role(bool) annotation per [`prime.md`](prime.md) § 2.2). An `__if_then_else__` whose condition is a stuck host call (or any other residual) is itself a residual — no implementation knowledge of "what the host returns" is allowed to leak in.
+The two ι rules fire **only** when the condition slot is the parser-recognized bool literal `.t` or `.f` (carrying its mandatory `[B]` role(bool) annotation per [`prime.md`](prime.md) § 2.2). An `__if_then_else__` whose condition is a stuck host call (or any other residual) is itself a residual — no implementation knowledge of "what the host returns" is allowed to leak in.
 
 These reduction rules recognize Boolean literal syntax. They work because `.t` / `.f` are specific literal AST nodes, not host-supplied values: the partial evaluator can recognize them syntactically without consulting any `role(bool)` host type.
 
@@ -135,14 +137,14 @@ A term `e` is in **residual normal form** when no rule from § 2 applies. After 
 ```text
 v ::=
     ()                              (unit)
-  | .t(B) | .f(B)                  (bool literal at role(bool) type B)
+  | .t[B] | .f[B]                  (bool literal at role(bool) type B)
   | n(N_k) | r(N_k) | s(S)          (numeric / string literal at its role-bearing type)
   | λ(x₁: T₁, …, xₙ: Tₙ). e         (closure, with body residualized)
   | Λα. v                           (type abstraction over a residual)
-  | __left__(T̄, v)               (sum injection with residual payload)
-  | __right__(T̄, v)
-  | __pair__(T̄, v₁, v₂)          (product with residual components)
-  | N.c(T̄, v)                       (newtype constructor with residual payload)
+  | __left__[T̄](v)               (sum injection with residual payload)
+  | __right__[T̄](v)
+  | __pair__[T̄](v₁, v₂)          (product with residual components)
+  | N.c[T̄](v)                       (newtype constructor with residual payload)
   | a                               (free atom — equiv parameter, unbound name,
                                      or host item)
   | case v_s { left(l) → v_l,       (symbolic case-split over an opaque sum
@@ -187,10 +189,10 @@ value group; later curry groups remain distinct and are compared in turn.
 ### 4.3. Atom equality
 
 Numeric literal atoms compare their exact resolved host-type identities and
-their checked values, independently of source spelling. Integer `010(I)`
-equals `10(I)`, and integer `-0(I)` equals `0(I)`. Float atoms compare the
+their checked values, independently of source spelling. Integer `010[I]`
+equals `10[I]`, and integer `-0[I]` equals `0[I]`. Float atoms compare the
 selected role's IEEE value, including its zero sign: decimal spellings that
-round to the same value are equal, while `-0.0(F)` and `0.0(F)` differ.
+round to the same value are equal, while `-0.0[F]` and `0.0[F]` differ.
 See [literal admission and rounding](../language.md#literals).
 
 Two `Atom(name)` residuals are equal iff `name` is byte-identical. The atom's name is the term's fully-qualified path: parameter names are plain identifiers (`p0`, `acc`, …), unbound names are plain identifiers, host items are their fully-qualified paths (`print`, `io.println`, `pdt.int_to_string`).
@@ -222,7 +224,7 @@ The relation rejects the following:
 - Different sequence skeletons: `Stuck(f, []) ; Stuck(g, []) ≄ Stuck(g, [])` (extra stuck action).
 - Different injected branches: `__left__(v) ≄ __right__(w)`; `__left__(v) ≄ __left__(w)` when `v ≄ w`.
 - Different newtype heads: `N.c(v) ≄ M.c(v)` when `N ≠ M`; `N.c(v) ≄ N.d(w)` when `c ≠ d`.
-- Literals that disagree: `.t ≄ .f`; `42(I32) ≄ 7(I32)`; `42(I32) ≄ 42(I64)` (same digits, distinct exact host-type annotations).
+- Literals that disagree: `.t ≄ .f`; `42[I32] ≄ 7[I32]`; `42[I32] ≄ 42[I64]` (same digits, distinct exact host-type annotations).
 
 ### 4.6. Symbolic case-split equivalence
 

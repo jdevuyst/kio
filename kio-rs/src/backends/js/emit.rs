@@ -3224,7 +3224,7 @@ mod tests {
             );
             for index in 0..count {
                 source.push_str(&format!(
-                    "pub fn f{index}(value: Box(N)) -> Box(N) {{ value }}"
+                    "pub fn f{index}(value: Box[N]) -> Box[N] {{ value }}"
                 ));
             }
             let package = typed_package_routed_with_package(&source, Some("bridge { main; }"));
@@ -3548,12 +3548,12 @@ mod tests {
     fn field_projection_keeps_lexical_binders_and_alias_identity() {
         let package = typed_package_routed_many(
             &[
-                "module origin; pub labels { field[A]: A }; pub type Row[A] = Field(A) & .;",
+                "module origin; pub labels { field[A]: A }; pub type Row[A] = Field[A] & .;",
                 "module main; import origin as source; import origin(Row, {field}); \
-                 pub fn scopes[A](value: Row(A)) -> A { \
-                   let first = .[Row](other: source.Row(Row)) -> Row { other.?{field} }; \
-                   let second = .[A](other: Row(A)) -> A { other.?{field} }; \
-                   let _ = first(A, value); let _ = second(A, value); value.?{field} \
+                 pub fn scopes[A](value: Row[A]) -> A { \
+                   let first = .[Row](other: source.Row[Row]) -> Row { other.?{field} }; \
+                   let second = .[A](other: Row[A]) -> A { other.?{field} }; \
+                   let _ = first[A]( value); let _ = second[A]( value); value.?{field} \
                  }",
             ],
             Some("bridge { origin; main; }"),
@@ -3581,10 +3581,10 @@ mod tests {
         let package = typed_package_routed_with_package(
             "module main; \
              host type Box[A]; \
-             host fn get[A](box: Box(A)) -> A; \
+             host fn get[A](box: Box[A]) -> A; \
              newtype N : . { constructor make; projector read; }; \
              fn local(f: N -> N, value: N) -> N { f(value) } \
-             fn specialized(box: Box(N)) -> N { get(box) } \
+             fn specialized(box: Box[N]) -> N { get(box) } \
              fn computed(f: . -> (N -> N), value: N) -> N { f()(value) }",
             Some("bridge { main; }"),
         );
@@ -3605,9 +3605,9 @@ mod tests {
             "module main; \
              newtype N : . { constructor make; projector read; }; \
              newtype Pack <A> : A { constructor pack; projector unpack; }; \
-             fn stage(value: [A] N) -> N { value(.) } \
+             fn stage(value: [A] N) -> N { value[.] } \
              fn cps(value: Pack, continuation: [A] A -> N) -> N { \
-               Pack.unpack(value)(N, continuation) \
+               Pack.unpack(value)[N]( continuation) \
              }",
             Some("bridge { main; }"),
         );
@@ -3629,7 +3629,7 @@ mod tests {
              fn id[A](value: A) -> A { value } \
              fn generic() -> [A] A -> A { id } \
              fn consume(function: . -> (N -> N)) -> . -> (N -> N) { function } \
-             fn nested() -> . -> (N -> N) { consume(.() { generic()(N) }) }",
+             fn nested() -> . -> (N -> N) { consume(.() { generic()[N] }) }",
             Some("bridge { main; }"),
         );
         let js =
@@ -3785,7 +3785,7 @@ mod tests {
         let js = lower(
             "module x; \
              fn id[A](x: A) -> A { x } \
-             fn caller[A](y: A) -> A { id(A, y) }",
+             fn caller[A](y: A) -> A { id[A]( y) }",
         );
         assert!(js.contains("const caller = __kioPoly("), "got: {js}");
         assert!(js.contains("((id).advance())(y)"), "got: {js}");
@@ -3795,8 +3795,8 @@ mod tests {
     fn higher_kinded_applied_values_keep_forall_stages_and_erase_the_brand() {
         let js = lower_typed(
             "module main; \
-             fn id_app[*F][A](x: F(A)) -> F(A) { x } \
-             fn first_app[*F][A][B](x: F(A), y: F(B)) -> F(A) { x }",
+             fn id_app[*F][A](x: F[A]) -> F[A] { x } \
+             fn first_app[*F][A][B](x: F[A], y: F[B]) -> F[A] { x }",
         );
         assert!(
             js.contains("const id_app = __kioPoly(() => __kioPoly(() => ((x) => x)"),
@@ -3843,14 +3843,14 @@ mod tests {
              host type T role(str); \
              host fn observe() -> .; \
              fn staged[A]()(x: A) -> A { x } \
-             fn staged_type_only() -> (. -> T -> T) { staged(T) } \
+             fn staged_type_only() -> (. -> T -> T) { staged[T] } \
              fn staged_implicit() -> (T -> T) { staged() } \
-             fn staged_explicit() -> (T -> T) { staged(T, ()) } \
-             fn staged_effectful() -> (T -> T) { staged(T, observe()) } \
+             fn staged_explicit() -> (T -> T) { staged[T]( ()) } \
+             fn staged_effectful() -> (T -> T) { staged[T]( observe()) } \
              fn identity[A](value: A) -> A { value } \
-             fn identity_non_unit_residual() -> (T -> T) { identity(T) } \
-             fn identity_selected() -> (. -> .) { identity(.) } \
-             fn identity_saturated() -> . { identity(., ()) }",
+             fn identity_non_unit_residual() -> (T -> T) { identity[T] } \
+             fn identity_selected() -> (. -> .) { identity[.] } \
+             fn identity_saturated() -> . { identity[.]( ()) }",
         );
 
         let function_body = |name: &str, next: &str| {
@@ -4026,10 +4026,10 @@ mod tests {
 
     #[test]
     fn mk_pair_emits_binary_object() {
-        let js = lower(
+        let js = lower_typed(
             "module x; \
              import __intrinsics__; \
-             fn pair_of(x: .) -> (. & .) { __pair__(., ., x, x) }",
+             fn pair_of(x: .) -> (. & .) { __pair__[.][ .]( x, x) }",
         );
         assert!(js.contains("({ _0: x, _1: x })"), "got: {js}");
     }
@@ -4040,7 +4040,7 @@ mod tests {
             "module main; \
              import __intrinsics__; \
              host type T role(str); \
-             fn first(p: (T & T)) -> T { __fst__(T, T, p) }",
+             fn first(p: (T & T)) -> T { __fst__[T][ T]( p) }",
         );
         assert!(js.contains("const first = ((p) =>"), "got: {js}");
         assert!(js.contains("__kioProductSlot((p), 0, 2)"), "got: {js}");
@@ -4052,7 +4052,7 @@ mod tests {
             "module main; \
              import __intrinsics__; \
              host type T role(str); \
-             fn second(p: (T & T)) -> T { __snd__(T, T, p) }",
+             fn second(p: (T & T)) -> T { __snd__[T][ T]( p) }",
         );
         assert!(js.contains("const second = ((p) =>"), "got: {js}");
         assert!(js.contains("__kioProductSlot((p), 1, 2)"), "got: {js}");
@@ -4060,11 +4060,11 @@ mod tests {
 
     #[test]
     fn fst_of_mk_pair_composes() {
-        let js = lower(
+        let js = lower_typed(
             "module main; \
              import __intrinsics__; \
              host type T role(str); \
-             fn first_of_pair(x: T) -> T { __fst__(T, T, __pair__(T, T, x, x)) }",
+             fn first_of_pair(x: T) -> T { __fst__[T][ T]( __pair__[T][ T]( x, x)) }",
         );
         assert!(js.contains("const first_of_pair = ((x) =>"), "got: {js}");
         assert!(
@@ -4078,7 +4078,7 @@ mod tests {
         let js = lower(
             "module x; \
              import __intrinsics__; \
-             fn left(x: .) -> (. | .) { __left__(., ., x) }",
+             fn left(x: .) -> (. | .) { __left__[.][ .]( x) }",
         );
         assert!(js.contains("__kioSumInject(x, 0, 2)"), "got: {js}");
     }
@@ -4088,7 +4088,7 @@ mod tests {
         let js = lower(
             "module x; \
              import __intrinsics__; \
-             fn right(x: .) -> (. | .) { __right__(., ., x) }",
+             fn right(x: .) -> (. | .) { __right__[.][ .]( x) }",
         );
         assert!(js.contains("__kioSumInject(x, 1, 2)"), "got: {js}");
     }
@@ -4099,11 +4099,11 @@ mod tests {
         // the `__either__` chain into an `EnrichedMatch`; codegen
         // lowers that to one payload decode and dispatch — no
         // per-`__either__` IIFE wrapper.
-        let js = lower(
+        let js = lower_typed(
             "module x; \
              import __intrinsics__; \
              fn dispatch(s: (. | .)) -> . { \
-               __either__(., ., ., s, .(a) { a }, .(b) { b }) \
+               __either__[.][ .][ .]( s, .(a) { a }, .(b) { b }) \
              }",
         );
         assert!(
@@ -4122,7 +4122,7 @@ mod tests {
         let js = lower(
             "module x; \
              import __intrinsics__; \
-             fn dead[A](x: !) -> A { __absurd__(A, x) }",
+             fn dead[A](x: !) -> A { __absurd__[A]( x) }",
         );
         assert!(
             js.contains("((__bottom__) => { throw new Error("),
@@ -4176,7 +4176,7 @@ mod tests {
              host fn opaque_return[A](value: A) -> A; \
              pub fn poly_echo[T](x: T) -> T { x } \
              pub fn run() -> Str { apply_poly(poly_echo) } \
-             fn return_t(value: T) -> T { opaque_return(T, value) } \
+             fn return_t(value: T) -> T { opaque_return[T]( value) } \
              pub fn ordered(value: T)[T](later: T) -> T { later }",
             Some("bridge { main; }"),
         );
@@ -4209,7 +4209,7 @@ mod tests {
             "module main; \
              import __intrinsics__; \
              host type I32 role(i32); \
-             pub fn first(pair: I32 & I32) -> I32 { __fst__(I32, I32, pair) }",
+             pub fn first(pair: I32 & I32) -> I32 { __fst__[I32][ I32]( pair) }",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
@@ -4303,7 +4303,7 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              fn identity[A](value: A) -> A { value } \
-             pub fn selected[A]() -> (A -> A) { identity(A) }",
+             pub fn selected[A]() -> (A -> A) { identity[A] }",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
@@ -4339,7 +4339,7 @@ mod tests {
              import __intrinsics__; \
              host type I32 role(i32); \
              pub fn choose(pair: I32 & I32)(fallback: I32) -> I32 { \
-               __fst__(I32, I32, pair) \
+               __fst__[I32][ I32]( pair) \
              }",
             Some("bridge { main; }"),
         );
@@ -4537,7 +4537,7 @@ mod tests {
              pub newtype Box[A] : A { \
                pub constructor make_box; pub projector read_box; \
              }; \
-             pub fn round(value: Box(I32 & I32)) -> Box(I32 & I32) { value }",
+             pub fn round(value: Box[I32 & I32]) -> Box[I32 & I32] { value }",
             Some("bridge { main; }"),
         );
         let js = lower_package_to_factory_module(&pkg, "facade").expect("lower");
@@ -4549,11 +4549,11 @@ mod tests {
 
     #[test]
     fn substituted_nominals_keep_wrappers_in_original_abstract_slots() {
-        for payload in ["A & .", "A | .", "F(.) & .", "F(.) | ."] {
+        for payload in ["A & .", "A | .", "F[.] & .", "F[.] | ."] {
             let (parameters, argument) = if payload.starts_with("F") {
                 ("*F", "Box")
             } else {
-                ("A", "Box(.)")
+                ("A", "Box[.]")
             };
             let pkg = typed_package_routed_with_package(
                 &format!(
@@ -4564,7 +4564,7 @@ mod tests {
                      pub newtype Container[{parameters}] : {payload} {{ \
                        pub constructor make_container; pub projector read_container; \
                      }}; \
-                     pub fn round(value: Container({argument})) -> Container({argument}) {{ value }}"
+                     pub fn round(value: Container[{argument}]) -> Container[{argument}] {{ value }}"
                 ),
                 Some("bridge { main; }"),
             );
@@ -4852,7 +4852,7 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              pub newtype Hidden[A] : . { constructor make_hidden; projector read_hidden; }; \
-             pub rec newtype Root : Hidden(Root) { \
+             pub rec newtype Root : Hidden[Root] { \
                pub constructor make_root; pub projector read_root; \
              }; \
              pub fn keep(value: Root) -> Root { value }",
@@ -4903,7 +4903,7 @@ mod tests {
              pub newtype Phantom[A] : . { \
                pub constructor make_phantom; pub projector read_phantom; \
              }; \
-             pub rec newtype Root : Phantom(Root) { \
+             pub rec newtype Root : Phantom[Root] { \
                pub constructor make_root; pub projector read_root; \
              }; \
              pub fn keep(value: Root) -> Root { value }",
@@ -4924,7 +4924,7 @@ mod tests {
         let pkg = typed_package_routed_with_package(
             "module main; \
              pub type Const[A] = .; \
-             pub rec newtype Token : Const(Token) { \
+             pub rec newtype Token : Const[Token] { \
                pub constructor mk_token; pub projector un_token; \
              }; \
              pub fn keep(value: Token) -> Token { value }",
@@ -4944,7 +4944,7 @@ mod tests {
              pub newtype Unit_rep : . { pub constructor mk_unit_rep; pub projector un_unit_rep; }; \
              pub newtype Id[A] : A { pub constructor mk_id; pub projector un_id; }; \
              rec { \
-               pub type Tail = Id(.) & Id(Node); \
+               pub type Tail = Id[.] & Id[Node]; \
                pub newtype Node : Unit_rep | Tail { \
                  pub constructor mk_node; pub projector un_node; \
                }; \
@@ -4973,7 +4973,7 @@ mod tests {
              pub newtype Relay[A] : A { \
                pub constructor make_relay; pub projector read_relay; \
              }; \
-             pub rec newtype Root : Relay(Root) { \
+             pub rec newtype Root : Relay[Root] { \
                pub constructor make_root; pub projector read_root; \
              }; \
              pub fn keep(value: Root) -> Root { value }",
@@ -4993,7 +4993,7 @@ mod tests {
         let pkg = typed_package_routed_many(
             &[
                 "module list/core; \
-                 pub rec newtype List[A] : . | (A & List(A)) { \
+                 pub rec newtype List[A] : . | (A & List[A]) { \
                    pub constructor make_list; pub projector read_list; \
                  };",
                 "module facade; \
@@ -5193,7 +5193,7 @@ mod tests {
         let js = lower_typed(
             "module x; \
              newtype Box[A] : A { pub constructor mk_box; pub projector un_box; }; \
-             fn wrap[A](x: A) -> Box(A) { Box.mk_box(A, x) }",
+             fn wrap[A](x: A) -> Box[A] { Box.mk_box[A]( x) }",
         );
         assert!(js.contains("Box.mk_box.advance()(x)"), "got: {js}");
         assert!(!js.contains("Box.mk_box(A"), "got: {js}");
@@ -5214,8 +5214,8 @@ mod tests {
                 "module consumer; \
                  import selected as actual; \
                  import actual as selected; \
-                 fn wrap[A](value: A) -> actual.Box(A) { \
-                     actual.Box.mk_box(A, value) \
+                 fn wrap[A](value: A) -> actual.Box[A] { \
+                     actual.Box.mk_box[A]( value) \
                  }",
             ],
             None,
@@ -5357,11 +5357,11 @@ mod tests {
         let js = lower_typed(
             "module main; \
              host type I32 role(i32); host type I64 role(i64); host type U64 role(u64); host type I128 role(i128); host type U128 role(u128); \
-             fn small() -> I32 { 7(I32) } \
-             fn s64() -> I64 { 9_000_000_000(I64) } \
-             fn u64_v() -> U64 { 9_000_000_000(U64) } \
-             fn s128() -> I128 { 170_141_183_460_469_231_731_687_303_715_884_105_727(I128) } \
-             fn u128_v() -> U128 { 0(U128) }",
+             fn small() -> I32 { 7[I32] } \
+             fn s64() -> I64 { 9_000_000_000[I64] } \
+             fn u64_v() -> U64 { 9_000_000_000[U64] } \
+             fn s128() -> I128 { 170_141_183_460_469_231_731_687_303_715_884_105_727[I128] } \
+             fn u128_v() -> U128 { 0[U128] }",
         );
         assert!(
             js.contains("const small = (__kioUnit => 7)"),
@@ -5391,10 +5391,10 @@ mod tests {
             &[
                 "module left; \
                  host type Shared role(i32); \
-                 pub fn value_left() -> Shared { 7(Shared) }",
+                 pub fn value_left() -> Shared { 7[Shared] }",
                 "module right; \
                  host type Shared role(i64); \
-                 pub fn value_right() -> Shared { 9(Shared) }",
+                 pub fn value_right() -> Shared { 9[Shared] }",
             ],
             Some("bridge { left; right; }"),
         );
@@ -5459,12 +5459,12 @@ mod tests {
         // literal `.()` branch thunks into an `EnrichedConditional`;
         // codegen lowers that to a plain JS ternary — the IIFE
         // wrapper and the two branch thunks are gone.
-        let js = lower(
+        let js = lower_typed(
             "module main; \
              import __intrinsics__; \
              host type Bool role(bool); \
              fn pick(c: Bool) -> . { \
-               __if_then_else__(Bool, ., c, .() { () }, .() { () }) \
+               __if_then_else__[Bool][ .]( c, .() { () }, .() { () }) \
              }",
         );
         assert!(js.contains("(c ? null : null)"), "got: {js}");
@@ -5508,7 +5508,7 @@ mod tests {
         let js = lower(
             "module x; \
              fn default[A](y: A) -> A { y } \
-             fn caller[A](z: A) -> A { default(A, z) }",
+             fn caller[A](z: A) -> A { default[A]( z) }",
         );
         assert!(
             js.contains("const __kio_default__ = __kioPoly(() => ((y) => y))"),

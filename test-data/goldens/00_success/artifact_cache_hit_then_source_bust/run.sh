@@ -44,7 +44,7 @@ probe() {
 KIO_DEBUG_ARTIFACT_CACHE=1 "$KIO_BIN" build "$KIO_TARGET" 2>cold.err
 KIO_DEBUG_ARTIFACT_CACHE=1 "$KIO_BIN" build "$KIO_TARGET" 2>warm.err
 
-perl -0pi -e 's/print\("hi\\n"\(Str\)\)/print("bye\\n"(Str))/' m.kio
+perl -0pi -e 's/print\("hi\\n"\[Str\]\)/print("bye\\n"[Str])/' m.kio
 KIO_DEBUG_ARTIFACT_CACHE=1 "$KIO_BIN" build "$KIO_TARGET" 2>edit.err
 
 printf 'cold cache log:\n'

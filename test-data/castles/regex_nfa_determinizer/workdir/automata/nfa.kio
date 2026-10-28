@@ -33,7 +33,7 @@ import testapi/iter(loop);
 /// One transition. `sym` is a letter code, or `epsilon()`.
 pub labels Edge = { src: I32, sym: I32, dst: I32 };
 
-pub type Edges = List(Edge);
+pub type Edges = List[Edge];
 
 fn edge(src: I32, sym: I32, dst: I32) -> Edge { {src, sym, dst} }
 

@@ -15,10 +15,10 @@ import testapi/io(print);
 // Church-numeral value, both reaching a host function callback.
 labels { boxed[A] <U> : A & U };
 
-fn box_value[A](v: A) -> Boxed(A) { Boxed.mk((v, v)) }
+fn box_value[A](v: A) -> Boxed[A] { Boxed.mk((v, v)) }
 
-fn extract_via_cps[T](b: Boxed(T)) -> T {
-  Boxed.get(T, b)(.[U](pair) { __fst__(T, U, pair) })
+fn extract_via_cps[T](b: Boxed[T]) -> T {
+  Boxed.get[T](b)(.[U](pair) { __fst__[T][U](pair) })
 }
 
 type Nat = [A] ((A -> A) & A) -> A;
@@ -36,14 +36,14 @@ fn plus(m: Nat, n: Nat) -> Nat {
 }
 
 fn to_int(n: Nat) -> I32 {
-  n(.(x) { add_i32(x, 1(I32)) }, 0(I32))
+  n(.(x) { add_i32(x, 1[I32]) }, 0[I32])
 }
 
 pub fn main() {
   let two = succ(succ(zero()));
   let three = succ(succ(succ(zero())));
   print(int_to_string(to_int(plus(two, three))));
-  print("\n"(String));
-  let b = box_value("thread-safety-sync-ok\n"(String));
+  print("\n"[String]);
+  let b = box_value("thread-safety-sync-ok\n"[String]);
   print(extract_via_cps(b))
 }

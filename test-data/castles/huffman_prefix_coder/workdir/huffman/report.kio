@@ -61,7 +61,7 @@ rec(loop) fn ceil_log2_from(value: I32, width: I32, reach: I32) -> I32 {
 /// Bits a fixed-width code needs per symbol: the smallest `w` with `2^w >= n`.
 fn ceil_log2(value: I32) -> I32 { ceil_log2_from(value, 0, 1) }
 
-pub fn longest_code(rows: List(Entry)) -> I32 {
+pub fn longest_code(rows: List[Entry]) -> I32 {
   fold(
   , rows
   , .(best: I32, row: Entry) {
@@ -77,11 +77,11 @@ pub fn longest_code(rows: List(Entry)) -> I32 {
 /// to distinct leaves; equality with the scale checks that their recorded
 /// lengths account for the complete leaf tree. It does not select a tie-break or
 /// independently establish prefix-freeness or optimality.
-pub fn kraft_sum(rows: List(Entry), longest: I32) -> I32 {
+pub fn kraft_sum(rows: List[Entry], longest: I32) -> I32 {
   fold(rows, .(acc: I32, row: Entry) { add_i32(acc, pow2(sub_i32(longest, row.?{entry_len}))) }, 0)
 }
 
-pub fn kraft_holds(rows: List(Entry), longest: I32) -> Bool {
+pub fn kraft_holds(rows: List[Entry], longest: I32) -> Bool {
   eq_i32(kraft_sum(rows, longest), pow2(longest))
 }
 
@@ -100,7 +100,7 @@ pub labels Savings = {
 /// `ceil(log2(alphabet))` bits whatever its frequency. The saving is reported in
 /// permille because the tier has no floats, and the long division above is what
 /// scales it.
-pub fn savings(symbols: List(I32), alphabet: I32, coded_bits: I32) -> Savings {
+pub fn savings(symbols: List[I32], alphabet: I32, coded_bits: I32) -> Savings {
   let symbol_count = len(symbols);
   let fixed_width = ceil_log2(alphabet);
   let baseline_bits = mul_i32(symbol_count, fixed_width);

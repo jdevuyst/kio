@@ -4,4 +4,4 @@ pub newtype Callable[A] : A -> A { pub constructor mk; pub projector get }
 
 pub newtype Holder[*F] : . { pub constructor mk; pub projector get }
 
-pub fn hold_callable() -> Holder(Callable) { Holder.mk(Callable, ()) }
+pub fn hold_callable() -> Holder[Callable] { Holder.mk[Callable](()) }

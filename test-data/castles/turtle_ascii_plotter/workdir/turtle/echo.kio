@@ -28,11 +28,11 @@ fn turn_text(right: Bool) -> String {
 
 rec(loop) {
   /// Print every command of `b`, indented `depth` levels deep.
-  pub fn echo_block(b: list.List(cmd.Command), depth: I32) { recur walk(b, depth) };
-  fn walk(b: list.List(cmd.Command), depth: I32) {
+  pub fn echo_block(b: list.List[cmd.Command], depth: I32) { recur walk(b, depth) };
+  fn walk(b: list.List[cmd.Command], depth: I32) {
     match(list.uncons(b)) {
       (
-      , .(c: cmd.Command, rest: list.List(cmd.Command)) {
+      , .(c: cmd.Command, rest: list.List[cmd.Command]) {
           recur(cont) emit(c, depth);
           recur walk(rest, depth)
         }
@@ -54,7 +54,7 @@ rec(loop) {
         }
       , .(k: cmd.Mark_cmd) { line(indent, text.cat2("mark ", text.num(k.?{cmd.mark_cmd}))) }
       , .(r: cmd.Repeat_cmd) {
-          let .(n: I32, body: list.List(cmd.Command)) = r.?{cmd.repeat_cmd};
+          let .(n: I32, body: list.List[cmd.Command]) = r.?{cmd.repeat_cmd};
           line(indent, text.cat2("repeat ", text.num(n)));
           recur(cont) walk(body, add_i32(depth, 1));
           line(indent, "end")

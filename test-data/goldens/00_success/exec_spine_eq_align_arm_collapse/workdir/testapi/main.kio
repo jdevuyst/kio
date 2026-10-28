@@ -12,9 +12,9 @@ import testapi/io(print);
 // palette.
 fn pick(b: Bool) -> String {
   narrow_sum(if(b) {
-    widen_sum("collapsed\n"(String), String | String)
+    widen_sum("collapsed\n"[String])[String | String]
   } else {
-    widen_sum("collapsed\n"(String), String | String)
+    widen_sum("collapsed\n"[String])[String | String]
   })
 }
 

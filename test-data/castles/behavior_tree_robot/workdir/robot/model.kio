@@ -12,8 +12,8 @@ pub labels Job = { task_id: I32, task_name: String, duration: I32 };
 
 pub rec labels Tree =
   { action: Job }
-  | { sequence: I32 & lists.List(Tree) }
-  | { selector: lists.List(Tree) }
+  | { sequence: I32 & lists.List[Tree] }
+  | { selector: lists.List[Tree] }
   | { invert: Tree }
   | { blocked_test: . }
   | { hazard_guard: Tree }
@@ -29,12 +29,12 @@ fn task(id: I32, name: String, ticks: I32) -> Tree {
   {action = {task_id = id, task_name = name, duration = ticks}}.>widen_sum
 }
 
-fn seq(id: I32, children: lists.List(Tree)) -> Tree { {sequence = (id, children)}.>widen_sum }
+fn seq(id: I32, children: lists.List[Tree]) -> Tree { {sequence = (id, children)}.>widen_sum }
 
-fn select(children: lists.List(Tree)) -> Tree { {selector = children}.>widen_sum }
+fn select(children: lists.List[Tree]) -> Tree { {selector = children}.>widen_sum }
 
 pub fn delivery_tree() -> Tree {
-  let .(clear_door: Tree) = {invert = {blocked_test=}.>widen_sum(Tree)}.>widen_sum;
+  let .(clear_door: Tree) = {invert = ({blocked_test=}.>widen_sum)[Tree]}.>widen_sum;
   let shortcut = seq(10, lists.cons(clear_door, lists.singleton(task(1, "short-route", 3))));
   let route = select(lists.cons(shortcut, lists.singleton(task(2, "detour", 2))));
   let delivery =

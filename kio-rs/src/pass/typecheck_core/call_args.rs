@@ -38,7 +38,6 @@ impl CanonicalCallCursor {
         written: Option<WrittenCallArg>,
         implicit_unit: bool,
         resolved: bool,
-        value_at_type_slot: bool,
     ) -> Option<CanonicalCallSlot> {
         use CanonicalCallSlot::{ImplicitUnit, ResolvedType, Written};
         let slot = if implicit_unit {
@@ -52,7 +51,7 @@ impl CanonicalCallCursor {
                     consume_written: true,
                 },
                 (Some(WrittenCallArg::Value), true) => ResolvedType {
-                    consume_written: value_at_type_slot,
+                    consume_written: false,
                 },
                 (None, true) => ResolvedType {
                     consume_written: false,
@@ -89,7 +88,7 @@ mod tests {
         ] {
             for implicit in [false, true] {
                 for resolved in [false, true] {
-                    for reclassified in [false, true] {
+                    {
                         let expected = if implicit {
                             Some(ImplicitUnit)
                         } else {
@@ -99,7 +98,7 @@ mod tests {
                                     consume_written: true,
                                 }),
                                 Some(WrittenCallArg::Value) if resolved => Some(ResolvedType {
-                                    consume_written: reclassified,
+                                    consume_written: false,
                                 }),
                                 Some(_) => Some(Written),
                                 None if resolved => Some(ResolvedType {
@@ -109,10 +108,7 @@ mod tests {
                             }
                         };
                         let mut cursor = CanonicalCallCursor::default();
-                        assert_eq!(
-                            cursor.advance(arg, implicit, resolved, reclassified),
-                            expected
-                        );
+                        assert_eq!(cursor.advance(arg, implicit, resolved), expected);
                         assert_eq!(cursor.canonical(), usize::from(expected.is_some()));
                         assert_eq!(
                             cursor.written(),

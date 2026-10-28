@@ -36,61 +36,61 @@ host type Bool role(bool);
 
 type Identity[A] = A;
 
-type Number = Identity(I32);
+type Number = Identity[I32];
 
-type Real = Identity(F64);
+type Real = Identity[F64];
 
-type Words = Identity(Text);
+type Words = Identity[Text];
 
-type Flag = Identity(Truth);
+type Flag = Identity[Truth];
 
 host fn print_i32(value: I32);
 
-pure fn integer_value() -> Number { let value = 42(Number); value }
+pure fn integer_value() -> Number { let value = 42[Number]; value }
 
-pure fn float_value() -> Real { let value = 1.5(Real); value }
+pure fn float_value() -> Real { let value = 1.5[Real]; value }
 
-pure fn string_value() -> Words { let value = "selected"(Words); value }
+pure fn string_value() -> Words { let value = "selected"[Words]; value }
 
-pure fn boolean_value() -> Flag { let value = .f(Flag); value }
+pure fn boolean_value() -> Flag { let value = .f[Flag]; value }
 
 pure fn expected_integer() -> Int { 19 }
 
 pure fn discard[A](value: A) { () }
 
 pure fn choose[Truth](condition: Flag, yes: Truth, no: Truth) -> Truth {
-  let select = __if_then_else__(Flag);
-  select(Truth, condition, .() { yes }, .() { no })
+  let select = __if_then_else__[Flag];
+  select[Truth](condition, .() { yes }, .() { no })
 }
 
 equiv integer_annotation() {
   integer_value();
-  42(I32)
+  42[I32]
 }
 
 equiv float_annotation() {
   float_value();
-  1.5(F64)
+  1.5[F64]
 }
 
 equiv string_annotation() {
   string_value();
-  "selected"(Text)
+  "selected"[Text]
 }
 
 equiv boolean_annotation() {
   boolean_value();
-  .f(Truth)
+  .f[Truth]
 }
 
 equiv provider_integer() {
   integer();
-  7(provider.I32)
+  7[provider.I32]
 }
 
 equiv provider_string() {
   text();
-  "provider"(Text)
+  "provider"[Text]
 }
 
 pub fn main() {

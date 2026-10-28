@@ -27,7 +27,7 @@ pub fn mux() -> expr.Expression {
   expr.either(expr.both(x(), y()), expr.both(expr.negate(x()), z()))
 }
 
-pub fn cases() -> lists.List(String & expr.Expression) {
+pub fn cases() -> lists.List[String & expr.Expression] {
   [*
   , ("factored", factored())
   , ("expanded", expanded())

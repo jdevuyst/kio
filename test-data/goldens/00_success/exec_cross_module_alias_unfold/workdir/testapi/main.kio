@@ -25,5 +25,5 @@ pub fn main() {
   // the cross-module alias unfold in the emitted Kio', not the value.
   let _ = widen(some(42));
   let _ = widen(none());
-  print("done\n"(String))
+  print("done\n"[String])
 }

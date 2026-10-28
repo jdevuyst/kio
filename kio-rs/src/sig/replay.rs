@@ -2187,7 +2187,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) {
   with { module api {
-    pub rec newtype Bad : Negate(Bad) { pub constructor mk; pub projector un; };
+    pub rec newtype Bad : Negate[Bad] { pub constructor mk; pub projector un; };
   } };
   nonbreaking { add {
     module api { pub type Negate[A] = A -> .; };
@@ -2195,7 +2195,7 @@ v(1) {
   } }
 }
 "#;
-        let error = replay_error_at(src, "Bad)");
+        let error = replay_error_at(src, "Bad]");
         assert!(error.diag().1.contains("strictly positive"), "{error:?}");
     }
 
@@ -2204,7 +2204,7 @@ v(1) {
         let src = r#"signature app v(1);
 v(1) {
   with { module api {
-    pub rec newtype Bad : Stream(Bad) { pub constructor mk; pub projector un; };
+    pub rec newtype Bad : Stream[Bad] { pub constructor mk; pub projector un; };
   } };
   nonbreaking { add {
     module api { host type Stream[A]; };
@@ -2212,7 +2212,7 @@ v(1) {
   } }
 }
 "#;
-        let error = replay_error_at(src, "Bad)");
+        let error = replay_error_at(src, "Bad]");
         assert!(error.diag().1.contains("strictly positive"), "{error:?}");
     }
 
@@ -2233,10 +2233,10 @@ v(1) { nonbreaking { add { module api {
         let src = r#"signature app v(1);
 v(1) { nonbreaking { add { module api {
   host type Atom;
-  newtype Bad : Atom(.) { pub constructor mk; pub projector un; };
+  newtype Bad : Atom[.] { pub constructor mk; pub projector un; };
 } } } }
 "#;
-        let error = replay_error_at(src, "Atom(.)");
+        let error = replay_error_at(src, "Atom[.]");
         assert!(error.diag().1.contains("cannot be applied"), "{error:?}");
     }
 
@@ -2297,9 +2297,9 @@ v(1) {
   with {
     module api {
       import shapes(Box, Phantom);
-      pub rec newtype Covariant : Box(Covariant) { pub constructor mk_c; pub projector un_c; };
-      pub rec newtype Ignored : Phantom(Ignored) { pub constructor mk_i; pub projector un_i; };
-      pub rec newtype Shadow[A] : . | (A & Shadow(A)) { pub constructor mk_s; pub projector un_s; };
+      pub rec newtype Covariant : Box[Covariant] { pub constructor mk_c; pub projector un_c; };
+      pub rec newtype Ignored : Phantom[Ignored] { pub constructor mk_i; pub projector un_i; };
+      pub rec newtype Shadow[A] : . | (A & Shadow[A]) { pub constructor mk_s; pub projector un_s; };
     }
   };
   nonbreaking { add {

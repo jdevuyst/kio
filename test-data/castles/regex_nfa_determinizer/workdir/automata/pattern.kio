@@ -24,21 +24,21 @@ rec {
   pub newtype Pattern : Node { constructor pack; pub projector unpack }
 }
 
-pub fn chr(code: I32) -> Pattern { Pattern.pack({chr = code}.>widen_sum(Node)) }
+pub fn chr(code: I32) -> Pattern { Pattern.pack(({chr = code}.>widen_sum)[Node]) }
 
 pub fn cat(left: Pattern, right: Pattern) -> Pattern {
-  Pattern.pack({cat = (left, right)}.>widen_sum(Node))
+  Pattern.pack(({cat = (left, right)}.>widen_sum)[Node])
 }
 
 pub fn alt(left: Pattern, right: Pattern) -> Pattern {
-  Pattern.pack({alt = (left, right)}.>widen_sum(Node))
+  Pattern.pack(({alt = (left, right)}.>widen_sum)[Node])
 }
 
-pub fn star(body: Pattern) -> Pattern { Pattern.pack({star = body}.>widen_sum(Node)) }
+pub fn star(body: Pattern) -> Pattern { Pattern.pack(({star = body}.>widen_sum)[Node]) }
 
-pub fn plus(body: Pattern) -> Pattern { Pattern.pack({plus = body}.>widen_sum(Node)) }
+pub fn plus(body: Pattern) -> Pattern { Pattern.pack(({plus = body}.>widen_sum)[Node]) }
 
-pub fn opt(body: Pattern) -> Pattern { Pattern.pack({opt = body}.>widen_sum(Node)) }
+pub fn opt(body: Pattern) -> Pattern { Pattern.pack(({opt = body}.>widen_sum)[Node]) }
 
 /// How tightly a node binds: alternation loosest, then concatenation, then
 /// the postfix repetitions, with a bare letter tightest.

@@ -1,8 +1,19 @@
 /// The Kio' term parser: a token list → the erased de Bruijn `Term`, name-resolved against a binder scope.
 module parse;
 
+import chars(
+, c_lbrack
+, c_lparen
+, c_minus
+, c_rbrace
+, c_rbrack
+, c_rparen
+, c_semi
+, c_slash
+, c_star
+, c_under
+);
 import chars(c_amp, c_bang, c_bar, c_colon, c_comma, c_dot, c_eq, c_gt, c_lbrace);
-import chars(c_lbrack, c_lparen, c_minus, c_rbrace, c_rbrack, c_rparen, c_semi, c_slash, c_under);
 import host_descriptor(Host_type, Role_host_type, Roleless_host_type, host_type_shape, role_name);
 import lex(Lex_err, lex, lex_err_message, lex_err_pos);
 import list/core(List, cons, nil, uncons);
@@ -58,21 +69,24 @@ import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
 // **The emitted surface this inverts** (studied from real `kio build`
 // `kio-prime` output):
 //
-//   - literals carry their host type: `5(I32)`, `"hi"(String)`,
-//     `.t(Bool)` / `.f(Bool)`; the unit value is `()`.
+//   - literals carry their host type: `5[I32]`, `"hi"[String]`,
+//     `.t[Bool]` / `.f[Bool]`; the unit value is `()`.
 //   - a variable is a bare identifier; a lambda has value groups
 //     `.(x: T) { body }`, type groups `.[A] { body }`, or both.
 //     The zero-param thunk `.() { body }` retains its Unit stage.
 //   - application is postfix and repeatable: `f(a)(b)` is
 //     `app(app(f, a), b)`; a zero-arg call `t()` applies to the unit
 //     value.
-//   - the eight intrinsics carry **explicit positional type-args first**,
-//     then value-args: `__pair__(A, B, a, b)`, `__fst__(A, B, p)`,
-//     `__snd__(A, B, p)`, `__left__(A, B, x)`, `__right__(A, B, x)`,
-//     `__either__(A, B, C, s, f, g)`,
-//     `__if_then_else__(B, A, c, .() { t }, .() { e })`, `__absurd__(A, x)`.
+//   - type arguments use bracket groups: `f[A][B](a, b)` or `f[A][B](p)`.
+//     Each type consumes one forall stage; each parenthesized value group
+//     applies one Function to its single domain packet.
+//   - intrinsics are ordinary polymorphic values with explicit type stages,
+//     such as `__pair__[A][B](a, b)` and `__fst__[A][B](p)`.
+//     `__if_then_else__[B][A](c, .() { t }, .() { e })` retains the checked
+//     concrete Boolean descriptor B. Partially applied intrinsic values use
+//     the same lambda/application terms as other functions.
 //   - a host-item call uses the same staged syntax as any other value;
-//     polymorphic host items carry leading type arguments whose erased,
+//     polymorphic host items carry bracketed type arguments whose erased,
 //     evaluator-internal encoding uses Unit applications before their
 //     value-domain packet. That encoding does not consume a residual
 //     `. -> ...` source layer.
@@ -96,10 +110,10 @@ import token(Tk_num, Tk_punct, Tk_str, Tk_word, Token, Token_shape, Toks);
 // declaration order; a binder-scope frame uses it as the set of reference
 // spellings that resolve to that frame (see § Scope below).
 /// A cons-list of names.
-pub labels { pnl: List(String) };
+pub labels { pnl: List[String] };
 
 /// The empty name list.
-pub fn pnl_nil() -> Pnl { {pnl = nil(String)} }
+pub fn pnl_nil() -> Pnl { {pnl = nil[String]} }
 
 /// Prepends one name.
 pub fn pnl_cons(name: String, rest: Pnl) -> Pnl { {pnl = cons(name, Pnl.get(rest))} }
@@ -108,8 +122,8 @@ pub fn pnl_cons(name: String, rest: Pnl) -> Pnl { {pnl = cons(name, Pnl.get(rest
 pub fn un_pnl(p: Pnl) -> . | (String & Pnl) {
   match(uncons(Pnl.get(p))) {
     (
-    , .(h: String, t: List(String)) { widen_sum((h, {pnl = t}), . | (String & Pnl)) }
-    , .(_e: .) { widen_sum((), . | (String & Pnl)) }
+    , .(h: String, t: List[String]) { widen_sum((h, {pnl = t}))[. | (String & Pnl)] }
+    , .(_e: .) { widen_sum(())[. | (String & Pnl)] }
     )
   }
 }
@@ -141,13 +155,13 @@ fn pnl_has(p: Pnl, name: String) -> Bool {
 // reference matches, preserving the chain position.
 //
 /// Type-binder groups in lexical order, innermost group first.
-pub type Type_scope = List(Toks);
+pub type Type_scope = List[Toks];
 
 /// Value frames and the lexical type binders used for exact carrier resolution.
 pub rec labels { scope: Type_scope & (. | (Pnl & Scope)) };
 
 /// The empty scope.
-pub fn scope_nil() -> Scope { {scope = (nil(Toks), widen_sum((), . | (Pnl & Scope)))} }
+pub fn scope_nil() -> Scope { {scope = (nil[Toks], widen_sum(())[. | (Pnl & Scope)])} }
 
 fn scope_type_groups(s: Scope) -> Type_scope { let .(groups, _frames) = Scope.get(s); groups }
 
@@ -158,7 +172,7 @@ fn scope_with_type_groups(groups: Type_scope, s: Scope) -> Scope {
 
 /// Extends the scope with one frame carrying explicit spellings at index 0.
 pub fn scope_push_names(spellings: Pnl, s: Scope) -> Scope {
-  {scope = (scope_type_groups(s), widen_sum((spellings, s), . | (Pnl & Scope)))}
+  {scope = (scope_type_groups(s), widen_sum((spellings, s))[. | (Pnl & Scope)])}
 }
 
 /// Extends the scope with one binder name at index 0.
@@ -181,12 +195,12 @@ pub fn scope_index(name: String, s: Scope) -> . | Nat {
             (
             , .(spellings: Pnl, tail: Scope) {
                 if(pnl_has(spellings, name)) {
-                  widen_sum(widen_sum(depth, . | Nat), (Scope & Nat) | . | Nat)
+                  widen_sum(widen_sum(depth)[. | Nat])[(Scope & Nat) | . | Nat]
                 } else {
-                  widen_sum((tail, ns(depth)), (Scope & Nat) | . | Nat)
+                  widen_sum((tail, ns(depth)))[(Scope & Nat) | . | Nat]
                 }
               }
-            , .(_empty: .) { widen_sum(widen_sum((), . | Nat), (Scope & Nat) | . | Nat) }
+            , .(_empty: .) { widen_sum(widen_sum(())[. | Nat])[(Scope & Nat) | . | Nat] }
             )
           }
         }
@@ -260,7 +274,7 @@ fn nt_existential_arity(i: Nt_info) -> I32 {
 
 /// Whether the newtype declares existential binders.
 pub fn nt_existential(i: Nt_info) -> Bool {
-  if(leq_i32(1(I32), nt_existential_arity(i))) { .t(Bool) } else { .f(Bool) }
+  if(leq_i32(1[I32], nt_existential_arity(i))) { .t[Bool] } else { .f[Bool] }
 }
 
 /// The declared constructor member name.
@@ -328,16 +342,16 @@ pub fn nt_entry_proj_allowed(entry: Nt_entry) -> Bool {
 pub rec labels { ntab: . | (String & Nt_entry & Ntab) };
 
 /// The empty table.
-pub fn ntab_nil() -> Ntab { {ntab = widen_sum((), . | (String & Nt_entry & Ntab))} }
+pub fn ntab_nil() -> Ntab { {ntab = widen_sum(())[. | (String & Nt_entry & Ntab)]} }
 
 /// Records one entry under a spelling.
 pub fn ntab_cons_entry(name: String, e: Nt_entry, t: Ntab) -> Ntab {
-  {ntab = widen_sum((name, (e, t)), . | (String & Nt_entry & Ntab))}
+  {ntab = widen_sum((name, (e, t)))[. | (String & Nt_entry & Ntab)]}
 }
 
 /// Records one newtype's name and erasure facts.
 pub fn ntab_cons(name: String, info: Nt_info, t: Ntab) -> Ntab {
-  ntab_cons_entry(name, mk_nt_entry(info, .t(Bool), .t(Bool)), t)
+  ntab_cons_entry(name, mk_nt_entry(info, .t[Bool], .t[Bool]), t)
 }
 
 /// Records one newtype with independently authorized member sides.
@@ -377,12 +391,12 @@ pub fn ntab_lookup(name: String, t: Ntab) -> . | Nt_entry {
         (
         , .(head: String, tail_cell: Nt_entry & Ntab) {
             if(string_eq(head, name)) {
-              widen_sum(widen_sum(fst_ntab_info(tail_cell), . | Nt_entry), Ntab | . | Nt_entry)
+              widen_sum(widen_sum(fst_ntab_info(tail_cell))[. | Nt_entry])[Ntab | . | Nt_entry]
             } else {
-              widen_sum(snd_ntab(tail_cell), Ntab | . | Nt_entry)
+              widen_sum(snd_ntab(tail_cell))[Ntab | . | Nt_entry]
             }
           }
-        , .(_empty: .) { widen_sum(widen_sum((), . | Nt_entry), Ntab | . | Nt_entry) }
+        , .(_empty: .) { widen_sum(widen_sum(())[. | Nt_entry])[Ntab | . | Nt_entry] }
         )
       }
     }
@@ -433,9 +447,9 @@ fn pnl_push_scope(p: Pnl, base: Scope) -> Scope {
           match(un_pnl(rem)) {
             (
             , .(name: String, rest: Pnl) {
-                widen_sum((rest, scope_push(name, acc)), (Pnl & Scope) | Scope)
+                widen_sum((rest, scope_push(name, acc)))[(Pnl & Scope) | Scope]
               }
-            , .(_e: .) { widen_sum(acc, (Pnl & Scope) | Scope) }
+            , .(_e: .) { widen_sum(acc)[(Pnl & Scope) | Scope] }
             )
           }
         }
@@ -450,10 +464,10 @@ fn pnl_push_scope(p: Pnl, base: Scope) -> Scope {
 // one domain value (unit for 0, the product for N≥2) and recovers the named
 // params above a `<domain>` frame.
 fn lambda_group_scope(params: Pnl, base: Scope) -> Scope {
-  if(eq_i32(pnl_len(params), 1(I32))) {
+  if(eq_i32(pnl_len(params), 1[I32])) {
     pnl_push_scope(params, base)
   } else {
-    pnl_push_scope(params, scope_push("<domain>"(String), base))
+    pnl_push_scope(params, scope_push("<domain>"[String], base))
   }
 }
 
@@ -465,17 +479,17 @@ fn lambda_group_scope(params: Pnl, base: Scope) -> Scope {
 // (`FnSignature ::= FnSignatureGroup+`), each binding one domain value in
 // a curried closure chain: `.(x: A)(y: B) { body }` is `λx. λy. body`.
 /// A cons-list of dot-lambda parameter groups.
-pub labels { pnlg: List(Pnl) };
+pub labels { pnlg: List[Pnl] };
 
-fn pnlg_nil() -> Pnlg { {pnlg = nil(Pnl)} }
+fn pnlg_nil() -> Pnlg { {pnlg = nil[Pnl]} }
 
 fn pnlg_cons(g: Pnl, rest: Pnlg) -> Pnlg { {pnlg = cons(g, Pnlg.get(rest))} }
 
 fn un_pnlg(gs: Pnlg) -> . | (Pnl & Pnlg) {
   match(uncons(Pnlg.get(gs))) {
     (
-    , .(h: Pnl, t: List(Pnl)) { widen_sum((h, {pnlg = t}), . | (Pnl & Pnlg)) }
-    , .(_e: .) { widen_sum((), . | (Pnl & Pnlg)) }
+    , .(h: Pnl, t: List[Pnl]) { widen_sum((h, {pnlg = t}))[. | (Pnl & Pnlg)] }
+    , .(_e: .) { widen_sum(())[. | (Pnl & Pnlg)] }
     )
   }
 }
@@ -493,9 +507,9 @@ fn lambda_body_scope(groups: Pnlg, base: Scope) -> Scope {
           match(un_pnlg(rem)) {
             (
             , .(g: Pnl, rest: Pnlg) {
-                widen_sum((rest, lambda_group_scope(g, acc)), (Pnlg & Scope) | Scope)
+                widen_sum((rest, lambda_group_scope(g, acc)))[(Pnlg & Scope) | Scope]
               }
-            , .(_e: .) { widen_sum(acc, (Pnlg & Scope) | Scope) }
+            , .(_e: .) { widen_sum(acc)[(Pnlg & Scope) | Scope] }
             )
           }
         }
@@ -511,10 +525,10 @@ fn pnl_nat_of_i32(n: I32) -> Nat {
   , .(st: I32 & Nat) {
       match(st) {
         .(k: I32, acc: Nat) {
-          if(leq_i32(k, 0(I32))) {
-            widen_sum(acc, (I32 & Nat) | Nat)
+          if(leq_i32(k, 0[I32])) {
+            widen_sum(acc)[(I32 & Nat) | Nat]
           } else {
-            widen_sum((sub_i32(k, 1(I32)), ns(acc)), (I32 & Nat) | Nat)
+            widen_sum((sub_i32(k, 1[I32]), ns(acc)))[(I32 & Nat) | Nat]
           }
         }
       }
@@ -529,10 +543,10 @@ fn pnl_snd_n(k: I32, t: Term) -> Term {
   , .(st: I32 & Term) {
       match(st) {
         .(rem: I32, acc: Term) {
-          if(leq_i32(rem, 0(I32))) {
-            widen_sum(acc, (I32 & Term) | Term)
+          if(leq_i32(rem, 0[I32])) {
+            widen_sum(acc)[(I32 & Term) | Term]
           } else {
-            widen_sum((sub_i32(rem, 1(I32)), snd(acc)), (I32 & Term) | Term)
+            widen_sum((sub_i32(rem, 1[I32]), snd(acc)))[(I32 & Term) | Term]
           }
         }
       }
@@ -546,7 +560,7 @@ fn pnl_snd_n(k: I32, t: Term) -> Term {
 // except the last param (`i == n-1`) is `snd^(n-1)` with no leading `fst`.
 fn pnl_param_projection(i: I32, n: I32) -> Term {
   let at_product = pnl_snd_n(i, var(pnl_nat_of_i32(i)));
-  if(eq_i32(i, sub_i32(n, 1(I32)))) { at_product } else { fst(at_product) }
+  if(eq_i32(i, sub_i32(n, 1[I32]))) { at_product } else { fst(at_product) }
 }
 
 // Wrap `inner` in one group's closure: `lam(inner)` for 0 / 1 params, or
@@ -554,25 +568,23 @@ fn pnl_param_projection(i: I32, n: I32) -> Term {
 // per parameter (first param outermost), matching `lambda_group_scope`.
 fn wrap_lambda_group(params: Pnl, inner: Term) -> Term {
   let n = pnl_len(params);
-  if(leq_i32(n, 1(I32))) {
+  if(leq_i32(n, 1[I32])) {
     lam(inner)
   } else {
     lam(loop(
     , .(st: I32 & Term) {
         match(st) {
           .(i: I32, acc: Term) {
-            if(leq_i32(i, 0(I32))) {
-              widen_sum(let_(pnl_param_projection(0(I32), n), acc), (I32 & Term) | Term)
+            if(leq_i32(i, 0[I32])) {
+              widen_sum(let_(pnl_param_projection(0[I32], n), acc))[(I32 & Term) | Term]
             } else {
-              widen_sum(
-              , (sub_i32(i, 1(I32)), let_(pnl_param_projection(i, n), acc))
-              , (I32 & Term) | Term
-              )
+              widen_sum((sub_i32(i, 1[I32]), let_(pnl_param_projection(i, n), acc)))[| (I32 & Term)
+              | Term]
             }
           }
         }
       }
-    , (sub_i32(n, 1(I32)), inner)
+    , (sub_i32(n, 1[I32]), inner)
     ))
   }
 }
@@ -588,9 +600,9 @@ pub fn wrap_lambda(groups: Pnlg, body: Term) -> Term {
           match(un_pnlg(rem)) {
             (
             , .(g: Pnl, rest: Pnlg) {
-                widen_sum((rest, wrap_lambda_group(g, acc)), (Pnlg & Term) | Term)
+                widen_sum((rest, wrap_lambda_group(g, acc)))[(Pnlg & Term) | Term]
               }
-            , .(_e: .) { widen_sum(acc, (Pnlg & Term) | Term) }
+            , .(_e: .) { widen_sum(acc)[(Pnlg & Term) | Term] }
             )
           }
         }
@@ -607,8 +619,8 @@ pub fn wrap_lambda(groups: Pnlg, body: Term) -> Term {
 fn peek(ts: Toks) -> . | Token {
   match(un_toks(ts)) {
     (
-    , .(h: Token, _p: I32, _t: Toks) { widen_sum(h, . | Token) }
-    , .(_e: .) { widen_sum((), . | Token) }
+    , .(h: Token, _p: I32, _t: Toks) { widen_sum(h)[. | Token] }
+    , .(_e: .) { widen_sum(())[. | Token] }
     )
   }
 }
@@ -616,7 +628,7 @@ fn peek(ts: Toks) -> . | Token {
 /// The head token's source byte offset, or `()` at end-of-input.
 fn head_pos(ts: Toks) -> . | I32 {
   match(un_toks(ts)) {
-    (.(_h: Token, p: I32, _t: Toks) { widen_sum(p, . | I32) }, .(_e: .) { widen_sum((), . | I32) })
+    (.(_h: Token, p: I32, _t: Toks) { widen_sum(p)[. | I32] }, .(_e: .) { widen_sum(())[. | I32] })
   }
 }
 
@@ -631,9 +643,9 @@ fn rest(ts: Toks) -> Toks {
 fn is_punct(t: Token, code: I32) -> Bool {
   match(un_token(t)) {
     (
-    , .(_w: Tk_word) { .f(Bool) }
-    , .(_i: Tk_num) { .f(Bool) }
-    , .(_s: Tk_str) { .f(Bool) }
+    , .(_w: Tk_word) { .f[Bool] }
+    , .(_i: Tk_num) { .f[Bool] }
+    , .(_s: Tk_str) { .f[Bool] }
     , .(p: Tk_punct) { eq_i32(Tk_punct.get(p), code) }
     )
   }
@@ -642,7 +654,7 @@ fn is_punct(t: Token, code: I32) -> Bool {
 /// Whether the head of `ts` is the punctuation mark `code`.
 fn head_is_punct(ts: Toks, code: I32) -> Bool {
   match(peek(ts)) {
-    (.(t: Token) { is_punct(t, code) }, .(_e: .) { .f(Bool) })
+    (.(t: Token) { is_punct(t, code) }, .(_e: .) { .f[Bool] })
   }
 }
 
@@ -653,14 +665,14 @@ fn head_word_str(ts: Toks) -> . | String {
     , .(t: Token) {
         match(un_token(t)) {
           (
-          , .(w: Tk_word) { widen_sum(Tk_word.get(w), . | String) }
-          , .(_i: Tk_num) { widen_sum((), . | String) }
-          , .(_s: Tk_str) { widen_sum((), . | String) }
-          , .(_p: Tk_punct) { widen_sum((), . | String) }
+          , .(w: Tk_word) { widen_sum(Tk_word.get(w))[. | String] }
+          , .(_i: Tk_num) { widen_sum(())[. | String] }
+          , .(_s: Tk_str) { widen_sum(())[. | String] }
+          , .(_p: Tk_punct) { widen_sum(())[. | String] }
           )
         }
       }
-    , .(_e: .) { widen_sum((), . | String) }
+    , .(_e: .) { widen_sum(())[. | String] }
     )
   }
 }
@@ -671,33 +683,25 @@ fn drop_comma(ts: Toks) -> Toks {
 }
 
 // =====================================================================
-// Type-argument skip — erase one balanced type token-run
+// Parameter-annotation skip — erase one balanced type token-run
 // =====================================================================
 //
-// Intrinsic call sites carry explicit positional type-args (`__pair__(A,
-// B, a, b)`); under erasure these are dropped. A type-arg is a balanced
-// token run ending at the first depth-0 `,` or `)` (type expressions
-// carry no top-level commas — products use `&`, function types use
-// `->`). The skip counts bracket depth and stops at that delimiter
-// without consuming it. The emitter's leading-comma multi-line style
-// means a type-arg may be preceded by a comma, so a leading comma is
-// dropped first.
-//
-// The loop state is `(Toks & I32)` (remaining tokens, bracket depth);
-// the exit is the remaining `Toks`. A nesting opener raises the depth, a
-// closer at depth > 0 lowers it; at depth 0 a `,` or `)` ends the run.
+// Lambda parameter annotations end at the first depth-zero comma or closing
+// parenthesis. Nested type applications and grouped types remain inside that
+// annotation. This scanner never classifies an application argument as type
+// or value: the call's delimiters already decide that.
 
 // Whether `t` is a depth-0 type-arg delimiter (`,` or `)`).
 fn is_delim(t: Token) -> Bool {
-  if(is_punct(t, c_comma())) { .t(Bool) } else { is_punct(t, c_rparen()) }
+  if(is_punct(t, c_comma())) { .t[Bool] } else { is_punct(t, c_rparen()) }
 }
 
 // Whether a punctuation code opens a bracket nesting.
 fn is_open_code(code: I32) -> Bool {
   if(eq_i32(code, c_lparen())) {
-    .t(Bool)
-  } else if(eq_i32(code, 91(I32))) {
-    .t(Bool)
+    .t[Bool]
+  } else if(eq_i32(code, 91[I32])) {
+    .t[Bool]
   } else {
     eq_i32(code, c_lbrace())
   }
@@ -706,9 +710,9 @@ fn is_open_code(code: I32) -> Bool {
 // Whether a punctuation code closes a bracket nesting.
 fn is_close_code(code: I32) -> Bool {
   if(eq_i32(code, c_rparen())) {
-    .t(Bool)
-  } else if(eq_i32(code, 93(I32))) {
-    .t(Bool)
+    .t[Bool]
+  } else if(eq_i32(code, 93[I32])) {
+    .t[Bool]
   } else {
     eq_i32(code, c_rbrace())
   }
@@ -727,9 +731,9 @@ fn bracket_delta(t: Token, depth: I32) -> I32 {
     , .(p: Tk_punct) {
         let code = Tk_punct.get(p);
         if(is_open_code(code)) {
-          add_i32(depth, 1(I32))
+          add_i32(depth, 1[I32])
         } else if(is_close_code(code)) {
-          sub_i32(depth, 1(I32))
+          sub_i32(depth, 1[I32])
         } else {
           depth
         }
@@ -748,228 +752,50 @@ fn skip_type_arg(ts0: Toks) -> Toks {
           match(peek(cur)) {
             (
             , .(t: Token) {
-                if(eq_i32(depth, 0(I32))) {
+                if(eq_i32(depth, 0[I32])) {
                   if(is_delim(t)) {
-                    widen_sum(cur, (Toks & I32) | Toks)
+                    widen_sum(cur)[(Toks & I32) | Toks]
                   } else {
-                    widen_sum((rest(cur), bracket_delta(t, depth)), (Toks & I32) | Toks)
+                    widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Toks]
                   }
                 } else {
-                  widen_sum((rest(cur), bracket_delta(t, depth)), (Toks & I32) | Toks)
+                  widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Toks]
                 }
               }
-            , .(_e: .) { widen_sum(cur, (Toks & I32) | Toks) }
+            , .(_e: .) { widen_sum(cur)[(Toks & I32) | Toks] }
             )
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   )
 }
 
-// =====================================================================
-// Type-arguments at a value application — the type/value discriminator
-// =====================================================================
-//
-// An ordinary polymorphic value carries its type arguments positionally at
-// each application site: this is the same for a top-level fn, a local alias,
-// a host fn, a newtype member value, or a projected dictionary method such as
-// `Functor.fmap(F, inst)(A, B, f, x)`. The parser deliberately has no
-// declaration arity at the call site, so it discriminates each written
-// argument structurally, applies the leading **type** arguments as erased Unit
-// stages, then collects the value arguments. Intrinsics use the same
-// structural discriminator but discard their type arguments while building
-// their dedicated term node. The discrimination relies on Kio's naming rule:
-// a type head is uppercase immediately or immediately after one `_`; a value
-// head starts lowercase or `_` but never `_` followed immediately by uppercase
-// (`language.md` § Naming conventions).
-// An argument's first token decides:
-//
-//   - a type-shaped word **not** followed by `.` heads a type (`String`,
-//     `_String`, `List(A)`, `F(B)`) — skip it;
-//   - a type-shaped word **followed by `.`** heads a value (a qualified
-//     constructor / projector call `Box.un(…)` or `_Box.un(…)`) — stop;
-//   - a `(` followed by `)` is the unit value `()` — stop; a `(` followed
-//     by anything else heads a parenthesised type (`A -> B`, `(A & B)`) —
-//     skip it (the emitter strips value grouping, so a non-unit `(`-led
-//     argument is a type);
-//   - a `.` followed by a delimiter or type operator heads the unit type —
-//     skip it;
-//   - a lowercase word, a literal, a dot-lambda / bool-literal, or any
-//     other token heads a value — stop.
-//
-// Only the **leading** run of type-args is skipped; the first value
-// argument ends the skip, so a value application with no type-args
-// (`f(a)`, `print(s)`) skips nothing.
-
 // Whether the host character code is an ASCII uppercase letter (`A`–`Z`).
 fn is_upper_code(c: I32) -> Bool {
-  if(leq_i32(65(I32), c)) { leq_i32(c, 90(I32)) } else { .f(Bool) }
+  if(leq_i32(65[I32], c)) { leq_i32(c, 90[I32]) } else { .f[Bool] }
 }
 
 // Whether the word has a type-shaped head: `A`–`Z`, or exactly one leading
 // `_` followed by `A`–`Z`. This local spelling test is independent of the
 // loaded declaration set, preserving open-world argument classification.
 fn word_starts_type_name(w: String) -> Bool {
-  match(string_code_at(w, 0(I32))) {
+  match(string_code_at(w, 0[I32])) {
     (
     , .(first: I32) {
         if(is_upper_code(first)) {
-          .t(Bool)
+          .t[Bool]
         } else if(eq_i32(first, c_under())) {
-          match(string_code_at(w, 1(I32))) {
-            (.(second: I32) { is_upper_code(second) }, .(_empty: .) { .f(Bool) })
+          match(string_code_at(w, 1[I32])) {
+            (.(second: I32) { is_upper_code(second) }, .(_empty: .) { .f[Bool] })
           }
         } else {
-          .f(Bool)
+          .f[Bool]
         }
       }
-    , .(_empty: .) { .f(Bool) }
+    , .(_empty: .) { .f[Bool] }
     )
-  }
-}
-
-// Given the tokens just after `.`, whether it is the unit type rather
-// than a dot-led value form. Dot-lambdas start with `.(...)` or `.()`;
-// bool literals start with `.t` / `.f`; type uses are either bare before
-// a delimiter or followed by a type operator (`|`, `&`, or `->`, whose
-// first token is `-`).
-fn unit_dot_is_type(after: Toks) -> Bool {
-  if(head_is_punct(after, c_bar())) {
-    .t(Bool)
-  } else if(head_is_punct(after, c_amp())) {
-    .t(Bool)
-  } else if(head_is_punct(after, c_comma())) {
-    .t(Bool)
-  } else if(head_is_punct(after, c_rparen())) {
-    .t(Bool)
-  } else {
-    head_is_punct(after, c_minus())
-  }
-}
-
-// Whether a lowercase-headed argument heads a **type**: a module path in
-// a type position (`a/b.Name` — expression references never contain `/`),
-// or an alias-qualified type head (`a.Name` with no member call after it).
-// An alias-qualified newtype member call (`a.Box.mk(…)`) and an
-// alias-qualified value path (`a.helper`) head values.
-fn lower_head_is_typearg(ts: Toks) -> Bool {
-  let after = rest(ts);
-  if(head_is_punct(after, c_slash())) {
-    .t(Bool)
-  } else if(head_is_punct(after, c_dot())) {
-    let seg = rest(after);
-    match(head_word_str(seg)) {
-      (
-      , .(w2: String) {
-          if(word_starts_type_name(w2)) {
-            if(head_is_punct(rest(seg), c_dot())) { .f(Bool) } else { .t(Bool) }
-          } else {
-            .f(Bool)
-          }
-        }
-      , .(_notword: .) { .f(Bool) }
-      )
-    }
-  } else {
-    .f(Bool)
-  }
-}
-
-// Whether the argument starting at `ts` heads a **type** argument (to be
-// skipped at a value application), per the discriminator above.
-fn arg_is_typearg(ts: Toks) -> Bool {
-  match(peek(ts)) {
-    (
-    , .(t: Token) {
-        match(un_token(t)) {
-          (
-          , .(w: Tk_word) {
-              if(word_starts_type_name(Tk_word.get(w))) {
-                // Type-shaped head: a type unless it is a qualified
-                // member call (a value).
-                if(head_is_punct(rest(ts), c_dot())) { .f(Bool) } else { .t(Bool) }
-              } else {
-                lower_head_is_typearg(ts)
-              }
-            }
-          , .(_i: Tk_num) { .f(Bool) }
-          , .(_s: Tk_str) { .f(Bool) }
-          , .(p: Tk_punct) {
-              // A `(` heads a parenthesised type, except the unit value `()`.
-              // A `.` heads the unit type when followed by a delimiter or
-              // type operator; dot-lambdas and bool literals remain values.
-              if(eq_i32(Tk_punct.get(p), c_lparen())) {
-                if(head_is_punct(rest(ts), c_rparen())) { .f(Bool) } else { .t(Bool) }
-              } else if(eq_i32(Tk_punct.get(p), c_dot())) {
-                unit_dot_is_type(rest(ts))
-              } else if(eq_i32(Tk_punct.get(p), c_bang())) {
-                .t(Bool)
-              } else if(eq_i32(Tk_punct.get(p), c_lbrack())) {
-                .t(Bool)
-              } else {
-                .f(Bool)
-              }
-            }
-          )
-        }
-      }
-    , .(_e: .) { .f(Bool) }
-    )
-  }
-}
-
-// Skip the leading type-args at a value application (the `(` already
-// consumed), stopping at the first value argument. The emitter's
-// leading-comma style means a type-arg may be comma-led; `skip_type_arg`
-// drops a leading comma.
-/// Wraps the value-application type-arg skip's exit (the tokens at the first value-arg).
-labels { vta_done: Toks };
-
-fn skip_value_typeargs(ts: Toks) -> Toks {
-  Vta_done.get(loop(
-  , .(cur: Toks) {
-      let cur1 = drop_comma(cur);
-      if(arg_is_typearg(cur1)) {
-        widen_sum(skip_type_arg(cur1), Toks | Vta_done)
-      } else {
-        widen_sum({vta_done = cur}, Toks | Vta_done)
-      }
-    }
-  , ts
-  ))
-}
-
-/// Wraps a structurally consumed type-application run's `(term, tokens)`.
-labels { type_apps_done: Term & Toks };
-
-// Apply every written leading type argument to an ordinary runtime value as
-// one evaluator-internal Unit application per unary `forall`. This represents
-// only type application: it does not consume a following `. -> ...` value
-// layer when the written packet ends after its type arguments. No callee name,
-// declaration signature, or provenance participates. The cursor stops at the
-// first value argument (or the closing `)`).
-fn apply_value_typeargs(value: Term, ts: Toks) -> Term & Toks {
-  match(Type_apps_done.get(loop(
-  , .(st: Term & Toks) {
-      match(st) {
-        .(current: Term, remaining0: Toks) {
-          let remaining = drop_comma(remaining0);
-          if(arg_is_typearg(remaining)) {
-            widen_sum(
-            , (app(current, unit()), skip_type_arg(remaining))
-            , (Term & Toks) | Type_apps_done
-            )
-          } else {
-            widen_sum({type_apps_done = (current, remaining0)}, (Term & Toks) | Type_apps_done)
-          }
-        }
-      }
-    }
-  , (value, ts)
-  ))) {
-    .(applied: Term, after: Toks) { (applied, after) }
   }
 }
 
@@ -1030,23 +856,23 @@ pub type Tg_shape =
 /// One-step destructor on a `Tg`.
 pub fn un_tg(t: Tg) -> Tg_shape { Tg.get(t) }
 
-fn tg_app(callee: Term) -> Tg { {tg = widen_sum({tg_app = callee}, Tg_shape)} }
+fn tg_app(callee: Term) -> Tg { {tg = widen_sum({tg_app = callee})[Tg_shape]} }
 
-fn tg_pair() -> Tg { {tg = widen_sum({tg_pair=}, Tg_shape)} }
+fn tg_pair() -> Tg { {tg = widen_sum({tg_pair=})[Tg_shape]} }
 
-fn tg_fst() -> Tg { {tg = widen_sum({tg_fst=}, Tg_shape)} }
+fn tg_fst() -> Tg { {tg = widen_sum({tg_fst=})[Tg_shape]} }
 
-fn tg_snd() -> Tg { {tg = widen_sum({tg_snd=}, Tg_shape)} }
+fn tg_snd() -> Tg { {tg = widen_sum({tg_snd=})[Tg_shape]} }
 
-fn tg_left() -> Tg { {tg = widen_sum({tg_left=}, Tg_shape)} }
+fn tg_left() -> Tg { {tg = widen_sum({tg_left=})[Tg_shape]} }
 
-fn tg_right() -> Tg { {tg = widen_sum({tg_right=}, Tg_shape)} }
+fn tg_right() -> Tg { {tg = widen_sum({tg_right=})[Tg_shape]} }
 
-fn tg_either() -> Tg { {tg = widen_sum({tg_either=}, Tg_shape)} }
+fn tg_either() -> Tg { {tg = widen_sum({tg_either=})[Tg_shape]} }
 
-fn tg_ite(ty: Host_type) -> Tg { {tg = widen_sum({tg_ite = ty}, Tg_shape)} }
+fn tg_ite(ty: Host_type) -> Tg { {tg = widen_sum({tg_ite = ty})[Tg_shape]} }
 
-fn tg_absurd() -> Tg { {tg = widen_sum({tg_absurd=}, Tg_shape)} }
+fn tg_absurd() -> Tg { {tg = widen_sum({tg_absurd=})[Tg_shape]} }
 
 // Apply a value to `count` erased type-stage Unit arguments.
 fn apply_unit_stages(value: Term, count: I32) -> Term {
@@ -1054,10 +880,10 @@ fn apply_unit_stages(value: Term, count: I32) -> Term {
   , .(state: I32 & Term) {
       match(state) {
         .(remaining: I32, current: Term) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(current, (I32 & Term) | Term)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(current)[(I32 & Term) | Term]
           } else {
-            widen_sum((sub_i32(remaining, 1(I32)), app(current, unit())), (I32 & Term) | Term)
+            widen_sum((sub_i32(remaining, 1[I32]), app(current, unit())))[(I32 & Term) | Term]
           }
         }
       }
@@ -1072,10 +898,10 @@ fn wrap_type_stages(count: I32, value: Term) -> Term {
   , .(state: I32 & Term) {
       match(state) {
         .(remaining: I32, current: Term) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(current, (I32 & Term) | Term)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(current)[(I32 & Term) | Term]
           } else {
-            widen_sum((sub_i32(remaining, 1(I32)), lam(current)), (I32 & Term) | Term)
+            widen_sum((sub_i32(remaining, 1[I32]), lam(current)))[(I32 & Term) | Term]
           }
         }
       }
@@ -1093,82 +919,8 @@ fn cps_wrapper(existential_arity: I32) -> Term {
 }
 
 // The erased form of a constructor / projector used as a value (a
-// type-only application `N.mk(T)`): the identity closure.
+// type-only application `N.mk[T]`): the identity closure.
 fn identity_wrapper() -> Term { lam(var(nz())) }
-
-// The exact value-argument count a target consumes, or `()` for an
-// application (which takes any count — zero args is the unit call `t()`).
-fn tg_expected_args(t: Tg) -> . | I32 {
-  match(un_tg(t)) {
-    (
-    , .(_a: Tg_app) { widen_sum((), . | I32) }
-    , .(_p: Tg_pair) { widen_sum(2(I32), . | I32) }
-    , .(_f: Tg_fst) { widen_sum(1(I32), . | I32) }
-    , .(_s: Tg_snd) { widen_sum(1(I32), . | I32) }
-    , .(_l: Tg_left) { widen_sum(1(I32), . | I32) }
-    , .(_r: Tg_right) { widen_sum(1(I32), . | I32) }
-    , .(_e: Tg_either) { widen_sum(3(I32), . | I32) }
-    , .(_i: Tg_ite) { widen_sum(3(I32), . | I32) }
-    , .(_x: Tg_absurd) { widen_sum(1(I32), . | I32) }
-    )
-  }
-}
-
-// The target's name for a diagnostic.
-fn tg_describe(t: Tg) -> String {
-  match(un_tg(t)) {
-    (
-    , .(_a: Tg_app) { "an application"(String) }
-    , .(_p: Tg_pair) { "`__pair__`"(String) }
-    , .(_f: Tg_fst) { "`__fst__`"(String) }
-    , .(_s: Tg_snd) { "`__snd__`"(String) }
-    , .(_l: Tg_left) { "`__left__`"(String) }
-    , .(_r: Tg_right) { "`__right__`"(String) }
-    , .(_e: Tg_either) { "`__either__`"(String) }
-    , .(_i: Tg_ite) { "`__if_then_else__`"(String) }
-    , .(_x: Tg_absurd) { "`__absurd__`"(String) }
-    )
-  }
-}
-
-// The length of a term list, as a host i32.
-fn terms_len(ts: Terms) -> I32 { length(Terms.get(ts)) }
-
-// Check a finished argument list's count against the target's expected
-// count: `()` on a match (or for an application), else the mismatch
-// message. A missing or surplus intrinsic argument is a malformed image,
-// diagnosed rather than silently defaulted.
-fn args_count_mismatch(tg: Tg, got: I32) -> . | String {
-  match(tg_expected_args(tg)) {
-    (
-    , .(want: I32) {
-        if(eq_i32(want, got)) {
-          widen_sum((), . | String)
-        } else {
-          widen_sum(
-          , string_concat(
-            , "wrong number of value arguments to "(String)
-            , string_concat(
-              , tg_describe(tg)
-              , string_concat(
-                , " — expected "(String)
-                , string_concat(
-                  , int_to_string(want)
-                  , string_concat(", got "(String), int_to_string(got))
-                  )
-                )
-              )
-            )
-          , . | String
-          )
-        }
-      }
-    , .(_any: .) { widen_sum((), . | String) }
-    )
-  }
-}
-
-fn un_maybe_msg(m: . | String) -> . | String { m }
 
 // =====================================================================
 // Head classification — intrinsic / variable
@@ -1195,35 +947,35 @@ pub labels { hc_ite: . };
 /// A call head is a node-building call or an ordinary variable.
 pub type Headclass = Hc_call | Hc_var | Hc_ite;
 
-fn hc_call(t: Tg) -> Headclass { widen_sum({hc_call = t}, Hc_call | Hc_var | Hc_ite) }
+fn hc_call(t: Tg) -> Headclass { widen_sum({hc_call = t})[Hc_call | Hc_var | Hc_ite] }
 
-fn hc_var() -> Headclass { widen_sum({hc_var=}, Hc_call | Hc_var | Hc_ite) }
+fn hc_var() -> Headclass { widen_sum({hc_var=})[Hc_call | Hc_var | Hc_ite] }
 
 fn classify_intrinsic2(w: String) -> . | Headclass {
-  if(string_eq(w, "__right__"(String))) {
-    widen_sum(hc_call(tg_right()), . | Headclass)
-  } else if(string_eq(w, "__either__"(String))) {
-    widen_sum(hc_call(tg_either()), . | Headclass)
-  } else if(string_eq(w, "__if_then_else__"(String))) {
-    widen_sum(widen_sum({hc_ite=}, Headclass), . | Headclass)
-  } else if(string_eq(w, "__absurd__"(String))) {
-    widen_sum(hc_call(tg_absurd()), . | Headclass)
+  if(string_eq(w, "__right__"[String])) {
+    widen_sum(hc_call(tg_right()))[. | Headclass]
+  } else if(string_eq(w, "__either__"[String])) {
+    widen_sum(hc_call(tg_either()))[. | Headclass]
+  } else if(string_eq(w, "__if_then_else__"[String])) {
+    widen_sum(widen_sum({hc_ite=})[Headclass])[. | Headclass]
+  } else if(string_eq(w, "__absurd__"[String])) {
+    widen_sum(hc_call(tg_absurd()))[. | Headclass]
   } else {
-    widen_sum((), . | Headclass)
+    widen_sum(())[. | Headclass]
   }
 }
 
 // Classify an intrinsic name (a `__name__`) to its target,
 // or `()` when the name is not an intrinsic.
 fn classify_intrinsic(w: String) -> . | Headclass {
-  if(string_eq(w, "__pair__"(String))) {
-    widen_sum(hc_call(tg_pair()), . | Headclass)
-  } else if(string_eq(w, "__fst__"(String))) {
-    widen_sum(hc_call(tg_fst()), . | Headclass)
-  } else if(string_eq(w, "__snd__"(String))) {
-    widen_sum(hc_call(tg_snd()), . | Headclass)
-  } else if(string_eq(w, "__left__"(String))) {
-    widen_sum(hc_call(tg_left()), . | Headclass)
+  if(string_eq(w, "__pair__"[String])) {
+    widen_sum(hc_call(tg_pair()))[. | Headclass]
+  } else if(string_eq(w, "__fst__"[String])) {
+    widen_sum(hc_call(tg_fst()))[. | Headclass]
+  } else if(string_eq(w, "__snd__"[String])) {
+    widen_sum(hc_call(tg_snd()))[. | Headclass]
+  } else if(string_eq(w, "__left__"[String])) {
+    widen_sum(hc_call(tg_left()))[. | Headclass]
   } else {
     classify_intrinsic2(w)
   }
@@ -1245,36 +997,9 @@ fn classify_head(w: String, sc: Scope) -> Headclass {
 // Collected-argument list and node building
 // =====================================================================
 //
-// Value-args are collected most-recent-first (`tcons` onto the front),
-// then reversed into call order before the node is built. `terms_reverse`
-// performs that one reversal; the per-arm node builders read positional
-// args (`arg0` / `arg1` / `arg2`) off the in-order list. A missing
-// positional arg falls back to the unit value — a well-formed image never
-// triggers it, but keeping the accessors total avoids an `Eval_result`
-// dependency here (the parser is upstream of evaluation).
-/// Reverses a term list (most-recent-first into call order).
+// Value arguments are collected most-recent-first, then reversed into the
+// single product-domain packet consumed by this value application.
 fn terms_reverse(ts: Terms) -> Terms { {terms = reverse(Terms.get(ts))} }
-
-/// The first term of a list, or the unit term when empty.
-fn arg0(ts: Terms) -> Term {
-  match(un_terms(ts)) {
-    (.(h: Term, _t: Terms) { h }, .(_e: .) { unit() })
-  }
-}
-
-/// The second term of a list, or the unit term when shorter.
-fn arg1(ts: Terms) -> Term {
-  match(un_terms(ts)) {
-    (.(_h: Term, t: Terms) { arg0(t) }, .(_e: .) { unit() })
-  }
-}
-
-/// The third term of a list, or the unit term when shorter.
-fn arg2(ts: Terms) -> Term {
-  match(un_terms(ts)) {
-    (.(_h: Term, t: Terms) { arg1(t) }, .(_e: .) { unit() })
-  }
-}
 
 // Fold the in-order value-args of one call bracket into the single domain
 // value the callee is applied to. Kio''s functions are unary over one
@@ -1306,9 +1031,9 @@ fn product_of_args(args: Terms) -> Term {
                 match(un_terms(remaining)) {
                   (
                   , .(head: Term, rest_t: Terms) {
-                      widen_sum((pair(head, acc), rest_t), (Term & Terms) | Term)
+                      widen_sum((pair(head, acc), rest_t))[(Term & Terms) | Term]
                     }
-                  , .(_e: .) { widen_sum(acc, (Term & Terms) | Term) }
+                  , .(_e: .) { widen_sum(acc)[(Term & Terms) | Term] }
                   )
                 }
               }
@@ -1322,28 +1047,50 @@ fn product_of_args(args: Terms) -> Term {
   }
 }
 
-// Apply `callee` to the single domain value its argument list folds to.
-fn build_app(callee: Term, args: Terms) -> Term { app(callee, product_of_args(args)) }
-
-// Build the `Term` node a finished intrinsic or ordinary application
-// argument-list forms, from the target and the collected (reversed) terms.
-fn built(t: Term) -> Term | String { widen_sum(t, Term | String) }
-
-fn build_node(tg: Tg, rev_args: Terms) -> Term | String {
-  let args = terms_reverse(rev_args);
+// An intrinsic's value stage receives one ordinary product-domain argument.
+// Projections read the bound value, so every written packet is evaluated once
+// before branch dispatch. No source argument count selects a private ABI.
+fn target_value(tg: Tg) -> Term {
+  let packet = var(nz());
   match(un_tg(tg)) {
     (
-    , .(a: Tg_app) { built(build_app(Tg_app.get(a), args)) }
-    , .(_p: Tg_pair) { built(pair(arg0(args), arg1(args))) }
-    , .(_f: Tg_fst) { built(fst(arg0(args))) }
-    , .(_s: Tg_snd) { built(snd(arg0(args))) }
-    , .(_l: Tg_left) { built(left(arg0(args))) }
-    , .(_r: Tg_right) { built(right(arg0(args))) }
-    , .(_e: Tg_either) { built(either(arg0(args), arg1(args), arg2(args))) }
-    , .(i: Tg_ite) { built(ite(Tg_ite.get(i), arg0(args), arg1(args), arg2(args))) }
-    , .(_x: Tg_absurd) { built(absurd(arg0(args))) }
+    , .(a: Tg_app) { Tg_app.get(a) }
+    , .(_p: Tg_pair) { lam(packet) }
+    , .(_f: Tg_fst) { lam(fst(packet)) }
+    , .(_s: Tg_snd) { lam(snd(packet)) }
+    , .(_l: Tg_left) { lam(left(packet)) }
+    , .(_r: Tg_right) { lam(right(packet)) }
+    , .(_e: Tg_either) { lam(either(fst(packet), fst(snd(packet)), snd(snd(packet)))) }
+    , .(i: Tg_ite) { lam(ite(Tg_ite.get(i), fst(packet), fst(snd(packet)), snd(snd(packet)))) }
+    , .(_x: Tg_absurd) { lam(absurd(packet)) }
     )
   }
+}
+
+// The reserved intrinsic schemes determine their unary forall stages.
+// The conditional's checked B prefix is consumed before reaching this helper.
+fn target_type_stages(tg: Tg) -> I32 {
+  match(un_tg(tg)) {
+    (
+    , .(_a: Tg_app) { 0[I32] }
+    , .(_p: Tg_pair) { 2[I32] }
+    , .(_f: Tg_fst) { 2[I32] }
+    , .(_s: Tg_snd) { 2[I32] }
+    , .(_l: Tg_left) { 2[I32] }
+    , .(_r: Tg_right) { 2[I32] }
+    , .(_e: Tg_either) { 3[I32] }
+    , .(_i: Tg_ite) { 1[I32] }
+    , .(_x: Tg_absurd) { 1[I32] }
+    )
+  }
+}
+
+fn target_polymorphic_value(tg: Tg) -> Term {
+  wrap_type_stages(target_type_stages(tg), target_value(tg))
+}
+
+fn build_node(tg: Tg, reversed: Terms) -> Term {
+  app(target_value(tg), product_of_args(terms_reverse(reversed)))
 }
 
 // =====================================================================
@@ -1391,11 +1138,11 @@ pub labels { pctl: Pc_block | Pc_expr | Pc_yield };
 /// The bare control sum inside a `Pctl`.
 pub type Pctl_shape = Pc_block | Pc_expr | Pc_yield;
 
-fn c_pblock(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_block = (ts, sc)}, Pctl_shape)} }
+fn c_pblock(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_block = (ts, sc)})[Pctl_shape]} }
 
-fn c_pexpr(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_expr = (ts, sc)}, Pctl_shape)} }
+fn c_pexpr(ts: Toks, sc: Scope) -> Pctl { {pctl = widen_sum({pc_expr = (ts, sc)})[Pctl_shape]} }
 
-fn c_pyield(t: Term, ts: Toks) -> Pctl { {pctl = widen_sum({pc_yield = (t, ts)}, Pctl_shape)} }
+fn c_pyield(t: Term, ts: Toks) -> Pctl { {pctl = widen_sum({pc_yield = (t, ts)})[Pctl_shape]} }
 
 fn un_pctl(c: Pctl) -> Pctl_shape { Pctl.get(c) }
 
@@ -1439,21 +1186,21 @@ pub labels { pf: Pf_post | Pf_coll | Pf_letrhs | Pf_letbody | Pf_lam | Pf_stmt |
 /// The bare frame sum inside a `Pf`.
 pub type Pf_shape = Pf_post | Pf_coll | Pf_letrhs | Pf_letbody | Pf_lam | Pf_stmt | Pf_group;
 
-fn mk_post(sc: Scope) -> Pf { {pf = widen_sum({pf_post = sc}, Pf_shape)} }
+fn mk_post(sc: Scope) -> Pf { {pf = widen_sum({pf_post = sc})[Pf_shape]} }
 
 fn mk_coll(tg: Tg, rev: Terms, sc: Scope) -> Pf {
-  {pf = widen_sum({pf_coll = (tg, (rev, sc))}, Pf_shape)}
+  {pf = widen_sum({pf_coll = (tg, (rev, sc))})[Pf_shape]}
 }
 
-fn mk_letrhs(name: String, sc: Scope) -> Pf { {pf = widen_sum({pf_letrhs = (name, sc)}, Pf_shape)} }
+fn mk_letrhs(name: String, sc: Scope) -> Pf { {pf = widen_sum({pf_letrhs = (name, sc)})[Pf_shape]} }
 
-fn mk_letbody(rhs: Term) -> Pf { {pf = widen_sum({pf_letbody = rhs}, Pf_shape)} }
+fn mk_letbody(rhs: Term) -> Pf { {pf = widen_sum({pf_letbody = rhs})[Pf_shape]} }
 
-fn mk_lam(groups: Pnlg) -> Pf { {pf = widen_sum({pf_lam = groups}, Pf_shape)} }
+fn mk_lam(groups: Pnlg) -> Pf { {pf = widen_sum({pf_lam = groups})[Pf_shape]} }
 
-fn mk_stmt(sc: Scope) -> Pf { {pf = widen_sum({pf_stmt = sc}, Pf_shape)} }
+fn mk_stmt(sc: Scope) -> Pf { {pf = widen_sum({pf_stmt = sc})[Pf_shape]} }
 
-fn mk_group(sc: Scope) -> Pf { {pf = widen_sum({pf_group = sc}, Pf_shape)} }
+fn mk_group(sc: Scope) -> Pf { {pf = widen_sum({pf_group = sc})[Pf_shape]} }
 
 fn un_pf(f: Pf) -> Pf_shape { Pf.get(f) }
 
@@ -1463,9 +1210,9 @@ fn un_pf(f: Pf) -> Pf_shape { Pf.get(f) }
 /// The parser continuation stack, innermost frame first.
 pub rec labels { pk: . | (Pf & Pk) };
 
-fn pk_nil() -> Pk { {pk = widen_sum((), . | (Pf & Pk))} }
+fn pk_nil() -> Pk { {pk = widen_sum(())[. | (Pf & Pk)]} }
 
-fn pk_push(f: Pf, k: Pk) -> Pk { {pk = widen_sum((f, k), . | (Pf & Pk))} }
+fn pk_push(f: Pf, k: Pk) -> Pk { {pk = widen_sum((f, k))[. | (Pf & Pk)]} }
 
 fn un_pk(k: Pk) -> . | (Pf & Pk) { Pk.get(k) }
 
@@ -1515,14 +1262,14 @@ pub labels { p_err: Perr };
 pub type Pres = P_ok | P_err;
 
 /// Builds the successful parse result.
-pub fn p_ok(t: Term) -> Pres { widen_sum({p_ok = t}, P_ok | P_err) }
+pub fn p_ok(t: Term) -> Pres { widen_sum({p_ok = t})[P_ok | P_err] }
 
 /// Builds the parse-error result.
-pub fn p_err(e: Perr) -> Pres { widen_sum({p_err = e}, P_ok | P_err) }
+pub fn p_err(e: Perr) -> Pres { widen_sum({p_err = e})[P_ok | P_err] }
 
-fn pgo(s: Pstate) -> Pstate | Pres { widen_sum(s, Pstate | Pres) }
+fn pgo(s: Pstate) -> Pstate | Pres { widen_sum(s)[Pstate | Pres] }
 
-fn phalt(r: Pres) -> Pstate | Pres { widen_sum(r, Pstate | Pres) }
+fn phalt(r: Pres) -> Pstate | Pres { widen_sum(r)[Pstate | Pres] }
 
 // Halt with a parse error pointing at the head of `ts`.
 fn perr_halt(message: String, ts: Toks) -> Pstate | Pres { phalt(p_err(mk_perr_at(message, ts))) }
@@ -1537,9 +1284,9 @@ fn skip_semis(ts: Toks) -> Toks {
   After_semis.get(loop(
   , .(cur: Toks) {
       if(head_is_punct(cur, c_semi())) {
-        widen_sum(rest(cur), Toks | After_semis)
+        widen_sum(rest(cur))[Toks | After_semis]
       } else {
-        widen_sum({after_semis = cur}, Toks | After_semis)
+        widen_sum({after_semis = cur})[Toks | After_semis]
       }
     }
   , ts
@@ -1556,9 +1303,9 @@ fn reverse_toks(ts: Toks) -> Toks {
       match(un_toks(remaining)) {
         (
         , .(token: Token, pos: I32, tail: Toks) {
-            widen_sum((tail, toks_cons(token, pos, reversed)), (Toks & Toks) | Toks)
+            widen_sum((tail, toks_cons(token, pos, reversed)))[(Toks & Toks) | Toks]
           }
-        , .(_end: .) { widen_sum(reversed, (Toks & Toks) | Toks) }
+        , .(_end: .) { widen_sum(reversed)[(Toks & Toks) | Toks] }
         )
       }
     }
@@ -1568,159 +1315,100 @@ fn reverse_toks(ts: Toks) -> Toks {
 
 // Retain the complete balanced type for the existing alias normalizer.
 // The argument delimiter belongs to the surrounding call or annotation.
-fn read_type_arg(ts: Toks) -> Type_arg {
+fn read_type_arg(ts: Toks, closing: I32) -> Type_arg {
   loop(
   , .(state: Toks & I32 & Toks) {
       let .(remaining, depth, reversed) = state;
       match(un_toks(remaining)) {
         (
         , .(token: Token, pos: I32, tail: Toks) {
-            let finished = if(eq_i32(depth, 0(I32))) { is_delim(token) } else { .f(Bool) };
+            let finished =
+              if(eq_i32(depth, 0[I32])) {
+                if(is_punct(token, c_comma())) { .t[Bool] } else { is_punct(token, closing) }
+              } else {
+                .f[Bool]
+              };
             if(finished) {
-              widen_sum(
-              , {type_arg = (reverse_toks(reversed), remaining)}
-              , (Toks & I32 & Toks) | Type_arg
-              )
+              widen_sum({type_arg = (reverse_toks(reversed), remaining)})[| (Toks & I32 & Toks)
+              | Type_arg]
             } else {
-              widen_sum(
-              , (tail, bracket_delta(token, depth), toks_cons(token, pos, reversed))
-              , (Toks & I32 & Toks) | Type_arg
-              )
+              widen_sum((tail, bracket_delta(token, depth), toks_cons(token, pos, reversed)))[| (& Toks
+              & I32
+              & Toks)
+              | Type_arg]
             }
           }
         , .(_end: .) {
-            widen_sum(
-            , {type_arg = (reverse_toks(reversed), remaining)}
-            , (Toks & I32 & Toks) | Type_arg
-            )
+            widen_sum({type_arg = (reverse_toks(reversed), remaining)})[| (Toks & I32 & Toks)
+            | Type_arg]
           }
         )
       }
     }
-  , (drop_comma(ts), 0(I32), toks_nil())
+  , (ts, 0[I32], toks_nil())
   )
 }
 
-/// Wraps a literal annotation's type tokens and the tokens after its closing parenthesis.
+/// One bracketed type argument and the tokens after its close.
+labels { type_group: Toks & Toks };
+
+// The caller consumes `[`. Retain one complete type for exact carrier
+// resolution; ordinary erased application needs only its single Unit stage.
+fn read_type_group(ts: Toks) -> Type_group | Perr {
+  let .(argument, after) = Type_arg.get(read_type_arg(ts, c_rbrack()));
+  match(un_toks(argument)) {
+    (
+    , .(_first: Token, _pos: I32, _tail: Toks) {
+        if(head_is_punct(after, c_rbrack())) {
+          widen_sum({type_group = (argument, rest(after))})[Type_group | Perr]
+        } else {
+          widen_sum(mk_perr_at("expected `]` after one type argument"[String], after))[| Type_group
+          | Perr]
+        }
+      }
+    , .(_empty: .) {
+        widen_sum(mk_perr_at("expected one type argument in `[...]`"[String], ts))[Type_group | Perr]
+      }
+    )
+  }
+}
+
+/// A literal annotation's type tokens and the tokens after its closing bracket.
 labels { lit_annot: Toks & Toks };
 
 fn read_lit_annot(ts: Toks) -> Lit_annot | Perr {
-  if(head_is_punct(ts, c_lparen())) {
-    let .(ty, after) = Type_arg.get(read_type_arg(rest(ts)));
-    if(head_is_punct(after, c_rparen())) {
-      widen_sum({lit_annot = (ty, rest(after))}, Lit_annot | Perr)
-    } else {
-      widen_sum(
-      , mk_perr_at("expected `)` closing a literal's type annotation"(String), after)
-      , Lit_annot | Perr
+  if(head_is_punct(ts, c_lbrack())) {
+    match(read_type_group(rest(ts))) {
+      (
+      , .(group: Type_group) { widen_sum({lit_annot = Type_group.get(group)})[Lit_annot | Perr] }
+      , .(error: Perr) { widen_sum(error)[Lit_annot | Perr] }
       )
     }
   } else {
-    widen_sum(
-    , mk_perr_at("a literal must carry a parenthesized type annotation"(String), ts)
-    , Lit_annot | Perr
-    )
+    widen_sum(mk_perr_at("a literal must carry a bracketed type annotation"[String], ts))[| Lit_annot
+    | Perr]
   }
 }
 
 fn un_lit_annot_read(r: Lit_annot | Perr) -> Lit_annot | Perr { r }
 
-// Begin collecting the value-arguments of a call (the `(` already
-// consumed, and for an intrinsic the type-args already skipped). An
-// immediate `)` is an empty argument list — the node is built from no
-// args (for an application, `t()` applies the callee to the unit value).
+// Begin one value application after consuming `(`. An immediate `)`
+// supplies Unit. Every other list becomes one right-nested product packet.
 // Otherwise parse the first value-arg into a `Pf_coll` frame. Every argument,
 // including `__either__` handlers and `__if_then_else__` thunks, is an
 // ordinary value expression. The emitter's leading-comma style means a
 // leading comma may precede the first arg.
-// The erased result of a type-only application's target. An ordinary
-// application target already carries its Unit applications. Intrinsic targets never
-// appear bare (`bare_target_msg` rejects them first), so their arms yield
-// an inert unit.
-fn bare_target(t: Tg) -> Term {
-  match(un_tg(t)) {
-    (
-    , .(a: Tg_app) { Tg_app.get(a) }
-    , .(_p: Tg_pair) { unit() }
-    , .(_f: Tg_fst) { unit() }
-    , .(_s: Tg_snd) { unit() }
-    , .(_l: Tg_left) { unit() }
-    , .(_r: Tg_right) { unit() }
-    , .(_e: Tg_either) { unit() }
-    , .(_i: Tg_ite) { unit() }
-    , .(_x: Tg_absurd) { unit() }
-    )
-  }
-}
-
-// A type-only application is well-formed only for targets that are values
-// under erasure — an ordinary application callee. The Kio' intrinsics are
-// syntax, not values — a bare `__pair__(A, B)` with no value arguments is
-// a malformed image.
-fn bare_target_msg(t: Tg) -> . | String {
-  let reject =
-    string_concat(
-    , "type-only application of "(String)
-    , string_concat(tg_describe(t), " — an intrinsic requires its value arguments"(String))
-    );
-  match(un_tg(t)) {
-    (
-    , .(_a: Tg_app) { widen_sum((), . | String) }
-    , .(_p: Tg_pair) { widen_sum(reject, . | String) }
-    , .(_f: Tg_fst) { widen_sum(reject, . | String) }
-    , .(_s: Tg_snd) { widen_sum(reject, . | String) }
-    , .(_l: Tg_left) { widen_sum(reject, . | String) }
-    , .(_r: Tg_right) { widen_sum(reject, . | String) }
-    , .(_e: Tg_either) { widen_sum(reject, . | String) }
-    , .(_i: Tg_ite) { widen_sum(reject, . | String) }
-    , .(_x: Tg_absurd) { widen_sum(reject, . | String) }
-    )
-  }
-}
-
 // Boolean disjunction over two already-computed host bools.
 fn or_bool(a: Bool, b: Bool) -> Bool {
-  if(a) { .t(Bool) } else { b }
+  if(a) { .t[Bool] } else { b }
 }
 
-fn start_args(tg: Tg, source_empty: Bool, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) ->
-  Pstate | Pres
-   {
+fn start_args(tg: Tg, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
   let ts1 = drop_comma(ts);
   if(head_is_punct(ts1, c_rparen())) {
-    if(source_empty) {
-      match(un_maybe_msg(args_count_mismatch(tg, 0(I32)))) {
-        (
-        , .(msg: String) { perr_halt(msg, ts1) }
-        , .(_ok: .) {
-            match(build_node(tg, tnil())) {
-              (
-              , .(message: String) { perr_halt(message, ts1) }
-              , .(node: Term) {
-                  pgo(mk_pstate(c_pyield(node, rest(ts1)), pk_push(mk_post(sc), k), fuel, nt))
-                }
-              )
-            }
-          }
-        )
-      }
-    } else {
-      // Every written argument was a type: a type-only application `f(T...)`.
-      // The ordinary target already carries one Unit application per type
-      // argument, but this packet performs no value-domain application. Yield
-      // it through a postfix frame so a chained `(args)` still applies it.
-      match(un_maybe_msg(bare_target_msg(tg))) {
-        (
-        , .(msg: String) { perr_halt(msg, ts1) }
-        , .(_ok: .) {
-            pgo(mk_pstate(c_pyield(bare_target(tg), rest(ts1)), pk_push(mk_post(sc), k), fuel, nt))
-          }
-        )
-      }
-    }
+    pgo(mk_pstate(c_pyield(build_node(tg, tnil()), rest(ts1)), pk_push(mk_post(sc), k), fuel, nt))
   } else {
-    let coll = mk_coll(tg, tnil(), sc);
-    pgo(mk_pstate(c_pexpr(ts1, sc), pk_push(coll, k), fuel, nt))
+    pgo(mk_pstate(c_pexpr(ts1, sc), pk_push(mk_coll(tg, tnil(), sc), k), fuel, nt))
   }
 }
 
@@ -1739,10 +1427,9 @@ fn start_args(tg: Tg, source_empty: Bool, ts: Toks, sc: Scope, k: Pk, fuel: I32,
 // Decompose the top frame and resume it with the yielded `(v, ts)`,
 // producing the next machine state.
 //
-//   Pf_post   — postfix: a `(` after `v` opens an application of `v` to
-//               the parenthesized args (target `Tg_app`); otherwise `v`
-//               is final here and re-yielded against the popped
-//               continuation, so the next frame down handles it.
+//   Pf_post   — postfix: `[...]` consumes explicit type stages; `(...)`
+//               applies one product-domain value. Otherwise the value is
+//               final here and re-yielded to the enclosing continuation.
 //   Pf_coll   — push `v` as the just-parsed arg; a `,` parses the next
 //               ordinary value expression, while a `)` builds the node and
 //               re-yields it through a fresh postfix frame.
@@ -1755,63 +1442,38 @@ fn do_pyield_frame(v: Term, ts: Toks, top: Pf, rest_k: Pk, fuel: I32, nt: Ntab) 
     (
     , .(fr: Pf_post) {
         let sc = Pf_post.get(fr);
-        if(head_is_punct(ts, c_lparen())) {
-          // A postfix packet on an ordinary value represents each leading
-          // type argument as one evaluator-internal Unit application, then
-          // applies at most one written value-domain packet. Surface
-          // flattening has already become nested Kio' applications, so no
-          // declaration shape is needed here. This also covers aliases
-          // and projected values.
-          let args0 = rest(ts);
-          match(apply_value_typeargs(v, args0)) {
-            .(typed: Term, after_types: Toks) {
-              start_args(
-              , tg_app(typed)
-              , head_is_punct(drop_comma(args0), c_rparen())
-              , after_types
-              , sc
-              , rest_k
-              , fuel
-              , nt
-              )
-            }
+        if(head_is_punct(ts, c_lbrack())) {
+          match(read_type_group(rest(ts))) {
+            (
+            , .(group: Type_group) {
+                let .(_argument, after) = Type_group.get(group);
+                let applied = app(v, unit());
+                pgo(mk_pstate(c_pyield(applied, after), pk_push(mk_post(sc), rest_k), fuel, nt))
+              }
+            , .(error: Perr) { phalt(p_err(error)) }
+            )
           }
+        } else if(head_is_punct(ts, c_lparen())) {
+          start_args(tg_app(v), rest(ts), sc, rest_k, fuel, nt)
         } else {
           pgo(mk_pstate(c_pyield(v, ts), rest_k, fuel, nt))
         }
       }
     , .(fr: Pf_coll) {
-        match(Pf_coll.get(fr)) {
-          .(tg: Tg, rev: Terms, sc: Scope) {
-            let rev1 = tcons(v, rev);
-            if(head_is_punct(ts, c_comma())) {
-              let coll = mk_coll(tg, rev1, sc);
-              pgo(mk_pstate(c_pexpr(rest(ts), sc), pk_push(coll, rest_k), fuel, nt))
-            } else if(head_is_punct(ts, c_rparen())) {
-              match(un_maybe_msg(args_count_mismatch(tg, terms_len(rev1)))) {
-                (
-                , .(msg: String) { perr_halt(msg, ts) }
-                , .(_ok: .) {
-                    match(build_node(tg, rev1)) {
-                      (
-                      , .(message: String) { perr_halt(message, ts) }
-                      , .(node: Term) {
-                          pgo(mk_pstate(
-                          , c_pyield(node, rest(ts))
-                          , pk_push(mk_post(sc), rest_k)
-                          , fuel
-                          , nt
-                          ))
-                        }
-                      )
-                    }
-                  }
-                )
-              }
-            } else {
-              perr_halt("expected `,` or `)` in an argument list"(String), ts)
-            }
-          }
+        let .(tg, reversed, sc) = Pf_coll.get(fr);
+        let collected = tcons(v, reversed);
+        let after = if(head_is_punct(ts, c_comma())) { rest(ts) } else { ts };
+        if(head_is_punct(after, c_rparen())) {
+          pgo(mk_pstate(
+          , c_pyield(build_node(tg, collected), rest(after))
+          , pk_push(mk_post(sc), rest_k)
+          , fuel
+          , nt
+          ))
+        } else if(head_is_punct(ts, c_comma())) {
+          pgo(mk_pstate(c_pexpr(after, sc), pk_push(mk_coll(tg, collected, sc), rest_k), fuel, nt))
+        } else {
+          perr_halt("expected `,` or `)` in an argument list"[String], ts)
         }
       }
     , .(fr: Pf_letrhs) {
@@ -1825,7 +1487,7 @@ fn do_pyield_frame(v: Term, ts: Toks, top: Pf, rest_k: Pk, fuel: I32, nt: Ntab) 
               , nt
               ))
             } else {
-              perr_halt("expected `;` after a `let` binding's right-hand side"(String), ts)
+              perr_halt("expected `;` after a `let` binding's right-hand side"[String], ts)
             }
           }
         }
@@ -1837,7 +1499,7 @@ fn do_pyield_frame(v: Term, ts: Toks, top: Pf, rest_k: Pk, fuel: I32, nt: Ntab) 
         if(head_is_punct(ts, c_rbrace())) {
           pgo(mk_pstate(c_pyield(wrap_lambda(Pf_lam.get(fr), v), rest(ts)), rest_k, fuel, nt))
         } else {
-          perr_halt("expected `}` closing a lambda body"(String), ts)
+          perr_halt("expected `}` closing a lambda body"[String], ts)
         }
       }
     , .(fr: Pf_stmt) {
@@ -1873,7 +1535,7 @@ fn do_pyield_frame(v: Term, ts: Toks, top: Pf, rest_k: Pk, fuel: I32, nt: Ntab) 
         if(head_is_punct(ts, c_rparen())) {
           pgo(mk_pstate(c_pyield(v, rest(ts)), pk_push(mk_post(gsc), rest_k), fuel, nt))
         } else {
-          perr_halt("expected `)` closing a parenthesized expression"(String), ts)
+          perr_halt("expected `)` closing a parenthesized expression"[String], ts)
         }
       }
     )
@@ -1925,22 +1587,8 @@ fn yield_literal(
   }
 }
 
-// Begin a node-building call. The `(` is already consumed; skip its written
-// leading type arguments structurally before collecting the value arguments.
-fn start_call(tg: Tg, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
-  start_args(
-  , tg
-  , head_is_punct(drop_comma(ts), c_rparen())
-  , skip_value_typeargs(ts)
-  , sc
-  , k
-  , fuel
-  , nt
-  )
-}
-
-// A boolean literal `.t(Bool)` / `.f(Bool)`: `w` is the `t` / `f` word, `ts`
-// is just after it (at the `( Bool )` annotation). The literal's text is the
+// A boolean literal `.t[Bool]` / `.f[Bool]`: `w` is the `t` / `f` word, `ts`
+// is just after it (at the `[Bool]` annotation). The literal's text is the
 // `t` / `f` spelling and the annotation resolves to an exact host descriptor;
 // the host constructs the bool scalar from them. The parser pins no Boolean
 // representation itself. Any other word after `.` is not
@@ -1954,7 +1602,7 @@ fn parse_bool_lit(
 , fuel: I32
 , nt: Ntab
 ) -> Pstate | Pres {
-  if(or_bool(string_eq(w, "t"(String)), string_eq(w, "f"(String)))) {
+  if(or_bool(string_eq(w, "t"[String]), string_eq(w, "f"[String]))) {
     match(un_lit_annot_read(read_lit_annot(ts))) {
       (
       , .(a: Lit_annot) {
@@ -1968,7 +1616,7 @@ fn parse_bool_lit(
       )
     }
   } else {
-    perr_halt("expected `t` or `f` in a boolean literal after `.`"(String), ts)
+    perr_halt("expected `t` or `f` in a boolean literal after `.`"[String], ts)
   }
 }
 
@@ -1981,7 +1629,7 @@ fn scan_lambda_binder_group(ts: Toks) -> Lambda_binder_scan | Perr {
   let pos = head_pos(ts);
   let offset =
     match(pos) {
-      (.(p: I32) { p }, .(_missing: .) { 0(I32) })
+      (.(p: I32) { p }, .(_missing: .) { 0[I32] })
     };
   loop(
   , .(state: Toks & I32 & Toks) {
@@ -1991,25 +1639,55 @@ fn scan_lambda_binder_group(ts: Toks) -> Lambda_binder_scan | Perr {
         , .(token: Token, position: I32, after: Toks) {
             let collected = toks_cons(token, position, reversed);
             if(is_punct(token, c_rbrack())) {
-              widen_sum(
-              , {lambda_binder_scan = (n, reverse_toks(collected), after)}
-              , (Toks & I32 & Toks) | Lambda_binder_scan | Perr
-              )
+              if(eq_i32(n, 1[I32])) {
+                widen_sum({lambda_binder_scan = (n, reverse_toks(collected), after)})[| (& Toks
+                & I32
+                & Toks)
+                | Lambda_binder_scan
+                | Perr]
+              } else {
+                widen_sum(mk_perr_at("expected one type binder inside `[...]`"[String], cur))[| (& Toks
+                & I32
+                & Toks)
+                | Lambda_binder_scan
+                | Perr]
+              }
             } else {
-              let next = if(is_punct(token, c_comma())) { add_i32(n, 1(I32)) } else { n };
-              widen_sum((after, next, collected), (Toks & I32 & Toks) | Lambda_binder_scan | Perr)
+              let next = match(un_token(token)) {
+                (
+                , .(_word: Tk_word) { add_i32(n, 1[I32]) }
+                , .(_number: Tk_num) { 2[I32] }
+                , .(_string: Tk_str) { 2[I32] }
+                , .(punct: Tk_punct) {
+                    if(eq_i32(n, 0[I32])) {
+                      if(eq_i32(Tk_punct.get(punct), c_star())) { n } else { 2[I32] }
+                    } else {
+                      2[I32]
+                    }
+                  }
+                )
+              };
+              if(leq_i32(next, 1[I32])) {
+                widen_sum((after, next, collected))[(Toks & I32 & Toks) | Lambda_binder_scan | Perr]
+              } else {
+                widen_sum(mk_perr_at(
+                , "expected one kind-marked type binder inside `[...]`"[String]
+                , cur
+                ))[(Toks & I32 & Toks) | Lambda_binder_scan | Perr]
+              }
             }
           }
         , .(_eof: .) {
-            widen_sum(
-            , mk_perr("unterminated type-binder group in a lambda"(String), pos)
-            , (Toks & I32 & Toks) | Lambda_binder_scan | Perr
-            )
+            widen_sum(mk_perr("unterminated type-binder group in a lambda"[String], pos))[| (& Toks
+            & I32
+            & Toks)
+            | Lambda_binder_scan
+            | Perr]
           }
         )
       }
     }
-  , (rest(ts), 1(I32), toks_cons(tk_punct(c_lbrack()), offset, toks_nil()))
+  , (rest(ts), 0[I32], toks_cons(tk_punct(c_lbrack()), offset, toks_nil()))
   )
 }
 
@@ -2030,7 +1708,7 @@ fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
           // leading-comma style), so a comma may precede any param.
           let cur = drop_comma(cur0);
           if(head_is_punct(cur, c_rparen())) {
-            widen_sum({lparams = (acc, rest(cur))}, (Toks & Pnl) | Lparams)
+            widen_sum({lparams = (acc, rest(cur))})[(Toks & Pnl) | Lparams]
           } else match(peek(cur)) {
             (
             , .(t: Token) {
@@ -2048,18 +1726,16 @@ fn scan_lambda_params(ts: Toks) -> Pnl & Toks {
                           after_name
                         };
                       let after_comma = drop_comma(after_type);
-                      widen_sum(
-                      , (after_comma, pnl_cons(Tk_word.get(nm), acc))
-                      , (Toks & Pnl) | Lparams
-                      )
+                      widen_sum((after_comma, pnl_cons(Tk_word.get(nm), acc)))[| (Toks & Pnl)
+                      | Lparams]
                     }
-                  , .(_i: Tk_num) { widen_sum({lparams = (acc, cur)}, (Toks & Pnl) | Lparams) }
-                  , .(_s: Tk_str) { widen_sum({lparams = (acc, cur)}, (Toks & Pnl) | Lparams) }
-                  , .(_p: Tk_punct) { widen_sum({lparams = (acc, cur)}, (Toks & Pnl) | Lparams) }
+                  , .(_i: Tk_num) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
+                  , .(_s: Tk_str) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
+                  , .(_p: Tk_punct) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
                   )
                 }
               }
-            , .(_e: .) { widen_sum({lparams = (acc, cur)}, (Toks & Pnl) | Lparams) }
+            , .(_e: .) { widen_sum({lparams = (acc, cur)})[(Toks & Pnl) | Lparams] }
             )
           }
         }
@@ -2083,23 +1759,23 @@ fn skip_to_lbrace(ts: Toks) -> Toks {
           match(peek(cur)) {
             (
             , .(t: Token) {
-                if(eq_i32(depth, 0(I32))) {
+                if(eq_i32(depth, 0[I32])) {
                   if(is_punct(t, c_lbrace())) {
-                    widen_sum({ret_done = cur}, (Toks & I32) | Ret_done)
+                    widen_sum({ret_done = cur})[(Toks & I32) | Ret_done]
                   } else {
-                    widen_sum((rest(cur), bracket_delta(t, depth)), (Toks & I32) | Ret_done)
+                    widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Ret_done]
                   }
                 } else {
-                  widen_sum((rest(cur), bracket_delta(t, depth)), (Toks & I32) | Ret_done)
+                  widen_sum((rest(cur), bracket_delta(t, depth)))[(Toks & I32) | Ret_done]
                 }
               }
-            , .(_e: .) { widen_sum({ret_done = cur}, (Toks & I32) | Ret_done) }
+            , .(_e: .) { widen_sum({ret_done = cur})[(Toks & I32) | Ret_done] }
             )
           }
         }
       }
     }
-  , (ts, 0(I32))
+  , (ts, 0[I32])
   ))
 }
 
@@ -2123,10 +1799,10 @@ fn pnlg_prepend_empty(count: I32, groups: Pnlg) -> Pnlg {
   , .(st: I32 & Pnlg) {
       match(st) {
         .(remaining: I32, acc: Pnlg) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(acc, (I32 & Pnlg) | Pnlg)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(acc)[(I32 & Pnlg) | Pnlg]
           } else {
-            widen_sum((sub_i32(remaining, 1(I32)), pnlg_cons(pnl_nil(), acc)), (I32 & Pnlg) | Pnlg)
+            widen_sum((sub_i32(remaining, 1[I32]), pnlg_cons(pnl_nil(), acc)))[(I32 & Pnlg) | Pnlg]
           }
         }
       }
@@ -2150,47 +1826,48 @@ fn collect_lambda_groups(ts0: Toks, initial_types: Type_scope) -> Lgroups | Perr
                 , .(group: Lambda_binder_scan) {
                     match(Lambda_binder_scan.get(group)) {
                       .(arity: I32, tokens: Toks, after: Toks) {
-                        widen_sum(
-                        , (
-                          , after
-                          , pnlg_prepend_empty(arity, acc)
-                          , .t(Bool)
-                          , cons(Toks, tokens, types)
-                          )
-                        , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
-                        )
+                        widen_sum((
+                        , after
+                        , pnlg_prepend_empty(arity, acc)
+                        , .t[Bool]
+                        , cons[Toks](tokens, types)
+                        ))[(Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr]
                       }
                     }
                   }
                 , .(error: Perr) {
-                    widen_sum(error, (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr)
+                    widen_sum(error)[(Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr]
                   }
                 )
               }
             } else if(head_is_punct(cur, c_lparen())) {
               match(scan_lambda_params(rest(cur))) {
                 .(rev_params: Pnl, after_params: Toks) {
-                  widen_sum(
-                  , (after_params, pnlg_cons(pnl_reverse(rev_params), acc), .t(Bool), types)
-                  , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
-                  )
+                  widen_sum((after_params, pnlg_cons(pnl_reverse(rev_params), acc), .t[Bool], types))[| (& Toks
+                  & Pnlg
+                  & Bool
+                  & Type_scope)
+                  | Lgroups
+                  | Perr]
                 }
               }
             } else {
-              widen_sum(
-              , {lgroups = (pnlg_reverse(acc), cur, saw_group, types)}
-              , (Toks & Pnlg & Bool & Type_scope) | Lgroups | Perr
-              )
+              widen_sum({lgroups = (pnlg_reverse(acc), cur, saw_group, types)})[| (& Toks
+              & Pnlg
+              & Bool
+              & Type_scope)
+              | Lgroups
+              | Perr]
             }
           }
         }
       }
-    , (ts0, pnlg_nil(), .f(Bool), initial_types)
+    , (ts0, pnlg_nil(), .f[Bool], initial_types)
     );
   match(loop_result) {
     (
-    , .(done: Lgroups) { widen_sum(done, Lgroups | Perr) }
-    , .(error: Perr) { widen_sum(error, Lgroups | Perr) }
+    , .(done: Lgroups) { widen_sum(done)[Lgroups | Perr] }
+    , .(error: Perr) { widen_sum(error)[Lgroups | Perr] }
     )
   }
 }
@@ -2201,9 +1878,9 @@ pub fn scope_with_signature_types(header: Toks, sc: Scope) -> Scope | Perr {
     (
     , .(done: Lgroups) {
         let .(_groups, _after, _saw_group, types) = Lgroups.get(done);
-        widen_sum(scope_with_type_groups(types, sc), Scope | Perr)
+        widen_sum(scope_with_type_groups(types, sc))[Scope | Perr]
       }
-    , .(error: Perr) { widen_sum(error, Scope | Perr) }
+    , .(error: Perr) { widen_sum(error)[Scope | Perr] }
     )
   }
 }
@@ -2239,10 +1916,10 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
                 , nt
                 ))
               } else {
-                perr_halt("expected `{` opening a lambda body"(String), at_brace)
+                perr_halt("expected `{` opening a lambda body"[String], at_brace)
               }
             } else {
-              perr_halt("expected a lambda parameter group"(String), after_groups)
+              perr_halt("expected a lambda parameter group"[String], after_groups)
             }
           }
         }
@@ -2252,7 +1929,7 @@ fn parse_lambda(ts0: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pr
   }
 }
 
-// A `.`-led primary: a boolean literal (`.t(Bool)` / `.f(Bool)`) or a
+// A `.`-led primary: a boolean literal (`.t[Bool]` / `.f[Bool]`) or a
 // lambda (`.(x: T) { … }` or the zero-param `.() { … }`). `ts` is
 // positioned just after the `.`.
 fn parse_dot(
@@ -2272,16 +1949,16 @@ fn parse_dot(
               parse_bool_lit(resolve_host_type, Tk_word.get(w), rest(ts), sc, k, fuel, nt)
             }
           , .(_i: Tk_num) {
-              perr_halt("expected a boolean literal or a lambda after `.`"(String), ts)
+              perr_halt("expected a boolean literal or a lambda after `.`"[String], ts)
             }
           , .(_s: Tk_str) {
-              perr_halt("expected a boolean literal or a lambda after `.`"(String), ts)
+              perr_halt("expected a boolean literal or a lambda after `.`"[String], ts)
             }
           , .(_p: Tk_punct) { parse_lambda(ts, sc, k, fuel, nt) }
           )
         }
       }
-    , .(_e: .) { perr_halt("unexpected end of input after `.`"(String), ts) }
+    , .(_e: .) { perr_halt("unexpected end of input after `.`"[String], ts) }
     )
   }
 }
@@ -2299,17 +1976,17 @@ fn resolve_var(w: String, idx: Nat, ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: N
 
 // Boolean conjunction over two already-computed host bools.
 fn and_bool(a: Bool, b: Bool) -> Bool {
-  if(a) { b } else { .f(Bool) }
+  if(a) { b } else { .f[Bool] }
 }
 
 // The dotted spelling `a.b`.
-fn join2(a: String, b: String) -> String { string_concat(a, string_concat("."(String), b)) }
+fn join2(a: String, b: String) -> String { string_concat(a, string_concat("."[String], b)) }
 
 fn conditional_role(ty: Host_type) -> Bool {
   match(host_type_shape(ty)) {
     (
-    , .(role: Role_host_type) { string_eq(role_name(Role_host_type.get(role)), "bool"(String)) }
-    , .(_roleless: Roleless_host_type) { .f(Bool) }
+    , .(role: Role_host_type) { string_eq(role_name(Role_host_type.get(role)), "bool"[String]) }
+    , .(_roleless: Roleless_host_type) { .f[Bool] }
     )
   }
 }
@@ -2322,23 +1999,110 @@ fn start_conditional(
 , fuel: I32
 , nt: Ntab
 ) -> Pstate | Pres {
-  let .(type_tokens, after_type) = Type_arg.get(read_type_arg(ts));
-  match(resolve_host_type(type_tokens, scope_type_groups(sc))) {
+  match(read_type_group(ts)) {
     (
-    , .(message: String) { perr_halt(message, ts) }
-    , .(ty: Host_type) {
-        if(conditional_role(ty)) {
-          start_call(tg_ite(ty), after_type, sc, k, fuel, nt)
-        } else {
-          perr_halt(
-          , "`__if_then_else__` requires a concrete `role(bool)` type as its first "
-            "argument"(String)
-          , ts
+    , .(error: Perr) { phalt(p_err(error)) }
+    , .(group: Type_group) {
+        let .(type_tokens, after) = Type_group.get(group);
+        match(resolve_host_type(type_tokens, scope_type_groups(sc))) {
+          (
+          , .(message: String) { perr_halt(message, type_tokens) }
+          , .(ty: Host_type) {
+              if(conditional_role(ty)) {
+                yield_primary(target_polymorphic_value(tg_ite(ty)), after, sc, k, fuel, nt)
+              } else {
+                perr_halt(
+                , "`__if_then_else__` requires a concrete `role(bool)` type as its first "
+                  "type argument"[String]
+                , type_tokens
+                )
+              }
+            }
           )
         }
       }
     )
   }
+}
+
+fn enclosing_group(k: Pk) -> . | (Scope & Pk) {
+  match(un_pk(k)) {
+    (
+    , .(top: Pf, rest_k: Pk) {
+        match(un_pf(top)) {
+          (
+          , .(group: Pf_group) { widen_sum((Pf_group.get(group), rest_k))[. | (Scope & Pk)] }
+          , .(_post: Pf_post) { widen_sum(())[. | (Scope & Pk)] }
+          , .(_coll: Pf_coll) { widen_sum(())[. | (Scope & Pk)] }
+          , .(_rhs: Pf_letrhs) { widen_sum(())[. | (Scope & Pk)] }
+          , .(_body: Pf_letbody) { widen_sum(())[. | (Scope & Pk)] }
+          , .(_lambda: Pf_lam) { widen_sum(())[. | (Scope & Pk)] }
+          , .(_statement: Pf_stmt) { widen_sum(())[. | (Scope & Pk)] }
+          )
+        }
+      }
+    , .(_empty: .) { widen_sum(())[. | (Scope & Pk)] }
+    )
+  }
+}
+
+fn require_conditional_type(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
+  if(head_is_punct(ts, c_lbrack())) {
+    start_conditional(resolve_host_type, rest(ts), sc, k, fuel, nt)
+  } else {
+    perr_halt("expected `[` with the concrete Boolean type after `__if_then_else__`"[String], ts)
+  }
+}
+
+// Grouping can surround the intrinsic head before its concrete Boolean prefix.
+// Only grouping frames close here; a value-call delimiter must remain owned by
+// its argument-collection frame.
+fn parse_conditional_head(
+, resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, ts: Toks
+, sc: Scope
+, k: Pk
+, fuel: I32
+, nt: Ntab
+) -> Pstate | Pres {
+  loop(
+  , .(state: Toks & Scope & Pk) {
+      let .(current, current_scope, current_k) = state;
+      let grouped =
+        if(head_is_punct(current, c_rparen())) {
+          enclosing_group(current_k)
+        } else {
+          widen_sum(())[. | (Scope & Pk)]
+        };
+      match(grouped) {
+        (
+        , .(parent_scope: Scope, remaining_k: Pk) {
+            widen_sum((rest(current), parent_scope, remaining_k))[| (Toks & Scope & Pk)
+            | Pstate
+            | Pres]
+          }
+        , .(_not_grouped: .) {
+            widen_sum(require_conditional_type(
+            , resolve_host_type
+            , current
+            , current_scope
+            , current_k
+            , fuel
+            , nt
+            ))[(Toks & Scope & Pk) | Pstate | Pres]
+          }
+        )
+      }
+    }
+  , (ts, sc, k)
+  )
 }
 
 // Classify and parse a word that is not a dotted reference: an intrinsic
@@ -2358,33 +2122,15 @@ fn parse_word_classified(
 ) -> Pstate | Pres {
   match(un_pheadclass(classify_head(w, sc))) {
     (
-    , .(c: Hc_call) {
-        if(head_is_punct(ts, c_lparen())) {
-          start_call(Hc_call.get(c), rest(ts), sc, k, fuel, nt)
-        } else {
-          phalt(p_err(mk_perr(
-          , string_concat(
-            , "expected `(` after the intrinsic `"(String)
-            , string_concat(w, "`"(String))
-            )
-          , wpos
-          )))
-        }
-      }
-    , .(_conditional: Hc_ite) {
-        if(head_is_punct(ts, c_lparen())) {
-          start_conditional(resolve_host_type, rest(ts), sc, k, fuel, nt)
-        } else {
-          perr_halt("expected `(` after the intrinsic `__if_then_else__`"(String), ts)
-        }
-      }
+    , .(c: Hc_call) { yield_primary(target_polymorphic_value(Hc_call.get(c)), ts, sc, k, fuel, nt) }
+    , .(_conditional: Hc_ite) { parse_conditional_head(resolve_host_type, ts, sc, k, fuel, nt) }
     , .(_v: Hc_var) {
         match(scope_index(w, sc)) {
           (
           , .(idx: Nat) { resolve_var(w, idx, ts, sc, k, fuel, nt) }
           , .(_unbound: .) {
               phalt(p_err(mk_perr(
-              , string_concat("unbound name `"(String), string_concat(w, "`"(String)))
+              , string_concat("unbound name `"[String], string_concat(w, "`"[String]))
               , wpos
               )))
             }
@@ -2402,7 +2148,7 @@ fn parse_word_classified(
 // **identity** on the single payload argument;
 // `specs/prime.md` § The `newtype` primitive); an **existential projector**
 // erases to the CPS form, so the emitted curried second
-// application `(R, k)` delivers the payload to the continuation
+// application `[R](k)` delivers the payload to the continuation
 // (`specs/prime.md` § Existential introduction and elimination). The parser
 // constructs that erased member value with every universal stage intact and
 // always hands it to ordinary postfix parsing. Consequently direct calls,
@@ -2440,12 +2186,12 @@ fn parse_member(
     } else {
       phalt(p_err(mk_perr(
       , string_concat(
-        , "newtype member `"(String)
+        , "newtype member `"[String]
         , string_concat(
           , member
           , string_concat(
-            , "` is not visible through `"(String)
-            , string_concat(spelling, "`"(String))
+            , "` is not visible through `"[String]
+            , string_concat(spelling, "`"[String])
             )
           )
         )
@@ -2455,12 +2201,12 @@ fn parse_member(
   } else {
     phalt(p_err(mk_perr(
     , string_concat(
-      , "`"(String)
+      , "`"[String]
       , string_concat(
         , member
         , string_concat(
-          , "` is not the constructor or projector of newtype `"(String)
-          , string_concat(spelling, "`"(String))
+          , "` is not the constructor or projector of newtype `"[String]
+          , string_concat(spelling, "`"[String])
           )
         )
       )
@@ -2493,14 +2239,14 @@ fn parse_alias_newtype(
             , .(member: String) {
                 parse_member(spelled, entry, member, wpos, rest(rest(after2)), sc, k, fuel, nt)
               }
-            , .(_notword: .) { perr_halt("expected a member name after `.`"(String), after2) }
+            , .(_notword: .) { perr_halt("expected a member name after `.`"[String], after2) }
             )
           }
         } else {
           phalt(p_err(mk_perr(
           , string_concat(
-            , "expected `.member` after the newtype `"(String)
-            , string_concat(spelled, "`"(String))
+            , "expected `.member` after the newtype `"[String]
+            , string_concat(spelled, "`"[String])
             )
           , wpos
           )))
@@ -2508,7 +2254,7 @@ fn parse_alias_newtype(
       }
     , .(_no: .) {
         phalt(p_err(mk_perr(
-        , string_concat("unknown newtype `"(String), string_concat(spelled, "`"(String)))
+        , string_concat("unknown newtype `"[String], string_concat(spelled, "`"[String]))
         , wpos
         )))
       }
@@ -2556,7 +2302,7 @@ fn parse_dotted(
           )
         }
       }
-    , .(_notword: .) { perr_halt("expected a member name after `.`"(String), ts) }
+    , .(_notword: .) { perr_halt("expected a member name after `.`"[String], ts) }
     )
   }
 }
@@ -2602,16 +2348,16 @@ fn parse_let(ts: Toks, sc: Scope, k: Pk, fuel: I32, nt: Ntab) -> Pstate | Pres {
                 , nt
                 ))
               } else {
-                perr_halt("expected `=` after a `let` binder"(String), after_name)
+                perr_halt("expected `=` after a `let` binder"[String], after_name)
               }
             }
-          , .(_i: Tk_num) { perr_halt("expected a binder name after `let`"(String), ts) }
-          , .(_s: Tk_str) { perr_halt("expected a binder name after `let`"(String), ts) }
-          , .(_p: Tk_punct) { perr_halt("expected a binder name after `let`"(String), ts) }
+          , .(_i: Tk_num) { perr_halt("expected a binder name after `let`"[String], ts) }
+          , .(_s: Tk_str) { perr_halt("expected a binder name after `let`"[String], ts) }
+          , .(_p: Tk_punct) { perr_halt("expected a binder name after `let`"[String], ts) }
           )
         }
       }
-    , .(_e: .) { perr_halt("expected a binder name after `let`"(String), ts) }
+    , .(_e: .) { perr_halt("expected a binder name after `let`"[String], ts) }
     )
   }
 }
@@ -2627,13 +2373,13 @@ fn is_let_binding_head(ts: Toks) -> Bool {
         match(un_token(tok)) {
           (
           , .(_nm: Tk_word) { head_is_punct(rest(ts), c_eq()) }
-          , .(_i: Tk_num) { .f(Bool) }
-          , .(_s: Tk_str) { .f(Bool) }
-          , .(_p: Tk_punct) { .f(Bool) }
+          , .(_i: Tk_num) { .f[Bool] }
+          , .(_s: Tk_str) { .f[Bool] }
+          , .(_p: Tk_punct) { .f[Bool] }
           )
         }
       }
-    , .(_e: .) { .f(Bool) }
+    , .(_e: .) { .f[Bool] }
     )
   }
 }
@@ -2651,7 +2397,7 @@ fn do_pword(
 , fuel: I32
 , nt: Ntab
 ) -> Pstate | Pres {
-  if(string_eq(w, "let"(String))) {
+  if(string_eq(w, "let"[String])) {
     if(is_let_binding_head(ts)) {
       parse_let(ts, sc, k, fuel, nt)
     } else {
@@ -2684,7 +2430,7 @@ fn do_ppunct(
       pgo(mk_pstate(c_pexpr(ts1, sc), pk_push(mk_group(sc), k), fuel, nt))
     }
   } else {
-    perr_halt("unexpected token at the start of an expression"(String), ts)
+    perr_halt("unexpected token at the start of an expression"[String], ts)
   }
 }
 
@@ -2705,19 +2451,17 @@ fn fold_str_run(first: String, ts: Toks) -> String & Toks {
             , .(t: Token) {
                 match(un_token(t)) {
                   (
-                  , .(_w: Tk_word) { widen_sum({strfold = (acc, cur)}, (String & Toks) | Strfold) }
-                  , .(_i: Tk_num) { widen_sum({strfold = (acc, cur)}, (String & Toks) | Strfold) }
+                  , .(_w: Tk_word) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
+                  , .(_i: Tk_num) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
                   , .(s: Tk_str) {
-                      widen_sum(
-                      , (string_concat(acc, Tk_str.get(s)), rest(cur))
-                      , (String & Toks) | Strfold
-                      )
+                      widen_sum((string_concat(acc, Tk_str.get(s)), rest(cur)))[| (String & Toks)
+                      | Strfold]
                     }
-                  , .(_p: Tk_punct) { widen_sum({strfold = (acc, cur)}, (String & Toks) | Strfold) }
+                  , .(_p: Tk_punct) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
                   )
                 }
               }
-            , .(_e: .) { widen_sum({strfold = (acc, cur)}, (String & Toks) | Strfold) }
+            , .(_e: .) { widen_sum({strfold = (acc, cur)})[(String & Toks) | Strfold] }
             )
           }
         }
@@ -2802,7 +2546,7 @@ fn do_pexpr(
           )
         }
       }
-    , .(_e: .) { perr_halt("unexpected end of input inside a body"(String), ts) }
+    , .(_e: .) { perr_halt("unexpected end of input inside a body"[String], ts) }
     )
   }
 }
@@ -2825,14 +2569,14 @@ fn ptransition(resolve_host_type: (Toks & Type_scope) -> (Host_type | String), s
    {
   match(un_pstate(s)) {
     .(c: Pctl, k: Pk, fuel: I32, nt: Ntab) {
-      if(leq_i32(fuel, 0(I32))) {
+      if(leq_i32(fuel, 0[I32])) {
         phalt(p_err(mk_perr(
         , "parser step budget exhausted — the declaration body is unreasonably "
-          "large, or the image is malformed in a way that stalls the parse"(String)
-        , widen_sum((), . | I32)
+          "large, or the image is malformed in a way that stalls the parse"[String]
+        , widen_sum(())[. | I32]
         )))
       } else {
-        let fuel1 = sub_i32(fuel, 1(I32));
+        let fuel1 = sub_i32(fuel, 1[I32]);
         match(un_pctl(c)) {
           (
           , .(bl: Pc_block) {
@@ -2862,7 +2606,7 @@ fn ptransition(resolve_host_type: (Toks & Type_scope) -> (Host_type | String), s
 // =====================================================================
 /// The default parser step budget — generous for any image a test drives,
 /// while still bounding a malformed run.
-pub fn parse_fuel_default() -> I32 { 1000000(I32) }
+pub fn parse_fuel_default() -> I32 { 1000000[I32] }
 
 /// Parses one Kio' term expression (a token list) into the erased de
 /// Bruijn `Term`, resolving free names against the initial scope and
@@ -2921,7 +2665,7 @@ pub fn parse_str(src: String, resolve_host_type: (Toks & Type_scope) -> (Host_ty
   match(lex(src)) {
     (
     , .(ts: Toks) { parse_toks(ts, resolve_host_type) }
-    , .(e: Lex_err) { p_err(mk_perr(lex_err_message(e), widen_sum(lex_err_pos(e), . | I32))) }
+    , .(e: Lex_err) { p_err(mk_perr(lex_err_message(e), widen_sum(lex_err_pos(e))[. | I32])) }
     )
   }
 }
@@ -2945,39 +2689,39 @@ pub fn parse_str(src: String, resolve_host_type: (Toks & Type_scope) -> (Host_ty
 // frame.
 equiv un_scope_push(n: String, s: Scope) {
   un_scope(scope_push(n, s));
-  widen_sum((pnl_one(n), s), . | (Pnl & Scope))
+  widen_sum((pnl_one(n), s))[. | (Pnl & Scope)]
 }
 
 // `un_scope(scope_push_names(ns_, s))` recovers the pushed spelling list.
 equiv un_scope_push_names(ns_: Pnl, s: Scope) {
   un_scope(scope_push_names(ns_, s));
-  widen_sum((ns_, s), . | (Pnl & Scope))
+  widen_sum((ns_, s))[. | (Pnl & Scope)]
 }
 
 // `un_scope(scope_nil())` recovers the empty arm.
 equiv un_scope_nil() {
   un_scope(scope_nil());
-  widen_sum((), . | (Pnl & Scope))
+  widen_sum(())[. | (Pnl & Scope)]
 }
 
 // --- Pnl (the name list) ---
 equiv un_pnl_cons_head(n: String, p: Pnl) {
   match(un_pnl(pnl_cons(n, p))) {
-    (.(h: String, _t: Pnl) { h }, .(_e: .) { ""(String) })
+    (.(h: String, _t: Pnl) { h }, .(_e: .) { ""[String] })
   };
   n
 }
 
 equiv un_pnl_cons_tail(n: String, p: Pnl) {
   match(un_pnl(pnl_cons(n, p))) {
-    (.(_h: String, t: Pnl) { Pnl.get(t) }, .(_e: .) { nil(String) })
+    (.(_h: String, t: Pnl) { Pnl.get(t) }, .(_e: .) { nil[String] })
   };
   Pnl.get(p)
 }
 
 equiv un_pnl_nil() {
   un_pnl(pnl_nil());
-  widen_sum((), . | (String & Pnl))
+  widen_sum(())[. | (String & Pnl)]
 }
 
 // --- Nt_info (a newtype's erasure facts) ---
@@ -2990,7 +2734,7 @@ equiv nt_arity_round(a: I32, e: I32, c: String, p: String) {
 
 equiv nt_existential_round(a: I32, e: I32, c: String, p: String) {
   nt_existential(mk_nt_info(a, e, c, p));
-  if(leq_i32(1(I32), e)) { .t(Bool) } else { .f(Bool) }
+  if(leq_i32(1[I32], e)) { .t[Bool] } else { .f[Bool] }
 }
 
 equiv nt_ctor_round(a: I32, e: I32, c: String, p: String) {
@@ -3013,12 +2757,12 @@ equiv nt_proj_round(a: I32, e: I32, c: String, p: String) {
 // exercised end to end by the differential runner.
 equiv un_ntab_cons(n: String, i: Nt_info, t: Ntab) {
   un_ntab(ntab_cons(n, i, t));
-  widen_sum((n, (mk_nt_entry(i, .t(Bool), .t(Bool)), t)), . | (String & Nt_entry & Ntab))
+  widen_sum((n, (mk_nt_entry(i, .t[Bool], .t[Bool]), t)))[. | (String & Nt_entry & Ntab)]
 }
 
 equiv un_ntab_nil() {
   un_ntab(ntab_nil());
-  widen_sum((), . | (String & Nt_entry & Ntab))
+  widen_sum(())[. | (String & Nt_entry & Ntab)]
 }
 
 // --- Tg (argument-list target tags) ---
@@ -3029,68 +2773,48 @@ equiv un_ntab_nil() {
 // pins the constructor / projector pairing.
 equiv un_tg_app(t: Term) {
   un_tg(tg_app(t));
-  widen_sum({tg_app = t}, Tg_shape)
+  widen_sum({tg_app = t})[Tg_shape]
 }
 
 equiv un_tg_pair() {
   un_tg(tg_pair());
-  widen_sum({tg_pair=}, Tg_shape)
+  widen_sum({tg_pair=})[Tg_shape]
 }
 
 equiv un_tg_ite(ty: Host_type) {
   un_tg(tg_ite(ty));
-  widen_sum({tg_ite = ty}, Tg_shape)
+  widen_sum({tg_ite = ty})[Tg_shape]
 }
 
 // --- Pres (the parse outcome) and Perr (the error payload) ---
 equiv un_p_ok(t: Term) {
   p_ok(t);
-  widen_sum({p_ok = t}, P_ok | P_err)
+  widen_sum({p_ok = t})[P_ok | P_err]
 }
 
 equiv un_p_err(e: Perr) {
   p_err(e);
-  widen_sum({p_err = e}, P_ok | P_err)
+  widen_sum({p_err = e})[P_ok | P_err]
 }
 
 // One law per position arm — an opaque `. | I32` parameter would need a
 // sum-eta step the normalizer does not take.
 equiv perr_message_at(m: String, i: I32) {
-  perr_message(mk_perr(m, widen_sum(i, . | I32)));
+  perr_message(mk_perr(m, widen_sum(i)[. | I32]));
   m
 }
 
 equiv perr_message_nopos(m: String) {
-  perr_message(mk_perr(m, widen_sum((), . | I32)));
+  perr_message(mk_perr(m, widen_sum(())[. | I32]));
   m
 }
 
 equiv perr_pos_at(m: String, i: I32) {
-  perr_pos(mk_perr(m, widen_sum(i, . | I32)));
-  widen_sum(i, . | I32)
+  perr_pos(mk_perr(m, widen_sum(i)[. | I32]));
+  widen_sum(i)[. | I32]
 }
 
 equiv perr_pos_nopos(m: String) {
-  perr_pos(mk_perr(m, widen_sum((), . | I32)));
-  widen_sum((), . | I32)
-}
-
-// --- positional argument accessors over a concrete term list ---
-//
-// `arg0` / `arg1` / `arg2` read the first three terms of an in-order
-// argument list; these fold no host call, so a fixed three-element list
-// reduces to a normal form. The list `[unit, a, b]` pins each accessor.
-equiv arg0_three(a: Term, b: Term) {
-  arg0(tcons(unit(), tcons(a, tcons(b, tnil()))));
-  unit()
-}
-
-equiv arg1_three(a: Term, b: Term) {
-  arg1(tcons(unit(), tcons(a, tcons(b, tnil()))));
-  a
-}
-
-equiv arg2_three(a: Term, b: Term) {
-  arg2(tcons(unit(), tcons(a, tcons(b, tnil()))));
-  b
+  perr_pos(mk_perr(m, widen_sum(())[. | I32]));
+  widen_sum(())[. | I32]
 }

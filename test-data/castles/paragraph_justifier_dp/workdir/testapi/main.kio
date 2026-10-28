@@ -34,7 +34,7 @@ fn field(label: String, value: String) { print(cat3(label, ": ", cat(value, "\n"
 
 fn heading(name: String) { print(cat3("\n", name, ":\n")) }
 
-fn show(name: String, xs: Words, col: I32, bs: List(I32), ls: List(Line), total: I32) {
+fn show(name: String, xs: Words, col: I32, bs: List[I32], ls: List[Line], total: I32) {
   heading(name);
   field("  breaks", render.breaks(bs));
   print(render.layout(xs, col, ls));

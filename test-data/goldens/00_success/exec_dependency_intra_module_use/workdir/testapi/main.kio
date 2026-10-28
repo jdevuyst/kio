@@ -14,7 +14,7 @@ import testapi/io(print);
 // declaration. `first_after_swap(a, b)` swaps `(a, b)` and projects
 // the first component, so it returns `b`.
 pub fn greeting() -> String {
-  first_after_swap("discarded\n"(String), "dependency works\n"(String))
+  first_after_swap("discarded\n"[String], "dependency works\n"[String])
 }
 
 pub fn main() { print(greeting()) }

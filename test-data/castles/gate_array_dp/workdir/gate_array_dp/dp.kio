@@ -19,12 +19,12 @@ fn bump_age(age: I32) -> I32 {
   if(leq_i32(age, sub_i32(max_age(), 1))) { add_i32(age, 1) } else { max_age() }
 }
 
-fn min_set(table: Array(I32), index: I32, candidate: I32) {
+fn min_set(table: Array[I32], index: I32, candidate: I32) {
   let current = array_get(table, index);
   if(leq_i32(candidate, current)) { array_set(table, index, candidate) } else { () }
 }
 
-fn process_cell(day: I32, age: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) {
+fn process_cell(day: I32, age: I32, table: Array[I32], traffic: Array[I32], service: Array[I32]) {
   let current = array_get(table, table_index(day, age));
   if(reachable(current)) {
     let next_day = add_i32(day, 1);
@@ -42,9 +42,9 @@ fn process_cell(day: I32, age: I32, table: Array(I32), traffic: Array(I32), serv
 rec(loop) fn fill_ages(
 , age: I32
 , day: I32
-, table: Array(I32)
-, traffic: Array(I32)
-, service: Array(I32)
+, table: Array[I32]
+, traffic: Array[I32]
+, service: Array[I32]
 ) {
   if(leq_i32(age, max_age())) {
     process_cell(day, age, table, traffic, service);
@@ -54,7 +54,7 @@ rec(loop) fn fill_ages(
   }
 }
 
-rec(loop) fn fill_days(day: I32, table: Array(I32), traffic: Array(I32), service: Array(I32)) -> Array(I32) {
+rec(loop) fn fill_days(day: I32, table: Array[I32], traffic: Array[I32], service: Array[I32]) -> Array[I32] {
   if(leq_i32(day, sub_i32(days(), 1))) {
     fill_ages(0, day, table, traffic, service);
     recur fill_days(add_i32(day, 1), table, traffic, service)
@@ -63,7 +63,7 @@ rec(loop) fn fill_days(day: I32, table: Array(I32), traffic: Array(I32), service
   }
 }
 
-rec(loop) fn best_final_from(age: I32, best: I32, table: Array(I32)) -> I32 {
+rec(loop) fn best_final_from(age: I32, best: I32, table: Array[I32]) -> I32 {
   if(leq_i32(age, max_age())) {
     let cost = array_get(table, table_index(days(), age));
     let next_best = if(leq_i32(cost, best)) { cost } else { best };
@@ -73,10 +73,10 @@ rec(loop) fn best_final_from(age: I32, best: I32, table: Array(I32)) -> I32 {
   }
 }
 
-pub fn solve(traffic: Array(I32), service: Array(I32)) -> Array(I32) {
+pub fn solve(traffic: Array[I32], service: Array[I32]) -> Array[I32] {
   let table = array_make_filled(table_size(), inf());
   array_set(table, table_index(0, 0), 0);
   fill_days(0, table, traffic, service)
 }
 
-pub fn final_score(table: Array(I32)) -> I32 { best_final_from(0, inf(), table) }
+pub fn final_score(table: Array[I32]) -> I32 { best_final_from(0, inf(), table) }

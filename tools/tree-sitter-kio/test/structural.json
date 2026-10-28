@@ -2466,7 +2466,7 @@
   },
   {
     "name": "type_only_dot_star_binder_multiline",
-    "source": "module m;\nfn run() { . // dot\n [* // shared\n F] -> F(.) -> F(.) { .(x: F(.)) { let value = x; value } } }\nfn after() { () }\n",
+    "source": "module m;\nfn run() { . // dot\n [* // shared\n F] -> F[.] -> F[.] { .(x: F[.]) { let value = x; value } } }\nfn after() { () }\n",
     "targets": [
       {
         "start": 46,
@@ -2508,7 +2508,7 @@
   },
   {
     "name": "type_only_dot_star_binder_complete",
-    "source": "module m;\nfn run() { . // dot\n [*F] -> F(.) -> F(.) { .(x: F(.)) { x } } }\nfn after() { () }\n",
+    "source": "module m;\nfn run() { . // dot\n [*F] -> F[.] -> F[.] { .(x: F[.]) { x } } }\nfn after() { () }\n",
     "targets": [
       {
         "start": 34,
@@ -3354,7 +3354,7 @@
   },
   {
     "name": "typed_collision_control",
-    "source": "module type_side;\n\nimport operators(id);\n\nfn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {\n  id([*F].->.)\n}\n",
+    "source": "module type_side;\n\nimport operators(id);\n\nfn run[*F]() -> ([*H] . -> .) -> ([*I] . -> .) {\n  id[[*F].->.]\n}\n",
     "partial": false,
     "targets": [
       {
@@ -3547,7 +3547,7 @@
   },
   {
     "name": "polymorphic_lambda",
-    "source": "module source;\nfn run() { id([ .[*F](x: F(.)) -> F(.) { x } ]) }\n",
+    "source": "module source;\nfn run() { id([ .[*F](x: F[.]) -> F[.] { x } ]) }\n",
     "partial": false,
     "targets": [
       {
@@ -3601,7 +3601,7 @@
   },
   {
     "name": "label_and_call",
-    "source": "module source;\nfn run() { id([ { field = let(x) }, call([*F] F(.) -> F(.)) ]) }\n",
+    "source": "module source;\nfn run() { id([ { field = let(x) }, call[[*F] F[.] -> F[.]] ]) }\n",
     "partial": false,
     "targets": [
       {
@@ -3729,7 +3729,7 @@
   },
   {
     "name": "bare_type",
-    "source": "module source;\nfn run() { id([A] A -> A) }\n",
+    "source": "module source;\nfn run() { id[[A] A -> A] }\n",
     "partial": false,
     "targets": [
       {
@@ -3746,7 +3746,7 @@
   },
   {
     "name": "grouped_higher_kind",
-    "source": "module source;\nfn run() { id(([*F] F(.) -> F(.))) }\n",
+    "source": "module source;\nfn run() { id[([*F] F[.] -> F[.])] }\n",
     "partial": false,
     "targets": [
       {
@@ -4350,7 +4350,7 @@
   },
   {
     "name": "type_split_spans",
-    "source": "module source;\nfn run() { id([*F] F(.) -> F(.)) }\n",
+    "source": "module source;\nfn run() { id[[*F] F[.] -> F[.]] }\n",
     "partial": false,
     "targets": [
       {
@@ -4764,7 +4764,7 @@
   },
   {
     "name": "forall_recovery_[*F]",
-    "source": "module source; fn broken() { id([*F] }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id[[*F] }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -4790,7 +4790,7 @@
   },
   {
     "name": "forall_recovery_[A]",
-    "source": "module source; fn broken() { id([A] }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id[[A] }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -4816,7 +4816,7 @@
   },
   {
     "name": "forall_recovery_[*F] ->",
-    "source": "module source; fn broken() { id([*F] -> }\nfn after() { let(x) }",
+    "source": "module source; fn broken() { id[[*F] -> }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -4841,8 +4841,8 @@
     "absent": []
   },
   {
-    "name": "forall_recovery_[*F] F(",
-    "source": "module source; fn broken() { id([*F] F( }\nfn after() { let(x) }",
+    "name": "forall_recovery_[*F] F[",
+    "source": "module source; fn broken() { id[[*F] F[ }\nfn after() { let(x) }",
     "partial": true,
     "targets": [
       {
@@ -6390,7 +6390,7 @@
   },
   {
     "name": "review_uppercase_qualified_nested_callee",
-    "source": "module app; fn run() { Box.un_box(A, Box.mk_box(A, value)) }",
+    "source": "module app; fn run() { Box.un_box[A](Box.mk_box[A](value)) }",
     "partial": false,
     "targets": [
       {
@@ -7241,7 +7241,7 @@
   },
   {
     "name": "review_adjacent_marked_function_type_groups",
-    "source": "module m;\nfn repeated[*F][A](_x: F(A)) -> F(A) { if(_x) }\nfn after() { let(_x) }",
+    "source": "module m;\nfn repeated[*F][A](_x: F[A]) -> F[A] { if(_x) }\nfn after() { let(_x) }",
     "partial": false,
     "targets": [
       {
@@ -11848,12 +11848,12 @@
   },
   {
     "name": "identifier_word_boundaries_keep_raw_tokens",
-    "source": "module m; fn run() { consume(http2_client3_(), _x1_y2__, Http_client2(.), HttpClient(), x1y(), a__b()) }",
+    "source": "module m; fn run() { consume[Http_client2[.]](http2_client3_(), _x1_y2__, HttpClient(), x1y(), a__b()) }",
     "targets": [
       {
         "text": "http2_client3_",
-        "start": 29,
-        "end": 43,
+        "start": 46,
+        "end": 60,
         "kind": "entity.name.function",
         "owners": [
           "call_expr"
@@ -11861,8 +11861,8 @@
       },
       {
         "text": "_x1_y2__",
-        "start": 47,
-        "end": 55,
+        "start": 64,
+        "end": 72,
         "kind": "identifier",
         "owners": [
           "expression_path"
@@ -11870,8 +11870,8 @@
       },
       {
         "text": "Http_client2",
-        "start": 57,
-        "end": 69,
+        "start": 29,
+        "end": 41,
         "kind": "entity.name.type",
         "owners": [
           "type_path"
@@ -15252,5 +15252,233 @@
       }
     ],
     "partial": true
+  },
+  {
+    "name": "explicit_call_stages",
+    "source": "module stages; fn run(a: A, b: B) { f[A][B](a)[C](b); f [A] [B] (a); (f(a))[C](b) }\n",
+    "targets": [
+      {
+        "start": 38,
+        "end": 39,
+        "text": "A",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 41,
+        "end": 42,
+        "text": "B",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 47,
+        "end": 48,
+        "text": "C",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_type_arguments"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "type_suffix_and_expression_start_varop",
+    "source": "module stages; fn run(a: A) { f[A](a); [a]; f [A] (a); [a, a] }\n",
+    "targets": [
+      {
+        "start": 30,
+        "end": 31,
+        "text": "f",
+        "kind": "entity.name.function",
+        "owners": [
+          "call_expr"
+        ]
+      },
+      {
+        "start": 31,
+        "end": 32,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 39,
+        "end": 40,
+        "text": "[",
+        "kind": "punctuation.bracket",
+        "owners": [
+          "variadic_expression"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "ufcs_outer_stage_and_type_boundary",
+    "source": "module stages; fn run(a: A, b: B, r: R) { r.>f[A](a)(b); f(a)(b).<r; f(a)[B].<<r; (f(a)(b)).<r }\n",
+    "targets": [
+      {
+        "start": 47,
+        "end": 48,
+        "text": "A",
+        "kind": "entity.name.type",
+        "owners": [
+          "typed_ufcs_callable",
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 74,
+        "end": 75,
+        "text": "B",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_expr",
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 64,
+        "end": 66,
+        "text": ".<",
+        "kind": "operator.builtin",
+        "owners": [
+          "ufcs_expr"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "macro_multiple_value_prefixes",
+    "source": "module stages; fn run(a: A, b: B) { arrange(a)(b) { a } then { b }; r.>arrange(a)(b) { a }; arrange(a)(b) { a }.<r }\n",
+    "targets": [
+      {
+        "start": 36,
+        "end": 43,
+        "text": "arrange",
+        "kind": "entity.name.function",
+        "owners": [
+          "block_call"
+        ]
+      },
+      {
+        "start": 56,
+        "end": 60,
+        "text": "then",
+        "kind": "keyword.control",
+        "owners": [
+          "labelled_block"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "uniform_type_application_and_literal_annotations",
+    "source": "module stages; type Wrapped[A] = Box[A]; type Mapped = Map[Key][List[Value]]; literal count = 42; fn run() { count[I32]; 42[I32]; f[Box[I32]](count[I32]); .t[Bool]; \"text\"[String] }\n",
+    "targets": [
+      {
+        "start": 115,
+        "end": 118,
+        "text": "I32",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_type_arguments"
+        ]
+      },
+      {
+        "start": 124,
+        "end": 127,
+        "text": "I32",
+        "kind": "entity.name.type",
+        "owners": [
+          "literal_annotation"
+        ]
+      },
+      {
+        "start": 132,
+        "end": 135,
+        "text": "Box",
+        "kind": "entity.name.type",
+        "owners": [
+          "call_type_arguments",
+          "type_path"
+        ]
+      },
+      {
+        "start": 69,
+        "end": 74,
+        "text": "Value",
+        "kind": "entity.name.type",
+        "owners": [
+          "type_arguments"
+        ]
+      },
+      {
+        "start": 158,
+        "end": 162,
+        "text": "Bool",
+        "kind": "entity.name.type",
+        "owners": [
+          "literal_annotation"
+        ]
+      },
+      {
+        "start": 172,
+        "end": 178,
+        "text": "String",
+        "kind": "entity.name.type",
+        "owners": [
+          "literal_annotation"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "single_type_pair_rejection_1",
+    "source": "module invalid; fn run[A, B](a: A) { a }",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "single_type_pair_rejection_2",
+    "source": "module invalid; type F = [A, B] A -> B;",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "single_type_pair_rejection_3",
+    "source": "module invalid; type F = Map[A, B];",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "single_type_pair_rejection_4",
+    "source": "module invalid; fn run() { f[A, B](a) }",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "single_type_pair_rejection_5",
+    "source": "module invalid; fn run() { f[] }",
+    "targets": [],
+    "partial": true,
+    "error": true
+  },
+  {
+    "name": "single_type_pair_rejection_6",
+    "source": "module invalid; fn run() { f[x] }",
+    "targets": [],
+    "partial": true,
+    "error": true
   }
 ]

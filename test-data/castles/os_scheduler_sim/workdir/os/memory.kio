@@ -20,7 +20,7 @@ import testapi/arith(add_i32, leq_i32, mul_i32, sub_i32);
 import testapi/array(array_get, array_make_filled, array_set);
 import testapi/iter(loop);
 
-pub labels Mem = { ptable: Array(I32), owner: Array(I32), vpage: Array(I32), refbit: Array(Bool) };
+pub labels Mem = { ptable: Array[I32], owner: Array[I32], vpage: Array[I32], refbit: Array[Bool] };
 
 pub fn new_mem() -> Mem {
   let pages = mul_i32(config.proc_count(), config.pages_per_proc());

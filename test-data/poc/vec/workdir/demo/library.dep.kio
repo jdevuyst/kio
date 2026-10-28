@@ -7,8 +7,8 @@ source {
 rehost library/list/list to vec_host;
 rehost library/list/macros/control to vec_host;
 rehost library/list/macros/testapi to testapi;
-rehost library/macros/testapi to testapi;
 rehost library/macros/control to vec_host;
+rehost library/macros/testapi to testapi;
 rehost library/vec to vec_host;
 
 retype library/list/core.List to list/core.List;

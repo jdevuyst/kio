@@ -11,9 +11,9 @@ import testapi(Bool, I32);
 import testapi/arith as arith;
 import testapi/iter(loop);
 
-rec(loop) fn cancellation_report(now: I32, canceled: lists.List(model.Event)) {
+rec(loop) fn cancellation_report(now: I32, canceled: lists.List[model.Event]) {
   match(lists.uncons(canceled)) {
-    .(event: model.Event, tail: lists.List(model.Event)) {
+    .(event: model.Event, tail: lists.List[model.Event]) {
       report.canceled(now, event);
       recur cancellation_report(now, tail)
     };
@@ -73,7 +73,7 @@ fn propagate(now: I32, changed: I32, state: model.State, gate: model.Gate) -> mo
   }
 }
 
-fn commit(event: model.Event, state: model.State, gates: lists.List(model.Gate)) -> model.State {
+fn commit(event: model.Event, state: model.State, gates: lists.List[model.Gate]) -> model.State {
   let wire = event.?{model.target};
   let value = event.?{model.value};
   if(model.same_bit(model.read_wire(wire, state.?{model.wires}), value)) {
@@ -94,9 +94,9 @@ fn commit(event: model.Event, state: model.State, gates: lists.List(model.Gate))
   }
 }
 
-pub rec(loop) fn run(state: model.State, gates: lists.List(model.Gate)) -> model.State {
+pub rec(loop) fn run(state: model.State, gates: lists.List[model.Gate]) -> model.State {
   match(lists.uncons(state.?{model.agenda})) {
-    .(event: model.Event, tail: lists.List(model.Event)) {
+    .(event: model.Event, tail: lists.List[model.Event]) {
       let next =
         commit(event, state.!{model.agenda = tail, model.last_time = event.?{model.at}}, gates);
       recur run(next, gates)

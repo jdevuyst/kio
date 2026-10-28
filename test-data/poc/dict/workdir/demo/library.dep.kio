@@ -5,5 +5,5 @@ source {
 }
 
 rehost library/dict to dict_host;
-rehost library/macros/testapi to testapi;
 rehost library/macros/control to testapi;
+rehost library/macros/testapi to testapi;

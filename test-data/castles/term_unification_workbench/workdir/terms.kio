@@ -13,24 +13,24 @@ import testapi/text(string_concat);
 
 pub labels { variable: I32 };
 
-pub rec newtype Term : Variable | (I32 & lists.List(Term)) {
+pub rec newtype Term : Variable | (I32 & lists.List[Term]) {
   pub constructor wrap;
   pub projector unwrap
   }
 
 pub fn variable(id: I32) -> Term { Term.wrap({variable = id}.>widen_sum) }
 
-pub fn node(symbol: I32, arguments: lists.List(Term)) -> Term {
+pub fn node(symbol: I32, arguments: lists.List[Term]) -> Term {
   Term.wrap((symbol, arguments).>widen_sum)
 }
 
-pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil(_)) }
+pub fn atom(symbol: I32) -> Term { node(symbol, lists.nil[_]) }
 
 rec(loop) {
   pub fn render(term: Term) -> String {
     match(term.>Term.unwrap) {
       .(v: Variable) { string_concat("v", fmt.int_to_string(v.?{variable})) };
-      .(symbol: I32, arguments: lists.List(Term)) {
+      .(symbol: I32, arguments: lists.List[Term]) {
         string_concat(
         , "f"
         , string_concat(
@@ -41,9 +41,9 @@ rec(loop) {
       }
     }
   };
-  fn render_arguments(arguments: lists.List(Term)) -> String {
+  fn render_arguments(arguments: lists.List[Term]) -> String {
     match(lists.uncons(arguments)) {
-      .(first: Term, rest: lists.List(Term)) {
+      .(first: Term, rest: lists.List[Term]) {
         let shown = recur(cont) render(first);
         if(traversal.null(rest)) {
           shown
@@ -56,14 +56,14 @@ rec(loop) {
   }
 }
 
-rec(loop) fn occurs_in(id: I32, pending: lists.List(Term)) -> Bool {
+rec(loop) fn occurs_in(id: I32, pending: lists.List[Term]) -> Bool {
   match(lists.uncons(pending)) {
-    .(first: Term, rest: lists.List(Term)) {
+    .(first: Term, rest: lists.List[Term]) {
       match(first.>Term.unwrap) {
         .(v: Variable) {
           if(arith.eq_i32(id, v.?{variable})) { .t } else { recur occurs_in(id, rest) }
         };
-        .(_symbol: I32, arguments: lists.List(Term)) {
+        .(_symbol: I32, arguments: lists.List[Term]) {
           recur occurs_in(id, traversal.append(arguments, rest))
         }
       }
@@ -80,13 +80,13 @@ rec(loop) {
       .(v: Variable) {
         match(right.>Term.unwrap) {
           .(w: Variable) { arith.eq_i32(v.?{variable}, w.?{variable}) };
-          .(_symbol: I32, _arguments: lists.List(Term)) { .f }
+          .(_symbol: I32, _arguments: lists.List[Term]) { .f }
         }
       };
-      .(symbol: I32, arguments: lists.List(Term)) {
+      .(symbol: I32, arguments: lists.List[Term]) {
         match(right.>Term.unwrap) {
           .(_v: Variable) { .f };
-          .(other: I32, other_arguments: lists.List(Term)) {
+          .(other: I32, other_arguments: lists.List[Term]) {
             if(arith.eq_i32(symbol, other)) {
               recur equal_arguments(arguments, other_arguments)
             } else {
@@ -97,11 +97,11 @@ rec(loop) {
       }
     }
   };
-  fn equal_arguments(left: lists.List(Term), right: lists.List(Term)) -> Bool {
+  fn equal_arguments(left: lists.List[Term], right: lists.List[Term]) -> Bool {
     match(lists.uncons(left)) {
-      .(first: Term, rest: lists.List(Term)) {
+      .(first: Term, rest: lists.List[Term]) {
         match(lists.uncons(right)) {
-          .(other: Term, others: lists.List(Term)) {
+          .(other: Term, others: lists.List[Term]) {
             if(recur(cont) equal(first, other)) { recur equal_arguments(rest, others) } else { .f }
           };
           .(_empty: .) { .f }

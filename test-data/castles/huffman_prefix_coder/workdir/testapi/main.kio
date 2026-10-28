@@ -30,7 +30,7 @@ pub fn main() {
   let symbols = message();
   let counts = tally(symbols, zero_counts());
   let queue = initial_queue(present(counts));
-  let .({built_root, built_log}) = build(queue, alphabet_size(), nil(Step));
+  let .({built_root, built_log}) = build(queue, alphabet_size(), nil[Step]);
   let table = code_table(built_root);
   let bits = encode(table, symbols);
   let decoded = decode(built_root, bits);

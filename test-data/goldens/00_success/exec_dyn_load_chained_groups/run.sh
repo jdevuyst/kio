@@ -1,13 +1,12 @@
 #!/bin/sh
 #
-# Dyn-load regression (chained value groups): canonical Kio' emission
-# preserves every written Unit value explicitly. Thus
-# `f(I32, x)(I32, ())` on `fn f[A](x: I32)[B]()` reaches the loader as a
-# second packet containing both `I32` and `()`, while a residual
-# `id(I32)` packet remains type-only until its following value call. The
-# same rule holds when the callee is a local binder or a let alias; the
-# loader reads the emitted packets without reconstructing declaration
-# parameter groups.
+# Dyn-load regression (chained value groups): `f[I32](x)[I32](())` on
+# `fn f[A](x: I32)[B]()` instantiates A, passes x, instantiates B, then
+# supplies the explicit Unit value. The loader preserves those source
+# stages; its evaluator uses erased Unit applications for type stages,
+# separate from the written Unit call. `id[I32]` likewise leaves its value
+# function for the following call. Partial applications stored in a local
+# binder or let alias retain their remaining stages.
 #
 # The host vendors the live test-data/poc/dyn_load_prime/workdir/ package
 # (the single source of truth — no committed fork) alongside this case's

@@ -14,11 +14,11 @@ fn poly_id[T](v: T) -> T { v }
 fn type_only[T]() { () }
 
 equiv type_app_is_value_id[T](v: T) {
-  poly_id(T, v);
+  poly_id[T](v);
   v
 }
 
 equiv type_only_fn_reduces() {
-  type_only(A, ());
+  type_only[A](());
   ()
 }

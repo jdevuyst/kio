@@ -16,7 +16,7 @@ rec(loop) fn constant_value(g: graph.Graph, root: I32, i: I32, limit: I32) -> I3
     ().>widen_sum
   } else if(graph.same_class(g, root, i)) {
     match(graph.node(g, i)) {
-      .(value: graph.Constant) { value.?{graph.constant}.>widen_sum(I32 | .) };
+      .(value: graph.Constant) { (value.?{graph.constant}.>widen_sum)[I32 | .] };
       .() { recur constant_value(g, root, n.increment(i), limit) }
     }
   } else {

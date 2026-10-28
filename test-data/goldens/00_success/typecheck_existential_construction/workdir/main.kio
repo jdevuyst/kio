@@ -9,19 +9,19 @@ import __intrinsics__;
 // binder. The result type carries only the universals.
 
 // Single-existential newtype. `mk_pack`'s scheme is
-// `[A] [U] (A & U) -> Pack(A)`; `U` is inferred from the payload
+// `[A] [U] (A & U) -> Pack[A]`; `U` is inferred from the payload
 // at the call site.
 newtype Pack[A] <U> : A & U { pub constructor mk_pack; pub projector un_pack }
 
-fn make_pack[A][U](x: A, y: U) -> Pack(A) { Pack.mk_pack(A, __pair__(A, U, x, y)) }
+fn make_pack[A][U](x: A, y: U) -> Pack[A] { Pack.mk_pack[A](__pair__[A][U](x, y)) }
 
 // Two-existential newtype. `mk_box`'s scheme is
-// `[A] [U] [V] (A & U & V) -> Box(A)`. The existentials `U` and
+// `[A] [U] [V] (A & U & V) -> Box[A]`. The existentials `U` and
 // `V` are inferred from the triple payload.
 newtype Box[A] <U> <V> : A & U & V { pub constructor mk_box; pub projector un_box }
 
-fn make_box[A][U][V](x: A, y: U, z: V) -> Box(A) {
-  Box.mk_box(A, __pair__(A, U & V, x, __pair__(U, V, y, z)))
+fn make_box[A][U][V](x: A, y: U, z: V) -> Box[A] {
+  Box.mk_box[A](__pair__[A][U & V](x, __pair__[U][V](y, z)))
 }
 
 // Zero-universals newtype. `mk_just_u`'s scheme is

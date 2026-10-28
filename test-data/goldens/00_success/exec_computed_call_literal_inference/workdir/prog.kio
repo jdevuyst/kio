@@ -7,9 +7,9 @@ fn keep_first[A](first: A) -> A -> A {
   .(_later: A) { first }
 }
 
-fn argument_context() -> I32 { let result = keep_first(1)(2(I32)); result }
+fn argument_context() -> I32 { let result = keep_first(1)(2[I32]); result }
 
-fn nested_context() -> I32 { let result = keep_first(keep_first(3)(4(I32)))(5(I32)); result }
+fn nested_context() -> I32 { let result = keep_first(keep_first(3)(4[I32]))(5[I32]); result }
 
 fn result_context() -> I32 { keep_first(6)(7) }
 

@@ -26,7 +26,7 @@ pub fn print_bool_metric(name: String, value: Bool) {
   print_string_metric(name, fmt.bool_to_string(value))
 }
 
-pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I32) -> I32 {
+pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array[I32], acc: I32) -> I32 {
   if(arith.leq_i32(index, last)) {
     let value = array.array_get(row, index);
     let weight = arith.add_i32(index, 1);
@@ -37,9 +37,9 @@ pub rec(loop) fn row_checksum_at(index: I32, last: I32, row: Array(I32), acc: I3
   }
 }
 
-pub fn row_checksum(row: Array(I32), last: I32) -> I32 { row_checksum_at(0, last, row, 0) }
+pub fn row_checksum(row: Array[I32], last: I32) -> I32 { row_checksum_at(0, last, row, 0) }
 
-pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) {
+pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array[I32]) {
   if(arith.leq_i32(index, last)) {
     print_i32(array.array_get(row, index));
     io.print(" ");
@@ -49,7 +49,7 @@ pub rec(loop) fn print_row_cells(index: I32, last: I32, row: Array(I32)) {
   }
 }
 
-pub fn print_row(row_index: I32, row: Array(I32), last: I32) -> I32 {
+pub fn print_row(row_index: I32, row: Array[I32], last: I32) -> I32 {
   let checksum = row_checksum(row, last);
   io.print("row ");
   print_i32(row_index);

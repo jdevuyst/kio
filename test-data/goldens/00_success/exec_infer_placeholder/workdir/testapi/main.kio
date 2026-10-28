@@ -19,8 +19,8 @@ fn apply(f: String -> String, x: String) -> String { f(x) }
 pub fn main() {
   // Three call shapes for `id` exercising explicit, `_`-marked,
   // and fully-elided forms.
-  print(id(String, "in"));
-  print(id(_, "fer"));
+  print(id[String]("in"));
+  print(id[_]("fer"));
   // Multi-binder full elision: the unifier pins `[A]` and `[B]`
   // from the value-arg types.
   print(const_fst("re", ()));

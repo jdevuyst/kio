@@ -27,7 +27,7 @@ pub fn snapshot(name: String, state: replica.Replica) {
   dict.fold_asc(
   , state.?{replica.records}
   , ()
-  , .(_done: ., key: I32, versions: core.List(replica.Version)) {
+  , .(_done: ., key: I32, versions: core.List[replica.Version]) {
       line(
       , "  key ".>string_concat(fmt.int_to_string(key)).>string_concat(" ")
       , lists.to_string(show_version, versions)
@@ -61,6 +61,6 @@ pub fn read(name: String, state: replica.Replica, key: I32) {
   line(name, text)
 }
 
-pub fn rejection(name: String, attempted: result.Result(replica.Change, replica.Fault)) {
+pub fn rejection(name: String, attempted: result.Result[replica.Change][replica.Fault]) {
   line(name, result.fold(.(_change: replica.Change) { "unexpected success" }, fault, attempted))
 }

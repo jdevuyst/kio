@@ -15,11 +15,11 @@ import testapi/array(
 import testapi/iter(loop);
 
 pub labels Cache = {
-, keys: Array(I32)
-, values: Array(I32)
-, ages: Array(I32)
-, stats: Array(I32)
-, victims: Array(I32)
+, keys: Array[I32]
+, values: Array[I32]
+, ages: Array[I32]
+, stats: Array[I32]
+, victims: Array[I32]
 };
 
 pub fn capacity() -> I32 { 3 }
@@ -36,15 +36,15 @@ fn clock_index() -> I32 { 3 }
 
 fn missing_key() -> I32 { sub_i32(0, 1) }
 
-fn keys_array(c: Cache) -> Array(I32) { c.?{keys} }
+fn keys_array(c: Cache) -> Array[I32] { c.?{keys} }
 
-fn values_array(c: Cache) -> Array(I32) { c.?{values} }
+fn values_array(c: Cache) -> Array[I32] { c.?{values} }
 
-fn ages_array(c: Cache) -> Array(I32) { c.?{ages} }
+fn ages_array(c: Cache) -> Array[I32] { c.?{ages} }
 
-fn stats_array(c: Cache) -> Array(I32) { c.?{stats} }
+fn stats_array(c: Cache) -> Array[I32] { c.?{stats} }
 
-fn victims_array(c: Cache) -> Array(I32) { c.?{victims} }
+fn victims_array(c: Cache) -> Array[I32] { c.?{victims} }
 
 fn next(n: I32) -> I32 { add_i32(n, 1) }
 
@@ -56,7 +56,7 @@ fn lt_i32(a: I32, b: I32) -> Bool { leq_i32(next(a), b) }
 
 fn is_missing(slot: I32) -> Bool { eq_i32(slot, missing_key()) }
 
-fn inc_stat(stats: Array(I32), index: I32) {
+fn inc_stat(stats: Array[I32], index: I32) {
   array_set(stats, index, next(array_get(stats, index)))
 }
 
@@ -67,7 +67,7 @@ fn bump_clock(c: Cache) -> I32 {
   clock
 }
 
-pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32 {
+pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array[I32]) -> I32 {
   if(leq_i32(limit, i)) {
     missing_key()
   } else if(eq_i32(array_get(keys, i), key)) {
@@ -77,7 +77,7 @@ pub rec(loop) fn find_key(i: I32, limit: I32, key: I32, keys: Array(I32)) -> I32
   }
 }
 
-pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
+pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array[I32]) -> I32 {
   if(leq_i32(limit, i)) {
     missing_key()
   } else if(eq_i32(array_get(keys, i), missing_key())) {
@@ -87,7 +87,7 @@ pub rec(loop) fn find_empty_slot(i: I32, limit: I32, keys: Array(I32)) -> I32 {
   }
 }
 
-pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array(I32)) -> I32 {
+pub rec(loop) fn find_lru_slot(i: I32, limit: I32, best: I32, ages: Array[I32]) -> I32 {
   if(leq_i32(limit, i)) {
     best
   } else if(lt_i32(array_get(ages, i), array_get(ages, best))) {
@@ -185,10 +185,10 @@ fn render_put_replace(step: I32, key: I32, value: I32, slot: I32, old_key: I32, 
 
 pub fn new_cache() -> Cache {
   let key_slots = array_make_filled(capacity(), missing_key());
-  let value_slots = array_make_filled(capacity(), 0);
-  let age_slots = array_make_filled(capacity(), 0);
-  let stat_slots = array_make_filled(4, 0);
-  let victim_slots = array_make_empty(I32, ());
+  let .(value_slots: Array[I32]) = array_make_filled(capacity(), 0);
+  let .(age_slots: Array[I32]) = array_make_filled(capacity(), 0);
+  let .(stat_slots: Array[I32]) = array_make_filled(4, 0);
+  let victim_slots = array_make_empty[I32](());
   {
   , keys = key_slots
   , values = value_slots

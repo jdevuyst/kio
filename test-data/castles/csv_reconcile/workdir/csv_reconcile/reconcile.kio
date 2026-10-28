@@ -60,7 +60,7 @@ fn check_line(state: State) -> String {
 
 fn read_amount() -> I32 | . {
   match(io.read_ascii_line()) {
-    (.(line: String) { fmt.string_to_int(line) }, .(_eof: .) { widen_sum((), I32 | .) })
+    (.(line: String) { fmt.string_to_int(line) }, .(_eof: .) { widen_sum(())[I32 | .] })
   }
 }
 

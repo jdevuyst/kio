@@ -1,0 +1,3 @@
+module control;
+
+host type Bool role(bool);

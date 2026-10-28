@@ -85,7 +85,7 @@ fn eval_homomorphism(claim: String, a: core.Poly, b: core.Poly, x: I32) -> Check
 }
 
 /// Every fixed law instance the workbench checks, in report order.
-pub fn all_checks() -> lc.List(Check) {
+pub fn all_checks() -> lc.List[Check] {
   [*
   , additive_inverse("(p + q) - q == p", fx.p(), fx.q())
   , additive_inverse("(s + e) - e == s", fx.s(), fx.e())
@@ -101,7 +101,7 @@ pub fn all_checks() -> lc.List(Check) {
   *]
 }
 
-pub fn passes(checks: lc.List(Check)) -> I32 {
+pub fn passes(checks: lc.List[Check]) -> I32 {
   ll.foldl(
   , .(count: I32, c: Check) -> I32 {
       if(c.?{holds}) { add_i32(count, 1) } else { count }

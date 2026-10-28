@@ -1,0 +1,64 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, I32, String);
+import testapi/fmt(print_i32);
+import testapi/io(print);
+
+fn condition(value: Bool) -> Bool { print("C"); value }
+
+fn branch(factory: String, body: String, value: I32) -> . -> I32 {
+  print(factory);
+  .() -> I32 { print(body); value }
+}
+
+fn conditional_packet(value: Bool) -> Bool & (. -> I32) & (. -> I32) {
+  (condition(value), branch("L", "T", 1), branch("R", "F", 2))
+}
+
+fn handlers() -> (. -> I32) & (. -> I32) { print("H"); (branch("L", "T", 1), branch("R", "F", 2)) }
+
+fn scrutinee(value: I32 | I32) -> I32 | I32 { print("S"); value }
+
+fn handler(factory: String, body: String) -> I32 -> I32 {
+  print(factory);
+  .(value: I32) -> I32 { print(body); value }
+}
+
+fn either_packet(value: I32 | I32) -> (I32 | I32) & (I32 -> I32) & (I32 -> I32) {
+  (scrutinee(value), handler("L", "A"), handler("R", "B"))
+}
+
+fn mark(value: I32) -> I32 { print("P"); value }
+
+fn nested_packet() -> (I32 & I32) & I32 & I32 { print("Q"); ((5, 6), (7, 8)) }
+
+fn print_nested(packet: (I32 & I32) & I32 & I32) {
+  let left = __fst__[I32 & I32][I32 & I32](packet);
+  let right = __snd__[I32 & I32][I32 & I32](packet);
+  print_i32(__fst__[I32][I32](left));
+  print_i32(__snd__[I32][I32](left));
+  print_i32(__fst__[I32][I32](right));
+  print_i32(__snd__[I32][I32](right))
+}
+
+pub fn main() {
+  print_i32(__if_then_else__[Bool][I32](condition(.t), branch("L", "T", 1), branch("R", "F", 2)));
+  print("|");
+  print_i32(__if_then_else__[Bool][I32](conditional_packet(.f)));
+  print("|");
+  print_i32(__either__[I32][I32][I32](
+  , scrutinee(__left__[I32][I32](3))
+  , handler("L", "A")
+  , handler("R", "B")
+  ));
+  print("|");
+  print_i32(__either__[I32][I32][I32](either_packet(__right__[I32][I32](4))));
+  print("|");
+  print_nested(__pair__[I32 & I32][I32 & I32]((mark(5), 6), (7, 8)));
+  print("|");
+  print_nested(__pair__[I32 & I32][I32 & I32](nested_packet()));
+  print("|");
+  print_i32(__if_then_else__[Bool][I32](condition(.t), handlers()))
+}

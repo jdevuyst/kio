@@ -50,9 +50,9 @@ __INSERT_CODE_HERE__
 `String | Int` is the type of a value that is either a `String` or an `Int`. It does not need to be declared:
 
 ```kio {@module}
-fn build_string_sum() -> String | Int { "hello\n"(String).>widen_sum }
+fn build_string_sum() -> String | Int { "hello\n"[String].>widen_sum }
 
-fn build_int_sum() -> String | Int { 42(Int).>widen_sum }
+fn build_int_sum() -> String | Int { 42[Int].>widen_sum }
 ```
 
 `widen_sum` injects the source value into a target sum that contains its type.
@@ -61,7 +61,7 @@ the `|` structure. When the expected type is not obvious, write the target
 explicitly:
 
 ```kio {@module}
-fn explicit_target() -> String | Int { widen_sum("hello\n"(String), String | Int) }
+fn explicit_target() -> String | Int { widen_sum("hello\n"[String])[String | Int] }
 ```
 
 For a sum-valued source, grouping matters: `widen_sum` matches the alternatives
@@ -78,9 +78,9 @@ Sum branches are positional, and repeated payload types are allowed. If two bran
 ```kio {@module}
 labels Channel = { primary: String } | { fallback: String };
 
-fn primary_channel(s: String) -> Channel { {primary = s}.>widen_sum(Channel) }
+fn primary_channel(s: String) -> Channel { ({primary = s}.>widen_sum)[Channel] }
 
-fn fallback_channel(s: String) -> Channel { {fallback = s}.>widen_sum(Channel) }
+fn fallback_channel(s: String) -> Channel { ({fallback = s}.>widen_sum)[Channel] }
 
 fn describe_channel(c: Channel) -> String {
   match(c) {
@@ -117,7 +117,7 @@ Use a named `labels` sum when arms need stable names:
 ```kio {@module}
 labels Color = { red: . } | { green: . } | { blue: . };
 
-fn red_color() -> Color { {red=}.>widen_sum(Color) }
+fn red_color() -> Color { ({red=}.>widen_sum)[Color] }
 ```
 
 A case with data uses a non-unit payload:
@@ -206,19 +206,19 @@ This is not record-style matching. The first product slot goes to `label`; the s
 Anonymous sum types cannot mention themselves. Recursion is grounded at a `newtype`, which wraps and unwraps the recursive body:
 
 ```kio {@module}
-rec newtype List[A] : . | (A & List(A)) { pub constructor cons; pub projector un_list }
+rec newtype List[A] : . | (A & List[A]) { pub constructor cons; pub projector un_list }
 
-fn nil[A] -> List(A) { List.cons(widen_sum((), . | (A & List(A)))) }
+fn nil[A] -> List[A] { List.cons(widen_sum(())[. | (A & List[A])]) }
 
-fn head_or[A](xs: List(A), default: A) -> A {
+fn head_or[A](xs: List[A], default: A) -> A {
   match(xs.>List.un_list) {
-    .(x: A, _rest: List(A)) { x };
+    .(x: A, _rest: List[A]) { x };
     .(_empty: .) { default }
   }
 }
 ```
 
-`nil(Int)` constructs an empty `List(Int)`; the type-only signature has no
+`nil[Int]` constructs an empty `List[Int]`; the type-only signature has no
 Unit argument. For a constructor that waits for an explicit Unit call, keep
 `()` in its signature as explained in
 [Type-only values](../tutorials/language.md#type-only-values).
@@ -229,9 +229,9 @@ named form also sees its transparent alias head. This makes a recursive
 disjunction concise while keeping its cycles nominally grounded:
 
 ```kio {@module}
-rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list(A) };
+rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list[A] };
 
-fn empty_label_list[A]() -> Label_list(A) { Nil.mk(A, ()).>widen_sum(Label_list(A)) }
+fn empty_label_list[A]() -> Label_list[A] { (Nil.mk[A](()).>widen_sum)[Label_list[A]] }
 ```
 
 `Label_list` remains a transparent alias; the generated `Cons` newtype is the
@@ -246,17 +246,17 @@ A clause can bind type parameters when the same body works for several branches:
 ```kio {@module}
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn box_label[A](b: Box(A)) -> String { "boxed\n" }
+fn box_label[A](b: Box[A]) -> String { "boxed\n" }
 
-fn label(p: Box(Int) | Box(String)) -> String {
+fn label(p: Box[Int] | Box[String]) -> String {
   match(p) {
-    .[A](b: Box(A)) { box_label(b) }
+    .[A](b: Box[A]) { box_label(b) }
   }
 }
 ```
 
-The clause `.[A](b: Box(A)) { ... }` matches *both* `Box(Int)` and
-`Box(String)`, binding `A` per branch. Here the surrounding function's `String`
+The clause `.[A](b: Box[A]) { ... }` matches *both* `Box[Int]` and
+`Box[String]`, binding `A` per branch. Here the surrounding function's `String`
 result determines the clause's return type before its body is checked, so the
 clause does not need to repeat that annotation. This omitted result is
 determined before the body is checked and cannot mention the clause's local
@@ -284,10 +284,9 @@ fn text_clauses() -> (String -> String) & (Int -> String) {
 
 fn describe_extended(v: String | Int | .) -> String {
   let clauses =
-    concat(
-    , (text_clauses(), .(_unit: .) -> String { "unit" })
-    , (String -> String) & (Int -> String) & (. -> String)
-    );
+    concat((text_clauses(), .(_unit: .) -> String { "unit" }))[& (String -> String)
+    & (Int -> String)
+    & (. -> String)];
   match(v) { clauses }
 }
 ```

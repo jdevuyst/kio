@@ -10,13 +10,13 @@ import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);
 
-fn score(scores: Array(I32), n: I32, i: I32, j: I32) -> I32 {
+fn score(scores: Array[I32], n: I32, i: I32, j: I32) -> I32 {
   if(arith.leq_i32(j, i)) { 0 } else { array.array_get(scores, numbers.index(n, i, j)) }
 }
 
 // Each candidate partitions the interval into the paired interior and its right suffix.
 rec(loop) fn choose_partner(
-, sequence: Array(String)
+, sequence: Array[String]
 , min_loop: I32
 , program: plan.Program
 , i: I32
@@ -50,7 +50,7 @@ rec(loop) fn choose_partner(
 }
 
 rec(loop) fn fill_diagonal(
-, sequence: Array(String)
+, sequence: Array[String]
 , min_loop: I32
 , program: plan.Program
 , span: I32
@@ -71,7 +71,7 @@ rec(loop) fn fill_diagonal(
   }
 }
 
-rec(loop) fn fill_spans(sequence: Array(String), min_loop: I32, program: plan.Program, span: I32) {
+rec(loop) fn fill_spans(sequence: Array[String], min_loop: I32, program: plan.Program, span: I32) {
   if(arith.leq_i32(span, program.?{length})) {
     fill_diagonal(sequence, min_loop, program, span, 0);
     recur fill_spans(sequence, min_loop, program, arith.add_i32(span, 1))
@@ -80,7 +80,7 @@ rec(loop) fn fill_spans(sequence: Array(String), min_loop: I32, program: plan.Pr
   }
 }
 
-pub fn solve(sequence: Array(String), min_loop: I32) -> plan.Program {
+pub fn solve(sequence: Array[String], min_loop: I32) -> plan.Program {
   let n = array.array_len(sequence);
   let program =
     {

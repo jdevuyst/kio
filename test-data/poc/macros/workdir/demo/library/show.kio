@@ -8,22 +8,22 @@ import library/macro_util(Optional_type);
 import library/testapi(String);
 
 /// Renders the unit value.
-pub fn show_unit_text() -> String { "()"(String) }
+pub fn show_unit_text() -> String { "()"[String] }
 
 /// The opening parenthesis that wraps a product's rendered fields.
-pub fn show_open_paren() -> String { "("(String) }
+pub fn show_open_paren() -> String { "("[String] }
 
 /// The closing parenthesis that wraps a product's rendered fields.
-pub fn show_close_paren() -> String { ")"(String) }
+pub fn show_close_paren() -> String { ")"[String] }
 
 /// The separator between a product's rendered fields.
-pub fn show_comma_space() -> String { ", "(String) }
+pub fn show_comma_space() -> String { ", "[String] }
 
 /// The prefix tagging a sum's left arm.
-pub fn show_left_prefix() -> String { "left("(String) }
+pub fn show_left_prefix() -> String { "left("[String] }
 
 /// The prefix tagging a sum's right arm.
-pub fn show_right_prefix() -> String { "right("(String) }
+pub fn show_right_prefix() -> String { "right("[String] }
 
 type Type_pair = __Type__ & __Type__;
 
@@ -52,11 +52,11 @@ type Render_state = __Checked_term__ & Render_mode;
 type Render_recur = (__Type__ & Render_state) -> __Checked_term__;
 
 pure fn type_pair_left(ct: __Comptime__, pair: Type_pair) -> __Type__ {
-  __fst__(__Type__, __Type__, pair)
+  __fst__[__Type__][__Type__](pair)
 }
 
 pure fn type_pair_right(ct: __Comptime__, pair: Type_pair) -> __Type__ {
-  __snd__(__Type__, __Type__, pair)
+  __snd__[__Type__][__Type__](pair)
 }
 
 pure fn call_text(ct: __Comptime__, text_fn_type: __Type__, text_fn: __Checked_term__) -> __Checked_term__ {
@@ -98,7 +98,7 @@ pure fn concat_text_right(
 pure fn unsupported_show(ct: __Comptime__) -> __Checked_term__ {
   __macro_error__(
   , ct
-  , "show supports only host leaves, unit, products, sums, and bottom"(__Diagnostic_text__)
+  , "show supports only host leaves, unit, products, sums, and bottom"[__Diagnostic_text__]
   )
 }
 
@@ -119,20 +119,20 @@ pure fn render_host_or_error(
   )
 }
 
-pure fn render_value_mode() -> Render_mode { __left__(., ., ()) }
+pure fn render_value_mode() -> Render_mode { __left__[.][.](()) }
 
-pure fn render_product_tail_mode() -> Render_mode { __right__(., ., ()) }
+pure fn render_product_tail_mode() -> Render_mode { __right__[.][.](()) }
 
 pure fn render_state(ct: __Comptime__, value: __Checked_term__, mode: Render_mode) -> Render_state {
   (value, mode)
 }
 
 pure fn render_state_value(ct: __Comptime__, state: Render_state) -> __Checked_term__ {
-  __fst__(__Checked_term__, Render_mode, state)
+  __fst__[__Checked_term__][Render_mode](state)
 }
 
 pure fn render_state_mode(ct: __Comptime__, state: Render_state) -> Render_mode {
-  __snd__(__Checked_term__, Render_mode, state)
+  __snd__[__Checked_term__][Render_mode](state)
 }
 
 pure fn recur_value(ct: __Comptime__, recur: Render_recur, typ: __Type__, value: __Checked_term__) -> __Checked_term__ {
@@ -184,24 +184,15 @@ pure fn render_regular_step(
 , typ: __Type__
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __either__(
-  , .
-  , Type_view_tail1
-  , __Checked_term__
+  __either__[.][Type_view_tail1][__Checked_term__](
   , __type_view__(ct, typ)
   , .(_unit: .) -> __Checked_term__ { call_text(ct, text_fn_type, unit_text_fn) }
   , .(tail1: Type_view_tail1) -> __Checked_term__ {
-      __either__(
-      , .
-      , Type_view_tail2
-      , __Checked_term__
+      __either__[.][Type_view_tail2][__Checked_term__](
       , tail1
       , .(_bottom: .) -> __Checked_term__ { __intrinsic_absurd__(ct, value, string_type) }
       , .(tail2: Type_view_tail2) -> __Checked_term__ {
-          __either__(
-          , Type_pair
-          , Type_view_tail3
-          , __Checked_term__
+          __either__[Type_pair][Type_view_tail3][__Checked_term__](
           , tail2
           , .(pair: Type_pair) -> __Checked_term__ {
               let left_type = type_pair_left(ct, pair);
@@ -241,10 +232,7 @@ pure fn render_regular_step(
               )
             }
           , .(tail3: Type_view_tail3) -> __Checked_term__ {
-              __either__(
-              , Type_pair
-              , Type_view_tail4
-              , __Checked_term__
+              __either__[Type_pair][Type_view_tail4][__Checked_term__](
               , tail3
               , .(pair: Type_pair) -> __Checked_term__ {
                   let left_type = type_pair_left(ct, pair);
@@ -311,24 +299,15 @@ pure fn render_product_tail_step(
 , typ: __Type__
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __either__(
-  , .
-  , Type_view_tail1
-  , __Checked_term__
+  __either__[.][Type_view_tail1][__Checked_term__](
   , __type_view__(ct, typ)
   , .(_unit: .) -> __Checked_term__ { call_text(ct, text_fn_type, unit_text_fn) }
   , .(tail1: Type_view_tail1) -> __Checked_term__ {
-      __either__(
-      , .
-      , Type_view_tail2
-      , __Checked_term__
+      __either__[.][Type_view_tail2][__Checked_term__](
       , tail1
       , .(_bottom: .) -> __Checked_term__ { __intrinsic_absurd__(ct, value, string_type) }
       , .(tail2: Type_view_tail2) -> __Checked_term__ {
-          __either__(
-          , Type_pair
-          , Type_view_tail3
-          , __Checked_term__
+          __either__[Type_pair][Type_view_tail3][__Checked_term__](
           , tail2
           , .(pair: Type_pair) -> __Checked_term__ {
               let left_type = type_pair_left(ct, pair);
@@ -359,10 +338,7 @@ pure fn render_product_tail_step(
               )
             }
           , .(_tail3: Type_view_tail3) -> __Checked_term__ {
-              __either__(
-              , Type_pair
-              , Type_view_tail4
-              , __Checked_term__
+              __either__[Type_pair][Type_view_tail4][__Checked_term__](
               , _tail3
               , .(pair: Type_pair) -> __Checked_term__ {
                   let left_type = type_pair_left(ct, pair);
@@ -430,10 +406,7 @@ pure fn render_step(
 , state: Render_state
 ) -> __Checked_term__ {
   let value = render_state_value(ct, state);
-  __either__(
-  , .
-  , .
-  , __Checked_term__
+  __either__[.][.][__Checked_term__](
   , render_state_mode(ct, state)
   , .(_regular: .) -> __Checked_term__ {
       render_regular_step(
@@ -495,11 +468,7 @@ pure fn render_value(
 , typ: __Type__
 , value: __Checked_term__
 ) -> __Checked_term__ {
-  __structural_recur__(
-  , ct
-  , __Type__
-  , Render_state
-  , __Checked_term__
+  __structural_recur__(ct)[__Type__][Render_state][__Checked_term__](
   , typ
   , render_state(ct, value, render_value_mode())
   , .(loop_recur: Render_recur, loop_fuel: __Type__, loop_state: Render_state) -> __Checked_term__ {
@@ -538,9 +507,9 @@ pub pure fn show_checked(
 , value: __Checked_term__
 , _target: Optional_type
 ) -> __Checked_term__ {
-  let string_type = __reflect_type__(ct, String);
-  let concat_type = __reflect_type__(ct, (String & String) -> String);
-  let text_fn_type = __reflect_type__(ct, . -> String);
+  let string_type = __reflect_type__(ct)[String];
+  let concat_type = __reflect_type__(ct)[(String & String) -> String];
+  let text_fn_type = __reflect_type__(ct)[. -> String];
   let converters_type = __type_host_converters__(ct, string_type, source);
   let show_fn_type =
     __type_arrow__(

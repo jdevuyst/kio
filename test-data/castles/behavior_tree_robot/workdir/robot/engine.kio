@@ -127,12 +127,12 @@ rec(loop) {
   fn sequence_children(
   , id: I32
   , cursor: I32
-  , children: lists.List(model.Tree)
+  , children: lists.List[model.Tree]
   , world: model.World
   , state: memory.State
   ) -> Evaluation {
     match(lists.uncons(children)) {
-      .(child: model.Tree, tail: lists.List(model.Tree)) {
+      .(child: model.Tree, tail: lists.List[model.Tree]) {
         let evaluated = recur(cont) tick(child, world, state);
         match(evaluated.?{result}) {
           .(_done: model.Success) {
@@ -155,9 +155,9 @@ rec(loop) {
       .() { {result = model.success_status(), state = memory.store(id, 0, "", .f, state)} }
     }
   };
-  fn selector_children(children: lists.List(model.Tree), world: model.World, state: memory.State) -> Evaluation {
+  fn selector_children(children: lists.List[model.Tree], world: model.World, state: memory.State) -> Evaluation {
     match(lists.uncons(children)) {
-      .(child: model.Tree, tail: lists.List(model.Tree)) {
+      .(child: model.Tree, tail: lists.List[model.Tree]) {
         let evaluated = recur(cont) tick(child, world, state);
         match(evaluated.?{result}) {
           .(_failed: model.Failure) { recur selector_children(tail, world, evaluated.?{state}) };

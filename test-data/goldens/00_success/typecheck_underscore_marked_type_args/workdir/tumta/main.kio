@@ -20,4 +20,4 @@ import tumta(String);
 // `_` slots in front of `x` stand in for the two type-args; the
 // typer solves `[A] = .` from `x`'s type and `[B] = String`
 // from the return type.
-fn mk_left_str_marked(x: .) -> . | String { __left__(_, _, x) }
+fn mk_left_str_marked(x: .) -> . | String { __left__[_][_](x) }

@@ -9,25 +9,25 @@ import testapi/array as arrays;
 
 pub labels Symbol = { terminal: I32 } | { nonterminal: I32 };
 
-pub labels Production = { lhs: I32, rhs: Array(Symbol) };
+pub labels Production = { lhs: I32, rhs: Array[Symbol] };
 
-pub type Grammar = Array(Production);
+pub type Grammar = Array[Production];
 
 pub labels Item = { production_index: I32, dot: I32, origin: I32 };
 
-pub type Column = Array(Item);
+pub type Column = Array[Item];
 
-pub type Chart = Array(Column);
+pub type Chart = Array[Column];
 
 pub fn token(id: I32) -> Symbol { {terminal = id}.>widen_sum }
 
 pub fn category(id: I32) -> Symbol { {nonterminal = id}.>widen_sum }
 
-pub fn production(left: I32, right: Array(Symbol)) -> Production { {lhs = left, rhs = right} }
+pub fn production(left: I32, right: Array[Symbol]) -> Production { {lhs = left, rhs = right} }
 
 pub fn left(rule: Production) -> I32 { rule.?{lhs} }
 
-pub fn right(rule: Production) -> Array(Symbol) { rule.?{rhs} }
+pub fn right(rule: Production) -> Array[Symbol] { rule.?{rhs} }
 
 pub fn item(rule: I32, position: I32, start: I32) -> Item {
   {production_index = rule, dot = position, origin = start}

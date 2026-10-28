@@ -653,12 +653,12 @@ mod tests {
             .unwrap();
         assert_eq!(ordinary.kind.tag(), "fn");
         for expression in [
-            "42(Int)",
-            "42.0e0(Float)",
-            "42.0E+3(Float)",
-            "42.0(Float)",
-            "42.0e-3(Float)",
-            ".t(Bool)",
+            "42[Int]",
+            "42.0e0[Float]",
+            "42.0E+3[Float]",
+            "42.0[Float]",
+            "42.0e-3[Float]",
+            ".t[Bool]",
             "default()",
             "same(42, default())",
             "same(42.0, floating())",
@@ -680,7 +680,7 @@ mod tests {
             ".t",
             "same(42.0, 42)",
             "same(42, 42.0)",
-            "42(Float)",
+            "42[Float]",
         ] {
             let output = strip_ansi(
                 &repl
@@ -706,7 +706,7 @@ mod tests {
                     .output,
             );
             assert!(
-                output == expected || output.starts_with(&format!("{expected}(")),
+                output == expected || output.starts_with(&format!("{expected}[")),
                 "{expression}: {output}"
             );
         }
@@ -802,16 +802,16 @@ mod tests {
         for (input, expected) in [
             (":type mark", "mark : [A] ."),
             (":type .[B] { () }", ".[B] { () } : [B] ."),
-            (":normalize mark(.)", "()"),
-            (":normalize .[B] { () }(.)", "()"),
-            (":type delayed(.)", "delayed(.) : . -> ."),
-            (":normalize delayed(., ())", "()"),
+            (":normalize mark[.]", "()"),
+            (":normalize .[B] { () }[.]", "()"),
+            (":type delayed[.]", "delayed[.] : . -> ."),
+            (":normalize delayed[.](())", "()"),
         ] {
             let outcome = repl.run_command(parse_command(input).unwrap());
             assert!(outcome.keep_running, "{input}: {outcome:?}");
             assert_eq!(strip_ansi(&outcome.output).trim(), expected, "{input}");
         }
-        for input in [":normalize mark", ":normalize delayed(.)"] {
+        for input in [":normalize mark", ":normalize delayed[.]"] {
             let output = strip_ansi(&repl.run_command(parse_command(input).unwrap()).output);
             let residual = output.trim();
             assert!(
@@ -839,7 +839,7 @@ mod tests {
                 "{binder}: binding leaked outside its scope"
             );
             let inserted = format!(
-                "{}{}{}) {{ value }} }}(., ())",
+                "{}{}{}) {{ value }} }}[.](())",
                 &input[..result.replace.start],
                 selected.label,
                 &input[result.replace.end..]

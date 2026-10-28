@@ -2,7 +2,7 @@ module main;
 
 host type Hidden[A];
 
-host fn get() -> Hidden(.);
+host fn get() -> Hidden[.];
 
 fn consume[T](value: T) { () }
 

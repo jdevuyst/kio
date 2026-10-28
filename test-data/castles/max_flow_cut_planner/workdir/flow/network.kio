@@ -9,9 +9,9 @@ import testapi/iter(loop);
 
 pub labels Edge = { from: I32, to: I32, capacity: I32, reverse: I32, backward: Bool };
 
-pub labels Network = { vertices: I32, edges: Array(Edge) };
+pub labels Network = { vertices: I32, edges: Array[Edge] };
 
-pub fn empty(vertices: I32) -> Network { {vertices, edges = ar.array_make_empty(Edge, ())} }
+pub fn empty(vertices: I32) -> Network { {vertices, edges = ar.array_make_empty[Edge](())} }
 
 pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
   let edges = network.?{edges};
@@ -20,7 +20,7 @@ pub fn connect(network: Network, from: I32, to: I32, capacity: I32) {
   ar.array_push(edges, {from = to, to = from, capacity = 0, reverse = index, backward = .t})
 }
 
-rec(loop) fn fill(network: Network, index: I32, residual: Array(I32)) -> Array(I32) {
+rec(loop) fn fill(network: Network, index: I32, residual: Array[I32]) -> Array[I32] {
   if(math.less(index, ar.array_len(network.?{edges}))) {
     ar.array_push(residual, ar.array_get(network.?{edges}, index).?{capacity});
     recur fill(network, a.add_i32(index, 1), residual)
@@ -29,6 +29,6 @@ rec(loop) fn fill(network: Network, index: I32, residual: Array(I32)) -> Array(I
   }
 }
 
-pub fn initial_residual(network: Network) -> Array(I32) {
-  fill(network, 0, ar.array_make_empty(I32, ()))
+pub fn initial_residual(network: Network) -> Array[I32] {
+  fill(network, 0, ar.array_make_empty[I32](()))
 }

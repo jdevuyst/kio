@@ -1,2 +1,1 @@
-recursive call is not in tail position
-recur\(cont\)
+type name `recur` must have an uppercase first letter

@@ -12,21 +12,21 @@ import testapi/arith(add_i32, lt_i32);
 import testapi/iter(loop);
 import testapi/text(string_eq);
 
-rec(loop) fn words_onto(lines: List(Line), acc: I32) -> I32 {
+rec(loop) fn words_onto(lines: List[Line], acc: I32) -> I32 {
   match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) { recur words_onto(more, add_i32(acc, len(l.?{line_words}))) }
+    , .(l: Line, more: List[Line]) { recur words_onto(more, add_i32(acc, len(l.?{line_words}))) }
     , .(_empty: .) { acc }
     )
   }
 }
 
-pub fn words_generated(lines: List(Line)) -> I32 { words_onto(lines, 0) }
+pub fn words_generated(lines: List[Line]) -> I32 { words_onto(lines, 0) }
 
-rec(loop) fn longest_onto(lines: List(Line), acc: I32) -> I32 {
+rec(loop) fn longest_onto(lines: List[Line], acc: I32) -> I32 {
   match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) {
+    , .(l: Line, more: List[Line]) {
         let n = len(l.?{line_words});
         let best = if(lt_i32(acc, n)) { n } else { acc };
         recur longest_onto(more, best)
@@ -36,12 +36,12 @@ rec(loop) fn longest_onto(lines: List(Line), acc: I32) -> I32 {
   }
 }
 
-pub fn longest_line(lines: List(Line)) -> I32 { longest_onto(lines, 0) }
+pub fn longest_line(lines: List[Line]) -> I32 { longest_onto(lines, 0) }
 
-rec(loop) fn seen(ws: List(String), w: String) -> Bool {
+rec(loop) fn seen(ws: List[String], w: String) -> Bool {
   match(ws.>List.un_list) {
     (
-    , .(x: String, more: List(String)) {
+    , .(x: String, more: List[String]) {
         if(string_eq(x, w)) { .t } else { recur seen(more, w) }
       }
     , .(_empty: .) { .f }
@@ -49,10 +49,10 @@ rec(loop) fn seen(ws: List(String), w: String) -> Bool {
   }
 }
 
-rec(loop) fn collect_words(ws: List(String), acc: List(String)) -> List(String) {
+rec(loop) fn collect_words(ws: List[String], acc: List[String]) -> List[String] {
   match(ws.>List.un_list) {
     (
-    , .(w: String, more: List(String)) {
+    , .(w: String, more: List[String]) {
         if(seen(acc, w)) {
           recur collect_words(more, acc)
         } else {
@@ -64,10 +64,10 @@ rec(loop) fn collect_words(ws: List(String), acc: List(String)) -> List(String) 
   }
 }
 
-rec(loop) fn collect_lines(lines: List(Line), acc: List(String)) -> List(String) {
+rec(loop) fn collect_lines(lines: List[Line], acc: List[String]) -> List[String] {
   match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) {
+    , .(l: Line, more: List[Line]) {
         recur collect_lines(more, collect_words(l.?{line_words}, acc))
       }
     , .(_empty: .) { acc }
@@ -76,7 +76,7 @@ rec(loop) fn collect_lines(lines: List(Line), acc: List(String)) -> List(String)
 }
 
 /// How much of the vocabulary the run actually reached.
-pub fn distinct_words(lines: List(Line)) -> I32 { len(collect_lines(lines, nil(String))) }
+pub fn distinct_words(lines: List[Line]) -> I32 { len(collect_lines(lines, nil[String])) }
 
 fn ended_on_word(l: Line) -> Bool {
   let stop = l.?{line_stop};
@@ -99,11 +99,11 @@ fn ran_dry(l: Line) -> Bool {
   }
 }
 
-rec(loop) fn count_onto(lines: List(Line), pick: Line -> Bool, acc: I32) -> I32 {
+rec(loop) fn count_onto(lines: List[Line], pick: Line -> Bool, acc: I32) -> I32 {
   match(lines.>List.un_list) {
     (
-    , .(l: Line, more: List(Line)) {
-        let hit = if(pick(l)) { 1 } else { 0 };
+    , .(l: Line, more: List[Line]) {
+        let .(hit: I32) = if(pick(l)) { 1 } else { 0 };
         recur count_onto(more, pick, add_i32(acc, hit))
       }
     , .(_empty: .) { acc }
@@ -112,12 +112,12 @@ rec(loop) fn count_onto(lines: List(Line), pick: Line -> Bool, acc: I32) -> I32 
 }
 
 /// Lines the model closed itself, by drawing a word the corpus ends on.
-pub fn lines_by_end_word(lines: List(Line)) -> I32 { count_onto(lines, ended_on_word, 0) }
+pub fn lines_by_end_word(lines: List[Line]) -> I32 { count_onto(lines, ended_on_word, 0) }
 
 /// Lines the leash closed, counted directly rather than as the remainder — a
 /// subtraction would quietly fold in any line that stopped for a third reason.
-pub fn lines_by_word_cap(lines: List(Line)) -> I32 { count_onto(lines, hit_the_cap, 0) }
+pub fn lines_by_word_cap(lines: List[Line]) -> I32 { count_onto(lines, hit_the_cap, 0) }
 
 /// Lines that reached a word with no learned successor without that word being
 /// recorded as a phrase end.
-pub fn lines_by_no_successor(lines: List(Line)) -> I32 { count_onto(lines, ran_dry, 0) }
+pub fn lines_by_no_successor(lines: List[Line]) -> I32 { count_onto(lines, ran_dry, 0) }

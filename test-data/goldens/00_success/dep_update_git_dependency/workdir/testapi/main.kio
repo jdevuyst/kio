@@ -12,7 +12,7 @@ import testapi/io(print);
 // commit's code the consumer threads its host `String` through — not
 // only that the lockfile SHA changed.
 pub fn greeting() -> String {
-  marker("locked to old commit\n"(String), "advanced to new commit\n"(String))
+  marker("locked to old commit\n"[String], "advanced to new commit\n"[String])
 }
 
 pub fn main() { print(greeting()) }

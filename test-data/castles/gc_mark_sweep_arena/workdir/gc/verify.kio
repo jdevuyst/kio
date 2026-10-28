@@ -39,12 +39,12 @@ pub labels Audit = {
 pub labels Verdict = { verified: Audit } | { broken: Audit };
 
 /// In range is not enough: the address has to start an object.
-fn lands_on_header(cells: Array(I32), headers: Array(Bool), addr: I32) -> Bool {
+fn lands_on_header(cells: Array[I32], headers: Array[Bool], addr: I32) -> Bool {
   if(in_arena(cells, addr)) { array_get(headers, addr) } else { .f }
 }
 
 /// Count one object's pointer fields and how many of them are unsound.
-fn check_fields(cells: Array(I32), headers: Array(Bool), addr: I32, seen: I32 & I32) -> I32 & I32 {
+fn check_fields(cells: Array[I32], headers: Array[Bool], addr: I32, seen: I32 & I32) -> I32 & I32 {
   fold_fields(
   , cells
   , addr
@@ -68,9 +68,9 @@ fn check_fields(cells: Array(I32), headers: Array(Bool), addr: I32, seen: I32 & 
 }
 
 rec(loop) fn check_roots(
-, cells: Array(I32)
-, headers: Array(Bool)
-, roots: Array(I32)
+, cells: Array[I32]
+, headers: Array[Bool]
+, roots: Array[I32]
 , index: I32
 , bad: I32
 ) -> I32 {
@@ -89,11 +89,11 @@ rec(loop) fn check_roots(
 /// Re-walk the compacted arena from the relocated roots and count what
 /// the roots still reach. Safe only once every pointer is known to land
 /// on a header.
-fn reachable_objects(cells: Array(I32), roots: Array(I32)) -> I32 {
+fn reachable_objects(cells: Array[I32], roots: Array[I32]) -> I32 {
   sweep(cells, mark_heap(cells, roots).?{mark_bits}).?{live_objects}
 }
 
-pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
+pub fn audit(cells: Array[I32], roots: Array[I32], expected: I32) -> Verdict {
   let headers = header_map(cells);
   let .(objects: I32, pointers: I32, field_bad: I32) =
     fold_objects(
@@ -109,9 +109,9 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
   let sound = int_eq(bad, 0);
   let reached =
     if(sound) {
-      widen_sum(reachable_objects(cells, roots), I32 | .)
+      widen_sum(reachable_objects(cells, roots))[I32 | .]
     } else {
-      widen_sum((), I32 | .)
+      widen_sum(())[I32 | .]
     };
   let report =
     {
@@ -127,8 +127,8 @@ pub fn audit(cells: Array(I32), roots: Array(I32), expected: I32) -> Verdict {
       (.(count: I32) { int_eq(count, expected) }, .(_untraversed: .) { .f })
     };
   if(and(sound, intact)) {
-    {verified = report}.>widen_sum(Verdict)
+    ({verified = report}.>widen_sum)[Verdict]
   } else {
-    {broken = report}.>widen_sum(Verdict)
+    ({broken = report}.>widen_sum)[Verdict]
   }
 }

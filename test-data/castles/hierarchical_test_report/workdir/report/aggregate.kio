@@ -11,9 +11,9 @@ import testapi/arith as arith;
 import testapi/fmt as fmt;
 import testapi/text as text;
 
-fn append_closed(state: model.State, closed: model.Suite, rest: cells.List(model.Suite)) -> model.State {
+fn append_closed(state: model.State, closed: model.Suite, rest: cells.List[model.Suite]) -> model.State {
   match(cells.uncons(rest)) {
-    .(parent: model.Suite, ancestors: cells.List(model.Suite)) {
+    .(parent: model.Suite, ancestors: cells.List[model.Suite]) {
       state.!{model.stack = cells.cons(model.attach(parent, closed), ancestors)}
     };
     .(_empty: .) {
@@ -24,7 +24,7 @@ fn append_closed(state: model.State, closed: model.Suite, rest: cells.List(model
 
 fn close(state: model.State, name: String, declared: I32) -> model.State {
   match(cells.uncons(state.?{model.stack})) {
-    .(suite: model.Suite, rest: cells.List(model.Suite)) {
+    .(suite: model.Suite, rest: cells.List[model.Suite]) {
       if(text.string_eq(name, model.suite_name(suite))) {
         let actual = model.total(model.suite_counts(suite));
         let checked = if(arith.leq_i32(actual, declared)) {
@@ -55,7 +55,7 @@ fn record(state: model.State, test: model.Case, counts: model.Counts, failed: Bo
   if(arith.leq_i32(test.?{model.count}, 0)) {
     model.error(state, "test count must be positive")
   } else match(cells.uncons(state.?{model.stack})) {
-    .(suite: model.Suite, rest: cells.List(model.Suite)) {
+    .(suite: model.Suite, rest: cells.List[model.Suite]) {
       let failures =
         if(failed) { cells.cons(test, model.failures(suite)) } else { model.failures(suite) };
       state.!{model.stack = cells.cons(model.add_case(suite, counts, failures), rest)}

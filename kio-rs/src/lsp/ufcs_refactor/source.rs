@@ -217,8 +217,7 @@ pub(super) fn render(
     for (original, slot, flavor) in chain {
         let Expr::Ufcs {
             receiver,
-            callee_segments,
-            callee_span,
+            callee: parsed_callee,
             args,
             flavor: actual_flavor,
             macro_call: None,
@@ -228,12 +227,19 @@ pub(super) fn render(
             return None;
         };
         let (callee, original_args) = super::parts(original)?;
-        let Expr::Path { segments, .. } = callee else {
+        let Expr::Path { segments, .. } = super::callee_path(callee)? else {
+            return None;
+        };
+        let Expr::Path {
+            segments: parsed_segments,
+            ..
+        } = super::callee_path(parsed_callee)?
+        else {
             return None;
         };
         if actual_flavor != flavor
-            || mapped(*callee_span) != Some(callee.span())
-            || callee_segments
+            || mapped(parsed_callee.span()) != Some(callee.span())
+            || parsed_segments
                 .iter()
                 .map(|segment| &segment.name)
                 .ne(segments.iter().map(|segment| &segment.name))

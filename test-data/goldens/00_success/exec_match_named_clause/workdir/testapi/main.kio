@@ -22,4 +22,4 @@ fn handle(v: I32 | String) {
   match(v) { (show_int, show_string) }
 }
 
-pub fn main() { handle(widen_sum("matched right\n"(String))) }
+pub fn main() { handle(widen_sum("matched right\n"[String])) }

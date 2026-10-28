@@ -433,18 +433,8 @@ mod tests {
                     .join(",")
             ),
             Expr::Ufcs {
-                receiver,
-                callee_segments,
-                ..
-            } => format!(
-                "{}({})",
-                callee_segments
-                    .iter()
-                    .map(|segment| segment.name.as_str())
-                    .collect::<Vec<_>>()
-                    .join("."),
-                shape(receiver)
-            ),
+                receiver, callee, ..
+            } => format!("{}({})", shape(callee), shape(receiver)),
             other => panic!("unexpected test expression {other:?}"),
         }
     }
@@ -589,7 +579,7 @@ mod tests {
             ),
             (vec!["_ < _ >"], "a < A >", "value"),
             (vec!["_ < _ >"], "a < (A) >", "value"),
-            (vec!["_ < _ >"], "a < F(A) >", "value"),
+            (vec!["_ < _ >"], "a < F[A] >", "value"),
             (vec!["! _"], "f.<!a", "receiver requires an atom"),
             (
                 vec!["_ ? _ : _", "_ + _", "___ < _ >"],
@@ -610,7 +600,7 @@ mod tests {
 
     #[test]
     fn value_only_slots_do_not_leak_through_native_wrappers() {
-        for expression in ["! A", "! (A)", "! F(A)", "! (A.>f)", "keep(! A)"] {
+        for expression in ["! A", "! (A)", "! F[A]", "! (A.>f)", "keep(! A)"] {
             let source = source(&["! _"], expression);
             assert!(parse(&source).is_err(), "{source}");
             assert!(
@@ -618,7 +608,7 @@ mod tests {
                 "{source}"
             );
         }
-        for expression in ["! keep(A)", "! F.f(A)"] {
+        for expression in ["! keep[A]", "! F.f[A]"] {
             let source = source(&["! _"], expression);
             let parsed = parse(&source).unwrap_or_else(|error| panic!("{source}: {error:?}"));
             assert_eq!(parse_lazy(&source).unwrap().force_all().unwrap(), parsed);

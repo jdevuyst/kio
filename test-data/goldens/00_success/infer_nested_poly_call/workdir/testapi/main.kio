@@ -11,9 +11,9 @@ import testapi/text(string_concat);
 // so `fst_lens()` cannot be synthesized standalone.
 pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
 
-fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod(l, S -> A)(x) }
+fn view[S][A](l: Lens[S][A], x: S) -> A { one_prod(l)[S -> A](x) }
 
-fn fst_lens[A][B]() -> Lens(A & B, A) {
+fn fst_lens[A][B]() -> Lens[A & B][A] {
   let get = .((x: A, _y: B)) -> A { x };
   let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
   (get, put)
@@ -26,6 +26,6 @@ fn fst_lens[A][B]() -> Lens(A & B, A) {
 // This let-RHS is synthesized in pure synth mode (no expected type),
 // the case the nested-poly-call inference must handle.
 pub fn main() {
-  let viewed = view(fst_lens(), ("one"(String), 2(I32)));
+  let viewed = view(fst_lens(), ("one"[String], 2[I32]));
   print(string_concat("view(fst_lens(), (\"one\", 2)) == ", string_concat(viewed, "\n")))
 }

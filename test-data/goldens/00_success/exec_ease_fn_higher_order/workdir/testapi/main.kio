@@ -26,6 +26,6 @@ fn make_consumer() -> (A | B) -> . {
 }
 
 pub fn main() {
-  let narrow_inner = ease(make_consumer, . -> A -> .);
+  let narrow_inner = ease(make_consumer)[. -> A -> .];
   narrow_inner()(A.mk_a("ease! higher order ok\n"))
 }

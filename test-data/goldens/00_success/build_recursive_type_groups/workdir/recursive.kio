@@ -1,10 +1,10 @@
 module recursive;
 
-pub rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list(A) };
+pub rec labels Label_list[A] = { nil[A]: . } | { cons[A]: A & Label_list[A] };
 
 rec {
-  pub type Chain[A] = . | Chain_node(A);
-  pub newtype Chain_node[A] : A & Chain(A) {
+  pub type Chain[A] = . | Chain_node[A];
+  pub newtype Chain_node[A] : A & Chain[A] {
     pub constructor mk_chain_node;
     pub projector un_chain_node
     }

@@ -17,11 +17,11 @@ pub labels { show[A]: A -> String };
 // "surface forms that desugar to polymorphic intrinsic calls
 // with elided type arguments"). Two instantiations: `Show(I32)`
 // and `Show(String)`, exercising both inference paths.
-fn make_int_show() -> Show(I32) { {show = int_to_string} }
+fn make_int_show() -> Show[I32] { {show = int_to_string} }
 
 fn opaque_string(s: String) -> String { s }
 
-fn make_string_show() -> Show(String) { {show = opaque_string} }
+fn make_string_show() -> Show[String] { {show = opaque_string} }
 
 pub fn main() {
   let int_dict = make_int_show();

@@ -36,25 +36,25 @@ pub labels Outcome =
   | { blocked: I32 }
   | { retired: . };
 
-pub fn stalled_event() -> Event { {stalled=}.>widen_sum(Event) }
+pub fn stalled_event() -> Event { ({stalled=}.>widen_sum)[Event] }
 
-pub fn ran_event(left: I32) -> Event { {ran = left}.>widen_sum(Event) }
+pub fn ran_event(left: I32) -> Event { ({ran = left}.>widen_sum)[Event] }
 
-pub fn hit_event(vp: I32, frame: I32) -> Event { {hit = (vp, frame)}.>widen_sum(Event) }
+pub fn hit_event(vp: I32, frame: I32) -> Event { ({hit = (vp, frame)}.>widen_sum)[Event] }
 
 pub fn fault_event(vp: I32, frame: I32, victim_pid: I32, victim_vp: I32) -> Event {
-  {fault = (vp, frame, victim_pid, victim_vp)}.>widen_sum(Event)
+  ({fault = (vp, frame, victim_pid, victim_vp)}.>widen_sum)[Event]
 }
 
-pub fn nobody() -> Outcome { {nobody=}.>widen_sum(Outcome) }
+pub fn nobody() -> Outcome { ({nobody=}.>widen_sum)[Outcome] }
 
-pub fn holds() -> Outcome { {holds=}.>widen_sum(Outcome) }
+pub fn holds() -> Outcome { ({holds=}.>widen_sum)[Outcome] }
 
-pub fn preempted() -> Outcome { {preempted=}.>widen_sum(Outcome) }
+pub fn preempted() -> Outcome { ({preempted=}.>widen_sum)[Outcome] }
 
-pub fn blocked(wake_at: I32) -> Outcome { {blocked = wake_at}.>widen_sum(Outcome) }
+pub fn blocked(wake_at: I32) -> Outcome { ({blocked = wake_at}.>widen_sum)[Outcome] }
 
-pub fn retired() -> Outcome { {retired=}.>widen_sum(Outcome) }
+pub fn retired() -> Outcome { ({retired=}.>widen_sum)[Outcome] }
 
 fn victim_text(victim_pid: I32, victim_vp: I32) -> String {
   if(num.lt(victim_pid, 0)) {

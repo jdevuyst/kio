@@ -38,9 +38,9 @@ fn before(left: m.Pair, right: m.Pair) -> Bool {
   }
 }
 
-rec(loop) fn insert(pair: m.Pair, sorted: core.List(m.Pair)) -> core.List(m.Pair) {
+rec(loop) fn insert(pair: m.Pair, sorted: core.List[m.Pair]) -> core.List[m.Pair] {
   match(core.uncons(sorted)) {
-    .(head: m.Pair, tail: core.List(m.Pair)) {
+    .(head: m.Pair, tail: core.List[m.Pair]) {
       if(before(pair, head)) {
         core.cons(pair, sorted)
       } else {
@@ -61,8 +61,8 @@ fn pair_text(pair: m.Pair) -> String {
 pub fn signature(state: m.State) -> String {
   let sorted =
     lists.foldl(
-    , .(acc: core.List(m.Pair), pair: m.Pair) { insert(pair, acc) }
-    , core.nil(_)
+    , .(acc: core.List[m.Pair], pair: m.Pair) { insert(pair, acc) }
+    , core.nil[_]
     , state.?{m.pairs}
     );
   lists.to_string(pair_text, sorted)
@@ -85,10 +85,10 @@ pub fn checkpoint(label: String, state: m.State) {
 pub fn finish(state: m.State) {
   let unique =
     lists.foldl(
-    , .(acc: core.List(m.Pair), pair: m.Pair) {
+    , .(acc: core.List[m.Pair], pair: m.Pair) {
         if(lists.elem(same_pair, pair, acc)) { acc } else { core.cons(pair, acc) }
       }
-    , core.nil(_)
+    , core.nil[_]
     , state.?{m.pairs}
     );
   number("accepted=", state.?{m.accepted_left});

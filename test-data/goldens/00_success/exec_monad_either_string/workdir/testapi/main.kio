@@ -20,7 +20,7 @@ pub newtype Either[E][A] : E | A { pub constructor mk_either; pub projector un_e
 // result. The Forall binders flow to the inherent projector method
 // as generic type-params; the dictionary instance below is the
 // `Either(String)` interpretation.
-pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B] (F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;
   pub projector bind
   }
@@ -31,15 +31,12 @@ pub newtype Monad[*F] : [A][B] (F(A) & (A -> F(B))) -> F(B) {
 // `left` error short-circuits, a `right` value is handed to the
 // continuation `k`), and re-wraps the continuation's result via
 // `Either.mk_either`.
-fn either_string_monad() -> Monad(Either(String)) {
-  Monad.mk_monad(
-  , Either(String)
-  , .[A][B](m, k) {
-      match(Either.un_either(String, A, m)) {
-        (.(e: String) { Either.mk_either(String, B, widen_sum(e, String | B)) }, .(av: A) { k(av) })
-      }
+fn either_string_monad() -> Monad[Either[String]] {
+  Monad.mk_monad[Either[String]](.[A][B](m, k) {
+    match(Either.un_either[String][A](m)) {
+      (.(e: String) { Either.mk_either[String][B](widen_sum(e)[String | B]) }, .(av: A) { k(av) })
     }
-  )
+  })
 }
 
 // The success payload is wrapped in a distinct `Ok` newtype, so an
@@ -57,13 +54,13 @@ newtype Ok : String { constructor mk_ok; projector un_ok }
 fn use_dictionary() -> String {
   let monad = either_string_monad();
   let just_hello =
-    Either.mk_either(String, Ok, widen_sum(Ok.mk_ok("monad on either ok\n"), String | Ok));
+    Either.mk_either[String][Ok](widen_sum(Ok.mk_ok("monad on either ok\n"))[String | Ok]);
   let result =
     do(Monad.bind(monad)) {
       let x <- just_hello;
-      Either.mk_either(String, Ok, widen_sum(x, String | Ok))
+      Either.mk_either[String][Ok](widen_sum(x)[String | Ok])
     };
-  match(Either.un_either(String, Ok, result)) {
+  match(Either.un_either[String][Ok](result)) {
     (.(err: String) { err }, .(s: Ok) { Ok.un_ok(s) })
   }
 }

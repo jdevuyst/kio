@@ -87,7 +87,7 @@ pure fn cold_single(ct: __Comptime__) -> __Checked_term__ {
     , .(var: __Type_var__) -> __Type__ { identity_body(ct, var) }
     );
   __if_then_else__(
-  , __type_equal__(ct, a, __reflect_type__(ct, [A] A -> A))
+  , __type_equal__(ct, a, __reflect_type__(ct)[[A] A -> A])
   , .() -> __Checked_term__ {
       with_var(
       , ct

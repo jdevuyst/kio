@@ -1,0 +1,22 @@
+module generated;
+
+import __intrinsics__;
+
+import __comptime__;
+import reflect_helper(reflected_actual);
+import types as real;
+import types(Actual);
+
+pub type Keeper = real.Actual -> real.Actual;
+
+pure fn captured_type_app_impl(
+, ct: __Comptime__
+, polymorphic: __Checked_term__
+, _source: __Type__
+, value: __Checked_term__
+) -> __Checked_term__ {
+  let specialized = __term_type_app__(ct, polymorphic, reflected_actual(ct));
+  __term_call__(ct, __term_type__(ct, specialized), specialized, value)
+}
+
+pub macro captured_type_app : [T] . -> Keeper { captures real.polymorphic; impl captured_type_app_impl }

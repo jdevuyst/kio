@@ -256,9 +256,9 @@ fn compact_frames_fix_marker_identity_before_binding_lookup() {
 }
 
 #[test]
-fn frame_elements_reject_type_wrappers_before_mixed_argument_commit() {
+fn frame_elements_stay_values_while_call_type_stages_accept_types() {
     for imports in ["", "import ops(varop [], varop [* *], op | _ |);"] {
-        for value in ["A", "(A)", "F(A)", "A.>f", "A.?{field}", "owner.A"] {
+        for value in ["A", "(A)", "F[A]", "A.>f", "A.?{field}", "owner.A"] {
             for frame in [format!("[({value})]"), format!("[* ({value}) *]")] {
                 for expression in [frame.clone(), format!("keep({frame})")] {
                     let source = format!("module source; {imports} fn run() {{ {expression} }}");
@@ -266,7 +266,11 @@ fn frame_elements_reject_type_wrappers_before_mixed_argument_commit() {
                 }
             }
         }
-        for expression in ["keep(A)", "keep(F(A))"] {
+        for expression in ["keep(A)", "keep(F[A])", "keep([A] A)"] {
+            let source = format!("module source; {imports} fn run() {{ {expression} }}");
+            assert!(parse(&source).is_err(), "{source}");
+        }
+        for expression in ["keep[A]", "keep[F[A]]"] {
             let source = format!("module source; {imports} fn run() {{ {expression} }}");
             let module = parse(&source).unwrap();
             let Item::FnDef(function) = &module.items[0] else {
@@ -276,12 +280,12 @@ fn frame_elements_reject_type_wrappers_before_mixed_argument_commit() {
                 panic!("call");
             };
             assert!(
-                matches!(args.as_slice(), [crate::ast::CallArg::Value(_)]),
+                matches!(args.as_slice(), [crate::ast::CallArg::Type(_)]),
                 "{source}"
             );
         }
         parse(&format!(
-            "module source; {imports} fn run() {{ keep([A] A) }}"
+            "module source; {imports} fn run() {{ keep[[A] A] }}"
         ))
         .unwrap();
     }
@@ -359,7 +363,7 @@ fn brackets_are_excluded_from_fixed_operators_and_placeholder_stems() {
 #[test]
 fn ordinary_type_lambda_placeholder_and_value_elements_roundtrip() {
     for expr in [
-        "[* f([*F] .), .[*F](x: F(.)) -> F(.) { x }, .x. { x1 }, (a, b), {field = x}, [% y %] *]",
+        "[* f[[*F] .], .[*F](x: F[.]) -> F[.] { x }, .x. { x1 }, (a, b), {field = x}, [% y %] *]",
         "[* , a, b, *]",
         "[* *]",
         "[* .x. { x1 } *]",

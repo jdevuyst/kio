@@ -1689,8 +1689,8 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         } => {
             overrides.source_reference(&head.name, head.span, SourceNameKind::Value, false);
             overrides.insert(head.span.start, TokenKind::EntityNameFunctionReference);
-            for value in prefix {
-                walk_expr(value, raw, overrides);
+            for arg in prefix.iter().flat_map(|stage| &stage.args) {
+                walk_call_arg(arg, raw, overrides);
             }
             for block in blocks {
                 if let Some(label) = &block.label {
@@ -1786,7 +1786,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         RecCall {
             modes,
             callee,
-            args,
+            stages,
             meta,
             ..
         } => {
@@ -1805,7 +1805,7 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             overrides.insert(callee.span.start, TokenKind::EntityNameFunctionReference);
             #[cfg(all(feature = "surface", feature = "lsp"))]
             overrides.rec_calls.push((callee.name.clone(), callee.span));
-            for arg in args {
+            for arg in stages.iter().flat_map(|stage| &stage.args) {
                 walk_call_arg(arg, raw, overrides);
             }
         }
@@ -1913,16 +1913,13 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
             }
         },
         RecOrder { ext, .. } | RecQuote { ext, .. } => match *ext {},
-        UserMacro { name, args, .. } => {
+        UserMacro { name, stages, .. } => {
             if let Some(s) = find_ident_in_span(raw, e.meta().span, name) {
                 overrides.source_reference(name, s, SourceNameKind::Macro, false);
                 overrides.insert(s.start, TokenKind::EntityNameFunctionReference);
             }
-            for arg in args {
-                match arg {
-                    ast::CallArg::Value(value) => walk_expr(value, raw, overrides),
-                    ast::CallArg::Type(ty) => walk_type(ty, raw, overrides),
-                }
+            for arg in stages.iter().flat_map(|stage| &stage.args) {
+                walk_call_arg(arg, raw, overrides);
             }
         }
         Tuple { items, .. } => {
@@ -1936,25 +1933,22 @@ fn walk_expr(e: &ast::Expr<ast::Surface>, raw: &[LexToken], overrides: &mut AstO
         }
         Ufcs {
             receiver,
-            callee_segments,
+            callee,
             args,
             macro_call,
             ..
         } => {
-            overrides.source_path(
-                callee_segments,
+            walk_ufcs_callee(
+                callee,
                 if macro_call.is_some() {
                     SourceNameKind::Macro
                 } else {
                     SourceNameKind::Value
                 },
+                raw,
+                overrides,
             );
             walk_expr(receiver, raw, overrides);
-            // The trailing callee segment is the dispatched method's
-            // name — classify like a Call's callee tail.
-            if let Some(last) = callee_segments.last() {
-                overrides.insert(last.span.start, TokenKind::EntityNameFunctionReference);
-            }
             for arg in args {
                 walk_call_arg(arg, raw, overrides);
             }
@@ -2045,16 +2039,31 @@ fn walk_row_let_entries(
     }
 }
 
-fn walk_call_arg(arg: &ast::CallArg<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    match arg {
-        ast::CallArg::Value(value)
-            if crate::pass::typecheck_core::value_arg_looks_like_type_arg(value) =>
-        {
-            match crate::pass::typecheck_core::expr_to_type_arg(value) {
-                Ok(ty) => walk_type(&ty, raw, overrides),
-                Err(_) => walk_expr(value, raw, overrides),
+fn walk_ufcs_callee(
+    callee: &ast::Expr<ast::Surface>,
+    kind: SourceNameKind,
+    raw: &[LexToken],
+    overrides: &mut AstOverrides,
+) {
+    match callee {
+        ast::Expr::Path { segments, .. } => {
+            overrides.source_path(segments, kind);
+            if let Some(last) = segments.last() {
+                overrides.insert(last.span.start, TokenKind::EntityNameFunctionReference);
             }
         }
+        ast::Expr::Call { callee, args, .. } => {
+            walk_ufcs_callee(callee, kind, raw, overrides);
+            for arg in args {
+                walk_call_arg(arg, raw, overrides);
+            }
+        }
+        _ => walk_expr(callee, raw, overrides),
+    }
+}
+
+fn walk_call_arg(arg: &ast::CallArg<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
+    match arg {
         ast::CallArg::Value(value) => walk_expr(value, raw, overrides),
         ast::CallArg::Type(ty) => walk_type(ty, raw, overrides),
     }
@@ -2436,7 +2445,7 @@ mod tests {
         for callee in ["rhs", "(rhs)"] {
             let source = format!(
                 "module m; fn explicit() {{
-                {callee}(_, .[Hidden](payload) {{ payload }})
+                {callee}[_](.[Hidden](payload) {{ payload }})
             }}"
             );
             let module = crate::pass::parser::parse(&source).unwrap();
@@ -3130,6 +3139,43 @@ mod tests {
                 token.kind,
                 TokenKind::EntityNameFunctionReference,
                 "callee `{name}`"
+            );
+        }
+    }
+
+    #[test]
+    fn ufcs_expression_callees_keep_type_and_value_stage_tokens() {
+        for (body, names) in [
+            ("x.>outer[A](inner(x))", vec!["outer", "inner"]),
+            ("factory(x)[A](inner(x)).<x", vec!["factory", "inner"]),
+        ] {
+            let source = format!("module m; fn run[A](x: A) {{ {body} }}");
+            let probe = crate::pass::parser::probe_tooling_source(&source, None);
+            assert!(
+                probe.parse_error.is_none(),
+                "{body}: {:?}",
+                probe.parse_error
+            );
+            let classified = dump(&source).expect("token dump");
+            for name in names {
+                let start = source.rfind(name).unwrap() as u32;
+                assert_eq!(
+                    classified
+                        .iter()
+                        .find(|token| token.span.start == start)
+                        .map(|token| token.kind),
+                    Some(TokenKind::EntityNameFunctionReference),
+                    "{body}: {name}"
+                );
+            }
+            let type_start = source.rfind("[A]").unwrap() as u32 + 1;
+            assert_eq!(
+                classified
+                    .iter()
+                    .find(|token| token.span.start == type_start)
+                    .map(|token| token.kind),
+                Some(TokenKind::EntityNameType),
+                "{body}"
             );
         }
     }
@@ -4142,14 +4188,14 @@ mod tests {
     }
 
     #[test]
-    fn raw_call_type_arguments_classify_as_types_by_exact_spelling() {
+    fn bracketed_call_type_arguments_classify_as_types_by_exact_spelling() {
         let src = "module m; fn id[A](x: A) -> A { x } \
                    fn use_types[A][_A](x: A, y: _A) -> _A { \
-                     let _ = id(A, x); id(_A, y) \
+                     let _ = id[A](x); id[_A](y) \
                    }";
         let toks = dumped(src);
-        for call in ["id(A, x)", "id(_A, y)"] {
-            let type_arg = src.find(call).unwrap() + "id(".len();
+        for call in ["id[A](x)", "id[_A](y)"] {
+            let type_arg = src.find(call).unwrap() + "id[".len();
             assert_eq!(
                 find_kind_at(&toks, type_arg as u32),
                 Some("entity.name.type"),

@@ -257,7 +257,7 @@ fn intrinsic_details(name: &str) -> &'static str {
             "The value must have exactly the product type `A & B`; the result is its right component. The helper does not search a wider product spine, so a different product shape is a type error."
         }
         "__if_then_else__" => {
-            "The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__(Bool)` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked."
+            "The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__[Bool]` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked."
         }
         "__absurd__" => {
             "The argument must have bottom type `!`; because `!` has no values, a well-typed closed program cannot reach this eliminator with a constructed value. It supplies no fallback behavior: an argument of any inhabited type is rejected, and a stuck host computation returning `!` remains opaque during compile-time evaluation."
@@ -466,7 +466,7 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
             "Arity is a compile-time natural number used for kinds and function parameter packets. Build it from zero and successor or read it from a type/variable. It is opaque to ordinary arithmetic and has no runtime representation."
         }
         DiagnosticText => {
-            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `\"message\"(__Diagnostic_text__)`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string."
+            "Diagnostic text is the only message payload accepted by `__macro_error__` and `__type_error__`. Produce it with display helpers and concatenation, or explicitly annotate a string as `\"message\"[__Diagnostic_text__]`. A transparent alias of `__Diagnostic_text__` works too, under ordinary import and kind checks. A concrete expected diagnostic-text type can also determine an unannotated string literal. `__Diagnostic_text__` is compiler-owned text, not a runtime string."
         }
         ComptimeBool => {
             "The literals `.t` and `.f` form compile-time predicate results used by reflection helpers and concrete compile-time branching. It is distinct from every package host boolean. It is erased after compile-time evaluation and is not a runtime API type."
@@ -660,9 +660,7 @@ fn comptime_example(builtin: ComptimeBuiltin) -> Option<&'static str> {
 import __comptime__;
 
 fn product_arity(ct: __Comptime__, typ: __Type__) -> __Type_arity__ {
-  __type_product_spine_fold__(
-  , ct
-  , __Type_arity__
+  __type_product_spine_fold__(ct)[__Type_arity__](
   , typ
   , __type_arity_zero__(ct)
   , .(count: __Type_arity__, _member: __Type__) -> __Type_arity__ { __type_arity_succ__(ct, count) }
@@ -688,23 +686,16 @@ import __comptime__;
 
 rec newtype Fuel : . | Fuel { pub constructor mk_fuel; pub projector un_fuel }
 
-fn stop() -> Fuel { Fuel.mk_fuel(__left__(., Fuel, ())) }
+fn stop() -> Fuel { Fuel.mk_fuel(__left__[.][Fuel](())) }
 
-fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__(., Fuel, rest)) }
+fn tick(rest: Fuel) -> Fuel { Fuel.mk_fuel(__right__[.][Fuel](rest)) }
 
 fn count_down(ct: __Comptime__, fuel: Fuel) -> __Type_arity__ {
-  __structural_recur__(
-  , ct
-  , Fuel
-  , .
-  , __Type_arity__
+  __structural_recur__(ct)[Fuel][.][__Type_arity__](
   , fuel
   , ()
   , .(recur: (Fuel & .) -> __Type_arity__, current: Fuel, _input: .) -> __Type_arity__ {
-      __either__(
-      , .
-      , Fuel
-      , __Type_arity__
+      __either__[.][Fuel][__Type_arity__](
       , Fuel.un_fuel(current)
       , .(_done: .) -> __Type_arity__ { __type_arity_zero__(ct) }
       , .(rest: Fuel) -> __Type_arity__ { __type_arity_succ__(ct, recur(rest, ())) }

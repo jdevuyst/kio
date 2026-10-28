@@ -13,7 +13,7 @@ pub newtype Identity[A] : A { pub constructor mk_id; pub projector un_id }
 // F(B)`. The `[*F]` binder is kind-`*→*`; the instance newtype is
 // shared across goldens — every concrete brand instantiates it with
 // its own body for the brand-crossing.
-pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
+pub newtype Functor[*F] : [A][B] ((A -> B) & F[A]) -> F[B] {
   pub constructor mk_functor;
   pub projector fmap
   }
@@ -22,8 +22,8 @@ pub newtype Functor[*F] : [A][B] ((A -> B) & F(A)) -> F(B) {
 // `Identity`'s own constructor / projector: peel via `un_id`, apply
 // the user's function, re-wrap via `mk_id`. At every target this
 // composes to a runtime no-op around the function call.
-fn identity_functor() -> Functor(Identity) {
-  Functor.mk_functor(Identity, .[A][B](s, m) { Identity.mk_id(B, s(Identity.un_id(A, m))) })
+fn identity_functor() -> Functor[Identity] {
+  Functor.mk_functor[Identity](.[A][B](s, m) { Identity.mk_id[B](s(Identity.un_id[A](m))) })
 }
 
 // Pass the instance as a value to a consumer. The consumer doesn't
@@ -32,9 +32,9 @@ fn identity_functor() -> Functor(Identity) {
 // canonical-brand path end-to-end.
 fn use_instance() -> String {
   let inst = identity_functor();
-  let branded = Identity.mk_id(String, "functor on identity ok\n"(String));
-  let mapped = Functor.fmap(Identity, inst)(String, String, .(s) { s }, branded);
-  Identity.un_id(String, mapped)
+  let branded = Identity.mk_id[String]("functor on identity ok\n"[String]);
+  let mapped = Functor.fmap[Identity](inst)[String][String](.(s) { s }, branded);
+  Identity.un_id[String](mapped)
 }
 
 pub fn main() { print(use_instance()) }

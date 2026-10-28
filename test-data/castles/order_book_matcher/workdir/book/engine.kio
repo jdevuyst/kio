@@ -82,7 +82,7 @@ import testapi/iter(loop);
 /// A maker that is used up leaves the book and the walk goes on to the
 /// next one; a maker with more than the aggressor needs stays where it is
 /// with the rest, and the walk is over -- there is nothing left to trade.
-rec(loop) fn cross(taker: I32, side: Side, cap: Cap, remaining: I32, makers: Array(Order), b: Book) -> I32 {
+rec(loop) fn cross(taker: I32, side: Side, cap: Cap, remaining: I32, makers: Array[Order], b: Book) -> I32 {
   if(not(is_positive(remaining))) {
     remaining
   } else if(is_empty(makers)) {
@@ -147,14 +147,14 @@ fn take_market(step: I32, b: Book, r: Market_req) {
 /// across the book, so searching both sides settles it. When the id rests
 /// nowhere, the index says so and the queue handed back beside it is never
 /// touched.
-fn locate(b: Book, id: I32) -> Array(Order) & I32 {
+fn locate(b: Book, id: I32) -> Array[Order] & I32 {
   let in_bids = index_of_id(bids_of(b), id);
   if(is_found(in_bids)) { (bids_of(b), in_bids) } else { (asks_of(b), index_of_id(asks_of(b), id)) }
 }
 
 fn take_cancel(step: I32, b: Book, id: I32) {
   print(report.cancel_header(step, id));
-  let .(queue: Array(Order), index: I32) = locate(b, id);
+  let .(queue: Array[Order], index: I32) = locate(b, id);
   if(is_found(index)) {
     let victim = at(queue, index);
     note_cancelled(b, remaining_of(victim));
@@ -171,7 +171,7 @@ fn take_amend(step: I32, b: Book, r: Amend_req) {
   let id = amend_id(r);
   let target = amend_qty(r);
   print(report.amend_header(step, id, target));
-  let .(queue: Array(Order), index: I32) = locate(b, id);
+  let .(queue: Array[Order], index: I32) = locate(b, id);
   if(not(is_found(index))) {
     print(report.reject_line(report.no_order_reason(id)))
   } else {
@@ -202,7 +202,7 @@ fn apply_event(step: I32, b: Book, e: Event) {
 /// The event's position in the flow is also the arrival sequence a
 /// resting order keeps, which is why it is passed down rather than
 /// counted again in the book.
-rec(loop) fn replay(i: I32, b: Book, events: Array(Event)) {
+rec(loop) fn replay(i: I32, b: Book, events: Array[Event]) {
   if(leq_i32(event_count(events), i)) {
     ()
   } else {

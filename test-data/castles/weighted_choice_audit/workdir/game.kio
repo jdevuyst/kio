@@ -16,13 +16,13 @@ fn bow_drop() -> Loot { {bow = 3}.>widen_sum }
 
 fn coin_drop() -> Loot { {coins = 5}.>widen_sum }
 
-pub fn loot() -> choice.Choice(Loot) {
+pub fn loot() -> choice.Choice[Loot] {
   choice.weighted(blade_drop(), 2)
     .>choice.alternative(choice.certain(bow_drop()))
     .>choice.alternative(choice.certain(coin_drop()))
 }
 
-pub fn charms() -> choice.Choice(I32) {
+pub fn charms() -> choice.Choice[I32] {
   choice.weighted(0, 2).>choice.alternative(choice.certain(1))
 }
 
@@ -34,7 +34,7 @@ pub fn equip(item: Loot, bonus: I32) -> Loadout {
   }
 }
 
-pub fn loadouts() -> choice.Choice(Loadout) { choice.independent(loot(), charms(), equip) }
+pub fn loadouts() -> choice.Choice[Loadout] { choice.independent(loot(), charms(), equip) }
 
 pub fn attack_score(loadout: Loadout) -> I32 { loadout.?{attack} }
 
@@ -42,6 +42,6 @@ pub fn treasure_value(loadout: Loadout) -> I32 { loadout.?{treasure} }
 
 pub fn ready(loadout: Loadout) -> Bool { arith.leq_i32(3, loadout.?{attack}) }
 
-pub fn guaranteed() -> choice.Choice(Loadout) {
+pub fn guaranteed() -> choice.Choice[Loadout] {
   choice.independent(choice.certain(blade_drop()), choice.certain(1), equip)
 }

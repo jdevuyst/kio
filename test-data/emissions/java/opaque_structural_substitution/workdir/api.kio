@@ -4,12 +4,12 @@ host type Box[T];
 
 host type Number role(i32);
 
-host fn unbox[T](boxed: Box(T)) -> T;
+host fn unbox[T](boxed: Box[T]) -> T;
 
 host fn consume(head: Number, tail: Number) -> Number;
 
-fn relay[T](boxed: Box(T)) -> T { unbox(boxed) }
+fn relay[T](boxed: Box[T]) -> T { unbox(boxed) }
 
-pub fn direct(boxed: Box(Number & Number)) -> Number { consume(unbox(boxed)) }
+pub fn direct(boxed: Box[Number & Number]) -> Number { consume(unbox(boxed)) }
 
-pub fn through_relay(boxed: Box(Number & Number)) -> Number { consume(relay(boxed)) }
+pub fn through_relay(boxed: Box[Number & Number]) -> Number { consume(relay(boxed)) }

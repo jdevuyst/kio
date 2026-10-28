@@ -414,13 +414,22 @@ where
                 visitor.visit_expr(value);
             }
         },
-        Expr::UserMacro { args, .. } => visit_call_args(visitor, args),
-        Expr::Ufcs { receiver, args, .. } => {
+        Expr::UserMacro { stages, .. } | Expr::RecCall { stages, .. } => {
+            for stage in stages {
+                visit_call_args(visitor, &mut stage.args);
+            }
+        }
+        Expr::Ufcs {
+            receiver,
+            callee,
+            args,
+            ..
+        } => {
             visitor.visit_expr(receiver);
+            visitor.visit_expr(callee);
             visit_call_args(visitor, args);
         }
-        Expr::RecCall { ext, .. }
-        | Expr::RowLet { ext, .. }
+        Expr::RowLet { ext, .. }
         | Expr::Tuple { ext, .. }
         | Expr::FnPlaceholder { ext, .. }
         | Expr::LabelValue { ext, .. }

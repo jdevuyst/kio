@@ -6,7 +6,7 @@ import testapi/fmt(i32_to_string);
 import testapi/io(print);
 
 pub fn main() {
-  let step = make_step(7(I32));
-  print(i32_to_string(step(35(I32))));
-  print("\n"(String))
+  let step = make_step(7[I32]);
+  print(i32_to_string(step(35[I32])));
+  print("\n"[String])
 }

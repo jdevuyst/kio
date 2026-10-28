@@ -22,7 +22,7 @@ Write `///` immediately above a module item:
 /// Adds one to `x`.
 ///
 /// See [`@signature inc`].
-pub fn inc(x: Int) -> Int { add_i32(x, 1(Int)) }
+pub fn inc(x: Int) -> Int { add_i32(x, 1[Int]) }
 ```
 
 The body is Markdown. Blank `///` lines become blank Markdown lines.

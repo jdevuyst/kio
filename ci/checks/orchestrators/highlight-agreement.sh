@@ -15,7 +15,9 @@
 # Tree-sitter must match (1) after coalescing adjacent equal documentation roles;
 # its explicit line-local literal fallback remains neutral. A named malformed
 # wrapper fixture compares containment/resumption, not identical recovery colors
-# inside authenticated embedded payload. Normal example contexts remain exact.
+# inside authenticated embedded payload. Two named malformed source fixtures
+# compare lexical kinds/spans; call-stage recovery resumes exact roles at its
+# following declaration. Normal example contexts remain exact.
 # TextMate may remain neutral only when later-line evidence disambiguates a
 # role: its line-oriented engine cannot revise earlier lines from that evidence.
 # Every positive TextMate classification must agree; the focused raw-scope

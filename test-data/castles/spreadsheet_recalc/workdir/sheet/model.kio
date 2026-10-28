@@ -75,12 +75,12 @@ pub fn initial_sheet() -> Sheet {
 
 /// The edit script: a literal, a formula that breaks the cycle, a clear,
 /// and a formula that closes a new cycle.
-pub fn edit_script() -> List(Edit) {
+pub fn edit_script() -> List[Edit] {
   cons(
   , number_edit(a1(), 9)
   , cons(
     , formula_edit(d3(), add(cell_ref(b3()), lit_num(4)))
-    , cons(clear_edit(b4()), cons(formula_edit(a3(), add(cell_ref(b3()), lit_num(1))), nil(Edit)))
+    , cons(clear_edit(b4()), cons(formula_edit(a3(), add(cell_ref(b3()), lit_num(1))), nil[Edit]))
     )
   )
 }

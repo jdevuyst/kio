@@ -1,0 +1,767 @@
+================================================================================
+explicit_call_stages
+================================================================================
+module stages; fn run(a: A, b: B) { f[A][B](a)[C](b); f [A] [B] (a); (f(a))[C](b) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_expr
+          (call_expr
+            (call_expr
+              (call_expr
+                (call_callee
+                  (entity_name_function))
+                (call_type_arguments
+                  (bracket_lbracket)
+                  (type_path
+                    (entity_name_type))
+                  (bracket_rbracket)))
+              (call_type_arguments
+                (bracket_lbracket)
+                (type_path
+                  (entity_name_type))
+                (bracket_rbracket)))
+            (expression_arguments
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen)))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_expr
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (call_type_arguments
+              (bracket_lbracket)
+              (type_path
+                (entity_name_type))
+              (bracket_rbracket)))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (call_expr
+        (call_expr
+          (grouped_expression
+            (bracket_lparen)
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (expression_path
+                  (identifier))
+                (bracket_rparen)))
+            (bracket_rparen))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+type_suffix_and_expression_start_varop
+================================================================================
+module stages; fn run(a: A) { f[A](a); [a]; f [A] (a); [a, a] }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (variadic_expression
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (variadic_element
+            (expression_path
+              (identifier))))
+        (variadic_close
+          (bracket_rbracket)))
+      (separator_semicolon)
+      (call_expr
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (variadic_expression
+        (variadic_open
+          (bracket_lbracket))
+        (variadic_elements
+          (variadic_element
+            (expression_path
+              (identifier)))
+          (separator_comma)
+          (variadic_element
+            (expression_path
+              (identifier))))
+        (variadic_close
+          (bracket_rbracket)))
+      (bracket_rbrace))))
+
+================================================================================
+ufcs_outer_stage_and_type_boundary
+================================================================================
+module stages; fn run(a: A, b: B, r: R) { r.>f[A](a)(b); f(a)(b).<r; f(a)[B].<<r; (f(a)(b)).<r }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (ufcs_expr
+          (expression_path
+            (identifier))
+          (operator_arrow_ufcs)
+          (typed_ufcs_callable
+            (call_callee
+              (entity_name_function))
+            (call_type_arguments
+              (bracket_lbracket)
+              (type_path
+                (entity_name_type))
+              (bracket_rbracket)))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (ufcs_expr
+        (call_expr
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen)))
+          (expression_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen)))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (ufcs_expr
+        (call_expr
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (expression_arguments
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen)))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (separator_semicolon)
+      (ufcs_expr
+        (grouped_expression
+          (bracket_lparen)
+          (call_expr
+            (call_expr
+              (call_callee
+                (entity_name_function))
+              (expression_arguments
+                (bracket_lparen)
+                (expression_path
+                  (identifier))
+                (bracket_rparen)))
+            (expression_arguments
+              (bracket_lparen)
+              (expression_path
+                (identifier))
+              (bracket_rparen)))
+          (bracket_rparen))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (bracket_rbrace))))
+
+================================================================================
+macro_multiple_value_prefixes
+================================================================================
+module stages; fn run(a: A, b: B) { arrange(a)(b) { a } then { b }; r.>arrange(a)(b) { a }; arrange(a)(b) { a }.<r }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (separator_comma)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (block_call
+        (call_callee
+          (entity_name_function))
+        (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        (block_value_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen))
+        (neutral_block
+          (bracket_lbrace)
+          (expression_path
+            (identifier))
+          (bracket_rbrace))
+        (labelled_block
+          (block_label)
+          (neutral_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (block_ufcs_expr
+        (expression_path
+          (identifier))
+        (operator_arrow_ufcs)
+        (block_call
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (neutral_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace))))
+      (separator_semicolon)
+      (block_ufcs_expr
+        (block_call
+          (call_callee
+            (entity_name_function))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (block_value_arguments
+            (bracket_lparen)
+            (expression_path
+              (identifier))
+            (bracket_rparen))
+          (neutral_block
+            (bracket_lbrace)
+            (expression_path
+              (identifier))
+            (bracket_rbrace)))
+        (operator_arrow_ufcs)
+        (expression_path
+          (identifier)))
+      (bracket_rbrace))))
+
+================================================================================
+uniform_type_application_and_literal_annotations
+================================================================================
+module stages; type Wrapped[A] = Box[A]; type Mapped = Map[Key][List[Value]]; literal count = 42; fn run() { count[I32]; 42[I32]; f[Box[I32]](count[I32]); .t[Bool]; "text"[String] }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (type_param_list
+      (type_param_group
+        (bracket_lbracket)
+        (type_param_binder
+          (variable_parameter))
+        (bracket_rbracket)))
+    (operator_builtin)
+    (type_path
+      (entity_name_type)
+      (type_arguments
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket)))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (type_path
+      (entity_name_type)
+      (type_arguments
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket))
+      (type_arguments
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type)
+          (type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (bracket_rbracket)))
+    (separator_semicolon))
+  (literal_definition
+    (keyword_literal)
+    (identifier)
+    (operator_builtin)
+    (number_literal)
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (call_type_arguments
+          (bracket_lbracket)
+          (type_path
+            (entity_name_type))
+          (bracket_rbracket)))
+      (separator_semicolon)
+      (literal_annotation
+        (number_literal)
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket))
+      (separator_semicolon)
+      (call_expr
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (type_path
+              (entity_name_type)
+              (type_arguments
+                (bracket_lbracket)
+                (type_path
+                  (entity_name_type))
+                (bracket_rbracket)))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (call_expr
+            (call_callee
+              (entity_name_function))
+            (call_type_arguments
+              (bracket_lbracket)
+              (type_path
+                (entity_name_type))
+              (bracket_rbracket)))
+          (bracket_rparen)))
+      (separator_semicolon)
+      (literal_annotation
+        (bool_literal
+          (bool_prefix)
+          (bool_value))
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket))
+      (separator_semicolon)
+      (literal_annotation
+        (string_literal)
+        (bracket_lbracket)
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket))
+      (bracket_rbrace))))
+
+================================================================================
+single_type_pair_rejection_1
+================================================================================
+module invalid; fn run[A, B](a: A) { a }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (type_param_group
+          (bracket_lbracket)
+          (ERROR
+            (type_param_binder
+              (variable_parameter))
+            (separator_comma))
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket))
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (type_path
+                (entity_name_type))))
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+single_type_pair_rejection_2
+================================================================================
+module invalid; type F = [A, B] A -> B;
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (forall_type
+      (type_param_list
+        (type_param_group
+          (bracket_lbracket)
+          (ERROR
+            (type_param_binder
+              (variable_parameter))
+            (separator_comma))
+          (type_param_binder
+            (variable_parameter))
+          (bracket_rbracket)))
+      (type_arrow
+        (type_path
+          (entity_name_type))
+        (operator_arrow_type)
+        (type_path
+          (entity_name_type))))
+    (separator_semicolon)))
+
+================================================================================
+single_type_pair_rejection_3
+================================================================================
+module invalid; type F = Map[A, B];
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (type_alias_decl_head
+    (keyword_type)
+    (entity_name_type)
+    (operator_builtin)
+    (type_path
+      (entity_name_type)
+      (type_arguments
+        (bracket_lbracket)
+        (ERROR
+          (uppercase_identifier)
+          (separator_comma))
+        (type_path
+          (entity_name_type))
+        (bracket_rbracket)))
+    (separator_semicolon)))
+
+================================================================================
+single_type_pair_rejection_4
+================================================================================
+module invalid; fn run() { f[A, B](a) }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_expr
+          (call_callee
+            (entity_name_function))
+          (call_type_arguments
+            (bracket_lbracket)
+            (ERROR
+              (type_path
+                (entity_name_type))
+              (separator_comma))
+            (type_path
+              (entity_name_type))
+            (bracket_rbracket)))
+        (expression_arguments
+          (bracket_lparen)
+          (expression_path
+            (identifier))
+          (bracket_rparen)))
+      (bracket_rbrace))))
+
+================================================================================
+single_type_pair_rejection_5
+================================================================================
+module invalid; fn run() { f[] }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (call_expr
+        (call_callee
+          (entity_name_function))
+        (call_type_arguments
+          (bracket_lbracket)
+          (slot
+            (MISSING "_"))
+          (bracket_rbracket)))
+      (bracket_rbrace))))
+
+================================================================================
+single_type_pair_rejection_6
+================================================================================
+module invalid; fn run() { f[x] }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (bracket_rparen))))
+    (expression_block
+      (bracket_lbrace)
+      (ERROR
+        (call_callee
+          (entity_name_function))
+        (bracket_lbracket)
+        (identifier)
+        (bracket_rbracket))
+      (bracket_rbrace))))
+

@@ -20,7 +20,7 @@ pub fn main() {
   report.compare("root rename", branch, fixtures.branching(6, 2));
   report.compare("internal rename", branch, fixtures.branching(1, 6));
   report.compare("identical tree", branch, branch);
-  let identity = array.array_make_filled(3, 0);
+  let identity = array.array_make_filled[I32](3, 0);
   array.array_set(identity, 1, 1);
   array.array_set(identity, 2, 2);
   report.control("flattening ancestry", chain, fork, identity);

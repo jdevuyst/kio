@@ -1,8 +1,7 @@
 //! LSP `textDocument/signatureHelp` handler.
 //!
-//! V1 supports direct path callees whose path segment resolved to a
-//! top-level Kio function or host function in the latest typed
-//! snapshot. Signature help consumes committed semantic facts and renders
+//! Named function application stages use the declaration resolved in the
+//! latest typed snapshot. Signature help consumes committed semantic facts and renders
 //! declaration spelling; it does not participate in name resolution and
 //! cannot affect open-world compilation.
 
@@ -38,13 +37,14 @@ pub fn handle_signature_help(
         character: params.position.character,
     });
     let call = nearest_call(module, offset)?;
-    let Expr::Path { segments, .. } = call.callee else {
-        return None;
+    let (head, mut stage) = named_call_head(call.callee)?;
+    let Expr::Path { segments, .. } = head else {
+        unreachable!()
     };
     // The leaf's recorded binder carries the selected declaration's owner;
     // a qualified path must not look up its spelling in the consumer module.
     let segment = segments.last()?;
-    let callable = resolved_callable(analysis, module_path, call.callee.span(), segment.span)?;
+    let callable = resolved_callable(analysis, module_path, head.span(), segment.span)?;
     let rendered = declaration_signature_label(analysis, &callable)?;
     let label_offsets = label_offsets.then(|| rendered.label_offsets());
     let layers = analysis
@@ -52,7 +52,6 @@ pub fn handle_signature_help(
         .call_presentation(module_path, call.span)?;
     let mut parameters = Vec::new();
     let mut sources = Vec::new();
-    let mut stage = 0;
     for (ordinal, layer) in layers.values().enumerate() {
         let selected = layer.layer?;
         // A context-inferred returned forall has no written application of
@@ -366,6 +365,7 @@ fn type_binder_text(param: &TypeParam) -> String {
 #[derive(Debug, Clone, Copy)]
 struct CallSite<'a> {
     callee: &'a Expr<Surface>,
+    args: &'a [CallArg<Surface>],
     span: Span,
 }
 
@@ -374,24 +374,72 @@ pub(super) fn nearest_call_start(module: &Module<Surface>, offset: u32) -> Optio
 }
 
 fn nearest_call(module: &Module<Surface>, offset: u32) -> Option<CallSite<'_>> {
-    let mut best = None;
+    let mut best: Option<CallSite<'_>> = None;
     for item in &module.items {
-        visit_item(item, offset, &mut best);
+        visit_item(item, Some(offset), &mut |candidate| {
+            if best.is_none_or(|current| span_len(candidate.span) < span_len(current.span)) {
+                best = Some(candidate);
+            }
+        });
     }
     best
 }
 
-fn visit_item<'a>(item: &'a Item<Surface>, offset: u32, best: &mut Option<CallSite<'a>>) {
+fn named_call_head(mut callee: &Expr<Surface>) -> Option<(&Expr<Surface>, usize)> {
+    let mut stage = 0;
+    loop {
+        match callee {
+            Expr::Path { .. } => return Some((callee, stage)),
+            Expr::Call {
+                callee: inner,
+                args,
+                ..
+            } => {
+                stage += usize::from(
+                    args.is_empty() || args.iter().any(|arg| matches!(arg, CallArg::Value(_))),
+                );
+                callee = inner;
+            }
+            _ => return None,
+        }
+    }
+}
+
+pub(crate) fn written_call_arguments(
+    module: &Module<Surface>,
+) -> std::collections::HashMap<Span, Vec<Span>> {
+    let mut calls = std::collections::HashMap::new();
+    for item in &module.items {
+        visit_item(item, None, &mut |call| {
+            let values = call
+                .args
+                .iter()
+                .filter_map(|argument| match argument {
+                    CallArg::Value(value) => Some(value.span()),
+                    CallArg::Type(_) => None,
+                })
+                .collect();
+            calls.insert(call.span, values);
+        });
+    }
+    calls
+}
+
+fn visit_item<'a>(
+    item: &'a Item<Surface>,
+    offset: Option<u32>,
+    visitor: &mut impl FnMut(CallSite<'a>),
+) {
     match item {
-        Item::FnDef(d) => visit_expr(&d.body, offset, best),
+        Item::FnDef(d) => visit_expr(&d.body, offset, visitor),
         Item::RecGroup(group, _) => {
             for member in &group.members {
-                visit_expr(&member.body, offset, best);
+                visit_expr(&member.body, offset, visitor);
             }
         }
         Item::Equiv(e, _) => {
             for term in &e.terms {
-                visit_expr(&term.body, offset, best);
+                visit_expr(&term.body, offset, visitor);
             }
         }
         Item::Macro(_, _) => {}
@@ -408,58 +456,94 @@ fn visit_item<'a>(item: &'a Item<Surface>, offset: u32, best: &mut Option<CallSi
     }
 }
 
-fn visit_expr<'a>(expr: &'a Expr<Surface>, offset: u32, best: &mut Option<CallSite<'a>>) {
-    if !contains(expr.span(), offset) {
+fn visit_expr<'a>(
+    expr: &'a Expr<Surface>,
+    offset: Option<u32>,
+    visitor: &mut impl FnMut(CallSite<'a>),
+) {
+    if offset.is_some_and(|offset| !contains(expr.span(), offset)) {
         return;
     }
     match expr {
         Expr::BlockCall { prefix, blocks, .. } => {
-            for value in prefix {
-                visit_expr(value, offset, best);
+            for stage in prefix {
+                visit_call_args(&stage.args, offset, visitor);
             }
             for block in blocks {
                 for item in &block.items {
-                    visit_expr(item.value(), offset, best);
+                    visit_expr(item.value(), offset, visitor);
                 }
             }
         }
         Expr::Call {
             callee, args, meta, ..
         } => {
-            visit_expr(callee, offset, best);
-            visit_call_args(args, offset, best);
-            record_call(callee, meta.span, offset, best);
+            let mut before_types = callee.as_ref();
+            while let Expr::Call {
+                callee: inner,
+                args,
+                ..
+            } = before_types
+            {
+                if args.is_empty() || args.iter().any(|arg| matches!(arg, CallArg::Value(_))) {
+                    break;
+                }
+                before_types = inner;
+            }
+            if offset.is_none_or(|offset| offset < before_types.span().end) {
+                visit_expr(before_types, offset, visitor);
+            }
+            visit_call_args(args, offset, visitor);
+            visitor(CallSite {
+                callee,
+                args,
+                span: meta.span,
+            });
         }
-        Expr::RecCall { args, .. } => visit_call_args(args, offset, best),
-        Expr::FnExpr { body, .. } => visit_expr(body, offset, best),
+        Expr::RecCall { stages, .. } => {
+            for stage in stages {
+                visit_call_args(&stage.args, offset, visitor);
+            }
+        }
+        Expr::FnExpr { body, .. } => visit_expr(body, offset, visitor),
         Expr::Let { value, body, .. } | Expr::Seq { value, body, .. } => {
-            visit_expr(value, offset, best);
-            visit_expr(body, offset, best);
+            visit_expr(value, offset, visitor);
+            visit_expr(body, offset, visitor);
         }
         Expr::RowLet { value, body, .. } => {
-            visit_expr(value, offset, best);
-            visit_expr(body, offset, best);
+            visit_expr(value, offset, visitor);
+            visit_expr(body, offset, visitor);
         }
         Expr::Tuple { items, .. } => {
             for item in items {
-                visit_expr(item, offset, best);
+                visit_expr(item, offset, visitor);
             }
         }
         Expr::FnPlaceholder { body, .. } => {
-            visit_expr(body, offset, best);
+            visit_expr(body, offset, visitor);
         }
         Expr::LabelValue { labels, .. } => {
             for label in labels {
-                visit_expr(&label.value, offset, best);
+                visit_expr(&label.value, offset, visitor);
             }
         }
-        Expr::Elaborator { call, .. } => visit_elaborator_call(call, offset, best),
-        Expr::UserMacro { args, .. } => visit_call_args(args, offset, best),
-        Expr::Ufcs { receiver, args, .. } => {
-            visit_expr(receiver, offset, best);
-            visit_call_args(args, offset, best);
+        Expr::Elaborator { call, .. } => visit_elaborator_call(call, offset, visitor),
+        Expr::UserMacro { stages, .. } => {
+            for stage in stages {
+                visit_call_args(&stage.args, offset, visitor);
+            }
         }
-        Expr::OpChain { kind, .. } => visit_op_chain(kind, offset, best),
+        Expr::Ufcs {
+            receiver,
+            callee,
+            args,
+            ..
+        } => {
+            visit_expr(receiver, offset, visitor);
+            visit_expr(callee, offset, visitor);
+            visit_call_args(args, offset, visitor);
+        }
+        Expr::OpChain { kind, .. } => visit_op_chain(kind, offset, visitor),
         Expr::Path { .. }
         | Expr::Unit { .. }
         | Expr::StrLit { .. }
@@ -490,27 +574,31 @@ fn visit_expr<'a>(expr: &'a Expr<Surface>, offset: u32, best: &mut Option<CallSi
     }
 }
 
-fn visit_call_args<'a>(args: &'a [CallArg<Surface>], offset: u32, best: &mut Option<CallSite<'a>>) {
+fn visit_call_args<'a>(
+    args: &'a [CallArg<Surface>],
+    offset: Option<u32>,
+    visitor: &mut impl FnMut(CallSite<'a>),
+) {
     for arg in args {
         if let CallArg::Value(value) = arg {
-            visit_expr(value, offset, best);
+            visit_expr(value, offset, visitor);
         }
     }
 }
 
 fn visit_elaborator_call<'a>(
     call: &'a ElaboratorCall<Surface>,
-    offset: u32,
-    best: &mut Option<CallSite<'a>>,
+    offset: Option<u32>,
+    visitor: &mut impl FnMut(CallSite<'a>),
 ) {
     match call {
-        ElaboratorCall::FieldAccess { receiver, .. } => visit_expr(receiver, offset, best),
+        ElaboratorCall::FieldAccess { receiver, .. } => visit_expr(receiver, offset, visitor),
         ElaboratorCall::FieldUpdate { base, updates, .. } => {
             if let Some(receiver) = base.receiver() {
-                visit_expr(receiver, offset, best);
+                visit_expr(receiver, offset, visitor);
             }
             for update in updates {
-                visit_expr(&update.value, offset, best);
+                visit_expr(&update.value, offset, visitor);
             }
         }
     }
@@ -518,35 +606,20 @@ fn visit_elaborator_call<'a>(
 
 fn visit_op_chain<'a>(
     kind: &'a OpChainKind<Surface>,
-    offset: u32,
-    best: &mut Option<CallSite<'a>>,
+    offset: Option<u32>,
+    visitor: &mut impl FnMut(CallSite<'a>),
 ) {
     match kind {
         OpChainKind::Normal { slots, .. } => {
             for slot in slots {
-                visit_expr(slot, offset, best);
+                visit_expr(slot, offset, visitor);
             }
         }
         OpChainKind::Variadic { elements, .. } => {
             for element in elements {
-                visit_expr(element, offset, best);
+                visit_expr(element, offset, visitor);
             }
         }
-    }
-}
-
-fn record_call<'a>(
-    callee: &'a Expr<Surface>,
-    span: Span,
-    offset: u32,
-    best: &mut Option<CallSite<'a>>,
-) {
-    if !contains(span, offset) {
-        return;
-    }
-    let candidate = CallSite { callee, span };
-    if best.is_none_or(|current| span_len(candidate.span) < span_len(current.span)) {
-        *best = Some(candidate);
     }
 }
 
@@ -745,6 +818,203 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn signature_help_preserves_written_value_stages_and_type_prefixes() {
+        use crate::cmd::check::{
+            LspUserMacroMemos, analyze_workspace_at_with_overlay_lsp_cancellable_with_memos,
+        };
+        use crate::package_collection::SourceOverlay;
+        use std::collections::BTreeMap;
+        let root = crate::lsp::util::test_file_path(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("..")
+                .join("signature-stages-fixture"),
+        );
+        let source = "module main;
+fn pair[A](left: A, right: A) -> A { left }
+fn staged[A](left: A)[B](right: B) -> B { right }
+fn factory() -> . -> . { .(value: .) { value } }
+fn tail(left: ., rest: . & .) { () }
+fn nested(first: . & ., last: .) { () }
+pub fn run() { factory()(()); pair[.]((), ()); staged[.](())[.](()); pair[.](((), ())); tail((), ((), ())); nested(((), ()), ()) }
+";
+        let overlay = SourceOverlay::complete(
+            root.clone(),
+            BTreeMap::from([
+                (
+                    root.join("probe.pkg.kio"),
+                    "package probe; bridge { main; }".into(),
+                ),
+                (root.join("main.kio"), source.to_owned()),
+            ]),
+        );
+        let analysis = analyze_workspace_at_with_overlay_lsp_cancellable_with_memos(
+            &root,
+            &overlay,
+            &crate::lsp::cancel::CancellationToken::new(),
+            &LspUserMacroMemos::for_editor(),
+        )
+        .unwrap()
+        .unwrap();
+        let module = parse_lazy(source).unwrap().force_all().unwrap();
+        for (marker, delta, expected) in [
+            ("factory()(())", "factory()(".len(), ". -> ."),
+            ("pair[.]((), ())", 5, "left: A"),
+            ("pair[.]((), ())", 12, "right: A"),
+            ("staged[.](())[.](())", 12, "left: A"),
+            ("staged[.](())[.](())", 13, "right: B"),
+            ("staged[.](())[.](())", 14, "right: B"),
+            ("staged[.](())[.](())", 16, "right: B"),
+            ("pair[.](((), ()))", 13, "left: A, right: A"),
+            ("tail((), ((), ()))", 9, "rest: . & ."),
+            ("tail((), ((), ()))", 13, "rest: . & ."),
+            ("nested(((), ()), ())", 8, "first: . & ."),
+            ("nested(((), ()), ())", 17, "last: ."),
+        ] {
+            let offset = source.find(marker).unwrap() + delta;
+            let position = LineIndex::new(source).to_position(offset as u32);
+            let params = TextDocumentPositionParams {
+                text_document: lsp_types::TextDocumentIdentifier {
+                    uri: crate::lsp::util::test_file_uri(root.join("main.kio")),
+                },
+                position: lsp_types::Position::new(position.line, position.character),
+            };
+            let help = handle_signature_help(&params, source, &module, Some(&analysis), false)
+                .unwrap_or_else(|| panic!("signature help at {marker} + {delta}"));
+            let active = help
+                .active_parameter
+                .expect("one source parameter is active") as usize;
+            assert_eq!(
+                help.signatures[0].parameters.as_ref().unwrap()[active].label,
+                ParameterLabel::Simple(expected.to_owned()),
+                "{marker} + {delta}"
+            );
+        }
+    }
+
+    #[test]
+    fn source_reconciliation_keeps_disagreeing_call_copies_ambiguous() {
+        use crate::ast::{ExpressionOccurrence, ExpressionSite};
+        use crate::pass::typecheck_full::{
+            CallLayerPresentation, CallPresentationFact, PositionIndex,
+        };
+        let mut index = PositionIndex::new();
+        let span = Span::new(10, 30);
+        let one = ExpressionSite {
+            id: ExpressionOccurrence::fresh().key(),
+            span,
+        };
+        let two = ExpressionSite {
+            id: ExpressionOccurrence::fresh().key(),
+            span,
+        };
+        for site in [one, two] {
+            index.record_call_presentation(
+                "main",
+                site,
+                0,
+                CallPresentationFact::Layer(CallLayerPresentation {
+                    has_value_layer: true,
+                    consumed: true,
+                    implicit_unit: false,
+                }),
+            );
+            index.record_call_presentation(
+                "main",
+                site,
+                0,
+                CallPresentationFact::Argument {
+                    span: Span::new(15, 25),
+                    role: CallArgumentRole::Value(CallValueProjection::Tail { first: 0 }),
+                },
+            );
+        }
+        index.record_call_presentation(
+            "main",
+            one,
+            0,
+            CallPresentationFact::Argument {
+                span: Span::new(15, 18),
+                role: CallArgumentRole::Value(CallValueProjection::Range { first: 0, width: 1 }),
+            },
+        );
+        assert!(index.call_presentation("main", span).is_none());
+        index.reconcile_call_presentations("main", || {
+            std::collections::HashMap::from([(span, vec![Span::new(15, 18), Span::new(22, 25)])])
+        });
+        assert!(index.call_presentation("main", span).is_none());
+    }
+
+    #[test]
+    fn source_reconciliation_keeps_tuple_delimiters_and_type_roles() {
+        use crate::ast::{ExpressionOccurrence, ExpressionSite};
+        use crate::pass::typecheck_full::{
+            CallLayerPresentation, CallPresentationFact, PositionIndex,
+        };
+        let mut index = PositionIndex::new();
+        let span = Span::new(10, 70);
+        let type_span = Span::new(20, 21);
+        let packet_span = Span::new(31, 59);
+        let values = vec![Span::new(30, 40), Span::new(50, 60)];
+        for _ in 0..2 {
+            let site = ExpressionSite {
+                id: ExpressionOccurrence::fresh().key(),
+                span,
+            };
+            index.record_call_presentation(
+                "main",
+                site,
+                0,
+                CallPresentationFact::Layer(CallLayerPresentation {
+                    has_value_layer: true,
+                    consumed: true,
+                    implicit_unit: false,
+                }),
+            );
+            index.record_call_presentation(
+                "main",
+                site,
+                0,
+                CallPresentationFact::Argument {
+                    span: type_span,
+                    role: CallArgumentRole::Type,
+                },
+            );
+            index.record_call_presentation(
+                "main",
+                site,
+                0,
+                CallPresentationFact::Argument {
+                    span: packet_span,
+                    role: CallArgumentRole::Value(CallValueProjection::Tail { first: 0 }),
+                },
+            );
+        }
+        index.reconcile_call_presentations("main", || {
+            std::collections::HashMap::from([(span, values)])
+        });
+        let layer = index
+            .call_presentation("main", span)
+            .expect("identical source copies agree")
+            .get(&0)
+            .unwrap();
+        assert_eq!(
+            layer.arguments,
+            std::collections::BTreeMap::from([
+                ((20, 21), CallArgumentRole::Type),
+                (
+                    (30, 40),
+                    CallArgumentRole::Value(CallValueProjection::Range { first: 0, width: 1 })
+                ),
+                (
+                    (50, 60),
+                    CallArgumentRole::Value(CallValueProjection::Tail { first: 1 })
+                ),
+            ])
+        );
+        assert_eq!(index.call_presentation_counts(), Some([1, 1, 2, 2, 6]));
     }
 
     #[test]

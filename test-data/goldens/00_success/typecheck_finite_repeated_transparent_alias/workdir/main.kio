@@ -4,4 +4,4 @@ host type N;
 
 type Id[A] = A;
 
-fn coerce(value: Id(Id(N))) -> N { value }
+fn coerce(value: Id[Id[N]]) -> N { value }

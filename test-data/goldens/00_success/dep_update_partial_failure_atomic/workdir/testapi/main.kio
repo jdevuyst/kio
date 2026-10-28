@@ -12,7 +12,7 @@ import testapi/io(print);
 // one of several dependencies' gate blocks; this build+run only confirms
 // the healed (re-pinned) state still materializes and links.
 pub fn greeting() -> String {
-  keep(first("git dependencies work\n"(String), "x"(String)), "y"(String))
+  keep(first("git dependencies work\n"[String], "x"[String]), "y"[String])
 }
 
 pub fn main() { print(greeting()) }

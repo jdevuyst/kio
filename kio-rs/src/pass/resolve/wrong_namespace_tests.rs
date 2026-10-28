@@ -56,20 +56,20 @@ fn assert_known_type(error: &Error, name: &str, primary: Span, kind: &str) {
 }
 
 #[test]
-fn type_parameter_call_argument_fallback_keeps_admitted_calls() {
+fn explicit_type_parameter_call_arguments_keep_admitted_calls() {
     let source = "module main;
         newtype List[A] : . { constructor mk; projector get; };
-        fn nil[A]() -> List(A) { List.mk(()) }
-        fn cons[A](head: A, tail: List(A)) -> List(A) { tail }
-        fn singleton[A](x: A) -> List(A) { cons(x, nil(A, ())) }
+        fn nil[A]() -> List[A] { List.mk(()) }
+        fn cons[A](head: A, tail: List[A]) -> List[A] { tail }
+        fn singleton[A](x: A) -> List[A] { cons(x, nil[A](())) }
         fn identity[A](value: A) -> A { value }
-        fn applied[*F, A](value: F(A)) -> F(A) { identity(F(A), value) }
-        fn residual[A]() -> . -> List(A) { nil(A) }";
+        fn applied[*F][A](value: F[A]) -> F[A] { identity[F[A]](value) }
+        fn residual[A]() -> . -> List[A] { nil[A] }";
     #[cfg(feature = "surface")]
     full_check(&[("main.kio", source)]).expect("ordinary full type arguments remain admitted");
     let prime_source = source
-        .replace("List.mk(())", "List.mk(A, ())")
-        .replace("cons(x, nil", "cons(A, x, nil");
+        .replace("List.mk(())", "List.mk[A](())")
+        .replace("cons(x, nil", "cons[A](x, nil");
     prime_check(&[("main.kio", &prime_source)])
         .expect("explicit ordinary Prime type arguments remain admitted");
 }
@@ -79,8 +79,8 @@ fn type_parameter_argument_resolution_keeps_nested_lexical_scope() {
     let source = "module main;
         fn identity[A](value: A) -> A { value }
         fn shadow[A](value: A) -> A {
-            let inner = .[A](other: A) -> A { identity(A, other) };
-            inner(A, value)
+            let inner = .[A](other: A) -> A { identity[A](other) };
+            inner[A](value)
         }";
     Resolver::check_module(&prime_module(source))
         .expect("the body resolver must not reject a lexical type argument");
@@ -89,7 +89,7 @@ fn type_parameter_argument_resolution_keeps_nested_lexical_scope() {
 #[test]
 fn type_argument_resolution_requires_the_exact_reserved_binding() {
     use crate::ast::{CallArg, Expr, Item, SignatureParam};
-    let source = "module main; fn accept[A]() -> . { () } fn caller[A]() -> . { accept(A, ()) }";
+    let source = "module main; fn accept[A]() -> . { () } fn caller[A]() -> . { accept[A](()) }";
     let mut module = prime_module(source);
     let Item::FnDef(caller) = &mut module.items[1] else {
         panic!("caller")
@@ -101,16 +101,13 @@ fn type_argument_resolution_requires_the_exact_reserved_binding() {
     let Expr::Call { args, .. } = &mut caller.body else {
         panic!("call")
     };
-    let CallArg::Value(argument @ Expr::Path { .. }) = &mut args[0] else {
+    let CallArg::Type(argument @ crate::ast::Type::Path { .. }) = &mut args[0] else {
         panic!("type candidate")
     };
-    let Expr::Path { segments, .. } = argument else {
+    let crate::ast::Type::Path { segments, .. } = argument else {
         unreachable!()
     };
     segments[0].name = "__Bound_type__".to_owned();
-    assert!(crate::pass::typecheck_core::value_arg_looks_like_type_arg(
-        argument
-    ));
     Resolver::check_module(&module).expect("an exact hygienic type binder remains a candidate");
 
     let Item::FnDef(caller) = &mut module.items[1] else {
@@ -148,24 +145,26 @@ fn type_argument_resolution_requires_the_exact_reserved_binding() {
 fn type_parameter_argument_in_a_value_slot_still_rejects() {
     let source =
         "module main; fn consume(value: .) -> . { value } fn caller[A]() -> . { consume(A) }";
-    Resolver::check_module(&prime_module(source)).expect("call slot selection belongs to typing");
-    prime_check(&[("main.kio", source)]).expect_err("a type cannot supply a value slot");
+    parse(source).expect_err("a parenthesized value packet cannot contain a type path");
+    let explicit = source.replace("consume(A)", "consume[A]");
+    Resolver::check_module(&prime_module(&explicit)).expect("the lexical type binder resolves");
+    prime_check(&[("main.kio", &explicit)]).expect_err("a monomorphic function has no type stage");
     #[cfg(feature = "surface")]
-    full_check(&[("main.kio", source)]).expect_err("a type cannot supply a value slot");
+    full_check(&[("main.kio", &explicit)]).expect_err("a monomorphic function has no type stage");
 }
 
 #[cfg(feature = "surface")]
 #[test]
-fn type_parameter_call_argument_fallback_covers_ufcs_and_macro_calls() {
+fn explicit_type_parameter_arguments_cover_ufcs_and_macro_calls() {
     let source = "module main;
         import __comptime__;
         pure fn implementation(ct: __Comptime__, _ty: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
         macro identity : [A] A -> A { impl implementation; };
         fn ordinary[A](value: A) -> A { value }
-        fn ufcs[A](value: A) -> A { value.>ordinary(A) }
-        fn macro_call[A](value: A) -> A { identity(A, value) }
-        fn macro_ufcs[A](value: A) -> A { value.>identity(A) }";
-    full_check(&[("main.kio", source)]).expect("all call paths defer type arguments to typing");
+        fn ufcs[A](value: A) -> A { value.>ordinary[A] }
+        fn macro_call[A](value: A) -> A { identity[A](value) }
+        fn macro_ufcs[A](value: A) -> A { value.>identity[A] }";
+    full_check(&[("main.kio", source)]).expect("all call paths preserve explicit type stages");
 }
 
 #[test]

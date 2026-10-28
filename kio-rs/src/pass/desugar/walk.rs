@@ -75,7 +75,7 @@ pub trait SurfaceToDesugared {
         &mut self,
         modes: Vec<crate::ast::RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<crate::ast::CallStage<Surface>>,
         syntax: crate::ast::RecCallSyntax,
         meta: Meta<Surface>,
     ) -> Result<Expr<Desugared>, Error>;
@@ -412,74 +412,43 @@ pub trait SurfaceToDesugared {
 
     fn visit_expr_user_macro(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
         let Expr::UserMacro {
-            source_trivia: _,
-            occurrence: _,
             name,
             form,
-            args,
-            meta: Meta { span, .. },
+            stages,
+            meta,
             ext,
+            ..
         } = e
         else {
             unreachable!()
         };
+        let stages = stages
+            .into_iter()
+            .map(|stage| {
+                Ok(crate::ast::CallStage {
+                    occurrence: Default::default(),
+                    args: stage
+                        .args
+                        .into_iter()
+                        .map(|arg| self.walk_call_arg(arg))
+                        .collect::<Result<_, Error>>()?,
+                    source_trivia: Default::default(),
+                    meta: Meta::new(stage.meta.span),
+                })
+            })
+            .collect::<Result<_, Error>>()?;
         Ok(Expr::UserMacro {
-            source_trivia: Default::default(),
             occurrence: Default::default(),
             name,
             form,
-            args: args
-                .into_iter()
-                .map(|arg| match arg {
-                    crate::ast::CallArg::Value(e) => {
-                        self.walk_expr(e).map(crate::ast::CallArg::Value)
-                    }
-                    crate::ast::CallArg::Type(t) => {
-                        self.walk_type(t).map(crate::ast::CallArg::Type)
-                    }
-                })
-                .collect::<Result<_, _>>()?,
-            meta: Meta::new(span),
+            stages,
+            meta: Meta::new(meta.span),
             ext,
         })
     }
 
-    fn visit_expr_ufcs(&mut self, e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
-        let Expr::Ufcs {
-            source_trivia: _,
-            occurrence: _,
-            receiver,
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta: Meta { span, .. },
-            ext,
-        } = e
-        else {
-            unreachable!()
-        };
-        let receiver = Box::new(self.walk_expr(*receiver)?);
-        let args = args
-            .into_iter()
-            .map(|arg| match arg {
-                crate::ast::CallArg::Value(e) => self.walk_expr(e).map(crate::ast::CallArg::Value),
-                crate::ast::CallArg::Type(t) => self.walk_type(t).map(crate::ast::CallArg::Type),
-            })
-            .collect::<Result<_, _>>()?;
-        Ok(Expr::Ufcs {
-            source_trivia: Default::default(),
-            occurrence: Default::default(),
-            receiver,
-            callee_segments,
-            callee_span,
-            args,
-            flavor,
-            macro_call,
-            meta: Meta::new(span),
-            ext,
-        })
+    fn visit_expr_ufcs(&mut self, _e: Expr<Surface>) -> Result<Expr<Desugared>, Error> {
+        unreachable!("UFCS is normalized before desugaring")
     }
 
     fn visit_type_path(&mut self, ty: Type<Surface>) -> Result<Type<Desugared>, Error> {
@@ -1128,11 +1097,11 @@ pub trait SurfaceToDesugared {
             Expr::RecCall {
                 modes,
                 callee,
-                args,
+                stages,
                 meta,
                 ext,
                 ..
-            } => self.rewrite_expr_rec_call(modes, callee, args, ext, meta),
+            } => self.rewrite_expr_rec_call(modes, callee, stages, ext, meta),
             Expr::FnExpr { .. } => self.visit_expr_fn(e),
             Expr::Let { .. } => self.visit_expr_let(e),
             Expr::RowLet {

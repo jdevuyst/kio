@@ -2,4 +2,4 @@ module main;
 
 import macros(macro guarded);
 
-fn witness() { guarded(((), ()), .) }
+fn witness() { guarded(((), ()))[.] }

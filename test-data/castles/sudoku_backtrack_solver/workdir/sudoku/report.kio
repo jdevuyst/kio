@@ -55,7 +55,7 @@ fn cell_gap(col: I32) -> String {
   }
 }
 
-rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> String {
+rec(loop) fn row_text(cells: Array[I32], row: I32, col: I32, text: String) -> String {
   if(leq_i32(col, sub_i32(geo.size(), 1))) {
     let cell = digit_text(array_get(cells, geo.cell_at(row, col)));
     recur row_text(cells, row, add_i32(col, 1), cat3(text, cell, cell_gap(col)))
@@ -64,7 +64,7 @@ rec(loop) fn row_text(cells: Array(I32), row: I32, col: I32, text: String) -> St
   }
 }
 
-rec(loop) fn print_rows(cells: Array(I32), row: I32) {
+rec(loop) fn print_rows(cells: Array[I32], row: I32) {
   if(leq_i32(row, sub_i32(geo.size(), 1))) {
     print(cat(row_text(cells, row, 0, "    "), "\n"));
     recur print_rows(cells, add_i32(row, 1))
@@ -73,7 +73,7 @@ rec(loop) fn print_rows(cells: Array(I32), row: I32) {
   }
 }
 
-fn print_grid(cells: Array(I32)) { print_rows(cells, 0) }
+fn print_grid(cells: Array[I32]) { print_rows(cells, 0) }
 
 fn verdict_text(outcome: Outcome) -> String {
   match(outcome) {
@@ -85,19 +85,19 @@ fn verdict_text(outcome: Outcome) -> String {
   }
 }
 
-fn print_solved(givens: Array(I32), work: Work) {
+fn print_solved(givens: Array[I32], work: Work) {
   print("  solved grid:\n");
   print_grid(work.?{board});
   field_bool("  every row, column, and box holds 1-9 once: ", verify.is_solved(work.?{board}));
   field_bool("  keeps every given: ", verify.keeps_givens(givens, work.?{board}))
 }
 
-fn print_refuted(givens: Array(I32), work: Work) {
+fn print_refuted(givens: Array[I32], work: Work) {
   print("  no completion exists\n");
   field_bool("  board restored to the givens: ", verify.same_board(givens, work.?{board}))
 }
 
-fn print_result(givens: Array(I32), work: Work, summary: Report) {
+fn print_result(givens: Array[I32], work: Work, summary: Report) {
   field("  outcome: ", verdict_text(summary.?{verdict}));
   let verdict = summary.?{verdict};
   match(verdict) {
@@ -116,7 +116,7 @@ fn print_stats(summary: Report) {
   field_i32("  steps: ", summary.?{steps})
 }
 
-pub fn print_puzzle(index: I32, name: String, givens: Array(I32), work: Work, summary: Report) {
+pub fn print_puzzle(index: I32, name: String, givens: Array[I32], work: Work, summary: Report) {
   field(cat3("puzzle ", int_to_string(index), ": "), name);
   field_i32("  givens: ", verify.count_givens(givens));
   field_bool("  givens legal: ", verify.is_consistent(givens));

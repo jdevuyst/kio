@@ -22,7 +22,7 @@ fn value(v: &Value) -> String {
 }
 fn let_value(v: &Value) -> String {
     match v {
-        Value::Literal(s) => format!("{}(String)", quoted(s)),
+        Value::Literal(s) => format!("{}[String]", quoted(s)),
         Value::Current => value(v),
     }
 }
@@ -35,20 +35,20 @@ fn receiver(seq: &Sequence) -> String {
 }
 
 fn schedule(seq: &Sequence, depth: usize) -> String {
-    let mut out = format!("let value = {}(String);\n", quoted(&seq.initial));
+    let mut out = format!("let value = {}[String];\n", quoted(&seq.initial));
     for (i, step) in seq.steps.iter().enumerate() {
         let event = quoted(&format!("value-{i}:{}", seq.initial));
         out.push_str(&match step {
             Step::Let(v) if i % 2 == 0 => format!("let .local. = {}; let value = local1;\n", let_value(v)),
             Step::Let(v) => format!("let value = {};\n", let_value(v)),
-            Step::Bind(Payload::String(v)) if i % 2 == 0 => format!("let .local. <- effect({event}, ((), {})); let value = local2;\n", value(v)),
-            Step::Bind(Payload::String(v)) => format!("let value <- effect({event}, {});\n", value(v)),
+            Step::Bind(Payload::String(v)) if i % 2 == 0 => format!("let .local. <- effect({event}, ((), {})); let value = local2;\n", let_value(v)),
+            Step::Bind(Payload::String(v)) => format!("let value <- effect({event}, {});\n", let_value(v)),
             Step::Bind(Payload::Unit) => format!("let unit <- effect({event}, ());\n"),
             Step::Action => format!("action({});\n", quoted(&format!("action-{i}:{}", seq.initial))),
             Step::Nested(inner) => format!("let nested{depth} = do({}) {{ {} }};\nlet observed{depth} = io.print(Box.get(nested{depth}));\n", receiver(inner), schedule(inner, depth + 1)),
         });
     }
-    out.push_str(&format!("pure({})", value(&seq.result)));
+    out.push_str(&format!("pure({})", let_value(&seq.result)));
     out
 }
 
@@ -68,7 +68,7 @@ fn slot_type(b: &Block) -> &'static str {
             _ => unreachable!("bounded product"),
         },
         Block::Thunk { .. } => ". -> String",
-        Block::Sequence(_) => "Bind(Box) -> Box(String)",
+        Block::Sequence(_) => "Bind[Box] -> Box[String]",
     }
 }
 fn block(b: &Block) -> String {
@@ -79,7 +79,7 @@ fn block(b: &Block) -> String {
             .collect::<Vec<_>>()
             .join("; "),
         Block::Thunk { initial, result } => format!(
-            "let value = {}(String); io.print(\"thunk\\n\"); {}",
+            "let value = {}[String]; io.print(\"thunk\\n\"); {}",
             quoted(initial),
             value(result)
         ),
@@ -101,7 +101,7 @@ fn observe(b: &Block, name: &str) -> String {
 
 fn declaration(name: &str, first: Descriptor, second: Descriptor, label: &str) -> String {
     format!(
-        "pub macro {name} : [Left][Right] ((Left -> Right -> .) & Left & Right) -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
+        "pub macro {name} : [Left][Right] (Left -> Right -> .) -> Left -> Right -> . {{ trailing {}; trailing {} {label}; impl(fills) apply }}\n",
         descriptor(first),
         descriptor(second)
     )
@@ -128,7 +128,7 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         } else {
             *runtime = runtime.replace("pub fn run()", "fn control_run()");
             runtime.push_str(&format!(
-                "pub fn run() {{ control_run(); let value = {}(String);",
+                "pub fn run() {{ control_run(); let value = {}[String];",
                 quoted(types.initial_value())
             ));
         }
@@ -188,7 +188,8 @@ pub fn files(probe: &ControlProbe) -> Vec<(String, String)> {
         r#"module kio_gen_control_blocks;
 import __comptime__;
 
-pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_type: __Type__, arguments: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
+pure fn apply(ct: __Comptime__, fills: __Fill_ctx__, left_type: __Type__, right_type: __Type__, consumer: __Checked_term__, first: __Checked_term__, second: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ {
+  let arguments = __intrinsic_pair__(ct, consumer, __intrinsic_pair__(ct, first, second));
   let result = __term_let__(ct, __term_type__(ct, arguments), arguments, .(packet: __Checked_term__) -> __Checked_term__ {
     let consumer = __intrinsic_fst__(ct, __term_type__(ct, packet), packet);
     let blocks = __intrinsic_snd__(ct, __term_type__(ct, packet), packet);
@@ -210,13 +211,13 @@ import sequence(Bind, macro do);
 import kio_gen_control_blocks(macro probe, macro nested_probe);
 
 newtype Box[A] : A { constructor mk; projector get };
-newtype Receiver : Bind(Box) { constructor mk; projector get };
-fn pure[A](v: A) -> Box(A) { Box.mk(v) }
-fn bind[A][B](v: Box(A), k: A -> Box(B)) -> Box(B) { io.print("bind\n"); k(Box.get(v)) }
-fn factory(label: String) -> Bind(Box) { io.print("receiver:"); io.print(label); bind }
+newtype Receiver : Bind[Box] { constructor mk; projector get };
+fn pure[A](v: A) -> Box[A] { Box.mk(v) }
+fn bind[A][B](v: Box[A], k: A -> Box[B]) -> Box[B] { io.print("bind\n"); k(Box.get(v)) }
+fn factory(label: String) -> Bind[Box] { io.print("receiver:"); io.print(label); bind }
 fn wrapped_factory(label: String) -> Receiver { io.print("receiver:"); io.print(label); Receiver.mk(bind) }
-fn effect[A](label: String, v: A) -> Box(A) { io.print(label); pure(v) }
-fn action(label: String) -> Box(.) { io.print(label); pure(()) }
+fn effect[A](label: String, v: A) -> Box[A] { io.print(label); pure(v) }
+fn action(label: String) -> Box[.] { io.print(label); pure(()) }
 fn entry(v: String) -> String { io.print("entry:"); io.print(v); v }
 fn observe_unit(v: .) { io.print("unit\n") }
 fn nested_consumer(first: . -> String)(second: . -> String) { io.print("consumer\n"); io.print(first()); io.print(second()) }
@@ -375,40 +376,32 @@ fn type_probe(probe: &TypeProbe) -> String {
             let last = if *explicit {
                 quoted(last)
             } else {
-                format!("{}(String)", quoted(last))
+                format!("{}[String]", quoted(last))
             };
-            let call = match spelling {
-                UfcsSpelling::ReceiverFirst => format!(
-                    "{first}.>staged({}{last})",
-                    if *explicit { "String, " } else { "" }
-                ),
-                UfcsSpelling::ReceiverLast => format!(
-                    "{last}.>>staged({first}{})",
-                    if *explicit { ", String" } else { "" }
-                ),
-                UfcsSpelling::CalleeLast => format!(
-                    "staged({first}{}) .<{last}",
-                    if *explicit { ", String" } else { "" }
-                ),
-                UfcsSpelling::CalleeFirst => format!(
-                    "staged({}{last}).<<{first}",
-                    if *explicit { "String, " } else { "" }
-                ),
+            let prefix = match spelling {
+                UfcsSpelling::ReceiverFirst => format!("{first}.>staged"),
+                UfcsSpelling::ReceiverLast => format!("{first}.>>staged"),
+                UfcsSpelling::CalleeLast => format!("staged.<{first}"),
+                UfcsSpelling::CalleeFirst => format!("staged.<<{first}"),
             };
+            let call = format!(
+                "({prefix}){}({last})",
+                if *explicit { "[String]" } else { "" }
+            );
             out.push_str(&format!(
                 "pub fn transform(input: String) -> String {{ let selected = {call}; selected }}\n"
             ));
         }
         TypeProbe::HigherRank { .. } => {
-            out.push_str("fn apply(transform: [A] A -> A, value: String) -> String { transform(String, value) }\n");
+            out.push_str("fn apply(transform: [A] A -> A, value: String) -> String { transform[String](value) }\n");
             out.push_str("pub fn transform(input: String) -> String { let identity = .[A](value: A) -> A { value }; apply(identity, input) }\n");
         }
         TypeProbe::HigherKinded { wrapped, .. } => {
-            out.push_str("newtype Box[A] : A { constructor mk; projector get };\nnewtype Wrapped[A] : . & A { constructor mk; projector get };\nfn unbox[A](value: Box(A)) -> A { Box.get(value) }\nfn unwrap[A](value: Wrapped(A)) -> A { __snd__(., A, Wrapped.get(value)) }\nfn apply[*F][A](value: F(A), project: [B] F(B) -> B) -> A { project(A, value) }\n");
+            out.push_str("newtype Box[A] : A { constructor mk; projector get };\nnewtype Wrapped[A] : . & A { constructor mk; projector get };\nfn unbox[A](value: Box[A]) -> A { Box.get(value) }\nfn unwrap[A](value: Wrapped[A]) -> A { __snd__[.][A](Wrapped.get(value)) }\nfn apply[*F][A](value: F[A], project: [B] F[B] -> B) -> A { project[A](value) }\n");
             let call = if *wrapped {
-                "apply(Wrapped, String, Wrapped.mk(((), input)), unwrap)"
+                "apply[Wrapped][String](Wrapped.mk(((), input)), unwrap)"
             } else {
-                "apply(Box, String, Box.mk(input), unbox)"
+                "apply[Box][String](Box.mk(input), unbox)"
             };
             out.push_str(&format!(
                 "pub fn transform(input: String) -> String {{ {call} }}\n"
@@ -424,11 +417,11 @@ fn type_probe(probe: &TypeProbe) -> String {
             let packed = match payload {
                 0 => "Packed.mk((input, .(seed: String) -> String { seed }))".into(),
                 1 => format!(
-                    "Packed.mk((({}, {}), .(seed: String & String) -> String {{ __snd__(String, String, seed) }}))",
+                    "Packed.mk((({}, {}), .(seed: String & String) -> String {{ __snd__[String][String](seed) }}))",
                     quoted(last),
                     "input"
                 ),
-                2 => "Packed.mk((Box.mk(input), .(seed: Box(String)) -> String { Box.get(seed) }))"
+                2 => "Packed.mk((Box.mk(input), .(seed: Box[String]) -> String { Box.get(seed) }))"
                     .into(),
                 _ => unreachable!("bounded existential payload"),
             };
@@ -436,7 +429,7 @@ fn type_probe(probe: &TypeProbe) -> String {
                 "fn make(input: String) -> Packed {{ {packed} }}\n"
             ));
             if *explicit_open {
-                out.push_str("fn open(packed: Packed) -> String { Packed.get(packed)(String, .[Hidden](packet: Hidden & (Hidden -> String)) -> String { let .(seed, observe) = packet; observe(seed) }) }\n");
+                out.push_str("fn open(packed: Packed) -> String { Packed.get(packed)[String](.[Hidden](packet: Hidden & (Hidden -> String)) -> String { let .(seed, observe) = packet; observe(seed) }) }\n");
             } else {
                 out.push_str("fn open(packed: Packed) -> String { let .(<Hidden> packet) = Packed.get(packed); let .(seed, observe) = packet; observe(seed) }\n");
             }
@@ -496,7 +489,7 @@ fn recursion_probe(probe: &RecursionProbe) -> String {
         };
         let base = format!("io.print({}); {value}", event("base"));
         let call = if poly {
-            format!("{target}(String, rest, observe(value), identity)")
+            format!("{target}[String](rest, observe(value), identity)")
         } else {
             format!("{target}(rest, value)")
         };
@@ -542,14 +535,14 @@ fn recursion_probe(probe: &RecursionProbe) -> String {
     if probe.mutual {
         out.push_str("}\n");
     }
-    let mut counter = "Counter.mk(__left__(., Counter, ()))".to_string();
+    let mut counter = "Counter.mk(__left__[.][Counter](()))".to_string();
     for _ in 0..probe.depth {
-        counter = format!("Counter.mk(__right__(., Counter, {counter}))");
+        counter = format!("Counter.mk(__right__[.][Counter]({counter}))");
     }
     let selected = "input";
     let call = if poly {
         format!(
-            "walk(String & ., {counter}, ({selected}, ()), .(packet: String & .) -> String {{ __fst__(String, ., packet) }})"
+            "walk[String & .]({counter}, ({selected}, ()), .(packet: String & .) -> String {{ __fst__[String][.](packet) }})"
         )
     } else {
         format!("walk({counter}, {selected})")
@@ -568,6 +561,31 @@ fn recursion_probe(probe: &RecursionProbe) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sequence_literal_payloads_keep_their_local_string_carrier() {
+        let sequence = Sequence {
+            receiver: Receiver::Direct,
+            initial: "initial\n".into(),
+            steps: vec![
+                Step::Bind(Payload::String(Value::Literal("first\n".into()))),
+                Step::Bind(Payload::String(Value::Literal("second\n".into()))),
+            ],
+            result: Value::Literal("result\n".into()),
+        };
+        let source = schedule(&sequence, 0);
+        for form in [
+            r#"let .local. <- effect("value-0:initial\n", ((), "first\n"[String])); let value = local2;"#,
+            r#"let value <- effect("value-1:initial\n", "second\n"[String]);"#,
+            r#"pure("result\n"[String])"#,
+        ] {
+            assert!(source.contains(form), "{source}");
+        }
+        assert_eq!(
+            crate::control::expected_stdout(&ControlProbe::Sequence(sequence)),
+            "value-0:initial\nbind\nvalue-1:initial\nbind\nresult\n"
+        );
+    }
 
     #[test]
     fn numbered_and_ordinary_bindings_share_the_control_model() {

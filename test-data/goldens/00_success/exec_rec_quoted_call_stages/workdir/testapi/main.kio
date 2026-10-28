@@ -1,0 +1,36 @@
+module testapi/main;
+
+import __comptime__;
+import testapi(Bool, I32);
+import testapi/fmt(i32_to_string);
+import testapi/io(print);
+import testapi/iter(loop);
+
+pure fn retain_impl(_ct: __Comptime__, _a: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+macro retain : [A] A -> A { impl retain_impl }
+
+fn later() -> I32 { print("R"); 7 }
+
+fn stages(_first: Bool) -> I32 -> I32 {
+  print("F");
+  .(last: I32) { print("S"); last }
+}
+
+rec(loop) {
+  fn left() -> Bool { print("L"); .t };
+  fn prefix() -> Bool {
+    let value = retain(stages(recur(cont) left())(later()));
+    print(i32_to_string(value));
+    .t
+  };
+  fn ufcs() -> Bool {
+    let value = retain((recur(cont) left().>stages)(later()));
+    print(i32_to_string(value));
+    .t
+  }
+}
+
+pub fn main() { print("P:"); let first = prefix(); print("\nU:"); let second = ufcs(); print("\n") }

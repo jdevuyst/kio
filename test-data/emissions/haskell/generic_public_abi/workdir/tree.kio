@@ -15,12 +15,12 @@ rec {
   pub newtype Beta : . | Alpha { pub constructor mk_beta; pub projector un_beta }
 }
 
-pub fn empty() -> Tree { Tree.mk_tree(__left__(., Tree, ())) }
+pub fn empty() -> Tree { Tree.mk_tree(__left__[.][Tree](())) }
 
 pub fn keep(value: Tree) -> Tree { value }
 
 pub fn branch_wrapped() -> Branch & . {
-  __pair__(Branch, ., Branch.mk_branch(__left__(., Branch, ())), ())
+  __pair__[Branch][.](Branch.mk_branch(__left__[.][Branch](())), ())
 }
 
-pub fn leaf_wrapped() -> . | Leaf { __left__(., Leaf, ()) }
+pub fn leaf_wrapped() -> . | Leaf { __left__[.][Leaf](()) }

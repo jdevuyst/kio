@@ -5,7 +5,7 @@ import testapi(Array, I32);
 import testapi/array(array_make_empty, array_push);
 
 fn push_row(
-, cells: Array(I32)
+, cells: Array[I32]
 , c0: I32
 , c1: I32
 , c2: I32
@@ -29,8 +29,8 @@ fn push_row(
 
 /// Thirty givens. Every cell the heuristic reaches is forced, so the
 /// search never has to retract a digit.
-pub fn gentle() -> Array(I32) {
-  let cells = array_make_empty(I32, ());
+pub fn gentle() -> Array[I32] {
+  let cells = array_make_empty[I32](());
   push_row(cells, 5, 3, 0, 0, 7, 0, 0, 0, 0);
   push_row(cells, 6, 0, 0, 1, 9, 5, 0, 0, 0);
   push_row(cells, 0, 9, 8, 0, 0, 0, 0, 6, 0);
@@ -46,8 +46,8 @@ pub fn gentle() -> Array(I32) {
 /// Twenty-three givens, one solution, and no way to reach it without
 /// guessing: the heuristic runs out of forced cells early and the search
 /// has to try digits, fail, and unwind.
-pub fn hard() -> Array(I32) {
-  let cells = array_make_empty(I32, ());
+pub fn hard() -> Array[I32] {
+  let cells = array_make_empty[I32](());
   push_row(cells, 1, 0, 0, 0, 0, 7, 0, 9, 0);
   push_row(cells, 0, 3, 0, 0, 2, 0, 0, 0, 8);
   push_row(cells, 0, 0, 9, 6, 0, 0, 5, 0, 0);
@@ -64,8 +64,8 @@ pub fn hard() -> Array(I32) {
 /// column. It duplicates no digit in its row, its column, or its box, so
 /// nothing local rejects it — and yet the grid now has no completion at
 /// all. Only the search can say so.
-pub fn contradictory() -> Array(I32) {
-  let cells = array_make_empty(I32, ());
+pub fn contradictory() -> Array[I32] {
+  let cells = array_make_empty[I32](());
   push_row(cells, 1, 0, 0, 0, 0, 7, 0, 9, 0);
   push_row(cells, 0, 3, 0, 0, 2, 0, 0, 0, 8);
   push_row(cells, 0, 0, 9, 6, 0, 0, 5, 0, 0);

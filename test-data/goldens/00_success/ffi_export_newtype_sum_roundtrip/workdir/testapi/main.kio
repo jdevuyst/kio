@@ -13,13 +13,13 @@ pub labels { pr: I32 & String };
 pub type Tagged = Pr | .;
 
 // Out boundary: build the `Pr` arm of the sum.
-pub fn pack(n: I32, s: String) -> Tagged { widen_sum({pr = (n, s)}, Tagged) }
+pub fn pack(n: I32, s: String) -> Tagged { widen_sum({pr = (n, s)})[Tagged] }
 
 // In boundary: take the sum (the FFI In conversion of a
 // sum-over-a-newtype-over-a-product), returning the product's first field
 // from the `Pr` arm or the default for the unit arm.
 pub fn first_or(dflt: I32, t: Tagged) -> I32 {
   match(t) {
-    (.(p: Pr) { __fst__(I32, String, Pr.get(p)) }, .(u: .) { dflt })
+    (.(p: Pr) { __fst__[I32][String](Pr.get(p)) }, .(u: .) { dflt })
   }
 }

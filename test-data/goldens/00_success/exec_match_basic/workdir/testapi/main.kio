@@ -23,4 +23,4 @@ fn handle(v: I32 | String) {
   ()
 }
 
-pub fn main() { handle(widen_sum("matched right\n"(String))) }
+pub fn main() { handle(widen_sum("matched right\n"[String])) }

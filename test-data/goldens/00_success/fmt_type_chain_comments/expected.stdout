@@ -19,9 +19,9 @@ type Nested[A][B][C] =
 type Applied[*F][A][B] =
   | A
   // before application
-  | F(
-  // type argument
-  , B
-  // closing argument
-  )
+  | F[
+    // type argument
+    B
+    // closing argument
+  ]
   ;

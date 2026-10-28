@@ -15,7 +15,7 @@ import testapi/arith as arith;
 import testapi/array as array;
 import testapi/iter(loop);
 
-fn neighbor_count(mines: Array(Bool), row: I32, col: I32) -> I32 {
+fn neighbor_count(mines: Array[Bool], row: I32, col: I32) -> I32 {
   let north = arith.sub_i32(row, 1);
   let south = arith.add_i32(row, 1);
   let west = arith.sub_i32(col, 1);
@@ -31,7 +31,7 @@ fn neighbor_count(mines: Array(Bool), row: I32, col: I32) -> I32 {
   arith.add_i32(arith.add_i32(top_full, middle), bottom_full)
 }
 
-rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
+rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array[I32], mines: Array[Bool]) -> Array[I32] {
   if(arith.leq_i32(col, arith.sub_i32(width(), 1))) {
     array.array_set(counts, cell_index(row, col), neighbor_count(mines, row, col));
     recur fill_count_cols(row, arith.add_i32(col, 1), counts, mines)
@@ -40,7 +40,7 @@ rec(loop) fn fill_count_cols(row: I32, col: I32, counts: Array(I32), mines: Arra
   }
 }
 
-rec(loop) fn fill_count_rows(row: I32, counts: Array(I32), mines: Array(Bool)) -> Array(I32) {
+rec(loop) fn fill_count_rows(row: I32, counts: Array[I32], mines: Array[Bool]) -> Array[I32] {
   if(arith.leq_i32(row, arith.sub_i32(height(), 1))) {
     let updated = fill_count_cols(row, 0, counts, mines);
     recur fill_count_rows(arith.add_i32(row, 1), updated, mines)
@@ -49,12 +49,12 @@ rec(loop) fn fill_count_rows(row: I32, counts: Array(I32), mines: Array(Bool)) -
   }
 }
 
-pub fn build_counts(mines: Array(Bool)) -> Array(I32) {
-  let counts = array.array_make_filled(cell_count(), 0);
+pub fn build_counts(mines: Array[Bool]) -> Array[I32] {
+  let .(counts: Array[I32]) = array.array_make_filled(cell_count(), 0);
   fill_count_rows(0, counts, mines)
 }
 
-pub rec(loop) fn sum_revealed_counts(i: I32, counts: Array(I32), revealed: Array(Bool), total: I32) -> I32 {
+pub rec(loop) fn sum_revealed_counts(i: I32, counts: Array[I32], revealed: Array[Bool], total: I32) -> I32 {
   if(arith.leq_i32(i, last_index())) {
     if(array.array_get(revealed, i)) {
       recur sum_revealed_counts(

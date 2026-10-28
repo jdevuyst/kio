@@ -28,7 +28,7 @@ pub fn arrow_type(a: Ty, b: Ty) -> Ty { {arrow = (a, b)}.>widen_sum }
 
 pub fn pair_type(a: Ty, b: Ty) -> Ty { {pair = (a, b)}.>widen_sum }
 
-pub type Substitution = lists.List(I32 & Ty);
+pub type Substitution = lists.List[I32 & Ty];
 
 pub rec(loop) fn lookup(id: I32, substitutions: Substitution) -> . | Ty {
   match(lists.uncons(substitutions)) {
@@ -59,7 +59,7 @@ pub rec(loop) fn apply(substitutions: Substitution, ty: Ty) -> Ty {
   }
 }
 
-pub rec(loop) fn variables(ty: Ty) -> lists.List(I32) {
+pub rec(loop) fn variables(ty: Ty) -> lists.List[I32] {
   match(ty) {
     .(v: Variable) { lists.singleton(v.?{variable}) };
     .(f: Arrow) {
@@ -70,18 +70,18 @@ pub rec(loop) fn variables(ty: Ty) -> lists.List(I32) {
       let .(a: Ty, b: Ty) = p.?{pair};
       walk.append(recur(cont) variables(a), recur(cont) variables(b))
     };
-    .() { lists.nil(_) }
+    .() { lists.nil[_] }
   }
 }
 
-pub fn contains(id: I32, ids: lists.List(I32)) -> Bool { walk.elem(number.eq_i32, id, ids) }
+pub fn contains(id: I32, ids: lists.List[I32]) -> Bool { walk.elem(number.eq_i32, id, ids) }
 
-pub fn unique(ids: lists.List(I32)) -> lists.List(I32) {
+pub fn unique(ids: lists.List[I32]) -> lists.List[I32] {
   walk.reverse(walk.foldl(
-  , .(seen: lists.List(I32), id: I32) {
+  , .(seen: lists.List[I32], id: I32) {
       if(contains(id, seen)) { seen } else { lists.cons(id, seen) }
     }
-  , lists.nil(_)
+  , lists.nil[_]
   , ids
   ))
 }
@@ -93,7 +93,7 @@ fn combine(a: String, separator: String, b: String) -> String {
   )
 }
 
-rec(loop) fn render(ty: Ty, names: lists.List(I32)) -> String {
+rec(loop) fn render(ty: Ty, names: lists.List[I32]) -> String {
   match(ty) {
     .(v: Variable) {
       match(walk.index_of(number.eq_i32, v.?{variable}, names)) {

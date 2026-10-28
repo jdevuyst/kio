@@ -17,14 +17,14 @@ fn effectful() -> . | ([A] String) { make_stage().>widen_sum }
 
 fn read_left(value: ([A] String) | .) -> String {
   match(value) {
-    .(selected: [A] String) { selected(.) };
+    .(selected: [A] String) { selected[.] };
     .(_empty: .) { "wrong arm\n" }
   }
 }
 
 fn read_right(value: . | ([A] String)) -> String {
   match(value) {
-    .(selected: [A] String) { selected(.) };
+    .(selected: [A] String) { selected[.] };
     .(_empty: .) { "wrong arm\n" }
   }
 }

@@ -14,27 +14,22 @@ import testapi/text(string_concat);
 // Render an `Array(I32)` left-to-right as `,`-separated cells. Used to
 // observe an `Array(I32)` that travels *inside* a structural shape —
 // the host array is reconstructed when read back via `array_get`.
-fn render_array(arr: Array(I32)) -> String {
-  loop(
-  , String & I32
-  , String
+fn render_array(arr: Array[I32]) -> String {
+  loop[String & I32][String](
   , .(state: String & I32) -> (String & I32) | String {
       match(state) {
         .(acc: String, i: I32) {
           if(leq_i32(i, sub_i32(array_len(arr), 1))) {
-            widen_sum(
-            , if(leq_i32(i, 0)) {
-                (int_to_string(array_get(arr, i)), add_i32(i, 1))
-              } else {
-                (
-                , string_concat(acc, string_concat(",", int_to_string(array_get(arr, i))))
-                , add_i32(i, 1)
-                )
-              }
-            , (String & I32) | String
-            )
+            widen_sum(if(leq_i32(i, 0)) {
+              (int_to_string(array_get(arr, i)), add_i32(i, 1))
+            } else {
+              (
+              , string_concat(acc, string_concat(",", int_to_string(array_get(arr, i))))
+              , add_i32(i, 1)
+              )
+            })[(String & I32) | String]
           } else {
-            widen_sum(acc, (String & I32) | String)
+            widen_sum(acc)[(String & I32) | String]
           }
         }
       }
@@ -47,9 +42,9 @@ fn render_array(arr: Array(I32)) -> String {
 // The struct's first slot stores an `H::Array<i32>`; after #21 the
 // `Prod_<name>` shape carries no `<H>` and the host type enters only
 // as the slot's use-site type argument. ---
-fn show_arr_and_int(p: Array(I32) & I32) -> String {
+fn show_arr_and_int(p: Array[I32] & I32) -> String {
   match(p) {
-    .(a: Array(I32), n: I32) {
+    .(a: Array[I32], n: I32) {
       string_concat("[", string_concat(render_array(a), string_concat("]+", int_to_string(n))))
     }
   }
@@ -69,9 +64,9 @@ fn show_two_ints(p: I32 & I32) -> String {
 // `Array(I32) & I32 & String`. Exported, so the 3-wide compound
 // reaches the FFI surface as a flat `ProdN_<name>` (not the
 // nested-binary internal rep). ---
-pub fn show_triple(p: Array(I32) & I32 & String) -> String {
+pub fn show_triple(p: Array[I32] & I32 & String) -> String {
   match(p) {
-    .(a: Array(I32), n: I32, s: String) {
+    .(a: Array[I32], n: I32, s: String) {
       string_concat(
       , "["
       , string_concat(
@@ -85,10 +80,10 @@ pub fn show_triple(p: Array(I32) & I32 & String) -> String {
 
 // --- Sum_ with a host-type leaf: `Array(I32) | String`. `match`
 // dispatches on which arm the value inhabits. ---
-fn show_arr_or_str(v: Array(I32) | String) -> String {
+fn show_arr_or_str(v: Array[I32] | String) -> String {
   match(v) {
     (
-    , .(a: Array(I32)) { string_concat("arr[", string_concat(render_array(a), "]")) }
+    , .(a: Array[I32]) { string_concat("arr[", string_concat(render_array(a), "]")) }
     , .(s: String) { string_concat("str:", s) }
     )
   }
@@ -106,7 +101,7 @@ fn show_int_or_str(v: I32 | String) -> String {
 }
 
 pub fn main() {
-  let xs = array_make_empty(I32, ());
+  let xs = array_make_empty[I32](());
   array_push(xs, 4);
   array_push(xs, 5);
   array_push(xs, 6);
@@ -120,13 +115,13 @@ pub fn main() {
   print(show_triple((xs, 8, "tail")));
   print("\n");
   // Sum_ with a host-type leaf, both arms.
-  print(show_arr_or_str(widen_sum(xs, Array(I32) | String)));
+  print(show_arr_or_str(widen_sum(xs)[Array[I32] | String]));
   print("\n");
-  print(show_arr_or_str(widen_sum("solo"(String), Array(I32) | String)));
+  print(show_arr_or_str(widen_sum("solo"[String])[Array[I32] | String]));
   print("\n");
   // Role-only Sum_ collision on the same mint, both arms.
-  print(show_int_or_str(widen_sum(7(I32), I32 | String)));
+  print(show_int_or_str(widen_sum(7[I32])[I32 | String]));
   print("\n");
-  print(show_int_or_str(widen_sum("ok"(String), I32 | String)));
+  print(show_int_or_str(widen_sum("ok"[String])[I32 | String]));
   print("\n")
 }

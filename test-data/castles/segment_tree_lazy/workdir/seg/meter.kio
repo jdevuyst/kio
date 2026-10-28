@@ -15,7 +15,7 @@ literal work_slot = 0;
 
 literal push_slot = 1;
 
-pub newtype Meter : Array(I32) { constructor of_cells; projector cells }
+pub newtype Meter : Array[I32] { constructor of_cells; projector cells }
 
 pub fn new_meter() -> Meter { Meter.of_cells(array_make_filled(2, 0)) }
 

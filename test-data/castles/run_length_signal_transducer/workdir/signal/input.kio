@@ -10,18 +10,18 @@ import testapi/fmt as fmt;
 import testapi/io as io;
 import testapi/iter(loop);
 
-pub type Read_result = (codec.Encoder & lists.List(I32)) | String;
+pub type Read_result = (codec.Encoder & lists.List[I32]) | String;
 
-rec(loop) fn read(state: codec.Encoder, originals_rev: lists.List(I32)) -> Read_result {
+rec(loop) fn read(state: codec.Encoder, originals_rev: lists.List[I32]) -> Read_result {
   match(io.read_ascii_line()) {
     .(line: String) {
       match(fmt.string_to_int(line)) {
         .(value: I32) { recur read(codec.accept(state, value), lists.cons(value, originals_rev)) };
-        .() { line.>widen_sum(Read_result) }
+        .() { (line.>widen_sum)[Read_result] }
       }
     };
-    .() { (state, traversal.reverse(originals_rev)).>widen_sum(Read_result) }
+    .() { ((state, traversal.reverse(originals_rev)).>widen_sum)[Read_result] }
   }
 }
 
-pub fn consume() -> Read_result { read(codec.empty(), lists.nil(_)) }
+pub fn consume() -> Read_result { read(codec.empty(), lists.nil[_]) }

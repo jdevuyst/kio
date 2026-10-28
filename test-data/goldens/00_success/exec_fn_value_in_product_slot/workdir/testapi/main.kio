@@ -15,10 +15,10 @@ import testapi/io(print);
 type Bundle[S] = ((I32 & I32) -> I32) & (S -> S);
 
 // Assemble the bundle: `add` is the host binary op, `step` threads state.
-fn make_bundle[S](step: S -> S) -> Bundle(S) { (add, step) }
+fn make_bundle[S](step: S -> S) -> Bundle[S] { (add, step) }
 
 // Project the binary op out of the bundle by its (distinct) type.
-fn plus[S](b: Bundle(S)) -> (I32 & I32) -> I32 { one_prod(b, (I32 & I32) -> I32) }
+fn plus[S](b: Bundle[S]) -> (I32 & I32) -> I32 { one_prod(b)[(I32 & I32) -> I32] }
 
 pub fn main() {
   // Instantiate at `S = I32` with an identity step, then apply the
@@ -26,6 +26,6 @@ pub fn main() {
   // `add` must be carried at the slot's `(I32 & I32) -> I32` grouping for
   // this application to reach it.
   let b = make_bundle(.(s: I32) -> I32 { s });
-  print(int_to_string(plus(b)(2(I32), 3(I32))));
-  print("\n"(String))
+  print(int_to_string(plus(b)(2[I32], 3[I32])));
+  print("\n"[String])
 }

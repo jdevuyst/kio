@@ -125,7 +125,7 @@ pure fn duplicate[A](saved: A) -> A & A {
 }
 
 equiv repeats_the_input[A](saved: A) {
-  duplicate(A, saved);
+  duplicate[A](saved);
   (saved, saved)
 }
 
@@ -195,7 +195,7 @@ import author/template(macro template_twice);
 pure fn duplicated[A](value: A) -> A & A { template_twice(value) }
 
 equiv templates_and_constructors_agree[A](value: A) {
-  duplicated(A, value);
+  duplicated[A](value);
   twice(value);
   (value, value)
 }
@@ -254,27 +254,15 @@ type After_unit = . | From_product;
 type Maybe_product = Type_pair | .;
 
 pure fn product_children(ct: __Comptime__, typ: __Type__) -> Maybe_product {
-  __either__(
-    , .
-    , After_unit
-    , Maybe_product
-    , __type_view__(ct, typ)
-    , .(_unit: .) -> Maybe_product { __right__(Type_pair, ., ()) }
+  __either__[.][After_unit][Maybe_product](__type_view__(ct, typ)
+    , .(_unit: .) -> Maybe_product { __right__[Type_pair][.](()) }
     , .(after_unit: After_unit) -> Maybe_product {
-        __either__(
-          , .
-          , From_product
-          , Maybe_product
-          , after_unit
-          , .(_bottom: .) -> Maybe_product { __right__(Type_pair, ., ()) }
+        __either__[.][From_product][Maybe_product](after_unit
+          , .(_bottom: .) -> Maybe_product { __right__[Type_pair][.](()) }
           , .(from_product: From_product) -> Maybe_product {
-              __either__(
-                , Type_pair
-                , After_product
-                , Maybe_product
-                , from_product
-                , .(children: Type_pair) -> Maybe_product { __left__(Type_pair, ., children) }
-                , .(_other: After_product) -> Maybe_product { __right__(Type_pair, ., ()) }
+              __either__[Type_pair][After_product][Maybe_product](from_product
+                , .(children: Type_pair) -> Maybe_product { __left__[Type_pair][.](children) }
+                , .(_other: After_product) -> Maybe_product { __right__[Type_pair][.](()) }
                 )
             }
           )
@@ -283,11 +271,7 @@ pure fn product_children(ct: __Comptime__, typ: __Type__) -> Maybe_product {
 }
 
 pure fn mirror_term(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> __Checked_term__ {
-  __structural_recur__(
-    , ct
-    , __Type__
-    , __Checked_term__
-    , __Checked_term__
+  __structural_recur__(ct)[__Type__][__Checked_term__][__Checked_term__](
     , source
     , value
     , .(
@@ -295,14 +279,10 @@ pure fn mirror_term(ct: __Comptime__, source: __Type__, value: __Checked_term__)
         , current_type: __Type__
         , current_term: __Checked_term__
         ) -> __Checked_term__ {
-        __either__(
-          , Type_pair
-          , .
-          , __Checked_term__
-          , product_children(ct, current_type)
+        __either__[Type_pair][.][__Checked_term__](product_children(ct, current_type)
           , .(children: Type_pair) -> __Checked_term__ {
-              let left_type = __fst__(__Type__, __Type__, children);
-              let right_type = __snd__(__Type__, __Type__, children);
+              let left_type = __fst__[__Type__][__Type__](children);
+              let right_type = __snd__[__Type__][__Type__](children);
               let left = __intrinsic_fst__(ct, current_type, current_term);
               let right = __intrinsic_snd__(ct, current_type, current_term);
               __intrinsic_pair__(ct, recur(right_type, right), recur(left_type, left))
@@ -354,7 +334,7 @@ import author/mirror(macro mirror);
 pure fn mirrored[A][B][C](a: A, b: B, c: C) -> C & (B & A) { mirror(((a, b), c)) }
 
 equiv mirrors_nested_products[A][B][C](a: A, b: B, c: C) {
-  mirrored(A, B, C, a, b, c);
+  mirrored[A][B][C](a, b, c);
   (c, (b, a))
 }
 
@@ -387,11 +367,7 @@ module bad_recursion;
 import __comptime__;
 
 pure fn stuck_impl(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
-  __structural_recur__(
-  , ct
-  , __Type__
-  , .
-  , __Checked_term__
+  __structural_recur__(ct)[__Type__][.][__Checked_term__](
   , typ
   , ()
   , .(recur: (__Type__ & .) -> __Checked_term__, fuel: __Type__, _state: .) -> __Checked_term__ {
@@ -402,7 +378,7 @@ pure fn stuck_impl(ct: __Comptime__, typ: __Type__) -> __Checked_term__ {
 
 macro stuck : [A] . { impl stuck_impl }
 
-fn trigger() { stuck(.) }
+fn trigger() { stuck[.] }
 ```
 
 `kio check` reports totality error `16`. The next fuel must shrink on every
@@ -466,16 +442,16 @@ import author/fills(macro first_result);
 import author/template(identity);
 
 pure fn known_result(value: .) -> . {
-  first_result(.() { value }, .() { value })
+  first_result(.() { value })(.() { value })
 }
 
 pure fn open_first(value: .) -> . {
-  let selected = first_result(.() { identity(_) }, .() -> (. -> .) { identity(.) });
+  let selected = first_result(.() { identity[_] })(.() -> (. -> .) { identity[.] });
   selected(value)
 }
 
 pure fn concrete_first(value: .) -> . {
-  let selected = first_result(.() -> (. -> .) { identity(.) }, .() { identity(_) });
+  let selected = first_result(.() -> (. -> .) { identity[.] })(.() { identity[_] });
   selected(value)
 }
 
@@ -489,7 +465,7 @@ equiv fills_agree_in_both_orders(value: .) {
 
 `known_result` supplies an expected unit result. The other calls have an open
 local result: the explicitly annotated thunk supplies `. -> .`, which lets
-the other body finish `identity(_)`. Reversing the operands retains that
+the other body finish `identity[_]`. Reversing the operands retains that
 inferred type. Fill order records traversal; it does not make the first
 candidate win. The returned checked term alone does not fill an open marked
 result.
@@ -511,7 +487,7 @@ Two concrete results disagree:
 
 ```kio {@fill_failure check_exit_code=14}
 fn disagree(value: .) {
-  let _selected = first_result(.() { value }, .() { (value, value) });
+  let _selected = first_result(.() { value })(.() { (value, value) });
   ()
 }
 ```
@@ -521,7 +497,7 @@ anchor:
 
 ```kio {@fill_failure check_exit_code=14}
 fn no_anchor() {
-  let _selected = first_result(.() { identity(_) }, .() { identity(_) });
+  let _selected = first_result(.() { identity[_] })(.() { identity[_] });
   ()
 }
 ```
@@ -586,7 +562,7 @@ import author/blocks(macro scope, macro sequence);
 
 newtype Box[A] : A { constructor box; projector un_box }
 
-pure fn bind[A][B](source: Box(A), next: A -> Box(B)) -> Box(B) {
+pure fn bind[A][B](source: Box[A], next: A -> Box[B]) -> Box[B] {
   next(Box.un_box(source))
 }
 
@@ -594,7 +570,7 @@ pure fn scoped[A](value: A) -> A {
   scope { let saved = value; saved }
 }
 
-pure fn sequenced[A](value: A) -> Box(A) {
+pure fn sequenced[A](value: A) -> Box[A] {
   sequence(bind) {
     let saved <- Box.box(value);
     let copy = saved;
@@ -603,15 +579,15 @@ pure fn sequenced[A](value: A) -> Box(A) {
 }
 
 equiv block_execution[A](value: A) {
-  scoped(A, value);
-  Box.un_box(sequenced(A, value));
+  scoped[A](value);
+  Box.un_box(sequenced[A](value));
   value
 }
 ```
 
 The sequence lowers to a call to `bind` with a continuation. The ordinary
 `let copy` stays inside that continuation; the final expression is an action
-of type `Box(A)`. This receiver unwraps and continues immediately. Other
+of type `Box[A]`. This receiver unwraps and continues immediately. Other
 receivers define their own sequencing behavior through the same explicit
 typed interface. The descriptor does not select a bind implementation from
 the package's declarations.
@@ -638,7 +614,7 @@ pure fn unit_impl(ct: __Comptime__, source: __Type__, value: __Checked_term__) -
   , __type_equal__(ct, source, __type_unit__(ct))
   , .() -> __Checked_term__ { value }
   , .() -> __Checked_term__ {
-      __macro_error__(ct, "unit_only requires a unit source"(__Diagnostic_text__))
+      __macro_error__(ct, "unit_only requires a unit source"[__Diagnostic_text__])
     }
   )
 }

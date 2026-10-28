@@ -1,0 +1,20 @@
+module testapi/main;
+
+import macros/spine_macros(macro widen_sum);
+import testapi(I32, String);
+import testapi/fmt as fmt;
+import testapi/io as io;
+import testapi/iter as iter;
+
+type Replies = (. -> I32) & (. -> I32);
+
+fn step(reenter: . -> Replies, _state: .) -> . | Replies {
+  let direct = .() -> I32 { 41 };
+  let saved = .() -> I32 { let .(answer, _again) = reenter(); answer() };
+  (direct, saved).>widen_sum
+}
+
+pub fn main() {
+  let .(_direct, saved) = iter.loop_reentry(step, ());
+  io.print(fmt.i32_to_string(saved()))
+}

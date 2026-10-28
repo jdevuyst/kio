@@ -7,4 +7,4 @@ fn outer[A](value: A) -> A {
   identity(value)
 }
 
-pub fn main() { outer(., ()) }
+pub fn main() { outer[.](()) }

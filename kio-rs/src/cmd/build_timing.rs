@@ -363,7 +363,9 @@ impl BuildShapeStats {
         self.max_expr_depth = self.max_expr_depth.max(depth);
         match expr {
             Expr::BlockCall { prefix, blocks, .. } => {
-                self.visit_exprs(prefix, depth + 1);
+                for stage in prefix {
+                    self.visit_call_args(&stage.args, depth + 1);
+                }
                 for block in blocks {
                     for item in &block.items {
                         self.visit_expr(item.value(), depth + 1);
@@ -376,9 +378,11 @@ impl BuildShapeStats {
                 self.visit_expr(callee, depth + 1);
                 self.visit_call_args(args, depth + 1);
             }
-            Expr::RecCall { args, .. } => {
+            Expr::RecCall { stages, .. } => {
                 self.rec_calls += 1;
-                self.visit_call_args(args, depth + 1);
+                for stage in stages {
+                    self.visit_call_args(&stage.args, depth + 1);
+                }
             }
             Expr::FnExpr {
                 sig, ret_ty, body, ..
@@ -446,12 +450,20 @@ impl BuildShapeStats {
                 self.visit_expr(&plan.value, depth + 1);
                 self.visit_expr(&plan.body, depth + 1);
             }
-            Expr::UserMacro { args, .. } => {
+            Expr::UserMacro { stages, .. } => {
                 self.user_macro_calls += 1;
-                self.visit_call_args(args, depth + 1);
+                for stage in stages {
+                    self.visit_call_args(&stage.args, depth + 1);
+                }
             }
-            Expr::Ufcs { receiver, args, .. } => {
+            Expr::Ufcs {
+                receiver,
+                callee,
+                args,
+                ..
+            } => {
                 self.visit_expr(receiver, depth + 1);
+                self.visit_expr(callee, depth + 1);
                 self.visit_call_args(args, depth + 1);
             }
             Expr::OpChain { kind, .. } => match kind {

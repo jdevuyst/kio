@@ -19,13 +19,13 @@ import turtle/canvas as canvas;
 /// toward smaller `y`.
 pub labels Facing = { north: . } | { east: . } | { south: . } | { west: . };
 
-fn north_facing() -> Facing { {north=}.>widen_sum(Facing) }
+fn north_facing() -> Facing { ({north=}.>widen_sum)[Facing] }
 
-fn east_facing() -> Facing { {east=}.>widen_sum(Facing) }
+fn east_facing() -> Facing { ({east=}.>widen_sum)[Facing] }
 
-fn south_facing() -> Facing { {south=}.>widen_sum(Facing) }
+fn south_facing() -> Facing { ({south=}.>widen_sum)[Facing] }
 
-fn west_facing() -> Facing { {west=}.>widen_sum(Facing) }
+fn west_facing() -> Facing { ({west=}.>widen_sum)[Facing] }
 
 pub fn facing_name(f: Facing) -> String {
   match(f) {

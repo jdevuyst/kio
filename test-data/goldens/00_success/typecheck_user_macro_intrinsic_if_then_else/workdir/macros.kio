@@ -12,10 +12,7 @@ pub pure fn choose_impl(
 , value: __Checked_term__
 , target: Target_request
 ) -> __Checked_term__ {
-  __either__(
-  , __Type__
-  , .
-  , __Checked_term__
+  __either__[__Type__][.][__Checked_term__](
   , target
   , .(target_type: __Type__) -> __Checked_term__ {
       __intrinsic_if_then_else__(

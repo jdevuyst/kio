@@ -90,10 +90,33 @@ ends. Exercise maximal leading extent before operand checks, opposing claims,
 native suffix ownership and macro-head grouping. Frame identity follows structural
 square edges and whole mirrored marker words before binding lookup; a failed
 parse or missing binding cannot select a shorter marker. Keep value-only
-slots/elements distinct from native types at mixed call-argument boundaries.
+slots/elements value-only, with explicit type arguments confined to their
+singleton bracket stages.
 The shared lexical rules also apply to independent Prime parsing and all five
 file kinds; dot/bracket roles, signed literals and comment ownership need
 their own witnesses.
+
+## Call stages and bracket ownership
+
+Keep explicit value-level type arguments in square suffixes and ordinary value
+arguments in parentheses. Each type-supply or binder bracket contains exactly
+one entry: declaration/prefix binders, value instantiation, TypePath arguments
+and literal/literal-alias carriers all follow that rule. Reject comma lists
+and empty brackets before formatting; `_` remains an admitted Surface inference
+request in its existing positions. Metadata such as role/visibility/recursion
+annotations and ordinary import lists keep their own grammar.
+Postfix brackets belong to the completed expression regardless of whitespace;
+expression-start brackets remain variadic frames. Invalid type entries never
+retry a value-frame interpretation. Exercise nested forall types, empty-group
+rejection, `_` inference, Unit, computed callees, authored consecutive type
+groups and returned binders across native, Prime and editor parsers.
+One written value group applies one Function layer; tuple packing is not curry
+crossing. Check UFCS against its selected written stage, including outermost
+reverse insertion, a final type-stage boundary, and first/last block prefixes.
+Multiple block prefixes and each projected block are successive stages, while
+explicit block-call type arguments remain excluded. Whole direct macro chains
+must gather public inference before source admission/action without absorbing
+ordinary generated-result calls into reflected operands.
 
 ## Macro binding and highlighting
 

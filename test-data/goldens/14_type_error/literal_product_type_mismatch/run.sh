@@ -13,6 +13,8 @@ if [ "$status" -ne 14 ]; then
   printf 'expected type error 14, got %s\n' "$status" >&2
   exit 1
 fi
+# Backticks are literal characters in the expected diagnostics.
+# shellcheck disable=SC2016
 case "$(basename "$KIO_BIN")" in
   kio|kio.exe) expected='type mismatch: expected `T & Witness`, found `Local`' ;;
   kio-prime|kio-prime.exe) expected='Kio'"'"' requires an explicit type argument for `[T]`' ;;

@@ -450,7 +450,7 @@ Declarations inside a module section are post-elaboration **Kio'**:
 
   ```text
   pub pure fn greet(p0: Str) -> Str ;
-  pub fn nil[A] -> List(A) ;
+  pub fn nil[A] -> List[A] ;
   ```
 
   This is distinct from a regular-module `fn`, which requires a body. A stray
@@ -464,8 +464,8 @@ Declarations inside a module section are post-elaboration **Kio'**:
   `host fn` means `.`. Explicit `-> .` records the same contract.
 
   An ordinary export need not have a value group; a `host fn` import still
-  does. The recorded `fn nil[A] -> List(A)` and
-  `fn nil[A]() -> List(A)` are distinct contracts: the latter retains a Unit
+  does. The recorded `fn nil[A] -> List[A]` and
+  `fn nil[A]() -> List[A]` are distinct contracts: the latter retains a Unit
   application before its result. Recording, replay, and comparison preserve
   this distinction; a sealed historical signature is not rewritten to add or
   remove `()`.

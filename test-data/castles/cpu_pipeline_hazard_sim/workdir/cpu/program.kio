@@ -23,8 +23,8 @@ import cpu/isa(Instr, i_add, i_beq, i_halt, i_load, i_loadi, i_mul, i_nop, i_sto
 import testapi(Array, I32);
 import testapi/array(array_make_empty, array_push);
 
-pub fn build() -> Array(Instr) {
-  let code = array_make_empty(Instr, ());
+pub fn build() -> Array[Instr] {
+  let code = array_make_empty[Instr](());
   array_push(code, i_loadi(1, 6));
   array_push(code, i_loadi(2, 7));
   array_push(code, i_add(3, 1, 2));

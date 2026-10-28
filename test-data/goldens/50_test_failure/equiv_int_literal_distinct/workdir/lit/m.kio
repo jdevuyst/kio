@@ -3,6 +3,6 @@ module lit/m;
 import lit(I32);
 
 equiv int_lit() {
-  42(I32);
-  7(I32)
+  42[I32];
+  7[I32]
 }

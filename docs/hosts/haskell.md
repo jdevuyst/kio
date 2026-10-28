@@ -85,10 +85,10 @@ exact `KioPkg_...` namespace (`main` → `KioPkg_Main`); see
 
 Haskell's own type system expresses higher-kinded and rank-N
 polymorphism, so Kio's kind-`*→*` carriers map straight onto Haskell
-type constructors (`F(A)` → `f a`) — there is nothing to wrap or unwrap
+type constructors (`F[A]` → `f a`) — there is nothing to wrap or unwrap
 at the boundary. This matters in practice in two ways:
 
-- A higher-kinded value (a `Functor` / `Monad` dictionary's `F(A)`)
+- A higher-kinded value (a `Functor` / `Monad` dictionary's `F[A]`)
   rides Haskell's own type-constructor application; the host pays no
   representation cost for higher-kinded types.
 - A polymorphic position you *do* see at the boundary (a rank-N or
@@ -99,7 +99,7 @@ at the boundary. This matters in practice in two ways:
   calling the resulting value function.
 
 An opaque constructor keeps its argument's native value representation. Thus
-a Kio `Box(. -> A)` holds a Haskell `() -> m a` callback, even though a direct
+a Kio `Box[. -> A]` holds a Haskell `() -> m a` callback, even though a direct
 Unit-domain callback at the public boundary is a nullary `m a` action. The
 backend can adapt the direct callback, but does not inspect or map your box.
 The same distinction applies inside an abstract `F` and inside its nested
@@ -472,7 +472,7 @@ module greeter/main;
 
 import greeter(Str, print, stdout);
 
-pub fn main() { print(stdout(), "hello\n"(Str)) }
+pub fn main() { print(stdout(), "hello\n"[Str]) }
 ```
 
 `kio build haskell` writes `out/haskell/Greeter.hs`.

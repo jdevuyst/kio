@@ -6,19 +6,19 @@ import testapi(Bool, Int, String);
 import testapi/fmt(int_to_string);
 import testapi/io(print);
 
-rec newtype List[A] : . | (A & List(A)) { constructor list; pub projector un_list }
+rec newtype List[A] : . | (A & List[A]) { constructor list; pub projector un_list }
 
-fn nil[A]() -> List(A) { List.list(widen_sum((), . | (A & List(A)))) }
+fn nil[A]() -> List[A] { List.list(widen_sum(())[. | (A & List[A])]) }
 
-fn push[A](head: A, tail: List(A)) -> List(A) {
-  List.list(widen_sum((head, tail), . | (A & List(A))))
+fn push[A](head: A, tail: List[A]) -> List[A] {
+  List.list(widen_sum((head, tail))[. | (A & List[A])])
 }
 
 labels Kind = { first: . } | { second: . };
 
-fn first_kind() -> Kind { {first=}.>widen_sum(Kind) }
+fn first_kind() -> Kind { ({first=}.>widen_sum)[Kind] }
 
-fn second_kind() -> Kind { {second=}.>widen_sum(Kind) }
+fn second_kind() -> Kind { ({second=}.>widen_sum)[Kind] }
 
 fn kind_code(kind: Kind) -> Int {
   match(kind) {
@@ -30,12 +30,12 @@ fn identity[A](value: A) -> A { value }
 
 fn keep_polymorphic(value: [A] A -> A) -> [A] A -> A { value }
 
-fn second_or(fallback: Kind, xs: List(Kind)) -> Kind {
+fn second_or(fallback: Kind, xs: List[Kind]) -> Kind {
   match(xs.>List.un_list) {
     (
-    , .(_head: Kind, rest: List(Kind)) {
+    , .(_head: Kind, rest: List[Kind]) {
         match(rest.>List.un_list) {
-          (.(second: Kind, _tail: List(Kind)) { second }, .(_empty: .) { fallback })
+          (.(second: Kind, _tail: List[Kind]) { second }, .(_empty: .) { fallback })
         }
       }
     , .(_empty: .) { fallback }
@@ -44,7 +44,7 @@ fn second_or(fallback: Kind, xs: List(Kind)) -> Kind {
 }
 
 fn result() -> Int {
-  let items = nil(Kind, ());
+  let items = nil[Kind](());
   let items = push(first_kind(), items);
   let items = push(second_kind(), items);
   kind_code(second_or(first_kind(), items))
@@ -52,17 +52,17 @@ fn result() -> Int {
 
 fn print_polymorphic(choose: [A] A -> A) {
   let choose = keep_polymorphic(choose);
-  print(choose("poly\n"(String)));
-  print(int_to_string(choose(7(Int))));
-  print("\n"(String))
+  print(choose("poly\n"[String]));
+  print(int_to_string(choose(7[Int])));
+  print("\n"[String])
 }
 
 pub fn main() {
   let choose = identity;
   print(int_to_string(result()));
-  print("\n"(String));
-  print(choose("direct\n"(String)));
-  print(int_to_string(choose(8(Int))));
-  print("\n"(String));
+  print("\n"[String]);
+  print(choose("direct\n"[String]));
+  print(int_to_string(choose(8[Int])));
+  print("\n"[String]);
   print_polymorphic(identity)
 }

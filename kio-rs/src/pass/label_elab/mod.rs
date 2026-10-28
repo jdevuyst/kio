@@ -2688,7 +2688,7 @@ mod tests {
     fn declaration_universal_headers_compare_arity_and_kinds_not_binder_names() {
         let module = parse(
             "module m; \
-             labels First[*F][A] = { item[*F][A]: F(A) }; \
+             labels First[*F][A] = { item[*F][A]: F[A] }; \
              labels Later[*G][B] = { item[*G][B]: _ }; \
              labels Short[A] = { item[A]: _ }; \
              labels Wrong[F][A] = { item[F][A]: _ };",
@@ -2740,7 +2740,7 @@ mod tests {
     #[test]
     fn label_nominal_shape_preserves_headers_visibility_and_owner_spans() {
         let module =
-            parse("module m;\n/// Label family.\npub(m) labels { box[*F][A]<X>: F(A) & X };")
+            parse("module m;\n/// Label family.\npub(m) labels { box[*F][A]<X>: F[A] & X };")
                 .expect("parse explicit universal/existential label header");
         let Item::Labels(owner, _) = &module.items[0] else {
             panic!("expected labels");
@@ -2805,7 +2805,7 @@ mod tests {
     fn named_label_shape_preserves_arm_order_and_universal_arguments() {
         let module = parse(
             "module m; labels Choice[*F][A][B] = \
-             { first[*F][B]<X>: F(B) & X, second[A]: A } | { middle: . } | { first[*F][A]: _ };",
+             { first[*F][B]<X>: F[B] & X, second[A]: A } | { middle: . } | { first[*F][A]: _ };",
         )
         .expect("parse written product/sum before elaboration");
         let Item::Labels(owner, _) = &module.items[0] else {
@@ -3761,7 +3761,7 @@ mod tests {
     #[test]
     fn reuse_header_matches_kinds_but_not_binder_names() {
         let m = elab(
-            "module x; labels { value[*F][A] : F(A) }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
+            "module x; labels { value[*F][A] : F[A] }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
         );
         assert!(
             m.items
@@ -3780,7 +3780,7 @@ mod tests {
             "got: {arity}"
         );
         let kind = elab_err(
-            "module x; labels { value[*F] : F(.) }; labels Choice[G] = { value[G] : _, other : . };",
+            "module x; labels { value[*F] : F[.] }; labels Choice[G] = { value[G] : _, other : . };",
         );
         assert!(
             kind.contains("incompatible universal binder header"),
@@ -3798,7 +3798,7 @@ mod tests {
 
     #[test]
     fn nested_infer_is_an_explicit_payload_not_a_reuse_marker() {
-        let m = elab("module x; labels { value[*F] : F(_) };");
+        let m = elab("module x; labels { value[*F] : F[_] };");
         let value = m.items.iter().find_map(|item| match item {
             Item::Newtype(newtype) if newtype.name == "Value" => Some(newtype),
             _ => None,
@@ -3908,10 +3908,10 @@ mod tests {
 
     #[test]
     fn rec_label_reference_rewrites() {
-        // `list(A)` (which parses as `Path { list, [A] }`) is
+        // `list[A]` (which parses as `Path { list, [A] }`) is
         // rewritten by label-elab to a reference to the minted newtype
-        // name `List(A)`.
-        let m = elab("module x; rec labels { list[A] : (. | (A & List(A))) };");
+        // name `List[A]`.
+        let m = elab("module x; rec labels { list[A] : (. | (A & List[A])) };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "List");
             let self_ref =

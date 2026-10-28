@@ -11,15 +11,13 @@ type First_bool = first.Bool;
 type Second_bool = second.Bool;
 
 fn choose(condition: First_bool) -> First_bool {
-  if(condition) { .t(First_bool) } else { .f(First_bool) }
+  if(condition) { .t[First_bool] } else { .f[First_bool] }
 }
 
 fn mismatched_condition(condition: First_bool) -> Second_bool {
-  __if_then_else__(
-  , Second_bool
-  , Second_bool
+  __if_then_else__[Second_bool][Second_bool](
   , condition
-  , .() { .t(Second_bool) }
-  , .() { .f(Second_bool) }
+  , .() { .t[Second_bool] }
+  , .() { .f[Second_bool] }
   )
 }

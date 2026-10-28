@@ -1,13 +1,8 @@
 #!/bin/sh
-# A wide `|` chain that appears as a *call argument* (here an intrinsic
-# form's leading type operand, `__left__(T, U, x)`) breaks to the
-# leading-operator A1 layout — but, unlike a `type` body, a call-
-# argument position is not self-delimiting, so the broken chain must
-# parenthesize itself or its leading `|` reparses as a stray operator at
-# the start of a type expression. Formatting must be idempotent and the
-# output must round-trip (parse cleanly), which the second `fmt`
-# asserts. Regression for the pretty-printer emitting an unparenthesized
-# leading-operator chain at a bare type-operand position.
+# A wide `|` chain is used as the leading type argument to `__left__`.
+# Brackets delimit that type argument while the formatter breaks the chain
+# with leading operators. The second format pass checks that this layout
+# stays stable and parses cleanly.
 set -u
 work=$(mktemp -d) || exit
 trap 'rm -rf "$work"' EXIT INT TERM HUP

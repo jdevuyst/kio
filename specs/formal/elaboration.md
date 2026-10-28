@@ -51,7 +51,7 @@ The mode of a position is determined by the surrounding rule: a sub-expression i
 Contexts `Γ` carry the same shape as in [`prime.md`](prime.md) § 2.1:
 
 ```text
-Γ ::= · | Γ, α | Γ, x : T | Γ, N(α₁, ..., αₙ) := …
+Γ ::= · | Γ, α | Γ, x : T | Γ, N[α₁]...[αₙ] := …
 ```
 
 The α form admits both ordinary universal binders (introduced by user-written `[α]`) and **skolems** (introduced by checking against a polytype, see § 4). Skolems are distinct from ordinary type variables only when an escape check fires at a binder boundary; the elaborator treats them uniformly elsewhere.
@@ -153,7 +153,7 @@ with `bound_args` the type and value arguments after the standard call rule has 
 
 ### Kind-checking discipline
 
-Higher-kinded type application (`F(A)`, `Either(String)`) is a **type form**,
+Higher-kinded type application (`F[A]`, `Either[String]`) is a **type form**,
 not a callable: it has no scheme entry in the registry and does not participate
 in E-App. Binder kinds are always explicit. Kind validation is a
 phase-polymorphic structural operation applied whenever a declared or completed
@@ -311,14 +311,18 @@ In particular, `let id = .[A](x) { x };` is a type error: the RHS is a polymorph
 
 ```kio
 fn identity[T](x: T) -> T { x }
-let id = identity([A] A -> A, .[A](x) { x });
+let id = identity[[A] A -> A](.[A](x) { x });
 ```
 
 Now the `.[A](x) { x }` sits in a checking position (the value-arg slot of `identity`'s scheme after substituting `T := [A] A -> A`), and E-FnCheck applies.
 
 ## 5. Function application
 
-Kio's call grammar admits a **single positional list** interleaving type-arguments and value-arguments. The elaborator reads them in source order, threading each through the callee's scheme.
+Kio's call grammar separates explicit type instantiation `f[U]` from value
+application `f(a)`. Each written value group consumes exactly one Function
+layer. Consecutive type and value stages remain one connected finite local
+inference opportunity; the stage boundaries fix applications, not independent
+inference domains.
 
 ```text
 Γ ⊢ f ⇑ ∀ᾱ. (T₁, …, Tₙ) → R ↪ f′
@@ -328,40 +332,43 @@ each value-arg aᵢ is elaborated against Tᵢ[ᾱ := Ū]   ↪ aᵢ′
 return-type expectation R[ᾱ := Ū] is consistent with the context's expected type
                                                               (if any)
 ─────────────────────────────────────────────────────────────────  E-App
-Γ ⊢ f(Ū_explicit, a₁, …, aₙ) ⇑ R[ᾱ := Ū] ↪ f′[Ū](a₁′, …, aₙ′)
+Γ ⊢ f[Ū_explicit](a₁, …, aₙ) ⇑ R[ᾱ := Ū] ↪ f′[Ū](a₁′, …, aₙ′)
 ```
 
-The rule presents one combined argument list; the elaborated tree uses the
-curried Λ/λ presentation of [`prime.md`](prime.md) § 2.2 (T-App / T-TApp).
-The premises describe the completed derivation. The syntax-directed procedure
-that obtains it is the finite retained schedule below.
+In rule notation, `[Ū]` abbreviates a sequence of singleton type applications,
+not a comma-separated source bracket.
 
-Surface E-App may consume successive `Forall` and `Function` layers from one
-written list, but it fixes each function packet without type-directed
-backtracking. At a product domain, every value followed by another value
-consumes one right-spine slot. Only the packet-final value — the last value
-before a written type argument, an explicit nested application boundary, or
-the end of the list — may be checked against the whole remaining product.
-Slot selection uses only the resolved callee type and written argument
-structure; a value's synthesized type cannot make the procedure revisit a
-different split. Kio' retains its one-layer-per-call syntax, so elaboration
-records an explicit nested call at each consumed surface layer.
+The rule combines the premises for an explicit or omitted universal prefix
+and one written value application. Its elaborated tree uses the Λ/λ
+presentation of [`prime.md`](prime.md) § 2.2 (T-App / T-TApp). The premises
+describe the completed derivation; the finite retained schedule below obtains
+it without replaying source actions.
+
+The value group's comma components form one right-associated product,
+including the zero-component Unit and one-component value cases. `f(a,b)`
+and `f((a,b))` supply the same product to the same Function layer. For
+`f : (A & B) -> C -> R`, `f(a,b)(c)` has two value applications;
+`f(a,b,c)` instead supplies one product to the first layer and cannot spill
+components into the second. Neither argument types nor declaration grouping
+may change those written boundaries. Successive explicit type groups remain
+successive applications. Write `f[A][B]` for two exposed binders;
+`f[A,B]` and empty brackets are rejected, at definitions and calls alike.
 
 A syntactically empty direct/prefix surface call list contributes one Unit
 value and omits the leading type arguments. E-App solves those omissions from
 that written Unit value and any local expected result. The call succeeds only
 when every omitted binder is solved. Thus `id()` applies
-`id : ∀α. α → α` at `α := Unit`, while `nil() : List(A)` elaborates to
-`nil(A, ())` only when the checked position supplies `A`; the same call in an
+`id : ∀α. α → α` at `α := Unit`, while `nil() : List[A]` elaborates to
+`nil[A](())` only when the checked position supplies `A`; the same call in an
 unconstrained position is an inference error.
 
-A nonempty packet containing type arguments or `_` placeholders and no written
-value is instead **type-only**. It performs the selected type applications and
-returns the residual result without inventing Unit. Consequently `id(_)`
-checked against `Unit → Unit` elaborates to residual `id(Unit)`, concrete
-`id(Unit)` has type `Unit → Unit`, and `nil(A)` has type
-`Unit → List(A)`. Saturation requires a written value application:
-`nil(A)()`, `nil(A, ())`, and the UFCS form `().>nil(A)` elaborate to the same
+A singleton bracket group containing one type or a whole-slot `_` placeholder
+is **type-only**. It performs the selected type applications and
+returns the residual result without inventing Unit. Consequently `id[_]`
+checked against `Unit → Unit` elaborates to residual `id[Unit]`, concrete
+`id[Unit]` has type `Unit → Unit`, and `nil[A]` has type
+`Unit → List[A]`. Saturation requires a written value application:
+`nil[A]()`, `nil[A](())`, and the UFCS form `().>nil[A]` elaborate to the same
 typed call tree. Substitution and alias unfolding may establish that the
 written value fits a Unit domain, but cannot create a value application.
 
@@ -369,7 +376,7 @@ UFCS inserts its receiver before E-App checks the resulting prefix plan. A
 receiver-only spelling omits the argument list: `r.>f` produces the E-App plan
 `f(r)`. The surface parser rejects a written empty UFCS list before E-App;
 `r.>f(())` instead produces `f(r, ())` because the additional Unit is explicit.
-The form `().>nil(A)` produces `nil(A, ())` because its receiver is the written
+The form `().>nil[A]` produces `nil[A](())` because its receiver is the written
 Unit value.
 
 The distinction is determined only by the written packet, resolved callee
@@ -479,9 +486,8 @@ of a declared monomorphic parameter shape may not. Each consumed function
 layer solves only the binders introduced for that layer; binders in an
 unconsumed layer remain quantified in the residual result. Kio' uses the same
 direct-callee completion for an absent annotation, but has no `_` spelling and
-still requires every universal call argument explicitly. Surface calls retain
-their ordinary ability to span successive function layers; Kio' retains its
-restriction that one flat call cannot span multiple function layers. The
+still requires every universal call argument explicitly. Surface and Kio' both use one written value group per Function layer;
+Surface alone may infer omitted universal arguments. The
 completed Kio' term carries concrete lambda annotations and every inferred
 type argument materialized at its ordinary type-application boundary.
 
@@ -489,8 +495,8 @@ type argument materialized at its ordinary type-application boundary.
 
 Three forms are admissible at a call:
 
-1. **Fully explicit** — every type-argument written out: `f(T₁, …, Tₘ, a₁, …, aₙ)` with `m = |ᾱ|`.
-2. **Partial** — `_` placeholders at individual type-arg slots: `f(T₁, _, T₃, a₁, …)`. The elaborator solves each `_` from unification.
+1. **Fully explicit** — every type-argument written out: `f[T₁]…[Tₘ](a₁, …, aₙ)` with `m = |ᾱ|`.
+2. **Partial** — `_` placeholders at individual type-arg slots: `f[T₁][_][T₃](a₁, …)`. The elaborator solves each `_` from unification.
 3. **Fully elided** — no type-arg slots, no `_`s: `f(a₁, …, aₙ)`. The elaborator solves every binder from unification.
 
 In every case, the type-argument slot is **positional**: the kth written type
@@ -511,7 +517,7 @@ inference goal beneath its `Forall` nodes. The owner binds αⱼ to that tree as
 single solution; subsequent premises must be structurally alpha-equivalent.
 The rule never constructs a `Forall`, moves one across an arrow, or recursively
 searches for a binder arrangement that would make a partial shape fit. An
-explicit user-written Uⱼ, for example `f([A] A -> A, value)`, is checked by the
+explicit user-written Uⱼ, for example `f[[A] A -> A](value)`, is checked by the
 same structural relation but does not require inference.
 
 **Failure modes.** A binder that cannot be solved (no equality pins it, or
@@ -524,11 +530,24 @@ parameter types (`aᵢ ⇓ Tᵢ[ᾱ := Ū]`).
 call whose result-only binders remain open cannot contribute a completed type
 during their first visit. Their retained actions let the owning slot become
 more precise first. For example, a sibling value may pin the outer `S` in
-`view(fst_lens(), value)`, after which the expected `Lens(S, A)` result can
+`view(fst_lens(), value)`, after which the expected `Lens[S][ A]` result can
 close `fst_lens`'s nested binders. The nested call is not re-run: its unfinished
 source action is consumed once under that expected result.
 
-**UFCS provenance.** A UFCS call resolves the written callee, reads its type/value slot sequence, and inserts the receiver into a value slot before applying E-App. `.>` and `.<<` insert first; `.>>` and `.<` insert last. For a block call, insertion is among prefix values before block projection (§ 7.6), not after the final projected block arguments. Type arguments remain in their declared type slots, so `r.>f(T, x)` has the same E-App plan as `f(T, r, x)`, and `r.>>f(T, x)` has the same plan as `f(T, x, r)`. At the receiver boundary, type-looking candidates are reserved for the consecutive binder run immediately after the receiver; the adjacent binder run before the receiver consumes only the surplus. An unfilled value layer is a hard boundary: reservation never crosses it. This split uses only the resolved slot sequence and written argument kinds, with no inferred-type feedback or retry. Blockless macro call UFCS uses the same slot rule before invoking the user-macro call rule; block calls infer their type arguments from the arranged prefix and projected blocks.
+**UFCS provenance.** Receiver placement is fixed by written stages before
+E-App. Forward `.>` / `.>>` select the immediately following value group;
+reverse `.<` / `.<<` select the immediately preceding outermost value
+application. First forms `.>` / `.<<` prepend and `.>>` / `.<` append.
+`r.>f[A](x)` therefore plans `f[A](r,x)`;
+`f(a)(b).<r` plans `f(a)(b,r)`, while `(f(a).<r)(b)` plans `f(a,r)(b)`.
+Whole-left-expression grouping is transparent. A final type application is
+a boundary: `f(a)[B].<r` plans `f(a)[B](r)` without searching backward.
+For a block invocation, forward selects its first prefix group and reverse
+its last; absent prefixes create a receiver-only stage before block projection.
+Receivers never enter a projected block. Explicit-empty selected UFCS groups
+reject, while ordinary earlier Unit stages remain intact. No rule inspects
+callee provenance, declaration groups, receiver type or implementation ABI to
+select another stage.
 
 ### 5.3. Value-argument checking against polytype slots
 
@@ -603,7 +622,7 @@ Therefore the RHS's synthesized type is always unambiguous — there is no defau
 
 ```kio
 fn identity[T](x: T) -> T { x }
-let id = identity([A] A -> A, .[A](x) { x });
+let id = identity[[A] A -> A](.[A](x) { x });
 ```
 
 Now `.[A](x) { x }` sits in a checking position (the value-arg slot of `identity`'s scheme after substituting `T := [A] A -> A`), and E-FnCheck applies.
@@ -631,7 +650,7 @@ from that core typing relation:
 
 (B is a role(bool) type in Γ)
 ─────────────────────────────  E-True/False
-Γ ⊢ .t(B) ⇑ B ↪ .t(B)
+Γ ⊢ .t[B] ⇑ B ↪ .t[B]
    etc.
 ```
 
@@ -655,6 +674,17 @@ lexical ownership to an earlier same-module macro or an explicit `macro name`
 import selector. Transparent grouping preserves that ownership; a nearer value
 binder shadows it. Neither a bare macro value nor qualified invocation is
 admitted. The declaration supplies a call type and names the code that implements it.
+
+The maximal written application chain rooted at that direct macro head is one
+public inference/admission unit, including through transparent grouping.
+Written type/value stages and the resolved public type gather the available
+local equalities before source admission and the one implementation action.
+No incomplete prefix executes to manufacture its admission evidence. A later
+application to the expansion's ordinary function result stays an ordinary
+result application, not another reflected operand. Lookahead stops when the
+public result has no known callable shape; after ordinary admission and
+expansion, a callable generated result may be applied normally. A let ends
+the unit. These boundaries introduce no first-class macro value.
 
 The schedule below distinguishes three kinds of intermediate information:
 
@@ -967,10 +997,10 @@ bounds; ordinary open-world name resolution remains unchanged.
 A newtype with existential binders `<u₁> … <uₙ>` carries a CPS projector whose scheme is
 
 ```text
-N.un_N : ∀ᾱ. (N(ᾱ)) → ∀ρ. (∀β₁ … βₙ. (Payload[ᾱ, β̄]) → ρ) → ρ
+N.un_N : ∀ᾱ. (N[ᾱ]) → ∀ρ. (∀β₁ … βₙ. (Payload[ᾱ][β̄]) → ρ) → ρ
 ```
 
-(see [`language.md`](../language.md) § Existential type binders). Applying the projector to a value `v : N(T̄)` yields the inner polymorphic CPS function; the user then applies that to `(R, k)` where `k` is the continuation. The continuation `k` is checked against `∀β₁ … βₙ. (Payload[T̄, β̄]) → R`:
+(see [`language.md`](../language.md) § Existential type binders). Applying the projector to a value `v : N[T̄]` yields the inner polymorphic CPS function; the user then instantiates it with `[R]` and applies `(k)` where `k` is the continuation. The continuation `k` is checked against `∀β₁ … βₙ. (Payload[T̄][β̄]) → R`:
 
 - The inner `∀β₁ … βₙ.` skolemizes via E-FnCheck (§ 4.1).
 - The body of `k` is typed under the skolemized context.
@@ -986,13 +1016,15 @@ The `let .(<U_1> … <U_n> x) = e;` block-statement sugar (per [`language.md`](.
 A marked block call uses source-local binding classification independently
 of provider declarations. After ordinary name
 resolution, each `trailing` descriptor selects the projection for one final
-value slot of the resolved public call type. Every declared block is required
-once, in declaration order. Every nonempty written prefix has ordinary value-argument
-list parentheses. Zero-prefix calls omit that list, while a direct empty list
+Function layer of the resolved public call type. Each projected block is one
+value for that entire layer, never a component of another block's product. Every declared block is required
+once, in declaration order. Each written prefix value group likewise applies
+one preceding Function layer; several such groups are admitted. Zero-prefix calls omit that list, while a direct empty list
 supplies one Unit value. Prefixes are value-only, type arguments are
 inferred, and the call is complete; there is no blockless alternate for a
-declaration with descriptors. A UFCS spelling inserts its receiver first or
-last among the prefix values before any block projection. Reverse splices
+declaration with descriptors. Forward UFCS inserts in the first prefix group, reverse UFCS in the last;
+without a written prefix it creates a receiver-only prefix stage. Insertion
+never enters a block. Reverse splices
 follow the complete block chain. The resulting call uses the same public-type
 application rules as its direct prefix equivalent; neither the descriptors
 nor the private implementation ABI select another insertion position.
@@ -1010,7 +1042,7 @@ ordinary chains inside an explicit block keep their ordinary elision rules.
 - `thunk` projects an expression-block body to a zero-argument function. Empty
   gives unit in its body. Ordinary lets are admitted, and `<-` is rejected.
 - `sequence` projects an ordinary function taking a bind of structural type
-  `[A][B] (F(A) & (A -> F(B))) -> F(B)` and returning `F(R)`. Bind and sequence
+  `[A][B] (F[A] & (A -> F[B])) -> F[B]` and returning `F[R]`. Bind and sequence
   steps become ordinary calls with nested continuations; the final expression
   is explicit. Empty and statement-only sequences are type errors.
 
@@ -1019,9 +1051,9 @@ The private implementation ABI does not choose public slots or type flow.
 Local lets use E-LetSynth / E-LetCheck, completing the prefix before the tail.
 A written bind annotation retains its one original source occurrence and the
 ordinary post-materialization `forall` predicate. The bind type connects
-`e : F(A)` to its continuation parameter, and ordinary expected-result flow
+`e : F[A]` to its continuation parameter, and ordinary expected-result flow
 may determine `B`. Later continuation uses do not infer the earlier payload
-across its binding boundary. A sequenced expression requires `F(.)`, whereas
+across its binding boundary. A sequenced expression requires `F[.]`, whereas
 `let _ <- e` may discard a non-unit payload. No implicit lift is inserted.
 
 The reference `if`, `scope`, `do`, and `match` are ordinary library

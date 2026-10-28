@@ -175,11 +175,11 @@ mod tests {
     fn affected_owners_preserve_header_and_recursive_member_boundaries() {
         let module = parse(
             "module source; \
-             labels { box[*F][A]<X>: F(A) & X }; \
+             labels { box[*F][A]<X>: F[A] & X }; \
              labels Wrong[F][A] = { box[F][A]: _ }; \
              rec { \
-               labels Later[*G][B] = { box[*G][B]: _ } | { link[*G][B]: Next(G, B) }; \
-               labels Next[*H][C] = { box[*H][C]: _ } | { back[*H][C]: Later(H, C) }; \
+               labels Later[*G][B] = { box[*G][B]: _ } | { link[*G][B]: Next[G][ B] }; \
+               labels Next[*H][C] = { box[*H][C]: _ } | { back[*H][C]: Later[H][ C] }; \
              }",
         );
         assert_eq!(

@@ -4,16 +4,16 @@ import fold/fixtures as fixtures;
 import fold/reconstruct as reconstruct;
 import fold/report as report;
 import fold/solver as solver;
-import testapi(I32, String);
+import testapi(Array, I32, String);
 import testapi/array as array;
 import testapi/io as io;
 
 fn audit_examples() {
   report.inspect("crossed-pairs", fixtures.crossing_choice(), fixtures.crossed_partners(), 1, 2);
-  let incompatible = array.array_make_filled(4, -1);
+  let .(incompatible: Array[I32]) = array.array_make_filled(4, -1);
   fixtures.pair(incompatible, 0, 3);
   report.inspect("incompatible-bases", fixtures.unpairable(), incompatible, 1, 1);
-  let adjacent = array.array_make_filled(2, -1);
+  let .(adjacent: Array[I32]) = array.array_make_filled(2, -1);
   fixtures.pair(adjacent, 0, 1);
   report.inspect("short-loop", fixtures.adjacent(), adjacent, 2, 1);
   let valid = reconstruct.partners(solver.solve(fixtures.hairpin(), 2));

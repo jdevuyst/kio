@@ -16,7 +16,7 @@ import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
-pub type Codes = list.List(I32);
+pub type Codes = list.List[I32];
 
 pub fn answers(q: Atom, db: Atoms) -> subst.Substs {
   unify.solve_all(list.of1(q), db, subst.empty())
@@ -50,4 +50,4 @@ rec(loop) fn vars_from(args: Args, acc: Codes) -> Codes {
 
 /// In order of first occurrence, and deduplicated - a variable written
 /// twice in one query is still reported once.
-pub fn query_vars(q: Atom) -> Codes { vars_from(args_of(q), list.nil(I32)) }
+pub fn query_vars(q: Atom) -> Codes { vars_from(args_of(q), list.nil[I32]) }

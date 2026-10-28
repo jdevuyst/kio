@@ -8,8 +8,8 @@ pub newtype Const[A] : I32 { pub constructor mk_const; pub projector un_const }
 // is the finite host scalar `I32`. The argument must not make `Wrap`
 // recursive or replace that exact finite boundary type with an erased
 // recursive carrier.
-pub rec newtype Wrap : Const(Wrap) { pub constructor mk_wrap; pub projector un_wrap }
+pub rec newtype Wrap : Const[Wrap] { pub constructor mk_wrap; pub projector un_wrap }
 
-pub fn from_i32(value: I32) -> Wrap { Wrap.mk_wrap(Const.mk_const(Wrap, value)) }
+pub fn from_i32(value: I32) -> Wrap { Wrap.mk_wrap(Const.mk_const[Wrap](value)) }
 
-pub fn to_i32(value: Wrap) -> I32 { Const.un_const(Wrap, Wrap.un_wrap(value)) }
+pub fn to_i32(value: Wrap) -> I32 { Const.un_const[Wrap](Wrap.un_wrap(value)) }

@@ -16,12 +16,12 @@ rec(iter.loop_reentry) {
       fallback
     } else {
       receive(.(value: I32) -> Bool {
-        recur(poly, escape) answer(Bool, value, captured, .(same: Bool) { same })
+        recur(poly, escape) answer[Bool](value, captured, .(same: Bool) { same })
       })
     }
   };
   fn answer[A](value: I32, captured: I32, finish: Bool -> A) -> A {
-    recur save(A, 0, finish(arith.eq_i32(value, captured)), .(_unused: I32 -> Bool) { finish(.f) })
+    recur save[A](0, finish(arith.eq_i32(value, captured)), .(_unused: I32 -> Bool) { finish(.f) })
   }
 }
 

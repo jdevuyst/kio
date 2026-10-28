@@ -21,12 +21,12 @@ fn cnf_to_dnf(x: Cnf) -> Dnf { iso(x) }
 fn dnf_to_cnf(y: Dnf) -> Cnf { iso(y) }
 
 pub fn main() {
-  let cnf = (42(I32), into("hello\n"(String), String | I32));
+  let cnf = (42[I32], into("hello\n"[String])[String | I32]);
   // Round-trip through DNF and back to CNF.
   let dnf = cnf_to_dnf(cnf);
   let cnf_again = dnf_to_cnf(dnf);
-  let i = onto(cnf_again, I32);
-  let inner = onto(cnf_again, String | I32);
+  let i = onto(cnf_again)[I32];
+  let inner = onto(cnf_again)[String | I32];
   let s =
     match(inner) {
       (.(s: String) { s }, .(_n: I32) { "wrong\n" })

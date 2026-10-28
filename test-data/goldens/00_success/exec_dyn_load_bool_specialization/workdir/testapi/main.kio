@@ -20,13 +20,13 @@ import value(Side, Value, s_left, s_right, vhost);
 fn adapter() -> Host_adapter {
   mk_host_adapter(
   , host_types_cons(
-    , mk_role_host_type(mk_host_id("hostapi"(String), "I32"(String)), i32_role())
+    , mk_role_host_type(mk_host_id("hostapi"[String], "I32"[String]), i32_role())
     , host_types_cons(
-      , mk_role_host_type(mk_host_id("hostapi"(String), "First"(String)), bool_role())
+      , mk_role_host_type(mk_host_id("hostapi"[String], "First"[String]), bool_role())
       , host_types_cons(
-        , mk_role_host_type(mk_host_id("hostapi"(String), "Second"(String)), bool_role())
+        , mk_role_host_type(mk_host_id("hostapi"[String], "Second"[String]), bool_role())
         , host_types_cons(
-          , mk_role_host_type(mk_host_id("hostapi"(String), "Flag"(String)), bool_role())
+          , mk_role_host_type(mk_host_id("hostapi"[String], "Flag"[String]), bool_role())
           , host_types_nil()
           )
         )
@@ -39,8 +39,8 @@ fn adapter() -> Host_adapter {
 fn bool_type(ty: Host_type) -> Bool {
   match(host_type_shape(ty)) {
     (
-    , .(role: Role_host_type) { string_eq(role_name(Role_host_type.get(role)), "bool"(String)) }
-    , .(_other: Roleless_host_type) { .f(Bool) }
+    , .(role: Role_host_type) { string_eq(role_name(Role_host_type.get(role)), "bool"[String]) }
+    , .(_other: Roleless_host_type) { .f[Bool] }
     )
   }
 }
@@ -59,7 +59,7 @@ fn test_boolean(ty: Host_type, scalar: Scalar) -> Side {
   match(scalar_as_str(scalar)) {
     (
     , .(text: String) {
-        if(string_eq(text, string_concat(host_id_local(host_type_id(ty)), "t"(String)))) {
+        if(string_eq(text, string_concat(host_id_local(host_type_id(ty)), "t"[String]))) {
           s_right()
         } else {
           s_left()
@@ -70,8 +70,8 @@ fn test_boolean(ty: Host_type, scalar: Scalar) -> Side {
   }
 }
 
-fn call_value[P](surface: Surface(P)) -> String {
-  match(surface.?{lookup}("value"(String))) {
+fn call_value[P](surface: Surface[P]) -> String {
+  match(surface.?{lookup}("value"[String])) {
     (
     , .(callee: P) {
         match(surface.?{apply}((callee, surface.?{unit_in}))) {
@@ -92,14 +92,14 @@ fn call_value[P](surface: Surface(P)) -> String {
 
 fn rejected(name: String, source: String) {
   print(name);
-  print(": "(String));
+  print(": "[String]);
   match(un_load_outcome(load_package(source))) {
     (
-    , .(_image: Lr_image) { print("unexpected acceptance"(String)) }
+    , .(_image: Lr_image) { print("unexpected acceptance"[String]) }
     , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
     )
   };
-  print("\n"(String))
+  print("\n"[String])
 }
 
 fn evaluated(source: String) {
@@ -109,7 +109,7 @@ fn evaluated(source: String) {
         match(instantiate(adapter(), serve_default, make_literal, test_boolean, Lr_image.get(image))) {
           (
           , .(loaded: Loaded) {
-              Loaded.get(loaded)(.[P](surface: Surface(P)) { print(call_value(surface)) })
+              Loaded.get(loaded)(.[P](surface: Surface[P]) { print(call_value(surface)) })
             }
           , .(diag: Diag) { print(diag_message(diag)) }
           )
@@ -118,82 +118,82 @@ fn evaluated(source: String) {
     , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
     )
   };
-  print("\n"(String))
+  print("\n"[String])
 }
 
 pub fn main() {
   evaluated("module hostapi; host type I32 role(i32); host type First role(bool); "
             "host type Second role(bool); module guest; import __intrinsics__; import "
             "hostapi(I32, First, Second); type Identity[A] = A; pub fn value() -> I32 "
-            "{ __if_then_else__(Identity(First), I32, .t(Identity(First)), .() -> I32 "
-            "{ __if_then_else__(Second, I32, .t(Second), .() -> I32 { 73(I32) }, .() "
-            "-> I32 { 0(I32) }) }, .() -> I32 { 0(I32) }) } package guest; bridge { "
-            "guest; hostapi; }"(String));
+            "{ __if_then_else__[Identity[First]][I32](.t[Identity[First]], .() -> I32 "
+            "{ __if_then_else__[Second][I32](.t[Second], .() -> I32 { 73[I32] }, .() "
+            "-> I32 { 0[I32] }) }, .() -> I32 { 0[I32] }) } package guest; bridge { "
+            "guest; hostapi; }"[String]);
   evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
             "module guest; import __intrinsics__; import hostapi(I32, Flag); fn "
-            "default() -> I32 { 74(I32) } pub fn value() -> I32 { "
-            "__if_then_else__(Flag, I32, .f(Flag), .() -> I32 { 0(I32) }, .() -> I32 "
-            "{ default() }) } package guest; bridge { guest; hostapi; }"(String));
+            "default() -> I32 { 74[I32] } pub fn value() -> I32 { "
+            "__if_then_else__[Flag][I32](.f[Flag], .() -> I32 { 0[I32] }, .() -> I32 "
+            "{ default() }) } package guest; bridge { guest; hostapi; }"[String]);
   evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
             "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
             "Ignore[A] = Flag; fn pick[A](condition: Flag, yes: A, no: A) -> A { "
-            "__if_then_else__(Ignore(A), A, condition, .() -> A { yes }, .() -> A { "
-            "no }) } pub fn value() -> I32 { pick(I32, .t(Flag), 75(I32), 0(I32)) } "
-            "package guest; bridge { guest; hostapi; }"(String));
+            "__if_then_else__[Ignore[A]][A](condition, .() -> A { yes }, .() -> A { "
+            "no }) } pub fn value() -> I32 { pick[I32](.t[Flag], 75[I32], 0[I32]) } "
+            "package guest; bridge { guest; hostapi; }"[String]);
   evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
             "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
             "Ignore[*F] = Flag; newtype Box[A] : A { constructor mk; projector get } "
             "pub fn value() -> I32 { .[*F](condition: Flag) -> I32 { "
-            "__if_then_else__(Ignore(F), I32, condition, .() -> I32 { 76(I32) }, .() "
-            "-> I32 { 0(I32) }) }(Box, .t(Flag)) } package guest; bridge { guest; "
-            "hostapi; }"(String));
+            "__if_then_else__[Ignore[F]][I32](condition, .() -> I32 { 76[I32] }, .() "
+            "-> I32 { 0[I32] }) }[Box](.t[Flag]) } package guest; bridge { guest; "
+            "hostapi; }"[String]);
   evaluated("module hostapi; host type I32 role(i32); host type Flag role(bool); "
             "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
             "Ignore[A] = Flag; pub fn value() -> I32 { let ignored = .[Flag]() -> "
-            "Ignore(Flag) { .t(Ignore(Flag)) }; __if_then_else__(Flag, I32, .t(Flag), "
-            ".() -> I32 { 77(I32) }, .() -> I32 { 0(I32) }) } package guest; bridge { "
-            "guest; hostapi; }"(String));
+            "Ignore[Flag] { .t[Ignore[Flag]] }; __if_then_else__[Flag][I32](.t[Flag], "
+            ".() -> I32 { 77[I32] }, .() -> I32 { 0[I32] }) } package guest; bridge { "
+            "guest; hostapi; }"[String]);
   rejected(
-  , "nonbool"(String)
+  , "nonbool"[String]
   , "module hostapi; host type I32 role(i32); module guest; import "
     "__intrinsics__; import hostapi(I32); pub fn value() -> I32 { "
-    "__if_then_else__(I32, I32, 1(I32), .() -> I32 { 1(I32) }, .() -> I32 { "
-    "0(I32) }) } package guest; bridge { guest; hostapi; }"(String)
+    "__if_then_else__[I32][I32](1[I32], .() -> I32 { 1[I32] }, .() -> I32 { "
+    "0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
-  , "underapplied"(String)
+  , "underapplied"[String]
   , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
     "module guest; import __intrinsics__; import hostapi(I32, Flag); type "
-    "Identity[A] = A; pub fn value() -> I32 { __if_then_else__(Identity, I32, "
-    ".t(Flag), .() -> I32 { 1(I32) }, .() -> I32 { 0(I32) }) } package guest; "
-    "bridge { guest; hostapi; }"(String)
+    "Identity[A] = A; pub fn value() -> I32 { "
+    "__if_then_else__[Identity][I32](.t[Flag], .() -> I32 { 1[I32] }, .() -> "
+    "I32 { 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
-  , "rigid"(String)
+  , "rigid"[String]
   , "module hostapi; host type I32 role(i32); module guest; import "
     "__intrinsics__; import hostapi(I32); pub fn value[B](condition: B) -> "
-    "I32 { __if_then_else__(B, I32, condition, .() -> I32 { 1(I32) }, .() -> "
-    "I32 { 0(I32) }) } package guest; bridge { guest; hostapi; }"(String)
+    "I32 { __if_then_else__[B][I32](condition, .() -> I32 { 1[I32] }, .() -> "
+    "I32 { 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
-  , "shadowed"(String)
+  , "shadowed"[String]
   , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
     "module guest; import __intrinsics__; import hostapi(I32, Flag); pub fn "
-    "value[Flag](condition: Flag) -> I32 { __if_then_else__(Flag, I32, "
-    "condition, .() -> I32 { 1(I32) }, .() -> I32 { 0(I32) }) } package "
-    "guest; bridge { guest; hostapi; }"(String)
+    "value[Flag](condition: Flag) -> I32 { "
+    "__if_then_else__[Flag][I32](condition, .() -> I32 { 1[I32] }, .() -> I32 "
+    "{ 0[I32] }) } package guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
-  , "nested shadow"(String)
+  , "nested shadow"[String]
   , "module hostapi; host type I32 role(i32); host type Flag role(bool); "
     "module guest; import __intrinsics__; import hostapi(I32, Flag); pub fn "
     "value() -> I32 { let ignored = .[Flag](condition: Flag) -> I32 { "
-    "__if_then_else__(Flag, I32, condition, .() -> I32 { 1(I32) }, .() -> I32 "
-    "{ 0(I32) }) }; 0(I32) } package guest; bridge { guest; hostapi; }"(String)
+    "__if_then_else__[Flag][I32](condition, .() -> I32 { 1[I32] }, .() -> I32 "
+    "{ 0[I32] }) }; 0[I32] } package guest; bridge { guest; hostapi; }"[String]
   );
   rejected(
-  , "removed modifier"(String)
+  , "removed modifier"[String]
   , "module hostapi; default host type Flag role(bool); package guest; bridge "
-    "{ hostapi; }"(String)
+    "{ hostapi; }"[String]
   )
 }

@@ -11,5 +11,5 @@ fn projector() -> Count -> I32 { Count.get_count }
 pub fn main() {
   let get = projector();
   print(int_to_string(get(Count.mk_count(42))));
-  print("\n"(String))
+  print("\n"[String])
 }

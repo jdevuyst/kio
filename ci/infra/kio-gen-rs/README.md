@@ -45,8 +45,9 @@ The batch directory also gets a `README.md` describing the seed, the generator v
 For invalid programs, the oracle is the expected exit code (in `expected.exit`); stderr wording is ignored. For valid programs, the harness discharges surface-mode `equiv` claims, builds the selected target, invokes `prog.main`, and compares stdout and exit against the independent expectations.
 
 `generated-core-main` supplies the fourteen role types in `prog` and the
-standard `prog.print_i32` capability; `generated-surface-main` adds the four
-role types in the bundled `testapi` module. Valid functions returning `I32`
+standard `prog.print_i32` capability; `generated-surface-main` replaces
+`prog.Bool` with `control.Bool` and adds the four role types in the bundled
+`testapi` module. Valid functions returning `I32`
 are closed with the existing typed inhabitant construction and invoked through
 one shared `kio_gen_observed` function. Their `run.sh` captures the small
 nonnegative integer, validates it, and appends an ordinary `equiv` comparing

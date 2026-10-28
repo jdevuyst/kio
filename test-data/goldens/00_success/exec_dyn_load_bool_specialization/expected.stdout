@@ -3,7 +3,7 @@
 75
 76
 77
-nonbool: dyn_load_prime: malformed image — module `guest`, fn `value`: `__if_then_else__` requires a concrete `role(bool)` type as its first argument at line 1, column 141
+nonbool: dyn_load_prime: malformed image — module `guest`, fn `value`: `__if_then_else__` requires a concrete `role(bool)` type as its first type argument at line 1, column 141
 underapplied: dyn_load_prime: malformed image — module `guest`, fn `value`: dyn_load_prime: host type argument: dyn_load_prime: malformed exact host-function signature: type alias `Identity` requires 1 type argument, but 0 were supplied at line 1, column 196
 rigid: dyn_load_prime: malformed image — module `guest`, fn `value`: dyn_load_prime: type argument does not resolve to one exact host type at line 1, column 156
 shadowed: dyn_load_prime: malformed image — module `guest`, fn `value`: dyn_load_prime: type argument does not resolve to one exact host type at line 1, column 195

@@ -21,7 +21,7 @@ rec(loop) fn cols_onto(cols: schema.Col_list, acc: String, first: Bool) -> Strin
   match(cols.>list.List.un_list) {
     (
     , .(c: schema.Col, rest: schema.Col_list) {
-        let sep = if(first) { "" } else { ", " };
+        let .(sep: String) = if(first) { "" } else { ", " };
         recur cols_onto(rest, text.cat3(acc, sep, schema.col_name(c)), .f)
       }
     , .(_empty: .) { acc }

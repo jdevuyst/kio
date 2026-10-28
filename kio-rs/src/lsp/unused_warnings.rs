@@ -922,9 +922,9 @@ mod tests {
     #[test]
     fn source_warning_graph_counts_written_type_alias_uses_only() {
         for (body, expected_dead) in [
-            ("pub fn run() -> . { let _value = 1(Fallback); () }", false),
+            ("pub fn run() -> . { let _value = 1[Fallback]; () }", false),
             ("pub fn run() -> r.Number { 1 }", true),
-            ("pub fn run() -> r.Number { 1(r.Number) }", true),
+            ("pub fn run() -> r.Number { 1[r.Number] }", true),
         ] {
             let main = format!("module main; import roles as r; type Fallback = r.Number; {body}");
             let analysis = analyze_sources(&[
@@ -1025,7 +1025,7 @@ mod tests {
     #[test]
     fn source_warning_graph_tracks_erased_literals_without_shadowed_import_uses() {
         for (body, unused) in [
-            ("pub fn run() -> r.Number { marker(r.Number) }", false),
+            ("pub fn run() -> r.Number { marker[r.Number] }", false),
             ("pub fn run(marker: r.Number) -> r.Number { marker }", true),
         ] {
             let source = format!("module main; import literals(marker); import roles as r; {body}");
@@ -1059,7 +1059,7 @@ mod tests {
                 ],
             ),
             (
-                "pub fn run() -> . & . { __pair__(., ., (), ()) }",
+                "pub fn run() -> . & . { __pair__[.][.]((), ()) }",
                 vec!["import __comptime__;"],
             ),
             (

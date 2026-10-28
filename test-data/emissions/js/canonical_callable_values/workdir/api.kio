@@ -8,7 +8,7 @@ host type Atom;
 
 host type Box[T];
 
-host fn pack[T](value: T) -> Box(T);
+host fn pack[T](value: T) -> Box[T];
 
 host fn host_hold[T](value: T) -> . -> T;
 
@@ -24,7 +24,7 @@ pub fn read_seal(value: Seal) -> Number { value.>Seal.read }
 
 fn observe_seal(value: Seal) -> Seal { mark(7); value }
 
-pub fn boxed_observer() -> Box(Seal -> Seal) { pack(observe_seal) }
+pub fn boxed_observer() -> Box[Seal -> Seal] { pack(observe_seal) }
 
 pub fn hold[T](value: T) -> . -> T {
   .() { value }
@@ -32,7 +32,7 @@ pub fn hold[T](value: T) -> . -> T {
 
 pub fn pair_hold(value: Number & Flag) -> . -> (Number & Flag) { hold(value) }
 
-pub fn boxed_hold(value: Number & Flag) -> Box(. -> (Number & Flag)) { pack(hold(value)) }
+pub fn boxed_hold(value: Number & Flag) -> Box[. -> (Number & Flag)] { pack(hold(value)) }
 
 pub fn pair_host_hold(value: Number & Flag) -> . -> (Number & Flag) { host_hold(value) }
 
@@ -49,4 +49,4 @@ pub fn staged[A] -> Number -> Number {
 
 pub fn computed() -> [A] Number -> Number { mark(0); staged }
 
-pub fn invoke() -> Number { computed()(Number, argument()) }
+pub fn invoke() -> Number { computed()[Number](argument()) }

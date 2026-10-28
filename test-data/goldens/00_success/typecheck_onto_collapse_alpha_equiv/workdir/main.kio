@@ -13,4 +13,4 @@ type Id_b = [B] B -> B;
 // under `equiv`. With alpha-equivalence in `equiv`, `Id_a` and
 // `Id_b` match — so `(Id_a | Id_b)` collapses to `Id_a`. The
 // function below is well-typed iff that collapse fires.
-fn collapse(x: Id_a | Id_b) -> Id_a { onto(x) }
+fn collapse(x: Id_a | Id_b) -> Id_a { onto(x)[_] }

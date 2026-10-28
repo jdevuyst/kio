@@ -310,8 +310,8 @@ fn check_contract() {
 let c =
   contract_cons(
   , mk_expect(
-    , "add3"(String)
-    , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String)
+    , "add3"[String]
+    , "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"[String]
     )
   , contract_nil()
   );
@@ -337,8 +337,8 @@ that has already opened a loaded handle.
 
 Instantiating evaluates every top-level binding exactly once, in
 dependency order, and presents the image's exports at an **existential**
-interface: `Loaded` packs `exists P. Surface(P)`. The representation `P`
-of a loaded value is hidden; `Surface(P)` is a record of operations over
+interface: `Loaded` packs `exists P. Surface[P]`. The representation `P`
+of a loaded value is hidden; `Surface[P]` is a record of operations over
 `P`:
 
 - `lookup` — resolve an export by (optionally module-qualified) name.
@@ -411,9 +411,9 @@ signature never names a type the host cannot see:
 ```kio {@contracts}
 let c =
   contract_cons(
-  , mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
+  , mk_expect("Tag.mk_tag"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
   , contract_cons(
-    , mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
+    , mk_expect("guest.Tag.un_tag"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
     , contract_nil()
     )
   );
@@ -442,8 +442,8 @@ four lines of ceremony behind a typed signature — written once, called
 everywhere:
 
 ```text
-fn run_greet[P](surf: Surface(P), who: String) -> String {
-  match(surf.?{lookup}("greet"(String))) {
+fn run_greet[P](surf: Surface[P], who: String) -> String {
+  match(surf.?{lookup}("greet"[String])) {
     .(g: P) {
       match(surf.?{apply}((g, surf.?{str_in}(who)))) {
         .(r: P) {

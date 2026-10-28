@@ -138,7 +138,7 @@ rec(loop) fn filter_rows(rows: rel.Table, p: plan.Pred, st: Stats) -> rel.Table 
         let .(tail: rel.Table, st2: Stats) = recur(cont) filter_rows(rest, p, st1);
         if(keep) { (list.cons(r, tail), st2) } else { (tail, st2) }
       }
-    , .(_empty: .) { (list.nil(rel.Row), st) }
+    , .(_empty: .) { (list.nil[rel.Row], st) }
     )
   }
 }
@@ -150,7 +150,7 @@ rec(loop) fn project_rows(cols: schema.Col_list, rows: rel.Table, st: Stats) -> 
         let .(tail: rel.Table, st1: Stats) = recur(cont) project_rows(cols, rest, st);
         (list.cons(rel.project_row(cols, r), tail), st1)
       }
-    , .(_empty: .) { (list.nil(rel.Row), st) }
+    , .(_empty: .) { (list.nil[rel.Row], st) }
     )
   }
 }
@@ -184,7 +184,7 @@ rec(loop) fn join_probe(l: rel.Row, rs: rel.Table, lkey: schema.Col, rkey: schem
           recur(cont) join_probe(l, rest, lkey, rkey, compared(st, 1));
         if(hit) { (list.cons(rel.row_merge(l, r), tail), st1) } else { (tail, st1) }
       }
-    , .(_empty: .) { (list.nil(rel.Row), st) }
+    , .(_empty: .) { (list.nil[rel.Row], st) }
     )
   }
 }
@@ -203,7 +203,7 @@ rec(loop) fn join_rows(ls: rel.Table, rs: rel.Table, lkey: schema.Col, rkey: sch
         let .(tail: rel.Table, st2: Stats) = recur(cont) join_rows(rest, rs, lkey, rkey, st1);
         (list.append(hits, tail), st2)
       }
-    , .(_empty: .) { (list.nil(rel.Row), st) }
+    , .(_empty: .) { (list.nil[rel.Row], st) }
     )
   }
 }
@@ -281,9 +281,9 @@ labels Agg = { agg_col: schema.Col } | { agg_rows: . };
 
 labels Group = { g_key: I32, g_acc: I32 };
 
-fn summing(c: schema.Col) -> Agg { {agg_col = c}.>widen_sum(Agg) }
+fn summing(c: schema.Col) -> Agg { ({agg_col = c}.>widen_sum)[Agg] }
 
-fn counting() -> Agg { {agg_rows=}.>widen_sum(Agg) }
+fn counting() -> Agg { ({agg_rows=}.>widen_sum)[Agg] }
 
 fn group(key: I32, acc: I32) -> Group { {g_key = key, g_acc = acc} }
 
@@ -297,17 +297,17 @@ fn delta_of(row: rel.Row, a: Agg) -> I32 {
 /// the list absorbs the row; a new key is appended, which is what keeps
 /// the groups in first-seen order. The probe compares the key against
 /// every bucket it passes.
-rec(loop) fn bump(groups: list.List(Group), key: I32, delta: I32, st: Stats) ->
-  list.List(Group) & Stats
+rec(loop) fn bump(groups: list.List[Group], key: I32, delta: I32, st: Stats) ->
+  list.List[Group] & Stats
    {
   match(groups.>list.List.un_list) {
     (
-    , .(g: Group, rest: list.List(Group)) {
+    , .(g: Group, rest: list.List[Group]) {
         let st1 = compared(st, 1);
         if(eq_i32(g.?{g_key}, key)) {
           (list.cons(group(key, add_i32(g.?{g_acc}, delta)), rest), st1)
         } else {
-          let .(tail: list.List(Group), st2: Stats) = recur(cont) bump(rest, key, delta, st1);
+          let .(tail: list.List[Group], st2: Stats) = recur(cont) bump(rest, key, delta, st1);
           (list.cons(g, tail), st2)
         }
       }
@@ -320,13 +320,13 @@ rec(loop) fn group_rows(
 , rows: rel.Table
 , key: schema.Col
 , a: Agg
-, groups: list.List(Group)
+, groups: list.List[Group]
 , st: Stats
-) -> list.List(Group) & Stats {
+) -> list.List[Group] & Stats {
   match(rows.>list.List.un_list) {
     (
     , .(r: rel.Row, rest: rel.Table) {
-        let .(next: list.List(Group), st1: Stats) =
+        let .(next: list.List[Group], st1: Stats) =
           bump(groups, int_or_zero(rel.row_int(r, key)), delta_of(r, a), st);
         recur group_rows(rest, key, a, next, st1)
       }
@@ -335,10 +335,10 @@ rec(loop) fn group_rows(
   }
 }
 
-rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List(Group)) -> rel.Table {
+rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List[Group]) -> rel.Table {
   match(groups.>list.List.un_list) {
     (
-    , .(g: Group, rest: list.List(Group)) {
+    , .(g: Group, rest: list.List[Group]) {
         list.cons(
         , list.of2(
           , rel.cell(key, value.int_val(g.?{g_key}))
@@ -347,7 +347,7 @@ rec(loop) fn groups_to_table(key: schema.Col, agg: schema.Col, groups: list.List
         , recur(cont) groups_to_table(key, agg, rest)
         )
       }
-    , .(_empty: .) { list.nil(rel.Row) }
+    , .(_empty: .) { list.nil[rel.Row] }
     )
   }
 }
@@ -391,8 +391,8 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
     , .(k: plan.Sum_key, v: plan.Sum_val, src: plan.Sum_src) {
         let .(child: rel.Relation, st1: Stats) = recur(cont) eval(plan.sum_src_of(src), st);
         let key = plan.sum_key_of(k);
-        let .(groups: list.List(Group), st2: Stats) =
-          group_rows(rel.rel_rows_of(child), key, summing(plan.sum_val_of(v)), list.nil(Group), st1);
+        let .(groups: list.List[Group], st2: Stats) =
+          group_rows(rel.rel_rows_of(child), key, summing(plan.sum_val_of(v)), list.nil[Group], st1);
         (
         , rel.relation(list.of2(key, schema.total()), groups_to_table(key, schema.total(), groups))
         , st2
@@ -401,8 +401,8 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
     , .(k: plan.Count_key, src: plan.Count_src) {
         let .(child: rel.Relation, st1: Stats) = recur(cont) eval(plan.count_src_of(src), st);
         let key = plan.count_key_of(k);
-        let .(groups: list.List(Group), st2: Stats) =
-          group_rows(rel.rel_rows_of(child), key, counting(), list.nil(Group), st1);
+        let .(groups: list.List[Group], st2: Stats) =
+          group_rows(rel.rel_rows_of(child), key, counting(), list.nil[Group], st1);
         (
         , rel.relation(list.of2(key, schema.count()), groups_to_table(key, schema.count(), groups))
         , st2
@@ -415,7 +415,7 @@ pub rec(loop) fn eval(p: plan.Plan, st: Stats) -> rel.Relation & Stats {
           , rel.rel_rows_of(child)
           , plan.order_key_of(k)
           , plan.order_dir_of(d)
-          , list.nil(rel.Row)
+          , list.nil[rel.Row]
           , st1
           );
         (rel.relation(rel.rel_cols_of(child), rows), st2)

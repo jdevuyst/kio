@@ -19,13 +19,13 @@ import testapi/iter(loop);
 /// `int_min` as the identity for the minimum.
 literal unreachable_high = 1000000;
 
-pub labels Brute = { cells: Array(I32), touched: Meter };
+pub labels Brute = { cells: Array[I32], touched: Meter };
 
 /// The reference owns its own copy of the fixture, so the two structures
 /// cannot alias and quietly agree.
-pub fn build_brute(src: Array(I32)) -> Brute { {cells = array_clone(src), touched = new_meter()} }
+pub fn build_brute(src: Array[I32]) -> Brute { {cells = array_clone(src), touched = new_meter()} }
 
-pub fn brute_cells(base: Brute) -> Array(I32) { base.?{cells} }
+pub fn brute_cells(base: Brute) -> Array[I32] { base.?{cells} }
 
 pub fn touches(base: Brute) -> I32 { work(base.?{touched}) }
 
@@ -71,7 +71,7 @@ pub fn brute_min(base: Brute, l: I32, r: I32) -> I32 { min_from(base, l, r, unre
 
 pub fn brute_point_set(base: Brute, i: I32, v: I32) { write_cell(base, i, v) }
 
-rec(loop) fn same_from(a: Array(I32), b: Array(I32), i: I32, n: I32) -> Bool {
+rec(loop) fn same_from(a: Array[I32], b: Array[I32], i: I32, n: I32) -> Bool {
   if(leq_i32(n, i)) {
     .t
   } else if(int_eq(array_get(a, i), array_get(b, i))) {
@@ -83,6 +83,6 @@ rec(loop) fn same_from(a: Array(I32), b: Array(I32), i: I32, n: I32) -> Bool {
 
 /// Element-wise equality of two arrays: the final check that the settled
 /// tree and the reference array hold the same data.
-pub fn same_cells(a: Array(I32), b: Array(I32)) -> Bool {
+pub fn same_cells(a: Array[I32], b: Array[I32]) -> Bool {
   if(int_eq(array_len(a), array_len(b))) { same_from(a, b, 0, array_len(a)) } else { .f }
 }

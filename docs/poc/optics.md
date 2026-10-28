@@ -148,10 +148,10 @@ import macros/match(macro match);
 
 Two of these carry almost the entire library:
 
-- **`one_prod(p, T)`** extracts the first component of type `T` out of a
+- **`one_prod(p)[T]`** extracts the first component of type `T` out of a
   product `p`. It is how every combinator pulls a getter or setter back out
   of the pair an optic *is*. It selects the first matching spine slot of `p`.
-- **`widen_sum(v, T)`** injects a value `v` into a wider sum type `T` — the
+- **`widen_sum(v)[T]`** injects a value `v` into a wider sum type `T` — the
   injection that builds an `(A | .)` "hit", drops to the `()` "miss" arm, or
   lands a value at a chosen arm of a sum.
 
@@ -200,7 +200,7 @@ part back:
 pub type Lens[S][A] = (S -> A) & ((A & S) -> S);
 ```
 
-A `Lens(S, A)` is the product of a getter `S -> A` and a setter
+A `Lens[S][ A]` is the product of a getter `S -> A` and a setter
 `(A & S) -> S`. Nothing more. The getter is unary and the setter binary, so
 the two components have distinct types — and that distinction is exactly what
 lets `one_prod` pick each one out of the pair unambiguously.
@@ -210,15 +210,15 @@ lets `one_prod` pick each one out of the pair unambiguously.
 The three core lens combinators pull the two functions out and apply them:
 
 ```kio {@optics}
-pub fn view[S][A](l: Lens(S, A), x: S) -> A { one_prod(l, S -> A)(x) }
+pub fn view[S][A](l: Lens[S][A], x: S) -> A { one_prod(l)[S -> A](x) }
 
-pub fn set[S][A](l: Lens(S, A), new_a: A, x: S) -> S { one_prod(l, (A & S) -> S)(new_a, x) }
+pub fn set[S][A](l: Lens[S][A], new_a: A, x: S) -> S { one_prod(l)[(A & S) -> S](new_a, x) }
 
-pub fn over[S][A](l: Lens(S, A), f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
+pub fn over[S][A](l: Lens[S][A], f: A -> A, x: S) -> S { set(l, f(view(l, x)), x) }
 ```
 
-`one_prod(l, S -> A)` picks the getter and applies it to `x`;
-`one_prod(l, (A & S) -> S)` picks the setter and applies it to the new value
+`one_prod(l)[S -> A]` picks the getter and applies it to `x`;
+`one_prod(l)[(A & S) -> S]` picks the setter and applies it to the new value
 and the container. `one_prod` can disambiguate because the getter type
 `S -> A` and the setter type `(A & S) -> S` are different — there is
 exactly one product slot of each. `over` is *defined* in terms of the other
@@ -232,13 +232,13 @@ The library ships three concrete lenses. The first two focus a positional
 component of a pair:
 
 ```kio {@optics}
-pub fn fst_lens[A][B] -> Lens(A & B, A) {
+pub fn fst_lens[A][B] -> Lens[A & B][A] {
   let get = .((x: A, _y: B)) -> A { x };
   let put = .(new_a: A, (_x: A, y: B)) -> A & B { (new_a, y) };
   (get, put)
 }
 
-pub fn snd_lens[A][B] -> Lens(A & B, B) {
+pub fn snd_lens[A][B] -> Lens[A & B][B] {
   let get = .((_x: A, y: B)) -> B { y };
   let put = .(new_b: B, (x: A, _y: B)) -> A & B { (x, new_b) };
   (get, put)
@@ -249,22 +249,22 @@ The getter and setter destructure the pair *positionally* — the lambda binds
 `(x: A, _y: B)` by position, so `fst_lens` stays correct (it really does
 focus the *first* component) even when `A` and `B` are the same type. Each
 lambda is return-annotated, and the two go into a tuple literal whose type is
-`Lens(A & B, A)`. `snd_lens` is the mirror image, focusing the second
-component. These constructors have only type parameters: `fst_lens(_, _)`
+`Lens[A & B][ A]`. `snd_lens` is the mirror image, focusing the second
+component. These constructors have only type parameters: `fst_lens[_][ _]`
 lets the surrounding context infer them without a Unit value argument.
 
 The third concrete lens is the identity lens, which focuses the whole
 container — it is the unit of lens composition:
 
 ```kio {@optics}
-pub fn id_lens[A] -> Lens(A, A) {
+pub fn id_lens[A] -> Lens[A][A] {
   let get = .(x: A) -> A { x };
   let put = .(new_a: A, _old: A) -> A { new_a };
   (get, put)
 }
 ```
 
-`view(id_lens(_), x)` returns `x` unchanged; `set(id_lens(_), new, x)` replaces
+`view(id_lens[_], x)` returns `x` unchanged; `set(id_lens[_], new, x)` replaces
 it with `new`, discarding the old container. Both facts are pinned by laws
 below.
 
@@ -274,7 +274,7 @@ The point of optics is that they *compose*. A lens `S → A` and a lens
 `A → B` make a lens `S → B`:
 
 ```kio {@optics}
-pub fn compose_lens[S][A][B](outer: Lens(S, A), inner: Lens(A, B)) -> Lens(S, B) {
+pub fn compose_lens[S][A][B](outer: Lens[S][A], inner: Lens[A][B]) -> Lens[S][B] {
   let get = .(x: S) -> B { view(inner, view(outer, x)) };
   let put =
     .(new_b: B, x: S) -> S { let focus = view(outer, x); set(outer, set(inner, new_b, focus), x) };
@@ -307,9 +307,9 @@ the same `one_prod` projection the lens combinators use, picking the right
 half of the pair by type:
 
 ```kio {@optics}
-pub fn preview[S][A](p: Prism(S, A), x: S) -> A | . { one_prod(p, S -> (A | .))(x) }
+pub fn preview[S][A](p: Prism[S][A], x: S) -> A | . { one_prod(p)[S -> (A | .)](x) }
 
-pub fn review[S][A](p: Prism(S, A), v: A) -> S { one_prod(p, A -> S)(v) }
+pub fn review[S][A](p: Prism[S][A], v: A) -> S { one_prod(p)[A -> S](v) }
 ```
 
 `over_prism` applies a function through the prism when the source is in the
@@ -317,7 +317,7 @@ matching arm, and leaves it unchanged otherwise. This is where `match`
 eliminates the `(A | .)` that `preview` produces:
 
 ```kio {@optics}
-pub fn over_prism[S][A](p: Prism(S, A), f: A -> A, x: S) -> S {
+pub fn over_prism[S][A](p: Prism[S][A], f: A -> A, x: S) -> S {
   match(preview(p, x)) {
     (.(av: A) { review(p, f(av)) }, .(_u: .) { x })
   }
@@ -336,25 +336,25 @@ source's left arm to the target's `A` arm and the right arm to `()`; each
 `widen_sum`. Its review is a single left-injection:
 
 ```kio {@optics}
-pub fn left_prism[A][B] -> Prism(A | B, A) {
+pub fn left_prism[A][B] -> Prism[A | B][A] {
   let pre =
     .(x: A | B) -> A | . {
       match(x) {
-        (.(av: A) { widen_sum(av, A | .) }, .(_bv: B) { widen_sum((), A | .) })
+        (.(av: A) { widen_sum(av)[A | .] }, .(_bv: B) { widen_sum(())[A | .] })
       }
     };
-  let rev = .(av: A) -> A | B { widen_sum(av, A | B) };
+  let rev = .(av: A) -> A | B { widen_sum(av)[A | B] };
   (pre, rev)
 }
 
-pub fn right_prism[A][B] -> Prism(A | B, B) {
+pub fn right_prism[A][B] -> Prism[A | B][B] {
   let pre =
     .(x: A | B) -> B | . {
       match(x) {
-        (.(_av: A) { widen_sum((), B | .) }, .(bv: B) { widen_sum(bv, B | .) })
+        (.(_av: A) { widen_sum(())[B | .] }, .(bv: B) { widen_sum(bv)[B | .] })
       }
     };
-  let rev = .(bv: B) -> A | B { widen_sum(bv, A | B) };
+  let rev = .(bv: B) -> A | B { widen_sum(bv)[A | B] };
   (pre, rev)
 }
 ```
@@ -370,7 +370,7 @@ common result makes the clause bodies agree. The positional `match` keeps
 `left_prism` meaning "left" and `right_prism` meaning "right" even when `A`
 and `B` coincide.
 
-There is a subtle and important point about `rev`. `widen_sum(av, A | B)` is
+There is a subtle and important point about `rev`. `widen_sum(av)[A | B]` is
 a single left-injection, and the spine engine generates that glue *once*
 against the abstract type `A` — treating `A` as one opaque spine slot.
 Because the slot is opaque, the generated injection stays a valid
@@ -385,11 +385,11 @@ exactly this when it composes prisms (see § The deep-prism tour).
 Two prisms compose into a prism for a nested focus:
 
 ```kio {@optics}
-pub fn compose_prism[S][A][B](psa: Prism(S, A), pab: Prism(A, B)) -> Prism(S, B) {
+pub fn compose_prism[S][A][B](psa: Prism[S][A], pab: Prism[A][B]) -> Prism[S][B] {
   let pre =
     .(x: S) -> B | . {
       match(preview(psa, x)) {
-        (.(av: A) { preview(pab, av) }, .(_u: .) { widen_sum((), B | .) })
+        (.(av: A) { preview(pab, av) }, .(_u: .) { widen_sum(())[B | .] })
       }
     };
   let rev = .(bv: B) -> S { review(psa, review(pab, bv)) };
@@ -426,7 +426,7 @@ slot and cannot select the second by type alone. The iso combinators
 therefore use `match` *positional* destructuring instead:
 
 ```kio {@optics}
-pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
+pub fn view_iso[S][A](i: Iso[S][A], x: S) -> A {
   let fwd =
     match(i) {
       .(f: S -> A, _b: A -> S) { f }
@@ -434,7 +434,7 @@ pub fn view_iso[S][A](i: Iso(S, A), x: S) -> A {
   fwd(x)
 }
 
-pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
+pub fn review_iso[S][A](i: Iso[S][A], v: A) -> S {
   let bwd =
     match(i) {
       .(_f: S -> A, b: A -> S) { b }
@@ -442,7 +442,7 @@ pub fn review_iso[S][A](i: Iso(S, A), v: A) -> S {
   bwd(v)
 }
 
-pub fn over_iso[S][A](i: Iso(S, A), f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
+pub fn over_iso[S][A](i: Iso[S][A], f: A -> A, x: S) -> S { review_iso(i, f(view_iso(i, x))) }
 ```
 
 `match(i) { .(f: S -> A, _b: A -> S) { f } }` binds the pair positionally — `f` is the first
@@ -462,13 +462,13 @@ The library ships two concrete isos. `swap_iso` swaps the components of a
 pair; `assoc_iso` re-associates a left-nested triple to the right:
 
 ```kio {@optics}
-pub fn swap_iso[A][B] -> Iso(A & B, B & A) {
+pub fn swap_iso[A][B] -> Iso[A & B][B & A] {
   let to = .((x: A, y: B)) -> B & A { (y, x) };
   let from = .((y: B, x: A)) -> A & B { (x, y) };
   (to, from)
 }
 
-pub fn assoc_iso[A][B][C] -> Iso((A & B) & C, A & B & C) {
+pub fn assoc_iso[A][B][C] -> Iso[(A & B) & C][A & B & C] {
   let to = .(((av: A, bv: B), cv: C)) -> A & B & C { (av, (bv, cv)) };
   let from = .((av: A, (bv: B, cv: C))) -> (A & B) & C { ((av, bv), cv) };
   (to, from)
@@ -488,7 +488,7 @@ Two isos compose into one round-trip conversion. The forward map runs both
 forward; the backward map runs both backward, inside-out:
 
 ```kio {@optics}
-pub fn compose_iso[S][A][B](isa: Iso(S, A), iab: Iso(A, B)) -> Iso(S, B) {
+pub fn compose_iso[S][A][B](isa: Iso[S][A], iab: Iso[A][B]) -> Iso[S][B] {
   let to = .(x: S) -> B { view_iso(iab, view_iso(isa, x)) };
   let from = .(v: B) -> S { review_iso(isa, review_iso(iab, v)) };
   (to, from)
@@ -501,14 +501,14 @@ Because an iso is both lossless *and* total, every iso *is* a lens and *is* a
 prism. The library provides the two forward coercions:
 
 ```kio {@optics}
-pub fn iso_to_lens[S][A](i: Iso(S, A)) -> Lens(S, A) {
+pub fn iso_to_lens[S][A](i: Iso[S][A]) -> Lens[S][A] {
   let get = .(x: S) -> A { view_iso(i, x) };
   let put = .(new_a: A, _old: S) -> S { review_iso(i, new_a) };
   (get, put)
 }
 
-pub fn iso_to_prism[S][A](i: Iso(S, A)) -> Prism(S, A) {
-  let pre = .(x: S) -> A | . { widen_sum(view_iso(i, x), A | .) };
+pub fn iso_to_prism[S][A](i: Iso[S][A]) -> Prism[S][A] {
+  let pre = .(x: S) -> A | . { widen_sum(view_iso(i, x))[A | .] };
   let rev = .(v: A) -> S { review_iso(i, v) };
   (pre, rev)
 }
@@ -555,7 +555,7 @@ Now:
 A composed lens chain reads naturally:
 
 ```kio {@lens_use}
-let l_chain = fst_lens(I32 & String, I32) ** snd_lens(I32, String);
+let l_chain = fst_lens[I32 & String][I32] ** snd_lens[I32][String];
 say_str(l_chain ^ outer);
 ```
 
@@ -577,7 +577,7 @@ on an anonymous `labels` block and the `narrow_prod` spine form:
 ```kio {@optics}
 labels { hed: I32, mid: String, tal: I32 };
 
-fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x, R)) }
+fn set_hed[R](x: Hed & R, n: I32) -> Hed & R { ({hed = n}, narrow_prod(x)[R]) }
 
 op __ %% _ { impl set_hed }
 ```
@@ -590,7 +590,7 @@ crosses *into* the type with the brace constructor `{hed = n}` and crosses
 
 `set_hed` takes a row whose head is a `Hed` and whose tail is anything (`R`),
 and rebuilds it with a fresh `Hed`: it constructs `{hed = n}` for the new
-head and uses `narrow_prod(x, R)` to drop the old `Hed` head off `x`,
+head and uses `narrow_prod(x)[R]` to drop the old `Hed` head off `x`,
 keeping the rest of the row. `r %% n` replaces the `hed` field; the `[R]`
 binder is inferred from the receiver's value type, so the call site writes no
 type argument. The `__` left slot makes `%%` left-associative, so
@@ -666,7 +666,7 @@ specialized to `hed`, and `Hed.get` is the lens "view" for the same field.
 
 Composing prisms needs a deeply-nested sum value to preview against. The
 outer sum is `(I32 | String) | I32`, and the tour reaches the inner `I32`
-through `compose_prism(left_prism((I32 | String), I32), left_prism(_, _))`.
+through `compose_prism(left_prism[(I32 | String)][ I32], left_prism[_][ _])`.
 
 The interesting case is building a value that lands in the *outer-left* arm —
 a whole `(I32 | String)` injected into the left of `(I32 | String) | I32`. A
@@ -677,11 +677,11 @@ target slot to land in. The adopter-natural construction is the *outer
 prism's own* `review`:
 
 ```kio {@prism_use}
-let p_outer = left_prism(I32 | String, I32);
-let deep_hit = review(p_outer, widen_sum(5(I32), I32 | String));
+let p_outer = left_prism[I32 | String][I32];
+let deep_hit = review(p_outer, widen_sum(5[I32])[I32 | String]);
 ```
 
-`left_prism(I32 | String, I32)`'s `rev` is `widen_sum(av, A | B)` generated
+`left_prism[I32 | String][ I32]`'s `rev` is `widen_sum(av)[A | B]` generated
 against the abstract `A` (a single opaque spine slot), so its left-injection
 glue stays valid when `A` is instantiated to the sum `I32 | String`. No
 intrinsic, no algebraic macro — the polymorphic prism *is* the tool that
@@ -690,7 +690,7 @@ reaches the nested arm. The outer-*right* arm, by contrast, is reachable with
 the outer-right slot:
 
 ```kio {@prism_use}
-let deep_outer_miss = widen_sum(100(I32), (I32 | String) | I32);
+let deep_outer_miss = widen_sum(100[I32])[(I32 | String) | I32];
 ```
 
 Previewing the composed prism against these three values — outer-left hit
@@ -765,46 +765,46 @@ positional lenses. For `fst_lens`:
 ```text
 // get-set: setting back what you got changes nothing.
 equiv fst_get_set[A][B](x: A & B) {
-  set(fst_lens(A, B), view(fst_lens(A, B), x), x);
+  set(fst_lens[A][B], view(fst_lens[A][B], x), x);
   x
 }
 
 // set-get: getting after a set returns what you set.
 equiv fst_set_get[A][B](x: A & B, new_a: A) {
-  view(fst_lens(A, B), set(fst_lens(A, B), new_a, x));
+  view(fst_lens[A][B], set(fst_lens[A][B], new_a, x));
   new_a
 }
 
 // set-set: the last set wins.
 equiv fst_set_set[A][B](x: A & B, a1: A, a2: A) {
-  set(fst_lens(A, B), a2, set(fst_lens(A, B), a1, x));
-  set(fst_lens(A, B), a2, x)
+  set(fst_lens[A][B], a2, set(fst_lens[A][B], a1, x));
+  set(fst_lens[A][B], a2, x)
 }
 ```
 
 `snd_lens` carries the same three laws (`snd_get_set`, `snd_set_get`,
 `snd_set_set`), identical in shape with `snd_lens` in place of `fst_lens`.
-`id_lens` is a unit for `view` and `set` — `view(id_lens(A), x) ≡ x`
-(`id_view`) and `set(id_lens(A), new, x) ≡ new` (`id_set`). And `over`'s
+`id_lens` is a unit for `view` and `set` — `view(id_lens[A], x) ≡ x`
+(`id_view`) and `set(id_lens[A], new, x) ≡ new` (`id_set`). And `over`'s
 defining equation is checked on `fst_lens`:
 
 ```text
 equiv fst_over_def[A][B](x: A & B, f: A -> A) {
-  over(fst_lens(A, B), f, x);
-  set(fst_lens(A, B), f(view(fst_lens(A, B), x)), x)
+  over(fst_lens[A][B], f, x);
+  set(fst_lens[A][B], f(view(fst_lens[A][B], x)), x)
 }
 ```
 
 ### Prism laws
 
 The prism round-trip law is build-then-match: `preview(p, review(p, v))` hits
-with `v`, expressed as `widen_sum(v, A | .)` — the `Some(v)` arm. For the
+with `v`, expressed as `widen_sum(v)[A | .]` — the `Some(v)` arm. For the
 left prism:
 
 ```text
 equiv left_review_preview[A][B](v: A) {
-  preview(left_prism(A, B), review(left_prism(A, B), v));
-  widen_sum(v, A | .)
+  preview(left_prism[A][B], review(left_prism[A][B], v));
+  widen_sum(v)[A | .]
 }
 ```
 
@@ -815,8 +815,8 @@ transformed:
 
 ```text
 equiv left_over_review[A][B](v: A, f: A -> A) {
-  preview(left_prism(A, B), over_prism(left_prism(A, B), f, review(left_prism(A, B), v)));
-  widen_sum(f(v), A | .)
+  preview(left_prism[A][B], over_prism(left_prism[A][B], f, review(left_prism[A][B], v)));
+  widen_sum(f(v))[A | .]
 }
 ```
 
@@ -828,12 +828,12 @@ is the identity iso (`swap_swap_view`):
 
 ```text
 equiv swap_view_review[A][B](y: B & A) {
-  view_iso(swap_iso(A, B), review_iso(swap_iso(A, B), y));
+  view_iso(swap_iso[A][B], review_iso(swap_iso[A][B], y));
   y
 }
 
 equiv swap_swap_view[A][B](x: A & B) {
-  view_iso(compose_iso(swap_iso(A, B), swap_iso(B, A)), x);
+  view_iso(compose_iso(swap_iso[A][B], swap_iso[B][A]), x);
   x
 }
 ```
@@ -846,8 +846,8 @@ equation is checked on `swap_iso`:
 
 ```text
 equiv swap_over_def[A][B](x: A & B, f: (B & A) -> (B & A)) {
-  over_iso(swap_iso(A, B), f, x);
-  review_iso(swap_iso(A, B), f(view_iso(swap_iso(A, B), x)))
+  over_iso(swap_iso[A][B], f, x);
+  review_iso(swap_iso[A][B], f(view_iso(swap_iso[A][B], x)))
 }
 ```
 
@@ -861,23 +861,23 @@ preview:
 
 ```text
 equiv iso_lens_view[A][B](x: A & B) {
-  view(iso_to_lens(swap_iso(A, B)), x);
-  view_iso(swap_iso(A, B), x)
+  view(iso_to_lens(swap_iso[A][B]), x);
+  view_iso(swap_iso[A][B], x)
 }
 
 equiv iso_lens_set_view[A][B](x: A & B, new: B & A) {
-  view(iso_to_lens(swap_iso(A, B)), set(iso_to_lens(swap_iso(A, B)), new, x));
+  view(iso_to_lens(swap_iso[A][B]), set(iso_to_lens(swap_iso[A][B]), new, x));
   new
 }
 
 equiv iso_prism_review[A][B](y: B & A) {
-  review(iso_to_prism(swap_iso(A, B)), y);
-  review_iso(swap_iso(A, B), y)
+  review(iso_to_prism(swap_iso[A][B]), y);
+  review_iso(swap_iso[A][B], y)
 }
 
 equiv iso_prism_preview[A][B](x: A & B) {
-  preview(iso_to_prism(swap_iso(A, B)), x);
-  widen_sum(view_iso(swap_iso(A, B), x), (B & A) | .)
+  preview(iso_to_prism(swap_iso[A][B]), x);
+  widen_sum(view_iso(swap_iso[A][B], x))[(B & A) | .]
 }
 ```
 

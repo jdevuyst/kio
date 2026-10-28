@@ -14,7 +14,7 @@ pub labels Counts = { deleted: I32, inserted: I32, renamed: I32, kept: I32 };
 rec(loop) fn ancestry(
 , source: forest.Tree
 , target: forest.Tree
-, mapping: Array(I32)
+, mapping: Array[I32]
 , first: I32
 , second: I32
 ) -> Bool {
@@ -49,7 +49,7 @@ rec(loop) fn ancestry(
 rec(loop) fn check_nodes(
 , source: forest.Tree
 , target: forest.Tree
-, mapping: Array(I32)
+, mapping: Array[I32]
 , position: I32
 , previous: I32
 ) -> Bool {
@@ -75,7 +75,7 @@ rec(loop) fn check_nodes(
   }
 }
 
-pub fn valid(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> Bool {
+pub fn valid(source: forest.Tree, target: forest.Tree, mapping: Array[I32]) -> Bool {
   if(forest.equal(array.array_len(mapping), forest.size(source))) {
     check_nodes(source, target, mapping, 0, -1)
   } else {
@@ -86,7 +86,7 @@ pub fn valid(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> B
 rec(loop) fn tally(
 , source: forest.Tree
 , target: forest.Tree
-, mapping: Array(I32)
+, mapping: Array[I32]
 , position: I32
 , matched: I32
 , renamed: I32
@@ -118,7 +118,7 @@ rec(loop) fn tally(
   }
 }
 
-pub fn counts(source: forest.Tree, target: forest.Tree, mapping: Array(I32)) -> Counts {
+pub fn counts(source: forest.Tree, target: forest.Tree, mapping: Array[I32]) -> Counts {
   let .(matched, renamed) = tally(source, target, mapping, 0, 0, 0);
   {
   , deleted = arith.sub_i32(forest.size(source), matched)

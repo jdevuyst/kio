@@ -1117,7 +1117,7 @@ mod tests {
             .insert_text
             .as_ref()
             .unwrap();
-        for (prefix_list, count) in [("", 0), ("()", 1), ("(left, right)", 2)] {
+        for (prefix_list, stages, values) in [("", 0, 0), ("()", 1, 0), ("(left, right)", 1, 2)] {
             let insertion = snippet
                 .replace("${1}", prefix_list)
                 .replace("${2}", "()")
@@ -1130,7 +1130,12 @@ mod tests {
             let crate::ast::Expr::BlockCall { prefix, .. } = &function.body else {
                 panic!("block call: {insertion}");
             };
-            assert_eq!(prefix.len(), count, "{insertion}");
+            assert_eq!(prefix.len(), stages, "{insertion}");
+            assert_eq!(
+                prefix.iter().map(|stage| stage.args.len()).sum::<usize>(),
+                values,
+                "{insertion}"
+            );
         }
     }
 

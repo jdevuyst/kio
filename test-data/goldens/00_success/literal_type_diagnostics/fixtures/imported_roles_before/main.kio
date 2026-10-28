@@ -14,15 +14,15 @@ pure fn id[A](value: A) -> A { value }
 
 pure fn integer_expected() -> Int { 42 }
 
-pure fn integer_later() { let _result = same(42, 42(Int)); () }
+pure fn integer_later() { let _result = same(42, 42[Int]); () }
 
-pure fn integer_earlier() { let _result = same(42(Int), 42); () }
+pure fn integer_earlier() { let _result = same(42[Int], 42); () }
 
-pure fn integer_nested() { let _result = same(id(42), 42(Int)); () }
+pure fn integer_nested() { let _result = same(id(42), 42[Int]); () }
 
 equiv integer_expected_result() {
   integer_expected();
-  42(Int)
+  42[Int]
 }
 
 equiv integer_siblings() {
@@ -34,15 +34,15 @@ equiv integer_siblings() {
 
 pure fn floating_expected() -> Float { 42.0 }
 
-pure fn floating_later() { let _result = same(42.0, 42.0(Float)); () }
+pure fn floating_later() { let _result = same(42.0, 42.0[Float]); () }
 
-pure fn floating_earlier() { let _result = same(42.0(Float), 42.0); () }
+pure fn floating_earlier() { let _result = same(42.0[Float], 42.0); () }
 
-pure fn floating_nested() { let _result = same(id(42.0), 42.0(Float)); () }
+pure fn floating_nested() { let _result = same(id(42.0), 42.0[Float]); () }
 
 equiv floating_expected_result() {
   floating_expected();
-  42.0(Float)
+  42.0[Float]
 }
 
 equiv floating_siblings() {
@@ -54,15 +54,15 @@ equiv floating_siblings() {
 
 pure fn boolean_expected() -> Bool { .t }
 
-pure fn boolean_later() { let _result = same(.t, .t(Bool)); () }
+pure fn boolean_later() { let _result = same(.t, .t[Bool]); () }
 
-pure fn boolean_earlier() { let _result = same(.t(Bool), .t); () }
+pure fn boolean_earlier() { let _result = same(.t[Bool], .t); () }
 
-pure fn boolean_nested() { let _result = same(id(.t), .t(Bool)); () }
+pure fn boolean_nested() { let _result = same(id(.t), .t[Bool]); () }
 
 equiv boolean_expected_result() {
   boolean_expected();
-  .t(Bool)
+  .t[Bool]
 }
 
 equiv boolean_siblings() {
@@ -74,15 +74,15 @@ equiv boolean_siblings() {
 
 pure fn string_expected() -> String { "text" }
 
-pure fn string_later() { let _result = same("text", "text"(String)); () }
+pure fn string_later() { let _result = same("text", "text"[String]); () }
 
-pure fn string_earlier() { let _result = same("text"(String), "text"); () }
+pure fn string_earlier() { let _result = same("text"[String], "text"); () }
 
-pure fn string_nested() { let _result = same(id("text"), "text"(String)); () }
+pure fn string_nested() { let _result = same(id("text"), "text"[String]); () }
 
 equiv string_expected_result() {
   string_expected();
-  "text"(String)
+  "text"[String]
 }
 
 equiv string_siblings() {

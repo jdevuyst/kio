@@ -2,9 +2,9 @@ module main;
 
 import numbers(Int);
 
-pure fn value() -> Int { let value = 42(Int); value }
+pure fn value() -> Int { let value = 42[Int]; value }
 
 equiv imported_annotation() {
   value();
-  42(Int)
+  42[Int]
 }

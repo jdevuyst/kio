@@ -52,3 +52,57 @@ c
 stage: (a,(b,c))
 d
 ((a,(b,c)),d)
+packet first prefix
+a
+b
+packet: a
+c
+packet: (a,b)
+d
+packet: ((a,b),c)
+(((a,b),c),d)
+packet first UFCS
+a
+b
+packet: a
+c
+packet: (a,b)
+d
+packet: ((a,b),c)
+(((a,b),c),d)
+packet last prefix
+a
+b
+c
+d
+packet: c
+packet: b
+packet: a
+(a,(b,(c,d)))
+packet last UFCS
+a
+b
+c
+d
+packet: c
+packet: b
+packet: a
+(a,(b,(c,d)))
+packet mixed prefix
+a
+b
+c
+packet: b
+packet: a
+d
+packet: (a,(b,c))
+((a,(b,c)),d)
+packet mixed UFCS
+a
+b
+c
+packet: b
+packet: a
+d
+packet: (a,(b,c))
+((a,(b,c)),d)

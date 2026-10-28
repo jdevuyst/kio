@@ -866,7 +866,7 @@ mod tests {
             "api: {api}"
         );
         assert!(
-            api.contains("_rehost_hahcgphggjgegfhc_n2.loop("),
+            api.contains("_rehost_hahcgphggjgegfhc_n2.loop[S][R]("),
             "api: {api}"
         );
         crate::cmd::check::analyze_workspace_at(dir.path(), false)

@@ -1,0 +1,18 @@
+module call_stage_recovery;
+
+import macros(macro form);
+
+// Each bracket is deliberately malformed; following declarations stay recoverable.
+fn comma_binders[A, B](value: A) -> A { value }
+type Comma_arguments = Pair[A, B];
+type Empty_arguments = Pair[];
+type Comma_forall = [A, B] A -> B;
+
+fn calls(value: A) {
+  call[A, B](value);
+  call[](value);
+  call[value];
+  form[A](value) { value }
+}
+
+fn following(value: A) -> A { value }

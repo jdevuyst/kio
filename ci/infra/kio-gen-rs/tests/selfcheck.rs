@@ -27,7 +27,7 @@ fn initial_env() -> HashMap<String, Type> {
 /// `match` production through `pick_match_disjoint_pair`, which in
 /// turn checks `a != b` to reject two structurally-identical
 /// scrutinee arms (the case where one clause's parameter type
-/// covers both DNF branches). For two `Box(I32)` Param
+/// covers both DNF branches). For two `Box[I32]` Param
 /// instantiations to be rejected, the derived `Eq` has to do a
 /// deep payload comparison — which it does, by virtue of
 /// `Type::Param`'s derive — but if anyone ever re-derives the
@@ -45,7 +45,7 @@ fn type_param_payload_equality_is_deep() {
     let box_i32_b = box_i32_a.clone();
     assert_eq!(
         box_i32_a, box_i32_b,
-        "two structurally identical Box(I32) types must compare equal"
+        "two structurally identical Box[I32] types must compare equal"
     );
 
     let box_str = Type::Param {
@@ -56,7 +56,7 @@ fn type_param_payload_equality_is_deep() {
     };
     assert_ne!(
         box_i32_a, box_str,
-        "Box(I32) and Box(String) must compare distinct"
+        "Box[I32] and Box[String] must compare distinct"
     );
 }
 
@@ -81,7 +81,7 @@ fn block_ufcs_directions_keep_the_receiver_before_projected_blocks() {
         assert_eq!(type_of(&term, &env).unwrap(), Type::i32());
         assert_eq!(
             render::render_term_opts(&term, &render::RenderOpts { surface: false }),
-            "__if_then_else__(Bool, I32, condition, .() { yes }, .() { no })"
+            "__if_then_else__[Bool][I32](condition, .() { yes }, .() { no })"
         );
         let expected = match spelling {
             UfcsSpelling::ReceiverFirst => "(condition).>if { yes } else { no }",
@@ -118,18 +118,18 @@ fn ufcs_directions_preserve_distinct_argument_types_and_core_order() {
             assert_eq!(type_of(&term, &env).unwrap(), Type::i32());
             assert_eq!(
                 render::render_term_opts(&term, &render::RenderOpts { surface: false }),
-                "const1(I32, String, number, text)"
+                "const1[I32][String](number, text)"
             );
-            let args = if explicit_type_args {
-                "I32, String, "
+            let types = if explicit_type_args {
+                "[I32][String]"
             } else {
                 ""
             };
             let expected = match spelling {
-                UfcsSpelling::ReceiverFirst => format!("(number).>const1({args}text)"),
-                UfcsSpelling::ReceiverLast => format!("(text).>>const1({args}number)"),
-                UfcsSpelling::CalleeLast => format!("const1({args}number).<(text)"),
-                UfcsSpelling::CalleeFirst => format!("const1({args}text).<<(number)"),
+                UfcsSpelling::ReceiverFirst => format!("(number).>const1{types}(text)"),
+                UfcsSpelling::ReceiverLast => format!("(text).>>const1{types}(number)"),
+                UfcsSpelling::CalleeLast => format!("const1{types}(number).<(text)"),
+                UfcsSpelling::CalleeFirst => format!("const1{types}(text).<<(number)"),
             };
             assert_eq!(
                 render::render_term_opts(&term, &render::RenderOpts { surface: true }),
@@ -319,21 +319,21 @@ fn type_only_support_tracks_body_calls_and_shrinking() {
                 );
             }
             if name == "kio_gen_type_only_id" {
-                assert!(source.contains("kio_gen_type_only_id(.)(())"), "{source}");
+                assert!(source.contains("kio_gen_type_only_id[.](())"), "{source}");
                 assert!(
                     source.contains("kio_gen_type_only_id[A] -> A -> A"),
                     "{source}"
                 );
             } else {
                 assert!(
-                    source.contains("kio_gen_type_only_capture(., ())"),
+                    source.contains("kio_gen_type_only_capture[.](())"),
                     "{source}"
                 );
                 assert!(
                     source.contains("let captured = .[B] { value };"),
                     "{source}"
                 );
-                assert!(source.contains("captured(A)"), "{source}");
+                assert!(source.contains("captured[A]"), "{source}");
             }
             let shrunk = shrink::minimize_body(&prog);
             assert_eq!(type_of(&shrunk.body, &initial_env()).unwrap(), Type::Unit);

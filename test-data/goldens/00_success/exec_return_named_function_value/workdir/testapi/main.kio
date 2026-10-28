@@ -13,5 +13,5 @@ fn make_boxer() -> Bool -> Boolbox { box_bool }
 pub fn main() {
   let boxed = make_boxer()(.t);
   print(bool_to_string(Boolbox.un_boolbox(boxed)));
-  print("\n"(String))
+  print("\n"[String])
 }

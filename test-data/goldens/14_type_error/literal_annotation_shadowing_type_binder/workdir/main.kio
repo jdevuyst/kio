@@ -2,4 +2,4 @@ module main;
 
 host type Int role(i64);
 
-fn wrong[Int]() -> Int { 42(Int) }
+fn wrong[Int]() -> Int { 42[Int] }

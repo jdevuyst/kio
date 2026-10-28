@@ -12,7 +12,7 @@ fn duplicate(value: Atom) -> Atom & Atom { (value, value) }
 
 // Core sum elimination is the demand subject; elaboration is not involved.
 fn select(input: (Atom & Payload) | Atom) -> Atom {
-  __either__(Atom & Payload, Atom, Atom, input, .(pair) { first(pair) }, .(value) { value })
+  __either__[Atom & Payload][Atom][Atom](input, .(pair) { first(pair) }, .(value) { value })
 }
 
 pub fn choice(input: (Atom & Payload) | Atom) -> Atom & Atom { duplicate(select(input)) }

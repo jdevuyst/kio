@@ -6,8 +6,8 @@ import u(String);
 // value. Here `not_a_function` is bound to a String, so the
 // receiver-style call `r.>not_a_function` cannot dispatch.
 pub fn main() {
-  let not_a_function = "hello"(String);
-  let r = "world"(String);
+  let not_a_function = "hello"[String];
+  let r = "world"[String];
   let _ = r.>not_a_function;
   ()
 }

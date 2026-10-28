@@ -5,6 +5,6 @@ import testapi/arith(box_get, box_make);
 import testapi/fmt(i32_to_string);
 import testapi/io(print);
 
-fn unbox(get: [A] Box(A) -> A, boxed: Box(I32)) -> I32 { get(boxed) }
+fn unbox(get: [A] Box[A] -> A, boxed: Box[I32]) -> I32 { get[I32](boxed) }
 
-pub fn main() { let boxed = box_make(42(I32)); print(i32_to_string(unbox(box_get, boxed))) }
+pub fn main() { let boxed = box_make[I32](42[I32]); print(i32_to_string(unbox(box_get, boxed))) }

@@ -4,5 +4,5 @@ source {
   path "../macros.pkg.kio"
 }
 
-rehost library/testapi to testapi;
 rehost library/control to testapi;
+rehost library/testapi to testapi;

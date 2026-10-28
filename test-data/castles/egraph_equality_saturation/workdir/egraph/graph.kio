@@ -15,17 +15,17 @@ pub labels Node =
   | { addition: I32 & I32 }
   | { product: I32 & I32 };
 
-pub newtype Graph : Array(Node) & Array(I32) & Array(I32) { constructor graph; projector fields }
+pub newtype Graph : Array[Node] & Array[I32] & Array[I32] { constructor graph; projector fields }
 
 pub fn create() -> Graph {
   Graph.graph(arr.array_make_empty(), arr.array_make_empty(), arr.array_make_filled(1, 0))
 }
 
-fn nodes(g: Graph) -> Array(Node) { let .(items, _, _) = Graph.fields(g); items }
+fn nodes(g: Graph) -> Array[Node] { let .(items, _, _) = Graph.fields(g); items }
 
-fn parents(g: Graph) -> Array(I32) { let .(_, links, _) = Graph.fields(g); links }
+fn parents(g: Graph) -> Array[I32] { let .(_, links, _) = Graph.fields(g); links }
 
-fn revisions(g: Graph) -> Array(I32) { let .(_, _, counter) = Graph.fields(g); counter }
+fn revisions(g: Graph) -> Array[I32] { let .(_, _, counter) = Graph.fields(g); counter }
 
 pub fn size(g: Graph) -> I32 { arr.array_len(nodes(g)) }
 
@@ -107,19 +107,19 @@ rec(loop) fn intern_walk(g: Graph, value: Node, i: I32) -> I32 {
 }
 
 pub fn constant_node(g: Graph, value: I32) -> I32 {
-  intern_walk(g, {constant = value}.>widen_sum(Node), 0)
+  intern_walk(g, ({constant = value}.>widen_sum)[Node], 0)
 }
 
 pub fn variable_node(g: Graph, symbol: I32) -> I32 {
-  intern_walk(g, {variable = symbol}.>widen_sum(Node), 0)
+  intern_walk(g, ({variable = symbol}.>widen_sum)[Node], 0)
 }
 
 pub fn add(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, {addition = (a, b)}.>widen_sum(Node), 0)
+  intern_walk(g, ({addition = (a, b)}.>widen_sum)[Node], 0)
 }
 
 pub fn multiply(g: Graph, a: I32, b: I32) -> I32 {
-  intern_walk(g, {product = (a, b)}.>widen_sum(Node), 0)
+  intern_walk(g, ({product = (a, b)}.>widen_sum)[Node], 0)
 }
 
 rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
@@ -128,7 +128,7 @@ rec(loop) fn rebuild_pairs(g: Graph, i: I32, j: I32, merges: I32) -> I32 {
   } else if(num.leq_i32(size(g), j)) {
     recur rebuild_pairs(g, n.increment(i), num.add_i32(i, 2), merges)
   } else {
-    let extra = if(same_key(g, node(g, i), node(g, j))) {
+    let .(extra: I32) = if(same_key(g, node(g, i), node(g, j))) {
       if(merge(g, i, j)) { 1 } else { 0 }
     } else {
       0

@@ -36,7 +36,7 @@ import testapi/iter(loop);
 
 /// The interned DFA states, in the order they were first reached. A set's
 /// position is its DFA state number.
-pub type Sets = List(Ints);
+pub type Sets = List[Ints];
 
 fn hits(e: nfa.Edge, src: I32, sym: I32) -> Bool {
   if(eq_i32(nfa.edge_src(e), src)) { eq_i32(nfa.edge_sym(e), sym) } else { .f }

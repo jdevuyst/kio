@@ -32,7 +32,7 @@ rec(loop) {
 
 rec(loop) {
   fn ignored() -> Bool { io.print("unexpected discarded input\n"); .f };
-  fn discarded() -> Bool { second(recur(cont) ignored(), .t) }
+  fn discarded() -> Bool { second(recur(cont) ignored())(.t) }
 }
 
 rec(loop) {
@@ -40,9 +40,9 @@ rec(loop) {
   fn right() -> Bool { io.print("right\n"); .t };
   fn duplicated() -> Bool { let pair = duplicate(recur(cont) left()); .t };
   fn marked_duplicated() -> Bool { let pair = marked_duplicate(recur(cont) left()); .t };
-  fn swapped() -> Bool { let pair = swap(recur(cont) left(), recur(cont) right()); .t };
+  fn swapped() -> Bool { let pair = swap(recur(cont) left())(recur(cont) right()); .t };
   fn marked_swapped() -> Bool {
-    let pair = marked_swap(recur(cont) left(), recur(cont) right());
+    let pair = marked_swap(recur(cont) left())(recur(cont) right());
     .t
   }
 }

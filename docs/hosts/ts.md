@@ -232,7 +232,7 @@ callbacks retain their original captures and host bindings. See
 
 An opaque or one-member carrier is already atomic at the JS boundary and cuts
 the recursion walk. An enclosing visible wrapper such as
-`Root : Hidden(Root)` therefore remains the host-constructible structural
+`Root : Hidden[Root]` therefore remains the host-constructible structural
 `{ Root: Hidden<Root> }` shape. Its declaration uses a private structural
 interface only to give the recursive reference a finite name; that interface
 is not a nominal brand.
@@ -361,7 +361,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() { print("hello from kio\n"(String)) }
+pub fn main() { print("hello from kio\n"[String]) }
 ```
 
 Build:

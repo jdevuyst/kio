@@ -34,7 +34,7 @@ fn line(label: String, value: String) { print(cat3(label, ": ", cat(value, "\n")
 
 fn of_sheet(n: I32) -> String { cat3(num(n), " of ", num(cell_count())) }
 
-fn cycle_line(cells: List(Addr)) { line("cycle", addr_list(cells)) }
+fn cycle_line(cells: List[Addr]) { line("cycle", addr_list(cells)) }
 
 fn report(index: I32, e: Edit, st: Step) {
   print(cat3("\n== edit ", num(index), cat3(": ", render_edit(e), " ==\n")));
@@ -47,10 +47,10 @@ fn report(index: I32, e: Edit, st: Step) {
   print(grid(step_values(st)))
 }
 
-rec(loop) fn run_edits(s: Sheet, vals: Values, script: List(Edit), index: I32) {
+rec(loop) fn run_edits(s: Sheet, vals: Values, script: List[Edit], index: I32) {
   match(script.>List.unpack) {
     (
-    , .(e: Edit, rest: List(Edit)) {
+    , .(e: Edit, rest: List[Edit]) {
         let st = recalc(s, vals, e);
         report(index, e, st);
         recur run_edits(step_sheet(st), step_values(st), rest, add_i32(index, 1))

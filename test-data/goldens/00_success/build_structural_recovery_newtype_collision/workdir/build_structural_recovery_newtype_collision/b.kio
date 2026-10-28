@@ -4,4 +4,4 @@ import __intrinsics__;
 
 pub newtype Foo : . { pub constructor mk_b; pub projector un_b }
 
-pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__(., ., p)) }
+pub fn keep(p: . & .) -> Foo { Foo.mk_b(__fst__[.][.](p)) }

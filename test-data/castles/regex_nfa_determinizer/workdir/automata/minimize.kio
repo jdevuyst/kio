@@ -43,7 +43,7 @@ rec(loop) fn initial(d: dfa.Dfa, s: I32, acc: Blocks) -> Blocks {
   if(leq_i32(dfa.count(d), s)) {
     reverse(acc)
   } else {
-    let tag = if(dfa.is_accepting(d, s)) { 1 } else { 0 };
+    let .(tag: I32) = if(dfa.is_accepting(d, s)) { 1 } else { 0 };
     recur initial(d, add_i32(s, 1), cons(tag, acc))
   }
 }
@@ -66,11 +66,11 @@ fn signature(d: dfa.Dfa, bs: Blocks, s: I32) -> Ints {
 /// One round. `bs` is the previous map and stays fixed throughout — the
 /// update is synchronous. Interning the distinct signatures both numbers the
 /// new blocks and counts them.
-rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Blocks) -> Blocks & I32 {
+rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List[Ints], acc: Blocks) -> Blocks & I32 {
   if(leq_i32(dfa.count(d), s)) {
     (reverse(acc), len(seen))
   } else {
-    let .(grown: List(Ints), id: I32) = intern(seen, signature(d, bs, s));
+    let .(grown: List[Ints], id: I32) = intern(seen, signature(d, bs, s));
     recur relabel(d, bs, add_i32(s, 1), grown, cons(id, acc))
   }
 }
@@ -80,7 +80,7 @@ rec(loop) fn relabel(d: dfa.Dfa, bs: Blocks, s: I32, seen: List(Ints), acc: Bloc
 /// a count no partition can have, so the first round is never mistaken for a
 /// stable one.
 rec(loop) fn refine(d: dfa.Dfa, bs: Blocks, before: I32) -> Blocks & I32 {
-  let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil(Ints), empty());
+  let .(next: Blocks, after: I32) = relabel(d, bs, 0, nil[Ints], empty());
   if(eq_i32(after, before)) { (next, after) } else { recur refine(d, next, after) }
 }
 

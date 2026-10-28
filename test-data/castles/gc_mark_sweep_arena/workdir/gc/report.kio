@@ -62,7 +62,7 @@ fn append(list: Bool & String, separator: String, item: String) -> Bool & String
 
 fn list_text(list: Bool & String) -> String { let .(_empty: Bool, text: String) = list; text }
 
-fn fields_text(cells: Array(I32), addr: I32) -> String {
+fn fields_text(cells: Array[I32], addr: I32) -> String {
   list_text(fold_fields(
   , cells
   , addr
@@ -77,7 +77,7 @@ fn fields_text(cells: Array(I32), addr: I32) -> String {
   ))
 }
 
-fn object_text(cells: Array(I32), addr: I32) -> String {
+fn object_text(cells: Array[I32], addr: I32) -> String {
   at(addr)
     .>cat(" ")
     .>cat(tag_name(tag_at(cells, addr)))
@@ -88,7 +88,7 @@ fn object_text(cells: Array(I32), addr: I32) -> String {
     .>cat("]")
 }
 
-pub fn print_heap(title: String, cells: Array(I32)) {
+pub fn print_heap(title: String, cells: Array[I32]) {
   line(title
     .>cat(" (")
     .>cat(num(top(cells)))
@@ -98,9 +98,9 @@ pub fn print_heap(title: String, cells: Array(I32)) {
   fold_objects(cells, .(_unit, addr) { line(object_text(cells, addr)) }, ())
 }
 
-rec(loop) fn addrs_text(addrs: Array(I32), index: I32, text: String) -> String {
+rec(loop) fn addrs_text(addrs: Array[I32], index: I32, text: String) -> String {
   if(int_lt(index, array_len(addrs))) {
-    let separator = if(int_eq(index, 0)) { "" } else { " " };
+    let .(separator: String) = if(int_eq(index, 0)) { "" } else { " " };
     recur addrs_text(
     , addrs
     , add_i32(index, 1)
@@ -111,11 +111,11 @@ rec(loop) fn addrs_text(addrs: Array(I32), index: I32, text: String) -> String {
   }
 }
 
-pub fn addr_list(addrs: Array(I32)) -> String { addrs_text(addrs, 0, "") }
+pub fn addr_list(addrs: Array[I32]) -> String { addrs_text(addrs, 0, "") }
 
 /// The addresses of every object whose mark bit is `wanted` -- the live
 /// set for `.t`, the garbage for `.f`.
-fn marked_list(cells: Array(I32), marks: Array(Bool), wanted: Bool) -> String {
+fn marked_list(cells: Array[I32], marks: Array[Bool], wanted: Bool) -> String {
   list_text(fold_objects(
   , cells
   , .(list, addr) {
@@ -137,7 +137,7 @@ pub fn print_mark(trace: Trace) {
   counted("marked objects", trace.?{marked})
 }
 
-pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) {
+pub fn print_sweep(cells: Array[I32], marks: Array[Bool], census: Census) {
   line("-- sweep --");
   tally("live objects", census.?{live_objects}, marked_list(cells, marks, .t));
   tally("dead objects", census.?{dead_objects}, marked_list(cells, marks, .f));
@@ -148,7 +148,7 @@ pub fn print_sweep(cells: Array(I32), marks: Array(Bool), census: Census) {
 /// Printed before the move, while the old object list is still there to
 /// walk: a dead object leaves no forwarding entry, so only survivors
 /// appear.
-pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) {
+pub fn print_plan(cells: Array[I32], marks: Array[Bool], layout: Plan) {
   line("-- compact --");
   line("forwarding table (old -> new)");
   let forward = layout.?{forward_table};
@@ -165,7 +165,7 @@ pub fn print_plan(cells: Array(I32), marks: Array(Bool), layout: Plan) {
   )
 }
 
-pub fn print_relocation(roots: Array(I32), before_top: I32, after_top: I32) {
+pub fn print_relocation(roots: Array[I32], before_top: I32, after_top: I32) {
   labeled("roots after fixup", addr_list(roots));
   labeled("arena top", num(before_top).>cat(" -> ").>cat(num(after_top)));
   counted("cells reclaimed", sub_i32(before_top, after_top))

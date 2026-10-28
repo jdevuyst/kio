@@ -29,7 +29,7 @@ fn base_marker() -> String { "  ||||||| base" }
 
 fn theirs_marker() -> String { "  >>>>>>> theirs" }
 
-fn conflict_block(reg: merge.Region) -> list.List(String) {
+fn conflict_block(reg: merge.Region) -> list.List[String] {
   list.append(
   , list.cons(ours_marker(), merge.ours_of(reg))
   , list.append(
@@ -40,7 +40,7 @@ fn conflict_block(reg: merge.Region) -> list.List(String) {
 }
 
 /// The lines one region contributes to the merged document.
-fn emit(reg: merge.Region) -> list.List(String) {
+fn emit(reg: merge.Region) -> list.List[String] {
   match(merge.mark_of(reg)) {
     (
     , .(_v: merge.Stable) { merge.base_of(reg) }
@@ -52,10 +52,10 @@ fn emit(reg: merge.Region) -> list.List(String) {
   }
 }
 
-rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String)) -> list.List(String) {
+rec(loop) fn merged_from(found: list.List[merge.Region], acc: list.List[String]) -> list.List[String] {
   match(list.List.unpack(found)) {
     (
-    , .(reg: merge.Region, rest: list.List(merge.Region)) {
+    , .(reg: merge.Region, rest: list.List[merge.Region]) {
         recur merged_from(rest, list.rev_onto(emit(reg), acc))
       }
     , .(_empty: .) { list.reverse(acc) }
@@ -63,8 +63,8 @@ rec(loop) fn merged_from(found: list.List(merge.Region), acc: list.List(String))
   }
 }
 
-fn merged(found: list.List(merge.Region)) -> list.List(String) {
-  merged_from(found, list.nil(String))
+fn merged(found: list.List[merge.Region]) -> list.List[String] {
+  merged_from(found, list.nil[String])
 }
 
 fn text(line: String) { print(prim.cat(line, "\n")) }
@@ -73,10 +73,10 @@ fn field(label: String, value: String) { text(prim.cat(label, prim.cat(": ", val
 
 fn count(label: String, value: I32) { field(label, int_to_string(value)) }
 
-rec(loop) fn print_lines(lines: list.List(String)) {
+rec(loop) fn print_lines(lines: list.List[String]) {
   match(list.List.unpack(lines)) {
     (
-    , .(line: String, rest: list.List(String)) { text(line); recur print_lines(rest) }
+    , .(line: String, rest: list.List[String]) { text(line); recur print_lines(rest) }
     , .(_empty: .) { () }
     )
   }
@@ -90,8 +90,8 @@ pub fn report(
 , doc: scan.Doc
 , ours: lcs.Dp
 , theirs: lcs.Dp
-, found_anchors: list.List(merge.Anchor)
-, found: list.List(merge.Region)
+, found_anchors: list.List[merge.Anchor]
+, found: list.List[merge.Region]
 ) {
   let base_count = list.len(scan.base_lines(doc));
   let ours_count = list.len(scan.our_lines(doc));

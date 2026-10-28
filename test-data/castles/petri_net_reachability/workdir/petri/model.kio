@@ -9,7 +9,7 @@ import testapi(Bool, I32, String);
 import testapi/arith as arithmetic;
 import testapi/iter(loop);
 
-pub type Marking = lists.List(I32);
+pub type Marking = lists.List[I32];
 
 pub labels Transition = { name: String, consumes: Marking, produces: Marking };
 
@@ -17,7 +17,7 @@ pub labels Net = {
 , initial: Marking
 , terminal: Marking
 , capacity: I32
-, transitions: lists.List(Transition)
+, transitions: lists.List[Transition]
 };
 
 pub rec(loop) fn equal(left: Marking, right: Marking) -> Bool {
@@ -75,7 +75,7 @@ pub fn fire(net: Net, transition: Transition, marking: Marking) -> Marking | . {
   , transition.?{consumes}
   , transition.?{produces}
   , net.?{capacity}
-  , lists.nil(_)
+  , lists.nil[_]
   )
 }
 

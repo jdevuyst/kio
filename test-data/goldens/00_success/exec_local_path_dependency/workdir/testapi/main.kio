@@ -13,7 +13,7 @@ import testapi/io(print);
 // second argument — exercising re-rooted generic exports across the
 // package edge.
 pub fn greeting() -> String {
-  const_first(first(dup("dependency works\n"(String))), "discarded\n"(String))
+  const_first(first(dup("dependency works\n"[String])), "discarded\n"[String])
 }
 
 pub fn main() { print(greeting()) }

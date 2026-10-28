@@ -2581,7 +2581,7 @@ where
     let mut error = Error::type_(
         span,
         format!("cannot determine the type of this {} literal", literal_shape_noun(shape)),
-    ).with_help("annotate this literal with `<literal>(T)`, or supply an expected type in its enclosing expression");
+    ).with_help("annotate this literal with `<literal>[T]`, or supply an expected type in its enclosing expression");
     let bound = tcx.in_scope_type_param_binders();
     #[cfg(feature = "surface")]
     let bound = {
@@ -2658,7 +2658,7 @@ where
             || {
                 crate::error::FixEdit::new(
                     Span::new(span.end, span.end),
-                    format!("({source_type})"),
+                    format!("[{source_type}]"),
                 )
             },
             |annotation| crate::error::FixEdit::new(annotation.span(), source_type.clone()),
@@ -3492,7 +3492,7 @@ where
 
 pub(crate) fn unspecialized_intrinsic_error(span: Span) -> Error {
     Error::type_(span, "`__if_then_else__` needs a concrete Boolean type before it can be used as a value")
-        .with_help("specialize it as `__if_then_else__(Bool)` or supply a function type with a concrete Boolean condition")
+        .with_help("specialize it as `__if_then_else__[Bool]` or supply a function type with a concrete Boolean condition")
 }
 
 pub(crate) fn check_boolean_specialization<P>(

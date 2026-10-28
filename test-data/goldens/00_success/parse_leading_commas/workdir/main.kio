@@ -16,4 +16,4 @@ fn ugly[A](x: A) -> A { x }
 type Three3[A][B][C] = (A & B) & C;
 
 // Type-application argument list with leading commas.
-type Triple[A] = Three3(A, A, A);
+type Triple[A] = Three3[A][ A][ A];

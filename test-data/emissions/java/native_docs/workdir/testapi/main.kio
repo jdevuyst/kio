@@ -6,7 +6,7 @@ import testapi/io as io;
 import testapi/other as other;
 
 /// FIRST-SAME-DOC identity.
-pub fn same() { io.print("left\n"(String)) }
+pub fn same() { io.print("left\n"[String]) }
 
 /// EXPORT-DOC main. Merely mentioning big.Int selects no runtime import.
 ///
@@ -28,10 +28,10 @@ pub fn same() { io.print("left\n"(String)) }
 /// ~~~
 pub fn main() {
   detached.hidden();
-  io.print("first\n"(String));
+  io.print("first\n"[String]);
   same();
   other.same();
-  io.print("last\n"(String))
+  io.print("last\n"[String])
 }
 
 /// PRIVATE-DOC does not appear on the host boundary.

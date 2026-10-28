@@ -1,0 +1,2 @@
+type mismatch: expected `.`
+found `a & b`

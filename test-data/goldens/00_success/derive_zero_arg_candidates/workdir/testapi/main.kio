@@ -19,7 +19,7 @@ fn string_from_unit(_unit: .) -> String { print("unit parameter\n"); "" }
 
 fn product_fact() -> . & . { print("product\n"); ((), ()) }
 
-fn sum_fact() -> Unit_sum { print("sum\n"); widen_sum((), Unit_sum) }
+fn sum_fact() -> Unit_sum { print("sum\n"); widen_sum(())[Unit_sum] }
 
 fn wrapped_fact() -> Wrapped { print("wrapped\n"); Wrapped.make_wrapped(()) }
 
@@ -40,11 +40,11 @@ fn discard_wrapped(_value: Wrapped) { () }
 fn discard_unique(_value: Unique) { () }
 
 pub fn main() {
-  derive(unit_fact, .);
-  discard_int(derive(int_fact, Int));
-  discard_string(derive(string_from_unit, String));
-  discard_product(derive(product_fact, . & .));
-  discard_sum(derive(sum_fact, Unit_sum));
-  discard_wrapped(derive(wrapped_fact, Wrapped));
-  discard_unique(derive((unique_base, unreachable_rival), Unique))
+  derive(unit_fact)[.];
+  discard_int(derive(int_fact)[Int]);
+  discard_string(derive(string_from_unit)[String]);
+  discard_product(derive(product_fact)[. & .]);
+  discard_sum(derive(sum_fact)[Unit_sum]);
+  discard_wrapped(derive(wrapped_fact)[Wrapped]);
+  discard_unique(derive((unique_base, unreachable_rival))[Unique])
 }

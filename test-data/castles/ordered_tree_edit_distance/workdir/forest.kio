@@ -8,7 +8,7 @@ import testapi/fmt as fmt;
 import testapi/iter(loop);
 import testapi/text as text;
 
-pub labels Tree = { symbols: Array(I32), ends: Array(I32) };
+pub labels Tree = { symbols: Array[I32], ends: Array[I32] };
 
 pub fn equal(a: I32, b: I32) -> Bool {
   if(arith.leq_i32(a, b)) { arith.leq_i32(b, a) } else { .f }
@@ -23,7 +23,7 @@ pub fn symbol(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{symbols
 pub fn after(tree: Tree, position: I32) -> I32 { array.array_get(tree.?{ends}, position) }
 
 pub fn empty() -> Tree {
-  {symbols = array.array_make_empty(I32, ()), ends = array.array_make_empty(I32, ())}
+  {symbols = array.array_make_empty[I32](()), ends = array.array_make_empty[I32](())}
 }
 
 // Opening and closing a node brackets its entire preorder subtree.

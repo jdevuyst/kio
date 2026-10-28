@@ -22,6 +22,6 @@ fn foo(x: A | B) {
 }
 
 pub fn main() {
-  let narrow_call = ease(foo, A -> .);
+  let narrow_call = ease(foo)[A -> .];
   narrow_call(A.mk_a("ease! param widened ok\n"))
 }

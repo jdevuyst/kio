@@ -5,5 +5,5 @@ import rec_unrelated_match_macro_lambda/macros(macro match);
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
 rec(loop) fn spin(value: .) {
-  match(value, . -> ., .x. { recur spin(x1) })
+  match(value)[. -> .](.x. { recur spin(x1) })
 }

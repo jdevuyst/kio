@@ -38,7 +38,7 @@ use crate::span::Span;
 
 pub struct SurfaceUfcs {
     pub receiver: Box<Expr<Surface>>,
-    pub callee_segments: Vec<PathSegment>,
+    pub callee: Box<Expr<Surface>>,
     pub callee_span: Span,
     pub args: Vec<CallArg<Surface>>,
     pub flavor: crate::ast::UfcsFlavor,
@@ -82,7 +82,7 @@ pub trait SurfaceToPrime {
     fn rewrite_expr_rec_call(
         &mut self,
         callee: PathSegment,
-        args: Vec<CallArg<Surface>>,
+        stages: Vec<crate::ast::CallStage<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error>;
 
@@ -102,7 +102,7 @@ pub trait SurfaceToPrime {
     fn rewrite_expr_user_macro(
         &mut self,
         name: String,
-        args: Vec<crate::ast::CallArg<Surface>>,
+        stages: Vec<crate::ast::CallStage<Surface>>,
         meta: Meta<Surface>,
     ) -> Result<Expr<Prime>, Error>;
 
@@ -516,10 +516,33 @@ pub trait SurfaceToPrime {
                 ..
             } => {
                 let callee = self.walk_expr(*callee)?;
-                let args: Vec<CallArg<Prime>> = args
+                let is_value_stage =
+                    args.is_empty() || args.iter().any(|arg| matches!(arg, CallArg::Value(_)));
+                let mut args: Vec<CallArg<Prime>> = args
                     .into_iter()
                     .map(|a| self.walk_call_arg(a))
                     .collect::<Result<_, _>>()?;
+                if is_value_stage && args.is_empty() {
+                    args.push(CallArg::Value(Expr::Unit {
+                        occurrence: Default::default(),
+                        source_trivia: Default::default(),
+                        meta: Meta::new(span),
+                    }));
+                }
+                let callee = match callee {
+                    Expr::Call {
+                        callee,
+                        args: mut prefix,
+                        ..
+                    } if !prefix.is_empty()
+                        && prefix.iter().all(|arg| matches!(arg, CallArg::Type(_))) =>
+                    {
+                        prefix.extend(args);
+                        args = prefix;
+                        *callee
+                    }
+                    callee => callee,
+                };
                 Ok(Expr::synth_call(callee, args, span))
             }
             Expr::FnExpr {
@@ -645,8 +668,11 @@ pub trait SurfaceToPrime {
             } => self.rewrite_expr_fn_placeholder(body, stem, state, meta),
             Expr::OpChain { kind, meta, .. } => self.rewrite_expr_op_chain(kind, meta),
             Expr::RecCall {
-                callee, args, meta, ..
-            } => self.rewrite_expr_rec_call(callee, args, meta),
+                callee,
+                stages,
+                meta,
+                ..
+            } => self.rewrite_expr_rec_call(callee, stages, meta),
             Expr::LabelValue { labels, meta, .. } => self.rewrite_expr_label_value(labels, meta),
             Expr::RowLet { meta, .. } => Err(crate::error::Error::parse(
                 meta.span,
@@ -658,15 +684,15 @@ pub trait SurfaceToPrime {
             } => self.rewrite_expr_elaborator(kind, call, meta),
             Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match ext {},
             Expr::UserMacro {
-                name, args, meta, ..
-            } => self.rewrite_expr_user_macro(name, args, meta),
+                name, stages, meta, ..
+            } => self.rewrite_expr_user_macro(name, stages, meta),
             Expr::BlockCall { meta, .. } => Err(Error::parse(
                 meta.span,
                 "trailing blocks are not part of Kio'; use `kio` to compile full Kio source",
             )),
             Expr::Ufcs {
                 receiver,
-                callee_segments,
+                callee,
                 callee_span,
                 args,
                 flavor,
@@ -675,7 +701,7 @@ pub trait SurfaceToPrime {
                 ..
             } => self.rewrite_expr_ufcs(SurfaceUfcs {
                 receiver,
-                callee_segments,
+                callee,
                 callee_span,
                 args,
                 flavor,

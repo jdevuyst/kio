@@ -57,8 +57,8 @@ fn ufcs_refactor_first_last_mixed_and_written_type_arguments() {
         (false, "f((), f(f((), ()), ()))", "().>f(()).>f(()).>>f(())"),
         (
             true,
-            "f(., f(., f(., (), ()), ()), ())",
-            "().>f(., ()).>f(., ()).>f(., ())",
+            "f[.](f[.](f[.]((), ()), ()), ())",
+            "().>f[.](()).>f[.](()).>f[.](())",
         ),
     ] {
         let definition = if generic {
@@ -225,7 +225,7 @@ fn ufcs_refactor_arbitrary_chain_carets_and_explicit_inner_branch() {
 }
 
 #[test]
-fn ufcs_refactor_local_generic_and_staged_public_types() {
+fn ufcs_refactor_local_generic_and_written_type_stages() {
     for (source, body, expected) in [
         (
             "module pkg/main; pub fn run[A](f: (A & A) -> A, a: A, b: A, c: A, d: A) -> A { f(f(a, f(b, c)), d) }",
@@ -233,14 +233,9 @@ fn ufcs_refactor_local_generic_and_staged_public_types() {
             "c.>>f(b).>>f(a).>f(d)",
         ),
         (
-            "module pkg/main; fn f(a: .) -> . -> . { .(b: .) { a } } pub fn run() -> . { f(f(f((), ()), ()), ()) }",
-            "f(f(f((), ()), ()), ())",
-            "().>f(()).>f(()).>f(())",
-        ),
-        (
-            "module pkg/main; fn f[A](a: A)[B](b: B) -> A { a } pub fn run() -> . { f(., f(., (), ., ()), ., ()) }",
-            "f(., f(., (), ., ()), ., ())",
-            "().>f(., ., ()).>f(., ., ())",
+            "module pkg/main; fn f[A][B](a: A, b: B) -> A { a } pub fn run() -> . { f[.][.](f[.][.]((), ()), ()) }",
+            "f[.][.](f[.][.]((), ()), ())",
+            "().>f[.][.](()).>f[.][.](())",
         ),
     ] {
         let (_, parsed, analysis) = fixture(source, None);
@@ -258,7 +253,45 @@ fn ufcs_refactor_local_generic_and_staged_public_types() {
 }
 
 #[test]
-fn ufcs_refactor_conflict_incomplete_and_role_veto_never_return_shorter_prefix() {
+fn ufcs_refactor_does_not_treat_computed_results_as_the_named_callable() {
+    let body = "make(())(make(())((), ()), ())";
+    let source =
+        format!("module pkg/main; host fn make(x: .) -> ((. & .) -> .); pub fn run() {{ {body} }}");
+    let (_, parsed, analysis) = fixture(&source, None);
+    assert!(
+        edit(
+            &source,
+            &parsed,
+            &analysis,
+            "pkg/main",
+            selected(&source, body)
+        )
+        .is_none()
+    );
+}
+
+#[test]
+fn ufcs_refactor_finds_calls_inside_stages_and_reverse_computed_callees() {
+    for source in [
+        "module m; fn run() { factory(f(f(a, b), c))(d).<r }",
+        "module m; macro wrap : . -> . { impl implementation } fn run() { wrap(f(f(a, b), c))(d) }",
+        "module m; macro wrap : . -> . { trailing product; impl implementation } fn run() { wrap(f(f(a, b), c))(d) { () } }",
+    ] {
+        let parsed = crate::pass::parser::parse(source).unwrap();
+        let written = calls(&parsed);
+        for expected in ["f(a, b)", "f(f(a, b), c)"] {
+            assert!(
+                written.iter().any(|call| {
+                    &source[call.span().start as usize..call.span().end as usize] == expected
+                }),
+                "{expected} in {source}"
+            );
+        }
+    }
+}
+
+#[test]
+fn ufcs_refactor_conflict_and_incomplete_never_return_shorter_prefix() {
     let body = "f(f(f((), ()), ()), ())";
     let source =
         format!("module pkg/main; fn f(a: ., b: .) -> . {{ a }} pub fn run() -> . {{ {body} }}");
@@ -270,21 +303,18 @@ fn ufcs_refactor_conflict_incomplete_and_role_veto_never_return_shorter_prefix()
         .into_iter()
         .max_by_key(|call| call.span().end - call.span().start)
         .unwrap();
-    for damage in 0..4 {
+    for damage in 0..3 {
         analysis.position_index = pristine.clone();
         match damage {
             0 => analysis.position_index.merge(PositionIndex::new()),
-            1 => analysis
-                .position_index
-                .record_value_at_type_slot("pkg/main", root.span(), 99),
-            2 | 3 => {
+            1 | 2 => {
                 let (callee, _) = parts(root).unwrap();
                 analysis.position_index.record_binder(
                     "pkg/main",
                     callee.span(),
                     ResolvedBinder::Local {
                         name: "f".into(),
-                        decl_span: (damage == 3).then_some(Span::new(0, 1)),
+                        decl_span: (damage == 2).then_some(Span::new(0, 1)),
                     },
                 );
             }
@@ -340,35 +370,26 @@ fn ufcs_refactor_request_scaling() {
         for i in 0..background {
             source.push_str(&format!(" pub fn extra{i}() -> . {{ f(f((), ()), ()) }}"));
         }
-        let (_, parsed, mut analysis) = fixture(&source, None);
+        let (_, parsed, analysis) = fixture(&source, None);
         let ordinary_calls = calls(&parsed).len();
         let selection = selected(&source, &body);
-        for role_facts in [0, 512] {
-            for i in 0..role_facts {
-                analysis.position_index.record_value_at_type_slot(
-                    "pkg/main",
-                    Span::new(100_000 + i, 100_001 + i),
-                    0,
-                );
-            }
-            let mut times = Vec::new();
-            for _ in 0..32 {
-                let start = std::time::Instant::now();
-                let action = edit(&source, &parsed, &analysis, "pkg/main", selection).unwrap();
-                times.push(start.elapsed());
-                assert_eq!(action.new_text.matches(".>").count(), count);
-            }
-            times.sort();
-            eprintln!(
-                "ufcs request: selected_calls={count} module_calls={ordinary_calls} module_items={} source_bytes={} role_facts={role_facts} samples={} min={:?} median={:?} max={:?}",
-                parsed.items.len(),
-                source.len(),
-                times.len(),
-                times[0],
-                times[16],
-                times[31]
-            );
+        let mut times = Vec::new();
+        for _ in 0..32 {
+            let start = std::time::Instant::now();
+            let action = edit(&source, &parsed, &analysis, "pkg/main", selection).unwrap();
+            times.push(start.elapsed());
+            assert_eq!(action.new_text.matches(".>").count(), count);
         }
+        times.sort();
+        eprintln!(
+            "ufcs request: selected_calls={count} module_calls={ordinary_calls} module_items={} source_bytes={} samples={} min={:?} median={:?} max={:?}",
+            parsed.items.len(),
+            source.len(),
+            times.len(),
+            times[0],
+            times[16],
+            times[31]
+        );
     }
 }
 
@@ -386,7 +407,14 @@ fn ufcs_refactor_runtime_golden_uses_the_action_output() {
     )
     .unwrap()
     .unwrap();
-    for direction in ["first", "last", "mixed"] {
+    for direction in [
+        "first",
+        "last",
+        "mixed",
+        "packet first",
+        "packet last",
+        "packet mixed",
+    ] {
         let prefix = source
             .split(&format!("line(\"{direction} prefix\");"))
             .nth(1)
@@ -406,8 +434,12 @@ fn ufcs_refactor_runtime_golden_uses_the_action_output() {
             &analysis,
             "testapi/main",
             selected(&source, prefix),
-        )
-        .unwrap();
+        );
+        if !direction.starts_with("packet ") {
+            assert!(action.is_none(), "curried stages are outside the refactor");
+            continue;
+        }
+        let action = action.unwrap();
         // The formatter removes redundant receiver parentheses in the golden;
         // canonical formatting otherwise preserves the exact action result.
         let rendered = action.new_text[1..action.new_text.len() - 1]
@@ -444,28 +476,32 @@ fn ufcs_refactor_preserves_enclosing_tight_ufcs_context() {
         };
         let Expr::Ufcs {
             receiver,
-            callee_segments,
+            callee,
             flavor,
             ..
         } = &run.body
         else {
             panic!("outer g must remain a splice")
         };
+        let Expr::Path { segments, .. } = &**callee else {
+            panic!("g callee")
+        };
         assert_eq!(
-            callee_segments.last().unwrap().name,
+            segments.last().unwrap().name,
             "g",
             "edited enclosing expression: {changed}"
         );
         assert_eq!(flavor.token(), operator);
         let Expr::Ufcs {
-            receiver,
-            callee_segments,
-            ..
+            receiver, callee, ..
         } = &**receiver
         else {
             panic!("g receiver must be entire f spine")
         };
-        assert_eq!(callee_segments.last().unwrap().name, "f");
+        let Expr::Path { segments, .. } = &**callee else {
+            panic!("f callee")
+        };
+        assert_eq!(segments.last().unwrap().name, "f");
         assert!(matches!(&**receiver, Expr::Ufcs { .. }));
     }
 }

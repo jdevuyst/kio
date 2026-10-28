@@ -15,8 +15,8 @@ import testapi/text(string_concat);
 // value in source order. The textbook insertion-sort fixture is
 // small enough to read at a glance and large enough that the
 // shift-and-insert inner loop fires on every element.
-fn make_input() -> Array(I32) {
-  let a = array_make_empty(I32, ());
+fn make_input() -> Array[I32] {
+  let a = array_make_empty[I32](());
   array_push(a, 5);
   array_push(a, 2);
   array_push(a, 4);
@@ -32,7 +32,7 @@ fn make_input() -> Array(I32) {
 // and `key` are captured from the outer closure. The exit value
 // is `()` — the side-effect (the array's mutated cells) carries
 // the work.
-fn shift_step(arr: Array(I32), key: I32, j: I32) -> I32 | . {
+fn shift_step(arr: Array[I32], key: I32, j: I32) -> I32 | . {
   if(leq_i32(0, j)) {
     // j >= 0: compare arr[j] against key. If arr[j] > key,
     // shift arr[j] right and continue at j - 1; else write
@@ -61,7 +61,7 @@ fn shift_step(arr: Array(I32), key: I32, j: I32) -> I32 | . {
 // upward. For each `i`, snapshot `key = arr[i]` and drive the
 // inner shift loop starting at `j = i - 1`. State is `i`. The
 // exit value is `()`.
-fn sort_step(arr: Array(I32), i: I32) -> I32 | . {
+fn sort_step(arr: Array[I32], i: I32) -> I32 | . {
   if(leq_i32(i, sub_i32(array_len(arr), 1))) {
     let key = array_get(arr, i);
     loop(.(j: I32) { shift_step(arr, key, j) }, sub_i32(i, 1));
@@ -74,14 +74,14 @@ fn sort_step(arr: Array(I32), i: I32) -> I32 | . {
 // In-place insertion sort over `arr`. Outer loop walks `i` from
 // `1` to `len(arr) - 1`; inner loop shifts and inserts. Returns
 // the (now-sorted) array handle for `main` to render.
-fn insertion_sort(arr: Array(I32)) -> Array(I32) {
+fn insertion_sort(arr: Array[I32]) -> Array[I32] {
   loop(.(i: I32) { sort_step(arr, i) }, 1);
   arr
 }
 
 // Inner step of `render_csv`: emits one element per turn,
 // prepending "," to every cell but the first. State is `(acc, i)`.
-fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String {
+fn render_step(arr: Array[I32], acc: String, i: I32) -> (String & I32) | String {
   if(leq_i32(i, sub_i32(array_len(arr), 1))) {
     widen_sum(if(leq_i32(i, 0)) {
       (int_to_string(array_get(arr, i)), add_i32(i, 1))
@@ -95,10 +95,8 @@ fn render_step(arr: Array(I32), acc: String, i: I32) -> (String & I32) | String 
 
 // Render `arr` as a comma-separated string of decimal `I32`
 // values, walking via array_get.
-fn render_csv(arr: Array(I32)) -> String {
-  loop(
-  , String & I32
-  , String
+fn render_csv(arr: Array[I32]) -> String {
+  loop[String & I32][String](
   , .(state: String & I32) -> (String & I32) | String {
       match(state) {
         .(acc: String, i: I32) { render_step(arr, acc, i) }

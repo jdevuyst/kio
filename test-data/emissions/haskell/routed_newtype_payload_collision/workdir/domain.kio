@@ -2,4 +2,4 @@ module domain;
 
 import list/core as lcore;
 
-pub type Items = lcore.List(.);
+pub type Items = lcore.List[.];

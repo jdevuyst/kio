@@ -245,8 +245,8 @@ pub pure fn box_bool(x: Bool) -> Boolbox { Boolbox.mk_boolbox(x) }
 pub pure fn unbox_bool(b: Boolbox) -> Bool { Boolbox.un_boolbox(b) }
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
-pub pure fn box_any[A](x: A) -> Box(A) { Box.mk_box(A, x) }
-pub pure fn unbox_any[A](x: Box(A)) -> A { Box.un_box(A, x) }
+pub pure fn box_any[A](x: A) -> Box[A] { Box.mk_box[A](x) }
+pub pure fn unbox_any[A](x: Box[A]) -> A { Box.un_box[A](x) }
 
 // Recursive newtypes that exercise strict-positivity and the
 // iso-recursive wrap/unwrap boundary in the typechecker. The
@@ -288,7 +288,7 @@ pub type {kio_gen_count_forward} = {count};
 
 // Literal aliases appended to the generated root module for surface-using cases.
 // Each `literal name = <literal>;` stores an untyped literal token;
-// use sites render as `name(Type)` when the generated expression
+// use sites render as `name[Type]` when the generated expression
 // needs the same explicit annotation as the raw literal. Surface
 // form only: `IS_KIO_PRIME` cases must not see these.
 const UTIL_KIO_LITERAL_ALIASES: &str = "
@@ -312,7 +312,7 @@ pub op @ ___ # ___ $ { impl kio_gen_op_pick }
 // are stepped.
 const UTIL_KIO_VARIADIC: &str = "
 pub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }
-pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }
+pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }
 pub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
 pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }
 ";
@@ -344,7 +344,7 @@ fn util_kio(prog: &Program) -> String {
             "
 pub pure fn kio_gen_type_only_capture[A](value: A) -> A {
   let captured = .[B] { value };
-  captured(A)
+  captured[A]
 }
 ",
         );
@@ -454,7 +454,7 @@ fn render_generated_macro_impl(spec: &UserMacroSpec) -> String {
     let mut lines = Vec::new();
     if spec.captures.contains(&UserMacroCapture::TypeAlias) {
         lines.push(
-            "let _captured_type_seen = __type_equal__(ct, captured_type, __reflect_type__(ct, Kio_gen_capture));"
+            "let _captured_type_seen = __type_equal__(ct, captured_type, __reflect_type__(ct)[Kio_gen_capture]);"
                 .to_string(),
         );
     }
@@ -480,10 +480,10 @@ fn generated_fills_witness(prog: &Program) -> String {
         return String::new();
     };
     format!(
-        "\nfn kio_gen_fills_witness(value: I32) -> I32 {{ {name}(value, _) }}\n\
-         fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 {{ {name}(.[B](_ignored: B) {{ value }}, _) }}\n\
+        "\nfn kio_gen_fills_witness(value: I32) -> I32 {{ {name}(value)[_] }}\n\
+         fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 {{ {name}(.[B](_ignored: B) {{ value }})[_] }}\n\
          fn kio_gen_callback_apply[A][B](callback: A -> B, value: A) -> B {{ callback(value) }}\n\
-         fn kio_gen_callback_fills_witness(value: I32) -> I32 {{ {name}(kio_gen_callback_apply(.(input: I32) -> I32 {{ input }}, value), _) }}\n",
+         fn kio_gen_callback_fills_witness(value: I32) -> I32 {{ {name}(kio_gen_callback_apply(.(input: I32) -> I32 {{ input }}, value))[_] }}\n",
         name = spec.name
     )
 }
@@ -492,20 +492,14 @@ fn render_generated_macro_body(template: UserMacroTemplate) -> String {
     match template {
         UserMacroTemplate::Direct => "value".to_string(),
         UserMacroTemplate::TargetBranch => "\
-__either__(
-  , __Type__
-  , .
-  , __Checked_term__
+__either__[__Type__][.][__Checked_term__](
   , target
   , .(_target: __Type__) -> __Checked_term__ { value }
   , .() -> __Checked_term__ { value }
   )"
         .to_string(),
         UserMacroTemplate::SourceTargetGuard => "\
-__either__(
-  , __Type__
-  , .
-  , __Checked_term__
+__either__[__Type__][.][__Checked_term__](
     , target
     , .(target_type: __Type__) -> __Checked_term__ {
     __if_then_else__(
@@ -518,10 +512,7 @@ __either__(
   )"
         .to_string(),
         UserMacroTemplate::TermTypeGuard => "\
-__either__(
-  , __Type__
-  , .
-  , __Checked_term__
+__either__[__Type__][.][__Checked_term__](
     , target
     , .(target_type: __Type__) -> __Checked_term__ {
     __if_then_else__(
@@ -585,16 +576,16 @@ pub fn render_package_files(prog: &Program) -> Vec<(String, String)> {
     // before build/run for generated surface cases, so the claims check
     // Unit identity, seeded folds and the forwarded label's original identity.
     let equiv_block = if prog.surface_mode {
-        "\nequiv kio_gen_unit_equiv { (); id(., ()) }\n\
-equiv kio_gen_seeded_fold_singleton { [* 2(I32) *]; 2(I32) }\n\
-equiv kio_gen_seeded_fold_step { [* 1(I32), 2(I32) *]; 0(I32) }\n\
-equiv kio_gen_bare_fold_singleton { [2(I32)]; 2(I32) }\n\
-equiv kio_gen_bare_fold_step { [1(I32), 2(I32)]; 0(I32) }\n\
-equiv kio_gen_prefix_chain { !? !? 2(I32); 2(I32) }\n\
-equiv kio_gen_closed_result_suffix { 2(I32) ?! ?!.>id; 2(I32) }\n\
-equiv kio_gen_bounded_chain_slots { @ 1(I32) <+> 2(I32) # !? 3(I32) $; 1(I32) }\n\
-equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7(I32)}; Count.mk(7(I32)) }\n\
-equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}; 11(I32) }\n"
+        "\nequiv kio_gen_unit_equiv { (); id[.](()) }\n\
+equiv kio_gen_seeded_fold_singleton { [* 2[I32] *]; 2[I32] }\n\
+equiv kio_gen_seeded_fold_step { [* 1[I32], 2[I32] *]; 0[I32] }\n\
+equiv kio_gen_bare_fold_singleton { [2[I32]]; 2[I32] }\n\
+equiv kio_gen_bare_fold_step { [1[I32], 2[I32]]; 0[I32] }\n\
+equiv kio_gen_prefix_chain { !? !? 2[I32]; 2[I32] }\n\
+equiv kio_gen_closed_result_suffix { 2[I32] ?! ?!.>id; 2[I32] }\n\
+equiv kio_gen_bounded_chain_slots { @ 1[I32] <+> 2[I32] # !? 3[I32] $; 1[I32] }\n\
+equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7[I32]}; Count.mk(7[I32]) }\n\
+equiv kio_gen_label_forward_payload { Count.mk(11[I32]).?{kio_gen_count_forward}; 11[I32] }\n"
     } else {
         ""
     };
@@ -908,7 +899,7 @@ build {
         );
         assert_eq!(
             UTIL_KIO_VARIADIC,
-            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }\npub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\npub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
+            "\npub pure fn kio_gen_fold_seed(value: I32) -> I32 { value }\npub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }\npub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\npub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n"
         );
     }
 
@@ -995,17 +986,17 @@ build {
             .expect("generated root module");
         assert!(
             root.contains(
-                "fn kio_gen_fills_witness(value: I32) -> I32 { generated_fills(value, _) }"
+                "fn kio_gen_fills_witness(value: I32) -> I32 { generated_fills(value)[_] }"
             )
         );
         assert!(root.contains(
-            "fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 { generated_fills(.[B](_ignored: B) { value }, _) }"
+            "fn kio_gen_polymorphic_fills_witness(value: I32) -> [A] A -> I32 { generated_fills(.[B](_ignored: B) { value })[_] }"
         ));
         assert!(root.contains(
             "fn kio_gen_callback_apply[A][B](callback: A -> B, value: A) -> B { callback(value) }"
         ));
         assert!(root.contains(
-            "fn kio_gen_callback_fills_witness(value: I32) -> I32 { generated_fills(kio_gen_callback_apply(.(input: I32) -> I32 { input }, value), _) }"
+            "fn kio_gen_callback_fills_witness(value: I32) -> I32 { generated_fills(kio_gen_callback_apply(.(input: I32) -> I32 { input }, value))[_] }"
         ));
     }
 
@@ -1057,11 +1048,11 @@ build {
         ] {
             let generated = render_generated_macro_body(template);
             assert!(
-                generated.contains("__either__(\n  , __Type__\n  , .\n"),
+                generated.contains("__either__[__Type__][.][__Checked_term__]("),
                 "generated template must spell the Unit type as `.`: {generated}"
             );
             assert!(
-                !generated.contains("__either__(\n  , __Type__\n  , ()\n"),
+                !generated.contains("__either__[__Type__][()][__Checked_term__]("),
                 "generated template used the Unit value in a type slot: {generated}"
             );
         }

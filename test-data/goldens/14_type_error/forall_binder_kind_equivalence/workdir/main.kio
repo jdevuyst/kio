@@ -6,4 +6,4 @@ fn phantom_constructor[*F](_value: .) { () }
 
 fn same[T](_left: T, _right: T) { () }
 
-fn bad() { same([A] . -> ., phantom_type, phantom_constructor) }
+fn bad() { same[[A] . -> .](phantom_type, phantom_constructor) }

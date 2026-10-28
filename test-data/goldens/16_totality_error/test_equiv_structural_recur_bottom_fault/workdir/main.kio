@@ -6,11 +6,7 @@ import __comptime__;
 
 // The negative edge invokes the captured callback, not a fresh helper.
 pure fn reject(ct: __Comptime__) -> ! {
-  __structural_recur__(
-  , ct
-  , .
-  , .
-  , !
+  __structural_recur__(ct)[.][.][!](
   , ()
   , ()
   , .(again: (. & .) -> !, _fuel: ., _state: .) -> ! { again((), ()) }
@@ -18,6 +14,6 @@ pure fn reject(ct: __Comptime__) -> ! {
 }
 
 equiv callback_failure(ct: __Comptime__) {
-  .() { let ignored = __absurd__(., reject(ct)); () }();
+  .() { let ignored = __absurd__[.](reject(ct)); () }();
   ()
 }

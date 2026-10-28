@@ -1,0 +1,15 @@
+module main;
+
+host type String role(str);
+
+host fn make[A]() -> A;
+
+labels { item[A]: A };
+
+fn annotated_literal() -> String { Item.mk("text"[String]).?{item} }
+
+fn annotated_factory() -> String { Item.mk(make[String]()).?{item} }
+
+fn getter_literal() -> String { Item.get(Item.mk("text")) }
+
+fn getter_factory() -> String { Item.get(Item.mk(make())) }

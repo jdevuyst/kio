@@ -8,15 +8,13 @@ import testapi/iter as iter;
 
 pub fn main() {
   let identity =
-    iter.loop(
-    , .
-    , [A] A -> A
+    iter.loop[.][[A] A -> A](
     , .(_state: .) -> . | ([A] A -> A) {
         .[A](value: A) -> A { value }.>widen_sum
       }
     , ()
     );
-  io.print(fmt.i32_to_string(identity(I32, 41)));
+  io.print(fmt.i32_to_string(identity[I32](41)));
   io.print("\n");
-  io.print(identity(String, "kept\n"))
+  io.print(identity[String]("kept\n"))
 }

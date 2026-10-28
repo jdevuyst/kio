@@ -18,11 +18,11 @@ import testapi(Bool, I32);
 import testapi/arith(eq_i32);
 import testapi/iter(loop);
 
-rec(loop) fn encode_onto(rows: List(Entry), symbols: List(I32), acc: Bits) -> Bits {
+rec(loop) fn encode_onto(rows: List[Entry], symbols: List[I32], acc: Bits) -> Bits {
   match(symbols.>List.un_list) {
     (
-    , .(symbol: I32, rest: List(I32)) {
-        recur encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil(I32)), acc))
+    , .(symbol: I32, rest: List[I32]) {
+        recur encode_onto(rows, rest, rev_onto(bits_for(rows, symbol, nil[I32]), acc))
       }
     , .(_empty: .) { acc }
     )
@@ -31,8 +31,8 @@ rec(loop) fn encode_onto(rows: List(Entry), symbols: List(I32), acc: Bits) -> Bi
 
 /// The bit stream is accumulated backwards and reversed once, so appending a
 /// codeword stays a walk of that codeword rather than of the stream so far.
-pub fn encode(rows: List(Entry), symbols: List(I32)) -> Bits {
-  reverse(encode_onto(rows, symbols, nil(I32)))
+pub fn encode(rows: List[Entry], symbols: List[I32]) -> Bits {
+  reverse(encode_onto(rows, symbols, nil[I32]))
 }
 
 labels Walked = { walked_symbol: I32, walked_rest: Bits };
@@ -67,7 +67,7 @@ rec(loop) fn walk(node: Node, bits: Bits) -> Walked {
   }
 }
 
-rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
+rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List[I32]) -> List[I32] {
   match(bits.>List.un_list) {
     (
     , .(_bit: I32, _rest: Bits) {
@@ -79,15 +79,15 @@ rec(loop) fn decode_onto(root: Node, bits: Bits, acc: List(I32)) -> List(I32) {
   }
 }
 
-pub fn decode(root: Node, bits: Bits) -> List(I32) { reverse(decode_onto(root, bits, nil(I32))) }
+pub fn decode(root: Node, bits: Bits) -> List[I32] { reverse(decode_onto(root, bits, nil[I32])) }
 
-pub rec(loop) fn same_symbols(left: List(I32), right: List(I32)) -> Bool {
+pub rec(loop) fn same_symbols(left: List[I32], right: List[I32]) -> Bool {
   match(left.>List.un_list) {
     (
-    , .(head: I32, rest: List(I32)) {
+    , .(head: I32, rest: List[I32]) {
         match(right.>List.un_list) {
           (
-          , .(other: I32, other_rest: List(I32)) {
+          , .(other: I32, other_rest: List[I32]) {
               if(eq_i32(head, other)) { recur same_symbols(rest, other_rest) } else { .f }
             }
           , .(_empty: .) { .f }

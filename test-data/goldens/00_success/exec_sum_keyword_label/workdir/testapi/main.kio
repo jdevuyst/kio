@@ -13,4 +13,4 @@ pub newtype Box : String { pub constructor mk_box; pub projector un_box }
 
 pub fn describe(x: Box | String) { let _ = x; () }
 
-pub fn main() { print("sum-keyword-label ok\n"(String)) }
+pub fn main() { print("sum-keyword-label ok\n"[String]) }

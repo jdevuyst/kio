@@ -34,7 +34,7 @@ import testapi/arith(leq_i32, mul_i32);
 
 type Borrower = Member & Book;
 
-type Borrower_result = result.Result(Borrower, Failure);
+type Borrower_result = result.Result[Borrower][Failure];
 
 /// Both stores are consulted before any of them is written: an operation
 /// that names an unknown member never touches the catalog.
@@ -82,20 +82,16 @@ fn do_checkout(books: Book_index, members: Member_index, holds: Hold_list, id: I
   , .(pair: Borrower) {
       let .(who: Member, entry: Book) = pair;
       if(leq_i32(entry.?{copies_total}, entry.?{copies_out})) {
-        result.err(Applied, Failure, dom.fail_no_copies(call))
+        result.err[Applied][Failure](dom.fail_no_copies(call))
       } else {
         let .(lent: Book) = shelf.take_copy(entry);
         let .(holding: Member) = ledger.borrow(who, call);
-        result.ok(
-        , Applied
-        , Failure
-        , (
-          , shelf.save(books, call, lent)
-          , ledger.save(members, id, holding)
-          , holds
-          , note_copies(call, lent)
-          )
-        )
+        result.ok[Applied][Failure]((
+        , shelf.save(books, call, lent)
+        , ledger.save(members, id, holding)
+        , holds
+        , note_copies(call, lent)
+        ))
       }
     }
   )
@@ -116,18 +112,14 @@ fn do_return(
       if(ledger.holds_copy(who, call)) {
         let .(shelved: Book) = shelf.put_copy(entry);
         let .(settled: Member) = ledger.give_back(who, call, days_late);
-        result.ok(
-        , Applied
-        , Failure
-        , (
-          , shelf.save(books, call, shelved)
-          , ledger.save(members, id, settled)
-          , holds
-          , note_fine(call, shelved, days_late)
-          )
-        )
+        result.ok[Applied][Failure]((
+        , shelf.save(books, call, shelved)
+        , ledger.save(members, id, settled)
+        , holds
+        , note_fine(call, shelved, days_late)
+        ))
       } else {
-        result.err(Applied, Failure, dom.fail_not_held(id, call))
+        result.err[Applied][Failure](dom.fail_not_held(id, call))
       }
     }
   )
@@ -141,17 +133,17 @@ fn do_hold(books: Book_index, members: Member_index, holds: Hold_list, id: I32, 
   , .(pair: Borrower) {
       let .(_who: Member, entry: Book) = pair;
       if(shelf.is_available(entry)) {
-        result.err(Applied, Failure, dom.fail_copies_available(call))
+        result.err[Applied][Failure](dom.fail_copies_available(call))
       } else {
         let .(booked: Hold_list) = list.prepend({holder = id, held_call = call}, holds);
-        result.ok(Applied, Failure, (books, members, booked, note_hold(call, booked)))
+        result.ok[Applied][Failure]((books, members, booked, note_hold(call, booked)))
       }
     }
   )
 }
 
 fn do_report(books: Book_index, members: Member_index, holds: Hold_list) -> Outcome {
-  result.ok(_, Failure, (books, members, holds, note_summary(books, members, holds)))
+  result.ok[_][Failure]((books, members, holds, note_summary(books, members, holds)))
 }
 
 pub fn apply(op: Op, books: Book_index, members: Member_index, holds: Hold_list) -> Outcome {

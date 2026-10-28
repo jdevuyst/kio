@@ -95,30 +95,21 @@ pub pure fn row_pair[A][B](left: A, right: B) -> A & B { (left, right) }
 pub op _ * __ { impl row_pair }
 
 pure fn some_type_pair(ct: __Comptime__, pair: Type_pair) -> Maybe_type_pair {
-  __left__(Type_pair, ., pair)
+  __left__[Type_pair][.](pair)
 }
 
-pure fn no_type_pair(ct: __Comptime__) -> Maybe_type_pair { __right__(Type_pair, ., ()) }
+pure fn no_type_pair(ct: __Comptime__) -> Maybe_type_pair { __right__[Type_pair][.](()) }
 
 pure fn product_view(ct: __Comptime__, typ: __Type__) -> Maybe_type_pair {
-  __either__(
-  , .
-  , Type_view_tail1
-  , Maybe_type_pair
+  __either__[.][Type_view_tail1][Maybe_type_pair](
   , __type_view__(ct, typ)
   , .(_unit: .) -> Maybe_type_pair { no_type_pair(ct) }
   , .(tail1: Type_view_tail1) -> Maybe_type_pair {
-      __either__(
-      , .
-      , Type_view_tail2
-      , Maybe_type_pair
+      __either__[.][Type_view_tail2][Maybe_type_pair](
       , tail1
       , .(_bottom: .) -> Maybe_type_pair { no_type_pair(ct) }
       , .(tail2: Type_view_tail2) -> Maybe_type_pair {
-          __either__(
-          , Type_pair
-          , Type_view_tail3
-          , Maybe_type_pair
+          __either__[Type_pair][Type_view_tail3][Maybe_type_pair](
           , tail2
           , .(pair: Type_pair) -> Maybe_type_pair { some_type_pair(ct, pair) }
           , .(_tail3: Type_view_tail3) -> Maybe_type_pair { no_type_pair(ct) }
@@ -130,46 +121,31 @@ pure fn product_view(ct: __Comptime__, typ: __Type__) -> Maybe_type_pair {
 }
 
 pure fn some_function_view(ct: __Comptime__, view: Function_view) -> Maybe_function_view {
-  __left__(Function_view, ., view)
+  __left__[Function_view][.](view)
 }
 
 pure fn no_function_view(ct: __Comptime__) -> Maybe_function_view {
-  __right__(Function_view, ., ())
+  __right__[Function_view][.](())
 }
 
 pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
-  __either__(
-  , .
-  , Type_view_tail1
-  , Maybe_function_view
+  __either__[.][Type_view_tail1][Maybe_function_view](
   , __type_view__(ct, typ)
   , .(_unit: .) -> Maybe_function_view { no_function_view(ct) }
   , .(tail1: Type_view_tail1) -> Maybe_function_view {
-      __either__(
-      , .
-      , Type_view_tail2
-      , Maybe_function_view
+      __either__[.][Type_view_tail2][Maybe_function_view](
       , tail1
       , .(_bottom: .) -> Maybe_function_view { no_function_view(ct) }
       , .(tail2: Type_view_tail2) -> Maybe_function_view {
-          __either__(
-          , Type_pair
-          , Type_view_tail3
-          , Maybe_function_view
+          __either__[Type_pair][Type_view_tail3][Maybe_function_view](
           , tail2
           , .(_product: Type_pair) -> Maybe_function_view { no_function_view(ct) }
           , .(tail3: Type_view_tail3) -> Maybe_function_view {
-              __either__(
-              , Type_pair
-              , Type_view_tail4
-              , Maybe_function_view
+              __either__[Type_pair][Type_view_tail4][Maybe_function_view](
               , tail3
               , .(_sum: Type_pair) -> Maybe_function_view { no_function_view(ct) }
               , .(tail4: Type_view_tail4) -> Maybe_function_view {
-                  __either__(
-                  , Function_view
-                  , Type_view_tail5
-                  , Maybe_function_view
+                  __either__[Function_view][Type_view_tail5][Maybe_function_view](
                   , tail4
                   , .(view: Function_view) -> Maybe_function_view { some_function_view(ct, view) }
                   , .(_tail5: Type_view_tail5) -> Maybe_function_view { no_function_view(ct) }
@@ -185,35 +161,35 @@ pure fn function_view(ct: __Comptime__, typ: __Type__) -> Maybe_function_view {
 }
 
 pure fn function_param(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __fst__(__Type__, Function_view_tail, view)
+  __fst__[__Type__][Function_view_tail](view)
 }
 
 pure fn function_result(ct: __Comptime__, view: Function_view) -> __Type__ {
-  __snd__(__Type_arity__, __Type__, __snd__(__Type__, Function_view_tail, view))
+  __snd__[__Type_arity__][__Type__](__snd__[__Type__][Function_view_tail](view))
 }
 
 pure fn slot_list_ok(ct: __Comptime__, slots: Slot_list) -> Slot_list_result {
-  __left__(Slot_list, __Diagnostic_text__, slots)
+  __left__[Slot_list][__Diagnostic_text__](slots)
 }
 
 pure fn slot_list_err(ct: __Comptime__, message: __Diagnostic_text__) -> Slot_list_result {
-  __right__(Slot_list, __Diagnostic_text__, message)
+  __right__[Slot_list][__Diagnostic_text__](message)
 }
 
 pure fn slot_ok(ct: __Comptime__, slot: Slot) -> Slot_result {
-  __left__(Slot, __Diagnostic_text__, slot)
+  __left__[Slot][__Diagnostic_text__](slot)
 }
 
 pure fn slot_err(ct: __Comptime__, message: __Diagnostic_text__) -> Slot_result {
-  __right__(Slot, __Diagnostic_text__, message)
+  __right__[Slot][__Diagnostic_text__](message)
 }
 
 pure fn slots_fold_types_rev(state: Slots_fold_state) -> Type_list {
-  __fst__(Type_list, Term_list, state)
+  __fst__[Type_list][Term_list](state)
 }
 
 pure fn slots_fold_terms_rev(state: Slots_fold_state) -> Term_list {
-  __snd__(Type_list, Term_list, state)
+  __snd__[Type_list][Term_list](state)
 }
 
 type Slots_fold_next = Slot_list & Slots_fold_state;
@@ -221,11 +197,7 @@ type Slots_fold_next = Slot_list & Slots_fold_state;
 type Slots_fold_step = Slots_fold_state | Slots_fold_next;
 
 pure fn slots_fold(ct: __Comptime__, slots: Slot_list) -> Slots_fold_state {
-  __structural_recur__(
-  , ct
-  , Slot_list
-  , Slots_fold_state
-  , Slots_fold_state
+  __structural_recur__(ct)[Slot_list][Slots_fold_state][Slots_fold_state](
   , slots
   , (type_nil(), term_nil())
   , .(
@@ -235,38 +207,28 @@ pure fn slots_fold(ct: __Comptime__, slots: Slot_list) -> Slots_fold_state {
     ) -> Slots_fold_state {
       let loop_step_fn =
         .(fuel: Slot_list, state: Slots_fold_state) -> Slots_fold_step {
-          __either__(
-          , .
-          , Slot_cell
-          , Slots_fold_step
+          __either__[.][Slot_cell][Slots_fold_step](
           , Slot_list.un_slot_list(fuel)
-          , .(_done: .) -> Slots_fold_step { __left__(Slots_fold_state, Slots_fold_next, state) }
+          , .(_done: .) -> Slots_fold_step { __left__[Slots_fold_state][Slots_fold_next](state) }
           , .(cell: Slot_cell) -> Slots_fold_step {
-              let current = __fst__(Slot, Slot_list, cell);
-              __right__(
-              , Slots_fold_state
-              , Slots_fold_next
+              let current = __fst__[Slot][Slot_list](cell);
+              __right__[Slots_fold_state][Slots_fold_next]((
+              , __snd__[Slot][Slot_list](cell)
               , (
-                , __snd__(Slot, Slot_list, cell)
-                , (
-                  , type_cons(ct, slot_type(ct, current), slots_fold_types_rev(state))
-                  , term_cons(ct, slot_term(ct, current), slots_fold_terms_rev(state))
-                  )
+                , type_cons(ct, slot_type(ct, current), slots_fold_types_rev(state))
+                , term_cons(ct, slot_term(ct, current), slots_fold_terms_rev(state))
                 )
-              )
+              ))
             }
           )
         };
-      __either__(
-      , Slots_fold_state
-      , Slots_fold_next
-      , Slots_fold_state
+      __either__[Slots_fold_state][Slots_fold_next][Slots_fold_state](
       , loop_step_fn(loop_fuel, loop_state)
       , .(loop_done: Slots_fold_state) -> Slots_fold_state { loop_done }
       , .(loop_next: Slots_fold_next) -> Slots_fold_state {
           loop_recur(
-          , __fst__(Slot_list, Slots_fold_state, loop_next)
-          , __snd__(Slot_list, Slots_fold_state, loop_next)
+          , __fst__[Slot_list][Slots_fold_state](loop_next)
+          , __snd__[Slot_list][Slots_fold_state](loop_next)
           )
         }
       )
@@ -303,10 +265,7 @@ pure fn finish_slots_exact_target(
 , target: Optional_type
 , mismatch_message: __Diagnostic_text__
 ) -> Macro_result {
-  __either__(
-  , __Type__
-  , .
-  , Macro_result
+  __either__[__Type__][.][Macro_result](
   , target
   , .(target_type: __Type__) -> Macro_result {
       __if_then_else__(
@@ -320,10 +279,7 @@ pure fn finish_slots_exact_target(
 }
 
 pure fn finish_slots_reordered_target(ct: __Comptime__, slots: Slot_list, target: Optional_type) -> Macro_result {
-  __either__(
-  , __Type__
-  , .
-  , Macro_result
+  __either__[__Type__][.][Macro_result](
   , target
   , .(target_type: __Type__) -> Macro_result {
       build_product_from_slots(
@@ -339,10 +295,7 @@ pure fn finish_slots_reordered_target(ct: __Comptime__, slots: Slot_list, target
 }
 
 pure fn mk_macro(ct: __Comptime__, source: __Type__, value: __Checked_term__, target: Optional_type) -> Macro_result {
-  __either__(
-  , __Type__
-  , .
-  , Macro_result
+  __either__[__Type__][.][Macro_result](
   , target
   , .(target_type: __Type__) -> Macro_result {
       build_product_from_slots(
@@ -369,18 +322,12 @@ pub pure fn mk_checked(
 pub macro mk : [Source] Source -> [Target] Target { impl mk_checked }
 
 pure fn patch_from_pair(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Slot_result {
-  __either__(
-  , Type_pair
-  , .
-  , Slot_result
+  __either__[Type_pair][.][Slot_result](
   , product_view(ct, source)
   , .(pair: Type_pair) -> Slot_result {
-      let constructor_type = __fst__(__Type__, __Type__, pair);
-      let payload_type = __snd__(__Type__, __Type__, pair);
-      __either__(
-      , Function_view
-      , .
-      , Slot_result
+      let constructor_type = __fst__[__Type__][__Type__](pair);
+      let payload_type = __snd__[__Type__][__Type__](pair);
+      __either__[Function_view][.][Slot_result](
       , function_view(ct, constructor_type)
       , .(view: Function_view) -> Slot_result {
           __if_then_else__(
@@ -399,18 +346,18 @@ pure fn patch_from_pair(ct: __Comptime__, source: __Type__, value: __Checked_ter
           , .() -> Slot_result {
               slot_err(
               , ct
-              , "set patch constructor parameter does not match payload"(__Diagnostic_text__)
+              , "set patch constructor parameter does not match payload"[__Diagnostic_text__]
               )
             }
           )
         }
       , .(_not_function: .) -> Slot_result {
-          slot_err(ct, "set patch must start with a constructor function"(__Diagnostic_text__))
+          slot_err(ct, "set patch must start with a constructor function"[__Diagnostic_text__])
         }
       )
     }
   , .(_not_product: .) -> Slot_result {
-      slot_err(ct, "set patch must be a constructor-payload pair"(__Diagnostic_text__))
+      slot_err(ct, "set patch must be a constructor-payload pair"[__Diagnostic_text__])
     }
   )
 }
@@ -421,27 +368,18 @@ pure fn parse_patch_packet_step(
 , source: __Type__
 , value: __Checked_term__
 ) -> Slot_list_result {
-  __either__(
-  , Type_pair
-  , .
-  , Slot_list_result
+  __either__[Type_pair][.][Slot_list_result](
   , product_view(ct, source)
   , .(pair: Type_pair) -> Slot_list_result {
-      let left_type = __fst__(__Type__, __Type__, pair);
-      let right_type = __snd__(__Type__, __Type__, pair);
-      __either__(
-      , Function_view
-      , .
-      , Slot_list_result
+      let left_type = __fst__[__Type__][__Type__](pair);
+      let right_type = __snd__[__Type__][__Type__](pair);
+      __either__[Function_view][.][Slot_list_result](
       , function_view(ct, left_type)
       , .(view: Function_view) -> Slot_list_result {
           __if_then_else__(
           , __type_equal__(ct, function_param(ct, view), right_type)
           , .() -> Slot_list_result {
-              __either__(
-              , Slot
-              , __Diagnostic_text__
-              , Slot_list_result
+              __either__[Slot][__Diagnostic_text__][Slot_list_result](
               , patch_from_pair(ct, source, value)
               , .(slot: Slot) -> Slot_list_result {
                   slot_list_ok(ct, slot_cons(ct, slot, slot_nil()))
@@ -452,7 +390,7 @@ pure fn parse_patch_packet_step(
           , .() -> Slot_list_result {
               slot_list_err(
               , ct
-              , "set patch constructor parameter does not match payload"(__Diagnostic_text__)
+              , "set patch constructor parameter does not match payload"[__Diagnostic_text__]
               )
             }
           )
@@ -460,16 +398,10 @@ pure fn parse_patch_packet_step(
       , .(_not_function: .) -> Slot_list_result {
           let left_value = __intrinsic_fst__(ct, source, value);
           let right_value = __intrinsic_snd__(ct, source, value);
-          __either__(
-          , Slot_list
-          , __Diagnostic_text__
-          , Slot_list_result
+          __either__[Slot_list][__Diagnostic_text__][Slot_list_result](
           , recur(left_type, left_value)
           , .(left_slots: Slot_list) -> Slot_list_result {
-              __either__(
-              , Slot_list
-              , __Diagnostic_text__
-              , Slot_list_result
+              __either__[Slot_list][__Diagnostic_text__][Slot_list_result](
               , recur(right_type, right_value)
               , .(right_slots: Slot_list) -> Slot_list_result {
                   slot_list_ok(ct, slot_append(ct, left_slots, right_slots))
@@ -483,17 +415,13 @@ pure fn parse_patch_packet_step(
       )
     }
   , .(_not_product: .) -> Slot_list_result {
-      slot_list_err(ct, "set patches must be constructor-payload pairs"(__Diagnostic_text__))
+      slot_list_err(ct, "set patches must be constructor-payload pairs"[__Diagnostic_text__])
     }
   )
 }
 
 pure fn parse_patch_packet(ct: __Comptime__, source: __Type__, value: __Checked_term__) -> Slot_list_result {
-  __structural_recur__(
-  , ct
-  , __Type__
-  , __Checked_term__
-  , Slot_list_result
+  __structural_recur__(ct)[__Type__][__Checked_term__][Slot_list_result](
   , source
   , value
   , .(loop_recur: Patch_parser, loop_fuel: __Type__, loop_state: __Checked_term__) -> Slot_list_result {
@@ -502,16 +430,12 @@ pure fn parse_patch_packet(ct: __Comptime__, source: __Type__, value: __Checked_
   )
 }
 
-pure fn apply_types_rev(state: Apply_state) -> Type_list { __fst__(Type_list, Slot_list, state) }
+pure fn apply_types_rev(state: Apply_state) -> Type_list { __fst__[Type_list][Slot_list](state) }
 
-pure fn apply_slots_rev(state: Apply_state) -> Slot_list { __snd__(Type_list, Slot_list, state) }
+pure fn apply_slots_rev(state: Apply_state) -> Slot_list { __snd__[Type_list][Slot_list](state) }
 
 pure fn apply_patch_to_slots(ct: __Comptime__, patch: Slot, slots: Slot_list) -> Slot_list {
-  __structural_recur__(
-  , ct
-  , Slot_list
-  , Apply_state
-  , Slot_list
+  __structural_recur__(ct)[Slot_list][Apply_state][Slot_list](
   , slots
   , (type_nil(), slot_nil())
   , .(
@@ -521,70 +445,52 @@ pure fn apply_patch_to_slots(ct: __Comptime__, patch: Slot, slots: Slot_list) ->
     ) -> Slot_list {
       let loop_step_fn =
         .(fuel: Slot_list, state: Apply_state) -> Apply_step {
-          __either__(
-          , .
-          , Slot_cell
-          , Apply_step
+          __either__[.][Slot_cell][Apply_step](
           , Slot_list.un_slot_list(fuel)
           , .(_done: .) -> Apply_step {
-              __left__(
-              , Slot_list
-              , Apply_next
-              , slot_cons(
+              __left__[Slot_list][Apply_next](slot_cons(
+              , ct
+              , patch
+              , slot_prepend_reverse_by_types(
                 , ct
-                , patch
-                , slot_prepend_reverse_by_types(
-                  , ct
-                  , apply_types_rev(state)
-                  , apply_slots_rev(state)
-                  , slot_nil()
-                  )
+                , apply_types_rev(state)
+                , apply_slots_rev(state)
+                , slot_nil()
                 )
-              )
+              ))
             }
           , .(cell: Slot_cell) -> Apply_step {
-              let current = __fst__(Slot, Slot_list, cell);
+              let current = __fst__[Slot][Slot_list](cell);
               __if_then_else__(
               , __type_equal__(ct, slot_type(ct, current), slot_type(ct, patch))
               , .() -> Apply_step {
-                  __left__(
-                  , Slot_list
-                  , Apply_next
-                  , slot_prepend_reverse_by_types(
-                    , ct
-                    , apply_types_rev(state)
-                    , apply_slots_rev(state)
-                    , slot_cons(ct, patch, __snd__(Slot, Slot_list, cell))
-                    )
-                  )
+                  __left__[Slot_list][Apply_next](slot_prepend_reverse_by_types(
+                  , ct
+                  , apply_types_rev(state)
+                  , apply_slots_rev(state)
+                  , slot_cons(ct, patch, __snd__[Slot][Slot_list](cell))
+                  ))
                 }
               , .() -> Apply_step {
-                  __right__(
-                  , Slot_list
-                  , Apply_next
+                  __right__[Slot_list][Apply_next]((
+                  , __snd__[Slot][Slot_list](cell)
                   , (
-                    , __snd__(Slot, Slot_list, cell)
-                    , (
-                      , type_cons(ct, slot_type(ct, current), apply_types_rev(state))
-                      , slot_cons(ct, current, apply_slots_rev(state))
-                      )
+                    , type_cons(ct, slot_type(ct, current), apply_types_rev(state))
+                    , slot_cons(ct, current, apply_slots_rev(state))
                     )
-                  )
+                  ))
                 }
               )
             }
           )
         };
-      __either__(
-      , Slot_list
-      , Apply_next
-      , Slot_list
+      __either__[Slot_list][Apply_next][Slot_list](
       , loop_step_fn(loop_fuel, loop_state)
       , .(loop_done: Slot_list) -> Slot_list { loop_done }
       , .(loop_next: Apply_next) -> Slot_list {
           loop_recur(
-          , __fst__(Slot_list, Apply_state, loop_next)
-          , __snd__(Slot_list, Apply_state, loop_next)
+          , __fst__[Slot_list][Apply_state](loop_next)
+          , __snd__[Slot_list][Apply_state](loop_next)
           )
         }
       )
@@ -593,44 +499,30 @@ pure fn apply_patch_to_slots(ct: __Comptime__, patch: Slot, slots: Slot_list) ->
 }
 
 pure fn apply_patch_list(ct: __Comptime__, patches: Slot_list, slots: Slot_list) -> Slot_list {
-  __structural_recur__(
-  , ct
-  , Slot_list
-  , Slot_list
-  , Slot_list
+  __structural_recur__(ct)[Slot_list][Slot_list][Slot_list](
   , patches
   , slots
   , .(loop_recur: (Slot_list & Slot_list) -> Slot_list, loop_fuel: Slot_list, loop_state: Slot_list) -> Slot_list {
       let loop_step_fn =
         .(fuel: Slot_list, state: Slot_list) -> Patch_list_step {
-          __either__(
-          , .
-          , Slot_cell
-          , Patch_list_step
+          __either__[.][Slot_cell][Patch_list_step](
           , Slot_list.un_slot_list(fuel)
-          , .(_done: .) -> Patch_list_step { __left__(Slot_list, Patch_list_next, state) }
+          , .(_done: .) -> Patch_list_step { __left__[Slot_list][Patch_list_next](state) }
           , .(cell: Slot_cell) -> Patch_list_step {
-              __right__(
-              , Slot_list
-              , Patch_list_next
-              , (
-                , __snd__(Slot, Slot_list, cell)
-                , apply_patch_to_slots(ct, __fst__(Slot, Slot_list, cell), state)
-                )
-              )
+              __right__[Slot_list][Patch_list_next]((
+              , __snd__[Slot][Slot_list](cell)
+              , apply_patch_to_slots(ct, __fst__[Slot][Slot_list](cell), state)
+              ))
             }
           )
         };
-      __either__(
-      , Slot_list
-      , Patch_list_next
-      , Slot_list
+      __either__[Slot_list][Patch_list_next][Slot_list](
       , loop_step_fn(loop_fuel, loop_state)
       , .(loop_done: Slot_list) -> Slot_list { loop_done }
       , .(loop_next: Patch_list_next) -> Slot_list {
           loop_recur(
-          , __fst__(Slot_list, Slot_list, loop_next)
-          , __snd__(Slot_list, Slot_list, loop_next)
+          , __fst__[Slot_list][Slot_list](loop_next)
+          , __snd__[Slot_list][Slot_list](loop_next)
           )
         }
       )
@@ -646,10 +538,7 @@ pure fn set_macro(
 , patches: __Checked_term__
 , target: Optional_type
 ) -> Macro_result {
-  __either__(
-  , Slot_list
-  , __Diagnostic_text__
-  , Macro_result
+  __either__[Slot_list][__Diagnostic_text__][Macro_result](
   , parse_patch_packet(ct, patches_source, patches)
   , .(patch_slots: Slot_list) -> Macro_result {
       finish_slots_reordered_target(
@@ -677,9 +566,9 @@ pub pure fn set_checked(
 /// Applies constructor-payload patch packets to a row, replacing existing fields and prepending new fields.
 pub macro set : [Source] Source -> [Patches] Patches -> [Target] Target { impl set_checked }
 
-pure fn select_types_rev(state: Select_state) -> Type_list { __fst__(Type_list, Slot_list, state) }
+pure fn select_types_rev(state: Select_state) -> Type_list { __fst__[Type_list][Slot_list](state) }
 
-pure fn select_slots_rev(state: Select_state) -> Slot_list { __snd__(Type_list, Slot_list, state) }
+pure fn select_slots_rev(state: Select_state) -> Slot_list { __snd__[Type_list][Slot_list](state) }
 
 pure fn select_slots(
 , ct: __Comptime__
@@ -687,11 +576,7 @@ pure fn select_slots(
 , source_types: Type_list
 , source_slots: Slot_list
 ) -> Slot_list_result {
-  __structural_recur__(
-  , ct
-  , Slot_list
-  , Select_state
-  , Slot_list_result
+  __structural_recur__(ct)[Slot_list][Select_state][Slot_list_result](
   , selectors
   , (type_nil(), slot_nil())
   , .(
@@ -701,97 +586,69 @@ pure fn select_slots(
     ) -> Slot_list_result {
       let loop_step_fn =
         .(fuel: Slot_list, state: Select_state) -> Select_step {
-          __either__(
-          , .
-          , Slot_cell
-          , Select_step
+          __either__[.][Slot_cell][Select_step](
           , Slot_list.un_slot_list(fuel)
           , .(_done: .) -> Select_step {
-              __left__(
-              , Slot_list_result
-              , Select_next
-              , slot_list_ok(
-                , ct
-                , slot_reverse_by_types(ct, select_types_rev(state), select_slots_rev(state))
-                )
-              )
+              __left__[Slot_list_result][Select_next](slot_list_ok(
+              , ct
+              , slot_reverse_by_types(ct, select_types_rev(state), select_slots_rev(state))
+              ))
             }
           , .(cell: Slot_cell) -> Select_step {
-              let selector = __fst__(Slot, Slot_list, cell);
-              __either__(
-              , Function_view
-              , .
-              , Select_step
+              let selector = __fst__[Slot][Slot_list](cell);
+              __either__[Function_view][.][Select_step](
               , function_view(ct, slot_type(ct, selector))
               , .(view: Function_view) -> Select_step {
-                  __either__(
-                  , Matched_slot
-                  , .
-                  , Select_step
+                  __either__[Matched_slot][.][Select_step](
                   , take_first_matching(ct, function_param(ct, view), source_types, source_slots)
                   , .(taken: Matched_slot) -> Select_step {
-                      let wrapper = __fst__(Slot, Matched_slot_tail, taken);
+                      let wrapper = __fst__[Slot][Matched_slot_tail](taken);
                       let result_type = function_result(ct, view);
-                      __right__(
-                      , Slot_list_result
-                      , Select_next
+                      __right__[Slot_list_result][Select_next]((
+                      , __snd__[Slot][Slot_list](cell)
                       , (
-                        , __snd__(Slot, Slot_list, cell)
-                        , (
-                          , type_cons(ct, result_type, select_types_rev(state))
-                          , slot_cons(
-                            , ct
-                            , (
-                              , result_type
-                              , __term_call__(
-                                , ct
-                                , slot_type(ct, selector)
-                                , slot_term(ct, selector)
-                                , slot_term(ct, wrapper)
-                                )
+                        , type_cons(ct, result_type, select_types_rev(state))
+                        , slot_cons(
+                          , ct
+                          , (
+                            , result_type
+                            , __term_call__(
+                              , ct
+                              , slot_type(ct, selector)
+                              , slot_term(ct, selector)
+                              , slot_term(ct, wrapper)
                               )
-                            , select_slots_rev(state)
                             )
+                          , select_slots_rev(state)
                           )
                         )
-                      )
+                      ))
                     }
                   , .(_missing: .) -> Select_step {
-                      __left__(
-                      , Slot_list_result
-                      , Select_next
-                      , slot_list_err(
-                        , ct
-                        , "get selector has no matching row field"(__Diagnostic_text__)
-                        )
-                      )
+                      __left__[Slot_list_result][Select_next](slot_list_err(
+                      , ct
+                      , "get selector has no matching row field"[__Diagnostic_text__]
+                      ))
                     }
                   )
                 }
               , .(_not_function: .) -> Select_step {
-                  __left__(
-                  , Slot_list_result
-                  , Select_next
-                  , slot_list_err(
-                    , ct
-                    , "get selector must be a projector function"(__Diagnostic_text__)
-                    )
-                  )
+                  __left__[Slot_list_result][Select_next](slot_list_err(
+                  , ct
+                  , "get selector must be a projector function"[__Diagnostic_text__]
+                  ))
                 }
               )
             }
           )
         };
-      __either__(
-      , Slot_list_result
-      , Select_next
-      , Slot_list_result
+      __either__[Slot_list_result][Select_next][Slot_list_result](
       , loop_step_fn(loop_fuel, loop_state)
       , .(loop_done: Slot_list_result) -> Slot_list_result { loop_done }
       , .(loop_next: Select_next) -> Slot_list_result {
           loop_recur(
-          , __fst__(Slot_list, Select_state, loop_next)
-          , __snd__(Slot_list, Select_state, loop_next)
+          , __fst__[Slot_list][Select_state](loop_next)
+          , __snd__[Slot_list][Select_state](loop_next)
           )
         }
       )
@@ -807,10 +664,7 @@ pure fn get_macro(
 , selectors: __Checked_term__
 , target: Optional_type
 ) -> Macro_result {
-  __either__(
-  , Slot_list
-  , __Diagnostic_text__
-  , Macro_result
+  __either__[Slot_list][__Diagnostic_text__][Macro_result](
   , select_slots(
     , ct
     , product_slots(ct, selectors_source, selectors)
@@ -822,7 +676,7 @@ pure fn get_macro(
       , ct
       , selected
       , target
-      , "get target must match selector order exactly"(__Diagnostic_text__)
+      , "get target must match selector order exactly"[__Diagnostic_text__]
       )
     }
   , .(message: __Diagnostic_text__) -> Macro_result { err(ct, message) }

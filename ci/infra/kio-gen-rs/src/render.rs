@@ -63,7 +63,7 @@ pub struct RenderOpts {
     /// Render surface-form constructs as their surface spelling.
     /// When false, every construct renders to its Kio' equivalent
     /// (tuple-literal chains stay as nested `__pair__`, `IfElse`
-    /// nodes elaborate to `__if_then_else__(Bool, R, cond, .() { … },
+    /// nodes elaborate to `__if_then_else__[Bool][R](cond, .() { … },
     /// .() { … })`).
     pub surface: bool,
 }
@@ -249,7 +249,7 @@ pub fn render_type(t: &Type) -> String {
         Type::Product(a, b) => format!("({} & {})", paren_if_function(a), paren_if_function(b)),
         Type::Sum(a, b) => format!("({} | {})", paren_if_function(a), paren_if_function(b)),
         Type::Nominal { name, .. } => name.clone(),
-        Type::Param { name, payload, .. } => format!("{name}({})", render_type(payload)),
+        Type::Param { name, payload, .. } => format!("{name}[{}]", render_type(payload)),
         Type::Label { newtype_name, .. } => newtype_name.clone(),
     }
 }
@@ -371,12 +371,12 @@ fn render_term_opts_with_context(
         return format!("({})", parts.join(", "));
     }
     match t {
-        // The explicit `(Type)` annotation form (specs/language.md
+        // The explicit `[Type]` annotation form (specs/language.md
         // § Literals). An annotation pins each generated base identity
         // without relying on an expected type.
-        Term::NumLit { base, repr } => format!("{repr}({})", base.type_name()),
-        Term::StrLit(s) => format!("{}(String)", render_str_lit(s)),
-        Term::BoolLit(b) => format!("{}(Bool)", if *b { ".t" } else { ".f" }),
+        Term::NumLit { base, repr } => format!("{repr}[{}]", base.type_name()),
+        Term::StrLit(s) => format!("{}[String]", render_str_lit(s)),
+        Term::BoolLit(b) => format!("{}[Bool]", if *b { ".t" } else { ".f" }),
         Term::UnitLit => "()".to_string(),
         Term::Var(n) => n.clone(),
         Term::Lambda { params, ret, body } => {
@@ -455,15 +455,24 @@ fn render_term_opts_with_context(
             type_args,
             args,
         } => {
-            let mut parts: Vec<String> = type_args
+            let types: Vec<String> = type_args
                 .iter()
                 .map(|ty| render_type_opts(ty, opts))
                 .collect();
-            parts.extend(
-                args.iter()
-                    .map(|x| render_term_opts_with_context(x, opts, context)),
-            );
-            format!("{name}({})", parts.join(", "))
+            let callee = if types.is_empty() {
+                name.clone()
+            } else {
+                format!("{name}[{}]", types.join("]["))
+            };
+            if args.is_empty() && !types.is_empty() {
+                callee
+            } else {
+                let values: Vec<String> = args
+                    .iter()
+                    .map(|x| render_term_opts_with_context(x, opts, context))
+                    .collect();
+                format!("{callee}({})", values.join(", "))
+            }
         }
         Term::TypeMember {
             type_name,
@@ -535,7 +544,7 @@ fn render_term_opts_with_context(
                 }
             } else {
                 format!(
-                    "__either__({}, {}, {}, {}, .({left_param}) {{ {} }}, .({right_param}) {{ {} }})",
+                    "__either__[{}][{}][{}]({}, .({left_param}) {{ {} }}, .({right_param}) {{ {} }})",
                     render_type_opts(left_ty, opts),
                     render_type_opts(right_ty, opts),
                     render_type_opts(ret_ty, opts),
@@ -736,16 +745,15 @@ fn render_term_opts_with_context(
                 UfcsKind::App => Vec::new(),
             };
             if opts.surface {
-                let mut parts = if *explicit_type_args {
-                    types
+                let callee = if *explicit_type_args && !types.is_empty() {
+                    format!("{callee_name}[{}]", types.join("]["))
                 } else {
-                    Vec::new()
-                };
-                parts.extend(values);
-                let callee = if parts.is_empty() {
                     callee_name.clone()
+                };
+                let callee = if values.is_empty() {
+                    callee
                 } else {
-                    format!("{callee_name}({})", parts.join(", "))
+                    format!("{callee}({})", values.join(", "))
                 };
                 match spelling {
                     UfcsSpelling::ReceiverFirst => format!("({receiver}).>{callee}"),
@@ -760,9 +768,12 @@ fn render_term_opts_with_context(
                     }
                     UfcsSpelling::ReceiverLast | UfcsSpelling::CalleeLast => values.push(receiver),
                 }
-                let mut parts = types;
-                parts.extend(values);
-                format!("{callee_name}({})", parts.join(", "))
+                let callee = if types.is_empty() {
+                    callee_name.clone()
+                } else {
+                    format!("{callee_name}[{}]", types.join("]["))
+                };
+                format!("{callee}({})", values.join(", "))
             }
         }
         Term::FnPlaceholder { params, ret, body } => {
@@ -803,7 +814,7 @@ fn render_term_opts_with_context(
         }
         Term::LiteralAliasRef { name, literal } => {
             if opts.surface {
-                format!("{name}({})", literal_annotation(literal))
+                format!("{name}[{}]", literal_annotation(literal))
             } else {
                 render_term_opts_with_context(literal, opts, context)
             }
@@ -841,7 +852,7 @@ fn render_term_opts_with_context(
         Term::UserMacro { name, inner } => {
             if opts.surface {
                 format!(
-                    "{name}({}, _)",
+                    "{name}({})[_]",
                     render_term_opts_with_context(inner, opts, context)
                 )
             } else {
@@ -876,7 +887,7 @@ fn render_term_opts_with_context(
                 debug_assert_eq!(then_ty, else_ty);
                 let result_ty = render_type_opts(then_ty, opts);
                 format!(
-                    "__if_then_else__(Bool, {}, {}, .() {{ {} }}, .() {{ {} }})",
+                    "__if_then_else__[Bool][{}]({}, .() {{ {} }}, .() {{ {} }})",
                     result_ty,
                     render_term_opts_with_context(cond, opts, context),
                     render_term_opts_with_context(then, opts, context),
@@ -899,8 +910,8 @@ fn literal_annotation(literal: &Term) -> &'static str {
 /// If `t` is a `__pair__` call (with the canonical 2 type-args + 2
 /// value-args shape), return the chain of value-args treating nested
 /// right-associated `__pair__`s as further tuple elements:
-/// `__pair__(T1, T2, a, b)` → `Some([a, b])`,
-/// `__pair__(T1, T_rest, a, __pair__(T2, T3, b, c))` → `Some([a, b, c])`.
+/// `__pair__[T1][T2](a, b)` → `Some([a, b])`,
+/// `__pair__[T1][T_rest](a, __pair__[T2][T3](b, c))` → `Some([a, b, c])`.
 fn collect_tuple_items(t: &Term) -> Option<Vec<Term>> {
     match t {
         Term::PolyCall {
@@ -1269,7 +1280,7 @@ mod tests {
         };
         assert_eq!(
             render_term_opts(&term, &RenderOpts { surface: true }),
-            "if(if(.t(Bool)) { .f(Bool) } else { .t(Bool) }) { .t(Bool) } else { .f(Bool) }"
+            "if(if(.t[Bool]) { .f[Bool] } else { .t[Bool] }) { .t[Bool] } else { .f[Bool] }"
         );
     }
 
@@ -1297,7 +1308,7 @@ mod tests {
 
         assert_eq!(
             render_term_opts(&term, &RenderOpts { surface: false }),
-            "__either__(I32, String, I32, make_source(), .(left) { left }, .(right) { right })"
+            "__either__[I32][String][I32](make_source(), .(left) { left }, .(right) { right })"
         );
     }
 
@@ -1337,7 +1348,7 @@ mod tests {
         let opts = RenderOpts { surface: true };
         assert_eq!(
             render_term_opts(&term, &opts),
-            "((1(I32)) <+> (.() { let x = 2(I32); x }()))"
+            "((1[I32]) <+> (.() { let x = 2[I32]; x }()))"
         );
     }
 

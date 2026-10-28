@@ -30,9 +30,10 @@ fn g(z: I32) -> I32 {
 fn id[A](x: A) -> A { x }
 
 fn h() -> I32 {
-  id(
+  id[
     // before the type arg
-    , I32
+    I32
+  ](
     // before the value arg
     , 1
     )
@@ -62,11 +63,13 @@ newtype Box[A][B] : A & B { constructor mk_box; projector get_box }
 
 fn type_arg_comments() -> . {
   let _ =
-    mk_box(
+    mk_box[
       // type arg a
-      , I32
+      I32
+    ][
       // type arg b
-      , String
+      String
+    ](
       , 1
       , ""
       );

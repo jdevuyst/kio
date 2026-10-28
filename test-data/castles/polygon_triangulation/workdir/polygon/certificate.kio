@@ -10,7 +10,7 @@ import testapi/text as text;
 
 fn valid_index(i: I32, n: I32) -> Bool { geo.both(num.leq_i32(0, i), geo.less(i, n)) }
 
-rec(loop) fn triangle_check(points: Array(geo.Point), triangles: Array(geo.Triangle), i: I32) -> String {
+rec(loop) fn triangle_check(points: Array[geo.Point], triangles: Array[geo.Triangle], i: I32) -> String {
   if(geo.equal(i, arr.array_len(triangles))) {
     ""
   } else {
@@ -31,7 +31,7 @@ rec(loop) fn triangle_check(points: Array(geo.Point), triangles: Array(geo.Trian
   }
 }
 
-rec(loop) fn area_walk(points: Array(geo.Point), triangles: Array(geo.Triangle), i: I32, total: I32) -> I32 {
+rec(loop) fn area_walk(points: Array[geo.Point], triangles: Array[geo.Triangle], i: I32, total: I32) -> I32 {
   if(geo.equal(i, arr.array_len(triangles))) {
     total
   } else {
@@ -48,16 +48,16 @@ rec(loop) fn area_walk(points: Array(geo.Point), triangles: Array(geo.Triangle),
   }
 }
 
-pub fn triangle_area2(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> I32 {
+pub fn triangle_area2(points: Array[geo.Point], triangles: Array[geo.Triangle]) -> I32 {
   area_walk(points, triangles, 0, 0)
 }
 
-fn add_edge(edges: Array(I32), n: I32, a: I32, b: I32) {
+fn add_edge(edges: Array[I32], n: I32, a: I32, b: I32) {
   let index = num.add_i32(num.mul_i32(a, n), b);
   arr.array_set(edges, index, num.add_i32(arr.array_get(edges, index), 1))
 }
 
-rec(loop) fn collect_edges(edges: Array(I32), n: I32, triangles: Array(geo.Triangle), i: I32) {
+rec(loop) fn collect_edges(edges: Array[I32], n: I32, triangles: Array[geo.Triangle], i: I32) {
   if(geo.equal(i, arr.array_len(triangles))) {
     ()
   } else {
@@ -69,11 +69,11 @@ rec(loop) fn collect_edges(edges: Array(I32), n: I32, triangles: Array(geo.Trian
   }
 }
 
-fn edge_count(edges: Array(I32), n: I32, a: I32, b: I32) -> I32 {
+fn edge_count(edges: Array[I32], n: I32, a: I32, b: I32) -> I32 {
   arr.array_get(edges, num.add_i32(num.mul_i32(a, n), b))
 }
 
-rec(loop) fn edge_check(edges: Array(I32), n: I32, a: I32, b: I32) -> Bool {
+rec(loop) fn edge_check(edges: Array[I32], n: I32, a: I32, b: I32) -> Bool {
   if(geo.equal(a, n)) {
     .t
   } else if(num.leq_i32(n, b)) {
@@ -92,7 +92,7 @@ rec(loop) fn edge_check(edges: Array(I32), n: I32, a: I32, b: I32) -> Bool {
   }
 }
 
-rec(loop) fn internal_walk(edges: Array(I32), n: I32, a: I32, b: I32, total: I32) -> I32 {
+rec(loop) fn internal_walk(edges: Array[I32], n: I32, a: I32, b: I32, total: I32) -> I32 {
   if(geo.equal(a, n)) {
     total
   } else if(num.leq_i32(n, b)) {
@@ -109,14 +109,14 @@ rec(loop) fn internal_walk(edges: Array(I32), n: I32, a: I32, b: I32, total: I32
   }
 }
 
-pub fn internal_edges(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> I32 {
+pub fn internal_edges(points: Array[geo.Point], triangles: Array[geo.Triangle]) -> I32 {
   let n = arr.array_len(points);
   let edges = arr.array_make_filled(num.mul_i32(n, n), 0);
   collect_edges(edges, n, triangles, 0);
   internal_walk(edges, n, 0, 1, 0)
 }
 
-pub fn certify(points: Array(geo.Point), triangles: Array(geo.Triangle)) -> String {
+pub fn certify(points: Array[geo.Point], triangles: Array[geo.Triangle]) -> String {
   let n = arr.array_len(points);
   if(geo.equal(arr.array_len(triangles), num.sub_i32(n, 2))) {
     let defect = triangle_check(points, triangles, 0);

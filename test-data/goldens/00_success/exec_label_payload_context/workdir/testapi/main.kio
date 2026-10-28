@@ -5,9 +5,9 @@ import testapi/io(print);
 
 newtype Box[A] : String { pub constructor make; pub projector unpack }
 
-fn empty[A]() -> Box(A) { Box.make("empty\n") }
+fn empty[A]() -> Box[A] { Box.make("empty\n") }
 
-labels State = { first: Box(.), second: Box(. -> .) };
+labels State = { first: Box[.], second: Box[. -> .] };
 
 fn initial() -> State { {first = empty(), second = empty()} }
 

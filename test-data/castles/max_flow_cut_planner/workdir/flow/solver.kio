@@ -14,9 +14,9 @@ import testapi/text as text;
 
 pub labels Augmentation = { route: String, amount: I32, cancelled: I32 };
 
-pub labels Solution = { residual: Array(I32), value: I32, history: Array(Augmentation) };
+pub labels Solution = { residual: Array[I32], value: I32, history: Array[Augmentation] };
 
-rec(loop) fn bottleneck(path: Array(I32), residual: Array(I32), index: I32, limit: I32) -> I32 {
+rec(loop) fn bottleneck(path: Array[I32], residual: Array[I32], index: I32, limit: I32) -> I32 {
   if(math.less(index, ar.array_len(path))) {
     recur bottleneck(
     , path
@@ -31,8 +31,8 @@ rec(loop) fn bottleneck(path: Array(I32), residual: Array(I32), index: I32, limi
 
 rec(loop) fn send(
 , network: net.Network
-, residual: Array(I32)
-, path: Array(I32)
+, residual: Array[I32]
+, path: Array[I32]
 , amount: I32
 , index: I32
 , cancelled: I32
@@ -57,10 +57,10 @@ rec(loop) fn send(
   }
 }
 
-rec(loop) fn describe_path(network: net.Network, path: Array(I32), index: I32, route: String) -> String {
+rec(loop) fn describe_path(network: net.Network, path: Array[I32], index: I32, route: String) -> String {
   if(a.leq_i32(0, index)) {
     let edge = ar.array_get(network.?{net.edges}, ar.array_get(path, index));
-    let arrow = if(edge.?{net.backward}) { "-cancel->" } else { "->" };
+    let .(arrow: String) = if(edge.?{net.backward}) { "-cancel->" } else { "->" };
     let next = text.string_concat(
     , route
     , text.string_concat(arrow, fmt.int_to_string(edge.?{net.to}))
@@ -75,12 +75,12 @@ rec(loop) fn improve(
 , network: net.Network
 , source: I32
 , sink: I32
-, residual: Array(I32)
+, residual: Array[I32]
 , value: I32
-, history: Array(Augmentation)
+, history: Array[Augmentation]
 ) -> Solution {
   match(search.augmenting_path(network, residual, source, sink)) {
-    .(path: Array(I32)) {
+    .(path: Array[I32]) {
       let amount = bottleneck(path, residual, 1, ar.array_get(residual, ar.array_get(path, 0)));
       let route =
         describe_path(network, path, a.sub_i32(ar.array_len(path), 1), fmt.int_to_string(source));
@@ -99,6 +99,6 @@ pub fn solve(network: net.Network, source: I32, sink: I32) -> Solution {
   , sink
   , net.initial_residual(network)
   , 0
-  , ar.array_make_empty(Augmentation, ())
+  , ar.array_make_empty[Augmentation](())
   )
 }

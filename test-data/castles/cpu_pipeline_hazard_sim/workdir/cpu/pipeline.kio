@@ -93,7 +93,7 @@ labels Ex_out = { ex_value: I32, ex_hits: I32, mem_hits: I32, decision: Redirect
 /// against the cycle that produced it.
 labels Step = { next: Machine, note: Event };
 
-fn straight() -> Redirect { {straight=}.>widen_sum(Redirect) }
+fn straight() -> Redirect { ({straight=}.>widen_sum)[Redirect] }
 
 fn ex_out(value_now: I32, ex_hits_now: I32, mem_hits_now: I32, decision: Redirect) -> Ex_out {
   {ex_value = value_now, ex_hits = ex_hits_now, mem_hits = mem_hits_now, decision}
@@ -129,7 +129,7 @@ fn ex_branch(cpu: Cpu, m: Machine, inst: Instr) -> Ex_out {
   let b = read_source(cpu, m, inst.?{rt});
   let decision =
     if(int_eq(a.?{value}, b.?{value})) {
-      {jump = inst.?{imm}}.>widen_sum(Redirect)
+      ({jump = inst.?{imm}}.>widen_sum)[Redirect]
     } else {
       straight()
     };

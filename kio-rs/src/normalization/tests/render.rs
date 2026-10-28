@@ -158,7 +158,7 @@ fn repl_rendering_preserves_private_saturated_and_residual_newtype_members() {
         (
             "secret.kio",
             "module secret; \
-             newtype Hidden[A, B, C] : A & B & C { constructor mk; projector get; };",
+             newtype Hidden[A][ B][ C] : A & B & C { constructor mk; projector get; };",
         ),
         ("consumer.kio", "module consumer; fn keep() -> . { () }"),
     ]);

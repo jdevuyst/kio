@@ -1,0 +1,2 @@
+expected a value operand, found a type path
+write an explicit type argument in brackets, such as `f\[T\]\(value\)`

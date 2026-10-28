@@ -16,29 +16,33 @@ pub fn count() -> I32 | String {
     .(line: String) {
       match(fmt.string_to_int(line)) {
         .(n: I32) {
-          if(arith.leq_i32(0, n)) { n.>widen_sum } else { "negative frame count".>widen_sum }
+          if(arith.leq_i32(0, n)) {
+            n.>widen_sum
+          } else {
+            "negative frame count"[String].>widen_sum
+          }
         };
-        .() { "invalid frame count".>widen_sum }
+        .() { "invalid frame count"[String].>widen_sum }
       }
     };
-    .() { "missing frame count".>widen_sum }
+    .() { "missing frame count"[String].>widen_sum }
   }
 }
 
-rec(loop) fn read_tokens(remaining: I32, reversed: lists.List(String)) ->
-  lists.List(String) | String
+rec(loop) fn read_tokens(remaining: I32, reversed: lists.List[String]) ->
+  lists.List[String] | String
    {
   if(arith.leq_i32(remaining, 0)) {
     walk.reverse(reversed).>widen_sum
   } else match(io.read_ascii_line()) {
     .(token: String) { recur read_tokens(arith.sub_i32(remaining, 1), lists.cons(token, reversed)) };
-    .() { "incomplete token frame".>widen_sum }
+    .() { "incomplete token frame"[String].>widen_sum }
   }
 }
 
-pub fn frame() -> lists.List(String) | String {
+pub fn frame() -> lists.List[String] | String {
   match(count()) {
-    .(n: I32) { read_tokens(n, lists.nil(_)) };
+    .(n: I32) { read_tokens(n, lists.nil[_]) };
     .(error: String) { error.>widen_sum }
   }
 }

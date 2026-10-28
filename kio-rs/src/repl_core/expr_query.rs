@@ -1025,11 +1025,7 @@ module main;
 import __comptime__;
 
 pure fn run(ct: __Comptime__, k: . -> .) -> . {
-  __structural_recur__(
-    , ct
-    , __Type__
-    , .
-    , .
+  __structural_recur__(ct)[__Type__][.][.](
     , __type_unit__(ct)
     , ()
     , .(recur: (__Type__ & .) -> ., _fuel: __Type__, _input: .) -> . { recur(__type_unit__(ct), k(())) }

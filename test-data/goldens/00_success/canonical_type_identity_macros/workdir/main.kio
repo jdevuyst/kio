@@ -16,9 +16,9 @@ labels { cell[Cell]: Cell };
 
 fn identity[A](value: A) -> A { value }
 
-fn make_box(value: real.Actual) -> Box(real.Actual) { Box.mk_box(value) }
+fn make_box(value: real.Actual) -> Box[real.Actual] { Box.mk_box(value) }
 
-fn consume_box(value: Box(real.Actual)) -> real.Actual { Box.un_box(value) }
+fn consume_box(value: Box[real.Actual]) -> real.Actual { Box.un_box(value) }
 
 fn call(value: real.Actual) -> d.Flag { d.id(value) }
 
@@ -40,18 +40,18 @@ fn inferred_literal_under_same_named_binder[Actual]() -> types.Other {
 }
 
 equiv field_eval() {
-  field_roundtrip(Bool, real.btrue());
+  field_roundtrip[Bool](real.btrue());
   real.btrue()
 }
 
 fn call_captured(value: real.Actual) -> real.Actual {
-  captured_keep(real.Actual, ())(identity(value))
+  captured_keep[real.Actual](())(identity(value))
 }
 
 fn call_captured_pair() -> (real.Actual -> real.Actual) & (real.Actual -> real.Actual) {
-  captured_pair(real.Actual, ())
+  captured_pair[real.Actual](())
 }
 
 fn call_captured_type_app(value: real.Actual) -> real.Actual {
-  captured_type_app(real.Actual, ())(value)
+  captured_type_app[real.Actual](())(value)
 }

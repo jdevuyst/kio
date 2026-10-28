@@ -20,9 +20,9 @@ import testapi/iter(loop);
 /// the page is resident, and a trap into the pager when it is not.
 pub labels Phase = { compute: I32 } | { touch: I32 };
 
-pub fn compute_phase(ticks: I32) -> Phase { {compute = ticks}.>widen_sum(Phase) }
+pub fn compute_phase(ticks: I32) -> Phase { ({compute = ticks}.>widen_sum)[Phase] }
 
-pub fn touch_phase(vp: I32) -> Phase { {touch = vp}.>widen_sum(Phase) }
+pub fn touch_phase(vp: I32) -> Phase { ({touch = vp}.>widen_sum)[Phase] }
 
 pub fn phase_text(p: Phase) -> String {
   match(p) {
@@ -47,19 +47,19 @@ pub fn pid_tag(pid: I32) -> String {
 /// the times it was switched onto the CPU, trapped, and found its page
 /// resident.
 pub labels Pcb = {
-, arrive: Array(I32)
-, pc: Array(I32)
-, rem: Array(I32)
-, finish: Array(I32)
-, cpu_ticks: Array(I32)
-, wait_ticks: Array(I32)
-, block_ticks: Array(I32)
-, switches: Array(I32)
-, faults: Array(I32)
-, hits: Array(I32)
+, arrive: Array[I32]
+, pc: Array[I32]
+, rem: Array[I32]
+, finish: Array[I32]
+, cpu_ticks: Array[I32]
+, wait_ticks: Array[I32]
+, block_ticks: Array[I32]
+, switches: Array[I32]
+, faults: Array[I32]
+, hits: Array[I32]
 };
 
-pub fn new_pcb(arrive: Array(I32)) -> Pcb {
+pub fn new_pcb(arrive: Array[I32]) -> Pcb {
   let n = config.proc_count();
   {
   , arrive
@@ -75,7 +75,7 @@ pub fn new_pcb(arrive: Array(I32)) -> Pcb {
   }
 }
 
-fn bump(column: Array(I32), pid: I32) { array_set(column, pid, add_i32(array_get(column, pid), 1)) }
+fn bump(column: Array[I32], pid: I32) { array_set(column, pid, add_i32(array_get(column, pid), 1)) }
 
 pub fn arrive_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{arrive}, pid) }
 
@@ -115,13 +115,13 @@ pub fn faults_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{faults}, pid) }
 
 pub fn hits_at(p: Pcb, pid: I32) -> I32 { array_get(p.?{hits}, pid) }
 
-pub fn cpu_column(p: Pcb) -> Array(I32) { p.?{cpu_ticks} }
+pub fn cpu_column(p: Pcb) -> Array[I32] { p.?{cpu_ticks} }
 
-pub fn switch_column(p: Pcb) -> Array(I32) { p.?{switches} }
+pub fn switch_column(p: Pcb) -> Array[I32] { p.?{switches} }
 
-pub fn fault_column(p: Pcb) -> Array(I32) { p.?{faults} }
+pub fn fault_column(p: Pcb) -> Array[I32] { p.?{faults} }
 
-pub fn hit_column(p: Pcb) -> Array(I32) { p.?{hits} }
+pub fn hit_column(p: Pcb) -> Array[I32] { p.?{hits} }
 
 /// A process is finished once the tick it completed on has been recorded.
 pub fn is_done(p: Pcb, pid: I32) -> Bool { num.geq(finish_at(p, pid), 0) }
@@ -132,7 +132,7 @@ pub fn turnaround_at(p: Pcb, pid: I32) -> I32 {
   add_i32(sub_i32(finish_at(p, pid), arrive_at(p, pid)), 1)
 }
 
-pub rec(loop) fn column_total(column: Array(I32), i: I32, acc: I32) -> I32 {
+pub rec(loop) fn column_total(column: Array[I32], i: I32, acc: I32) -> I32 {
   if(num.geq(i, array_len(column))) {
     acc
   } else {

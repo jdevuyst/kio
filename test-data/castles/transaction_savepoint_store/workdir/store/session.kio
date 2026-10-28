@@ -17,7 +17,7 @@ import testapi/text as text;
 
 labels Session = {
 , database: tx.State
-, frozen: cells.List(audit.Frozen)
+, frozen: cells.List[audit.Frozen]
 , operations: I32
 , rejected: I32
 , failures: I32
@@ -25,7 +25,7 @@ labels Session = {
 
 fn print_reply(number: I32, reply: tx.Reply, ok: Bool) {
   let state = reply.?{tx.updated};
-  let prefix = if(reply.?{tx.successful}) { " OK " } else { " ERROR " };
+  let .(prefix: String) = if(reply.?{tx.successful}) { " OK " } else { " ERROR " };
   io.print(text.string_concat(
   , fmt.int_to_string(number)
   , text.string_concat(
@@ -68,9 +68,9 @@ fn execute(session: Session, command: commands.Command) -> Session {
   {database = after, frozen, operations = number, rejected, failures}
 }
 
-rec(loop) fn print_snapshots(frozen: cells.List(audit.Frozen)) {
+rec(loop) fn print_snapshots(frozen: cells.List[audit.Frozen]) {
   match(cells.uncons(frozen)) {
-    .(item: audit.Frozen, rest: cells.List(audit.Frozen)) {
+    .(item: audit.Frozen, rest: cells.List[audit.Frozen]) {
       audit.print_frozen(item);
       recur print_snapshots(rest)
     };
@@ -119,7 +119,7 @@ pub fn run() {
   io.print("persistent transaction store\n");
   consume({
   , database = tx.initial()
-  , frozen = cells.nil(_)
+  , frozen = cells.nil[_]
   , operations = 0
   , rejected = 0
   , failures = 0

@@ -14,7 +14,7 @@ import testapi/text(string_concat);
 
 /// Concatenates a list of fragments. Report lines are built as lists of pieces and
 /// joined here instead of nesting concatenation at every call site.
-pub fn join(parts: lc.List(String)) -> String {
+pub fn join(parts: lc.List[String]) -> String {
   ll.foldl(.(acc: String, part: String) -> String { string_concat(acc, part) }, "", parts)
 }
 

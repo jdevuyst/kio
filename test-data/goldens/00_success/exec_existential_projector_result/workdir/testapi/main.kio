@@ -33,18 +33,18 @@ fn returned_result(value: Pack) {
 }
 
 fn specialized(value: Pack) {
-  let unpack = Pack.unpack(value)(.);
+  let unpack = Pack.unpack(value)[.];
   unpack(.[U](_payload: U) { io.print("specialized-first\n") });
   unpack(.[U](_payload: U) { io.print("specialized-second\n") })
 }
 
-fn qualified(value: remote.Pack(String)) {
+fn qualified(value: remote.Pack[String]) {
   let unpack = remote.Pack.unpack(value);
   io.print(unpack(.[U](message: String, _payload: U) { message }));
   io.print(unpack(.[U](message: String, _payload: U) { message }))
 }
 
-fn forwarded(value: Forwarded(String)) {
+fn forwarded(value: Forwarded[String]) {
   let unpack = Forwarded.unpack(value);
   io.print(unpack(.[U](message: String, _payload: U) { message }));
   io.print(unpack(.[U](message: String, _payload: U) { message }))

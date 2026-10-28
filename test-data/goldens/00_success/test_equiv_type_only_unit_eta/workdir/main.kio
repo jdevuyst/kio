@@ -23,16 +23,16 @@ fn delayed[A]() -> . -> . {
 
 fn argument() { second(); () }
 
-fn saved() { let value = producer(.); value(argument()) }
+fn saved() { let value = producer[.]; value(argument()) }
 
-fn local() { let value = producer; value(., argument()) }
+fn local() { let value = producer; value[.](argument()) }
 
-fn saved_alias() { let value = aliased(.); value(argument()) }
+fn saved_alias() { let value = aliased[.]; value(argument()) }
 
-fn saved_delayed() { let value = delayed(., ()); value(argument()) }
+fn saved_delayed() { let value = delayed[.](()); value(argument()) }
 
 equiv direct_and_saved() {
-  producer(., argument());
+  producer[.](argument());
   saved()
 }
 
@@ -42,11 +42,11 @@ equiv local_and_saved() {
 }
 
 equiv aliased_unit() {
-  aliased(., argument());
+  aliased[.](argument());
   saved_alias()
 }
 
 equiv explicit_unit() {
-  delayed(., (), argument());
+  delayed[.](())(argument());
   saved_delayed()
 }

@@ -1350,8 +1350,8 @@ mod prepared_tests {
          host fn regroup(first: I32, rest: Str & I32) -> I32; \
          host fn product() -> (I32 & Str & I32); \
          host fn sum() -> (I32 | Str); \
-         host fn nested_function() -> Id((I32 & Str & I32) -> I32); \
-         host fn nested_forall() -> Id([A] A -> A); \
+         host fn nested_function() -> Id[(I32 & Str & I32) -> I32]; \
+         host fn nested_forall() -> Id[[A] A -> A]; \
          host fn staged[A](value: I32) -> I32;";
 
     #[derive(Default)]
@@ -1526,7 +1526,7 @@ mod prepared_tests {
             "module api; \
              host type Text role(str); \
              pub type Callback[A] = A -> Text; \
-             host fn substituted() -> Callback(.); \
+             host fn substituted() -> Callback[.]; \
              host fn direct() -> . -> Text;",
         );
         let prepared = PreparedBoundaryCallableSites::collect_live(&package)

@@ -1,9 +1,5 @@
 use super::*;
-use crate::ast::{CallArg, Expr, Item, Lowered, Module, Surface, Type, UfcsFlavor};
-use crate::pass::typecheck_core::apply::{
-    CallArgRef, call_arg_refs, splice_ufcs_arg_refs_interned,
-};
-use crate::pass::typecheck_core::{InternedType, ModuleEnv, call_arg_type_slot_candidate};
+use crate::ast::{CallArg, Expr, Item, Lowered, Module, Surface, Type};
 use crate::pass::typecheck_full::{PositionIndex, ResolvedBinder};
 use crate::span::Span;
 
@@ -18,53 +14,45 @@ fn run_body<P: crate::ast::Phase<FnBody = Expr<P>>>(module: &Module<P>) -> &Expr
         .expect("run function")
 }
 
+fn source_head(mut expr: &Expr<Surface>) -> &Expr<Surface> {
+    while let Expr::Call { callee, args, .. } = expr {
+        assert!(
+            !args.is_empty() && args.iter().all(|arg| matches!(arg, CallArg::Type(_))),
+            "only explicit type stages preserve this fixture's named callee"
+        );
+        expr = callee;
+    }
+    assert!(matches!(expr, Expr::Path { .. }));
+    expr
+}
+
 fn prove_calls(
     surface: &Expr<Surface>,
-    lowered: &Expr<Lowered>,
     index: &PositionIndex,
     module: &str,
-    env: &ModuleEnv<'_, Lowered>,
     generic: bool,
     local: Option<Span>,
 ) -> usize {
-    let (
-        Expr::Call {
-            callee: sc,
-            args: sa,
-            ..
-        },
-        Expr::Call {
-            callee: lc,
-            args: la,
-            ..
-        },
-    ) = (surface, lowered)
-    else {
+    let Expr::Call { callee, args, .. } = surface else {
         return 0;
     };
-    let Expr::Path { segments, .. } = &**lc else {
-        panic!("direct callee");
+    assert_eq!(args.len(), 2, "retain the two written value arguments");
+    assert!(args.iter().all(|arg| matches!(arg, CallArg::Value(_))));
+    let head = source_head(callee);
+    let Expr::Path { segments, .. } = head else {
+        unreachable!()
     };
-    assert_eq!(surface.span(), lowered.span());
-    assert_eq!(sc.span(), lc.span());
-    assert_eq!(sa.len(), la.len());
-    for (s, l) in sa.iter().zip(la) {
-        assert_eq!(
-            call_arg_type_slot_candidate(s),
-            call_arg_type_slot_candidate(l)
-        );
-    }
     let (ty, scope, binder) = index
         .authenticated_callee(
             module,
-            lc.span(),
+            head.span(),
             segments.last().unwrap().span,
-            lowered.span(),
+            surface.span(),
         )
         .unwrap_or_else(|| {
             panic!(
                 "final snapshot must authenticate {module}:{:?}; storage={:?}",
-                lc.span(),
+                head.span(),
                 index.refactoring_storage_counts()
             )
         });
@@ -87,58 +75,11 @@ fn prove_calls(
             matches!(binder, ResolvedBinder::Fn { module_path, name } if module_path == module && name == "f")
         );
     }
-    let locals = scope.names();
-    let mut ctx = env.alias_ctx();
-    ctx.binder_locals = Some(&locals);
-    let public_type = InternedType::fresh_with_identity(ty.clone(), true);
-    let original = call_arg_refs(la);
-    let values = la
+    1 + args
         .iter()
-        .enumerate()
-        .filter_map(|(i, arg)| matches!(arg, CallArg::Value(_)).then_some(i))
-        .collect::<Vec<_>>();
-    for (slot, direction) in [
-        (values[0], UfcsFlavor::ReceiverFirst),
-        (*values.last().unwrap(), UfcsFlavor::ReceiverLast),
-    ] {
-        let CallArg::Value(receiver) = &la[slot] else {
-            unreachable!()
-        };
-        let rest = original
-            .iter()
-            .enumerate()
-            .filter_map(|(i, arg)| (i != slot).then_some(*arg))
-            .collect::<Vec<_>>();
-        let recovered = splice_ufcs_arg_refs_interned(
-            &public_type,
-            receiver,
-            &rest,
-            &rest,
-            direction,
-            lowered.span(),
-            &ctx,
-        )
-        .unwrap();
-        assert_eq!(recovered.len(), original.len());
-        for (a, b) in recovered.into_iter().zip(&original) {
-            assert!(
-                match (a, b) {
-                    (CallArgRef::Type(a), CallArgRef::Type(b)) => std::ptr::eq(a, *b),
-                    (CallArgRef::Value(a), CallArgRef::Value(b)) => std::ptr::eq(a, *b),
-                    _ => false,
-                },
-                "shared splice recovers identical arguments and staging order"
-            );
-        }
-    }
-    1 + sa
-        .iter()
-        .zip(la)
-        .map(|(s, l)| match (s, l) {
-            (CallArg::Value(s), CallArg::Value(l)) => {
-                prove_calls(s, l, index, module, env, generic, local)
-            }
-            _ => 0,
+        .map(|arg| match arg {
+            CallArg::Value(value) => prove_calls(value, index, module, generic, local),
+            CallArg::Type(_) => unreachable!(),
         })
         .sum::<usize>()
 }
@@ -146,17 +87,6 @@ fn prove_calls(
 fn prove_snapshot(source: &str, path: &Path, analysis: &LspAnalysis, generic: bool, local: bool) {
     let module = &analysis.file_to_module[path];
     let parsed = crate::pass::parser::parse(source).expect("source parse");
-    let entry = analysis
-        .root_package_lowered
-        .module(module)
-        .expect("retained source-spelled Lowered module");
-    let env = ModuleEnv::build(
-        &entry.module,
-        None,
-        None,
-        Some(&analysis.root_package_lowered),
-    )
-    .unwrap();
     let declaration = local.then(|| {
         let start = source.find("f:").unwrap() as u32;
         Span::new(start, start + 1)
@@ -164,21 +94,20 @@ fn prove_snapshot(source: &str, path: &Path, analysis: &LspAnalysis, generic: bo
     assert_eq!(
         prove_calls(
             run_body(&parsed),
-            run_body(&entry.module),
             &analysis.position_index,
             module,
-            &env,
             generic,
             declaration
         ),
         3
     );
 
-    let Expr::Call { callee, .. } = run_body(&entry.module) else {
+    let Expr::Call { callee, .. } = run_body(&parsed) else {
         panic!("run call");
     };
-    let call_span = run_body(&entry.module).span();
-    let Expr::Path { segments, .. } = &**callee else {
+    let call_span = run_body(&parsed).span();
+    let callee = source_head(callee);
+    let Expr::Path { segments, .. } = callee else {
         panic!("direct path");
     };
     let terminal = segments.last().unwrap().span;
@@ -188,9 +117,6 @@ fn prove_snapshot(source: &str, path: &Path, analysis: &LspAnalysis, generic: bo
             .is_some()
     };
     assert!(accepts(&analysis.position_index));
-    let mut role = analysis.position_index.clone();
-    role.record_value_at_type_slot(module, call_span, 999);
-    assert!(!accepts(&role), "whole-call positive role union veto");
     let mut conflict = analysis.position_index.clone();
     let original = conflict.binder_at(module, terminal).unwrap().clone();
     conflict.record_binder(
@@ -217,9 +143,9 @@ fn ufcs_authentication_final_full_and_focused_first_last_mixed_chains() {
         (false, "f(f(f((), ()), ()), ())"),
         (false, "f((), f((), f((), ())))"),
         (false, "f(f((), f((), ())), ())"),
-        (true, "f(., f(., f(., (), ()), ()), ())"),
-        (true, "f(., (), f(., (), f(., (), ())))"),
-        (true, "f(., f(., (), f(., (), ())), ())"),
+        (true, "f[.](f[.](f[.]((), ()), ()), ())"),
+        (true, "f[.]((), f[.]((), f[.]((), ())))"),
+        (true, "f[.](f[.]((), f[.]((), ())), ())"),
     ] {
         let signature = if generic {
             "fn f[A](a: A, b: A) -> A { a }"

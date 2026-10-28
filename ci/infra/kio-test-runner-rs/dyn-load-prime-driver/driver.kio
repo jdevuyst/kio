@@ -144,78 +144,78 @@ fn descriptor(module_name: String, local_name: String, signature: String) -> Hos
 
 fn make_pair_fst_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_make_pair_fst"(String)
-  , "((h{testapi.I32} & h{testapi.String}) & .) -> h{testapi.I32}"(String)
+  , "driver"[String]
+  , "driver_make_pair_fst"[String]
+  , "((h{testapi.I32} & h{testapi.String}) & .) -> h{testapi.I32}"[String]
   )
 }
 
 fn apply_poly_value_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_apply_poly_value"(String)
+  , "driver"[String]
+  , "driver_apply_poly_value"[String]
   , "((h{testapi.String} -> h{testapi.String}) & h{testapi.String}) -> "
-    "h{testapi.String}"(String)
+    "h{testapi.String}"[String]
   )
 }
 
 fn step_apply_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_step_apply"(String)
-  , "(h{testapi.I32}) -> (h{testapi.I32}) -> h{testapi.I32}"(String)
+  , "driver"[String]
+  , "driver_step_apply"[String]
+  , "(h{testapi.I32}) -> (h{testapi.I32}) -> h{testapi.I32}"[String]
   )
 }
 
 fn loop_reentry_descriptor() -> Host_fn {
   descriptor(
-  , "testapi/iter"(String)
-  , "loop_reentry"(String)
-  , "[#0] [#1] ((((#0 -> #1) & #0) -> (#0 | #1)) & #0) -> #1"(String)
+  , "testapi/iter"[String]
+  , "loop_reentry"[String]
+  , "[#0] [#1] ((((#0 -> #1) & #0) -> (#0 | #1)) & #0) -> #1"[String]
   )
 }
 
 fn reentry_step_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_reentry_step"(String)
-  , "[#0] [#1] (((#0 -> #1) & #0) -> (#0 | #1)) -> #0 -> (#0 | #1)"(String)
+  , "driver"[String]
+  , "driver_reentry_step"[String]
+  , "[#0] [#1] (((#0 -> #1) & #0) -> (#0 | #1)) -> #0 -> (#0 | #1)"[String]
   )
 }
 
 fn reentry_run_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_reentry_run"(String)
-  , "[#0] [#1] (((#0 -> #1) & #0) -> (#0 | #1)) -> #0 -> #1"(String)
+  , "driver"[String]
+  , "driver_reentry_run"[String]
+  , "[#0] [#1] (((#0 -> #1) & #0) -> (#0 | #1)) -> #0 -> #1"[String]
   )
 }
 
 fn cb_add3_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_cb_add3"(String)
-  , "(h{testapi.I32}) -> h{testapi.I32}"(String)
+  , "driver"[String]
+  , "driver_cb_add3"[String]
+  , "(h{testapi.I32}) -> h{testapi.I32}"[String]
   )
 }
 
 fn cb_pair_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_cb_pair"(String)
-  , "() -> (h{testapi.I32} & h{testapi.String})"(String)
+  , "driver"[String]
+  , "driver_cb_pair"[String]
+  , "() -> (h{testapi.I32} & h{testapi.String})"[String]
   )
 }
 
 fn forall_stage_descriptor() -> Host_fn {
-  descriptor("driver"(String), "driver_forall_stage"(String), "() -> ."(String))
+  descriptor("driver"[String], "driver_forall_stage"[String], "() -> ."[String])
 }
 
 fn opaque_step_descriptor() -> Host_fn {
   descriptor(
-  , "driver"(String)
-  , "driver_opaque_step"(String)
-  , "(h{testapi.I32}) -> h{testapi.I32}"(String)
+  , "driver"[String]
+  , "driver_opaque_step"[String]
+  , "(h{testapi.I32}) -> h{testapi.I32}"[String]
   )
 }
 
@@ -224,13 +224,12 @@ fn base_param_kinds(arity: I32) -> Param_kinds {
   , .(state: I32 & Param_kinds) {
       match(state) {
         .(remaining: I32, kinds: Param_kinds) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(kinds, (I32 & Param_kinds) | Param_kinds)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(kinds)[(I32 & Param_kinds) | Param_kinds]
           } else {
-            widen_sum(
-            , (sub_i32(remaining, 1(I32)), param_kinds_cons(base_kind(), kinds))
-            , (I32 & Param_kinds) | Param_kinds
-            )
+            widen_sum((sub_i32(remaining, 1[I32]), param_kinds_cons(base_kind(), kinds)))[| (& I32
+            & Param_kinds)
+            | Param_kinds]
           }
         }
       }
@@ -242,7 +241,7 @@ fn base_param_kinds(arity: I32) -> Param_kinds {
 fn protocol_host_type(index: I32) -> Host_type {
   let id = mk_host_id(protocol_host_type_module(index), protocol_host_type_leaf(index));
   let role_name = protocol_host_type_role(index);
-  if(string_eq(role_name, ""(String))) {
+  if(string_eq(role_name, ""[String])) {
     mk_roleless_host_type(id, base_param_kinds(protocol_host_type_arity(index)))
   } else match(role_from_name(role_name)) {
     (
@@ -261,14 +260,13 @@ fn protocol_host_types() -> Host_types {
   , .(state: I32 & Host_types) {
       match(state) {
         .(remaining: I32, types: Host_types) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(types, (I32 & Host_types) | Host_types)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(types)[(I32 & Host_types) | Host_types]
           } else {
-            let index = sub_i32(remaining, 1(I32));
-            widen_sum(
-            , (index, host_types_cons(protocol_host_type(index), types))
-            , (I32 & Host_types) | Host_types
-            )
+            let index = sub_i32(remaining, 1[I32]);
+            widen_sum((index, host_types_cons(protocol_host_type(index), types)))[| (& I32
+            & Host_types)
+            | Host_types]
           }
         }
       }
@@ -282,17 +280,14 @@ fn protocol_host_fn_groups(fn_index: I32) -> Group_slots {
   , .(state: I32 & Group_slots) {
       match(state) {
         .(remaining: I32, groups: Group_slots) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(groups, (I32 & Group_slots) | Group_slots)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(groups)[(I32 & Group_slots) | Group_slots]
           } else {
-            let group_index = sub_i32(remaining, 1(I32));
-            widen_sum(
-            , (
-              , group_index
-              , group_slots_cons(protocol_host_fn_group_slots(fn_index, group_index), groups)
-              )
-            , (I32 & Group_slots) | Group_slots
-            )
+            let group_index = sub_i32(remaining, 1[I32]);
+            widen_sum((
+            , group_index
+            , group_slots_cons(protocol_host_fn_group_slots(fn_index, group_index), groups)
+            ))[(I32 & Group_slots) | Group_slots]
           }
         }
       }
@@ -317,14 +312,13 @@ fn protocol_host_functions() -> Host_fn_bindings {
   , .(state: I32 & Host_fn_bindings) {
       match(state) {
         .(remaining: I32, functions: Host_fn_bindings) {
-          if(leq_i32(remaining, 0(I32))) {
-            widen_sum(functions, (I32 & Host_fn_bindings) | Host_fn_bindings)
+          if(leq_i32(remaining, 0[I32])) {
+            widen_sum(functions)[(I32 & Host_fn_bindings) | Host_fn_bindings]
           } else {
-            let index = sub_i32(remaining, 1(I32));
-            widen_sum(
-            , (index, host_fn_bindings_cons(protocol_host_fn(index), functions))
-            , (I32 & Host_fn_bindings) | Host_fn_bindings
-            )
+            let index = sub_i32(remaining, 1[I32]);
+            widen_sum((index, host_fn_bindings_cons(protocol_host_fn(index), functions)))[| (& I32
+            & Host_fn_bindings)
+            | Host_fn_bindings]
           }
         }
       }
@@ -340,19 +334,19 @@ fn protocol_host_adapter() -> Host_adapter {
   // host contract, and only this script's adapter admits it. The exact runtime
   // preflight below compares against `functions`, not this local extension.
   let adapter_functions =
-    if(string_eq(protocol_name(), "export-callback-roundtrip"(String))) {
+    if(string_eq(protocol_name(), "export-callback-roundtrip"[String])) {
       host_fn_bindings_cons(
-      , mk_host_fn_binding(cb_add3_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
+      , mk_host_fn_binding(cb_add3_descriptor(), group_slots_cons(1[I32], group_slots_nil()))
       , functions
       )
-    } else if(string_eq(protocol_name(), "export-compound-input-once"(String))) {
+    } else if(string_eq(protocol_name(), "export-compound-input-once"[String])) {
       host_fn_bindings_cons(
-      , mk_host_fn_binding(cb_pair_descriptor(), group_slots_cons(0(I32), group_slots_nil()))
+      , mk_host_fn_binding(cb_pair_descriptor(), group_slots_cons(0[I32], group_slots_nil()))
       , functions
       )
-    } else if(string_eq(protocol_name(), "opaque-compound-roundtrip"(String))) {
+    } else if(string_eq(protocol_name(), "opaque-compound-roundtrip"[String])) {
       host_fn_bindings_cons(
-      , mk_host_fn_binding(opaque_step_descriptor(), group_slots_cons(1(I32), group_slots_nil()))
+      , mk_host_fn_binding(opaque_step_descriptor(), group_slots_cons(1[I32], group_slots_nil()))
       , functions
       )
     } else {
@@ -382,12 +376,12 @@ fn protocol_group_slots_eq(left: Group_slots, right: Group_slots) -> Bool {
                   (
                   , .(right_slots: I32, right_rest: Group_slots) {
                       if(eq_i32(left_slots, right_slots)) {
-                        widen_sum((left_rest, right_rest), (Group_slots & Group_slots) | Bool)
+                        widen_sum((left_rest, right_rest))[(Group_slots & Group_slots) | Bool]
                       } else {
-                        widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool)
+                        widen_sum(.f[Bool])[(Group_slots & Group_slots) | Bool]
                       }
                     }
-                  , .(_right_empty: .) { widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool) }
+                  , .(_right_empty: .) { widen_sum(.f[Bool])[(Group_slots & Group_slots) | Bool] }
                   )
                 }
               }
@@ -395,9 +389,9 @@ fn protocol_group_slots_eq(left: Group_slots, right: Group_slots) -> Bool {
                 match(un_group_slots(right0)) {
                   (
                   , .(_right_head: I32, _right_tail: Group_slots) {
-                      widen_sum(.f(Bool), (Group_slots & Group_slots) | Bool)
+                      widen_sum(.f[Bool])[(Group_slots & Group_slots) | Bool]
                     }
-                  , .(_right_empty: .) { widen_sum(.t(Bool), (Group_slots & Group_slots) | Bool) }
+                  , .(_right_empty: .) { widen_sum(.t[Bool])[(Group_slots & Group_slots) | Bool] }
                   )
                 }
               }
@@ -414,7 +408,7 @@ fn protocol_binding_matches_hostfn(binding: Host_fn_binding, hostfn: Hostfn) -> 
   if(host_fn_eq(host_fn_binding_descriptor(binding), hostfn_descriptor(hostfn))) {
     protocol_group_slots_eq(host_fn_binding_groups(binding), hostfn_groups(hostfn))
   } else {
-    .f(Bool)
+    .f[Bool]
   }
 }
 
@@ -425,12 +419,12 @@ fn protocol_has_runtime_hostfn(hostfn: Hostfn, bindings: Host_fn_bindings) -> Bo
         (
         , .(binding: Host_fn_binding, rest: Host_fn_bindings) {
             if(protocol_binding_matches_hostfn(binding, hostfn)) {
-              widen_sum(.t(Bool), Host_fn_bindings | Bool)
+              widen_sum(.t[Bool])[Host_fn_bindings | Bool]
             } else {
-              widen_sum(rest, Host_fn_bindings | Bool)
+              widen_sum(rest)[Host_fn_bindings | Bool]
             }
           }
-        , .(_empty: .) { widen_sum(.f(Bool), Host_fn_bindings | Bool) }
+        , .(_empty: .) { widen_sum(.f[Bool])[Host_fn_bindings | Bool] }
         )
       }
     }
@@ -451,12 +445,12 @@ fn protocol_runtime_hostfns_match(runtime: Hostfns) -> Bool {
             (
             , .(hostfn: Hostfn, rest: Hostfns) {
                 if(protocol_has_runtime_hostfn(hostfn, protocol_functions)) {
-                  widen_sum((rest, sub_i32(unmatched, 1(I32))), (Hostfns & I32) | Bool)
+                  widen_sum((rest, sub_i32(unmatched, 1[I32])))[(Hostfns & I32) | Bool]
                 } else {
-                  widen_sum(.f(Bool), (Hostfns & I32) | Bool)
+                  widen_sum(.f[Bool])[(Hostfns & I32) | Bool]
                 }
               }
-            , .(_empty: .) { widen_sum(eq_i32(unmatched, 0(I32)), (Hostfns & I32) | Bool) }
+            , .(_empty: .) { widen_sum(eq_i32(unmatched, 0[I32]))[(Hostfns & I32) | Bool] }
             )
           }
         }
@@ -469,13 +463,13 @@ fn protocol_runtime_hostfns_match(runtime: Hostfns) -> Bool {
 // The guest-side i32 payload of a host scalar value, or `()`.
 fn as_i32(v: Value) -> . | I32 {
   match(value_to_scalar(v)) {
-    (.(s: Scalar) { scalar_as_i32(s) }, .(_no: .) { widen_sum((), . | I32) })
+    (.(s: Scalar) { scalar_as_i32(s) }, .(_no: .) { widen_sum(())[. | I32] })
   }
 }
 
 fn as_str(v: Value) -> . | String {
   match(value_to_scalar(v)) {
-    (.(s: Scalar) { scalar_as_str(s) }, .(_no: .) { widen_sum((), . | String) })
+    (.(s: Scalar) { scalar_as_str(s) }, .(_no: .) { widen_sum(())[. | String] })
   }
 }
 
@@ -484,8 +478,8 @@ fn vi32(n: I32) -> Value { vhost(scalar_of_i32(n)) }
 fn arm_add_count(dom: Value) -> Call_result {
   match(un_value(dom)) {
     (
-    , .(_c: V_closure) { call_stuck("add_count expected two i32 values"(String)) }
-    , .(_f: V_hostfn) { call_stuck("add_count expected two i32 values"(String)) }
+    , .(_c: V_closure) { call_stuck("add_count expected two i32 values"[String]) }
+    , .(_f: V_hostfn) { call_stuck("add_count expected two i32 values"[String]) }
     , .(p: V_product) {
         match(V_product.get(p)) {
           .(a: Value, b: Value) {
@@ -495,19 +489,19 @@ fn arm_add_count(dom: Value) -> Call_result {
                   match(as_i32(b)) {
                     (
                     , .(y: I32) { call_done(vi32(add_i32(x, y))) }
-                    , .(_nob: .) { call_stuck("add_count expected two i32 values"(String)) }
+                    , .(_nob: .) { call_stuck("add_count expected two i32 values"[String]) }
                     )
                   }
                 }
-              , .(_noa: .) { call_stuck("add_count expected two i32 values"(String)) }
+              , .(_noa: .) { call_stuck("add_count expected two i32 values"[String]) }
               )
             }
           }
         }
       }
-    , .(_s: V_sum) { call_stuck("add_count expected two i32 values"(String)) }
-    , .(_u: V_unit) { call_stuck("add_count expected two i32 values"(String)) }
-    , .(_h: V_host) { call_stuck("add_count expected two i32 values"(String)) }
+    , .(_s: V_sum) { call_stuck("add_count expected two i32 values"[String]) }
+    , .(_u: V_unit) { call_stuck("add_count expected two i32 values"[String]) }
+    , .(_h: V_host) { call_stuck("add_count expected two i32 values"[String]) }
     )
   }
 }
@@ -516,7 +510,7 @@ fn arm_count_to_string(dom: Value) -> Call_result {
   match(as_i32(dom)) {
     (
     , .(n: I32) { call_done(vhost(scalar_of_str(int_to_string(n)))) }
-    , .(_no: .) { call_stuck("count_to_string expected an i32 value"(String)) }
+    , .(_no: .) { call_stuck("count_to_string expected an i32 value"[String]) }
     )
   }
 }
@@ -524,16 +518,16 @@ fn arm_count_to_string(dom: Value) -> Call_result {
 fn arm_staged(dom: Value) -> Call_result {
   match(un_value(dom)) {
     (
-    , .(_closure: V_closure) { call_stuck("staged expected a product domain"(String)) }
-    , .(_hostfn: V_hostfn) { call_stuck("staged expected a product domain"(String)) }
+    , .(_closure: V_closure) { call_stuck("staged expected a product domain"[String]) }
+    , .(_hostfn: V_hostfn) { call_stuck("staged expected a product domain"[String]) }
     , .(product: V_product) {
         match(V_product.get(product)) {
           .(_first: Value, second: Value) { call_done(second) }
         }
       }
-    , .(_sum: V_sum) { call_stuck("staged expected a product domain"(String)) }
-    , .(_unit: V_unit) { call_stuck("staged expected a product domain"(String)) }
-    , .(_host: V_host) { call_stuck("staged expected a product domain"(String)) }
+    , .(_sum: V_sum) { call_stuck("staged expected a product domain"[String]) }
+    , .(_unit: V_unit) { call_stuck("staged expected a product domain"[String]) }
+    , .(_host: V_host) { call_stuck("staged expected a product domain"[String]) }
     )
   }
 }
@@ -565,11 +559,11 @@ fn arm_make_pair(dom: Value) -> Call_result {
           }
         }
       }
-    , .(_c: V_closure) { call_stuck("make_pair expected a product domain"(String)) }
-    , .(_hf: V_hostfn) { call_stuck("make_pair expected a product domain"(String)) }
-    , .(_s: V_sum) { call_stuck("make_pair expected a product domain"(String)) }
-    , .(_u: V_unit) { call_stuck("make_pair expected a product domain"(String)) }
-    , .(_h: V_host) { call_stuck("make_pair expected a product domain"(String)) }
+    , .(_c: V_closure) { call_stuck("make_pair expected a product domain"[String]) }
+    , .(_hf: V_hostfn) { call_stuck("make_pair expected a product domain"[String]) }
+    , .(_s: V_sum) { call_stuck("make_pair expected a product domain"[String]) }
+    , .(_u: V_unit) { call_stuck("make_pair expected a product domain"[String]) }
+    , .(_h: V_host) { call_stuck("make_pair expected a product domain"[String]) }
     )
   }
 }
@@ -589,21 +583,21 @@ fn arm_make_pair_fst(dom: Value) -> Call_result {
                     .(x: Value, _y: Value) { call_done(x) }
                   }
                 }
-              , .(_c: V_closure) { call_stuck("make_pair's build returned a non-product"(String)) }
-              , .(_hf: V_hostfn) { call_stuck("make_pair's build returned a non-product"(String)) }
-              , .(_s: V_sum) { call_stuck("make_pair's build returned a non-product"(String)) }
-              , .(_u: V_unit) { call_stuck("make_pair's build returned a non-product"(String)) }
-              , .(_h: V_host) { call_stuck("make_pair's build returned a non-product"(String)) }
+              , .(_c: V_closure) { call_stuck("make_pair's build returned a non-product"[String]) }
+              , .(_hf: V_hostfn) { call_stuck("make_pair's build returned a non-product"[String]) }
+              , .(_s: V_sum) { call_stuck("make_pair's build returned a non-product"[String]) }
+              , .(_u: V_unit) { call_stuck("make_pair's build returned a non-product"[String]) }
+              , .(_h: V_host) { call_stuck("make_pair's build returned a non-product"[String]) }
               )
             }
           }
         }
       }
-    , .(_c: V_closure) { call_stuck("driver_make_pair_fst expected (result & state)"(String)) }
-    , .(_hf: V_hostfn) { call_stuck("driver_make_pair_fst expected (result & state)"(String)) }
-    , .(_s: V_sum) { call_stuck("driver_make_pair_fst expected (result & state)"(String)) }
-    , .(_u: V_unit) { call_stuck("driver_make_pair_fst expected (result & state)"(String)) }
-    , .(_h: V_host) { call_stuck("driver_make_pair_fst expected (result & state)"(String)) }
+    , .(_c: V_closure) { call_stuck("driver_make_pair_fst expected (result & state)"[String]) }
+    , .(_hf: V_hostfn) { call_stuck("driver_make_pair_fst expected (result & state)"[String]) }
+    , .(_s: V_sum) { call_stuck("driver_make_pair_fst expected (result & state)"[String]) }
+    , .(_u: V_unit) { call_stuck("driver_make_pair_fst expected (result & state)"[String]) }
+    , .(_h: V_host) { call_stuck("driver_make_pair_fst expected (result & state)"[String]) }
     )
   }
 }
@@ -622,19 +616,19 @@ fn arm_call_step(dom: Value) -> Call_result {
             , vproduct(
               , seed
               , vproduct(
-                , vhost(scalar_of_str("compound-callback"(String)))
-                , vhost(scalar_of_bool(.t(Bool)))
+                , vhost(scalar_of_str("compound-callback"[String]))
+                , vhost(scalar_of_bool(.t[Bool]))
                 )
               )
             )
           }
         }
       }
-    , .(_c: V_closure) { call_stuck("call_step expected (step & seed)"(String)) }
-    , .(_hf: V_hostfn) { call_stuck("call_step expected (step & seed)"(String)) }
-    , .(_s: V_sum) { call_stuck("call_step expected (step & seed)"(String)) }
-    , .(_u: V_unit) { call_stuck("call_step expected (step & seed)"(String)) }
-    , .(_h: V_host) { call_stuck("call_step expected (step & seed)"(String)) }
+    , .(_c: V_closure) { call_stuck("call_step expected (step & seed)"[String]) }
+    , .(_hf: V_hostfn) { call_stuck("call_step expected (step & seed)"[String]) }
+    , .(_s: V_sum) { call_stuck("call_step expected (step & seed)"[String]) }
+    , .(_u: V_unit) { call_stuck("call_step expected (step & seed)"[String]) }
+    , .(_h: V_host) { call_stuck("call_step expected (step & seed)"[String]) }
     )
   }
 }
@@ -646,7 +640,7 @@ fn arm_apply_poly(dom: Value) -> Call_result {
   , dom
   , vunit()
   , apply_poly_value_descriptor()
-  , vhost(scalar_of_str("rank-n\n"(String)))
+  , vhost(scalar_of_str("rank-n\n"[String]))
   )
 }
 
@@ -661,21 +655,21 @@ fn arm_apply_poly_value(dom: Value) -> Call_result {
         }
       }
     , .(_c: V_closure) {
-        call_stuck("driver_apply_poly_value expected (function & argument)"(String))
+        call_stuck("driver_apply_poly_value expected (function & argument)"[String])
       }
     , .(_hf: V_hostfn) {
-        call_stuck("driver_apply_poly_value expected (function & argument)"(String))
+        call_stuck("driver_apply_poly_value expected (function & argument)"[String])
       }
-    , .(_s: V_sum) { call_stuck("driver_apply_poly_value expected (function & argument)"(String)) }
-    , .(_u: V_unit) { call_stuck("driver_apply_poly_value expected (function & argument)"(String)) }
-    , .(_h: V_host) { call_stuck("driver_apply_poly_value expected (function & argument)"(String)) }
+    , .(_s: V_sum) { call_stuck("driver_apply_poly_value expected (function & argument)"[String]) }
+    , .(_u: V_unit) { call_stuck("driver_apply_poly_value expected (function & argument)"[String]) }
+    , .(_h: V_host) { call_stuck("driver_apply_poly_value expected (function & argument)"[String]) }
     )
   }
 }
 
 fn render_i32(v: Value) -> String {
   match(as_i32(v)) {
-    (.(n: I32) { int_to_string(n) }, .(_no: .) { "sum_to_string expected an i32 payload"(String) })
+    (.(n: I32) { int_to_string(n) }, .(_no: .) { "sum_to_string expected an i32 payload"[String] })
   }
 }
 
@@ -684,10 +678,10 @@ fn render_str(v: Value) -> String {
     (
     , .(s: Scalar) {
         match(scalar_as_str(s)) {
-          (.(t: String) { t }, .(_no: .) { "sum_to_string expected a string payload"(String) })
+          (.(t: String) { t }, .(_no: .) { "sum_to_string expected a string payload"[String] })
         }
       }
-    , .(_no: .) { "sum_to_string expected a scalar payload"(String) }
+    , .(_no: .) { "sum_to_string expected a scalar payload"[String] }
     )
   }
 }
@@ -697,9 +691,9 @@ fn render_str(v: Value) -> String {
 fn arm_sum_to_string(dom: Value) -> Call_result {
   match(un_value(dom)) {
     (
-    , .(_c: V_closure) { call_stuck("sum_to_string expected a sum"(String)) }
-    , .(_f: V_hostfn) { call_stuck("sum_to_string expected a sum"(String)) }
-    , .(_p: V_product) { call_stuck("sum_to_string expected a sum"(String)) }
+    , .(_c: V_closure) { call_stuck("sum_to_string expected a sum"[String]) }
+    , .(_f: V_hostfn) { call_stuck("sum_to_string expected a sum"[String]) }
+    , .(_p: V_product) { call_stuck("sum_to_string expected a sum"[String]) }
     , .(sm: V_sum) {
         match(V_sum.get(sm)) {
           .(sd: Side, payload: Value) {
@@ -707,8 +701,8 @@ fn arm_sum_to_string(dom: Value) -> Call_result {
           }
         }
       }
-    , .(_u: V_unit) { call_stuck("sum_to_string expected a sum"(String)) }
-    , .(_h: V_host) { call_stuck("sum_to_string expected a sum"(String)) }
+    , .(_u: V_unit) { call_stuck("sum_to_string expected a sum"[String]) }
+    , .(_h: V_host) { call_stuck("sum_to_string expected a sum"[String]) }
     )
   }
 }
@@ -720,13 +714,13 @@ fn arm_sum_to_string(dom: Value) -> Call_result {
 fn arm_make_step(dom: Value) -> Call_result {
   call_done(vhostfn(
   , step_apply_descriptor()
-  , group_slots_cons(1(I32), group_slots_nil())
+  , group_slots_cons(1[I32], group_slots_nil())
   , vals_push(dom, vals_nil())
   ))
 }
 
 fn reentry_callback(descriptor: Host_fn, step: Value) -> Value {
-  vhostfn(descriptor, group_slots_cons(1(I32), group_slots_nil()), vals_push(step, vals_nil()))
+  vhostfn(descriptor, group_slots_cons(1[I32], group_slots_nil()), vals_push(step, vals_nil()))
 }
 
 fn arm_loop_reentry(dom: Value) -> Call_result {
@@ -740,7 +734,7 @@ fn arm_loop_reentry(dom: Value) -> Call_result {
         }
       }
     , .(_other: V_closure | V_hostfn | V_sum | V_unit | V_host) {
-        call_stuck("loop_reentry expected (step & state)"(String))
+        call_stuck("loop_reentry expected (step & state)"[String])
       }
     )
   }
@@ -758,7 +752,7 @@ fn arm_reentry_step(dom: Value) -> Call_result {
         }
       }
     , .(_other: V_closure | V_hostfn | V_sum | V_unit | V_host) {
-        call_stuck("re-entry step expected (step & state)"(String))
+        call_stuck("re-entry step expected (step & state)"[String])
       }
     )
   }
@@ -769,8 +763,8 @@ fn arm_reentry_step(dom: Value) -> Call_result {
 fn arm_step_apply(dom: Value) -> Call_result {
   match(un_value(dom)) {
     (
-    , .(_c: V_closure) { call_stuck("driver_step_apply expected two i32s"(String)) }
-    , .(_f: V_hostfn) { call_stuck("driver_step_apply expected two i32s"(String)) }
+    , .(_c: V_closure) { call_stuck("driver_step_apply expected two i32s"[String]) }
+    , .(_f: V_hostfn) { call_stuck("driver_step_apply expected two i32s"[String]) }
     , .(p: V_product) {
         match(V_product.get(p)) {
           .(a: Value, b: Value) {
@@ -780,19 +774,19 @@ fn arm_step_apply(dom: Value) -> Call_result {
                   match(as_i32(b)) {
                     (
                     , .(n: I32) { call_done(vi32(add_i32(delta, n))) }
-                    , .(_nob: .) { call_stuck("driver_step_apply expected two i32s"(String)) }
+                    , .(_nob: .) { call_stuck("driver_step_apply expected two i32s"[String]) }
                     )
                   }
                 }
-              , .(_noa: .) { call_stuck("driver_step_apply expected two i32s"(String)) }
+              , .(_noa: .) { call_stuck("driver_step_apply expected two i32s"[String]) }
               )
             }
           }
         }
       }
-    , .(_s: V_sum) { call_stuck("driver_step_apply expected two i32s"(String)) }
-    , .(_u: V_unit) { call_stuck("driver_step_apply expected two i32s"(String)) }
-    , .(_h: V_host) { call_stuck("driver_step_apply expected two i32s"(String)) }
+    , .(_s: V_sum) { call_stuck("driver_step_apply expected two i32s"[String]) }
+    , .(_u: V_unit) { call_stuck("driver_step_apply expected two i32s"[String]) }
+    , .(_h: V_host) { call_stuck("driver_step_apply expected two i32s"[String]) }
     )
   }
 }
@@ -802,8 +796,8 @@ fn arm_step_apply(dom: Value) -> Call_result {
 fn arm_cb_add3(dom: Value) -> Call_result {
   match(as_i32(dom)) {
     (
-    , .(n: I32) { call_done(vi32(add_i32(n, 3(I32)))) }
-    , .(_no: .) { call_stuck("driver_cb_add3 expected an i32"(String)) }
+    , .(n: I32) { call_done(vi32(add_i32(n, 3[I32]))) }
+    , .(_no: .) { call_stuck("driver_cb_add3 expected an i32"[String]) }
     )
   }
 }
@@ -812,7 +806,7 @@ fn arm_eprint(dom: Value) -> Call_result {
   match(as_str(dom)) {
     (
     , .(message: String) { protocol_eprint(message); call_done(vunit()) }
-    , .(_no: .) { call_stuck("eprint expected a string"(String)) }
+    , .(_no: .) { call_stuck("eprint expected a string"[String]) }
     )
   }
 }
@@ -821,7 +815,7 @@ fn arm_exit(dom: Value) -> Call_result {
   match(as_i32(dom)) {
     (
     , .(status: I32) { protocol_exit(status); call_done(vunit()) }
-    , .(_no: .) { call_stuck("exit expected an i32 status"(String)) }
+    , .(_no: .) { call_stuck("exit expected an i32 status"[String]) }
     )
   }
 }
@@ -837,12 +831,12 @@ fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
   let identity = host_id_local(host_fn_id(descriptor));
   if(host_fn_eq(
   , descriptor
-  , mk_host_fn(mk_host_id("prog"(String), "print_i32"(String)), "(h{prog.I32}) -> ."(String))
+  , mk_host_fn(mk_host_id("prog"[String], "print_i32"[String]), "(h{prog.I32}) -> ."[String])
   )) {
     match(as_i32(dom)) {
       (
       , .(n: I32) { print(int_to_string(n)); call_done(vunit()) }
-      , .(_other: .) { call_stuck("prog.print_i32 expected an i32"(String)) }
+      , .(_other: .) { call_stuck("prog.print_i32 expected an i32"[String]) }
       )
     }
   } else if(host_fn_eq(descriptor, loop_reentry_descriptor())) {
@@ -851,210 +845,210 @@ fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
     arm_loop_reentry(dom)
   } else if(host_fn_eq(descriptor, reentry_step_descriptor())) {
     arm_reentry_step(dom)
-  } else if(string_eq(protocol_name(), "host-forall-stage-effects"(String))) {
+  } else if(string_eq(protocol_name(), "host-forall-stage-effects"[String])) {
     if(host_fn_eq(
     , descriptor
-    , mk_host_fn(mk_host_id("testapi/main"(String), "produce"(String)), "() -> ([#0] .)"(String))
+    , mk_host_fn(mk_host_id("testapi/main"[String], "produce"[String]), "() -> ([#0] .)"[String])
     )) {
-      print("create\n"(String));
+      print("create\n"[String]);
       call_done(vhostfn(
       , forall_stage_descriptor()
-      , group_slots_cons(0(I32), group_slots_nil())
+      , group_slots_cons(0[I32], group_slots_nil())
       , vals_nil()
       ))
     } else if(host_fn_eq(descriptor, forall_stage_descriptor())) {
-      print("apply\n"(String));
+      print("apply\n"[String]);
       call_done(vunit())
     } else if(host_fn_eq(
     , descriptor
-    , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
+    , mk_host_fn(mk_host_id("testapi/main"[String], "observe"[String]), "() -> ."[String])
     )) {
-      print("observe\n"(String));
+      print("observe\n"[String]);
       call_done(vunit())
     } else {
-      call_stuck("host-forall-stage-effects received an unexpected host descriptor"(String))
+      call_stuck("host-forall-stage-effects received an unexpected host descriptor"[String])
     }
-  } else if(string_eq(protocol_name(), "type-only-stage-trace"(String))) {
+  } else if(string_eq(protocol_name(), "type-only-stage-trace"[String])) {
     if(host_fn_eq(
     , descriptor
-    , mk_host_fn(mk_host_id("testapi/main"(String), "observe"(String)), "() -> ."(String))
+    , mk_host_fn(mk_host_id("testapi/main"[String], "observe"[String]), "() -> ."[String])
     )) {
-      print("observe\n"(String));
+      print("observe\n"[String]);
       call_done(vunit())
     } else if(host_fn_eq(
     , descriptor
-    , mk_host_fn(mk_host_id("testapi/main"(String), "consume"(String)), "() -> ."(String))
+    , mk_host_fn(mk_host_id("testapi/main"[String], "consume"[String]), "() -> ."[String])
     )) {
-      print("consume\n"(String));
+      print("consume\n"[String]);
       call_done(vunit())
     } else {
-      call_stuck("type-only-stage-trace received an unexpected host descriptor"(String))
+      call_stuck("type-only-stage-trace received an unexpected host descriptor"[String])
     }
-  } else if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"(String), "produce"(String)))) {
-    print("direct\n"(String));
-    call_done(vproduct(vi32(7(I32)), vhost(scalar_of_str("direct-value"(String)))))
+  } else if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi"[String], "produce"[String]))) {
+    print("direct\n"[String]);
+    call_done(vproduct(vi32(7[I32]), vhost(scalar_of_str("direct-value"[String]))))
   } else if(host_fn_eq(descriptor, cb_pair_descriptor())) {
-    print("callback\n"(String));
-    call_done(vproduct(vi32(9(I32)), vhost(scalar_of_str("callback-value"(String)))))
+    print("callback\n"[String]);
+    call_done(vproduct(vi32(9[I32]), vhost(scalar_of_str("callback-value"[String]))))
   } else if(host_fn_eq(descriptor, opaque_step_descriptor())) {
     match(as_i32(dom)) {
       (
-      , .(number: I32) { print("call\n"(String)); call_done(vi32(add_i32(number, 1(I32)))) }
-      , .(_bad: .) { call_stuck("opaque callback expected an i32"(String)) }
+      , .(number: I32) { print("call\n"[String]); call_done(vi32(add_i32(number, 1[I32]))) }
+      , .(_bad: .) { call_stuck("opaque callback expected an i32"[String]) }
       )
     }
-  } else if(string_eq(identity, "staged"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "staged"(String)))) {
+  } else if(string_eq(identity, "staged"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "staged"[String]))) {
       arm_staged(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "make_pair"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_pair"(String)))) {
+  } else if(string_eq(identity, "make_pair"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "make_pair"[String]))) {
       arm_make_pair(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "driver_make_pair_fst"(String))) {
+  } else if(string_eq(identity, "driver_make_pair_fst"[String])) {
     if(host_fn_eq(descriptor, make_pair_fst_descriptor())) {
       arm_make_pair_fst(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "call_step"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "call_step"(String)))) {
+  } else if(string_eq(identity, "call_step"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "call_step"[String]))) {
       arm_call_step(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "apply_poly"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "apply_poly"(String)))) {
+  } else if(string_eq(identity, "apply_poly"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "apply_poly"[String]))) {
       arm_apply_poly(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "driver_apply_poly_value"(String))) {
+  } else if(string_eq(identity, "driver_apply_poly_value"[String])) {
     if(host_fn_eq(descriptor, apply_poly_value_descriptor())) {
       arm_apply_poly_value(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "sum_to_string"(String))) {
+  } else if(string_eq(identity, "sum_to_string"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/fmt"(String), "sum_to_string"(String))
+    , mk_host_id("testapi/fmt"[String], "sum_to_string"[String])
     )) {
       arm_sum_to_string(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "make_step"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "make_step"(String)))) {
+  } else if(string_eq(identity, "make_step"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "make_step"[String]))) {
       arm_make_step(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "driver_step_apply"(String))) {
+  } else if(string_eq(identity, "driver_step_apply"[String])) {
     if(host_fn_eq(descriptor, step_apply_descriptor())) {
       arm_step_apply(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "driver_cb_add3"(String))) {
+  } else if(string_eq(identity, "driver_cb_add3"[String])) {
     if(host_fn_eq(descriptor, cb_add3_descriptor())) {
       arm_cb_add3(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "add_count"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "add_count"(String)))) {
+  } else if(string_eq(identity, "add_count"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "add_count"[String]))) {
       arm_add_count(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "count_to_string"(String))) {
+  } else if(string_eq(identity, "count_to_string"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/fmt"(String), "count_to_string"(String))
+    , mk_host_id("testapi/fmt"[String], "count_to_string"[String])
     )) {
       arm_count_to_string(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "make_token"(String))) {
+  } else if(string_eq(identity, "make_token"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/opaque"(String), "make_token"(String))
+    , mk_host_id("testapi/opaque"[String], "make_token"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "token_value"(String))) {
+  } else if(string_eq(identity, "token_value"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/opaque"(String), "token_value"(String))
+    , mk_host_id("testapi/opaque"[String], "token_value"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "box_make"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_make"(String)))) {
+  } else if(string_eq(identity, "box_make"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "box_make"[String]))) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "box_get"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"(String), "box_get"(String)))) {
+  } else if(string_eq(identity, "box_get"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/arith"[String], "box_get"[String]))) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "round_functor"(String))) {
+  } else if(string_eq(identity, "round_functor"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/arith"(String), "round_functor"(String))
+    , mk_host_id("testapi/arith"[String], "round_functor"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "round_picker"(String))) {
+  } else if(string_eq(identity, "round_picker"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/arith"(String), "round_picker"(String))
+    , mk_host_id("testapi/arith"[String], "round_picker"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "round_poly_thunk"(String))) {
+  } else if(string_eq(identity, "round_poly_thunk"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/arith"(String), "round_poly_thunk"(String))
+    , mk_host_id("testapi/arith"[String], "round_poly_thunk"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "round_unit_slot"(String))) {
+  } else if(string_eq(identity, "round_unit_slot"[String])) {
     if(host_id_eq(
     , host_fn_id(descriptor)
-    , mk_host_id("testapi/arith"(String), "round_unit_slot"(String))
+    , mk_host_id("testapi/arith"[String], "round_unit_slot"[String])
     )) {
       call_done(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "eprint"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "eprint"(String)))) {
+  } else if(string_eq(identity, "eprint"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"[String], "eprint"[String]))) {
       arm_eprint(dom)
     } else {
       serve_default(descriptor, dom)
     }
-  } else if(string_eq(identity, "exit"(String))) {
-    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"(String), "exit"(String)))) {
+  } else if(string_eq(identity, "exit"[String])) {
+    if(host_id_eq(host_fn_id(descriptor), mk_host_id("testapi/io"[String], "exit"[String]))) {
       arm_exit(dom)
     } else {
       serve_default(descriptor, dom)
@@ -1069,71 +1063,71 @@ fn serve_protocol(descriptor: Host_fn, dom: Value) -> Call_result {
 // ---------------------------------------------------------------------
 fn diag_line(prefix: String, d: Diag) -> String {
   string_concat(
-  , "dyn-load-prime driver: "(String)
-  , string_concat(prefix, string_concat(diag_message(d), "\n"(String)))
+  , "dyn-load-prime driver: "[String]
+  , string_concat(prefix, string_concat(diag_message(d), "\n"[String]))
   )
 }
 
-fn failure_string(message: String) -> String { runner_failure(message); ""(String) }
+fn failure_string(message: String) -> String { runner_failure(message); ""[String] }
 
 // Apply one ordinary Surface stage, preserving an earlier diagnostic.
-fn apply_result[P](surf: Surface(P), result: P | Diag, arg: P) -> P | Diag {
+fn apply_result[P](surf: Surface[P], result: P | Diag, arg: P) -> P | Diag {
   match(result) {
-    (.(f: P) { surf.?{apply}((f, arg)) }, .(d: Diag) { widen_sum(d, P | Diag) })
+    (.(f: P) { surf.?{apply}((f, arg)) }, .(d: Diag) { widen_sum(d)[P | Diag] })
   }
 }
 
 // Look the export up and apply it to one argument.
-fn call_export[P](surf: Surface(P), name: String, arg: P) -> P | Diag {
+fn call_export[P](surf: Surface[P], name: String, arg: P) -> P | Diag {
   apply_result(surf, surf.?{lookup}(name), arg)
 }
 
 // Render a call's i32 result as its printed line.
-fn i32_line[P](surf: Surface(P), r: P | Diag) -> String {
+fn i32_line[P](surf: Surface[P], r: P | Diag) -> String {
   match(r) {
     (
     , .(v: P) {
         match(surf.?{i32_out}(v)) {
           (
-          , .(n: I32) { string_concat(int_to_string(n), "\n"(String)) }
-          , .(d: Diag) { failure_string(diag_line("i32 result — "(String), d)) }
+          , .(n: I32) { string_concat(int_to_string(n), "\n"[String]) }
+          , .(d: Diag) { failure_string(diag_line("i32 result — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { failure_string(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { failure_string(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 // Render a call's string result as its printed line.
-fn str_line[P](surf: Surface(P), r: P | Diag) -> String {
+fn str_line[P](surf: Surface[P], r: P | Diag) -> String {
   match(r) {
     (
     , .(v: P) {
         match(surf.?{str_out}(v)) {
           (
-          , .(s: String) { string_concat(s, "\n"(String)) }
-          , .(d: Diag) { failure_string(diag_line("string result — "(String), d)) }
+          , .(s: String) { string_concat(s, "\n"[String]) }
+          , .(d: Diag) { failure_string(diag_line("string result — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { failure_string(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { failure_string(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 // export-namespace-roundtrip: `answer()` then `echo("namespace-utils")`.
-fn script_namespace[P](surf: Surface(P)) {
-  print(i32_line(surf, call_export(surf, "testapi/main.answer"(String), surf.?{unit_in})));
+fn script_namespace[P](surf: Surface[P]) {
+  print(i32_line(surf, call_export(surf, "testapi/main.answer"[String], surf.?{unit_in})));
   print(str_line(
   , surf
-  , call_export(surf, "testapi/utils.echo"(String), surf.?{str_in}("namespace-utils"(String)))
+  , call_export(surf, "testapi/utils.echo"[String], surf.?{str_in}("namespace-utils"[String]))
   ))
 }
 
 // export-callback-roundtrip: `apply_twice((n) => n + 3, 10)` then
 // `make_step(4)` applied to `5`.
-fn script_callback[P](surf: Surface(P)) {
+fn script_callback[P](surf: Surface[P]) {
   match(surf.?{hostfn_in}(cb_add3_descriptor())) {
     (
     , .(cb: P) {
@@ -1141,52 +1135,52 @@ fn script_callback[P](surf: Surface(P)) {
         , surf
         , call_export(
           , surf
-          , "testapi/main.apply_twice"(String)
-          , surf.?{pair_in}((cb, surf.?{i32_in}(10(I32))))
+          , "testapi/main.apply_twice"[String]
+          , surf.?{pair_in}((cb, surf.?{i32_in}(10[I32])))
           )
         ))
       }
-    , .(d: Diag) { runner_failure(diag_line("callback input — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("callback input — "[String], d)) }
     )
   };
   let make_step_result =
-    call_export(surf, "testapi/main.make_step"(String), surf.?{i32_in}(4(I32)));
+    call_export(surf, "testapi/main.make_step"[String], surf.?{i32_in}(4[I32]));
   match(make_step_result) {
     (
-    , .(step: P) { print(i32_line(surf, surf.?{apply}((step, surf.?{i32_in}(5(I32)))))) }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(step: P) { print(i32_line(surf, surf.?{apply}((step, surf.?{i32_in}(5[I32]))))) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 // export-module-roundtrip: `api.tag()`, `api.value()`, `api.echo(...)`.
-fn script_module[P](surf: Surface(P)) {
-  print(str_line(surf, call_export(surf, "testapi/api.tag"(String), surf.?{unit_in})));
-  print(i32_line(surf, call_export(surf, "testapi/api.value"(String), surf.?{unit_in})));
+fn script_module[P](surf: Surface[P]) {
+  print(str_line(surf, call_export(surf, "testapi/api.tag"[String], surf.?{unit_in})));
+  print(i32_line(surf, call_export(surf, "testapi/api.value"[String], surf.?{unit_in})));
   print(str_line(
   , surf
-  , call_export(surf, "testapi/api.echo"(String), surf.?{str_in}("module-echo"(String)))
+  , call_export(surf, "testapi/api.echo"[String], surf.?{str_in}("module-echo"[String]))
   ))
 }
 
 // export-multi-label-roundtrip: `say({A: 42, B: "shown\n"})`, round-trip
 // `{A: 88, B: "99"}` through `echo_pair`, then `A.mk(111)` through
 // `echo_a` and `A.get`.
-fn script_multilabel[P](surf: Surface(P)) {
+fn script_multilabel[P](surf: Surface[P]) {
   let say_result =
     call_export(
     , surf
-    , "testapi/main.say"(String)
-    , surf.?{pair_in}((surf.?{i32_in}(42(I32)), surf.?{str_in}("shown\n"(String))))
+    , "testapi/main.say"[String]
+    , surf.?{pair_in}((surf.?{i32_in}(42[I32]), surf.?{str_in}("shown\n"[String])))
     );
   match(say_result) {
-    (.(_done: P) { () }, .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) })
+    (.(_done: P) { () }, .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) })
   };
   let echo_pair_result =
     call_export(
     , surf
-    , "testapi/main.echo_pair"(String)
-    , surf.?{pair_in}((surf.?{i32_in}(88(I32)), surf.?{str_in}("99"(String))))
+    , "testapi/main.echo_pair"[String]
+    , surf.?{pair_in}((surf.?{i32_in}(88[I32]), surf.?{str_in}("99"[String])))
     );
   match(echo_pair_result) {
     (
@@ -1196,81 +1190,81 @@ fn script_multilabel[P](surf: Surface(P)) {
           , .(a: P, b: P) {
               match(surf.?{i32_out}(a)) {
                 (
-                , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
-                , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
+                , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
+                , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
                 )
               };
               match(surf.?{str_out}(b)) {
                 (
-                , .(s: String) { print(string_concat(s, "\n"(String))) }
-                , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
+                , .(s: String) { print(string_concat(s, "\n"[String])) }
+                , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                 )
               }
             }
-          , .(d: Diag) { runner_failure(diag_line("pair result — "(String), d)) }
+          , .(d: Diag) { runner_failure(diag_line("pair result — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   };
-  let a_mk_result = call_export(surf, "testapi/main.A.mk"(String), surf.?{i32_in}(111(I32)));
+  let a_mk_result = call_export(surf, "testapi/main.A.mk"[String], surf.?{i32_in}(111[I32]));
   match(a_mk_result) {
     (
     , .(a: P) {
-        match(call_export(surf, "testapi/main.echo_a"(String), a)) {
+        match(call_export(surf, "testapi/main.echo_a"[String], a)) {
           (
           , .(echoed: P) {
-              print(i32_line(surf, call_export(surf, "testapi/main.A.get"(String), echoed)))
+              print(i32_line(surf, call_export(surf, "testapi/main.A.get"[String], echoed)))
             }
-          , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+          , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 // export-poly-roundtrip: `poly_echo` at a string and an i32, then
 // `keep_left("left", 99)`.
-fn script_poly[P](surf: Surface(P)) {
+fn script_poly[P](surf: Surface[P]) {
   // Each universal binder is an erased Unit stage on the ordinary Surface.
   let poly_string =
     apply_result(
     , surf
-    , call_export(surf, "testapi.poly_echo"(String), surf.?{unit_in})
-    , surf.?{str_in}("poly-string"(String))
+    , call_export(surf, "testapi.poly_echo"[String], surf.?{unit_in})
+    , surf.?{str_in}("poly-string"[String])
     );
   print(str_line(surf, poly_string));
   let poly_i32 =
     apply_result(
     , surf
-    , call_export(surf, "testapi.poly_echo"(String), surf.?{unit_in})
-    , surf.?{i32_in}(42(I32))
+    , call_export(surf, "testapi.poly_echo"[String], surf.?{unit_in})
+    , surf.?{i32_in}(42[I32])
     );
   print(i32_line(surf, poly_i32));
-  let keep_left_a = call_export(surf, "testapi.keep_left"(String), surf.?{unit_in});
+  let keep_left_a = call_export(surf, "testapi.keep_left"[String], surf.?{unit_in});
   let keep_left_b = apply_result(surf, keep_left_a, surf.?{unit_in});
   let keep_left_result =
     apply_result(
     , surf
     , keep_left_b
-    , surf.?{pair_in}((surf.?{str_in}("left"(String)), surf.?{i32_in}(99(I32))))
+    , surf.?{pair_in}((surf.?{str_in}("left"[String]), surf.?{i32_in}(99[I32])))
     );
   print(str_line(surf, keep_left_result))
 }
 
 // export-nested-product-roundtrip: `make("nest", 7, 9)` and the three
 // leaves of the returned nested product.
-fn script_nested_product[P](surf: Surface(P)) {
+fn script_nested_product[P](surf: Surface[P]) {
   let nested_product_result =
     call_export(
     , surf
-    , "testapi/main.make"(String)
+    , "testapi/main.make"[String]
     , surf.?{pair_in}((
-      , surf.?{str_in}("nest"(String))
-      , surf.?{pair_in}((surf.?{i32_in}(7(I32)), surf.?{i32_in}(9(I32))))
+      , surf.?{str_in}("nest"[String])
+      , surf.?{pair_in}((surf.?{i32_in}(7[I32]), surf.?{i32_in}(9[I32])))
       ))
     );
   match(nested_product_result) {
@@ -1281,8 +1275,8 @@ fn script_nested_product[P](surf: Surface(P)) {
           , .(head: P, rest: P) {
               match(surf.?{str_out}(head)) {
                 (
-                , .(s: String) { print(string_concat(s, "\n"(String))) }
-                , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
+                , .(s: String) { print(string_concat(s, "\n"[String])) }
+                , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                 )
               };
               match(surf.?{pair_out}(rest)) {
@@ -1290,26 +1284,26 @@ fn script_nested_product[P](surf: Surface(P)) {
                 , .(x: P, y: P) {
                     match(surf.?{i32_out}(x)) {
                       (
-                      , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
-                      , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
+                      , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
+                      , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
                       )
                     };
                     match(surf.?{i32_out}(y)) {
                       (
-                      , .(n: I32) { print(string_concat(int_to_string(n), "\n"(String))) }
-                      , .(d: Diag) { runner_failure(diag_line("i32 result — "(String), d)) }
+                      , .(n: I32) { print(string_concat(int_to_string(n), "\n"[String])) }
+                      , .(d: Diag) { runner_failure(diag_line("i32 result — "[String], d)) }
                       )
                     }
                   }
-                , .(d: Diag) { runner_failure(diag_line("pair result — "(String), d)) }
+                , .(d: Diag) { runner_failure(diag_line("pair result — "[String], d)) }
                 )
               }
             }
-          , .(d: Diag) { runner_failure(diag_line("pair result — "(String), d)) }
+          , .(d: Diag) { runner_failure(diag_line("pair result — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
@@ -1320,40 +1314,40 @@ fn compound_input_value[P](r: P | Diag, consume: P -> .) {
   match(r) {
     (
     , .(v: P) { consume(v) }
-    , .(d: Diag) { runner_failure(diag_line("compound input — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("compound input — "[String], d)) }
     )
   }
 }
 
-fn compound_input_pair[P](surf: Surface(P), value: P, consume: (P & P) -> .) {
+fn compound_input_pair[P](surf: Surface[P], value: P, consume: (P & P) -> .) {
   match(surf.?{pair_out}(value)) {
-    (consume, .(d: Diag) { runner_failure(diag_line("compound pair — "(String), d)) })
+    (consume, .(d: Diag) { runner_failure(diag_line("compound pair — "[String], d)) })
   }
 }
 
-fn compound_input_inner[P](surf: Surface(P), value: P) {
+fn compound_input_inner[P](surf: Surface[P], value: P) {
   compound_input_pair(
   , surf
   , value
   , .(left: P, right: P) {
-      print(i32_line(surf, widen_sum(left, P | Diag)));
-      print(i32_line(surf, widen_sum(right, P | Diag)))
+      print(i32_line(surf, widen_sum(left)[P | Diag]));
+      print(i32_line(surf, widen_sum(right)[P | Diag]))
     }
   )
 }
 
-fn compound_input_outer[P](surf: Surface(P), value: P) {
+fn compound_input_outer[P](surf: Surface[P], value: P) {
   compound_input_pair(
   , surf
   , value
   , .(text: P, inner: P) {
-      print(str_line(surf, widen_sum(text, P | Diag)));
+      print(str_line(surf, widen_sum(text)[P | Diag]));
       compound_input_inner(surf, inner)
     }
   )
 }
 
-fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consume: P -> .) {
+fn compound_input_arm[P](surf: Surface[P], value: P, expected_left: Bool, consume: P -> .) {
   match(surf.?{sum_is_left}(value)) {
     (
     , .(is_left: Bool) {
@@ -1361,88 +1355,88 @@ fn compound_input_arm[P](surf: Surface(P), value: P, expected_left: Bool, consum
           if(expected_left) {
             ()
           } else {
-            runner_failure("compound input: unexpected left arm\n"(String))
+            runner_failure("compound input: unexpected left arm\n"[String])
           }
         } else if(expected_left) {
-          runner_failure("compound input: unexpected right arm\n"(String))
+          runner_failure("compound input: unexpected right arm\n"[String])
         } else {
           ()
         };
         compound_input_value(surf.?{sum_payload}(value), consume)
       }
-    , .(d: Diag) { runner_failure(diag_line("compound sum — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("compound sum — "[String], d)) }
     )
   }
 }
 
-fn script_compound_input_once[P](surf: Surface(P)) {
+fn script_compound_input_once[P](surf: Surface[P]) {
   let print_pair =
     .(value: P) {
       compound_input_pair(
       , surf
       , value
       , .(number: P, text: P) {
-          print(i32_line(surf, widen_sum(number, P | Diag)));
-          print(str_line(surf, widen_sum(text, P | Diag)))
+          print(i32_line(surf, widen_sum(number)[P | Diag]));
+          print(str_line(surf, widen_sum(text)[P | Diag]))
         }
       )
     };
   compound_input_value(
-  , call_export(surf, "testapi/main.direct"(String), surf.?{unit_in})
+  , call_export(surf, "testapi/main.direct"[String], surf.?{unit_in})
   , print_pair
   );
   compound_input_value(
   , surf.?{hostfn_in}(cb_pair_descriptor())
   , .(callback: P) {
-      compound_input_value(call_export(surf, "testapi/main.callback"(String), callback), print_pair)
+      compound_input_value(call_export(surf, "testapi/main.callback"[String], callback), print_pair)
     }
   );
   let outer_args =
     surf.?{pair_in}((
-    , surf.?{str_in}("nest"(String))
-    , surf.?{pair_in}((surf.?{i32_in}(11(I32)), surf.?{i32_in}(13(I32))))
+    , surf.?{str_in}("nest"[String])
+    , surf.?{pair_in}((surf.?{i32_in}(11[I32]), surf.?{i32_in}(13[I32])))
     ));
   compound_input_value(
-  , call_export(surf, "testapi/main.make_outer"(String), outer_args)
+  , call_export(surf, "testapi/main.make_outer"[String], outer_args)
   , .(outer: P) {
       compound_input_value(
-      , call_export(surf, "testapi/main.echo_outer"(String), outer)
+      , call_export(surf, "testapi/main.echo_outer"[String], outer)
       , .(result: P) { compound_input_outer(surf, result) }
       )
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.first"(String), surf.?{i32_in}(17(I32)))
+  , call_export(surf, "testapi/main.first"[String], surf.?{i32_in}(17[I32]))
   , .(choice: P) {
       compound_input_value(
-      , call_export(surf, "testapi/main.echo_choice"(String), choice)
+      , call_export(surf, "testapi/main.echo_choice"[String], choice)
       , .(result: P) {
           compound_input_arm(
           , surf
           , result
-          , .t(Bool)
-          , .(number: P) { print(i32_line(surf, widen_sum(number, P | Diag))) }
+          , .t[Bool]
+          , .(number: P) { print(i32_line(surf, widen_sum(number)[P | Diag])) }
           )
         }
       )
     }
   );
-  let middle_args = surf.?{pair_in}((surf.?{i32_in}(19(I32)), surf.?{i32_in}(23(I32))));
+  let middle_args = surf.?{pair_in}((surf.?{i32_in}(19[I32]), surf.?{i32_in}(23[I32])));
   compound_input_value(
-  , call_export(surf, "testapi/main.middle"(String), middle_args)
+  , call_export(surf, "testapi/main.middle"[String], middle_args)
   , .(choice: P) {
       compound_input_value(
-      , call_export(surf, "testapi/main.echo_choice"(String), choice)
+      , call_export(surf, "testapi/main.echo_choice"[String], choice)
       , .(result: P) {
           compound_input_arm(
           , surf
           , result
-          , .f(Bool)
+          , .f[Bool]
           , .(tail: P) {
               compound_input_arm(
               , surf
               , tail
-              , .t(Bool)
+              , .t[Bool]
               , .(inner: P) { compound_input_inner(surf, inner) }
               )
             }
@@ -1453,24 +1447,24 @@ fn script_compound_input_once[P](surf: Surface(P)) {
   );
   let last_args =
     surf.?{pair_in}((
-    , surf.?{str_in}("choice"(String))
-    , surf.?{pair_in}((surf.?{i32_in}(29(I32)), surf.?{i32_in}(31(I32))))
+    , surf.?{str_in}("choice"[String])
+    , surf.?{pair_in}((surf.?{i32_in}(29[I32]), surf.?{i32_in}(31[I32])))
     ));
   compound_input_value(
-  , call_export(surf, "testapi/main.last"(String), last_args)
+  , call_export(surf, "testapi/main.last"[String], last_args)
   , .(choice: P) {
       compound_input_value(
-      , call_export(surf, "testapi/main.echo_choice"(String), choice)
+      , call_export(surf, "testapi/main.echo_choice"[String], choice)
       , .(result: P) {
           compound_input_arm(
           , surf
           , result
-          , .f(Bool)
+          , .f[Bool]
           , .(tail: P) {
               compound_input_arm(
               , surf
               , tail
-              , .f(Bool)
+              , .f[Bool]
               , .(outer: P) { compound_input_outer(surf, outer) }
               )
             }
@@ -1481,23 +1475,23 @@ fn script_compound_input_once[P](surf: Surface(P)) {
   );
   print(str_line(
   , surf
-  , call_export(surf, "testapi/main.echo_text"(String), surf.?{str_in}("atomic"(String)))
+  , call_export(surf, "testapi/main.echo_text"[String], surf.?{str_in}("atomic"[String]))
   ))
 }
 
 // export-newtype-scalar-roundtrip: `bump(Wrap(7))` — the newtype erases,
 // so the payload rides as the i32.
-fn script_newtype_scalar[P](surf: Surface(P)) {
-  print(i32_line(surf, call_export(surf, "testapi/main.bump"(String), surf.?{i32_in}(7(I32)))))
+fn script_newtype_scalar[P](surf: Surface[P]) {
+  print(i32_line(surf, call_export(surf, "testapi/main.bump"[String], surf.?{i32_in}(7[I32]))))
 }
 
 // export-newtype-sum-roundtrip: `first_or(0, pack(7, "hi"))`.
-fn script_newtype_sum[P](surf: Surface(P)) {
+fn script_newtype_sum[P](surf: Surface[P]) {
   let pack_result =
     call_export(
     , surf
-    , "testapi/main.pack"(String)
-    , surf.?{pair_in}((surf.?{i32_in}(7(I32)), surf.?{str_in}("hi"(String))))
+    , "testapi/main.pack"[String]
+    , surf.?{pair_in}((surf.?{i32_in}(7[I32]), surf.?{str_in}("hi"[String])))
     );
   match(pack_result) {
     (
@@ -1506,36 +1500,36 @@ fn script_newtype_sum[P](surf: Surface(P)) {
         , surf
         , call_export(
           , surf
-          , "testapi/main.first_or"(String)
-          , surf.?{pair_in}((surf.?{i32_in}(0(I32)), packed))
+          , "testapi/main.first_or"[String]
+          , surf.?{pair_in}((surf.?{i32_in}(0[I32]), packed))
           )
         ))
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 // export-curried-facade: `pick("ku")("rz")` then `last(1)(2, 3)` — one
 // application per value group.
-fn script_curried[P](surf: Surface(P)) {
-  let pick_result = call_export(surf, "testapi/main.pick"(String), surf.?{str_in}("ku"(String)));
+fn script_curried[P](surf: Surface[P]) {
+  let pick_result = call_export(surf, "testapi/main.pick"[String], surf.?{str_in}("ku"[String]));
   match(pick_result) {
     (
-    , .(picked: P) { print(str_line(surf, surf.?{apply}((picked, surf.?{str_in}("rz"(String)))))) }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(picked: P) { print(str_line(surf, surf.?{apply}((picked, surf.?{str_in}("rz"[String]))))) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   };
-  let last_result = call_export(surf, "testapi/main.last"(String), surf.?{i32_in}(1(I32)));
+  let last_result = call_export(surf, "testapi/main.last"[String], surf.?{i32_in}(1[I32]));
   match(last_result) {
     (
     , .(lasted: P) {
         print(i32_line(
         , surf
-        , surf.?{apply}((lasted, surf.?{pair_in}((surf.?{i32_in}(2(I32)), surf.?{i32_in}(3(I32))))))
+        , surf.?{apply}((lasted, surf.?{pair_in}((surf.?{i32_in}(2[I32]), surf.?{i32_in}(3[I32])))))
         ))
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
@@ -1543,20 +1537,20 @@ fn script_curried[P](surf: Surface(P)) {
 // export-type-roundtrip: the exported newtype's members —
 // `Pair.mk_pair(("export-type-left", "export-type-right"))` then
 // `Pair.un_pair` back to the two components.
-fn script_type_roundtrip[P](surf: Surface(P)) {
+fn script_type_roundtrip[P](surf: Surface[P]) {
   let pair_mk_result =
     call_export(
     , surf
-    , "testapi/types.Pair.mk_pair"(String)
+    , "testapi/types.Pair.mk_pair"[String]
     , surf.?{pair_in}((
-      , surf.?{str_in}("export-type-left"(String))
-      , surf.?{str_in}("export-type-right"(String))
+      , surf.?{str_in}("export-type-left"[String])
+      , surf.?{str_in}("export-type-right"[String])
       ))
     );
   match(pair_mk_result) {
     (
     , .(boxed: P) {
-        match(call_export(surf, "testapi/types.Pair.un_pair"(String), boxed)) {
+        match(call_export(surf, "testapi/types.Pair.un_pair"[String], boxed)) {
           (
           , .(payload: P) {
               match(surf.?{pair_out}(payload)) {
@@ -1564,35 +1558,35 @@ fn script_type_roundtrip[P](surf: Surface(P)) {
                 , .(l: P, r: P) {
                     match(surf.?{str_out}(l)) {
                       (
-                      , .(a: String) { print(string_concat(a, "\n"(String))) }
-                      , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
+                      , .(a: String) { print(string_concat(a, "\n"[String])) }
+                      , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                       )
                     };
                     match(surf.?{str_out}(r)) {
                       (
-                      , .(b: String) { print(string_concat(b, "\n"(String))) }
-                      , .(d: Diag) { runner_failure(diag_line("string result — "(String), d)) }
+                      , .(b: String) { print(string_concat(b, "\n"[String])) }
+                      , .(d: Diag) { runner_failure(diag_line("string result — "[String], d)) }
                       )
                     }
                   }
-                , .(d: Diag) { runner_failure(diag_line("pair result — "(String), d)) }
+                , .(d: Diag) { runner_failure(diag_line("pair result — "[String], d)) }
                 )
               }
             }
-          , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+          , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
           )
         }
       }
-    , .(d: Diag) { runner_failure(diag_line("export call — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("export call — "[String], d)) }
     )
   }
 }
 
 fn unsupported_protocol_script() {
-  runner_failure("dyn-load-prime driver: unsupported protocol script\n"(String))
+  runner_failure("dyn-load-prime driver: unsupported protocol script\n"[String])
 }
 
-fn opaque_print_pair[P](surf: Surface(P), result: P | Diag) {
+fn opaque_print_pair[P](surf: Surface[P], result: P | Diag) {
   compound_input_value(
   , result
   , .(value: P) {
@@ -1608,14 +1602,14 @@ fn opaque_print_pair[P](surf: Surface(P), result: P | Diag) {
                   , .(b: I32) {
                       print(string_concat(
                       , int_to_string(a)
-                      , string_concat(" "(String), string_concat(int_to_string(b), "\n"(String)))
+                      , string_concat(" "[String], string_concat(int_to_string(b), "\n"[String]))
                       ))
                     }
-                  , .(d: Diag) { runner_failure(diag_line("opaque pair right — "(String), d)) }
+                  , .(d: Diag) { runner_failure(diag_line("opaque pair right — "[String], d)) }
                   )
                 }
               }
-            , .(d: Diag) { runner_failure(diag_line("opaque pair left — "(String), d)) }
+            , .(d: Diag) { runner_failure(diag_line("opaque pair left — "[String], d)) }
             )
           }
         }
@@ -1627,49 +1621,49 @@ fn opaque_print_pair[P](surf: Surface(P), result: P | Diag) {
 // This adapter's ordinary Box fixture stores its payload unchanged; box_make
 // and box_get above are its explicit storage operations. Surface constructors
 // below therefore build the host-origin payload before it enters the guest.
-fn script_opaque_product[P](surf: Surface(P)) {
-  let host = surf.?{pair_in}((surf.?{i32_in}(11(I32)), surf.?{i32_in}(17(I32))));
-  opaque_print_pair(surf, call_export(surf, "testapi/main.direct"(String), host));
-  opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"(String), host));
+fn script_opaque_product[P](surf: Surface[P]) {
+  let host = surf.?{pair_in}((surf.?{i32_in}(11[I32]), surf.?{i32_in}(17[I32])));
+  opaque_print_pair(surf, call_export(surf, "testapi/main.direct"[String], host));
+  opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"[String], host));
   compound_input_value(
-  , call_export(surf, "testapi/main.make"(String), surf.?{unit_in})
+  , call_export(surf, "testapi/main.make"[String], surf.?{unit_in})
   , .(kio: P) {
-      opaque_print_pair(surf, call_export(surf, "testapi/main.direct"(String), kio));
-      opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"(String), kio))
+      opaque_print_pair(surf, call_export(surf, "testapi/main.direct"[String], kio));
+      opaque_print_pair(surf, call_export(surf, "testapi/main.relayed"[String], kio))
     }
   )
 }
 
-fn script_generic_nominal_opaque[P](surf: Surface(P)) {
+fn script_generic_nominal_opaque[P](surf: Surface[P]) {
   compound_input_value(
-  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"(String), surf.?{i32_in}(37(I32)))
-  , .(nominal: P) { print(i32_line(surf, call_export(surf, "testapi/main.read"(String), nominal))) }
+  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"[String], surf.?{i32_in}(37[I32]))
+  , .(nominal: P) { print(i32_line(surf, call_export(surf, "testapi/main.read"[String], nominal))) }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make"(String), surf.?{i32_in}(61(I32)))
+  , call_export(surf, "testapi/main.make"[String], surf.?{i32_in}(61[I32]))
   , .(kio: P) {
-      print(i32_line(surf, call_export(surf, "testapi/main.read"(String), kio)));
-      print(i32_line(surf, call_export(surf, "testapi/main.unwrap"(String), kio)))
+      print(i32_line(surf, call_export(surf, "testapi/main.read"[String], kio)));
+      print(i32_line(surf, call_export(surf, "testapi/main.unwrap"[String], kio)))
     }
   )
 }
 
-fn script_opaque_compound[P](surf: Surface(P)) {
+fn script_opaque_compound[P](surf: Surface[P]) {
   print(i32_line(
   , surf
-  , call_export(surf, "testapi/main.read_sum"(String), surf.?{left_in}(surf.?{i32_in}(19(I32))))
+  , call_export(surf, "testapi/main.read_sum"[String], surf.?{left_in}(surf.?{i32_in}(19[I32])))
   ));
   print(i32_line(
   , surf
-  , call_export(surf, "testapi/main.read_sum"(String), surf.?{right_in}(surf.?{unit_in}))
+  , call_export(surf, "testapi/main.read_sum"[String], surf.?{right_in}(surf.?{unit_in}))
   ));
   compound_input_value(
-  , call_export(surf, "testapi/main.make_sum"(String), surf.?{unit_in})
-  , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"(String), value))) }
+  , call_export(surf, "testapi/main.make_sum"[String], surf.?{unit_in})
+  , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"[String], value))) }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_empty"(String), surf.?{unit_in})
-  , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"(String), value))) }
+  , call_export(surf, "testapi/main.make_empty"[String], surf.?{unit_in})
+  , .(value: P) { print(i32_line(surf, call_export(surf, "testapi/main.read_sum"[String], value))) }
   );
   compound_input_value(
   , surf.?{hostfn_in}(opaque_step_descriptor())
@@ -1678,78 +1672,78 @@ fn script_opaque_compound[P](surf: Surface(P)) {
       , surf
       , call_export(
         , surf
-        , "testapi/main.call"(String)
-        , surf.?{pair_in}((host, surf.?{i32_in}(31(I32))))
+        , "testapi/main.call"[String]
+        , surf.?{pair_in}((host, surf.?{i32_in}(31[I32])))
         )
       ));
       print(i32_line(
       , surf
       , call_export(
         , surf
-        , "testapi/main.call"(String)
-        , surf.?{pair_in}((host, surf.?{i32_in}(43(I32))))
+        , "testapi/main.call"[String]
+        , surf.?{pair_in}((host, surf.?{i32_in}(43[I32])))
         )
       ))
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_callable"(String), surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_callable"[String], surf.?{unit_in})
   , .(value: P) {
       print(i32_line(
       , surf
       , call_export(
         , surf
-        , "testapi/main.call"(String)
-        , surf.?{pair_in}((value, surf.?{i32_in}(47(I32))))
+        , "testapi/main.call"[String]
+        , surf.?{pair_in}((value, surf.?{i32_in}(47[I32])))
         )
       ))
     }
   );
-  let payload = surf.?{pair_in}((surf.?{i32_in}(41(I32)), surf.?{i32_in}(43(I32))));
+  let payload = surf.?{pair_in}((surf.?{i32_in}(41[I32]), surf.?{i32_in}(43[I32])));
   compound_input_value(
-  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"(String), payload)
+  , call_export(surf, "testapi/main.Wrapped.mk_wrapped"[String], payload)
   , .(nominal: P) {
-      opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"(String), nominal))
+      opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"[String], nominal))
     }
   );
   compound_input_value(
-  , call_export(surf, "testapi/main.make_nominal"(String), surf.?{unit_in})
+  , call_export(surf, "testapi/main.make_nominal"[String], surf.?{unit_in})
   , .(value: P) {
-      opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"(String), value))
+      opaque_print_pair(surf, call_export(surf, "testapi/main.read_nominal"[String], value))
     }
   )
 }
 
 // Keep these script adapters aligned with the canonical support inventory
 // in src/shared/protocol.rs, which the coverage lint consumes.
-fn dispatch_script[P](surf: Surface(P), proto: String) {
-  if(string_eq(proto, "export-namespace-roundtrip"(String))) {
+fn dispatch_script[P](surf: Surface[P], proto: String) {
+  if(string_eq(proto, "export-namespace-roundtrip"[String])) {
     script_namespace(surf)
-  } else if(string_eq(proto, "export-callback-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-callback-roundtrip"[String])) {
     script_callback(surf)
-  } else if(string_eq(proto, "export-module-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-module-roundtrip"[String])) {
     script_module(surf)
-  } else if(string_eq(proto, "export-multi-label-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-multi-label-roundtrip"[String])) {
     script_multilabel(surf)
-  } else if(string_eq(proto, "export-poly-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-poly-roundtrip"[String])) {
     script_poly(surf)
-  } else if(string_eq(proto, "export-nested-product-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-nested-product-roundtrip"[String])) {
     script_nested_product(surf)
-  } else if(string_eq(proto, "export-compound-input-once"(String))) {
+  } else if(string_eq(proto, "export-compound-input-once"[String])) {
     script_compound_input_once(surf)
-  } else if(string_eq(proto, "export-newtype-scalar-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-newtype-scalar-roundtrip"[String])) {
     script_newtype_scalar(surf)
-  } else if(string_eq(proto, "export-newtype-sum-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-newtype-sum-roundtrip"[String])) {
     script_newtype_sum(surf)
-  } else if(string_eq(proto, "export-curried-facade"(String))) {
+  } else if(string_eq(proto, "export-curried-facade"[String])) {
     script_curried(surf)
-  } else if(string_eq(proto, "export-type-roundtrip"(String))) {
+  } else if(string_eq(proto, "export-type-roundtrip"[String])) {
     script_type_roundtrip(surf)
-  } else if(string_eq(proto, "opaque-product-roundtrip"(String))) {
+  } else if(string_eq(proto, "opaque-product-roundtrip"[String])) {
     script_opaque_product(surf)
-  } else if(string_eq(proto, "opaque-compound-roundtrip"(String))) {
+  } else if(string_eq(proto, "opaque-compound-roundtrip"[String])) {
     script_opaque_compound(surf)
-  } else if(string_eq(proto, "generic-nominal-opaque-roundtrip"(String))) {
+  } else if(string_eq(proto, "generic-nominal-opaque-roundtrip"[String])) {
     script_generic_nominal_opaque(surf)
   } else {
     unsupported_protocol_script()
@@ -1762,11 +1756,8 @@ fn instantiate_protocol(im: Image) -> Loaded | Diag {
   if(protocol_runtime_hostfns_match(image_hostfns(im))) {
     instantiate(protocol_host_adapter(), serve_protocol, make_lit_protocol, test_bool_default, im)
   } else {
-    widen_sum(
-    , mk_diag("dyn_load_prime: selected runner protocol does not exactly match the "
-              "image's runtime host-function contract"(String))
-    , Loaded | Diag
-    )
+    widen_sum(mk_diag("dyn_load_prime: selected runner protocol does not exactly match the "
+                      "image's runtime host-function contract"[String]))[Loaded | Diag]
   }
 }
 
@@ -1775,7 +1766,7 @@ fn construct_protocol(im: Image) {
   match(un_inst(instantiate_protocol(im))) {
     (
     , .(_handle: Loaded) { () }
-    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "[String], d)) }
     )
   }
 }
@@ -1785,22 +1776,22 @@ fn run_protocol_main(im: Image) {
   match(un_inst(instantiate_protocol(im))) {
     (
     , .(handle: Loaded) {
-        Loaded.get(handle)(.[P](surf: Surface(P)) {
+        Loaded.get(handle)(.[P](surf: Surface[P]) {
           let main_result =
             call_export(
             , surf
-            , string_concat(protocol_entry_module(), ".main"(String))
+            , string_concat(protocol_entry_module(), ".main"[String])
             , surf.?{unit_in}
             );
           match(main_result) {
             (
             , .(_result: P) { () }
-            , .(d: Diag) { runner_failure(diag_line("calling guest `main` failed — "(String), d)) }
+            , .(d: Diag) { runner_failure(diag_line("calling guest `main` failed — "[String], d)) }
             )
           }
         })
       }
-    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "[String], d)) }
     )
   }
 }
@@ -1811,9 +1802,9 @@ fn run_protocol_script(im: Image, proto: String) {
   match(un_inst(instantiate_protocol(im))) {
     (
     , .(handle: Loaded) {
-        Loaded.get(handle)(.[P](surf: Surface(P)) { dispatch_script(surf, proto) })
+        Loaded.get(handle)(.[P](surf: Surface[P]) { dispatch_script(surf, proto) })
       }
-    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "(String), d)) }
+    , .(d: Diag) { runner_failure(diag_line("instantiating the guest failed — "[String], d)) }
     )
   }
 }
@@ -1827,22 +1818,22 @@ pub fn main() {
     , .(im: Lr_image) {
         let proto = protocol_name();
         let mode = protocol_execution_mode();
-        if(string_eq(mode, "load"(String))) {
+        if(string_eq(mode, "load"[String])) {
           ()
-        } else if(string_eq(mode, "construct"(String))) {
+        } else if(string_eq(mode, "construct"[String])) {
           construct_protocol(Lr_image.get(im))
-        } else if(string_eq(mode, "script"(String))) {
+        } else if(string_eq(mode, "script"[String])) {
           run_protocol_script(Lr_image.get(im), proto)
-        } else if(string_eq(mode, "main"(String))) {
+        } else if(string_eq(mode, "main"[String])) {
           run_protocol_main(Lr_image.get(im))
         } else {
-          runner_failure("dyn-load-prime driver: unsupported protocol execution mode\n"(String))
+          runner_failure("dyn-load-prime driver: unsupported protocol execution mode\n"[String])
         }
       }
     , .(d: Lr_diag) {
         runner_failure(string_concat(
-        , "dyn-load-prime driver: guest image failed to load — "(String)
-        , string_concat(diag_message(Lr_diag.get(d)), "\n"(String))
+        , "dyn-load-prime driver: guest image failed to load — "[String]
+        , string_concat(diag_message(Lr_diag.get(d)), "\n"[String])
         ))
       }
     )

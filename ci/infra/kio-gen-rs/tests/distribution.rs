@@ -68,7 +68,7 @@ fn ordinary_calls_generate_every_dot_splice_spelling() {
                 seen[j].get_or_insert(seed);
             }
         }
-        if [".>id(I32)", ".>>id(I32)", "id(I32).<(", "id(I32).<<("]
+        if [".>id[I32]", ".>>id[I32]", "id[I32].<(", "id[I32].<<("]
             .iter()
             .any(|s| source.contains(s))
         {
@@ -77,7 +77,7 @@ fn ordinary_calls_generate_every_dot_splice_spelling() {
         if [".>id", ".>>id"].iter().any(|token| {
             source
                 .match_indices(token)
-                .any(|(at, _)| bytes.get(at + token.len()) != Some(&b'('))
+                .any(|(at, _)| bytes.get(at + token.len()) != Some(&b'['))
         }) || ["id.<(", "id.<<("]
             .iter()
             .any(|token| source.contains(token))
@@ -671,7 +671,7 @@ fn surface_forms_appear_in_corpus() {
                     assert!(generated.contains(&signature));
                     assert!(generated.contains("(value, __fill__(ct, fills, target, source))"));
                     let witness = format!(
-                        "fn kio_gen_fills_witness(value: I32) -> I32 {{ {}(value, _) }}",
+                        "fn kio_gen_fills_witness(value: I32) -> I32 {{ {}(value)[_] }}",
                         spec.name
                     );
                     assert!(
@@ -721,24 +721,24 @@ fn surface_forms_appear_in_corpus() {
             .map(|(_, s)| s.as_str())
             .unwrap_or("");
         assert!(
-            root.contains("equiv kio_gen_unit_equiv { (); id(., ()) }"),
+            root.contains("equiv kio_gen_unit_equiv { (); id[.](()) }"),
             "surface-mode prog.kio missing the Unit type/value `equiv` witness"
         );
         assert!(
             root.contains(
-                "pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0(I32) }"
+                "pub pure fn kio_gen_fold_step(_value: I32, _acc: I32) -> I32 { 0[I32] }"
             ) && root.contains("pub varop [* *] { foldr1 kio_gen_fold_step kio_gen_fold_seed }\n")
-                && root.contains("equiv kio_gen_seeded_fold_singleton { [* 2(I32) *]; 2(I32) }")
-                && root.contains("equiv kio_gen_seeded_fold_step { [* 1(I32), 2(I32) *]; 0(I32) }"),
+                && root.contains("equiv kio_gen_seeded_fold_singleton { [* 2[I32] *]; 2[I32] }")
+                && root.contains("equiv kio_gen_seeded_fold_step { [* 1[I32], 2[I32] *]; 0[I32] }"),
             "surface-mode prog.kio missing nonvacuous seeded variadic-operator coverage"
         );
         for witness in [
             "pub varop [] { foldr1 kio_gen_fold_step kio_gen_fold_seed }",
-            "equiv kio_gen_bare_fold_singleton { [2(I32)]; 2(I32) }",
-            "equiv kio_gen_bare_fold_step { [1(I32), 2(I32)]; 0(I32) }",
-            "equiv kio_gen_prefix_chain { !? !? 2(I32); 2(I32) }",
-            "equiv kio_gen_closed_result_suffix { 2(I32) ?! ?!.>id; 2(I32) }",
-            "equiv kio_gen_bounded_chain_slots { @ 1(I32) <+> 2(I32) # !? 3(I32) $; 1(I32) }",
+            "equiv kio_gen_bare_fold_singleton { [2[I32]]; 2[I32] }",
+            "equiv kio_gen_bare_fold_step { [1[I32], 2[I32]]; 0[I32] }",
+            "equiv kio_gen_prefix_chain { !? !? 2[I32]; 2[I32] }",
+            "equiv kio_gen_closed_result_suffix { 2[I32] ?! ?!.>id; 2[I32] }",
+            "equiv kio_gen_bounded_chain_slots { @ 1[I32] <+> 2[I32] # !? 3[I32] $; 1[I32] }",
         ] {
             assert!(root.contains(witness), "missing surface witness: {witness}");
         }
@@ -752,13 +752,13 @@ fn surface_forms_appear_in_corpus() {
         );
         assert!(
             root.contains(
-                "equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7(I32)}; Count.mk(7(I32)) }"
+                "equiv kio_gen_label_forward_nominal { {kio_gen_count_forward = 7[I32]}; Count.mk(7[I32]) }"
             ),
             "surface-mode prog.kio missing forwarded-to-original nominal equivalence"
         );
         assert!(
             root.contains(
-                "equiv kio_gen_label_forward_payload { Count.mk(11(I32)).?{kio_gen_count_forward}; 11(I32) }"
+                "equiv kio_gen_label_forward_payload { Count.mk(11[I32]).?{kio_gen_count_forward}; 11[I32] }"
             ),
             "surface-mode prog.kio missing independently constructed payload-access coverage"
         );

@@ -9,12 +9,12 @@ rec {
   pub newtype Forest : . | (Tree & Forest) { pub constructor mk_forest; pub projector un_forest }
 }
 
-pub fn leaf(value: I32) -> Tree { Tree.mk_tree(__left__(I32, Forest, value)) }
+pub fn leaf(value: I32) -> Tree { Tree.mk_tree(__left__[I32][Forest](value)) }
 
-pub fn node(value: Forest) -> Tree { Tree.mk_tree(__right__(I32, Forest, value)) }
+pub fn node(value: Forest) -> Tree { Tree.mk_tree(__right__[I32][Forest](value)) }
 
-pub fn empty() -> Forest { Forest.mk_forest(__left__(., Tree & Forest, ())) }
+pub fn empty() -> Forest { Forest.mk_forest(__left__[.][Tree & Forest](())) }
 
 pub fn graft(tree: Tree, forest: Forest) -> Forest {
-  Forest.mk_forest(__right__(., Tree & Forest, (tree, forest)))
+  Forest.mk_forest(__right__[.][Tree & Forest]((tree, forest)))
 }

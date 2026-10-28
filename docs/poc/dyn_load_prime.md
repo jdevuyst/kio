@@ -164,7 +164,7 @@ The source-text `parse_*` entry points receive an exact host-type resolver
 `(Toks & Type_scope) -> (Host_type | String)`. `Type_scope` is a list of
 lexical binder-token groups, used when normalizing concrete aliases and
 respecting binder shadowing; no separate module Boolean argument is needed.
-A branching call explicitly writes `__if_then_else__(B, A, condition, yes, no)`.
+A branching call explicitly writes `__if_then_else__[B][A](condition, yes, no)`.
 The loader normalizes `B` through ordinary aliases and checks that its exact
 terminal host type has `role(bool)`. There is no visible-role search. These
 structural checks do not re-typecheck function bodies.
@@ -239,30 +239,30 @@ declaration and the reason — which is why both entry points answer
 `Loaded | Diag`.
 
 `Loaded` packs the existential: the representation `P` of a loaded value
-is hidden, and the host receives `Surface(P)`, a record of everything it
+is hidden, and the host receives `Surface[P]`, a record of everything it
 may do:
 
 ```text
 pub type Surface[P] =
-  & Lookup(P)
-  & Apply(P)
-  & Apply_fuel(P)
-  & Unit_in(P)
-  & I32_in(P)
-  & I32_out(P)
-  & F64_in(P)
-  & F64_out(P)
-  & Str_in(P)
-  & Str_out(P)
-  & Bool_in(P)
-  & Bool_out(P)
-  & Pair_in(P)
-  & Pair_out(P)
-  & Left_in(P)
-  & Right_in(P)
-  & Sum_is_left(P)
-  & Sum_payload(P)
-  & Hostfn_in(P)
+  & Lookup[P]
+  & Apply[P]
+  & Apply_fuel[P]
+  & Unit_in[P]
+  & I32_in[P]
+  & I32_out[P]
+  & F64_in[P]
+  & F64_out[P]
+  & Str_in[P]
+  & Str_out[P]
+  & Bool_in[P]
+  & Bool_out[P]
+  & Pair_in[P]
+  & Pair_out[P]
+  & Left_in[P]
+  & Right_in[P]
+  & Sum_is_left[P]
+  & Sum_payload[P]
+  & Hostfn_in[P]
   & Exports
   ;
 ```
@@ -330,8 +330,8 @@ with one exact binding and wraps the standard dispatch with one extra arm:
 ```text
 fn host_double_descriptor() -> Host_fn {
   mk_host_fn(
-    , mk_host_id("testapi/main"(String), "host_double"(String))
-    , "(h{hostapi.I32}) -> h{hostapi.I32}"(String)
+    , mk_host_id("testapi/main"[String], "host_double"[String])
+    , "(h{hostapi.I32}) -> h{hostapi.I32}"[String]
     )
 }
 
@@ -396,7 +396,7 @@ export table. Host identities use `h{module.Type}`, nominal identities use
 not ask the loader to resolve source-local type names:
 
 ```text
-mk_expect("add3"(String), "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"(String))
+mk_expect("add3"[String], "(h{hostapi.I32} & (h{hostapi.I32} & h{hostapi.I32})) -> h{hostapi.I32}"[String])
 ```
 
 `contract_check` compares every expectation against the declared surface:
@@ -406,8 +406,8 @@ stated like any other entry — the worked example's matching contract
 includes the newtype's constructor bare and its projector qualified:
 
 ```text
-mk_expect("Tag.mk_tag"(String), "[#0] (#0) -> n{guest.Tag}(#0)"(String))
-mk_expect("guest.Tag.un_tag"(String), "[#0] (n{guest.Tag}(#0)) -> #0"(String))
+mk_expect("Tag.mk_tag"[String], "[#0] (#0) -> n{guest.Tag}(#0)"[String])
+mk_expect("guest.Tag.un_tag"[String], "[#0] (n{guest.Tag}(#0)) -> #0"[String])
 ```
 
 `instantiate_checked` / `instantiate_checked_default` fold the check into
@@ -424,8 +424,8 @@ worked example writes that ceremony **once per export** behind a typed
 signature — the pattern a real host follows. Its `greet` wrapper:
 
 ```text
-fn run_greet[P](surf: Surface(P), who: String) -> String {
-  match(surf.?{lookup}("greet"(String))) {
+fn run_greet[P](surf: Surface[P], who: String) -> String {
+  match(surf.?{lookup}("greet"[String])) {
     (
       , .(g: P) {
           match(surf.?{apply}((g, surf.?{str_in}(who)))) {
@@ -462,12 +462,12 @@ runtime-value laws — every `un_value . v<arm>` recovers the arm it built:
 ```text
 equiv un_closure(e: Env, t: Term) {
   un_value(vclosure(e, t));
-  widen_sum({v_closure = (e, t)}, Value_shape)
+  widen_sum({v_closure = (e, t)})[Value_shape]
 }
 
 equiv un_product(a: Value, b: Value) {
   un_value(vproduct(a, b));
-  widen_sum({v_product = (a, b)}, Value_shape)
+  widen_sum({v_product = (a, b)})[Value_shape]
 }
 ```
 

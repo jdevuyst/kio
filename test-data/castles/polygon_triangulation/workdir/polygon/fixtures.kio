@@ -4,8 +4,8 @@ import polygon/geometry as geo;
 import testapi(Array, I32);
 import testapi/array as arr;
 
-pub fn rectangle() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn rectangle() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (6, 0));
   arr.array_push(points, (6, 4));
@@ -13,8 +13,8 @@ pub fn rectangle() -> Array(geo.Point) {
   points
 }
 
-pub fn arrow() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn arrow() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (6, 0));
   arr.array_push(points, (6, 4));
@@ -23,8 +23,8 @@ pub fn arrow() -> Array(geo.Point) {
   points
 }
 
-pub fn notch() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn notch() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (6, 0));
   arr.array_push(points, (6, 6));
@@ -36,21 +36,21 @@ pub fn notch() -> Array(geo.Point) {
   points
 }
 
-pub fn clockwise_arrow() -> Array(geo.Point) {
+pub fn clockwise_arrow() -> Array[geo.Point] {
   let points = arrow();
   arr.array_swap(points, 0, 4);
   arr.array_swap(points, 1, 3);
   points
 }
 
-pub fn repeated_point() -> Array(geo.Point) {
+pub fn repeated_point() -> Array[geo.Point] {
   let points = rectangle();
   arr.array_push(points, (0, 0));
   points
 }
 
-pub fn straight_corner() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn straight_corner() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (3, 0));
   arr.array_push(points, (6, 0));
@@ -58,8 +58,8 @@ pub fn straight_corner() -> Array(geo.Point) {
   points
 }
 
-pub fn crossed_boundary() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn crossed_boundary() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (5, 4));
   arr.array_push(points, (0, 4));
@@ -67,14 +67,14 @@ pub fn crossed_boundary() -> Array(geo.Point) {
   points
 }
 
-pub fn too_short() -> Array(geo.Point) {
-  let .(points: Array(geo.Point)) = arr.array_make_empty();
+pub fn too_short() -> Array[geo.Point] {
+  let .(points: Array[geo.Point]) = arr.array_make_empty();
   arr.array_push(points, (0, 0));
   arr.array_push(points, (6, 0));
   points
 }
 
-pub fn out_of_range() -> Array(geo.Point) {
+pub fn out_of_range() -> Array[geo.Point] {
   let points = rectangle();
   arr.array_set(points, 1, (21, 0));
   points

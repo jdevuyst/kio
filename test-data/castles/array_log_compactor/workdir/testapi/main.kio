@@ -22,7 +22,7 @@ import testapi/text(string_concat, string_eq);
 labels Event = { event_key: String, event_value: I32, event_deleted: Bool, event_seq: I32 };
 
 labels Compact = {
-, compacted_log: Array(Event)
+, compacted_log: Array[Event]
 , kept_count: I32
 , dropped_count: I32
 , superseded_count: I32
@@ -60,8 +60,8 @@ fn render(index: I32, item: Event) -> String {
     .>>string_concat("slot ")
 }
 
-fn build_log() -> Array(Event) {
-  let log = array_make_empty(Event, ());
+fn build_log() -> Array[Event] {
+  let log = array_make_empty[Event](());
   array_push(log, put(1, "alpha", 4));
   array_push(log, put(2, "beta", 7));
   array_push(log, put(3, "gamma", 2));
@@ -76,7 +76,7 @@ fn build_log() -> Array(Event) {
   log
 }
 
-rec(loop) fn has_later_key(log: Array(Event), item: Event, index: I32, last: I32) -> Bool {
+rec(loop) fn has_later_key(log: Array[Event], item: Event, index: I32, last: I32) -> Bool {
   if(leq_i32(index, last)) {
     let later = array_get(log, index);
     if(same_key(item, later)) {
@@ -89,7 +89,7 @@ rec(loop) fn has_later_key(log: Array(Event), item: Event, index: I32, last: I32
   }
 }
 
-fn result(log: Array(Event), kept: I32, dropped: I32, superseded: I32, deletes: I32, original: I32) -> Compact {
+fn result(log: Array[Event], kept: I32, dropped: I32, superseded: I32, deletes: I32, original: I32) -> Compact {
   {
   , compacted_log = log
   , kept_count = kept
@@ -101,7 +101,7 @@ fn result(log: Array(Event), kept: I32, dropped: I32, superseded: I32, deletes: 
 }
 
 rec(loop) fn compact_loop(
-, log: Array(Event)
+, log: Array[Event]
 , read: I32
 , write: I32
 , last: I32
@@ -157,7 +157,7 @@ rec(loop) fn compact_loop(
   }
 }
 
-fn compact(log: Array(Event)) -> Compact {
+fn compact(log: Array[Event]) -> Compact {
   let work = array_clone(log);
   let original = array_len(work);
   compact_loop(work, 0, 0, sub_i32(original, 1), 0, 0, 0, 0, original)
@@ -169,7 +169,7 @@ fn line_count(label: String, value: I32) -> String {
 
 fn print_count(label: String, value: I32) { print(line_count(label, value)) }
 
-rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32) -> I32 {
+rec(loop) fn checksum_loop(log: Array[Event], index: I32, last: I32, total: I32) -> I32 {
   if(leq_i32(index, last)) {
     let item = array_get(log, index);
     recur checksum_loop(log, add_i32(index, 1), last, add_i32(total, score(item)))
@@ -178,9 +178,9 @@ rec(loop) fn checksum_loop(log: Array(Event), index: I32, last: I32, total: I32)
   }
 }
 
-fn checksum(log: Array(Event), kept: I32) -> I32 { checksum_loop(log, 0, sub_i32(kept, 1), 0) }
+fn checksum(log: Array[Event], kept: I32) -> I32 { checksum_loop(log, 0, sub_i32(kept, 1), 0) }
 
-rec(loop) fn print_rows(log: Array(Event), index: I32, last: I32) {
+rec(loop) fn print_rows(log: Array[Event], index: I32, last: I32) {
   if(leq_i32(index, last)) {
     print(render(index, array_get(log, index)));
     recur print_rows(log, add_i32(index, 1), last)

@@ -77,9 +77,19 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
                 pending.push(callee);
                 values(args, &mut pending);
             }
-            Expr::RecCall { args, .. } | Expr::UserMacro { args, .. } => values(args, &mut pending),
-            Expr::Ufcs { receiver, args, .. } => {
+            Expr::RecCall { stages, .. } | Expr::UserMacro { stages, .. } => {
+                for stage in stages {
+                    values(&stage.args, &mut pending);
+                }
+            }
+            Expr::Ufcs {
+                receiver,
+                callee,
+                args,
+                ..
+            } => {
                 pending.push(receiver);
+                pending.push(callee);
                 values(args, &mut pending);
             }
             Expr::FnExpr { body, .. } | Expr::FnPlaceholder { body, .. } => pending.push(body),
@@ -100,7 +110,9 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
                 }
             },
             Expr::BlockCall { prefix, blocks, .. } => {
-                pending.extend(prefix);
+                for stage in prefix {
+                    values(&stage.args, &mut pending);
+                }
                 pending.extend(
                     blocks
                         .iter()

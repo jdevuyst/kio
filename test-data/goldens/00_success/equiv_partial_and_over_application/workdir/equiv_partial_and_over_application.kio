@@ -13,9 +13,8 @@ equiv partial_application_captures(value: T) {
   .(right: T) { (value, right) }
 }
 
-// Supplying an argument beyond a known function's own value group
-// re-applies the reduced result to that leftover argument.
+// A second application uses the function returned by the first.
 equiv over_application_reapplies_returned_function(f: T -> T, value: T) {
-  return_function(f, value);
+  return_function(f)(value);
   f(value)
 }

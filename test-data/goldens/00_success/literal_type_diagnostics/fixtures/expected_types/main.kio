@@ -16,11 +16,11 @@ pure fn flag() -> Bool { .t }
 
 pure fn text() -> String { "expected" }
 
-pure fn annotated() -> Float { 42.0(Float) }
+pure fn annotated() -> Float { 42.0[Float] }
 
 equiv expected_integer() {
   integer();
-  42(Int)
+  42[Int]
 }
 
 equiv expected_float() {
@@ -30,10 +30,10 @@ equiv expected_float() {
 
 equiv expected_bool() {
   flag();
-  .t(Bool)
+  .t[Bool]
 }
 
 equiv expected_string() {
   text();
-  "expected"(String)
+  "expected"[String]
 }

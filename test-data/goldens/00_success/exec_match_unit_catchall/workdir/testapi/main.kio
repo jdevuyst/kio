@@ -63,9 +63,9 @@ fn rigid_pair[A](input: . | (A & A)) -> String {
   }
 }
 
-fn empty[A]() -> . | A { widen_sum((), . | A) }
+fn empty[A]() -> . | A { widen_sum(())[. | A] }
 
-fn present[A](value: A) -> . | A { widen_sum(value, . | A) }
+fn present[A](value: A) -> . | A { widen_sum(value)[. | A] }
 
 fn unit_sum(input: First | Second) -> String {
   match(input) {
@@ -99,8 +99,8 @@ fn produce_nested() -> Tag & Second {
 }
 
 pub fn main() {
-  let left = widen_sum({first = "left"}, First | Second);
-  let right = widen_sum({second = "right"}, First | Second);
+  let left = widen_sum({first = "left"})[First | Second];
+  let right = widen_sum({second = "right"})[First | Second];
   io.print(typed(left));
   io.print(typed(right));
   io.print(match(produce()) {
@@ -112,17 +112,17 @@ pub fn main() {
   io.print(overlap(left));
   io.print(overlap(right));
   io.print(with_unit_component({first = "component\n"}));
-  io.print(tagged(widen_sum({tag=}, Tag | First)));
-  io.print(tagged(widen_sum({first = "left"}, Tag | First)));
+  io.print(tagged(widen_sum({tag=})[Tag | First]));
+  io.print(tagged(widen_sum({first = "left"})[Tag | First]));
   io.print(match(produce_pair()) {
     .() { "pair\n" }
   });
-  io.print(rigid(., empty(., ())));
-  io.print(rigid(., present(., ())));
-  io.print(rigid_pair(., empty(. & ., ())));
-  io.print(rigid_pair(., present(((), ()))));
-  io.print(unit_sum(widen_sum({first = "sum-first\n"}, First | Second)));
-  io.print(unit_sum(widen_sum(produce_second(), First | Second)));
+  io.print(rigid[.](empty[.](())));
+  io.print(rigid[.](present[.](())));
+  io.print(rigid_pair[.](empty[. & .](())));
+  io.print(rigid_pair[.](present(((), ()))));
+  io.print(unit_sum(widen_sum({first = "sum-first\n"})[First | Second]));
+  io.print(unit_sum(widen_sum(produce_second())[First | Second]));
   io.print(nested_unit_sum(produce_nested()));
   io.print(match(produce_second()) {
     .(_slot: . | First) { "direct-sum\n" }

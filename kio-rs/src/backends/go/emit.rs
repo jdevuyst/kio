@@ -427,7 +427,7 @@ mod facade_consumer_tests {
             "module api; \
              host type I32 role(i32); \
              host type Box[A]; \
-             host fn round(value: Box(I32)) -> Box(I32);",
+             host fn round(value: Box[I32]) -> Box[I32];",
         );
         let emitted = lower_package(&package, "pkg").expect("emit Go host carrier");
         let atom = "KioIndexNominal_M1_C3_apiN3_I32[KioHost_M1_C3_apiN3_I32]";
@@ -461,10 +461,10 @@ mod facade_consumer_tests {
         let package = package(
             "module api; \
              pub newtype Box[A] : A { pub constructor make; projector open; }; \
-             pub newtype Poly : [B] B -> Box(B) { pub constructor make; pub projector open; }; \
+             pub newtype Poly : [B] B -> Box[B] { pub constructor make; pub projector open; }; \
              pub newtype Keep[A] : [C] C -> (A & C) { pub constructor make; pub projector open; }; \
              pub fn outer[A](a: A) -> Poly { Poly.make(.[B](b: B) { Box.make(b) }) } \
-             pub fn sparse[A][B](a: A, b: B) -> Keep(B) { Keep.make(.[C](c: C) { (b, c) }) }",
+             pub fn sparse[A][B](a: A, b: B) -> Keep[B] { Keep.make(.[C](c: C) { (b, c) }) }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit selected transparent stages");
         assert!(
@@ -506,7 +506,7 @@ mod facade_consumer_tests {
             "module api; host type Number role(i32); host type Vault[A]; \
              host fn choose() -> (. | Number); \
              pub fn sparse() -> [A] A -> [B] B -> (. | Number) { .[A](a: A)[B](b: B) { choose() } } \
-             pub fn round[A](value: Vault(. | A)) -> Vault(. | A) { value }",
+             pub fn round[A](value: Vault[. | A]) -> Vault[. | A] { value }",
         );
         let emitted =
             lower_package(&package, "pkg").expect("emit exact contextual sum dependencies");
@@ -564,9 +564,9 @@ mod facade_consumer_tests {
     fn boundary_view_helpers_do_not_expand_the_generic_handle_method_set() {
         let package = package(
             "module api; host type Number role(i32); host type Vault[A]; \
-             host fn store[A](value: Vault(A)) -> Vault(A); \
+             host fn store[A](value: Vault[A]) -> Vault[A]; \
              pub newtype Box[A] : A { pub constructor make; projector open; }; \
-             pub fn round(value: Box(Number)) -> Box(Number) { value } \
+             pub fn round(value: Box[Number]) -> Box[Number] { value } \
              pub fn identity[A](value: A) -> A { value }",
         );
         let prepared = PreparedBoundaryCallableSites::collect(&package, None).unwrap();
@@ -613,7 +613,7 @@ mod facade_consumer_tests {
     fn generic_public_member_preparation_is_owned_by_host_declarations() {
         let package = package(
             "module api; host type Number role(i32); host type Vault[A]; \
-             pub newtype Applied[*F][A] : F(A) { pub constructor make; projector open; };",
+             pub newtype Applied[*F][A] : F[A] { pub constructor make; projector open; };",
         );
         let emitted =
             lower_package(&package, "pkg").expect("emit constructor-only host preparation");
@@ -1075,31 +1075,59 @@ v(2) {
             emitted.host_go
         );
 
-        let direct = emitted
+        let host_local = |host_member: &str, occurrence: usize| {
+            let binding = format!(" = pkg.host.{host_member}");
+            let binding_start = emitted
+                .pkg_go
+                .match_indices(&binding)
+                .nth(occurrence)
+                .map(|(offset, _)| offset)
+                .unwrap_or_else(|| {
+                    panic!("missing `{host_member}` binding occurrence {occurrence}")
+                });
+            let line = emitted.pkg_go[..binding_start + " = ".len()]
+                .rsplit_once('\n')
+                .map(|(_, line)| line)
+                .expect("host binding has a preceding line");
+            line.split_once(" = ")
+                .map(|(local, _)| local.trim())
+                .unwrap_or_else(|| panic!("malformed host binding: {line}"))
+                .to_owned()
+        };
+        let host_invocation = |host_member: &str, occurrence: usize| {
+            let local = host_local(host_member, occurrence);
+            let binding = format!(" = pkg.host.{host_member}");
+            let binding_start = emitted
+                .pkg_go
+                .match_indices(&binding)
+                .nth(occurrence)
+                .map(|(offset, _)| offset + binding.len())
+                .unwrap_or_else(|| {
+                    panic!("missing `{host_member}` binding occurrence {occurrence}")
+                });
+            emitted.pkg_go[binding_start..]
+                .find(&format!("{local}("))
+                .map(|offset| binding_start + offset)
+                .unwrap_or_else(|| panic!("missing invocation of `{host_member}` local `{local}`"))
+        };
+        let direct_read = emitted
             .pkg_go
-            .find("pkg.host.Api__direct")
+            .find(" = pkg.host.Api__direct")
             .expect("direct callee is materialized");
-        let unit = emitted
-            .pkg_go
-            .find("pkg.host.Api__unitEffect")
-            .expect("Unit source effect is retained");
-        let first_value = emitted
-            .pkg_go
-            .find("pkg.host.Api__valueEffect")
-            .expect("first product source effect");
-        let second_value = emitted.pkg_go[first_value + 1..]
-            .find("pkg.host.Api__valueEffect")
-            .map(|offset| first_value + 1 + offset)
-            .expect("second product source effect");
+        let direct_invocation = host_invocation("Api__direct", 0);
+        let unit_invocation = host_invocation("Api__unitEffect", 0);
+        let first_value_invocation = host_invocation("Api__valueEffect", 0);
+        let second_value_invocation = host_invocation("Api__valueEffect", 1);
         let expansion = emitted
             .pkg_go
             .find("kioProductSlots(")
             .expect("one product source expands through its prepared RightNest group");
         assert!(
-            direct < unit
-                && unit < first_value
-                && first_value < second_value
-                && second_value < expansion,
+            direct_read < direct_invocation
+                && unit_invocation < first_value_invocation
+                && first_value_invocation < second_value_invocation
+                && second_value_invocation < expansion
+                && expansion < direct_invocation,
             "{}",
             emitted.pkg_go
         );
@@ -1116,7 +1144,7 @@ v(2) {
              host type I32 role(i32); \
              host fn staged[A](first: I32)[B](second: I32 & I32) -> I32; \
              pub fn call(first: I32, second: I32, third: I32) -> I32 { \
-               staged(I32, first, I32, (second, third)) \
+               staged[I32]( first)[ I32]( (second, third)) \
              }",
         );
         let emitted = lower_package(&package, "pkg").expect("emit interleaved host value");
@@ -1306,7 +1334,7 @@ v(2) {
         let package = package(
             "module api; \
              pub type Erased[A] = .; \
-             pub newtype Empty <Hidden> : Erased(Hidden) { \
+             pub newtype Empty <Hidden> : Erased[Hidden] { \
                pub constructor make_empty; pub projector read_empty; \
              };",
         );

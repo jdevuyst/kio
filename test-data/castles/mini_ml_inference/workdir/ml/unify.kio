@@ -9,7 +9,7 @@ import ml/types as types;
 import testapi(Bool, I32, String);
 import testapi/iter(loop);
 
-type Equations = lists.List(types.Ty & types.Ty);
+type Equations = lists.List[types.Ty & types.Ty];
 
 pub type Result = types.Substitution | String;
 
@@ -24,7 +24,7 @@ fn bind(id: I32, ty: types.Ty, substitutions: types.Substitution) -> Result {
     };
     .() {
       if(types.contains(id, types.variables(ty))) {
-        "occurs check".>widen_sum
+        "occurs check"[String].>widen_sum
       } else {
         lists.cons((id, ty), substitutions).>widen_sum
       }
@@ -66,7 +66,7 @@ rec(loop) fn solve(equations: Equations, substitutions: types.Substitution) -> R
                   let .(b1: types.Ty, b2: types.Ty) = types.Pair.get(b);
                   recur solve(lists.cons((a1, b1), lists.cons((a2, b2), rest)), substitutions)
                 };
-                .() { "incompatible types".>widen_sum }
+                .() { "incompatible types"[String].>widen_sum }
               }
             }
           }

@@ -12,11 +12,5 @@ pub newtype Box[B] : B { pub constructor mk_plain_box; pub projector un_plain_bo
 pub newtype _Box[_A] : _A { pub constructor mk_box; pub projector un_box }
 
 pub fn main() {
-  print(_Box.un_box(
-  , Ordinary
-  , _Box.mk_box(
-    , _Alias
-    , Box.un_plain_box(Ordinary, Box.mk_plain_box(Ordinary, "underscore type names\n"(Ordinary)))
-    )
-  ))
+  print(_Box.un_box[Ordinary](_Box.mk_box[_Alias](Box.un_plain_box[Ordinary](Box.mk_plain_box[Ordinary]("underscore type names\n"[Ordinary])))))
 }

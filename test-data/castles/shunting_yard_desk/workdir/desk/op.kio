@@ -32,23 +32,23 @@ pub labels Unop = { negate: . };
 
 pub labels Op = { binary: Binop } | { unary: Unop };
 
-pub fn plus_op() -> Binop { {plus=}.>widen_sum(Binop) }
+pub fn plus_op() -> Binop { ({plus=}.>widen_sum)[Binop] }
 
-pub fn minus_op() -> Binop { {minus=}.>widen_sum(Binop) }
+pub fn minus_op() -> Binop { ({minus=}.>widen_sum)[Binop] }
 
-pub fn times_op() -> Binop { {times=}.>widen_sum(Binop) }
+pub fn times_op() -> Binop { ({times=}.>widen_sum)[Binop] }
 
-pub fn divide_op() -> Binop { {divide=}.>widen_sum(Binop) }
+pub fn divide_op() -> Binop { ({divide=}.>widen_sum)[Binop] }
 
-pub fn modulo_op() -> Binop { {modulo=}.>widen_sum(Binop) }
+pub fn modulo_op() -> Binop { ({modulo=}.>widen_sum)[Binop] }
 
-pub fn power_op() -> Binop { {power=}.>widen_sum(Binop) }
+pub fn power_op() -> Binop { ({power=}.>widen_sum)[Binop] }
 
-pub fn negate_op() -> Unop { {negate=}.>widen_sum(Unop) }
+pub fn negate_op() -> Unop { ({negate=}.>widen_sum)[Unop] }
 
-pub fn as_binary(b: Binop) -> Op { {binary = b}.>widen_sum(Op) }
+pub fn as_binary(b: Binop) -> Op { ({binary = b}.>widen_sum)[Op] }
 
-pub fn as_unary(u: Unop) -> Op { {unary = u}.>widen_sum(Op) }
+pub fn as_unary(u: Unop) -> Op { ({unary = u}.>widen_sum)[Op] }
 
 /// One row of the operator table: how tightly the operator binds, and how it
 /// is written. Both are read off the same row, so an operator's precedence and

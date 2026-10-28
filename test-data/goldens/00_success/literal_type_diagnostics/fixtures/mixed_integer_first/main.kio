@@ -6,4 +6,4 @@ host type Float role(f64);
 
 pure fn same[A](left: A, right: A) -> A { left }
 
-fn value() { let n = same(42(Int), 42.0); () }
+fn value() { let n = same(42[Int], 42.0); () }

@@ -12,10 +12,7 @@ pub pure fn id_impl(
 , value: __Checked_term__
 , target: Target_request
 ) -> __Checked_term__ {
-  __either__(
-  , __Type__
-  , .
-  , __Checked_term__
+  __either__[__Type__][.][__Checked_term__](
   , target
   , .(_target: __Type__) -> __Checked_term__ { value }
   , .() -> __Checked_term__ { __macro_error__(ct, "elaborator needs a target") }

@@ -1755,7 +1755,7 @@ mod tests {
             (
                 &[
                     "module left; host type Token; pub type Id[A] = A;",
-                    "module a; import left as dep; pub newtype Wrapped : dep.Id(dep.Token) { pub constructor wrap; pub projector unwrap; };",
+                    "module a; import left as dep; pub newtype Wrapped : dep.Id[dep.Token] { pub constructor wrap; pub projector unwrap; };",
                     "module b; import a(Wrapped); pub type Copy = Wrapped;",
                 ],
                 true,
@@ -1763,32 +1763,32 @@ mod tests {
             (
                 &[
                     "module a; pub type Higher[*F] = .;",
-                    "module b; import a(Higher); pub type Bad = Higher(.);",
+                    "module b; import a(Higher); pub type Bad = Higher[.];",
                 ],
                 false,
             ),
             (
                 &[
                     "module a; pub type F[A] = A;",
-                    "module b; import a(F); pub type Bad = F(., .);",
+                    "module b; import a(F); pub type Bad = F[.][ .];",
                 ],
                 false,
             ),
             (
                 &[
                     "module left; pub type F[A] = A;",
-                    "module right; pub type F[A, B] = B;",
-                    "module a; import left(F); pub type T = F(.);",
-                    "module b; import right(F); pub type T = F(., !);",
+                    "module right; pub type F[A][ B] = B;",
+                    "module a; import left(F); pub type T = F[.];",
+                    "module b; import right(F); pub type T = F[.][ !];",
                 ],
                 true,
             ),
             (
                 &[
                     "module left; pub type F[A] = A;",
-                    "module right; pub type F[A, B] = B;",
-                    "module a; import left(F); host fn take(value: F(.)) -> .;",
-                    "module b; import right(F); host fn take(value: F(.)) -> .;",
+                    "module right; pub type F[A][ B] = B;",
+                    "module a; import left(F); host fn take(value: F[.]) -> .;",
+                    "module b; import right(F); host fn take(value: F[.]) -> .;",
                 ],
                 false,
             ),

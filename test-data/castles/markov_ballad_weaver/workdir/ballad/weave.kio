@@ -26,22 +26,22 @@ import testapi/iter(loop);
 /// Why a line stopped.
 pub labels Stop = { by_end_word: . } | { by_word_cap: . } | { by_no_successor: . };
 
-fn stopped_at_end() -> Stop { {by_end_word=}.>widen_sum(Stop) }
+fn stopped_at_end() -> Stop { ({by_end_word=}.>widen_sum)[Stop] }
 
-fn stopped_at_cap() -> Stop { {by_word_cap=}.>widen_sum(Stop) }
+fn stopped_at_cap() -> Stop { ({by_word_cap=}.>widen_sum)[Stop] }
 
-fn stopped_dry() -> Stop { {by_no_successor=}.>widen_sum(Stop) }
+fn stopped_dry() -> Stop { ({by_no_successor=}.>widen_sum)[Stop] }
 
 /// One recorded draw.
 pub labels Step = {
 , step_state: I32
 , step_from: String
-, step_succs: List(Tally)
+, step_succs: List[Tally]
 , step_roll: I32
 , step_to: String
 };
 
-pub labels Line = { line_words: List(String), line_stop: Stop, line_draws: List(Step) };
+pub labels Line = { line_words: List[String], line_stop: Stop, line_draws: List[Step] };
 
 labels Drawn = { drawn_line: Line, drawn_state: I32 };
 
@@ -54,19 +54,19 @@ fn start_label() -> String { "<start>" }
 /// band already passed, so the first entry whose band contains `r` wins. The
 /// caller guarantees `r < total`, which is why the last entry always matches;
 /// returning it on exhaustion keeps the walk total without inventing a word.
-rec(loop) fn land(head: Tally, rest: List(Tally), r: I32, acc: I32) -> String {
+rec(loop) fn land(head: Tally, rest: List[Tally], r: I32, acc: I32) -> String {
   let upto = add_i32(acc, head.?{count});
   if(lt_i32(r, upto)) {
     head.?{word}
   } else match(rest.>List.un_list) {
-    (.(t: Tally, more: List(Tally)) { recur land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
+    (.(t: Tally, more: List[Tally]) { recur land(t, more, r, upto) }, .(_empty: .) { head.?{word} })
   }
 }
 
 /// One weighted draw against a non-empty word list. The list arrives split
 /// into head and tail because that is how the caller learned it was non-empty
 /// — an empty list has no band to land in, and this way the type carries that.
-fn draw(state: I32, from: String, head: Tally, rest: List(Tally)) -> Step {
+fn draw(state: I32, from: String, head: Tally, rest: List[Tally]) -> Step {
   let succs = cons(head, rest);
   let stepped = next(state);
   let r = roll(stepped, total_weight(succs));
@@ -79,7 +79,7 @@ fn draw(state: I32, from: String, head: Tally, rest: List(Tally)) -> Step {
   }
 }
 
-fn finish(state: I32, stop: Stop, words: List(String), draws: List(Step)) -> Drawn {
+fn finish(state: I32, stop: Stop, words: List[String], draws: List[Step]) -> Drawn {
   {
   , drawn_line = {line_words = reverse(words), line_stop = stop, line_draws = reverse(draws)}
   , drawn_state = state
@@ -100,8 +100,8 @@ rec(loop) fn extend(
 , state: I32
 , cur: String
 , n: I32
-, words: List(String)
-, draws: List(Step)
+, words: List[String]
+, draws: List[Step]
 ) -> Drawn {
   if(is_end(m, cur)) {
     finish(state, stopped_at_end(), words, draws)
@@ -109,7 +109,7 @@ rec(loop) fn extend(
     finish(state, stopped_at_cap(), words, draws)
   } else match(succs_of(m, cur).>List.un_list) {
     (
-    , .(head: Tally, rest: List(Tally)) {
+    , .(head: Tally, rest: List[Tally]) {
         let d = draw(state, cur, head, rest);
         recur extend(
         , m
@@ -131,16 +131,16 @@ rec(loop) fn extend(
 fn open_line(m: Model, cap: I32, state: I32) -> Drawn {
   match(starts_of(m).>List.un_list) {
     (
-    , .(head: Tally, rest: List(Tally)) {
+    , .(head: Tally, rest: List[Tally]) {
         let d = draw(state, start_label(), head, rest);
         extend(m, cap, d.?{step_state}, d.?{step_to}, 1, of1(d.?{step_to}), of1(d))
       }
-    , .(_empty: .) { finish(state, stopped_dry(), nil(String), nil(Step)) }
+    , .(_empty: .) { finish(state, stopped_dry(), nil[String], nil[Step]) }
     )
   }
 }
 
-rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: List(Line)) -> List(Line) {
+rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: List[Line]) -> List[Line] {
   if(leq_i32(remaining, 0)) {
     reverse(acc)
   } else {
@@ -151,6 +151,6 @@ rec(loop) fn weave_onto(m: Model, cap: I32, remaining: I32, state: I32, acc: Lis
 
 /// Weave `count` lines, threading one generator state through all of them, so
 /// the whole run is a single deterministic function of the fixture's seed.
-pub fn weave(m: Model, cap: I32, count: I32, seed: I32) -> List(Line) {
-  weave_onto(m, cap, count, seed_state(seed), nil(Line))
+pub fn weave(m: Model, cap: I32, count: I32, seed: I32) -> List[Line] {
+  weave_onto(m, cap, count, seed_state(seed), nil[Line])
 }

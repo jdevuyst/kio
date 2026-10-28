@@ -16,13 +16,13 @@ pub labels Exit =
   | { locked_to: ids.Room_id, locked_by: ids.Item_id }
   | { no_way: . };
 
-fn opens(to: ids.Room_id) -> Exit { {open_to = to}.>widen_sum(Exit) }
+fn opens(to: ids.Room_id) -> Exit { ({open_to = to}.>widen_sum)[Exit] }
 
 fn locked(to: ids.Room_id, key: ids.Item_id) -> Exit {
-  {locked_to = to, locked_by = key}.>widen_sum(Exit)
+  ({locked_to = to, locked_by = key}.>widen_sum)[Exit]
 }
 
-fn walled() -> Exit { {no_way=}.>widen_sum(Exit) }
+fn walled() -> Exit { ({no_way=}.>widen_sum)[Exit] }
 
 fn edge(from: ids.Room_id, d: ids.Dir_id, room: ids.Room_id, dir: ids.Dir_id) -> Bool {
   ids.and(ids.room_eq(from, room), ids.dir_eq(d, dir))

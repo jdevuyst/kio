@@ -547,7 +547,7 @@ can translate the storage token at the public boundary.
 ```kio
 // module app
 host type Array[T];
-host fn array_push[T](a: Array(T), v: T);
+host fn array_push[T](a: Array[T], v: T);
 ```
 
 emits
@@ -866,7 +866,7 @@ representation-varying container such as the native `Option` witness overrides
 `lift` and `project` as a pair so its abstract carrier stores the substitution-
 stable `Option<KioStoredValue>` representation. The conversion must be lossless,
 preserve the marker association in both directions, and use only the documented
-opaque-token API. The abstract `F(A)` occurrence remains `KioApplied1<F, A>`
+opaque-token API. The abstract `F[A]` occurrence remains `KioApplied1<F, A>`
 with facade `KioApply1<F, A>` regardless of that selection.
 
 #### Cost and source compatibility
@@ -964,7 +964,7 @@ let v = my_kiopkg::shapes::nominal::app::model::Foo::<MyHost>::unFoo(f);
 Each selected method retains the exact declared Kio member scheme after the
 Rust boundary mapping, including universal generics and function-valued
 payloads. Every kind-`*` binder is a `KioType` marker. A kind-`*→…→*` binder
-uses `KioTypeConstructorN`; an occurrence `F(A, …)` is
+uses `KioTypeConstructorN`; an occurrence `F[A₁]…[Aₙ]` is
 `KioAppliedN<F, A, …>` with facade `KioApplyN<F, A, …>`. The constructor
 witness's associated `Apply<A, …>: KioType` and public `lift` / `project`
 methods relate that abstract carrier to the exact declaration-owned marker;
@@ -1011,7 +1011,7 @@ let v = Foo::unFoo(f);
 
 A fn whose value-parameter type carries a `[T]` quantifier inside a
 function-typed slot — `fn if_c[A](b: [T](T & T) -> T, x: A, y: A) -> A {
-b(A, x, y) }` — is a *rank-N value parameter*. Rust has no closure type with
+b[A](x, y) }` — is a *rank-N value parameter*. Rust has no closure type with
 a type-generic `Fn::call`; the generated exact facade therefore owns two
 site-specific items. `KioForall_<exact-site>` is the host implementation trait
 whose generic `specialize<T: KioType>(&self)` method selects exactly one type
@@ -1080,7 +1080,7 @@ but computation cannot move past a later type or value application.
 **Construction and invocation.** A lambda literal targeting a rank-N slot
 (for example, `fn t() -> [A] (A & A) -> A { .[A](x, _y) { x } }`) is lowered
 from its canonical nested `Forall` / `Function` tree. A call such as
-`b(A, x, y)` advances the type stage and then calls the value stage; `A`
+`b[A](x, y)` advances the type stage and then calls the value stage; `A`
 itself produces no Rust argument. Direct calls and computed rank-N values
 follow the same tree, so a returned polymorphic value retains any preceding
 computation rather than being flattened into its consumer's value call.
@@ -1095,7 +1095,7 @@ The Rust backend is **type-erased internally** (§ Language families): Kio's
 higher-kinded application carries no additional *body* representation. The
 public facade nevertheless represents the complete type relation explicitly.
 Every saturated type is a `KioType` marker; each kind-`*→…→*` binder is a
-`KioTypeConstructorN` witness; and every abstract occurrence `F(A1, …, An)`
+`KioTypeConstructorN` witness; and every abstract occurrence `F[A1]…[An]`
 uses `KioAppliedN<F, A1, …, An>` whose facade is
 `KioApplyN<F, A1, …, An>`. Rust never uses `F::Apply<...>` as the abstract
 facade at some occurrences and `KioApplyN` at others. An external witness may
@@ -1180,7 +1180,7 @@ not runtime HKT machinery.
 A newtype whose payload is itself a polymorphic function — the dictionary pattern that underwrites `Functor[*F]`, `Monad[*F]`, and related abstractions — stores the complete staged callable in the body's universal erased representation. See [`backends/README.md` § Polymorphic newtype payloads](README.md#polymorphic-newtype-payloads) for the cross-cutting scheme; this section describes the Rust concretization.
 
 ```kio
-pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B) {
+pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B] {
   pub constructor mk_monad;  pub projector bind;  };
 ```
 
@@ -1318,9 +1318,9 @@ import hello(I32, String, print, int_to_string);
 pub labels { hed: I32, mid: String };
 
 pub fn main() {
-  let r = ({hed = 42(I32)}, {mid = "hi"(String)});
+  let r = ({hed = 42[I32]}, {mid = "hi"[String]});
   print(int_to_string(r.?{hed}));
-  print(", "(String));
+  print(", "[String]);
   print(r.?{mid})
 }
 ```

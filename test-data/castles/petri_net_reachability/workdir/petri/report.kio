@@ -29,7 +29,7 @@ fn print_witness(net: model.Net, result: search.Search) {
   match(result.?{search.first_deadlock}) {
     .(node: search.Node) {
       number("shortest deadlock depth: ", node.?{search.depth});
-      match(witness.reconstruct(result.?{search.visited}, node, lists.nil(_))) {
+      match(witness.reconstruct(result.?{search.visited}, node, lists.nil[_])) {
         .(path: witness.Path) {
           number("witness transitions: ", traversal.length(path));
           line("  0: initial -> ", witness.show_marking(net.?{model.initial}));

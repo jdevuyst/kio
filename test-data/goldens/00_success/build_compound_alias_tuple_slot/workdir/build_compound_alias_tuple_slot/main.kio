@@ -6,8 +6,8 @@ type Tail = . & .;
 
 type Whole = . & Tail;
 
-fn make() -> Whole { __pair__(., Tail, (), __pair__(., ., (), ())) }
+fn make() -> Whole { __pair__[.][Tail]((), __pair__[.][.]((), ())) }
 
-fn tail(x: Whole) -> Tail { __snd__(., Tail, x) }
+fn tail(x: Whole) -> Tail { __snd__[.][Tail](x) }
 
 pub fn main() { () }

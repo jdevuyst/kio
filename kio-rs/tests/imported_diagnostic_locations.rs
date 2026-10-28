@@ -86,12 +86,12 @@ fn imported_requirement_sites_do_not_replace_local_or_argument_internal_constrai
         (test_binary!("kio"), "p.take(local(()))"),
         (
             test_binary!("kio"),
-            "let f = p.pass(p.W -> ., p.take); f(())",
+            "let f = p.pass[p.W -> .](p.take); f(())",
         ),
         (test_binary!("kio-prime"), "p.take(local(()))"),
         (
             test_binary!("kio-prime"),
-            "let f = p.pass(p.W -> ., p.take); f(())",
+            "let f = p.pass[p.W -> .](p.take); f(())",
         ),
     ] {
         let source = format!(
@@ -129,7 +129,7 @@ fn imported_requirement_site_survives_explicit_universal_arguments() {
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         let stderr = check_control(
             &binary,
-            "module main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.poly; f(., ()) }\n",
+            "module main;\nimport provider as p;\n// Caller padding makes a foreign source span visibly unrelated to its annotation.\nfn caller() -> . { let f = p.poly; f[.](()) }\n",
         );
         assert!(
             stderr.contains("--> provider.kio:"),
@@ -231,7 +231,7 @@ fn host_requirement_context_survives_generic_and_returned_function_layers() {
     );
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         for (body, declaration) in [
-            ("let f = p.poly; f(., ())", "pub host fn poly"),
+            ("let f = p.poly; f[.](())", "pub host fn poly"),
             ("let f = p.later(()); f(())", "pub host fn later"),
         ] {
             let source = format!(
@@ -255,7 +255,7 @@ fn host_requirements_do_not_override_local_or_argument_internal_constraints() {
     for binary in [test_binary!("kio"), test_binary!("kio-prime")] {
         for body in [
             "p.take(local(()))",
-            "let f = p.pass(p.W -> ., p.take); f(())",
+            "let f = p.pass[p.W -> .](p.take); f(())",
             "let f = wrapper(()); f(())",
         ] {
             let source = format!(

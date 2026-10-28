@@ -28,19 +28,19 @@ pub labels Failure = { fault: Fault_kind, pos: I32 };
 /// What one expression came to: a value, or a failure.
 pub labels Answer = { value: I32 } | { failed: Failure };
 
-pub fn bad_token_fault() -> Fault_kind { {bad_token=}.>widen_sum(Fault_kind) }
+pub fn bad_token_fault() -> Fault_kind { ({bad_token=}.>widen_sum)[Fault_kind] }
 
-pub fn unmatched_close_fault() -> Fault_kind { {unmatched_close=}.>widen_sum(Fault_kind) }
+pub fn unmatched_close_fault() -> Fault_kind { ({unmatched_close=}.>widen_sum)[Fault_kind] }
 
-pub fn unclosed_open_fault() -> Fault_kind { {unclosed_open=}.>widen_sum(Fault_kind) }
+pub fn unclosed_open_fault() -> Fault_kind { ({unclosed_open=}.>widen_sum)[Fault_kind] }
 
-pub fn missing_operand_fault() -> Fault_kind { {missing_operand=}.>widen_sum(Fault_kind) }
+pub fn missing_operand_fault() -> Fault_kind { ({missing_operand=}.>widen_sum)[Fault_kind] }
 
-pub fn extra_operand_fault() -> Fault_kind { {extra_operand=}.>widen_sum(Fault_kind) }
+pub fn extra_operand_fault() -> Fault_kind { ({extra_operand=}.>widen_sum)[Fault_kind] }
 
-pub fn divide_by_zero_fault() -> Fault_kind { {divide_by_zero=}.>widen_sum(Fault_kind) }
+pub fn divide_by_zero_fault() -> Fault_kind { ({divide_by_zero=}.>widen_sum)[Fault_kind] }
 
-pub fn negative_exponent_fault() -> Fault_kind { {negative_exponent=}.>widen_sum(Fault_kind) }
+pub fn negative_exponent_fault() -> Fault_kind { ({negative_exponent=}.>widen_sum)[Fault_kind] }
 
 pub fn fault_at(kind: Fault_kind, pos: I32) -> Failure { {fault = kind, pos} }
 
@@ -48,9 +48,9 @@ pub fn fault_of(f: Failure) -> Fault_kind { f.?{fault} }
 
 pub fn pos_of(f: Failure) -> I32 { f.?{pos} }
 
-pub fn value_answer(n: I32) -> Answer { {value = n}.>widen_sum(Answer) }
+pub fn value_answer(n: I32) -> Answer { ({value = n}.>widen_sum)[Answer] }
 
-pub fn failed_answer(f: Failure) -> Answer { {failed = f}.>widen_sum(Answer) }
+pub fn failed_answer(f: Failure) -> Answer { ({failed = f}.>widen_sum)[Answer] }
 
 /// One row per fault kind: how it prints, and an ordinal. Two sum values
 /// cannot be compared without walking both, so the summary counts a kind by
@@ -76,8 +76,8 @@ pub fn kind_name(kind: Fault_kind) -> String { facts(kind).?{text} }
 
 /// Every fault kind, in report order. The summary walks this rather than
 /// carrying seven counters, so no arm can quietly lose its counter.
-pub fn all_kinds() -> List(Fault_kind) {
-  let ks = cons(negative_exponent_fault(), nil(Fault_kind));
+pub fn all_kinds() -> List[Fault_kind] {
+  let ks = cons(negative_exponent_fault(), nil[Fault_kind]);
   let ks = cons(divide_by_zero_fault(), ks);
   let ks = cons(extra_operand_fault(), ks);
   let ks = cons(missing_operand_fault(), ks);
@@ -86,7 +86,7 @@ pub fn all_kinds() -> List(Fault_kind) {
   cons(bad_token_fault(), ks)
 }
 
-pub fn count_kind(log: List(Fault_kind), kind: Fault_kind) -> I32 {
+pub fn count_kind(log: List[Fault_kind], kind: Fault_kind) -> I32 {
   let wanted = facts(kind).?{code};
   count(log, .(seen: Fault_kind) { int_eq(facts(seen).?{code}, wanted) })
 }

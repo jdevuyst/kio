@@ -10,9 +10,9 @@ awk 'BEGIN {
   print "module main; host type Float role(f32); host type Double role(f64);"
   printf "equiv whole_scale() { 1"
   for (i = 0; i < 660000; i++) printf "1"
-  print ".0e-660000(Float); 1.1111111640930176(Float) }"
+  print ".0e-660000[Float]; 1.1111111640930176[Float] }"
   printf "equiv fraction_scale() { -0."
   for (i = 0; i < 660000; i++) printf "0"
-  print "1e660001(Double); -1.0(Double) }"
+  print "1e660001[Double]; -1.0[Double] }"
 }' > main.kio
 "$KIO_BIN" test

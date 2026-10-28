@@ -3,4 +3,4 @@ module typecheck_user_macro_intrinsic_if_then_else/main;
 import macros(macro bool_if);
 import typecheck_user_macro_intrinsic_if_then_else(Bool);
 
-pub fn keep(b: Bool) -> Bool { bool_if(b, Bool) }
+pub fn keep(b: Bool) -> Bool { bool_if(b)[Bool] }

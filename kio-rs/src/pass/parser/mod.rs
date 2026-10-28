@@ -960,11 +960,11 @@ mod tests {
     fn tooling_other_argument_and_nested_type_owners_do_not_inherit_direct_calls() {
         let mut failures = Vec::new();
         for marked in [
-            "value.>identity(I|",
-            "recur(poly) again(I|",
-            "identity(I|).< value",
+            "value.>identity[I|",
+            "recur(poly) again[I|",
+            "identity[I|].< value",
             "outer(.(x: I|) { x })",
-            "outer((I|))",
+            "outer[(I|)]",
         ] {
             let cursor = marked.find('|').unwrap();
             let source = marked.replace('|', "");
@@ -1332,7 +1332,7 @@ mod tests {
 
         for (source, slot, start) in [
             (".(x: _", core::CursorSlot::Type, 5),
-            ("identity(_", core::CursorSlot::Argument, 9),
+            ("identity[_", core::CursorSlot::Type, 9),
         ] {
             let cursor = source.len() as u32;
             let probe = probe_tooling(source, None, Some(cursor), None);
@@ -1348,7 +1348,7 @@ mod tests {
             assert_eq!(context.slot, slot, "{source}");
         }
 
-        let complete = probe_tooling("identity(_)", None, None, None);
+        let complete = probe_tooling("identity[_]", None, None, None);
         let Some(ToolingSyntax::Expression(crate::ast::Expr::Call { args, .. })) = complete.syntax
         else {
             panic!("ordinary type-inference argument must still parse");
@@ -2736,7 +2736,7 @@ mod tests {
 
     #[test]
     fn tooling_selected_type_argument_discards_value_cursor_and_forall_probe_facts() {
-        let source = "consume((A) -> B)";
+        let source = "consume[(A) -> B]";
         let probe = probe_tooling(source, None, Some(source.find('A').unwrap() as u32), None);
         assert!(probe.parse_error.is_none());
         assert_eq!(
@@ -2771,7 +2771,9 @@ mod tests {
                         && fact.role == core::SourceNameRole::FunctionReference
                 })
                 .count(),
-            1
+            1,
+            "source-name facts: {:?}",
+            probe.facts.source_names
         );
         assert_eq!(
             crate::tokens::dump(source)
@@ -3161,6 +3163,13 @@ mod tests {
     use crate::error::{Applicability, Diagnostic};
     use crate::span::Span;
 
+    fn path_segments(expr: &Expr) -> &[PathSegment] {
+        let Expr::Path { segments, .. } = expr else {
+            panic!("expected a path callee, got {expr:?}");
+        };
+        segments
+    }
+
     fn p(src: &str) -> Module {
         parse(src).unwrap_or_else(|e| panic!("parse failed for {src:?}: {e:?}"))
     }
@@ -3373,16 +3382,31 @@ mod tests {
             applied.replace_range(span.start as usize..span.end as usize, &text);
             parse(&applied).expect("a repaired lambda argument must parse as a value");
         }
-        let module = p("module app; fn run() { consume(., . -> ., ()) }");
+        let module = p("module app; fn run() { consume[.][. -> .](()) }");
         let Item::FnDef(def) = &module.items[0] else {
             panic!("function")
         };
-        let Expr::Call { args, .. } = &def.body else {
-            panic!("call")
+        let Expr::Call { callee, args, .. } = &def.body else {
+            panic!("value call");
         };
-        assert!(matches!(args[0], CallArg::Type(Type::Unit { .. })));
-        assert!(matches!(args[1], CallArg::Type(Type::Function { .. })));
-        assert!(matches!(args[2], CallArg::Value(Expr::Unit { .. })));
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Unit { .. })]
+        ));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("function type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Function { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("Unit type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Unit { .. })]
+        ));
     }
 
     #[test]
@@ -4092,13 +4116,13 @@ mod tests {
 
     #[test]
     fn repl_forall_probe_uses_parser_context() {
-        for source in [".[", ".[A", ".[ *F", "f([A"] {
+        for source in [".[", ".[A", ".[ *F", "f[[A", "a[B", "a [ B"] {
             assert!(
                 expression_has_unclosed_structural_forall(source, None),
                 "expected an unclosed structural binder in {source:?}"
             );
         }
-        for source in ["a [ B", "a [! b", "a [ b", "xs[0", "[", ".[! { [!1 }"] {
+        for source in ["a [! b", "a [ b", "xs[0", "[", ".[! { [!1 }"] {
             assert!(
                 !expression_has_unclosed_structural_forall(source, None),
                 "ordinary bracket spelling became structural in {source:?}"
@@ -4129,8 +4153,8 @@ mod tests {
             Some(&local_prefix),
         ));
         let no_context_call =
-            probe_expression_fragment("f([ A", None).expect("unresolved call fragment probe");
-        assert_eq!(no_context_call.structural_bracket_offsets, vec![2]);
+            probe_expression_fragment("f[[ A", None).expect("unresolved call fragment probe");
+        assert_eq!(no_context_call.structural_bracket_offsets, vec![1, 2]);
         assert!(no_context_call.unclosed_structural_forall_at_eof);
         let prefix_call = probe_expression_fragment("f(<% a", Some(&local_prefix))
             .expect("prefix-operator call fragment probe");
@@ -4157,7 +4181,7 @@ mod tests {
 
     #[test]
     fn call_arg_forall_shape_is_independent_of_operator_grammar() {
-        let no_operator = p_expr_with_context("consume([A] Poly)", None)
+        let no_operator = p_expr_with_context("consume[[A] Poly]", None)
             .expect("polytype argument without an operator");
         let Expr::Call { args, .. } = no_operator else {
             panic!("expected call")
@@ -4165,30 +4189,30 @@ mod tests {
         assert!(matches!(args.as_slice(), [CallArg::Type(_)]));
 
         let bracket = local_expression_context("module x; varop [* *] { foldr step base; };");
-        let with_operator = p_expr_with_context("consume([A] Poly)", Some(&bracket))
+        let with_operator = p_expr_with_context("consume[[A] Poly]", Some(&bracket))
             .expect("same spelling with local varop");
         let Expr::Call { args, .. } = with_operator else {
             panic!("expected call")
         };
         assert!(matches!(args.as_slice(), [CallArg::Type(_)]));
-        let probe = probe_expression_fragment("consume([A] Poly)", Some(&bracket))
+        let probe = probe_expression_fragment("consume[[A] Poly]", Some(&bracket))
             .expect("forall call probe with local varop");
-        assert_eq!(probe.structural_bracket_offsets, [8, 10]);
+        assert_eq!(probe.structural_bracket_offsets, [7, 8, 10, 16]);
         assert!(!probe.unclosed_structural_forall_at_eof);
 
         let consumer =
             parse("module consumer; import syntax(varop [* *]);").expect("selective varop import");
         let imported =
             expression_parse_context(&consumer).expect("imported varop expression context");
-        let imported_arg = p_expr_with_context("consume([A] Poly)", Some(&imported))
+        let imported_arg = p_expr_with_context("consume[[A] Poly]", Some(&imported))
             .expect("same spelling with selectively imported varop");
         let Expr::Call { args, .. } = imported_arg else {
             panic!("expected imported-context call")
         };
         assert!(matches!(args.as_slice(), [CallArg::Type(_)]));
-        let imported_probe = probe_expression_fragment("consume([A] Poly)", Some(&imported))
+        let imported_probe = probe_expression_fragment("consume[[A] Poly]", Some(&imported))
             .expect("forall call probe with imported varop");
-        assert_eq!(imported_probe.structural_bracket_offsets, [8, 10]);
+        assert_eq!(imported_probe.structural_bracket_offsets, [7, 8, 10, 16]);
         assert!(!imported_probe.unclosed_structural_forall_at_eof);
         for source in [
             "module x; op [ _ ] _ { impl bracket; };",
@@ -4212,10 +4236,10 @@ mod tests {
         }
         assert!(p_expr_with_context(".[] { []1 }", None).is_err());
 
-        let call = probe_expression_fragment("f([A", None).expect("call fragment probe");
-        assert_eq!(call.structural_bracket_offsets, vec![2]);
+        let call = probe_expression_fragment("f[[A", None).expect("call fragment probe");
+        assert_eq!(call.structural_bracket_offsets, vec![1, 2]);
         assert!(call.unclosed_structural_forall_at_eof);
-        assert!(p_expr_with_context("f([A] A -> A)", None).is_ok());
+        assert!(p_expr_with_context("f[[A] A -> A]", None).is_ok());
     }
 
     #[test]
@@ -4946,7 +4970,7 @@ fn ok() -> . { () }
             "module x; fn marker[A] -> . { () }",
             "module x; pure fn marker[A][B] { () }",
             "module x; fn marker() -> [A] . { .[A] { () } }",
-            "module x; fn marker() -> [A][B] . { .[A, B] -> . { () } }",
+            "module x; fn marker() -> [A][B] . { .[A][B] -> . { () } }",
             "module x; fn marker() -> [A] . { . [A] // body\n { () } }",
         ] {
             let eager = p(source);
@@ -5027,8 +5051,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn fn_comma_binder_group_accepts_shorthand() {
-        let m = p("module x; fn pair[A, B](x: A, y: B) -> A { x }");
+    fn fn_binders_use_separate_brackets() {
+        let m = p("module x; fn pair[A][B](x: A, y: B) -> A { x }");
         match &m.items[0] {
             Item::FnDef(d) => {
                 assert!(matches!(&d.sig.params[0], SignatureParam::Type(tp) if tp.name == "A"));
@@ -5037,6 +5061,7 @@ fn ok() -> . { () }
             }
             other => panic!("expected FnDef, got {other:?}"),
         }
+        assert!(parse("module x; fn pair[A, B](x: A, y: B) -> A { x }").is_err());
     }
 
     #[test]
@@ -5081,8 +5106,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn newtype_comma_binder_group_accepts_shorthand() {
-        let m = p("module x; newtype Box[A, B] : A { constructor mk_box; projector un_box; };");
+    fn newtype_binders_use_separate_brackets() {
+        let m = p("module x; newtype Box[A][B] : A { constructor mk_box; projector un_box; };");
         match &m.items[0] {
             Item::Newtype(d) => {
                 assert_eq!(d.type_params.len(), 2);
@@ -5091,6 +5116,10 @@ fn ok() -> . { () }
             }
             other => panic!("expected Newtype, got {other:?}"),
         }
+        assert!(
+            parse("module x; newtype Box[A, B] : A { constructor mk_box; projector un_box; };")
+                .is_err()
+        );
     }
 
     #[test]
@@ -5115,8 +5144,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn type_alias_comma_binder_group_accepts_shorthand() {
-        let m = p("module x; type Pair[A, B] = A & B;");
+    fn type_alias_binders_use_separate_brackets() {
+        let m = p("module x; type Pair[A][B] = A & B;");
         match &m.items[0] {
             Item::TypeAlias(t) => {
                 assert_eq!(t.type_params.len(), 2);
@@ -5125,6 +5154,7 @@ fn ok() -> . { () }
             }
             other => panic!("expected a type alias, got {other:?}"),
         }
+        assert!(parse("module x; type Pair[A, B] = A & B;").is_err());
     }
 
     #[test]
@@ -5159,7 +5189,7 @@ fn ok() -> . { () }
     fn compact_forall_brackets_peel_from_maximal_runs() {
         p("module x; fn higher[A][*F][**G](x: A) -> A { x }");
         p("module x; type Nested = [A][B] A -> B;");
-        p("module x; fn lambda() -> . { .[*F](x: F(.)) -> F(.) { x } }");
+        p("module x; fn lambda() -> . { .[*F](x: F[.]) -> F[.] { x } }");
     }
 
     #[test]
@@ -5243,7 +5273,7 @@ fn ok() -> . { () }
 
     #[test]
     fn rec_single_fn_shorthand_parses() {
-        let m = p("module x; rec(loop) pub fn f[A](x: A) -> A { recur f(String, x) }");
+        let m = p("module x; rec(loop) pub fn f[A](x: A) -> A { recur f[String](x) }");
         let Item::RecGroup(group, _) = &m.items[0] else {
             panic!("expected RecGroup, got {:?}", m.items[0]);
         };
@@ -5259,17 +5289,22 @@ fn ok() -> . { () }
         let member = &group.members[0];
         assert!(member.vis.is_pub());
         assert_eq!(member.name, "f");
-        let Expr::RecCall { callee, args, .. } = &member.body else {
+        let Expr::RecCall { callee, stages, .. } = &member.body else {
             panic!("expected rec call body, got {:?}", member.body);
         };
         assert_eq!(callee.name, "f");
-        assert_eq!(args.len(), 2);
+        assert_eq!(stages.len(), 2);
+        assert!(matches!(stages[0].args.as_slice(), [CallArg::Type(_)]));
+        assert!(matches!(
+            stages[1].args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
+        ));
     }
 
     #[test]
     fn recursive_data_singleton_spellings_parse() {
         for source in [
-            "module x; rec newtype List[A] : . | (A & List(A)) { constructor mk_list; projector un_list; };",
+            "module x; rec newtype List[A] : . | (A & List[A]) { constructor mk_list; projector un_list; };",
             "module x; rec labels Tree = { leaf: I32 } | { branch: Tree & Tree };",
         ] {
             parse(source).unwrap_or_else(|error| {
@@ -5453,7 +5488,7 @@ fn ok() -> . { () }
     #[test]
     fn recursive_members_are_impure_across_eager_lazy_and_tooling_parses() {
         for source in [
-            "module x; pub rec(loop) fn f[A](x: A) -> A { recur f(A, x) }",
+            "module x; pub rec(loop) fn f[A](x: A) -> A { recur f[A](x) }",
             "module x; rec(loop) { pub fn f(x: .) { recur g(x) }; fn g(x: .) { x } }",
         ] {
             let eager = parse(source).expect("recursive declaration");
@@ -5844,7 +5879,7 @@ fn ok() -> . { () }
 
     #[test]
     fn newtype_parametric_with_rec() {
-        let m = p("module x; rec newtype List[A] : (. | (A & List(A))) { \
+        let m = p("module x; rec newtype List[A] : (. | (A & List[A])) { \
              pub constructor cons; pub projector un_list; };");
         if let Item::Newtype(d) = &m.items[0] {
             assert_eq!(d.name, "List");
@@ -6077,8 +6112,9 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn function_type_comma_binder_group_accepts_shorthand() {
-        p("module x; type F = [A, B]A -> B;");
+    fn function_type_binders_use_separate_brackets() {
+        p("module x; type F = [A][B]A -> B;");
+        assert!(parse("module x; type F = [A, B]A -> B;").is_err());
     }
 
     #[test]
@@ -6860,12 +6896,8 @@ fn ok() -> . { () }
         let m = p("module x; fn f() -> . { r.>f }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
-                Expr::Ufcs {
-                    callee_segments,
-                    args,
-                    ..
-                } => {
-                    assert_eq!(callee_segments, &vec!["f".to_owned()]);
+                Expr::Ufcs { callee, args, .. } => {
+                    assert_eq!(path_segments(callee), &vec!["f".to_owned()]);
                     assert!(args.is_empty());
                 }
                 other => panic!("expected Ufcs, got {other:?}"),
@@ -7130,12 +7162,12 @@ fn ok() -> . { () }
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
-                    callee_segments,
+                    callee,
                     flavor,
                     args,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["f".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["f".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ReceiverFirst);
                     assert_eq!(args.len(), 2);
                 }
@@ -7150,12 +7182,12 @@ fn ok() -> . { () }
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
-                    callee_segments,
+                    callee,
                     flavor,
                     args,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["f".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["f".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ReceiverLast);
                     assert_eq!(args.len(), 2);
                 }
@@ -7167,51 +7199,38 @@ fn ok() -> . { () }
     #[test]
     fn ufcs_regular_callee_accepts_explicit_type_args() {
         for (src, expected_flavor) in [
-            (
-                "module x; fn f() -> . { r.>f(T, x) }",
-                UfcsFlavor::ReceiverFirst,
-            ),
-            (
-                "module x; fn f() -> . { r.>>f(T, x) }",
-                UfcsFlavor::ReceiverLast,
-            ),
-            (
-                "module x; fn f() -> . { f(T, x).<r }",
-                UfcsFlavor::ArgumentLast,
-            ),
-            (
-                "module x; fn f() -> . { f(T, x).<<r }",
-                UfcsFlavor::ArgumentFirst,
-            ),
+            ("r.>f[T](x)", UfcsFlavor::ReceiverFirst),
+            ("r.>>f[T](x)", UfcsFlavor::ReceiverLast),
+            ("f[T](x).<r", UfcsFlavor::ArgumentLast),
+            ("f[T](x).<<r", UfcsFlavor::ArgumentFirst),
         ] {
-            let m = p(src);
-            if let Item::FnDef(d) = &m.items[0] {
-                match &d.body {
-                    Expr::Ufcs {
-                        callee_segments,
-                        flavor,
-                        args,
-                        macro_call,
-                        ..
-                    } => {
-                        assert_eq!(callee_segments, &vec!["f".to_owned()]);
-                        assert_eq!(*flavor, expected_flavor, "source: {src}");
-                        assert!(
-                            macro_call.is_none(),
-                            "regular UFCS should not carry macro_call"
-                        );
-                        assert_eq!(args.len(), 2, "source: {src}");
-                        assert!(
-                            matches!(
-                                args[0],
-                                CallArg::Type(_) | CallArg::Value(Expr::Path { .. })
-                            ),
-                            "type-shaped first arg should be preserved for typing: {src}"
-                        );
-                    }
-                    other => panic!("expected Ufcs for {src}, got {other:?}"),
-                }
-            }
+            let m = p(&format!("module x; fn g() {{ {src} }}"));
+            let Item::FnDef(d) = &m.items[0] else {
+                panic!("function");
+            };
+            let Expr::Ufcs {
+                callee,
+                flavor,
+                args,
+                macro_call,
+                ..
+            } = &d.body
+            else {
+                panic!("UFCS: {src}");
+            };
+            assert_eq!(*flavor, expected_flavor);
+            assert!(macro_call.is_none());
+            assert!(matches!(
+                args.as_slice(),
+                [CallArg::Value(Expr::Path { .. })]
+            ));
+            let Expr::Call { callee, args, .. } = callee.as_ref() else {
+                panic!("type call: {src}");
+            };
+            assert_eq!(path_segments(callee), &["f".to_owned()]);
+            assert!(
+                matches!(args.as_slice(), [CallArg::Type(Type::Path { segments, .. })] if segments[0].name == "T")
+            );
         }
     }
 
@@ -7222,13 +7241,13 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     flavor,
                     args,
                     ..
                 } => {
                     assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-                    assert_eq!(callee_segments, &vec!["f".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["f".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ArgumentLast);
                     assert!(args.is_empty());
                 }
@@ -7244,13 +7263,13 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     flavor,
                     args,
                     ..
                 } => {
                     assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-                    assert_eq!(callee_segments, &vec!["f".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["f".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ArgumentFirst);
                     assert_eq!(args.len(), 1);
                 }
@@ -7266,11 +7285,11 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     flavor,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["g".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["g".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ReceiverFirst);
                     assert!(matches!(
                         receiver.as_ref(),
@@ -7312,10 +7331,8 @@ fn ok() -> . { () }
         let m = p("module x; import provider as m; fn f() -> . { r.>m.f(x) }");
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
-                Expr::Ufcs {
-                    callee_segments, ..
-                } => {
-                    assert_eq!(callee_segments, &vec!["m".to_owned(), "f".to_owned()]);
+                Expr::Ufcs { callee, .. } => {
+                    assert_eq!(path_segments(callee), &vec!["m".to_owned(), "f".to_owned()]);
                 }
                 other => panic!("expected Ufcs, got {other:?}"),
             }
@@ -7331,11 +7348,11 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     args,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["g".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["g".to_owned()]);
                     assert_eq!(args.len(), 1);
                     // Inner receiver is itself a UFCS.
                     assert!(matches!(receiver.as_ref(), Expr::Ufcs { .. }));
@@ -7389,13 +7406,13 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     args,
                     macro_call,
                     ..
                 } => {
                     assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-                    assert_eq!(callee_segments, &vec!["iso".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["iso".to_owned()]);
                     assert!(args.is_empty(), "no target supplied");
                     assert!(
                         macro_call.is_none(),
@@ -7407,33 +7424,35 @@ fn ok() -> . { () }
         }
     }
 
-    /// `r.>into(T)` parses to `Expr::Ufcs` with the target type
-    /// recorded as the single trailing ordinary call arg.
     #[test]
     fn macro_ufcs_with_target_into() {
-        let m = p("module x; fn f() -> . { r.>into(T) }");
-        if let Item::FnDef(d) = &m.items[0] {
-            match &d.body {
-                Expr::Ufcs {
-                    callee_segments,
-                    args,
-                    macro_call,
-                    ..
-                } => {
-                    assert_eq!(callee_segments, &vec!["into".to_owned()]);
-                    assert_eq!(args.len(), 1);
-                    assert!(
-                        matches!(
-                            args[0],
-                            CallArg::Type(_) | CallArg::Value(Expr::Path { .. })
-                        ),
-                        "generic UFCS stores the raw call arg until typing"
-                    );
-                    assert!(macro_call.is_none());
-                }
-                other => panic!("expected Ufcs, got {other:?}"),
-            }
-        }
+        let m = p("module x; fn f() { (r.>into)[T] }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Path { .. })]
+        ));
+        let Expr::Ufcs {
+            receiver,
+            callee,
+            flavor,
+            macro_call,
+            args,
+            ..
+        } = callee.as_ref()
+        else {
+            panic!("UFCS");
+        };
+        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
+        assert_eq!(path_segments(callee), &["into".to_owned()]);
+        assert_eq!(*flavor, UfcsFlavor::ReceiverFirst);
+        assert!(macro_call.is_none());
+        assert!(args.is_empty());
     }
 
     #[test]
@@ -7442,13 +7461,13 @@ fn ok() -> . { () }
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
-                    callee_segments,
+                    callee,
                     flavor,
                     macro_call,
                     args,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["iso".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["iso".to_owned()]);
                     assert_eq!(*flavor, UfcsFlavor::ReceiverLast);
                     assert!(macro_call.is_none());
                     assert!(args.is_empty());
@@ -7459,27 +7478,34 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn macro_call_splice_argument_first_preserves_ufcs_until_typing() {
-        let m = p("module x; fn f() -> . { iso(T).<<r }");
-        if let Item::FnDef(d) = &m.items[0] {
-            match &d.body {
-                Expr::Ufcs {
-                    receiver,
-                    callee_segments,
-                    flavor,
-                    macro_call,
-                    args,
-                    ..
-                } => {
-                    assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-                    assert_eq!(callee_segments, &vec!["iso".to_owned()]);
-                    assert_eq!(*flavor, UfcsFlavor::ArgumentFirst);
-                    assert!(macro_call.is_none());
-                    assert_eq!(args.len(), 1, "target slot should remain unspliced");
-                }
-                other => panic!("expected macro call-splice UFCS, got {other:?}"),
-            }
-        }
+    fn call_splice_argument_first_precedes_returned_type_stage() {
+        let m = p("module x; fn f() { (iso.<<r)[T] }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Path { .. })]
+        ));
+        let Expr::Ufcs {
+            receiver,
+            callee,
+            flavor,
+            macro_call,
+            args,
+            ..
+        } = callee.as_ref()
+        else {
+            panic!("UFCS");
+        };
+        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
+        assert_eq!(path_segments(callee), &["iso".to_owned()]);
+        assert_eq!(*flavor, UfcsFlavor::ArgumentFirst);
+        assert!(macro_call.is_none());
+        assert!(args.is_empty());
     }
 
     #[test]
@@ -7493,16 +7519,14 @@ fn ok() -> . { () }
             if let Item::FnDef(d) = &m.items[0] {
                 match &d.body {
                     Expr::Ufcs {
-                        callee_segments,
-                        macro_call,
-                        ..
+                        callee, macro_call, ..
                     } => {
                         assert!(
                             macro_call.is_none(),
                             "parser leaves macro selection unresolved on {src}"
                         );
                         assert_eq!(
-                            callee_segments,
+                            path_segments(callee),
                             &vec![expected_name.to_owned()],
                             "for {src}"
                         );
@@ -7524,19 +7548,19 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     macro_call,
                     ..
                 } => {
                     assert!(macro_call.is_none(), "outer UFCS is regular, no macro_call");
-                    assert_eq!(callee_segments, &vec!["frob".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["frob".to_owned()]);
                     match receiver.as_ref() {
                         Expr::Ufcs {
-                            callee_segments: inner_segs,
+                            callee: inner_segs,
                             macro_call: inner_macro_call,
                             ..
                         } => {
-                            assert_eq!(inner_segs, &vec!["iso".to_owned()]);
+                            assert_eq!(path_segments(inner_segs), &vec!["iso".to_owned()]);
                             assert!(inner_macro_call.is_none());
                         }
                         other => panic!("expected inner macro UFCS, got {other:?}"),
@@ -7557,7 +7581,7 @@ fn ok() -> . { () }
             match &d.body {
                 Expr::Ufcs {
                     receiver,
-                    callee_segments,
+                    callee,
                     macro_call,
                     ..
                 } => {
@@ -7565,14 +7589,14 @@ fn ok() -> . { () }
                         macro_call.is_none(),
                         "parser leaves macro selection unresolved"
                     );
-                    assert_eq!(callee_segments, &vec!["iso".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["iso".to_owned()]);
                     match receiver.as_ref() {
                         Expr::Ufcs {
-                            callee_segments: inner_segs,
+                            callee: inner_segs,
                             macro_call: inner_macro_call,
                             ..
                         } => {
-                            assert_eq!(inner_segs, &vec!["frob".to_owned()]);
+                            assert_eq!(path_segments(inner_segs), &vec!["frob".to_owned()]);
                             assert!(inner_macro_call.is_none(), "inner is regular UFCS");
                         }
                         other => panic!("expected inner regular UFCS, got {other:?}"),
@@ -7591,12 +7615,12 @@ fn ok() -> . { () }
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
-                    callee_segments,
+                    callee,
                     macro_call,
                     args,
                     ..
                 } => {
-                    assert_eq!(callee_segments, &vec!["frob".to_owned()]);
+                    assert_eq!(path_segments(callee), &vec!["frob".to_owned()]);
                     assert!(
                         macro_call.is_none(),
                         "parser leaves macro selection unresolved"
@@ -7615,7 +7639,7 @@ fn ok() -> . { () }
             panic!("function")
         };
         assert!(
-            matches!(&def.body, Expr::Ufcs { callee_segments, macro_call: None, .. } if callee_segments.len() == 2)
+            matches!(&def.body, Expr::Ufcs { callee, macro_call: None, .. } if path_segments(callee).len() == 2)
         );
         assert!(
             crate::scope_walk::macro_calls(&module)
@@ -7625,35 +7649,35 @@ fn ok() -> . { () }
         );
     }
 
-    /// `r.>atom(T)` parses — the trailing target is admitted
-    /// (same shape as `iso`/`onto`/etc.); the single-arm
-    /// constraint on the target is enforced by the `atom` user
-    /// macro's own logic, not a built-in typer pass.
     #[test]
     fn macro_ufcs_atom_with_target_parses() {
-        let m = p("module x; fn f() -> . { r.>atom(T) }");
-        if let Item::FnDef(d) = &m.items[0] {
-            match &d.body {
-                Expr::Ufcs {
-                    callee_segments,
-                    args,
-                    macro_call,
-                    ..
-                } => {
-                    assert!(macro_call.is_none());
-                    assert_eq!(callee_segments, &vec!["atom".to_owned()]);
-                    assert_eq!(args.len(), 1, "expected target type-arg");
-                    assert!(
-                        matches!(
-                            args[0],
-                            CallArg::Type(_) | CallArg::Value(Expr::Path { .. })
-                        ),
-                        "macro_call UFCS keeps the parser-classified target argument for type-directed slot selection"
-                    );
-                }
-                other => panic!("expected macro UFCS Ufcs, got {other:?}"),
-            }
-        }
+        let m = p("module x; fn f() { (r.>atom)[T] }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Path { .. })]
+        ));
+        let Expr::Ufcs {
+            receiver,
+            callee,
+            flavor,
+            macro_call,
+            args,
+            ..
+        } = callee.as_ref()
+        else {
+            panic!("UFCS");
+        };
+        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
+        assert_eq!(path_segments(callee), &["atom".to_owned()]);
+        assert_eq!(*flavor, UfcsFlavor::ReceiverFirst);
+        assert!(macro_call.is_none());
+        assert!(args.is_empty());
     }
 
     // ---- Operators (op) ------------------------------------------------
@@ -8639,10 +8663,10 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn int_literal_call_form_carries_annotation() {
-        // `100(I32)` — the trailing `(Type)` is the explicit
+    fn int_literal_bracket_form_carries_annotation() {
+        // `100[I32]` — the trailing `[Type]` is the explicit
         // annotation, parsed onto the literal node.
-        let m = p("module x; fn f() -> . { let n = 100(I32); () }");
+        let m = p("module x; fn f() -> . { let n = 100[I32]; () }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Let { value, .. } = &d.body
         {
@@ -8661,8 +8685,8 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn float_literal_call_form_carries_annotation() {
-        let m = p("module x; fn f() -> . { let n = 3.14(F64); () }");
+    fn float_literal_bracket_form_carries_annotation() {
+        let m = p("module x; fn f() -> . { let n = 3.14[F64]; () }");
         if let Item::FnDef(d) = &m.items[0]
             && let Expr::Let { value, .. } = &d.body
         {
@@ -8706,73 +8730,104 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn call_arg_capital_ident_routes_via_backtracking() {
-        // After the call-arg backtracking fix: any Ident-headed
-        // call-arg parses as expression first, then falls back to
-        // type. A type-shaped path like `String` parses
-        // successfully as `Expr::Path` and lands as `CallArg::Value`.
-        // The typer's existing `Expr::Path` reinterpretation in
-        // type-arg slots keeps such call sites kind-correct.
-        let m = p(r#"module x; fn f() -> . { id(String, "hi") }"#);
-        if let Item::FnDef(d) = &m.items[0]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(
-                matches!(&args[0], CallArg::Value(Expr::Path { .. })),
-                "got: {:?}",
-                args[0]
-            );
-            assert!(matches!(args[1], CallArg::Value(Expr::StrLit { .. })));
-        }
+    fn type_and_value_arguments_have_distinct_stages() {
+        let m = p(r#"module x; fn f() { id[String]("hi") }"#);
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::StrLit { .. })]
+        ));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("type call");
+        };
+        assert_eq!(path_segments(callee), &["id".to_owned()]);
+        assert!(
+            matches!(args.as_slice(), [CallArg::Type(Type::Path { segments, .. })] if segments[0].name == "String")
+        );
+        assert!(parse(r#"module x; fn f() { id(String, "hi") }"#).is_err());
     }
 
     #[test]
     fn failed_dot_lambda_call_arg_does_not_become_a_forall_type() {
         assert!(
             parse("module x; fn f() -> . { consume(.[A] A) }").is_err(),
-            "a failed `.[` lambda parse must retain its leading dot when the call-arg type fallback runs"
+            "a type binder cannot replace a value lambda body"
         );
     }
 
     #[test]
-    fn call_arg_paren_type_form_routes_to_type() {
-        // `(A & B)` at a call-arg site is a type-only form. Backtracking:
-        // the value-side `expr_paren` rejects `&` after the first item,
-        // we restore and try `type_expr`, which succeeds.
-        let m = p("module x; fn f() -> . { id((A & B), 0) }");
-        if let Item::FnDef(d) = &m.items[0]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(matches!(&args[0], CallArg::Type(Type::Product { .. })));
-        }
+    fn grouped_product_type_is_an_explicit_type_stage() {
+        let m = p("module x; fn f() { id[(A & B)](0) }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::IntLit { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Product { .. })]
+        ));
     }
 
     #[test]
-    fn call_arg_product_type_wins_over_amp_operator() {
-        let m = p("module x; \
-             fn both(a: A, b: A) -> A { a } \
-             op _ & _ { impl both; }; \
-             fn f() -> . { id(String & String, value) }");
-        if let Item::FnDef(d) = &m.items[2]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(matches!(&args[0], CallArg::Type(Type::Product { .. })));
-            assert!(matches!(&args[1], CallArg::Value(Expr::Path { .. })));
-        }
+    fn type_stage_product_is_independent_of_amp_operator() {
+        let m = p(
+            "module x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[String & String](value) }",
+        );
+        let Item::FnDef(d) = &m.items[2] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Product { .. })]
+        ));
     }
 
     #[test]
-    fn call_arg_paren_product_type_wins_over_amp_operator() {
-        let m = p("module x; \
-             fn both(a: A, b: A) -> A { a } \
-             op _ & _ { impl both; }; \
-             fn f() -> . { id((String & String), value) }");
-        if let Item::FnDef(d) = &m.items[2]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(matches!(&args[0], CallArg::Type(Type::Product { .. })));
-            assert!(matches!(&args[1], CallArg::Value(Expr::Path { .. })));
-        }
+    fn grouped_type_stage_product_is_independent_of_amp_operator() {
+        let m = p(
+            "module x; fn both(a: A, b: A) -> A { a } op _ & _ { impl both; }; fn f() { id[(String & String)](value) }",
+        );
+        let Item::FnDef(d) = &m.items[2] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Product { .. })]
+        ));
     }
 
     #[test]
@@ -8790,30 +8845,40 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn call_arg_bare_bang_stays_bottom_type_with_prefix_operator_in_scope() {
-        let m = p("module x; \
-             fn invert(a: A) -> A { a } \
-             op ! _ { impl invert; }; \
-             fn f() -> . { id(!, value) }");
-        if let Item::FnDef(d) = &m.items[2]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(matches!(&args[0], CallArg::Type(Type::Bottom { .. })));
-            assert!(matches!(&args[1], CallArg::Value(Expr::Path { .. })));
-        }
+    fn type_stage_bottom_is_independent_of_prefix_operator() {
+        let m = p(
+            "module x; fn invert(a: A) -> A { a } op ! _ { impl invert; }; fn f() { id[!](value) }",
+        );
+        let Item::FnDef(d) = &m.items[2] else {
+            panic!("function");
+        };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Bottom { .. })]
+        ));
     }
 
     #[test]
-    fn call_arg_comma_tuple_stays_value() {
-        let m = p("module x; fn f() -> . { id((A, B), 0) }");
-        if let Item::FnDef(d) = &m.items[0]
-            && let Expr::Call { args, .. } = &d.body
-        {
-            assert!(matches!(
-                &args[0],
-                CallArg::Value(Expr::Tuple { items, .. }) if items.len() == 2
-            ));
-        }
+    fn call_arg_tuple_members_stay_values() {
+        let m = p("module x; fn f() { id((A.mk(a), B.mk(b)), 0) }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
+        };
+        let Expr::Call { args, .. } = &d.body else {
+            panic!("value call");
+        };
+        assert!(matches!(&args[0], CallArg::Value(Expr::Tuple { items, .. }) if items.len() == 2));
+        assert!(parse("module x; fn f() { id((A, B), 0) }").is_err());
     }
 
     #[test]
@@ -8839,27 +8904,27 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn call_arg_leading_sum_type_form_routes_to_type() {
-        // `| A | B` is valid type syntax in a macro target slot even
-        // though it starts with a symbol run. The call-arg dispatcher
-        // must try expression first, then fall back to `type_expr`.
-        let m = p("module x; fn f() -> . { flatten_sum(x, | A | B) }");
+    fn returned_type_stage_accepts_leading_sum() {
+        let m = p("module x; fn f() { flatten_sum(x)[| A | B] }");
         let Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
-        let Expr::Call { args, .. } = &d.body else {
-            panic!("expected macro with leading-sum target, got {:?}", d.body);
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("type call");
         };
-        assert!(matches!(args.get(1), Some(CallArg::Type(Type::Sum { .. }))));
+        assert!(matches!(args.as_slice(), [CallArg::Type(Type::Sum { .. })]));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("value call");
+        };
+        assert_eq!(path_segments(callee), &["flatten_sum".to_owned()]);
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
+        ));
     }
 
     #[test]
     fn call_arg_member_call_routes_to_value() {
-        // `List.un_list(a, xs)` at a call-arg site is a value-position
-        // member call whose head spells like a type name. Pre-fix the
-        // type-head heuristic forced this into `type_expr` and
-        // surfaced a kind error; backtracking now parses it as an
-        // expression call.
         let m = p("module x; \
              fn f() -> . { id(List.un_list(a, xs), 0) }");
         if let Item::FnDef(d) = &m.items[0]
@@ -8943,146 +9008,178 @@ fn ok() -> . { () }
         let Expr::BlockCall { prefix, .. } = &d.body else {
             panic!("expected block call, got {:?}", d.body);
         };
-        assert!(matches!(prefix.as_slice(), [Expr::LabelValue { .. }]));
+        assert_eq!(prefix.len(), 1);
+        assert!(matches!(
+            prefix[0].args.as_slice(),
+            [CallArg::Value(Expr::LabelValue { .. })]
+        ));
     }
 
     #[test]
     fn match_macro_direct_call_parses() {
-        // `match(v, (<arms>), B)` is parsed as an ordinary user
-        // macro call; resolution supplies the call contract later.
-        let m = p("module x; fn f(v: I32 | String) -> . { \
-             match(v, (.(n: I32) { () }, .(s: String) { () }), . | .) }");
+        let m = p(
+            "module x; fn f(v: I32 | String) { match(v)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
+        );
         let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
         let Expr::Call { callee, args, .. } = &f.body else {
-            panic!("expected match macro, got {:?}", f.body);
+            panic!("target type");
         };
-        assert!(
-            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["match"])
-        );
-        assert_eq!(args.len(), 3);
+        assert!(matches!(args.as_slice(), [CallArg::Type(Type::Sum { .. })]));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("arms");
+        };
         assert!(matches!(
-            args.first(),
-            Some(CallArg::Value(Expr::Path { .. }))
+            args.as_slice(),
+            [
+                CallArg::Value(Expr::FnExpr { .. }),
+                CallArg::Value(Expr::FnExpr { .. })
+            ]
         ));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("scrutinee");
+        };
+        assert_eq!(path_segments(callee), &["match".to_owned()]);
         assert!(matches!(
-            args.get(1),
-            Some(CallArg::Value(Expr::Tuple { .. }))
+            args.as_slice(),
+            [CallArg::Value(Expr::Path { .. })]
         ));
-        assert!(matches!(args.get(2), Some(CallArg::Type(Type::Sum { .. }))));
     }
 
     #[test]
     fn match_macro_arm_parses_nested_macro_with_leading_sum_target() {
-        let m = p("module x; fn f(v: A) -> A | B { \
-             match(v, .(x: A) { flatten_sum(x, | A | B) }) }");
+        let m =
+            p("module x; fn f(v: A) -> A | B { match(v)(.(x: A) { flatten_sum(x)[| A | B] }) }");
         let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
         let Expr::Call { callee, args, .. } = &f.body else {
-            panic!("expected match macro, got {:?}", f.body);
+            panic!("arms");
         };
-        assert!(
-            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["match"])
-        );
-        assert_eq!(args.len(), 2);
+        let [CallArg::Value(Expr::FnExpr { body, .. })] = args.as_slice() else {
+            panic!("one arm");
+        };
+        let Expr::Call { args, .. } = body.as_ref() else {
+            panic!("nested call");
+        };
+        assert!(matches!(args.as_slice(), [CallArg::Type(Type::Sum { .. })]));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("scrutinee");
+        };
+        assert_eq!(path_segments(callee), &["match".to_owned()]);
+        assert_eq!(args.len(), 1);
     }
 
     #[test]
     fn match_macro_ufcs_parses() {
-        // `v.>match((<arms>), B)` is parsed as ordinary macro UFCS.
-        // Desugar turns the receiver into the match scrutinee.
-        let m = p("module x; fn f(v: I32 | String) -> . { \
-             v.>match((.(n: I32) { () }, .(s: String) { () }), ()) }");
+        let m = p(
+            "module x; fn f(v: I32 | String) { (v.>match)(.(n: I32) { () }, .(s: String) { () })[. | .] }",
+        );
         let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
+        let Expr::Call { callee, args, .. } = &f.body else {
+            panic!("target");
+        };
+        assert!(matches!(args.as_slice(), [CallArg::Type(Type::Sum { .. })]));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("arms");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [
+                CallArg::Value(Expr::FnExpr { .. }),
+                CallArg::Value(Expr::FnExpr { .. })
+            ]
+        ));
         let Expr::Ufcs {
             receiver,
-            callee_segments,
+            callee,
             args,
             macro_call,
             ..
-        } = &f.body
+        } = callee.as_ref()
         else {
-            panic!("expected match UFCS, got {:?}", f.body);
+            panic!("UFCS scrutinee");
         };
-        assert!(
-            matches!(receiver.as_ref(), Expr::Path { .. }),
-            "receiver is retained"
-        );
-        assert_eq!(callee_segments, &vec!["match".to_owned()]);
-        assert!(
-            macro_call.is_none(),
-            "parser leaves macro selection unresolved"
-        );
-        assert_eq!(args.len(), 2, "arms plus explicit codomain");
-        match &args[0] {
-            CallArg::Value(Expr::Tuple { items, .. }) => {
-                assert_eq!(items.len(), 2, "two arms in the ordinary arg tuple")
-            }
-            other => panic!("expected value tuple arms, got {other:?}"),
-        }
+        assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
+        assert_eq!(path_segments(callee), &["match".to_owned()]);
+        assert!(macro_call.is_none());
+        assert!(args.is_empty());
     }
 
     #[test]
     fn derive_macro_call_parses() {
-        // `derive(T, (c0, c1))` parses as an ordinary user
-        // macro call.
-        let m = p("module x; fn f() -> Monad(Maybe) { \
-             derive(Monad(Maybe), (maybe_monad, maybe_t_monad)) }");
+        let m = p(
+            "module x; fn f() -> Monad[Maybe] { derive(maybe_monad, maybe_t_monad)[Monad[Maybe]] }",
+        );
         let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
         let Expr::Call { callee, args, .. } = &f.body else {
-            panic!("expected derive macro, got {:?}", f.body);
+            panic!("target type");
         };
-        assert!(
-            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["derive"])
-        );
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Path { .. })]
+        ));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("candidates");
+        };
+        assert_eq!(path_segments(callee), &["derive".to_owned()]);
         assert_eq!(args.len(), 2);
     }
 
     #[test]
     fn derive_macro_elided_target_parses() {
-        // `derive(_, c0)` parses as an ordinary macro call;
-        // the `_` argument is preserved for typechecking.
-        let m = p("module x; fn f() -> Monad(Maybe) { \
-             derive(_, maybe_monad) }");
+        let m = p("module x; fn f() -> Monad[Maybe] { derive(maybe_monad)[_] }");
         let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+            panic!("function");
         };
         let Expr::Call { callee, args, .. } = &f.body else {
-            panic!("expected derive macro");
+            panic!("target type");
         };
-        assert!(
-            matches!(callee.as_ref(), Expr::Path { segments, .. } if segments.as_slice() == ["derive"])
-        );
-        assert_eq!(args.len(), 2);
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Infer { .. })]
+        ));
+        let Expr::Call { callee, args, .. } = callee.as_ref() else {
+            panic!("candidates");
+        };
+        assert_eq!(path_segments(callee), &["derive".to_owned()]);
+        assert_eq!(args.len(), 1);
     }
 
     #[test]
     fn derive_macro_ufcs_parses() {
-        let m = p("module x; fn f() -> Monad(Maybe) { \
-             maybe_monad.>derive(Monad(Maybe)) }");
-        let Item::FnDef(f) = &m.items[0] else {
-            panic!("expected fn item");
+        let m = p("module x; fn f() { (maybe_monad.>derive)[Monad[Maybe]] }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
         };
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("type call");
+        };
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Path { .. })]
+        ));
         let Expr::Ufcs {
             receiver,
-            callee_segments,
-            args,
+            callee,
+            flavor,
             macro_call,
+            args,
             ..
-        } = &f.body
+        } = callee.as_ref()
         else {
-            panic!("expected derive UFCS, got {:?}", f.body);
+            panic!("UFCS");
         };
         assert!(matches!(receiver.as_ref(), Expr::Path { .. }));
-        assert_eq!(callee_segments, &vec!["derive".to_owned()]);
+        assert_eq!(path_segments(callee), &["derive".to_owned()]);
+        assert_eq!(*flavor, UfcsFlavor::ReceiverFirst);
         assert!(macro_call.is_none());
-        assert_eq!(args.len(), 1, "target type supplied as ordinary arg");
+        assert!(args.is_empty());
     }
 
     #[test]
@@ -9355,7 +9452,7 @@ fn ok() -> . { () }
     #[test]
     fn fold_keyword_parses_as_function_name() {
         let m = p("module x; \
-             pub fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq(A)) -> B { seed }");
+             pub fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B { seed }");
         assert_eq!(m.items.len(), 1);
         assert!(matches!(&m.items[0], Item::FnDef(d) if d.name == "fold"));
     }
@@ -9440,7 +9537,7 @@ fn ok() -> . { () }
         ] {
             assert!(parse(source).is_err(), "unexpectedly parsed {source}");
         }
-        let module = p("module x; type {local} = {original}; type Alias[A] = Original(A);");
+        let module = p("module x; type {local} = {original}; type Alias[A] = Original[A];");
         assert!(matches!(&module.items[0], Item::LabelForward(_, ())));
         assert!(matches!(&module.items[1], Item::TypeAlias(alias) if alias.type_params.len() == 1));
     }
@@ -9512,7 +9609,7 @@ fn ok() -> . { () }
     #[test]
     fn labels_reuse_marker_parses_as_exact_infer_payload() {
         let m = p(
-            "module x; labels { value[*F][A] : F(A) }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
+            "module x; labels { value[*F][A] : F[A] }; labels Choice[*G][B] = { value[*G][B] : _, other : . };",
         );
         let Item::Labels(labels, _) = &m.items[1] else {
             panic!("expected named labels declaration");
@@ -9523,7 +9620,7 @@ fn ok() -> . { () }
 
     #[test]
     fn nested_infer_payload_is_not_a_reuse_marker() {
-        let m = p("module x; labels { value[*F] : F(_) };");
+        let m = p("module x; labels { value[*F] : F[_] };");
         let Item::Labels(labels, _) = &m.items[0] else {
             panic!("expected labels declaration");
         };
@@ -9645,7 +9742,7 @@ fn ok() -> . { () }
         // `labels` bodies inherit the lifted-scope rule from
         // `newtype` bodies, so the entry's name resolves inside its
         // own payload.
-        let m = p("module x; labels { list[A] : (. | (A & List(A))) };");
+        let m = p("module x; labels { list[A] : (. | (A & List[A])) };");
         if let Item::Labels(d, _) = &m.items[0] {
             assert_eq!(d.entries[0].name, "list");
         } else {
@@ -9882,16 +9979,14 @@ fn ok() -> . { () }
         if let Item::FnDef(d) = &m.items[0] {
             match &d.body {
                 Expr::Ufcs {
-                    callee_segments,
-                    macro_call,
-                    ..
+                    callee, macro_call, ..
                 } => {
                     assert!(
                         macro_call.is_none(),
                         "parser leaves macro selection unresolved for {src:?}"
                     );
                     assert_eq!(
-                        callee_segments,
+                        path_segments(callee),
                         &vec![expected_segment.to_owned()],
                         "wrong segment for {src:?}"
                     );
@@ -10840,7 +10935,7 @@ fn ok() -> . { () }
 
     #[test]
     fn host_fn_polymorphic() {
-        let m = p("module x; host fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq(A)) -> B;");
+        let m = p("module x; host fn fold[A][B](f: (B & A) -> B, seed: B, xs: Seq[A]) -> B;");
         match host_items(&m)[0] {
             Item::HostFn(h) => {
                 assert_eq!(h.name, "fold");
@@ -10892,8 +10987,8 @@ fn ok() -> . { () }
              type Alias[A] = A; \
              type _Alias[_A] = _A; \
              type _Poly = [_T] _T -> _T; \
-             newtype Box[B] : Alias(B) { constructor mk_plain; projector un_plain; }; \
-             newtype _Box[_B] : _Alias(_B) { constructor mk_box; projector un_box; }; \
+             newtype Box[B] : Alias[B] { constructor mk_plain; projector un_plain; }; \
+             newtype _Box[_B] : _Alias[_B] { constructor mk_box; projector un_box; }; \
              newtype _Pack[_C] <_Hidden> : _C & _Hidden { constructor mk_pack; projector un_pack; }; \
              labels Row = { plain: . }; \
              labels _Row = { field: . };");
@@ -10924,36 +11019,41 @@ fn ok() -> . { () }
     }
 
     #[test]
-    fn ambiguous_call_args_accept_exact_name_roles_only() {
+    fn explicit_call_stages_accept_exact_name_roles_only() {
         p("module ok; fn id[A](x: A) -> A { x } \
-           fn ordinary[A](value: A) -> A { id(A, value) } \
-           fn marked[_A](_value: _A) -> _A { id(_A, _value) } \
+           fn ordinary[A](value: A) -> A { id[A](value) } \
+           fn marked[_A](_value: _A) -> _A { id[_A](_value) } \
            fn qualified[_A](_value: _A) -> _A { \
-               id(m._Foo, _value); \
-               let _ = id(_A, Formtype.member(_A, _value)); \
-               let _ = id(_A, m._value1.member(_value)); \
-               id(_A, m._Foo.member(_value)) \
+               id[m._Foo](_value); \
+               let _ = id[_A](Formtype.member[_A](_value)); \
+               let _ = id[_A](m._value1.member(_value)); \
+               id[_A](m._Foo.member(_value)) \
            }");
         for (argument, invalid_name) in [
             ("_FooBar", "_FooBar"),
-            ("_FooBar(_A)", "_FooBar"),
+            ("_FooBar[_A]", "_FooBar"),
             ("_1Foo", "_1Foo"),
             ("FooBar", "FooBar"),
             ("__FooBar", "__FooBar"),
             ("m._FooBar", "_FooBar"),
-            ("m._FooBar(_A)", "_FooBar"),
+            ("m._FooBar[_A]", "_FooBar"),
             ("m._1Foo", "_1Foo"),
             ("m.FooBar", "FooBar"),
             ("m.__FooBar", "__FooBar"),
             ("m._FooBar.member", "_FooBar"),
-            ("m._FooBar.member(_A)", "_FooBar"),
+            ("m._FooBar.member[_A](x)", "_FooBar"),
             ("m._1Foo.member", "_1Foo"),
             ("m.FooBar.member", "FooBar"),
             ("m.__FooBar.member", "__FooBar"),
         ] {
+            let call = if argument.contains(".member") {
+                format!("id[_A]({argument})")
+            } else {
+                format!("id[{argument}](x)")
+            };
             let msg = p_err(&format!(
                 "module bad; fn id[A](x: A) -> A {{ x }} \
-                 fn f[_A](x: .) -> . {{ id({argument}, x) }}"
+                 fn f[_A](x: .) -> . {{ {call} }}"
             ));
             assert!(msg.contains(invalid_name), "{argument}: {msg}");
         }
@@ -10961,8 +11061,8 @@ fn ok() -> . { () }
 
     #[test]
     fn expression_paths_accept_exact_name_roles_only() {
-        p("module ok; fn f[_A](_value: .) -> . { m._Foo.member(_A, _value) }");
-        p("module ok; fn f[_A](_value: .) -> . { __pair__(_A, _A, _value, _value) }");
+        p("module ok; fn f[_A](_value: .) -> . { m._Foo.member[_A](_value) }");
+        p("module ok; fn f[_A](_value: .) -> . { __pair__[_A][_A](_value, _value) }");
         p("module ok; fn f() { __Foo.member(__value) }");
         for (expression, invalid_name) in [
             ("_FooBar", "_FooBar"),
@@ -11154,9 +11254,9 @@ fn ok() -> . { () }
 
     #[test]
     fn ufcs_callee_accepts_documented_reserved_value_references() {
-        p("module m; fn f(x: ., y: .) -> . { x.>__pair__(., ., y) }");
+        p("module m; fn f(x: ., y: .) -> . { x.>__pair__[.][.](y) }");
         p(
-            "module m; fn f[Bool](packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { packet.>>__if_then_else__(Bool) }",
+            "module m; fn f[Bool](packet: Bool & (. -> Bool) & (. -> Bool)) -> Bool { packet.>>__if_then_else__[Bool] }",
         );
         for name in ["_Foo", "_FooBar", "__Foo"] {
             let message = p_err(&format!("module m; fn f(x: .) -> . {{ x.>{name} }}"));
@@ -11180,7 +11280,7 @@ fn ok() -> . { () }
             "module m; fn f(x: .) -> . { _foo(()).<x }",
             "module m; fn f(x: .) -> . { _Box.mk.<x }",
             "module m; fn f(x: .) -> . { _Box.mk(()).<x }",
-            "module m; fn f(x: .) -> . { __pair__(., ., x, x).<x }",
+            "module m; fn f(x: .) -> . { __pair__[.][.](x, x).<x }",
             "module m; fn f(x: .) -> . { _foo(()).<<x }",
         ] {
             p(source);
@@ -11242,7 +11342,7 @@ fn ok() -> . { () }
         // bare references like `__pair__` after that import go
         // through the IDENT lexer rule (not the declaration
         // validators), so they continue to parse.
-        let _ = p("module x; import __intrinsics__; fn f() -> . { __pair__(., ., (), ()) }");
+        let _ = p("module x; import __intrinsics__; fn f() -> . { __pair__[.][.]((), ()) }");
     }
 
     #[test]
@@ -11318,24 +11418,24 @@ fn ok() -> . { () }
 
     #[test]
     fn underscore_parses_in_type_arg_list() {
-        // `_` in a type-arg list at a call site parses fine.
-        // The body `f(_, "")` builds a `Call` whose first argument
-        // is a `CallArg::Type(Type::Infer)`.
-        let m = p("module x; fn use_id() -> . { f(_, ()) }");
-        let crate::ast::Item::FnDef(d) = &m.items[0] else {
-            panic!("expected fn");
+        let m = p("module x; fn use_id() { f[_](()) }");
+        let Item::FnDef(d) = &m.items[0] else {
+            panic!("function");
         };
-        // The body is `f(_, ())`.
-        let crate::ast::Expr::Call { args, .. } = &d.body else {
-            panic!("expected Call expression, got {:?}", d.body);
+        let Expr::Call { callee, args, .. } = &d.body else {
+            panic!("value call");
         };
-        let crate::ast::CallArg::Type(t) = &args[0] else {
-            panic!("expected first arg to be type-arg, got {:?}", args[0]);
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Value(Expr::Unit { .. })]
+        ));
+        let Expr::Call { args, .. } = callee.as_ref() else {
+            panic!("type call");
         };
-        assert!(
-            matches!(t, Type::Infer { .. }),
-            "expected Type::Infer, got {t:?}"
-        );
+        assert!(matches!(
+            args.as_slice(),
+            [CallArg::Type(Type::Infer { .. })]
+        ));
     }
 
     // =====================================================================

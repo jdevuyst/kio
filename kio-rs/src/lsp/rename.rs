@@ -930,8 +930,10 @@ fn collect_fn_scope<PurityField>(
 fn collect_expr_scope(expr: &Expr<Surface>, byte_offset: u32, out: &mut Vec<String>) {
     match expr {
         Expr::BlockCall { prefix, blocks, .. } => {
-            for value in prefix {
-                collect_expr_scope(value, byte_offset, out);
+            for arg in prefix.iter().flat_map(|stage| &stage.args) {
+                if let crate::ast::CallArg::Value(value) = arg {
+                    collect_expr_scope(value, byte_offset, out);
+                }
             }
             for block in blocks {
                 if !(block.open.end <= byte_offset && byte_offset <= block.close.end) {
@@ -1364,8 +1366,10 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
     visit(expr);
     match expr {
         Expr::BlockCall { prefix, blocks, .. } => {
-            for value in prefix {
-                walk_rename_expr(value, visit);
+            for arg in prefix.iter().flat_map(|stage| &stage.args) {
+                if let crate::ast::CallArg::Value(value) = arg {
+                    walk_rename_expr(value, visit);
+                }
             }
             for block in blocks {
                 for item in &block.items {
@@ -1412,15 +1416,21 @@ fn walk_rename_expr<'a>(expr: &'a Expr<Surface>, visit: &mut impl FnMut(&'a Expr
             }
         },
         Expr::RecOrder { ext, .. } | Expr::RecQuote { ext, .. } => match *ext {},
-        Expr::UserMacro { args, .. } | Expr::RecCall { args, .. } => {
-            for arg in args {
+        Expr::UserMacro { stages, .. } | Expr::RecCall { stages, .. } => {
+            for arg in stages.iter().flat_map(|stage| &stage.args) {
                 if let crate::ast::CallArg::Value(value) = arg {
                     walk_rename_expr(value, visit);
                 }
             }
         }
-        Expr::Ufcs { receiver, args, .. } => {
+        Expr::Ufcs {
+            receiver,
+            callee,
+            args,
+            ..
+        } => {
             walk_rename_expr(receiver, visit);
+            walk_rename_expr(callee, visit);
             for arg in args {
                 if let crate::ast::CallArg::Value(value) = arg {
                     walk_rename_expr(value, visit);
@@ -1480,7 +1490,7 @@ mod tests {
     fn selective_alias_tooling_keeps_local_and_provider_identities_in_full_and_focused_analysis() {
         let root = test_file_path("/virtual/selective-alias-tooling");
         let provider = "module provider; import __comptime__; pub fn foo() { () } host fn external(); host type Int role(i32); pub newtype Box : . { pub constructor mk; pub projector get } pub labels { foo: . }; pub literal token = 1; pure fn identity_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__) -> __Checked_term__ { value } pub macro identity : [Source] Source -> Source { impl identity_impl }";
-        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count(Number) }";
+        let source = "module main; import provider(foo as foo, foo as local, external as invoke, Box as Parcel, Int as Number, token as count, macro identity as preserve); type Capture[B] = Number; fn bar() { () } pub fn run() { local(); foo(); invoke(); preserve(()); Parcel.get(Parcel.mk(())) } fn numeral() -> Number { count[Number] }";
         let main_file = root.join("main.kio");
         let provider_file = root.join("provider.kio");
         let overlay = crate::package_collection::SourceOverlay::complete(
@@ -1537,7 +1547,7 @@ mod tests {
                 ("external as invoke", "invoke,", "invoke()"),
                 ("Box as Parcel", "Parcel,", "Parcel.get"),
                 ("Int as Number", "Number,", "Number;"),
-                ("token as count", "count,", "count(Number)"),
+                ("token as count", "count,", "count[Number]"),
                 ("identity as preserve", "preserve)", "preserve"),
             ] {
                 let definitions: Vec<_> = [source_site, destination_site, use_site]
@@ -1579,7 +1589,7 @@ mod tests {
                 .unwrap_err()
                 .contains("conflict")
             );
-            let literal_position = position_of(source, "count(Number)");
+            let literal_position = position_of(source, "count[Number]");
             let definition = crate::lsp::definition::handle_definition(
                 &uri,
                 &literal_position,

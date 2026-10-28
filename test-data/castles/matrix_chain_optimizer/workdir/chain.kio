@@ -23,7 +23,7 @@ fn valid_dimension(value: I32) -> Bool {
   if(math.leq_i32(1, value)) { math.leq_i32(value, 30) } else { .f }
 }
 
-rec(loop) fn validate_at(matrices: Array(Matrix), index: I32, previous_cols: I32) -> String | . {
+rec(loop) fn validate_at(matrices: Array[Matrix], index: I32, previous_cols: I32) -> String | . {
   if(math.leq_i32(arrays.array_len(matrices), index)) {
     widen_sum(())
   } else {
@@ -39,26 +39,26 @@ rec(loop) fn validate_at(matrices: Array(Matrix), index: I32, previous_cols: I32
           ))
         }
       } else {
-        widen_sum("dimensions must be in 1..30")
+        widen_sum("dimensions must be in 1..30"[String])
       }
     } else {
-      widen_sum("dimensions must be in 1..30")
+      widen_sum("dimensions must be in 1..30"[String])
     }
   }
 }
 
-pub fn validate(matrices: Array(Matrix)) -> String | . {
+pub fn validate(matrices: Array[Matrix]) -> String | . {
   let count = arrays.array_len(matrices);
   if(math.leq_i32(count, 0)) {
-    widen_sum("chain is empty")
+    widen_sum("chain is empty"[String])
   } else if(math.leq_i32(count, 8)) {
     validate_at(matrices, 0, arrays.array_get(matrices, 0).?{rows})
   } else {
-    widen_sum("chain exceeds 8 matrices")
+    widen_sum("chain exceeds 8 matrices"[String])
   }
 }
 
-pub rec(loop) fn describe(matrices: Array(Matrix), index: I32, result: String) -> String {
+pub rec(loop) fn describe(matrices: Array[Matrix], index: I32, result: String) -> String {
   if(math.leq_i32(arrays.array_len(matrices), index)) {
     result
   } else {

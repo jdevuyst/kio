@@ -31,39 +31,39 @@ pub labels Outcome =
   | { unknown_verb: String }
   | { left_cellar: . };
 
-pub fn saw_room() -> Outcome { {saw_room=}.>widen_sum(Outcome) }
+pub fn saw_room() -> Outcome { ({saw_room=}.>widen_sum)[Outcome] }
 
-pub fn too_dark_to_see() -> Outcome { {too_dark_to_see=}.>widen_sum(Outcome) }
+pub fn too_dark_to_see() -> Outcome { ({too_dark_to_see=}.>widen_sum)[Outcome] }
 
-pub fn dark_ahead() -> Outcome { {dark_ahead=}.>widen_sum(Outcome) }
+pub fn dark_ahead() -> Outcome { ({dark_ahead=}.>widen_sum)[Outcome] }
 
-pub fn way_locked(key: ids.Item_id) -> Outcome { {way_locked = key}.>widen_sum(Outcome) }
+pub fn way_locked(key: ids.Item_id) -> Outcome { ({way_locked = key}.>widen_sum)[Outcome] }
 
-pub fn no_exit() -> Outcome { {no_exit=}.>widen_sum(Outcome) }
+pub fn no_exit() -> Outcome { ({no_exit=}.>widen_sum)[Outcome] }
 
-pub fn not_a_direction(word: String) -> Outcome { {not_a_direction = word}.>widen_sum(Outcome) }
+pub fn not_a_direction(word: String) -> Outcome { ({not_a_direction = word}.>widen_sum)[Outcome] }
 
-pub fn took(i: ids.Item_id) -> Outcome { {took = i}.>widen_sum(Outcome) }
+pub fn took(i: ids.Item_id) -> Outcome { ({took = i}.>widen_sum)[Outcome] }
 
-pub fn already_held(i: ids.Item_id) -> Outcome { {already_held = i}.>widen_sum(Outcome) }
+pub fn already_held(i: ids.Item_id) -> Outcome { ({already_held = i}.>widen_sum)[Outcome] }
 
-pub fn nothing_named(word: String) -> Outcome { {nothing_named = word}.>widen_sum(Outcome) }
+pub fn nothing_named(word: String) -> Outcome { ({nothing_named = word}.>widen_sum)[Outcome] }
 
-pub fn dropped(i: ids.Item_id) -> Outcome { {dropped = i}.>widen_sum(Outcome) }
+pub fn dropped(i: ids.Item_id) -> Outcome { ({dropped = i}.>widen_sum)[Outcome] }
 
-pub fn not_held(word: String) -> Outcome { {not_held = word}.>widen_sum(Outcome) }
+pub fn not_held(word: String) -> Outcome { ({not_held = word}.>widen_sum)[Outcome] }
 
-pub fn lock_opened() -> Outcome { {lock_opened=}.>widen_sum(Outcome) }
+pub fn lock_opened() -> Outcome { ({lock_opened=}.>widen_sum)[Outcome] }
 
-pub fn nothing_to_unlock() -> Outcome { {nothing_to_unlock=}.>widen_sum(Outcome) }
+pub fn nothing_to_unlock() -> Outcome { ({nothing_to_unlock=}.>widen_sum)[Outcome] }
 
-pub fn lock_needs(key: ids.Item_id) -> Outcome { {lock_needs = key}.>widen_sum(Outcome) }
+pub fn lock_needs(key: ids.Item_id) -> Outcome { ({lock_needs = key}.>widen_sum)[Outcome] }
 
-pub fn held_items() -> Outcome { {held_items=}.>widen_sum(Outcome) }
+pub fn held_items() -> Outcome { ({held_items=}.>widen_sum)[Outcome] }
 
-pub fn unknown_verb(word: String) -> Outcome { {unknown_verb = word}.>widen_sum(Outcome) }
+pub fn unknown_verb(word: String) -> Outcome { ({unknown_verb = word}.>widen_sum)[Outcome] }
 
-pub fn left_cellar() -> Outcome { {left_cellar=}.>widen_sum(Outcome) }
+pub fn left_cellar() -> Outcome { ({left_cellar=}.>widen_sum)[Outcome] }
 
 /// A fumble is a turn that got the player nothing they asked for. The score
 /// docks a point for each, so every outcome arm is classified explicitly.

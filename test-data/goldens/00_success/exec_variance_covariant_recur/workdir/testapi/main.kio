@@ -10,8 +10,8 @@ import testapi/io(print);
 // under a negative (arrow-LHS) position is rejected.
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-rec newtype Rec : Box(Rec) { pub constructor mk_rec; pub projector un_rec }
+rec newtype Rec : Box[Rec] { pub constructor mk_rec; pub projector un_rec }
 
-fn unwrap(b: Box(String)) -> String { Box.un_box(b) }
+fn unwrap(b: Box[String]) -> String { Box.un_box(b) }
 
 pub fn main() { print(unwrap(Box.mk_box("covariant recursion accepted\n"))) }

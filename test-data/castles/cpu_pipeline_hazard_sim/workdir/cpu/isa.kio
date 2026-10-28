@@ -80,30 +80,30 @@ fn instr(code_value: Opcode, d: I32, s: I32, t: I32, immediate: I32) -> Instr {
   {code = code_value, rd = d, rs = s, rt = t, imm = immediate}
 }
 
-pub fn i_add(d: I32, s: I32, t: I32) -> Instr { instr({add=}.>widen_sum(Opcode), d, s, t, 0) }
+pub fn i_add(d: I32, s: I32, t: I32) -> Instr { instr(({add=}.>widen_sum)[Opcode], d, s, t, 0) }
 
-pub fn i_sub(d: I32, s: I32, t: I32) -> Instr { instr({sub=}.>widen_sum(Opcode), d, s, t, 0) }
+pub fn i_sub(d: I32, s: I32, t: I32) -> Instr { instr(({sub=}.>widen_sum)[Opcode], d, s, t, 0) }
 
-pub fn i_mul(d: I32, s: I32, t: I32) -> Instr { instr({mul=}.>widen_sum(Opcode), d, s, t, 0) }
+pub fn i_mul(d: I32, s: I32, t: I32) -> Instr { instr(({mul=}.>widen_sum)[Opcode], d, s, t, 0) }
 
-pub fn i_loadi(d: I32, value: I32) -> Instr { instr({loadi=}.>widen_sum(Opcode), d, 0, 0, value) }
+pub fn i_loadi(d: I32, value: I32) -> Instr { instr(({loadi=}.>widen_sum)[Opcode], d, 0, 0, value) }
 
-pub fn i_load(d: I32, addr: I32) -> Instr { instr({load=}.>widen_sum(Opcode), d, 0, 0, addr) }
+pub fn i_load(d: I32, addr: I32) -> Instr { instr(({load=}.>widen_sum)[Opcode], d, 0, 0, addr) }
 
-pub fn i_store(s: I32, addr: I32) -> Instr { instr({store=}.>widen_sum(Opcode), 0, s, 0, addr) }
+pub fn i_store(s: I32, addr: I32) -> Instr { instr(({store=}.>widen_sum)[Opcode], 0, s, 0, addr) }
 
 pub fn i_beq(s: I32, t: I32, target: I32) -> Instr {
-  instr({beq=}.>widen_sum(Opcode), 0, s, t, target)
+  instr(({beq=}.>widen_sum)[Opcode], 0, s, t, target)
 }
 
-pub fn i_nop() -> Instr { instr({nop=}.>widen_sum(Opcode), 0, 0, 0, 0) }
+pub fn i_nop() -> Instr { instr(({nop=}.>widen_sum)[Opcode], 0, 0, 0, 0) }
 
-pub fn i_halt() -> Instr { instr({halt=}.>widen_sum(Opcode), 0, 0, 0, 0) }
+pub fn i_halt() -> Instr { instr(({halt=}.>widen_sum)[Opcode], 0, 0, 0, 0) }
 
 /// The register this instruction writes back, if it writes one at all.
 /// The hazard unit compares consumers against exactly this.
 pub fn dest_of(inst: Instr) -> I32 | . {
-  if(kind_of(inst).?{has_dest}) { widen_sum(inst.?{rd}, I32 | .) } else { widen_sum((), I32 | .) }
+  if(kind_of(inst).?{has_dest}) { widen_sum(inst.?{rd})[I32 | .] } else { widen_sum(())[I32 | .] }
 }
 
 /// Does `inst` read register `r`? Only the fields the opcode actually

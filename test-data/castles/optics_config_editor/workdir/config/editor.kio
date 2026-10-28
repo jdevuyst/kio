@@ -40,72 +40,72 @@ fn yes() -> Bool { eq_i32(1, 1) }
 
 fn no() -> Bool { eq_i32(0, 1) }
 
-fn service_lens() -> Lens(App_config, Service_config) {
+fn service_lens() -> Lens[App_config][Service_config] {
   let get = .(app: App_config) -> Service_config { app.?{service} };
   let put = .(next: Service_config, app: App_config) -> App_config { app.!{service = next} };
   (get, put)
 }
 
-fn feature_lens() -> Lens(App_config, Feature_config) {
+fn feature_lens() -> Lens[App_config][Feature_config] {
   let get = .(app: App_config) -> Feature_config { app.?{feature} };
   let put = .(next: Feature_config, app: App_config) -> App_config { app.!{feature = next} };
   (get, put)
 }
 
-fn limits_lens() -> Lens(App_config, Limit_bundle) {
+fn limits_lens() -> Lens[App_config][Limit_bundle] {
   let get = .(app: App_config) -> Limit_bundle { app.?{limits} };
   let put = .(next: Limit_bundle, app: App_config) -> App_config { app.!{limits = next} };
   (get, put)
 }
 
-fn app_lens() -> Lens(Root_config, App_config) {
+fn app_lens() -> Lens[Root_config][App_config] {
   let get = .(cfg: Root_config) -> App_config { cfg.?{app} };
   let put = .(next: App_config, cfg: Root_config) -> Root_config { cfg.!{app = next} };
   (get, put)
 }
 
-fn mode_lens() -> Lens(Root_config, Mode_state) {
+fn mode_lens() -> Lens[Root_config][Mode_state] {
   let get = .(cfg: Root_config) -> Mode_state { cfg.?{mode} };
   let put = .(next: Mode_state, cfg: Root_config) -> Root_config { cfg.!{mode = next} };
   (get, put)
 }
 
-fn revision_lens() -> Lens(Root_config, I32) {
+fn revision_lens() -> Lens[Root_config][I32] {
   let get = .(cfg: Root_config) -> I32 { cfg.?{revision} };
   let put = .(next: I32, cfg: Root_config) -> Root_config { cfg.!{revision = next} };
   (get, put)
 }
 
-fn retries_lens() -> Lens(Service_config, I32) {
+fn retries_lens() -> Lens[Service_config][I32] {
   let get = .(svc: Service_config) -> I32 { svc.?{retries} };
   let put = .(next: I32, svc: Service_config) -> Service_config { svc.!{retries = next} };
   (get, put)
 }
 
-fn timeout_lens() -> Lens(Service_config, I32) {
+fn timeout_lens() -> Lens[Service_config][I32] {
   let get = .(svc: Service_config) -> I32 { svc.?{timeout_ms} };
   let put = .(next: I32, svc: Service_config) -> Service_config { svc.!{timeout_ms = next} };
   (get, put)
 }
 
-fn dark_mode_lens() -> Lens(Feature_config, Bool) {
+fn dark_mode_lens() -> Lens[Feature_config][Bool] {
   let get = .(feature: Feature_config) -> Bool { feature.?{dark_mode} };
   let put =
     .(next: Bool, feature: Feature_config) -> Feature_config { feature.!{dark_mode = next} };
   (get, put)
 }
 
-fn rollout_lens() -> Lens(Feature_config, I32) {
+fn rollout_lens() -> Lens[Feature_config][I32] {
   let get = .(feature: Feature_config) -> I32 { feature.?{rollout} };
   let put = .(next: I32, feature: Feature_config) -> Feature_config { feature.!{rollout = next} };
   (get, put)
 }
 
-fn normalized_limits_lens() -> Lens(Limit_bundle, Warn_limit & Block_limit & Audit_limit) {
-  iso_to_lens(assoc_iso(Warn_limit, Block_limit, Audit_limit))
+fn normalized_limits_lens() -> Lens[Limit_bundle][Warn_limit & Block_limit & Audit_limit] {
+  iso_to_lens(assoc_iso[Warn_limit][Block_limit][Audit_limit])
 }
 
-fn normalized_audit_lens() -> Lens(Warn_limit & Block_limit & Audit_limit, I32) {
+fn normalized_audit_lens() -> Lens[Warn_limit & Block_limit & Audit_limit][I32] {
   let get = .(limits: Warn_limit & Block_limit & Audit_limit) -> I32 { limits.?{audit_limit} };
   let put =
     .(next: I32, limits: Warn_limit & Block_limit & Audit_limit) -> & Warn_limit
@@ -114,45 +114,45 @@ fn normalized_audit_lens() -> Lens(Warn_limit & Block_limit & Audit_limit, I32) 
   (get, put)
 }
 
-fn stable_mode_prism() -> Prism(Mode_state, Stable_mode) { left_prism(Stable_mode, Degraded_mode) }
+fn stable_mode_prism() -> Prism[Mode_state][Stable_mode] { left_prism[Stable_mode][Degraded_mode] }
 
-fn degraded_mode_prism() -> Prism(Mode_state, Degraded_mode) {
-  right_prism(Stable_mode, Degraded_mode)
+fn degraded_mode_prism() -> Prism[Mode_state][Degraded_mode] {
+  right_prism[Stable_mode][Degraded_mode]
 }
 
-fn config_service_lens() -> Lens(Root_config, Service_config) {
+fn config_service_lens() -> Lens[Root_config][Service_config] {
   compose_lens(app_lens(), service_lens())
 }
 
-fn config_feature_lens() -> Lens(Root_config, Feature_config) {
+fn config_feature_lens() -> Lens[Root_config][Feature_config] {
   compose_lens(app_lens(), feature_lens())
 }
 
-fn config_limits_lens() -> Lens(Root_config, Limit_bundle) {
+fn config_limits_lens() -> Lens[Root_config][Limit_bundle] {
   compose_lens(app_lens(), limits_lens())
 }
 
-fn config_retries_lens() -> Lens(Root_config, I32) {
+fn config_retries_lens() -> Lens[Root_config][I32] {
   compose_lens(config_service_lens(), retries_lens())
 }
 
-fn config_timeout_lens() -> Lens(Root_config, I32) {
+fn config_timeout_lens() -> Lens[Root_config][I32] {
   compose_lens(config_service_lens(), timeout_lens())
 }
 
-fn config_dark_mode_lens() -> Lens(Root_config, Bool) {
+fn config_dark_mode_lens() -> Lens[Root_config][Bool] {
   compose_lens(config_feature_lens(), dark_mode_lens())
 }
 
-fn config_rollout_lens() -> Lens(Root_config, I32) {
+fn config_rollout_lens() -> Lens[Root_config][I32] {
   compose_lens(config_feature_lens(), rollout_lens())
 }
 
-fn limit_audit_lens() -> Lens(Limit_bundle, I32) {
+fn limit_audit_lens() -> Lens[Limit_bundle][I32] {
   compose_lens(normalized_limits_lens(), normalized_audit_lens())
 }
 
-fn config_audit_lens() -> Lens(Root_config, I32) {
+fn config_audit_lens() -> Lens[Root_config][I32] {
   compose_lens(config_limits_lens(), limit_audit_lens())
 }
 

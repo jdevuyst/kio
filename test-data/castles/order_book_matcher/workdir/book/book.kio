@@ -28,7 +28,7 @@ import testapi/array(
 );
 import testapi/iter(loop);
 
-pub labels Book = { bids: Array(Order), asks: Array(Order), tape: Array(Trade), ledger: Array(I32) };
+pub labels Book = { bids: Array[Order], asks: Array[Order], tape: Array[Trade], ledger: Array[I32] };
 
 /// Every quantity that enters or leaves the book lands in one of these
 /// cells. Nothing here is derived from the tape, which is what lets the
@@ -49,16 +49,16 @@ literal ledger_size = 6;
 
 pub fn new_book() -> Book {
   {
-  , bids = array_make_empty(Order, ())
-  , asks = array_make_empty(Order, ())
-  , tape = array_make_empty(Trade, ())
+  , bids = array_make_empty[Order](())
+  , asks = array_make_empty[Order](())
+  , tape = array_make_empty[Trade](())
   , ledger = array_make_filled(ledger_size, 0)
   }
 }
 
-fn ledger_of(b: Book) -> Array(I32) { b.?{ledger} }
+fn ledger_of(b: Book) -> Array[I32] { b.?{ledger} }
 
-fn tape_array(b: Book) -> Array(Trade) { b.?{tape} }
+fn tape_array(b: Book) -> Array[Trade] { b.?{tape} }
 
 fn cell(b: Book, index: I32) -> I32 { array_get(ledger_of(b), index) }
 
@@ -66,39 +66,39 @@ fn bump(b: Book, index: I32, amount: I32) {
   array_set(ledger_of(b), index, add_i32(cell(b, index), amount))
 }
 
-pub fn bids_of(b: Book) -> Array(Order) { b.?{bids} }
+pub fn bids_of(b: Book) -> Array[Order] { b.?{bids} }
 
-pub fn asks_of(b: Book) -> Array(Order) { b.?{asks} }
+pub fn asks_of(b: Book) -> Array[Order] { b.?{asks} }
 
 /// The queue an order of this side rests on.
-pub fn own_queue(b: Book, side: Side) -> Array(Order) {
+pub fn own_queue(b: Book, side: Side) -> Array[Order] {
   if(is_buy(side)) { bids_of(b) } else { asks_of(b) }
 }
 
 /// The queue an order of this side crosses against.
-pub fn facing_queue(b: Book, side: Side) -> Array(Order) {
+pub fn facing_queue(b: Book, side: Side) -> Array[Order] {
   if(is_buy(side)) { asks_of(b) } else { bids_of(b) }
 }
 
-pub fn depth(orders: Array(Order)) -> I32 { array_len(orders) }
+pub fn depth(orders: Array[Order]) -> I32 { array_len(orders) }
 
-pub fn is_empty(orders: Array(Order)) -> Bool { leq_i32(array_len(orders), 0) }
+pub fn is_empty(orders: Array[Order]) -> Bool { leq_i32(array_len(orders), 0) }
 
-pub fn at(orders: Array(Order), index: I32) -> Order { array_get(orders, index) }
+pub fn at(orders: Array[Order], index: I32) -> Order { array_get(orders, index) }
 
-pub fn set_at(orders: Array(Order), index: I32, o: Order) { array_set(orders, index, o) }
+pub fn set_at(orders: Array[Order], index: I32, o: Order) { array_set(orders, index, o) }
 
 /// The best price on a queue, or nothing when the queue is empty. The
 /// front of the queue is the best order by construction.
-pub fn best_price(orders: Array(Order)) -> I32 | . {
+pub fn best_price(orders: Array[Order]) -> I32 | . {
   if(is_empty(orders)) {
-    widen_sum((), I32 | .)
+    widen_sum(())[I32 | .]
   } else {
-    widen_sum(price_of(at(orders, 0)), I32 | .)
+    widen_sum(price_of(at(orders, 0)))[I32 | .]
   }
 }
 
-rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
+rec(loop) fn shift_down(i: I32, orders: Array[Order]) {
   if(leq_i32(sub_i32(array_len(orders), 1), i)) {
     ()
   } else {
@@ -110,15 +110,15 @@ rec(loop) fn shift_down(i: I32, orders: Array(Order)) {
 /// The queue is never empty where this is called, so the popped order is
 /// always there -- but the sum still has to be consumed, and consuming it
 /// is the whole of the proof.
-fn drop_back(orders: Array(Order)) {
+fn drop_back(orders: Array[Order]) {
   match(array_pop_back(orders)) {
     (.(_o: Order) { () }, .(_none: .) { () })
   }
 }
 
-pub fn remove_at(orders: Array(Order), index: I32) { shift_down(index, orders); drop_back(orders) }
+pub fn remove_at(orders: Array[Order], index: I32) { shift_down(index, orders); drop_back(orders) }
 
-rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) -> I32 {
+rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array[Order]) -> I32 {
   if(leq_i32(array_len(orders), i)) {
     i
   } else if(ranks_ahead(side, price, price_of(array_get(orders, i)))) {
@@ -128,7 +128,7 @@ rec(loop) fn rank_index(i: I32, side: Side, price: I32, orders: Array(Order)) ->
   }
 }
 
-rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) {
+rec(loop) fn shift_up(j: I32, index: I32, orders: Array[Order]) {
   if(leq_i32(j, index)) {
     ()
   } else {
@@ -141,7 +141,7 @@ rec(loop) fn shift_up(j: I32, index: I32, orders: Array(Order)) {
 /// one beats on price, behind every order it ties with. The scan stops at
 /// the first order it beats, so a tie walks past -- which is the time half
 /// of the rule, and the only reason a queue position is worth anything.
-pub fn insert_ranked(orders: Array(Order), o: Order) {
+pub fn insert_ranked(orders: Array[Order], o: Order) {
   let index = rank_index(0, side_of(o), price_of(o), orders);
   array_push(orders, o);
   shift_up(sub_i32(array_len(orders), 1), index, orders);
@@ -152,7 +152,7 @@ fn not_found() -> I32 { -1 }
 
 pub fn is_found(index: I32) -> Bool { not(int_eq(index, not_found())) }
 
-rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
+rec(loop) fn scan_id(i: I32, id: I32, orders: Array[Order]) -> I32 {
   if(leq_i32(array_len(orders), i)) {
     not_found()
   } else if(int_eq(id_of(array_get(orders, i)), id)) {
@@ -162,9 +162,9 @@ rec(loop) fn scan_id(i: I32, id: I32, orders: Array(Order)) -> I32 {
   }
 }
 
-pub fn index_of_id(orders: Array(Order), id: I32) -> I32 { scan_id(0, id, orders) }
+pub fn index_of_id(orders: Array[Order], id: I32) -> I32 { scan_id(0, id, orders) }
 
-rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
+rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array[Order]) -> I32 {
   if(leq_i32(array_len(orders), i)) {
     total
   } else {
@@ -173,7 +173,7 @@ rec(loop) fn sum_remaining(i: I32, total: I32, orders: Array(Order)) -> I32 {
 }
 
 /// The quantity still on offer on one queue.
-pub fn resting_qty(orders: Array(Order)) -> I32 { sum_remaining(0, 0, orders) }
+pub fn resting_qty(orders: Array[Order]) -> I32 { sum_remaining(0, 0, orders) }
 
 pub fn record_trade(b: Book, t: Trade) { array_push(tape_array(b), t) }
 

@@ -23,7 +23,7 @@ fn yes_no(value: Bool) -> String {
   if(value) { "yes" } else { "no" }
 }
 
-fn integers(values: c.List(I32)) -> String { l.to_string(fmt.int_to_string, values) }
+fn integers(values: c.List[I32]) -> String { l.to_string(fmt.int_to_string, values) }
 
 fn samples(values: s.Word) -> String { l.to_string(s.show, values) }
 
@@ -41,7 +41,7 @@ fn altered_erasure(message: p.Polynomial, erased: s.Word) {
   match(c.head(erased)) {
     .(sample: s.Sample) {
       let changed = {s.coordinate = sample.?{s.coordinate}, s.value = f.add(sample.?{s.value}, 1)};
-      let caught = if(matches_message(message, c.singleton(changed))) { .f } else { .t };
+      let .(caught: Bool) = if(matches_message(message, c.singleton(changed))) { .f } else { .t };
       line("  altered erased symbol rejected = ", yes_no(caught))
     };
     .() { line("  erased symbols = ", "none") }
@@ -87,7 +87,7 @@ pub fn run(frame: input.Frame) -> Bool {
     , .(ok, value) {
         if(ok) { f.valid(value) } else { .f }
       }
-    , .t
+    , .t[Bool]
     , frame.?{input.message}
     );
   if(message_valid) {

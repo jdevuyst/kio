@@ -165,7 +165,7 @@ The `module hello/main;` line says "this file is the module at path `hello/main`
 
 `import some/module(X);` lists one or more items, comma-separated. Bare items select ordinary values or types. A tagged `macro name` item selects a macro, for example `import match(macro match);`. A braced item selects label syntax, so a consumer that names a generated type and constructs its label writes `import people(Name, {name});`. Neither spelling imports the other. Host capabilities are no exception: `host type` and `host fn` declarations are ordinary public items of the module that declares them, so the hello-world brings in `String` and `print` with `import hello(String, print);`.
 
-When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack(Item)` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library macros such as `match` and the structural palette for normal product and sum code.
+When another module is mostly used as a source of names, prefer the qualified alias form where that import surface supports it: `import some/module as m;` or `import utils/list_ops as l;`. The call site then keeps the origin visible, as in `m.helper(...)`. The alias also reaches exported types, type constructors, and newtype members: `m.Shape` names a type, `m.Stack[Item]` applies a type constructor, and `m.Stack.unpack` reaches a public newtype member. These remain qualified names; the alias does not add them to unqualified scope. Use selective imports when the bare name is the point of the example, part of the module's public vocabulary, or required by syntax. The special compile-time and core imports are the exceptions: `import __comptime__;` and `import __intrinsics__;` are block imports with no alias form. Ordinary programs rarely need `__intrinsics__`; use tuples, labels, and imported library macros such as `match` and the structural palette for normal product and sum code.
 
 To choose a local spelling, use a selective alias:
 `import hello(String as Text, print as write);`. The destination keeps the
@@ -310,7 +310,7 @@ host type F64 role(f64);
 
 host fn add_f64(p0: F64, p1: F64) -> F64;
 
-pub fn adjusted() -> F64 { add_f64(19.5(F64), 0.25(F64)) }
+pub fn adjusted() -> F64 { add_f64(19.5[F64], 0.25[F64]) }
 ```
 
 Kio checks integer literals against their selected role's range: `i8`
@@ -321,7 +321,7 @@ nearest-even rounding. Overflow is a type error; subnormals and negative
 zero are preserved, including when a tiny value underflows to zero. These
 rules determine literal values; the host still supplies arithmetic.
 
-An explicit literal annotation such as `42(Int)` selects its carrier.
+An explicit literal annotation such as `42[Int]` selects its carrier.
 Otherwise, a concrete expected return, argument or binding type can determine
 it within ordinary local inference. If the carrier remains unknown at that
 boundary, annotate the literal. Merely importing a role-bearing type does not
@@ -336,7 +336,7 @@ finish before later statements, so a later call cannot choose their type.
 Floating-point syntax requires a decimal point: `42.0`, `42.0e3` and
 `42.0e-3` are floats. Integers have no exponent notation, so `42e0`, `42E+3`,
 `42e-3` and `42e-0` all reject. Neither an expected float type nor
-`42(F64)` turns integer syntax into a float: write `42.0` or `42.0(F64)`.
+`42[F64]` turns integer syntax into a float: write `42.0` or `42.0[F64]`.
 For a generic function requiring two values of the same type,
 `same(42, 42.0)` and `same(42.0, 42)` both reject.
 See [literal types and local inference](../guides/typechecking.md#literal-types-and-local-inference)
@@ -397,7 +397,7 @@ A function value can appear inline as `.(args) { body }` — a lambda.
 fn apply(f: Int -> Int, x: Int) -> Int { f(x) }
 
 fn immediate_identity() -> Int {
-  .(n) { n }(41(Int))
+  .(n) { n }(41[Int])
 }
 
 pub fn main() {
@@ -424,7 +424,7 @@ polymorphic annotation. Write the concrete result beneath that binder, or make
 the whole `f` annotation `_` so the surrounding function slot supplies it.
 
 An immediate call can also supply a whole missing parameter type:
-`immediate_identity` gives `n` the independently known type of `41(Int)`. The rule
+`immediate_identity` gives `n` the independently known type of `41[Int]`. The rule
 is local to that call. Binding `.(n) { n }` with an untyped `let` and calling
 the binding later does not send type information backward across the `let`;
 give the binding a concrete function-type annotation when it must be named
@@ -673,10 +673,10 @@ fn classify_again(v: String | Int) {
   ()
 }
 
-pub fn main() { let v = widen_sum("matched right\n"(String), String | Int); classify_again(v) }
+pub fn main() { let v = widen_sum("matched right\n"[String])[String | Int]; classify_again(v) }
 ```
 
-`widen_sum("matched right\n"(String), String | Int)` says "put this `String` into this target sum." Like `match`, `widen_sum` is imported library code; the tutorial harness imports it from `spine_macros`. The macro walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
+`widen_sum("matched right\n"[String])[String | Int]` says "put this `String` into this target sum." Like `match`, `widen_sum` is imported library code; the tutorial harness imports it from `spine_macros`. The macro walks the target's spine for the arm a `String` fits (here, the left arm) and produces the sum value — the walk is scoped to the target type, not to what other types are in scope.
 
 ## Chapter 7 — Polymorphism
 
@@ -692,12 +692,12 @@ outside it, the enclosing parameter is still in scope:
 fn identity[A](value: A) -> A { value }
 
 fn shadow[A](value: A) -> A {
-  let inner = .[A](other: A) -> A { identity(A, other) };
-  inner(A, value)
+  let inner = .[A](other: A) -> A { identity[A](other) };
+  inner[A](value)
 }
 ```
 
-Here `identity(A, other)` uses the inner `A`. The call `inner(A, value)`
+Here `identity[A](other)` uses the inner `A`. The call `inner[A](value)`
 supplies the outer `A`, so `shadow` returns the same type it received.
 
 <!-- A poly-aware harness: declares `id` and a few call-site
@@ -733,9 +733,9 @@ fn id[A](x: A) -> A { x }
 `id` takes a type argument `A` and a value `x` of that type, and returns `x`. Most call sites elide the type argument; the typer infers it from the value-arg's type:
 
 ```kio {@tutorial_poly_block}
-let _i = id(42(Int));
+let _i = id(42[Int]);
 // A inferred as Int
-let _s = id("hi"(String));
+let _s = id("hi"[String]);
 // A inferred as String
 ()
 ```
@@ -749,15 +749,17 @@ spellings. Write every type explicitly, put `_` in only the slots the typer
 should solve, or elide that layer's leading run:
 
 ```kio {@tutorial_poly_block}
-let _explicit = pair(String, Int, "left", 1);
-let _partial = pair(String, _, "left", 1(Int));
-let _elided = pair("left"(String), 1(Int));
+let _explicit = pair[String][Int]("left", 1);
+let _partial = pair[String][_]("left", 1[Int]);
+let _elided = pair("left"[String], 1[Int]);
 ()
 ```
 
-Within that layer, written type arguments and `_` placeholders are positional
-and precede its value arguments. In the partial call, `String` fills `[A]` and
-`_` asks inference to solve `[B]` from `1(Int)`. Elision omits that leading binder
+Square brackets contain only types or whole-slot `_` placeholders; ordinary
+parentheses contain values. Written type arguments are positional within the
+current binder run. `pair[String][Int]` supplies the two types. Each bracket contains exactly
+one type; a comma-separated type list is rejected, at both calls and binders. In the partial call, `String` fills `[A]` and
+`_` asks inference to solve `[B]` from `1[Int]`. Elision omits that leading binder
 run; it is not shorthand for writing a variable number of underscores among
 value arguments. Consuming a value layer may expose a later binder run, which
 the same rule handles as the next layer of the call.
@@ -766,17 +768,17 @@ Bare polymorphic values stay polymorphic. When a surrounding function needs a
 particular instance as a value, write `_` as the type-only application:
 
 ```kio {@tutorial_poly_block}
-let _instantiated_function = id(_)(42(Int));
+let .(_instantiated_function: Int -> Int) = id[_];
 ()
 ```
 
-Here `_` is solved as `Int`, so `id(_)` is the residual function
-`Int -> Int`. `id()` means something different: its syntactically empty direct
+The binding's expected function type solves `_` as `Int`, so `id[_]` is the
+residual function `Int -> Int`. `id()` means something different: its syntactically empty direct
 call writes one Unit value, so it calls `id` at the Unit type and produces
 `()`. Written `id(())` does the same thing because `()` is only a value.
-`id(.)` explicitly selects the Unit type but writes no value, so it remains the
-residual function `. -> .`; write `id(., ())` to apply it. Likewise,
-`id(String)` retains `String -> String`. An expected function type may solve a
+`id[.]` explicitly selects the Unit type but writes no value, so it remains the
+residual function `. -> .`; write `id[.](())` to apply it. Likewise,
+`id[String]` retains `String -> String`. An expected function type may solve a
 written `_`, but that does not apply the function's value packet.
 
 A type binder can also appear after a value layer. In this reference shape,
@@ -791,14 +793,14 @@ After `produce(seed)` consumes `Seed`, the declared `Witness` return type fixes
 `Result`. Without that expected result, the returned polymorphic value remains
 polymorphic.
 
-A nonempty list containing only type arguments performs only type application.
-For `id` above, `id(String)` has type `String -> String`, and `id(.)` has type
-`. -> .`; write `id(., ())` to apply the latter function to Unit. A direct
+A bracket group performs only type application; empty `id[]` is rejected.
+For `id` above, `id[String]` has type `String -> String`, and `id[.]` has type
+`. -> .`; write `id[.](())` to apply the latter function to Unit. A direct
 empty call is different: `id()` omits `A`, writes one Unit value, infers
 `A = .`, and produces `()`, just like `id(())`.
 
-For a function `nil : [A] . -> List(A)`, `nil(A)` likewise retains
-`. -> List(A)`, while `nil(A)()`, `nil(A, ())`, and `().>nil(A)` apply the Unit
+For a function `nil : [A] . -> List[A]`, `nil[A]` likewise retains
+`. -> List[A]`, while `nil[A]()`, `nil[A](())`, and `().>nil[A]` apply the Unit
 argument. The shorter direct spelling `nil()` works only where the surrounding
 expected type determines `A`, and lowers with both arguments explicit. A
 receiver-only UFCS call omits its list: `x.>f` means `f(x)`. The spelling
@@ -819,21 +821,50 @@ fn pair[A][B](x: A, y: B) -> A & B { (x, y) }
 `pair` infers both `A` and `B` from the value-arg types. The tuple spelling is equivalent to the comma-separated spelling because call arguments and tuple values use the same right-associated binary-product shape:
 
 ```kio {@tutorial_poly_block}
-let _p1 = pair("left"(String), 1(Int));
-let _p2 = pair(("left"(String), 1(Int)));
+let _p1 = pair("left"[String], 1[Int]);
+let _p2 = pair(("left"[String], 1[Int]));
 ()
 ```
 
 Both calls infer `A` as `String` and `B` as `Int`.
 
-One argument list may continue through several function layers. Its grouping
-is lexical rather than guessed from argument types: values followed by more
-values fill product slots one at a time, while the final value in a packet may
-be a whole product. For a function of type `(A & B) -> C -> R`, write
-`f(a, b, c)` for three flat slots and `f(pair)(c)` when `pair : A & B` should
-fill the first layer as one value. `f(pair, c)` does not try both readings.
+### Calls have stages
 
-This is not automatic currying. A function of two value parameters is not a function that takes one value and returns a function for the second. If you want partial application, write that shape explicitly, for example `A -> B -> R`, or return a lambda from another lambda.
+Each value group applies one function stage. A comma-separated group is one
+product argument, so it agrees with an explicitly written tuple:
+
+```kio {@tutorial_module}
+fn add_then(left: Int, right: Int)(extra: Int) -> Int { add(add(left, right), extra) }
+
+fn staged_example() -> Int { add_then(1, 2)(3) }
+
+fn tuple_example() -> Int { add_then((1, 2))(3) }
+```
+
+The first stage consumes `Int & Int` and returns `Int -> Int`;
+the second stage supplies the extra number. `add_then(1, 2, 3)`
+would supply one three-component product to the first stage, so it does not
+fit. To retain the returned function, stop after the first complete stage.
+There is no partial application of half a product domain.
+
+Type stages can appear between value stages too:
+
+```kio {@tutorial_module}
+fn keep_first[A](left: A)[B](_right: B) -> A { left }
+
+fn explicit_stages() -> String { keep_first[String]("left")[Int](1) }
+
+fn inferred_stages() -> String { keep_first("left"[String])(1[Int]) }
+```
+
+The brackets select types; each pair of parentheses supplies one value stage.
+Omission still lets these connected stages cooperate through their ordinary
+local type constraints. A `let` remains a boundary: once an initializer must
+finish, a later statement cannot complete its missing types.
+
+`f[A]` and `f [A]` mean the same type application;
+to pass a square-bracket collection as a value, put it inside the value list,
+for example `f([* a, b *])`.
 
 `newtype`, `labels`, and `type` declarations can carry the same `[A]`, `[B]` shape — that's how generic containers and dictionaries get expressed without typeclasses or traits.
 
@@ -845,20 +876,20 @@ Some polymorphic values need a type but no value argument. Leave out the
 value-parameter group to construct the result as soon as the type is supplied:
 
 ```kio {@tutorial_module}
-fn nothing[A] -> A | . { widen_sum((), A | .) }
+fn nothing[A] -> A | . { widen_sum(())[A | .] }
 
-fn nothing_later[A]() -> A | . { nothing(A) }
+fn nothing_later[A]() -> A | . { nothing[A] }
 
 fn example() {
   let make = nothing;
-  let _empty = make(Int);
-  let wait = nothing_later(Int);
+  let _empty = make[Int];
+  let wait = nothing_later[Int];
   let _also_empty = wait();
   ()
 }
 ```
 
-`nothing` has type `[A] A | .`: `nothing(Int)` constructs an empty result.
+`nothing` has type `[A] A | .`: `nothing[Int]` constructs an empty result.
 Saving `nothing` in `make` keeps it polymorphic and does not run its body.
 `nothing_later` has type `[A] . -> (A | .)`: supplying `Int` leaves a function
 that waits for `()`. Choose the type-only form when selecting the type should
@@ -868,8 +899,8 @@ later computation. The two types are distinct.
 The anonymous form is `.[A] { body }`:
 
 ```kio {@block_expr}
-let make = .[A] { widen_sum((), A | .) };
-let _empty = make(Int);
+let make = .[A] { widen_sum(())[A | .] };
+let _empty = make[Int];
 ()
 ```
 
@@ -903,7 +934,7 @@ An argless UFCS segment is bare: write `value.>f` rather than `value.>f()`.
 The latter is rejected because direct `f()` means a Unit call; write
 `value.>f(())` when Unit really is an additional argument.
 
-Macro calls use the same surface rule. Because Chapter 6 already used `widen_sum`, you can read `s.>widen_sum(String | Int)` as the receiver-first spelling of `widen_sum(s, String | Int)`. The full guide covers the other UFCS splice forms: `.>>`, `.<`, and `.<<`.
+Macro calls use the same surface rule. Because Chapter 6 already used `widen_sum`, you can read `(s.>widen_sum)[String | Int]` as the receiver-first spelling of `widen_sum(s)[String | Int]`. The full guide covers the other UFCS splice forms: `.>>`, `.<`, and `.<<`.
 
 Blocks stay attached to the macro: `v.>match { clauses }` means
 `match(v) { clauses }`. In a reverse spelling, the receiver follows all the
@@ -934,9 +965,9 @@ fn as_text(v: String | Int) -> String {
   }
 }
 
-fn as_sum(s: String) -> String | Int { widen_sum(s, String | Int) }
+fn as_sum(s: String) -> String | Int { widen_sum(s)[String | Int] }
 
-fn pick_second(p: String & Int) -> Int { one_prod(p, Int) }
+fn pick_second(p: String & Int) -> Int { one_prod(p)[Int] }
 ```
 
 Read those as three explicit requests to imported code:

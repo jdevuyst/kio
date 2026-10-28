@@ -46,7 +46,7 @@ pub fn main() {
   io.print("\n");
   io.print(apply3(._p. { _p3 }));
   io.print("\n");
-  let p1 = "captured"(String);
+  let p1 = "captured"[String];
   io.print(apply1(.x. { let ignored = x1; p1 }));
   io.print("\n")
 }

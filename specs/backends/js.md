@@ -244,7 +244,7 @@ calls the package retains no globally-mutable state — only the
 frozen host record (built at factory-call time) and the
 lexically-scoped module closures.
 
-**Type erasure.** A `fn run[A](cfg: Config(A)) -> A`
+**Type erasure.** A `fn run[A](cfg: Config[A]) -> A`
 lowers to the `run(cfg)` method under its role-framed module namespace; a
 `host fn` declared with a rank-N
 parameter type (`f: [T] T -> T`) receives only the value
@@ -426,7 +426,7 @@ value crosses the boundary as a declaration-specific nominal handle,
 carrier it round-trips through the package's own constructors /
 projectors and must not introspect. A member-hidden newtype already uses its
 nominal handle regardless of recursion and cuts traversal of the payload-visible
-graph. For example, a both-public nonexistential `Root : Hidden(Root)` remains
+graph. For example, a both-public nonexistential `Root : Hidden[Root]` remains
 a structural wrapper when `Hidden` has a hidden member: its child is an atomic
 handle, so the cycle does not expand structurally.
 
@@ -449,7 +449,7 @@ declares generated types `T1`, `T2`, `T3`;
 | `(T1 & Str)`                               | `{_0: {T1: <i32>}, _1: <str>}`      |
 | `(T1 \| T2)`                               | `{_0: {T1: <i32>}}` or `{_1: {T2: <str>}}` |
 | `(I32 \| Str)`                             | `{_0: <i32>}` or `{_1: <str>}`     |
-| `F(I32) & F(Str)` (parametric same label)  | `{_0: {F: <i32>}, _1: {F: <str>}}` |
+| `F[I32] & F[Str]` (parametric same label)  | `{_0: {F: <i32>}, _1: {F: <str>}}` |
 
 The host dispatches a sum value by checking which key is present:
 `if ('_0' in v) … else if ('_1' in v) …`.
@@ -460,7 +460,7 @@ The package and host agree on the compositional shapes above. The
 [generic substitution law](README.md#generic-substitution-and-opaque-constructors)
 applies in both directions, including callbacks, returned values, and opaque
 host-container storage. Concrete protection never guesses a shape from an
-erased `T` or inspects an opaque `F(A)`.
+erased `T` or inspects an opaque `F[A]`.
 
 **Equality.** Hosts may compare two FFI-shape values using a
 deep-equality helper (`lodash.isEqual`, JSON-shape comparison,
@@ -529,7 +529,7 @@ leaf-name collision and no rename.
 
 **Polymorphic exports.** Type arguments are erased at codegen, so a
 polymorphic `pub fn` presents as a JS function taking only its value
-parameters. Given a `pub fn id[T](x: T) -> T { id_impl(T, x) }` in module
+parameters. Given a `pub fn id[T](x: T) -> T { id_impl[T](x) }` in module
 `m`, a host calls
 
 ```js
@@ -598,12 +598,12 @@ evidence to the host. The cross-cutting scheme is documented at
 [`backends/README.md` § Higher-kinded types](README.md#higher-kinded-types);
 the per-backend realization is:
 
-- A type-constructor application — `F(A)` for a kind-`*→*` binder, `Either(String)` for a partially-applied multi-arity newtype — retains its canonical value carrier. Applying a type does not add a runtime type object or inspect an opaque host value.
+- A type-constructor application — `F[A]` for a kind-`*→*` binder, `Either[String]` for a partially-applied multi-arity newtype — retains its canonical value carrier. Applying a type does not add a runtime type object or inspect an opaque host value.
 - An opaque host constructor is transported without inspection. Concrete Kio
   newtypes retain their declared wrapper or nominal handle; their constructors
   and projectors preserve that representation and operation visibility.
 
-**Polymorphic newtype payloads.** The dictionary pattern (`pub newtype Monad[*F] : [A][B](F(A) & (A -> F(B))) -> F(B)`) stores the same first-class staged value used elsewhere. Each binder is one explicit `advance()`; computation at that stage runs before the next stage is returned. With both members public it uses the ordinary visible wrapper; hiding either member selects the nominal handle rule. Construction, storage, and projection do not enter or compact its payload's stages. See the shared [polymorphic payload contract](README.md#polymorphic-newtype-payloads).
+**Polymorphic newtype payloads.** The dictionary pattern (`pub newtype Monad[*F] : [A][B](F[A] & (A -> F[B])) -> F[B]`) stores the same first-class staged value used elsewhere. Each binder is one explicit `advance()`; computation at that stage runs before the next stage is returned. With both members public it uses the ordinary visible wrapper; hiding either member selects the nominal handle rule. Construction, storage, and projection do not enter or compact its payload's stages. See the shared [polymorphic payload contract](README.md#polymorphic-newtype-payloads).
 
 ## Item naming
 
@@ -650,7 +650,7 @@ module hello/main;
 
 import hello(String, print);
 
-pub fn main() { print("hello\n"(String)) }
+pub fn main() { print("hello\n"[String]) }
 ```
 
 A Node host invokes the package as:
@@ -700,7 +700,7 @@ import __intrinsics__;
 import pair_swap(I32, String);
 
 pub fn pair_swap(p: (I32 & String)) -> (String & I32) {
-  __pair__(String, I32, __snd__(I32, String, p), __fst__(I32, String, p))
+  __pair__[String][I32](__snd__[I32][String](p), __fst__[I32][String](p))
 }
 ```
 

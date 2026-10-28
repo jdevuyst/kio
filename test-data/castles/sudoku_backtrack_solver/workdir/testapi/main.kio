@@ -31,7 +31,7 @@ import testapi/text(string_concat);
 /// three shipped grids settle in well under a thousand.
 fn budget() -> I32 { 200000 }
 
-fn run_puzzle(index: I32, name: String, puzzle: Array(I32)) {
+fn run_puzzle(index: I32, name: String, puzzle: Array[I32]) {
   let givens = array_clone(puzzle);
   let work = constraints.new_work(puzzle);
   let summary = search.solve(work, budget());

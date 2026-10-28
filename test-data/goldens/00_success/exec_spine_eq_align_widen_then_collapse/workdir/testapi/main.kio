@@ -14,9 +14,9 @@ import testapi/io(print);
 // outward behavior is identical.
 fn convert(b: Bool) -> String | I32 {
   fit(if(b) {
-    widen_sum("widened-collapsed\n"(String), String | String)
+    widen_sum("widened-collapsed\n"[String])[String | String]
   } else {
-    widen_sum("widened-collapsed\n"(String), String | String)
+    widen_sum("widened-collapsed\n"[String])[String | String]
   })
 }
 

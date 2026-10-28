@@ -19,7 +19,7 @@ fn value_or[A](default: A, result: A | .) -> A {
 /// A coefficient vector, low degree first: the element at index `i` is the
 /// coefficient of `x^i`. The list library owns the spine; this module owns what
 /// the spine means.
-pub type Coeffs = lc.List(I32);
+pub type Coeffs = lc.List[I32];
 
 /// A polynomial in this fixture workbench *is* its coefficient vector. The
 /// constructor and projector stay private so `of_coeffs` is the only way in, which

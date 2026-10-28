@@ -2,6 +2,6 @@ module testapi/array;
 
 import testapi(Array, I32);
 
-host fn array_make_filled[T](n: I32, fill: T) -> Array(T);
+host fn array_make_filled[T](n: I32, fill: T) -> Array[T];
 
-host fn array_get[T](a: Array(T), i: I32) -> T;
+host fn array_get[T](a: Array[T], i: I32) -> T;

@@ -7,11 +7,11 @@ import testapi/io(print);
 
 newtype Box[A] : A { constructor box; projector unbox }
 
-fn label[A](value: Box(A)) -> String { "matched\n" }
+fn label[A](value: Box[A]) -> String { "matched\n" }
 
-fn handle(value: Box(I32) | Box(String)) -> String {
+fn handle(value: Box[I32] | Box[String]) -> String {
   match(value) {
-    .[A](boxed: Box(A)) { () }
+    .[A](boxed: Box[A]) { () }
   }
 }
 

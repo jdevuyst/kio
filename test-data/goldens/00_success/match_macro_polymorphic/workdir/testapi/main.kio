@@ -11,12 +11,12 @@ import testapi/io(print);
 // concrete instance (`Box(I32)`, `Box(String)`).
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn show_int(b: Box(I32)) -> String { int_to_string(Box.un_box(b)) }
+fn show_int(b: Box[I32]) -> String { int_to_string(Box.un_box(b)) }
 
-fn show_str(b: Box(String)) -> String { Box.un_box(b) }
+fn show_str(b: Box[String]) -> String { Box.un_box(b) }
 
-fn handle(v: Box(I32) | Box(String)) -> String {
+fn handle(v: Box[I32] | Box[String]) -> String {
   match(v) { (show_int, show_str) }
 }
 
-pub fn main() { print(handle(widen_sum(Box.mk_box("match! polymorphic: ok\n"(String))))) }
+pub fn main() { print(handle(widen_sum(Box.mk_box("match! polymorphic: ok\n"[String])))) }

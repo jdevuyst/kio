@@ -65,13 +65,13 @@ A parameterized alias names a family of structural types:
 ```kio {@declarations}
 type Pair[A] = A & A;
 
-fn duplicate[A](value: A) -> Pair(A) { (value, value) }
+fn duplicate[A](value: A) -> Pair[A] { (value, value) }
 ```
 
 An alias reference must supply exactly its declared parameter count. Here,
-`Pair(Int)` is a type; bare `Pair` supplies none and is not a first-class type
+`Pair[Int]` is a type; bare `Pair` supplies none and is not a first-class type
 constructor. For `type Either_pair[E][A] = E | A;`, both `Either_pair` and
-`Either_pair(String)` are likewise type errors because they omit parameters
+`Either_pair[String]` are likewise type errors because they omit parameters
 declared by the alias. Aliases unfold wherever the typer compares types, and an
 ordinary alias cannot refer to itself. An alias may participate in a mutual
 recursive group only when a sibling `newtype` provides the nominal knot; an
@@ -85,13 +85,13 @@ order:
 ```kio {@declarations}
 newtype Box[A] : A { pub constructor make; pub projector open }
 
-type Wrapped[A] = Box(A);
+type Wrapped[A] = Box[A];
 
-fn roundtrip[A](value: A) -> A { Wrapped.open(A, Wrapped.make(A, value)) }
+fn roundtrip[A](value: A) -> A { Wrapped.open[A](Wrapped.make[A](value)) }
 ```
 
 `Wrapped.make` is the constructor declared by `Box`; it still produces the
-`Box(A)` nominal. A partial application, reordered parameter list, structural
+`Box[A]` nominal. A partial application, reordered parameter list, structural
 alias, cycle, or missing target has no member namespace. The alias must already
 be in scope, and both the alias and terminal member must be visible from the
 use site.
@@ -114,11 +114,11 @@ literal limit = 100;
 
 fn greeting_text() -> String { greeting }
 
-fn explicit_limit() -> Int { limit(Int) }
+fn explicit_limit() -> Int { limit[Int] }
 ```
 
 The bare `greeting` is checked against the function's `String` return type.
-`limit(Int)` supplies the same annotation as `100(Int)`. A literal alias is
+`limit[Int]` supplies the same annotation as `100[Int]`. A literal alias is
 not a cached value or an arbitrary expression binding: expansion substitutes
 the stored token at each use. Use a zero-argument `fn` when evaluation itself
 is part of the abstraction.
@@ -167,7 +167,7 @@ Parameterized newtype members accept explicit type arguments; ordinary inference
 ```kio {@declarations}
 newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn box_roundtrip[A](value: A) -> A { Box.un_box(A, Box.mk_box(A, value)) }
+fn box_roundtrip[A](value: A) -> A { Box.un_box[A](Box.mk_box[A](value)) }
 ```
 
 ## Recursive newtypes
@@ -177,16 +177,16 @@ when its payload genuinely refers to that nominal name. The recursive
 occurrence must be strictly positive:
 
 ```kio {@declarations}
-rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
+rec newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
 
-fn empty[A] -> List(A) { List.mk_list(A, widen_sum((), . | (A & List(A)))) }
+fn empty[A] -> List[A] { List.mk_list[A](widen_sum(())[. | (A & List[A])]) }
 
-fn empty_later[A]() -> List(A) { empty(A) }
+fn empty_later[A]() -> List[A] { empty[A] }
 ```
 
-`empty(Int)` constructs a `List(Int)` with only a type argument. The optional
-`empty_later` wrapper deliberately keeps a Unit argument: `empty_later(Int)`
-returns a function, and `empty_later(Int, ())` constructs the list. A bare
+`empty[Int]` constructs a `List[Int]` with only a type argument. The optional
+`empty_later` wrapper deliberately keeps a Unit argument: `empty_later[Int]`
+returns a function, and `empty_later[Int](())` constructs the list. A bare
 `empty` remains polymorphic; it does not construct a list until specialized.
 See [Type-only values](../tutorials/language.md#type-only-values) for the
 anonymous form.
@@ -216,8 +216,8 @@ member:
 
 ```kio {@declarations}
 rec {
-  type Tree[A] = Branch(A);
-  newtype Branch[A] : . | (A & Tree(A) & Tree(A)) { constructor mk_branch; projector un_branch }
+  type Tree[A] = Branch[A];
+  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) { constructor mk_branch; projector un_branch }
 }
 ```
 
@@ -235,8 +235,8 @@ Code that relied on a declaration seeing its own head adds the singleton
 marker at the declaration-modifier position. Visibility stays before it:
 
 ```diff
--pub newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
-+pub rec newtype List[A] : . | (A & List(A)) { pub constructor mk_list; pub projector un_list }
+-pub newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
++pub rec newtype List[A] : . | (A & List[A]) { pub constructor mk_list; pub projector un_list }
 
 -labels Tree = { leaf: Int } | { branch: Tree & Tree };
 +rec labels Tree = { leaf: Int } | { branch: Tree & Tree };
@@ -247,14 +247,14 @@ the genuinely mutual component. The declarations remain the operation units;
 the group supplies only their shared scope:
 
 ```diff
--type Tree[A] = Branch(A);
--newtype Branch[A] : . | (A & Tree(A) & Tree(A)) {
+-type Tree[A] = Branch[A];
+-newtype Branch[A] : . | (A & Tree[A] & Tree[A]) {
 -  constructor mk_branch;
 -  projector un_branch
 -}
 +rec {
-+  type Tree[A] = Branch(A);
-+  newtype Branch[A] : . | (A & Tree(A) & Tree(A)) {
++  type Tree[A] = Branch[A];
++  newtype Branch[A] : . | (A & Tree[A] & Tree[A]) {
 +    constructor mk_branch;
 +    projector un_branch
 +  }
@@ -288,17 +288,17 @@ public arity at its square-bracket parameters:
 ```kio {@declarations}
 newtype Pack[A] <Hidden> : A & Hidden { pub constructor mk_pack; pub projector open_pack }
 
-fn pack_string(value: Int, hidden: String) -> Pack(Int) { Pack.mk_pack(Int, (value, hidden)) }
+fn pack_string(value: Int, hidden: String) -> Pack[Int] { Pack.mk_pack[Int]((value, hidden)) }
 
-fn first[A](pack: Pack(A)) -> A {
-  Pack.open_pack(A, pack)(
-  , _
-  , .[Hidden](payload) { let .(value: A, _hidden: Hidden) = payload; value }
-  )
+fn first[A](pack: Pack[A]) -> A {
+  Pack.open_pack[A](pack)[_](.[Hidden](payload) {
+    let .(value: A, _hidden: Hidden) = payload;
+    value
+  })
 }
 
-fn first_pattern[A](pack: Pack(A)) -> A {
-  let .(<Hidden> (value: A, _hidden: Hidden)) = Pack.open_pack(A, pack);
+fn first_pattern[A](pack: Pack[A]) -> A {
+  let .(<Hidden> (value: A, _hidden: Hidden)) = Pack.open_pack[A](pack);
   value
 }
 ```
@@ -395,7 +395,7 @@ type Duplicate[A] = A & A;
 
 pub pure fn id[A](value: A) -> A { value }
 
-pure fn duplicate[A](value: A) -> Duplicate(A) { (id(value), id(value)) }
+pure fn duplicate[A](value: A) -> Duplicate[A] { (id(value), id(value)) }
 
 pure fn keep_int(value: Int) -> Int { let .(kept: Int) = id(value); kept }
 

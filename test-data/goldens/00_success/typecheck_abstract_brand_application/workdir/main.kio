@@ -6,4 +6,4 @@ module main;
 // application — `F` is annotated kind-`*→*`, `A` is kind-`*`, so
 // `F(A)` is kind-`*`. No brand crossing happens here; the value
 // flows through unchanged.
-fn rebrand[*F][A](x: F(A)) -> F(A) { x }
+fn rebrand[*F][A](x: F[A]) -> F[A] { x }

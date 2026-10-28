@@ -11,11 +11,11 @@ import testapi/iter(loop);
 
 rec(loop) fn reconstruct(
 , network: net.Network
-, parent: Array(I32)
+, parent: Array[I32]
 , source: I32
 , node: I32
-, path: Array(I32)
-) -> Array(I32) {
+, path: Array[I32]
+) -> Array[I32] {
   if(math.equal(node, source)) {
     path
   } else {
@@ -33,16 +33,16 @@ rec(loop) fn reconstruct(
 
 rec(loop) fn walk(
 , network: net.Network
-, residual: Array(I32)
+, residual: Array[I32]
 , source: I32
 , sink: I32
-, parent: Array(I32)
-, seen: Array(Bool)
+, parent: Array[I32]
+, seen: Array[Bool]
 , node: I32
 , index: I32
-) -> Array(I32) | . {
+) -> Array[I32] | . {
   if(math.equal(node, sink)) {
-    reconstruct(network, parent, source, sink, ar.array_make_empty(I32, ())).>widen_sum
+    reconstruct(network, parent, source, sink, ar.array_make_empty[I32](())).>widen_sum
   } else {
     let edges = network.?{net.edges};
     if(math.less(index, ar.array_len(edges))) {
@@ -79,20 +79,20 @@ rec(loop) fn walk(
   }
 }
 
-pub fn augmenting_path(network: net.Network, residual: Array(I32), source: I32, sink: I32) ->
-  Array(I32) | .
+pub fn augmenting_path(network: net.Network, residual: Array[I32], source: I32, sink: I32) ->
+  Array[I32] | .
    {
-  let parent = ar.array_make_filled(network.?{net.vertices}, -1);
-  let seen = ar.array_make_filled(network.?{net.vertices}, .f);
+  let .(parent: Array[I32]) = ar.array_make_filled(network.?{net.vertices}, -1);
+  let .(seen: Array[Bool]) = ar.array_make_filled(network.?{net.vertices}, .f);
   ar.array_set(seen, source, .t);
   walk(network, residual, source, sink, parent, seen, source, 0)
 }
 
 rec(loop) fn scan_reachable(
 , network: net.Network
-, residual: Array(I32)
-, reached: Array(Bool)
-, queue: Array(I32)
+, residual: Array[I32]
+, reached: Array[Bool]
+, queue: Array[I32]
 , node: I32
 , index: I32
 ) {
@@ -118,11 +118,11 @@ rec(loop) fn scan_reachable(
 
 rec(loop) fn breadth_first(
 , network: net.Network
-, residual: Array(I32)
-, reached: Array(Bool)
-, queue: Array(I32)
+, residual: Array[I32]
+, reached: Array[Bool]
+, queue: Array[I32]
 , head: I32
-) -> Array(Bool) {
+) -> Array[Bool] {
   if(math.less(head, ar.array_len(queue))) {
     scan_reachable(network, residual, reached, queue, ar.array_get(queue, head), 0);
     recur breadth_first(network, residual, reached, queue, a.add_i32(head, 1))
@@ -131,9 +131,9 @@ rec(loop) fn breadth_first(
   }
 }
 
-pub fn reachable(network: net.Network, residual: Array(I32), source: I32) -> Array(Bool) {
-  let reached = ar.array_make_filled(network.?{net.vertices}, .f);
-  let queue = ar.array_make_empty(I32, ());
+pub fn reachable(network: net.Network, residual: Array[I32], source: I32) -> Array[Bool] {
+  let .(reached: Array[Bool]) = ar.array_make_filled(network.?{net.vertices}, .f);
+  let queue = ar.array_make_empty[I32](());
   ar.array_set(reached, source, .t);
   ar.array_push(queue, source);
   breadth_first(network, residual, reached, queue, 0)

@@ -73,7 +73,7 @@ fn identity[A](value: A) -> A { value }
 fn keep_number(number: Int) -> Int { identity(number) }
 ```
 
-You could spell the call `identity(Int, number)`, but there is no need here.
+You could spell the call `identity[Int](number)`, but there is no need here.
 An explicit `_` type argument likewise asks Kio to fill that slot; it is not
 a request to search for a value.
 
@@ -225,14 +225,14 @@ boundary rather than relying on later uses to reconstruct it.
 
 In a **sequence block**, such as the block passed to `do`, semicolons also
 separate clauses. The supplied bind function connects an action of type
-`F(A)` to a continuation receiving its payload `A`:
+`F[A]` to a continuation receiving its payload `A`:
 
 ```kio {@branches}
 fn sequence_example[*F](
-, bind: [A][B] (F(A) & (A -> F(B))) -> F(B)
-, source: F(Int)
-, finish: Int -> F(String)
-) -> F(String) {
+, bind: [A][B] (F[A] & (A -> F[B])) -> F[B]
+, source: F[Int]
+, finish: Int -> F[String]
+) -> F[String] {
   do(bind) { let value <- source; finish(value) }
 }
 ```
@@ -248,9 +248,9 @@ and result-type constraints. For example, the expected block result can guide
 the bind's result type. This does not permit a later use of `value` to choose
 the earlier action's payload type: that source-first boundary remains in place.
 
-An earlier unbound expression must produce `F(.)`; write `let _ <- action;`
+An earlier unbound expression must produce `F[.]`; write `let _ <- action;`
 to discard an action's non-unit payload deliberately. The final expression
-instead supplies the block's `F(R)` result. Its trailing `;` does not add
+instead supplies the block's `F[R]` result. Its trailing `;` does not add
 another bind, discard that result, or insert a lift. Within each source
 expression, nested calls still cooperate under the ordinary call rules.
 See [monadic `do`](higher-kinded-types.md#monadic-do) for the supplied bind
@@ -343,19 +343,19 @@ type Int_fn = Int -> Int;
 
 fn identity[A](value: A) -> A { value }
 
-fn text_handler(_text: String) -> Int_fn { identity(Int) }
+fn text_handler(_text: String) -> Int_fn { identity[Int] }
 
 fn apply_selected(source: Int | String, value: Int) -> Int {
   let selected =
     match(source) {
-      .(_number: Int) { identity(_) };
+      .(_number: Int) { identity[_] };
       text_handler
     };
   selected(value)
 }
 ```
 
-`identity(_)` asks Kio to choose the identity function's type argument without
+`identity[_]` asks Kio to choose the identity function's type argument without
 applying it to a value. The already typed `text_handler` returns `Int_fn`, so
 the other clause must also return `Int -> Int`: its `_` is filled as `Int`.
 The match therefore selects an identity function, which `selected(value)`
@@ -387,11 +387,20 @@ argument body to find information they need to expand. Ordinary `impl`
 macros instead receive arguments whose checking is already complete.
 The distinction can matter to callers, not just library authors.
 
+In a chain such as `macro_name[A](input)[B](other)`, later arguments can
+help determine earlier types through the macro's declared type. The compiler
+checks that whole chain before running the implementation; grouping does not
+force an early expansion. The expansion cannot justify an otherwise invalid
+input. A call on an ordinary function returned by the generated code remains
+a normal function call, rather than another input to the macro. Binding the
+result with `let` ends the connection. See
+[call stages](../tutorials/language.md#calls-have-stages).
+
 Computed arguments must have determined types before the expansion starts.
 The call's outside expected result and already known sibling arguments can
 help determine them through the macro's public type. The implementation's
 later choices cannot. A declared generic parameter still counts as known:
-`Box(A)` inside a function declaring `A` is different from a factory call whose
+`Box[A]` inside a function declaring `A` is different from a factory call whose
 type argument has not been chosen. Supply an explicit type argument or a
 complete binding annotation when the call otherwise lacks that information.
 Adding an unannotated binding alone does not supply it.
@@ -437,7 +446,7 @@ adaptation visible. Read [products](products.md), [sums](sums.md), and
 ## Literal types and local inference
 
 A scalar literal needs one concrete carrier. An explicit annotation such as
-`42(Small)` selects it directly. Otherwise, a concrete expected return,
+`42[Small]` selects it directly. Otherwise, a concrete expected return,
 argument or binding type can determine it through ordinary local inference:
 
 ```kio {}
@@ -453,7 +462,7 @@ host type String role(str);
 
 fn chosen_number() -> Int { 42 }
 
-fn small_number() -> Small { 42(Small) }
+fn small_number() -> Small { 42[Small] }
 
 fn greeting() -> String { "hello" }
 
@@ -475,7 +484,7 @@ point, including exponent forms such as `1.0e3`; `42e0`, `.5` and `1.` reject.
 Inference remains local. A fully concrete binding pattern can check an
 initializer, but an untyped `let` initializer must finish before the next
 statement. `let value = 42; consume(value);` cannot use the later call to
-choose a carrier. Write `let value = 42(Int);` or a concrete binding pattern.
+choose a carrier. Write `let value = 42[Int];` or a concrete binding pattern.
 A generic call may connect constraints from its arguments and expected result
 within the existing finite call boundary. If those constraints never determine
 the literal's carrier, annotate that literal; the compiler does not search

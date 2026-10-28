@@ -526,7 +526,7 @@ module greeter/main;
 
 import greeter(String, print);
 
-pub fn main() { print("Hello from Kio!\n"(String)) }
+pub fn main() { print("Hello from Kio!\n"[String]) }
 ```
 
 Save this host as `main.go` beside the Kio package manifest. Create the host's

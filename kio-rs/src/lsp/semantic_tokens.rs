@@ -639,16 +639,16 @@ mod tests {
     }
 
     #[test]
-    fn semantic_tokens_classify_raw_call_type_arguments_by_spelling() {
+    fn semantic_tokens_classify_bracketed_call_type_arguments_by_spelling() {
         let source = "module m; fn id[A](x: A) -> A { x } \
                       fn use_types[A][_A](x: A, y: _A) -> _A { \
-                        let _ = id(A, x); id(_A, y) \
+                        let _ = id[A](x); id[_A](y) \
                       }";
         let tokens = semantic_tokens(source).expect("semantic tokens");
-        for call in ["id(A, x)", "id(_A, y)"] {
-            let byte = source.find(call).unwrap() + "id(".len();
+        for call in ["id[A](x)", "id[_A](y)"] {
+            let byte = source.find(call).unwrap() + "id[".len();
             let token = semantic_token_at_byte(source, &tokens.data, byte as u32)
-                .expect("raw call type-argument token");
+                .expect("bracketed call type-argument token");
             assert_eq!(token.token_type, TT_TYPE, "{call}");
         }
     }

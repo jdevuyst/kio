@@ -1,0 +1,37 @@
+module prog;
+
+import __intrinsics__;
+
+import control(Bool);
+
+host type I8 role(i8);
+
+host type I16 role(i16);
+
+host type I32 role(i32);
+
+host type I64 role(i64);
+
+host type I128 role(i128);
+
+host type U8 role(u8);
+
+host type U16 role(u16);
+
+host type U32 role(u32);
+
+host type U64 role(u64);
+
+host type U128 role(u128);
+
+host type F32 role(f32);
+
+host type F64 role(f64);
+
+host type String role(str);
+
+host fn print_i32(value: I32);
+
+pub fn main() {
+  print_i32(__if_then_else__[Bool][I32](.t[Bool], .() { 1[I32] }, .() { 2[I32] }))
+}

@@ -7,11 +7,11 @@ import macro_util(choose_checked_term);
 
 pub type Marker_bool = . | .;
 
-pub fn marker_true() -> Marker_bool { __left__(., ., ()) }
+pub fn marker_true() -> Marker_bool { __left__[.][.](()) }
 
-pub fn marker_false() -> Marker_bool { __right__(., ., ()) }
+pub fn marker_false() -> Marker_bool { __right__[.][.](()) }
 
-pure fn marker_bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct, . -> Marker_bool) }
+pure fn marker_bool_fn_type(ct: __Comptime__) -> __Type__ { __reflect_type__(ct)[. -> Marker_bool] }
 
 pure fn call_marker_bool(ct: __Comptime__, fn_type: __Type__, value_fn: __Checked_term__) -> __Checked_term__ {
   __term_call__(ct, fn_type, value_fn, __term_unit__(ct))

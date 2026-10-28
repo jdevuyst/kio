@@ -14,7 +14,7 @@ fn generic_first(condition: Bool) -> I32 {
       Const.mk_const(11)
     } else {
       print("if concrete-later\n");
-      Const.mk_const(I32, 12)
+      Const.mk_const[I32](12)
     };
   Const.un_const(selected)
 }
@@ -23,7 +23,7 @@ fn concrete_first(condition: Bool) -> I32 {
   let selected =
     if(condition) {
       print("if concrete-first\n");
-      Const.mk_const(I32, 21)
+      Const.mk_const[I32](21)
     } else {
       print("if generic-later\n");
       Const.mk_const(22)

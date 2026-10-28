@@ -2,4 +2,4 @@ module main;
 
 host type Number role(f32);
 
-fn value() -> Number { 3.5e38(Number) }
+fn value() -> Number { 3.5e38[Number] }

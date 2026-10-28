@@ -1267,57 +1267,62 @@ fn lsp_recursive_annotations_replace_canonically_on_current_overlays() {
         json!({"textDocument": {"uri": uri, "languageId": "kio", "version": 1, "text": ""}}),
     );
     let cases = [
-        ("|", vec!["escape", "poly"], Some(("escape", "escape")), "x"),
+        (
+            "|",
+            vec!["escape", "poly"],
+            Some(("escape", "escape")),
+            "(x)",
+        ),
         (
             "cont, |",
             vec!["escape", "poly"],
             Some(("escape", "escape")),
-            "x",
+            "(x)",
         ),
         (
             "poly, cont, es|capex",
             vec!["escape"],
             Some(("escape", "poly, escape")),
-            "A & A, (x, x)",
+            "[A & A]((x, x))",
         ),
         (
             "escape, |",
             vec!["poly"],
             Some(("poly", "poly, escape")),
-            "A & A, (x, x)",
+            "[A & A]((x, x))",
         ),
         (
             "cont, // 😀 keep\n es|cape",
             vec!["escape", "poly"],
             Some(("escape", " // 😀 keep\n escape")),
-            "x",
+            "(x)",
         ),
         (
             "cont,\n |",
             vec!["escape", "poly"],
             Some(("escape", "\n escape")),
-            "x",
+            "(x)",
         ),
         (
             "|,\n escape",
             vec!["poly"],
             Some(("poly", "poly, escape\n ")),
-            "A & A, (x, x)",
+            "[A & A]((x, x))",
         ),
         (
             "|, escape",
             vec!["poly"],
             Some(("poly", "poly, escape")),
-            "A & A, (x, x)",
+            "[A & A]((x, x))",
         ),
-        ("poly, escape, |", vec![], None, "A & A, (x, x)"),
-        ("es|capex, unknown", vec![], None, "x"),
-        ("es|capex, // keep\n unknown", vec![], None, "x"),
+        ("poly, escape, |", vec![], None, "[A & A]((x, x))"),
+        ("es|capex, unknown", vec![], None, "(x)"),
+        ("es|capex, // keep\n unknown", vec![], None, "(x)"),
     ];
     let mut version = 1;
     for (annotations, expected, selected, args) in cases.iter().chain(cases.iter().rev()) {
         let marked = format!(
-            "module pkg/main; import pkg as host; rec(host.drive) {{ fn again[A](x: A) -> . {{ recur again(x) }}; pub fn capture[A](x: A) -> . {{ host.retain(.() -> . {{ recur({annotations}) again({args}) }}) }} }}"
+            "module pkg/main; import pkg as host; rec(host.drive) {{ fn again[A](x: A) -> . {{ recur again(x) }}; pub fn capture[A](x: A) -> . {{ host.retain(.() -> . {{ recur({annotations}) again{args} }}) }} }}"
         );
         let cursor = marked.find('|').unwrap();
         let source = marked.replacen('|', "", 1);

@@ -36,21 +36,21 @@ pub labels Command =
 
 pub fn verb_of(word: String) -> Verb {
   if(string_eq(word, "go")) {
-    {go_verb=}.>widen_sum(Verb)
+    ({go_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "take")) {
-    {take_verb=}.>widen_sum(Verb)
+    ({take_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "drop")) {
-    {drop_verb=}.>widen_sum(Verb)
+    ({drop_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "unlock")) {
-    {unlock_verb=}.>widen_sum(Verb)
+    ({unlock_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "look")) {
-    {look_verb=}.>widen_sum(Verb)
+    ({look_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "inventory")) {
-    {bag_verb=}.>widen_sum(Verb)
+    ({bag_verb=}.>widen_sum)[Verb]
   } else if(string_eq(word, "quit")) {
-    {quit_verb=}.>widen_sum(Verb)
+    ({quit_verb=}.>widen_sum)[Verb]
   } else {
-    {bad_verb = word}.>widen_sum(Verb)
+    ({bad_verb = word}.>widen_sum)[Verb]
   }
 }
 
@@ -72,14 +72,14 @@ pub fn verb_takes_object(v: Verb) -> Bool {
 pub fn command_of(v: Verb, object: String) -> Command {
   match(v) {
     (
-    , .(_g: Go_verb) { widen_sum({go_cmd = object}, Command) }
-    , .(_t: Take_verb) { widen_sum({take_cmd = object}, Command) }
-    , .(_d: Drop_verb) { widen_sum({drop_cmd = object}, Command) }
-    , .(_u: Unlock_verb) { widen_sum({unlock_cmd = object}, Command) }
-    , .(_l: Look_verb) { widen_sum({look_cmd=}, Command) }
-    , .(_b: Bag_verb) { widen_sum({bag_cmd=}, Command) }
-    , .(_q: Quit_verb) { widen_sum({quit_cmd=}, Command) }
-    , .(x: Bad_verb) { widen_sum({unknown_cmd = x.?{bad_verb}}, Command) }
+    , .(_g: Go_verb) { widen_sum({go_cmd = object})[Command] }
+    , .(_t: Take_verb) { widen_sum({take_cmd = object})[Command] }
+    , .(_d: Drop_verb) { widen_sum({drop_cmd = object})[Command] }
+    , .(_u: Unlock_verb) { widen_sum({unlock_cmd = object})[Command] }
+    , .(_l: Look_verb) { widen_sum({look_cmd=})[Command] }
+    , .(_b: Bag_verb) { widen_sum({bag_cmd=})[Command] }
+    , .(_q: Quit_verb) { widen_sum({quit_cmd=})[Command] }
+    , .(x: Bad_verb) { widen_sum({unknown_cmd = x.?{bad_verb}})[Command] }
     )
   }
 }

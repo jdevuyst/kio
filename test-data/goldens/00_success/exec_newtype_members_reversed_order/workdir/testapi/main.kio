@@ -10,6 +10,6 @@ import testapi/io(print);
 // the pair to `constructor`-then-`projector` (see specs/style.md).
 newtype Wrap : I32 { pub constructor mk_wrap; pub projector un_wrap; };
 
-fn wrapped() -> Wrap { Wrap.mk_wrap(42(I32)) }
+fn wrapped() -> Wrap { Wrap.mk_wrap(42[I32]) }
 
 pub fn main() { print(int_to_string(Wrap.un_wrap(wrapped()))) }

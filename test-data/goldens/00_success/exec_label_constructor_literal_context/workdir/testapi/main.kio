@@ -8,9 +8,9 @@ labels { box[A]: (A -> A) -> A, first[A]: A, second[A]: A };
 
 fn mark(tag: String, value: I32) -> I32 { print(tag); value }
 
-fn constructed() -> Second(I32) & First(I32) { {first = mark("A", 1), second = mark("B", 2)} }
+fn constructed() -> Second[I32] & First[I32] { {first = mark("A", 1), second = mark("B", 2)} }
 
-fn direct() -> Second(I32) & First(I32) {
+fn direct() -> Second[I32] & First[I32] {
   let first = First.mk(mark("C", 3));
   let second = Second.mk(mark("D", 4));
   (second, first)

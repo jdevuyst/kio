@@ -87,9 +87,9 @@ opaque host type `main.Box[T]` to the runner's `Box` fixture and invokes
 `main.main`. `generated-core-main` supplies the
 generated core package's exact fourteen `prog` role types and the standard
 `prog.print_i32` capability, while
-`generated-surface-main` additionally supplies the four role types declared by
-its bundled `testapi` support module and the standard `prog.print_i32`
-capability; both invoke `main` in module `prog`.
+`generated-surface-main` replaces `prog.Bool` with `control.Bool` and adds the
+four role types declared by its bundled `testapi` support module; it supplies
+the same print capability. Both invoke `main` in module `prog`.
 `generated-control-main` invokes the same entry with those eighteen role
 types and the standard `testapi/io.print` and `prog.print_i32` capabilities, for independently
 modelled generated control traces across all eight executable backends.

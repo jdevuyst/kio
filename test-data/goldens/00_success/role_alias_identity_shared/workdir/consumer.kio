@@ -11,32 +11,30 @@ type First = provider.Bool;
 type Second = provider.Bool;
 
 fn surface(condition: First) -> Second {
-  if(condition) { .t(Second) } else { .f(Second) }
+  if(condition) { .t[Second] } else { .f[Second] }
 }
 
 fn core(condition: First) -> Second {
-  __if_then_else__(
-  , First
-  , Second
+  __if_then_else__[First][Second](
   , condition
-  , .() -> Second { .t(Second) }
-  , .() -> Second { .f(Second) }
+  , .() -> Second { .t[Second] }
+  , .() -> Second { .f[Second] }
   )
 }
 
 fn type_applied(packet: First & (. -> Second) & (. -> Second)) -> Second {
-  let choose = __if_then_else__(First, Second);
+  let choose = __if_then_else__[First][Second];
   choose(packet)
 }
 
 fn packed(packet: First & (. -> Second) & (. -> Second)) -> Second {
-  __if_then_else__(First, Second, packet)
+  __if_then_else__[First][Second](packet)
 }
 
 fn branches_packed(condition: First, branches: (. -> Second) & (. -> Second)) -> Second {
-  __if_then_else__(First, Second, condition, branches)
+  __if_then_else__[First][Second](condition, branches)
 }
 
 fn ufcs(packet: First & (. -> Second) & (. -> Second)) -> Second {
-  packet.>>__if_then_else__(First, Second)
+  packet.>>__if_then_else__[First][Second]
 }

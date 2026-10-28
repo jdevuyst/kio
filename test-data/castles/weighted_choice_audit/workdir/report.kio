@@ -16,8 +16,8 @@ fn weighted_text[A](show: A -> String, outcome: A, weight: I32) -> String {
 
 pub fn distribution[A](
 , title: String
-, choices: choice.Choice(A)
-, support: lists.List(A)
+, choices: choice.Choice[A]
+, support: lists.List[A]
 , equal: (A & A) -> Bool
 , show: A -> String
 ) {
@@ -39,7 +39,7 @@ pub fn distribution[A](
     .>io.print
 }
 
-pub fn integer_distribution(title: String, choices: choice.Choice(I32), support: lists.List(I32)) {
+pub fn integer_distribution(title: String, choices: choice.Choice[I32], support: lists.List[I32]) {
   distribution(title, choices, support, arith.eq_i32, fmt.int_to_string)
 }
 

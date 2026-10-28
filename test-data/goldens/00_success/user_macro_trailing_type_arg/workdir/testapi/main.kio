@@ -8,7 +8,7 @@ import testapi/io(print);
 import testapi/text(string_concat);
 
 fn marker_bool_to_string(value: Marker_bool) -> String {
-  __either__(., ., String, value, .(yes: .) -> String { "true" }, .(no: .) -> String { "false" })
+  __either__[.][.][String](value, .(yes: .) -> String { "true" }, .(no: .) -> String { "false" })
 }
 
 fn line(label: String, value: Marker_bool) {
@@ -16,7 +16,7 @@ fn line(label: String, value: Marker_bool) {
 }
 
 pub fn main() {
-  let value = "payload"(String);
-  line("needle String: ", marker(value, String));
-  line("needle I32: ", marker(value, I32))
+  let value = "payload"[String];
+  line("needle String: ", marker(value)[String]);
+  line("needle I32: ", marker(value)[I32])
 }

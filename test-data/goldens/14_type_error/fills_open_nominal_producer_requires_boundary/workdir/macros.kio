@@ -8,4 +8,4 @@ pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, a: __Type__, _value: 
   __Checked_term__ & __Fill_ctx__
    { (__term_unit__(ct), __fill__(ct, fills, a, __type_unit__(ct))) }
 
-pub macro ignore : [A] Box(A) -> A { impl(fills) ignore_impl }
+pub macro ignore : [A] Box[A] -> A { impl(fills) ignore_impl }

@@ -29,10 +29,10 @@ import testapi/iter(loop);
 /// pointer fields of live objects, and `pops` as `marked + revisits`.
 pub labels Trace = { pushes: I32, pops: I32, revisits: I32, marked: I32 };
 
-pub labels Marking = { mark_bits: Array(Bool), mark_trace: Trace };
+pub labels Marking = { mark_bits: Array[Bool], mark_trace: Trace };
 
 /// An immediate is not an edge, so only pointer fields are pushed.
-fn push_fields(cells: Array(I32), work: Array(I32), addr: I32, pushed: I32) -> I32 {
+fn push_fields(cells: Array[I32], work: Array[I32], addr: I32, pushed: I32) -> I32 {
   fold_fields(
   , cells
   , addr
@@ -45,7 +45,7 @@ fn push_fields(cells: Array(I32), work: Array(I32), addr: I32, pushed: I32) -> I
   )
 }
 
-rec(loop) fn seed_roots(roots: Array(I32), work: Array(I32), index: I32, pushed: I32) -> I32 {
+rec(loop) fn seed_roots(roots: Array[I32], work: Array[I32], index: I32, pushed: I32) -> I32 {
   if(int_lt(index, array_len(roots))) {
     array_push(work, array_get(roots, index));
     recur seed_roots(roots, work, add_i32(index, 1), add_i32(pushed, 1))
@@ -56,7 +56,7 @@ rec(loop) fn seed_roots(roots: Array(I32), work: Array(I32), index: I32, pushed:
 
 /// Drain the worklist. `array_pop_back` reports the empty stack as the
 /// unit arm of its `I32 | .` result, which is the loop's only exit.
-rec(loop) fn drain(cells: Array(I32), work: Array(I32), marks: Array(Bool), trace: Trace) -> Trace {
+rec(loop) fn drain(cells: Array[I32], work: Array[I32], marks: Array[Bool], trace: Trace) -> Trace {
   match(array_pop_back(work)) {
     (
     , .(addr: I32) {
@@ -79,9 +79,9 @@ rec(loop) fn drain(cells: Array(I32), work: Array(I32), marks: Array(Bool), trac
   }
 }
 
-pub fn mark_heap(cells: Array(I32), roots: Array(I32)) -> Marking {
-  let marks = array_make_filled(top(cells), .f);
-  let work = array_make_empty(I32, ());
+pub fn mark_heap(cells: Array[I32], roots: Array[I32]) -> Marking {
+  let .(marks: Array[Bool]) = array_make_filled(top(cells), .f);
+  let work = array_make_empty[I32](());
   let seeded = seed_roots(roots, work, 0, 0);
   let trace = drain(cells, work, marks, {pushes = seeded, pops = 0, revisits = 0, marked = 0});
   {mark_bits = marks, mark_trace = trace}

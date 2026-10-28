@@ -15,7 +15,7 @@ import testapi(Bool, I32);
 import testapi/arith(add_i32, leq_i32);
 import testapi/iter(loop);
 
-rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_breaks: List(I32)) -> List(I32) {
+rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_breaks: List[I32]) -> List[I32] {
   match(rest.>List.unpack) {
     (
     , .(w: Word, tail: Words) {
@@ -41,6 +41,6 @@ rec(loop) fn fit_onto(column: I32, rest: Words, cursor: I32, used: I32, rev_brea
 /// that starts a fresh line, then the word count. Adjacent pairs are the lines.
 /// An empty line starts one gap in debt, so the first word it takes pays for a
 /// gap that is not there — the same accounting `span_used` uses.
-pub fn greedy_breaks(xs: Words, column: I32) -> List(I32) {
+pub fn greedy_breaks(xs: Words, column: I32) -> List[I32] {
   fit_onto(column, xs, 0, -1, list.one(0))
 }

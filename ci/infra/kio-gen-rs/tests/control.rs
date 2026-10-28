@@ -84,7 +84,7 @@ fn invoked_control_distribution_covers_semantic_catalog() {
             .find(|(path, _)| path == "workdir/kio_gen_control_blocks.kio")
             .unwrap()
             .1;
-        assert!(descriptors.contains("[Left][Right] ((Left -> Right -> .) & Left & Right) -> ."));
+        assert!(descriptors.contains("[Left][Right] (Left -> Right -> .) -> Left -> Right -> ."));
         for s in sequences(probe) {
             check_sequence(s, 0);
             witness(format!("receiver:{:?}", s.receiver));
@@ -291,8 +291,8 @@ fn invoked_type_and_recursion_probes_cover_grammar_cells() {
                 "higher-rank-value".into()
             }
             TypeProbe::HigherKinded { wrapped, .. } => {
-                assert!(source.contains("fn apply[*F][A](value: F(A), project: [B] F(B) -> B)"));
-                assert!(source.contains("{ apply("));
+                assert!(source.contains("fn apply[*F][A](value: F[A], project: [B] F[B] -> B)"));
+                assert!(source.contains("{ apply["));
                 format!("higher-kinded:{wrapped}")
             }
             TypeProbe::Existential {
@@ -308,7 +308,7 @@ fn invoked_type_and_recursion_probes_cover_grammar_cells() {
                 assert!(source.contains("let selected = open(packed); selected"));
                 assert_eq!(source.contains("let .(<Hidden> packet)"), !explicit_open);
                 assert_eq!(
-                    source.contains("Packed.get(packed)(String, .[Hidden]"),
+                    source.contains("Packed.get(packed)[String](.[Hidden]"),
                     *explicit_open
                 );
                 format!("existential:{payload}:{explicit_open}")
@@ -336,7 +336,11 @@ fn invoked_type_and_recursion_probes_cover_grammar_cells() {
                 .find(|(path, _)| path == "workdir/kio_gen_recursion.kio")
                 .unwrap()
                 .1;
-            assert!(source.contains("{ walk(") || source.contains("; saved()"));
+            assert!(
+                source.contains("{ walk(")
+                    || source.contains("{ walk[")
+                    || source.contains("; saved()")
+            );
             assert!(source.contains("match(current) { (\n.(rest: Counter)"));
             assert!(source.contains("},\n.(_unit: .)"));
             assert_eq!(source.contains("fn bounce"), probe.mutual);

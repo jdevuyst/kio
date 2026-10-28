@@ -11,8 +11,8 @@ type Arrow = (A // arrow before
 -> // arrow after
 B);
 type Applied = Box // application opener
-(A);
-type Empty = Box(// empty application
+[A];
+type Grouped = (Box // before closing group
 );
 KIO
 )
@@ -25,5 +25,5 @@ test "$comments" = '// binder start
 // arrow before
 // arrow after
 // application opener
-// empty application'
+// before closing group'
 printf '%s\n' 'type expression comments retained'

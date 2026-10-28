@@ -10,16 +10,16 @@ import testapi/io(print);
 // application, while an empty first value group is applied before retaining
 // later groups.
 pub fn main() {
-  let p = h.join("partial-"(String));
-  print(p("ok\n"(String)));
-  let f = h.id(String);
-  print(f("x\n"(String)));
-  let direct_logged = logged(String);
-  print("direct-created\n"(String));
-  direct_logged("d\n"(String));
-  let qualified_logged = h.logged(String);
-  print("qualified-created\n"(String));
-  qualified_logged("q\n"(String));
-  let staged = h.staged(String, ());
-  staged("z\n"(String))
+  let p = h.join("partial-"[String]);
+  print(p("ok\n"[String]));
+  let f = h.id[String];
+  print(f("x\n"[String]));
+  let direct_logged = logged[String];
+  print("direct-created\n"[String]);
+  direct_logged("d\n"[String]);
+  let qualified_logged = h.logged[String];
+  print("qualified-created\n"[String]);
+  qualified_logged("q\n"[String]);
+  let staged = h.staged[String](());
+  staged("z\n"[String])
 }

@@ -8,5 +8,5 @@ import second as other;
 type Fallback = other.Bool;
 
 pub fn select(flag: Flag) {
-  __if_then_else__(Flag, ., flag, .() { () }, .() { () })
+  __if_then_else__[Flag][.](flag, .() { () }, .() { () })
 }

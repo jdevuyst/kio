@@ -110,23 +110,23 @@ host type String role(str);
 
 host type Array[T];
 
-host fn array_make_empty[T]() -> Array(T);
+host fn array_make_empty[T]() -> Array[T];
 
-host fn array_push[T](a: Array(T), v: T);
+host fn array_push[T](a: Array[T], v: T);
 
-host fn array_get[T](a: Array(T), i: I32) -> T;
+host fn array_get[T](a: Array[T], i: I32) -> T;
 ```
 
-A generic host type is still opaque: Kio knows `Array(String)` and
-`Array(I32)` are applications of the host type family, but the array
+A generic host type is still opaque: Kio knows `Array[String]` and
+`Array[I32]` are applications of the host type family, but the array
 representation and mutation semantics belong to the host functions. When a
 generic host function has no value argument from which to infer a type
 parameter, pass the type argument and its Unit value at the call site, such as
-`array_make_empty(String, ())`. When value arguments determine it, ordinary
+`array_make_empty[String](())`. When value arguments determine it, ordinary
 inference is enough, as in `array_push(names, "ada")`. Any ordinary type
 expression can fill the generic slot, including named aliases introduced by
 `labels`: a `labels Item = { sku : String, count : I32 };` declaration can be
-used as `Array(Item)` and `array_make_empty(Item, ())`.
+used as `Array[Item]` and `array_make_empty[Item](())`.
 
 ### Mutable host arrays and `rec(loop)`
 
@@ -150,13 +150,13 @@ host fn leq_i32(p0: I32, p1: I32) -> Bool;
 
 host fn add_i32(p0: I32, p1: I32) -> I32;
 
-host fn array_make_filled[T](n: I32, fill: T) -> Array(T);
+host fn array_make_filled[T](n: I32, fill: T) -> Array[T];
 
-host fn array_set[T](a: Array(T), i: I32, v: T);
+host fn array_set[T](a: Array[T], i: I32, v: T);
 
 host fn loop[S][R](step: S -> (S | R), state: S) -> R;
 
-rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
+rec(loop) fn fill_scores(i: I32, scores: Array[I32]) -> Array[I32] {
   if(leq_i32(i, 2)) {
     array_set(scores, i, add_i32(i, 10));
     recur fill_scores(add_i32(i, 1), scores)
@@ -165,8 +165,8 @@ rec(loop) fn fill_scores(i: I32, scores: Array(I32)) -> Array(I32) {
   }
 }
 
-pub fn build_scores() -> Array(I32) {
-  let scores = array_make_filled(3, 0(I32));
+pub fn build_scores() -> Array[I32] {
+  let scores = array_make_filled(3, 0[I32]);
   fill_scores(0, scores)
 }
 ```

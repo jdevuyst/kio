@@ -22,9 +22,9 @@ import tree/node(Leaf, Node, Three, Tree, Two, and, root_of, size_of, {three}, {
 /// disagree — the answer that makes a broken rebalance visible.
 labels Depth = { level: I32 } | { ragged: . };
 
-fn level(d: I32) -> Depth { {level = d}.>widen_sum(Depth) }
+fn level(d: I32) -> Depth { ({level = d}.>widen_sum)[Depth] }
 
-fn ragged() -> Depth { {ragged=}.>widen_sum(Depth) }
+fn ragged() -> Depth { ({ragged=}.>widen_sum)[Depth] }
 
 /// Sibling depths that agree collapse to one; anything else is ragged, and
 /// raggedness spreads to every ancestor.
@@ -85,9 +85,9 @@ labels Seen = { last: I32 } | { unseen: . };
 
 type Order = Seen & Bool;
 
-fn seen(k: I32) -> Seen { {last = k}.>widen_sum(Seen) }
+fn seen(k: I32) -> Seen { ({last = k}.>widen_sum)[Seen] }
 
-fn unseen() -> Seen { {unseen=}.>widen_sum(Seen) }
+fn unseen() -> Seen { ({unseen=}.>widen_sum)[Seen] }
 
 fn order_start() -> Order { (unseen(), .t) }
 

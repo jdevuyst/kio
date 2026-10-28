@@ -1595,7 +1595,7 @@ impl Phase for Desugared {
     type ExprElab = NodeId;
     type ExprRecCall = Never;
     type ExprRecOrder = NodeId;
-    type ExprUfcs = NodeId;
+    type ExprUfcs = Never;
     type ExprEnriched = Never;
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
@@ -1643,7 +1643,7 @@ impl Phase for Lowered {
     type ExprElab = NodeId;
     type ExprRecCall = Never;
     type ExprRecOrder = NodeId;
-    type ExprUfcs = NodeId;
+    type ExprUfcs = Never;
     type ExprEnriched = Never;
     type ExprEnrichedSynthTy = Never;
     type ExprLow = Never;
@@ -4922,9 +4922,9 @@ pub enum Expr<P: Phase = Surface> {
         occurrence: P::ExpressionOccurrence,
         id: NodeId,
         head: PathSegment,
-        /// The ordinary prefix, including a UFCS receiver at the edge selected
-        /// by `splice`. Projection appends the block arguments after this list.
-        prefix: Vec<Expr<P>>,
+        /// Written prefix value groups. Each projected block adds one further
+        /// value stage; an absent prefix is distinct from a written Unit group.
+        prefix: Vec<CallStage<P>>,
         /// Written UFCS direction; the inserted value remains in `prefix` so
         /// ordinary Surface traversals visit it along with the other arguments.
         splice: Option<UfcsFlavor>,
@@ -4951,12 +4951,11 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprResolved,
     },
-    /// Function application. Type and value arguments share the
-    /// positional list, distinguished syntactically at parse time:
-    /// type-shaped `Path`s and type-only forms (`(A & B)`,
-    /// `(A | B)`, `!`, `P -> R`) become type args; everything else
-    /// becomes a value arg. `()` is always the Unit value; `.` is the
-    /// Unit type.
+    /// One application stage. Surface brackets contain one type argument;
+    /// parentheses contain a value packet for one Function layer. Lowering
+    /// may compact adjacent type stages with the following value stage into
+    /// a leading type prefix followed by one value packet. Value stages
+    /// remain nested calls, and type arguments never follow values here.
     ///
     /// Per-arg leading trivia flows onto each wrapped element's
     /// `meta.leading_trivia` (via [`CallArg::meta_mut`]) — preserving
@@ -4988,8 +4987,7 @@ pub enum Expr<P: Phase = Surface> {
         occurrence: P::ExpressionOccurrence,
         modes: Vec<RecCallMode>,
         callee: PathSegment,
-        args: Vec<CallArg<P>>,
-        source_trivia: P::SourceDelimitedTrivia,
+        stages: Vec<CallStage<P>>,
         meta: Meta<P>,
         ext: P::ExprRecCall,
     },
@@ -5245,14 +5243,15 @@ pub enum Expr<P: Phase = Surface> {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
         name: String,
-        args: Vec<CallArg<P>>,
-        source_trivia: P::SourceDelimitedTrivia,
+        stages: Vec<CallStage<P>>,
         form: UserMacroCallForm,
         meta: Meta<P>,
         ext: P::ExprElab,
     },
     /// `r.>f`, `r.>>f(args)`, `f(args).<r`, `f(args).<<r` — UFCS call splices.
-    /// The parser retains the written receiver, callee path, and argument list.
+    /// The parser retains the written receiver, expression callee, and selected
+    /// value group. Source projection performs the syntactic insertion before
+    /// ordinary call typing.
     /// Source-local binding classification marks a direct macro callee with
     /// `macro_call`; qualified paths always retain ordinary call ownership.
     ///
@@ -5265,7 +5264,7 @@ pub enum Expr<P: Phase = Surface> {
         #[serde(skip)]
         occurrence: P::ExpressionOccurrence,
         receiver: Box<Expr<P>>,
-        callee_segments: Vec<PathSegment>,
+        callee: Box<Expr<P>>,
         callee_span: Span,
         args: Vec<CallArg<P>>,
         source_trivia: P::SourceDelimitedTrivia,
@@ -6004,13 +6003,31 @@ pub enum PlaceholderState {
 }
 
 /// One positional argument at a call site — either a type argument or a
-/// value argument. Distinguished by the parser using syntactic shape
-/// (and, for bare `Path` arguments, the exact type-name spelling
-/// convention enforced by the language).
+/// value argument. Brackets and parentheses select the argument category.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CallArg<P: Phase = Surface> {
     Type(Type<P>),
     Value(Expr<P>),
+}
+
+/// One written application group retained by a direct macro invocation.
+/// Bracket stages contain one type; value stages contain a whole product.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CallStage<P: Phase = Surface> {
+    #[serde(skip)]
+    pub occurrence: P::ExpressionOccurrence,
+    pub args: Vec<CallArg<P>>,
+    pub source_trivia: P::SourceDelimitedTrivia,
+    pub meta: Meta<P>,
+}
+
+impl CallStage<Lowered> {
+    pub fn site(&self) -> ExpressionSite {
+        ExpressionSite {
+            id: self.occurrence.key(),
+            span: self.meta.span,
+        }
+    }
 }
 
 impl<P: Phase> CallArg<P> {
@@ -7330,6 +7347,7 @@ impl<P: Phase<ExpressionOccurrence = ExpressionOccurrence>> Expr<P> {
         }
     }
 
+    #[cfg(any(feature = "surface", test))]
     pub(crate) fn with_fresh_occurrence(mut self) -> Self {
         *self.occurrence_mut() = ExpressionOccurrence::fresh();
         self
@@ -7799,7 +7817,7 @@ mod tests {
     #[test]
     fn recursive_member_serde_rejects_purity() {
         use super::{FnDef, Item, RecGroup, Surface};
-        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { recur second(A, x) }; fn second[A](x: A) -> A { x } }";
+        let source = "module x; rec(loop) { pub fn first[A](x: A) -> A { recur second[A](x) }; fn second[A](x: A) -> A { x } }";
         let module = crate::pass::parser::parse(source).expect("recursive source");
         let Item::RecGroup(group, _) = &module.items[0] else {
             panic!("recursive group")

@@ -4,7 +4,7 @@ host type I32 role(i32);
 
 pub fn ignore(value: [A] .) { () }
 
-pub fn twice(value: [A] .) { value(.); value(.) }
+pub fn twice(value: [A] .) { value[.]; value[.] }
 
 pub fn relay(value: ([A][B] I32) & .) -> ([A][B] I32) & . { value }
 

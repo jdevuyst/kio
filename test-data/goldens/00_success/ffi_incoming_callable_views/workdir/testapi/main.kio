@@ -15,38 +15,38 @@ pub fn make_other(value: t.I32) -> Other { Other.make(value) }
 
 pub newtype Vault[A] : A { constructor store; projector open }
 
-pub fn stash[A](value: A) -> Vault(A) { Vault.store(value) }
+pub fn stash[A](value: A) -> Vault[A] { Vault.store(value) }
 
-pub fn release[A](value: Vault(A)) -> A { value.>Vault.open }
+pub fn release[A](value: Vault[A]) -> A { value.>Vault.open }
 
-pub fn host_result(box: t.Box(Seal), consume: . -> .) { let value = h.box_get(box); consume() }
+pub fn host_result(box: t.Box[Seal], consume: . -> .) { let value = h.box_get(box); consume() }
 
-fn host_getter() -> t.Box(Seal) -> Seal { h.box_get(Seal) }
+fn host_getter() -> t.Box[Seal] -> Seal { h.box_get[Seal] }
 
-pub fn host_value_result(box: t.Box(Seal), consume: . -> .) {
+pub fn host_value_result(box: t.Box[Seal], consume: . -> .) {
   let getter = host_getter();
   let value = getter(box);
   consume()
 }
 
-pub fn receive(vault: Vault(. -> Seal), consume: . -> .) {
+pub fn receive(vault: Vault[. -> Seal], consume: . -> .) {
   let callback = vault.>Vault.open;
   let value = callback();
   consume()
 }
 
-pub fn receive_computed(vault: Vault(. -> Seal), consume: . -> .) {
-  let value = vault.>Vault.open(());
+pub fn receive_computed(vault: Vault[. -> Seal], consume: . -> .) {
+  let value = (vault.>Vault.open)(());
   consume()
 }
 
-pub fn local_callback(value: Seal) -> Vault(. -> Seal) {
+pub fn local_callback(value: Seal) -> Vault[. -> Seal] {
   Vault.store(.() { value })
 }
 
-pub fn specialized_observer(consume: . -> .) -> Vault(Seal -> .) {
+pub fn specialized_observer(consume: . -> .) -> Vault[Seal -> .] {
   let generic = .[A](_value: A) { consume() };
-  Vault.store(generic(Seal))
+  Vault.store(generic[Seal])
 }
 
 fn apply_callback(callback: ((t.I32 & t.I32) & t.I32) -> ., value: (t.I32 & t.I32) & t.I32) ->
@@ -54,18 +54,18 @@ fn apply_callback(callback: ((t.I32 & t.I32) & t.I32) -> ., value: (t.I32 & t.I3
    { callback(value); value }
 
 pub fn invoke_via_helper(
-, vault: Vault(((t.I32 & t.I32) & t.I32) -> .)
+, vault: Vault[((t.I32 & t.I32) & t.I32) -> .]
 , value: (t.I32 & t.I32) & t.I32
 ) -> (t.I32 & t.I32) & t.I32 { apply_callback(vault.>Vault.open, value) }
 
-pub fn invoke_direct(vault: Vault(((t.I32 & t.I32) & t.I32) -> .), value: (t.I32 & t.I32) & t.I32) ->
+pub fn invoke_direct(vault: Vault[((t.I32 & t.I32) & t.I32) -> .], value: (t.I32 & t.I32) & t.I32) ->
   (t.I32 & t.I32) & t.I32
    { let callback = vault.>Vault.open; callback(value); value }
 
-pub fn invoke_computed(vault: Vault(((t.I32 & t.I32) & t.I32) -> .), value: (t.I32 & t.I32) & t.I32) ->
+pub fn invoke_computed(vault: Vault[((t.I32 & t.I32) & t.I32) -> .], value: (t.I32 & t.I32) & t.I32) ->
   (t.I32 & t.I32) & t.I32
-   { vault.>Vault.open(value); value }
+   { (vault.>Vault.open)(value); value }
 
-pub fn receive_pair(vault: Vault(. -> ((t.I32 & t.I32) & t.I32)), after: . -> .) ->
+pub fn receive_pair(vault: Vault[. -> ((t.I32 & t.I32) & t.I32)], after: . -> .) ->
   (t.I32 & t.I32) & t.I32
    { let callback = vault.>Vault.open; let value = callback(); after(); value }

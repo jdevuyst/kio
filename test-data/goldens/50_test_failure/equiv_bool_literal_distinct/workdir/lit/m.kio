@@ -3,6 +3,6 @@ module lit/m;
 import lit(Bool);
 
 equiv bool_lit() {
-  .t(Bool);
-  .f(Bool)
+  .t[Bool];
+  .f[Bool]
 }

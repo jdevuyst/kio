@@ -27,7 +27,7 @@ KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >alias-edit.out 2>alias-edit.err
 "$KIO_BIN" test --no-cache >alias-edit-cold.out 2>alias-edit-cold.err
 cmp alias-edit.out alias-edit-cold.out >/dev/null
 
-perl -0pi -e 's/pub fn answer\(\) -> Bool \{ \.t\(Bool\) \}/pub fn answer() -> Bool { .f(Bool) }/' qualified_provider.kio
+perl -0pi -e 's/pub fn answer\(\) -> Bool \{ \.t\[Bool\] \}/pub fn answer() -> Bool { .f[Bool] }/' qualified_provider.kio
 set +e
 KIO_DEBUG_EQUIV_CACHE=1 "$KIO_BIN" test >qualified-edit.out 2>qualified-edit.err
 qualified_cached_status=$?

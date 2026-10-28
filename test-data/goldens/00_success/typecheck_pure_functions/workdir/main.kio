@@ -18,6 +18,6 @@ pub varop [* *] { foldr append empty }
 
 pub pure fn id[A](value: A) -> A { value }
 
-pub pure fn wrap[A](value: A) -> Box(A) { Box.mk_box(A, value) }
+pub pure fn wrap[A](value: A) -> Box[A] { Box.mk_box[A](value) }
 
 fn impure_use() { id(()) }

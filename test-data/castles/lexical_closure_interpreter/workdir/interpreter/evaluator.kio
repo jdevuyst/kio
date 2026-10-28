@@ -20,17 +20,17 @@ labels Frame =
 
 labels Mode = { evaluate: ast.Expr & values.Environment } | { returned: values.Value };
 
-type Stack = lists.List(Frame);
+type Stack = lists.List[Frame];
 
 pub type Result = String | values.Value;
 
 fn evaluate_at(expr: ast.Expr, environment: values.Environment) -> Mode {
-  {evaluate = (expr, environment)}.>widen_sum(Mode)
+  ({evaluate = (expr, environment)}.>widen_sum)[Mode]
 }
 
-fn return_value(value: values.Value) -> Mode { {returned = value}.>widen_sum(Mode) }
+fn return_value(value: values.Value) -> Mode { ({returned = value}.>widen_sum)[Mode] }
 
-fn fail(message: String) -> Result { message.>widen_sum(Result) }
+fn fail(message: String) -> Result { (message.>widen_sum)[Result] }
 
 rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
   if(arith.leq_i32(fuel, 0)) {
@@ -56,17 +56,17 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
           };
           .(call: ast.Application) {
             let .(callee, argument) = call.?{ast.application};
-            let frame = {call_left = (argument, environment)}.>widen_sum(Frame);
+            let frame = ({call_left = (argument, environment)}.>widen_sum)[Frame];
             recur run(evaluate_at(callee, environment), lists.cons(frame, stack), next_fuel)
           };
           .(sum: ast.Addition) {
             let .(left, right) = sum.?{ast.addition};
-            let frame = {add_left = (right, environment)}.>widen_sum(Frame);
+            let frame = ({add_left = (right, environment)}.>widen_sum)[Frame];
             recur run(evaluate_at(left, environment), lists.cons(frame, stack), next_fuel)
           };
           .(binding: ast.Binding) {
             let .(name, initial, body) = binding.?{ast.binding};
-            let frame = {bind_value = (name, body, environment)}.>widen_sum(Frame);
+            let frame = ({bind_value = (name, body, environment)}.>widen_sum)[Frame];
             recur run(evaluate_at(initial, environment), lists.cons(frame, stack), next_fuel)
           }
         }
@@ -78,7 +78,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
             match(frame) {
               .(left: Add_left) {
                 let .(right, environment) = left.?{add_left};
-                let saved = {add_right = value}.>widen_sum(Frame);
+                let saved = ({add_right = value}.>widen_sum)[Frame];
                 recur run(evaluate_at(right, environment), lists.cons(saved, remaining), next_fuel)
               };
               .(right: Add_right) {
@@ -92,7 +92,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
               };
               .(callee: Call_left) {
                 let .(argument, caller_environment) = callee.?{call_left};
-                let saved = {call_right = value}.>widen_sum(Frame);
+                let saved = ({call_right = value}.>widen_sum)[Frame];
                 recur run(
                 , evaluate_at(argument, caller_environment)
                 , lists.cons(saved, remaining)
@@ -115,7 +115,7 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
               }
             }
           };
-          .() { value.>widen_sum(Result) }
+          .() { (value.>widen_sum)[Result] }
         }
       }
     }
@@ -123,5 +123,5 @@ rec(loop) fn run(mode: Mode, stack: Stack, fuel: I32) -> Result {
 }
 
 pub fn evaluate(expr: ast.Expr, fuel: I32) -> Result {
-  run(evaluate_at(expr, env.empty()), lists.nil(_), fuel)
+  run(evaluate_at(expr, env.empty()), lists.nil[_], fuel)
 }

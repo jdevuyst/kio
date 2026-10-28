@@ -4156,11 +4156,7 @@ import __comptime__;
 pub type Target_request = __Type__ | .;
 
 pure fn run(ct: __Comptime__, k: . -> __Checked_term__, value: __Checked_term__) -> __Checked_term__ {
-  __structural_recur__(
-    , ct
-    , __Type__
-    , __Checked_term__
-    , __Checked_term__
+  __structural_recur__(ct)[__Type__][__Checked_term__][__Checked_term__](
     , __type_unit__(ct)
     , value
     , .(
@@ -4230,7 +4226,7 @@ pub macro reentrant : [Source] Source -> [Target] Target { impl reentrant_checke
         );
 
         let result =
-            Command::Normalize("reentrant((), .)".to_owned()).run(&mut session, Palette::plain());
+            Command::Normalize("reentrant(())[.]".to_owned()).run(&mut session, Palette::plain());
         assert!(
             result
                 .output

@@ -1,10 +1,10 @@
 #!/bin/sh
 #
-# Dyn-load regression (type-only application): `id(I32)` consumes only
+# Dyn-load regression (type-only application): `id[I32]` consumes only
 # the type stage and leaves the value-function stage (a regression here
 # also supplied the unit value, so the partially-applied fn evaluated to
 # `()` and a later application stuck).
-# Covers the plain-fn and constructor (`Box.mk_box(I32)`) targets.
+# Covers the plain-fn and constructor (`Box.mk_box[I32]`) targets.
 #
 # The host vendors the live test-data/poc/dyn_load_prime/workdir/ package
 # (the single source of truth — no committed fork) alongside this case's

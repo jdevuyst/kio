@@ -46,15 +46,15 @@ fn lookup_step(state: I32 & Tree) -> (I32 & Tree) | Option {
         , .(k: I32, v: String, l: Tree, r: Tree) {
             if(leq_i32(target_key, k)) {
               if(leq_i32(k, target_key)) {
-                widen_sum(some(v), (I32 & Tree) | Option)
+                widen_sum(some(v))[(I32 & Tree) | Option]
               } else {
-                widen_sum((target_key, l), (I32 & Tree) | Option)
+                widen_sum((target_key, l))[(I32 & Tree) | Option]
               }
             } else {
-              widen_sum((target_key, r), (I32 & Tree) | Option)
+              widen_sum((target_key, r))[(I32 & Tree) | Option]
             }
           }
-        , .(_empty: .) { widen_sum(none(), (I32 & Tree) | Option) }
+        , .(_empty: .) { widen_sum(none())[(I32 & Tree) | Option] }
         )
       }
     }

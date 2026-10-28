@@ -16,22 +16,22 @@ op _ <- _ { impl arrow }
 
 pub newtype Box[A] : A { pub constructor mk_box; pub projector un_box }
 
-fn box_pure[A](x: A) -> Box(A) { Box.mk_box(x) }
+fn box_pure[A](x: A) -> Box[A] { Box.mk_box(x) }
 
-fn box_bind[A][B](m: Box(A), k: A -> Box(B)) -> Box(B) { k(Box.un_box(m)) }
+fn box_bind[A][B](m: Box[A], k: A -> Box[B]) -> Box[B] { k(Box.un_box(m)) }
 
 // Inside a do-block the `let x <- e;` form parses as a bind
 // statement. A bare `a <- b` expression — without the `let`
 // lead — parses as a user-op expression call to `arrow`. Both
 // coexist freely.
-fn run() -> Box(String) {
+fn run() -> Box[String] {
   do(box_bind) {
-    let s <- box_pure("left"(String) <- "arrow-op final inside do\n"(String));
+    let s <- box_pure("left"[String] <- "arrow-op final inside do\n"[String]);
     box_pure(s)
   }
 }
 
 // Outside any do-block, `<-` is purely the user-defined operator.
-fn outside_do() -> String { "left"(String) <- "arrow-op outside do\n" }
+fn outside_do() -> String { "left"[String] <- "arrow-op outside do\n" }
 
 pub fn main() { print(outside_do()); print(Box.un_box(run())) }

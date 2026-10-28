@@ -25,11 +25,11 @@ fn collapse_pair(p: String & String) -> String { onto(p) }
 pub fn main() {
   let chosen =
     if(.t) {
-      widen_sum("sum-collapsed\n"(String), String | String)
+      widen_sum("sum-collapsed\n"[String])[String | String]
     } else {
-      widen_sum("unreachable\n"(String), String | String)
+      widen_sum("unreachable\n"[String])[String | String]
     };
   print(collapse_sum(chosen));
-  let pair = ("pair-collapsed\n"(String), "pair-collapsed\n"(String));
+  let pair = ("pair-collapsed\n"[String], "pair-collapsed\n"[String]);
   print(collapse_pair(pair))
 }

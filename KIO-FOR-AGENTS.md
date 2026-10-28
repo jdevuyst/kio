@@ -43,10 +43,17 @@ or export the tree for browsing and searching with local tools. Run
   names intentionally forming the module's local vocabulary. See
   [the language tutorial](docs/tutorials/language.md) and
   [UFCS spelling choices](docs/guides/ufcs.md#choosing-a-spelling).
+- Write one explicit type or binder per square-bracket group and one value group per
+  function stage: `f[A](a)[B](b)`. Omit type groups when local context solves
+  them. `f(a,b)` and `f((a,b))` pass the same product; one group never spills
+  into a returned function. Use the same singleton brackets for type
+  constructors (`List[A]`) and literal carriers (`42[I32]`, `count[I32]`);
+  empty or comma-separated type brackets reject. See [call stages](docs/tutorials/language.md#calls-have-stages).
 - Choose direct or receiver-style macro calls for readability. With
   [trailing blocks](docs/guides/ufcs.md#calls-with-trailing-blocks), a receiver
-  belongs before the block arguments; a reverse splice is written after the
-  complete block chain. Keep label braces around a spliced nested child and
+  enters the first prefix group forward or the last prefix group in reverse,
+  before the projected blocks. Each block is its own function stage. A reverse
+  splice is written after the complete block chain. Keep label braces around a spliced nested child and
   around a reverse-spliced call's own final labelled child.
 - Export deliberately: keep helpers private, adding `pub` when another module
   or a host-facing package surface needs the item.

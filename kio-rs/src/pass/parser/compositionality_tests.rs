@@ -74,17 +74,24 @@ fn expr_tag(expr: &Expr<Surface>) -> &'static str {
     }
 }
 
+fn path_segments(expr: &Expr<Surface>) -> &[crate::ast::PathSegment] {
+    let Expr::Path { segments, .. } = expr else {
+        panic!("expected a path callee, got {expr:?}");
+    };
+    segments
+}
+
 fn expr_root_signature(expr: &Expr<Surface>) -> String {
     match expr {
         Expr::Ufcs {
-            callee_segments,
+            callee,
             flavor,
             macro_call,
             ..
         } => format!(
             "ufcs:{}:{}:{}",
             flavor.token(),
-            callee_segments
+            path_segments(callee)
                 .iter()
                 .map(crate::ast::PathSegment::as_str)
                 .collect::<Vec<_>>()
@@ -189,7 +196,7 @@ const EXPR_FORMS: &[ExprForm] = &[
         id: "annotated-literal",
         grammar: "LiteralCall",
         declarations: "",
-        source: "23(Formtype)",
+        source: "23[Formtype]",
         root_tag: "integer-literal",
     },
     ExprForm {
@@ -211,6 +218,20 @@ const EXPR_FORMS: &[ExprForm] = &[
         grammar: "ExprSuffix",
         declarations: "",
         source: "form_callee(form_arg)",
+        root_tag: "call",
+    },
+    ExprForm {
+        id: "explicit-type-stage",
+        grammar: "TypeApplication",
+        declarations: "",
+        source: "form_callee[Formtype]",
+        root_tag: "call",
+    },
+    ExprForm {
+        id: "interleaved-call-stages",
+        grammar: "ExprSuffix",
+        declarations: "",
+        source: "form_callee[Formtype](form_arg)[Formother](form_last)",
         root_tag: "call",
     },
     ExprForm {
@@ -279,14 +300,14 @@ const EXPR_FORMS: &[ExprForm] = &[
     },
     ExprForm {
         id: "block-ufcs-argument-first",
-        grammar: "LeftSpliceBlockCallee",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         source: "form_macro (form_arg) { form_body }.<<form_receiver",
         root_tag: "block-call",
     },
     ExprForm {
         id: "block-ufcs-argument-last",
-        grammar: "LeftSpliceBlockCallee",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         source: "form_macro (form_arg) { form_body }.<form_receiver",
         root_tag: "block-call",
@@ -342,14 +363,14 @@ const EXPR_FORMS: &[ExprForm] = &[
     },
     ExprForm {
         id: "ufcs-argument-last",
-        grammar: "LeftCallSplice",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         source: "form_callee(form_arg).<form_receiver",
         root_tag: "ufcs",
     },
     ExprForm {
         id: "ufcs-argument-first",
-        grammar: "LeftCallSplice",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         source: "form_callee(form_arg).<<form_receiver",
         root_tag: "ufcs",
@@ -492,7 +513,7 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     },
     ExprContext {
         id: "call-argument",
-        grammar: "CallArg",
+        grammar: "ValueApplication",
         declarations: "",
         item: "fn subject() -> . { context_callee(__EXPR_HOLE__) }",
         subject: Subject::Function,
@@ -648,14 +669,14 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     },
     ExprContext {
         id: "block-ufcs-argument-first",
-        grammar: "LeftSpliceBlockCallee",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         item: "fn subject() -> . { context_macro (context_arg) { context_body }.<<(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "block-ufcs-argument-last",
-        grammar: "LeftSpliceBlockCallee",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         item: "fn subject() -> . { context_macro (context_arg) { context_body }.<(__EXPR_HOLE__) }",
         subject: Subject::Function,
@@ -669,14 +690,14 @@ const EXPR_CONTEXTS: &[ExprContext] = &[
     },
     ExprContext {
         id: "ufcs-argument-last",
-        grammar: "LeftCallSplice",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         item: "fn subject() -> . { context_callee.<(__EXPR_HOLE__) }",
         subject: Subject::Function,
     },
     ExprContext {
         id: "ufcs-argument-first",
-        grammar: "LeftCallSplice",
+        grammar: "ReverseSpliceSuffix",
         declarations: "",
         item: "fn subject() -> . { context_callee.<<(__EXPR_HOLE__) }",
         subject: Subject::Function,
@@ -916,7 +937,13 @@ const TYPE_FORMS: &[TypeForm] = &[
     TypeForm {
         id: "application",
         grammar: "TypeArgList",
-        source: "Formbox(Formtype)",
+        source: "Formbox[Formtype]",
+        root_tag: "path",
+    },
+    TypeForm {
+        id: "successive-type-applications",
+        grammar: "TypeArgList",
+        source: "Formmap[Formleft][Formright]",
         root_tag: "path",
     },
     TypeForm {
@@ -964,7 +991,7 @@ const TYPE_FORMS: &[TypeForm] = &[
     TypeForm {
         id: "higher-kinded-forall",
         grammar: "TypeBinderGroup",
-        source: "[*Formctor] Formctor(Formtype)",
+        source: "[*Formctor] Formctor[Formtype]",
         root_tag: "forall",
     },
     TypeForm {
@@ -989,7 +1016,12 @@ const TYPE_CONTEXTS: &[TypeContext] = &[
     TypeContext {
         id: "type-argument",
         grammar: "TypeArgList",
-        item: "type Subjecttype = Contextbox(__TYPE_HOLE__);",
+        item: "type Subjecttype = Contextbox[__TYPE_HOLE__];",
+    },
+    TypeContext {
+        id: "call-type-argument",
+        grammar: "TypeApplication",
+        item: "fn subject() -> . { context_callee[__TYPE_HOLE__] }",
     },
     TypeContext {
         id: "function-parameter",
@@ -1014,7 +1046,7 @@ const TYPE_CONTEXTS: &[TypeContext] = &[
     TypeContext {
         id: "literal-annotation",
         grammar: "LiteralCall",
-        item: "fn subject() -> . { 23(__TYPE_HOLE__) }",
+        item: "fn subject() -> . { 23[__TYPE_HOLE__] }",
     },
     TypeContext {
         id: "checked-let",
@@ -1163,15 +1195,20 @@ fn subject_call_arg(module: &Module) -> &CallArg {
 }
 
 #[test]
-fn raw_call_argument_ambiguity_is_classified_by_topology() {
+fn written_call_stages_classify_type_and_value_topology() {
     for (id, declarations, source, expected) in [
         ("lowercase-path", "", "form_value", ArgClass::Value("path")),
-        ("uppercase-path", "", "Formtype", ArgClass::Value("path")),
         (
-            "parametric-uppercase-call",
+            "uppercase-type-path",
             "",
-            "Formbox(Formtype)",
-            ArgClass::Value("call"),
+            "Formtype",
+            ArgClass::Type("path"),
+        ),
+        (
+            "parametric-type-application",
+            "",
+            "Formbox[Formtype]",
+            ArgClass::Type("path"),
         ),
         ("unit-value", "", "()", ArgClass::Value("unit")),
         (
@@ -1218,9 +1255,11 @@ fn raw_call_argument_ambiguity_is_classified_by_topology() {
             ArgClass::Value("call"),
         ),
     ] {
-        let source = format!(
-            "module matrix;\n{declarations}\nfn subject() -> . {{ context_callee({source}) }}\n"
-        );
+        let call = match expected {
+            ArgClass::Value(_) => format!("context_callee({source})"),
+            ArgClass::Type(_) => format!("context_callee[{source}]"),
+        };
+        let source = format!("module matrix;\n{declarations}\nfn subject() -> . {{ {call} }}\n");
         let parsed = parse_eager_and_lazy(&source, id);
         match (subject_call_arg(&parsed), expected) {
             (CallArg::Value(value), ArgClass::Value(tag)) => assert_eq!(
@@ -1239,9 +1278,30 @@ fn raw_call_argument_ambiguity_is_classified_by_topology() {
     }
 }
 
+#[test]
+fn call_stage_delimiters_reject_the_wrong_argument_namespace() {
+    for argument in [
+        "Formtype",
+        "Formbox[Formtype]",
+        "(Formleft & Formright)",
+        "[Formtype] Formtype",
+    ] {
+        assert_deferred_body_rejected(
+            &format!("module matrix; fn subject() {{ context_callee({argument}) }}"),
+            "type expression in value stage",
+        );
+    }
+    for argument in ["form_value", "form_callee(value)", "()"] {
+        assert_deferred_body_rejected(
+            &format!("module matrix; fn subject() {{ context_callee[{argument}] }}"),
+            "value expression in type stage",
+        );
+    }
+}
+
 #[cfg(feature = "surface")]
 #[test]
-fn typed_parametric_call_argument_is_baked_into_its_resolved_slot() {
+fn explicit_parametric_type_stage_survives_typechecking() {
     use crate::pass::full::FullPipeline;
     use crate::pass::resolve::Package;
     use crate::pipeline::Pipeline;
@@ -1250,26 +1310,33 @@ fn typed_parametric_call_argument_is_baked_into_its_resolved_slot() {
     let source = "module matrix;\n\
         newtype Formbox[A] : A { constructor make_formbox; projector un_formbox; };\n\
         fn identity[A](value: A) -> A { value }\n\
-        fn subject[A](value: Formbox(A)) -> Formbox(A) { identity(Formbox(A), value) }";
-    let parsed = parse(source).expect("parse typed ambiguity fixture");
+        fn subject[A](value: Formbox[A]) -> Formbox[A] { identity[Formbox[A]](value) }";
+    let parsed = parse(source).expect("parse explicit type-stage fixture");
     let raw = subject_expr(&parsed, Subject::Function);
-    let Expr::Call { args, .. } = raw else {
-        panic!("typed ambiguity fixture must start as an ordinary call")
+    let Expr::Call { callee, args, .. } = raw else {
+        panic!("explicit type-stage fixture must start as an ordinary value call")
+    };
+    assert!(matches!(
+        args.as_slice(),
+        [CallArg::Value(Expr::Path { .. })]
+    ));
+    let Expr::Call {
+        args: type_args, ..
+    } = callee.as_ref()
+    else {
+        panic!("the written bracket must be its own type stage")
     };
     assert!(
-        matches!(
-            args.as_slice(),
-            [CallArg::Value(Expr::Call { .. }), CallArg::Value(_)]
-        ),
-        "the parametric type candidate must remain a value-shaped parser node: {args:?}"
+        matches!(type_args.as_slice(), [CallArg::Type(Type::Path { segments, args, .. })]
+        if segments.last().is_some_and(|segment| segment.as_str() == "Formbox") && args.len() == 1)
     );
 
     let (lowered, _) =
         FullPipeline::lower_package(vec![(PathBuf::from("matrix.kio"), parsed)], None)
-            .expect("lower typed ambiguity fixture");
+            .expect("lower explicit type-stage fixture");
     let package =
-        Package::build(Path::new(""), lowered, None).expect("assemble typed ambiguity fixture");
-    let prime = FullPipeline::typecheck(&package).expect("typecheck typed ambiguity fixture");
+        Package::build(Path::new(""), lowered, None).expect("assemble explicit type-stage fixture");
+    let prime = FullPipeline::typecheck(&package).expect("typecheck explicit type-stage fixture");
     let module = prime
         .module("matrix")
         .expect("typed matrix module")
@@ -1278,20 +1345,29 @@ fn typed_parametric_call_argument_is_baked_into_its_resolved_slot() {
         Item::FnDef(def) if def.name == "subject" => Some(&def.body),
         _ => None,
     });
-    let Expr::Call { args, .. } = subject.expect("typed subject function") else {
+    let Expr::Call { callee, args, .. } = subject.expect("typed subject function") else {
         panic!("typed subject must remain an ordinary call")
     };
-    assert!(
-        matches!(
-            args.as_slice(),
-            [
-                CallArg::Type(Type::Path { segments, args, .. }),
-                CallArg::Value(_)
-            ] if segments.last().is_some_and(|segment| segment.as_str() == "Formbox")
-                && args.len() == 1
-        ),
-        "typing must bake the candidate into the resolved type slot: {args:?}"
-    );
+    // Prime may retain the type prefix nested or compact it into this call;
+    // neither representation may move it across the one value stage.
+    let type_arg = match args.as_slice() {
+        [CallArg::Type(ty), CallArg::Value(_)] => ty,
+        [CallArg::Value(_)] => {
+            let Expr::Call {
+                args: type_args, ..
+            } = callee.as_ref()
+            else {
+                panic!("typed call lost its explicit type prefix")
+            };
+            let [CallArg::Type(ty)] = type_args.as_slice() else {
+                panic!("typed prefix must contain exactly one type argument")
+            };
+            ty
+        }
+        _ => panic!("typed call changed its type/value stage order: {args:?}"),
+    };
+    assert!(matches!(type_arg, Type::Path { segments, args, .. }
+        if segments.last().is_some_and(|segment| segment.as_str() == "Formbox") && args.len() == 1));
 }
 
 fn assert_deferred_body_rejected(source: &str, id: &str) {
@@ -1448,7 +1524,7 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
     );
     let Expr::Ufcs {
         receiver: tight_receiver,
-        callee_segments: tight_callee,
+        callee: tight_callee,
         flavor: tight_flavor,
         ..
     } = tight
@@ -1457,7 +1533,9 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
     };
     assert_eq!(tight_flavor.token(), ".>");
     assert_eq!(
-        tight_callee.last().map(crate::ast::PathSegment::as_str),
+        path_segments(tight_callee)
+            .last()
+            .map(crate::ast::PathSegment::as_str),
         Some("context_next")
     );
     assert_eq!(
@@ -1467,7 +1545,7 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
 
     let Expr::Ufcs {
         receiver: grouped_receiver,
-        callee_segments: grouped_callee,
+        callee: grouped_callee,
         flavor: grouped_flavor,
         ..
     } = grouped
@@ -1476,7 +1554,9 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
     };
     assert_eq!(grouped_flavor.token(), ".<");
     assert_eq!(
-        grouped_callee.last().map(crate::ast::PathSegment::as_str),
+        path_segments(grouped_callee)
+            .last()
+            .map(crate::ast::PathSegment::as_str),
         Some("context_callee")
     );
     assert_eq!(
@@ -1488,7 +1568,7 @@ fn tight_splice_boundary_is_distinct_from_a_grouped_rhs() {
 #[test]
 fn matched_operator_and_structural_forall_follow_their_syntax() {
     let no_operator = parse_eager_and_lazy(
-        "module matrix; fn subject() -> . { context_callee([Formtype] Formtype) }",
+        "module matrix; fn subject() -> . { context_callee[[Formtype] Formtype] }",
         "structural forall call argument",
     );
     assert!(matches!(
@@ -1513,7 +1593,7 @@ fn matched_operator_and_structural_forall_follow_their_syntax() {
         "module matrix;\n\
          fn context_bracket(context_x: Contexttype, context_y: Contexttype) -> Contexttype { context_x }\n\
          op <| _ |> _ { impl context_bracket; };\n\
-         fn subject() -> . { context_callee([Formtype] Formtype) }",
+         fn subject() -> . { context_callee[[Formtype] Formtype] }",
         "structural forall beside a matched operator",
     );
     assert!(matches!(
@@ -1672,7 +1752,8 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "Expr",
     "ExprPostfix",
     "ExprSuffix",
-    "CallArg",
+    "ValueApplication",
+    "TypeApplication",
     "ExprAtom",
     "LiteralCall",
     "BoolLit",
@@ -1713,10 +1794,7 @@ const MONITORED_GRAMMAR: &[&str] = &[
     "PrefixOpExpr",
     "DotSpliceSuffix",
     "DotSpliceCallee",
-    "LeftCallSplice",
-    "LeftSpliceCallee",
-    "LeftSpliceBlockCallee",
-    "LeftSplicePathCallee",
+    "ReverseSpliceSuffix",
     "TightCallArg",
     "OperatorTail",
     "PatternLet",
@@ -1735,7 +1813,6 @@ const MONITORED_GRAMMAR: &[&str] = &[
 const DIRECT_EXPR_OWNERS: &[&str] = &[
     "BlockBody",
     "BlockValueArgs",
-    "CallArg",
     "Equiv",
     "ExistentialLet",
     "ExprAtom",
@@ -1745,15 +1822,16 @@ const DIRECT_EXPR_OWNERS: &[&str] = &[
     "LetStmt",
     "NeutralBind",
     "NeutralBlock",
+    "NonemptyCallArgList",
     "OpUsePart",
     "PatternLet",
     "RowLet",
     "TupleLit",
+    "ValueApplication",
     "ValueElements",
 ];
 
 const DIRECT_TYPE_OWNERS: &[&str] = &[
-    "CallArg",
     "FnDef",
     "FnExpr",
     "FnSignatureParam",
@@ -1767,6 +1845,7 @@ const DIRECT_TYPE_OWNERS: &[&str] = &[
     "SigExportFn",
     "SignatureParam",
     "TypeAliasBody",
+    "TypeApplication",
     "TypeArgList",
     "TypeAtom",
 ];
@@ -1775,10 +1854,6 @@ const DIRECT_TYPE_OWNERS: &[&str] = &[
 // list is deliberately exact: adding a grammar owner cannot silently escape
 // either the matrix or one of these separately exercised boundaries.
 const NON_MATRIX_TYPE_OWNERS: &[(&str, &str)] = &[
-    (
-        "CallArg",
-        "raw expression/type ambiguity has its own topology table",
-    ),
     (
         "HostFnBody",
         "shares SignatureParam and return-type parsing with function declarations",
@@ -1805,7 +1880,7 @@ const EXPECTED_EXPRESSION_GRAMMAR: &str = r#"TypeAlias ::= TypeAliasBody ';'
 TypeAliasBody ::= Vis? 'type' IDENT TypeParamList? '=' Type
 NewtypeAfterVis ::= 'newtype' IDENT TypeParamList? ExistsBinder* ':' Type NewtypeBody
 FnDef ::= FnDeclModifiers 'fn' IDENT Signature ('->' Type)? Block
-TypeBinderGroup ::= '[' TypeBinder (',' TypeBinder)* ']'
+TypeBinderGroup ::= '[' TypeBinder ']'
 SignatureParam ::= IDENT ':' Type
 SignatureParam += ParamPatternTuple | IDENT ':' ParamPatternTuple
 FnSignatureParam ::= IDENT (':' Type)?
@@ -1818,8 +1893,8 @@ TypeChain ::= TypeAtom TypeChainTail?
 TypeChainTail ::= ('&' TypeAtom)+ | ('|' TypeAtom)+
 TypeAtom ::= '!' | '.' | '(' Type ')' | '(' Type ('|' Type)+ ')' | '(' Type ('&' Type)+ ')' | TypePath
 TypeAtom += '_'
-TypePath ::= TypeName TypeArgList? | ModulePath '.' TypeName TypeArgList?
-TypeArgList ::= '(' Type (',' Type)* ')'
+TypePath ::= TypeName TypeArgList* | ModulePath '.' TypeName TypeArgList*
+TypeArgList ::= '[' Type ']'
 Block ::= '{' BlockBody '}'
 BlockBody ::= ';'* (Stmt ';'*)* Expr ';'*
 Stmt ::= LetStmt | ExprStmt
@@ -1829,15 +1904,15 @@ ExprStmt ::= Expr ';'
 Expr ::= ExprPostfix
 Expr += PrefixOpExpr
 ExprPostfix ::= ExprAtom ExprSuffix*
-ExprPostfix += LeftCallSplice ExprSuffix*
-ExprSuffix ::= '(' (CallArg (',' CallArg)*)? ')'
+ExprSuffix ::= ValueApplication | TypeApplication
 ExprSuffix += FieldAccess | FieldUpdate
-ExprSuffix += DotSpliceSuffix | OperatorTail
-CallArg ::= Expr | Type
+ExprSuffix += DotSpliceSuffix | ReverseSpliceSuffix | OperatorTail
+ValueApplication ::= '(' (Expr (',' Expr)*)? ')'
+TypeApplication ::= '[' Type ']'
 ExprAtom ::= LiteralCall | '(' ')' | '(' Expr ')' | ValuePath | FnExpr
 ExprAtom += TupleLit | LabelValue | MacroCall | BlockMacroCall | PlaceholderLambda | RecCall
 ExprAtom += VariadicLiteral | ClosedFixedOpExpr
-LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '(' Type ')'
+LiteralCall ::= (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit) '[' Type ']'
 LiteralCall += (INT_LIT | FLOAT_LIT | STR_LIT+ | BoolLit)
 BoolLit ::= '.' ('t' | 'f')
 FnExpr ::= '.' FnSignature ('->' Type)? Block
@@ -1867,21 +1942,18 @@ NeutralBlock ::= '{' ';'* ((NeutralBinding | Expr ';') ';'*)* Expr? '}'
 NeutralBinding ::= LetStmt | PatternLet | ExistentialLet | RowLet | NeutralBind
 NeutralBind ::= 'let' NeutralBinder '<-' Expr ';'
 NeutralBinder ::= LetBinder | '.' ParamPatternTuple | DotPlaceholderIntro
-MacroCall ::= MacroHead CallArgList
+MacroCall ::= MacroHead (TypeApplication | ValueApplication)+
 MacroHead ::= IDENT | '(' MacroHead ')'
-RecCall ::= 'recur' RecCallAnnotationList? IDENT CallArgList
-CallArgList ::= '(' (CallArg (',' CallArg)*)? ','? ')'
-NonemptyCallArgList ::= '(' CallArg (',' CallArg)* ','? ')'
+RecCall ::= 'recur' RecCallAnnotationList? IDENT (TypeApplication | ValueApplication)+
+CallArgList ::= ValueApplication
+NonemptyCallArgList ::= '(' Expr (',' Expr)* ','? ')'
 DotPlaceholderIntro ::= '.' IDENT '.'
 PlaceholderLambda ::= DotPlaceholderIntro Block
 PrefixOpExpr ::= FixedOperatorUse
 DotSpliceSuffix ::= ('.>' | '.>>') DotSpliceCallee NonemptyCallArgList? | ('.>' | '.>>') BlockMacroCall
-DotSpliceCallee ::= GroupedValuePath
-LeftCallSplice ::= LeftSpliceCallee ('.<' | '.<<') TightCallArg
-LeftSpliceCallee ::= LeftSplicePathCallee | LeftSpliceBlockCallee
-LeftSpliceBlockCallee ::= BlockMacroCall | '(' LeftSpliceBlockCallee ')'
-LeftSplicePathCallee ::= IDENT ('.' IDENT)* NonemptyCallArgList? | '(' LeftSplicePathCallee ')'
-TightCallArg ::= ExprAtom CallArgList*
+DotSpliceCallee ::= GroupedValuePath TypeApplication*
+ReverseSpliceSuffix ::= ('.<' | '.<<') TightCallArg
+TightCallArg ::= ExprAtom (TypeApplication | ValueApplication)*
 OperatorTail ::= FixedOperatorUse
 PatternLet ::= 'let' ('.' ParamPatternTuple | DotPlaceholderIntro) '=' Expr ';'
 ParamPatternElem ::= IDENT (':' Type)? | '_' (':' Type)? | ParamPatternTuple | IDENT ':' ParamPatternTuple
@@ -1890,7 +1962,7 @@ ExistentialLetBinder ::= IDENT | ParamPatternTuple
 RowLet ::= 'let' '.' '(' '{' RowLetEntry (',' RowLetEntry)* ','? '}' ')' '=' Expr ';'
 TrailingBlockDecl ::= 'trailing' BlockExposure IDENT?
 BlockExposure ::= 'product' | 'thunk' | 'sequence'
-BlockPrefix ::= BlockValueArgs
+BlockPrefix ::= BlockValueArgs+
 BlockValueArgs ::= '(' (Expr (',' Expr)*)? ','? ')'
 LabelledBlock ::= IDENT NeutralBlock
 FinalElidedBlock ::= IDENT BlockMacroCall"#;

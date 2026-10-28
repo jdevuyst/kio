@@ -11,7 +11,7 @@ fn opened() {
 
 fn explicit() {
   // authored call
-  rhs(_, .[Hidden](payload) { payload })
+  rhs[_](.[Hidden](payload) { payload })
 }
 
 fn typed() {
@@ -24,5 +24,5 @@ fn typed() {
 }
 
 fn explicit_pattern() {
-  rhs(_, .[Hidden]((left: Hidden, right: Hidden)) { left })
+  rhs[_](.[Hidden]((left: Hidden, right: Hidden)) { left })
 }

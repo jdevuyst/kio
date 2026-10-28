@@ -28,7 +28,7 @@ import testapi/array(array_len, array_make_empty, array_push, array_set);
 /// `link` before the image is handed out.
 fn hole() -> I32 { imm_cell(0) }
 
-fn alloc1(cells: Array(I32), tag: I32, f0: I32) -> I32 {
+fn alloc1(cells: Array[I32], tag: I32, f0: I32) -> I32 {
   let addr = array_len(cells);
   array_push(cells, tag);
   array_push(cells, 1);
@@ -36,7 +36,7 @@ fn alloc1(cells: Array(I32), tag: I32, f0: I32) -> I32 {
   addr
 }
 
-fn alloc2(cells: Array(I32), tag: I32, f0: I32, f1: I32) -> I32 {
+fn alloc2(cells: Array[I32], tag: I32, f0: I32, f1: I32) -> I32 {
   let addr = array_len(cells);
   array_push(cells, tag);
   array_push(cells, 2);
@@ -45,7 +45,7 @@ fn alloc2(cells: Array(I32), tag: I32, f0: I32, f1: I32) -> I32 {
   addr
 }
 
-fn alloc3(cells: Array(I32), tag: I32, f0: I32, f1: I32, f2: I32) -> I32 {
+fn alloc3(cells: Array[I32], tag: I32, f0: I32, f1: I32, f2: I32) -> I32 {
   let addr = array_len(cells);
   array_push(cells, tag);
   array_push(cells, 3);
@@ -55,12 +55,12 @@ fn alloc3(cells: Array(I32), tag: I32, f0: I32, f1: I32, f2: I32) -> I32 {
   addr
 }
 
-fn link(cells: Array(I32), addr: I32, index: I32, target: I32) {
+fn link(cells: Array[I32], addr: I32, index: I32, target: I32) {
   array_set(cells, field_addr(addr, index), ptr_cell(target))
 }
 
 pub fn build_image() -> Image {
-  let cells = array_make_empty(I32, ());
+  let cells = array_make_empty[I32](());
   let active = alloc3(cells, tag_frame, hole(), hole(), imm_cell(7));
   let dropped = alloc2(cells, tag_frame, hole(), imm_cell(99));
   let left = alloc2(cells, tag_pair, hole(), hole());
@@ -80,7 +80,7 @@ pub fn build_image() -> Image {
   link(cells, stale, 1, orphan);
   link(cells, back, 0, left);
   link(cells, temp, 0, shared);
-  let roots = array_make_empty(I32, ());
+  let roots = array_make_empty[I32](());
   array_push(roots, active);
   array_push(roots, temp);
   {heap_cells = cells, heap_roots = roots}

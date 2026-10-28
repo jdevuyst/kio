@@ -11,14 +11,14 @@ pub labels State = {
 , longest: I32
 , suffix: I32
 , ends: I32
-, transitions: Array(I32)
+, transitions: Array[I32]
 , copied_from: I32
 };
 
-pub labels Index = { states: Array(State), last: I32, clones: I32 };
+pub labels Index = { states: Array[State], last: I32, clones: I32 };
 
 pub fn empty() -> Index {
-  let states = a.array_make_empty(State, ());
+  let states = a.array_make_empty[State](());
   a.array_push(
   , states
   , {longest = 0, suffix = -1, ends = 0, transitions = a.array_make_filled(3, -1), copied_from = -1}
@@ -26,16 +26,16 @@ pub fn empty() -> Index {
   {states, last = 0, clones = 0}
 }
 
-pub fn transition(states: Array(State), state: I32, symbol: I32) -> I32 {
+pub fn transition(states: Array[State], state: I32, symbol: I32) -> I32 {
   a.array_get(a.array_get(states, state).?{transitions}, symbol)
 }
 
-fn set_link(states: Array(State), state: I32, link: I32) {
+fn set_link(states: Array[State], state: I32, link: I32) {
   let old = a.array_get(states, state);
   a.array_set(states, state, old.!{suffix = link})
 }
 
-rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32) -> I32 {
+rec(loop) fn add_missing(states: Array[State], p: I32, symbol: I32, target: I32) -> I32 {
   if(num.less(p, 0)) {
     p
   } else {
@@ -49,7 +49,7 @@ rec(loop) fn add_missing(states: Array(State), p: I32, symbol: I32, target: I32)
   }
 }
 
-rec(loop) fn redirect(states: Array(State), p: I32, symbol: I32, old: I32, clone: I32) {
+rec(loop) fn redirect(states: Array[State], p: I32, symbol: I32, old: I32, clone: I32) {
   if(num.less(p, 0)) {
     ()
   } else {
@@ -108,7 +108,7 @@ pub fn append(index: Index, symbol: I32) -> Index {
   }
 }
 
-rec(loop) fn consume(index: Index, symbols: Array(I32), position: I32) -> Index {
+rec(loop) fn consume(index: Index, symbols: Array[I32], position: I32) -> Index {
   if(num.less(position, a.array_len(symbols))) {
     recur consume(append(index, a.array_get(symbols, position)), symbols, n.add_i32(position, 1))
   } else {
@@ -116,4 +116,4 @@ rec(loop) fn consume(index: Index, symbols: Array(I32), position: I32) -> Index 
   }
 }
 
-pub fn build(symbols: Array(I32)) -> Index { consume(empty(), symbols, 0) }
+pub fn build(symbols: Array[I32]) -> Index { consume(empty(), symbols, 0) }

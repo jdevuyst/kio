@@ -1,7 +1,7 @@
 module main;
 
 // `Bad`'s parameter `[A]` appears in a negative position in the
-// payload (LHS of an arrow). Applying `Bad(Loop)` smuggles
+// payload (LHS of an arrow). Applying `Bad[Loop]` smuggles
 // `Loop` into that negative position, which is non-strictly-
 // positive — strict-positivity rejects it per
 // `specs/language.md` § The `rec` type operator.
@@ -12,4 +12,4 @@ module main;
 // normalization of the `rec` boundary.
 newtype Bad[A] : A -> . { pub constructor mk_bad; pub projector un_bad }
 
-rec newtype Loop : Bad(Loop) { pub constructor mk_loop; pub projector un_loop }
+rec newtype Loop : Bad[Loop] { pub constructor mk_loop; pub projector un_loop }

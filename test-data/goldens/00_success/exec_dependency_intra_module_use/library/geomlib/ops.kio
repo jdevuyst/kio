@@ -6,4 +6,4 @@ import vec(Vec2, fst, mk, snd);
 // `snd` from its sibling module `vec`. After the dependency is
 // re-rooted under the consumer's local name, this `from vec;` must
 // become `from <local>/vec;` or it resolves to a non-existent root.
-pub fn swap[A](v: Vec2(A)) -> Vec2(A) { mk(snd(v), fst(v)) }
+pub fn swap[A](v: Vec2[A]) -> Vec2[A] { mk(snd(v), fst(v)) }

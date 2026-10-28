@@ -9,20 +9,20 @@ labels { box[T]: T };
 // ι-Fst (specs/formal/equiv.md section 2.1): a projection over a built
 // pair selects the first component.
 equiv fst_picks_first(x: A, y: B) {
-  __fst__(A, B, __pair__(A, B, x, y));
+  __fst__[A][B](__pair__[A][B](x, y));
   x
 }
 
 // ι-Snd: a projection over a built pair selects the second component.
 equiv snd_picks_second(x: A, y: B) {
-  __snd__(A, B, __pair__(A, B, x, y));
+  __snd__[A][B](__pair__[A][B](x, y));
   y
 }
 
 // product-η (specs/formal/equiv.md section 4.2): re-pairing the
 // projections of an opaque product `p` reconstructs `p`.
 equiv product_eta(p: A & B) {
-  __pair__(A, B, __fst__(A, B, p), __snd__(A, B, p));
+  __pair__[A][B](__fst__[A][B](p), __snd__[A][B](p));
   p
 }
 

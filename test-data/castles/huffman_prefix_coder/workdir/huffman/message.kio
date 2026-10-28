@@ -49,17 +49,17 @@ pub fn glyph(code: I32) -> String {
   }
 }
 
-fn word_a() -> List(I32) { of1(code_a()) }
+fn word_a() -> List[I32] { of1(code_a()) }
 
-fn word_man() -> List(I32) { of3(code_m(), code_a(), code_n()) }
+fn word_man() -> List[I32] { of3(code_m(), code_a(), code_n()) }
 
-fn word_plan() -> List(I32) { of4(code_p(), code_l(), code_a(), code_n()) }
+fn word_plan() -> List[I32] { of4(code_p(), code_l(), code_a(), code_n()) }
 
-fn word_canal() -> List(I32) { of5(code_c(), code_a(), code_n(), code_a(), code_l()) }
+fn word_canal() -> List[I32] { of5(code_c(), code_a(), code_n(), code_a(), code_l()) }
 
-fn word_panama() -> List(I32) { of6(code_p(), code_a(), code_n(), code_a(), code_m(), code_a()) }
+fn word_panama() -> List[I32] { of6(code_p(), code_a(), code_n(), code_a(), code_m(), code_a()) }
 
-pub fn message() -> List(I32) {
+pub fn message() -> List[I32] {
   append(
   , word_a()
   , append(
@@ -69,6 +69,6 @@ pub fn message() -> List(I32) {
   )
 }
 
-pub fn message_text(symbols: List(I32)) -> String {
+pub fn message_text(symbols: List[I32]) -> String {
   fold(symbols, .(acc: String, code: I32) { cat(acc, glyph(code)) }, "")
 }

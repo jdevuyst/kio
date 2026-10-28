@@ -23,11 +23,11 @@ import testapi/arith(add_i32, leq_i32, sub_i32);
 import testapi/array(array_get, array_len);
 import testapi/iter(loop);
 
-fn phase_at(programs: Array(Array(Phase)), pid: I32, pc: I32) -> Phase {
+fn phase_at(programs: Array[Array[Phase]], pid: I32, pc: I32) -> Phase {
   array_get(array_get(programs, pid), pc)
 }
 
-fn program_len(programs: Array(Array(Phase)), pid: I32) -> I32 {
+fn program_len(programs: Array[Array[Phase]], pid: I32) -> I32 {
   array_len(array_get(programs, pid))
 }
 
@@ -91,7 +91,7 @@ fn dispatch(pcb: proc.Pcb, q: queue.Queues, running: I32, quantum_left: I32) -> 
 fn settle(
 , pcb: proc.Pcb
 , q: queue.Queues
-, programs: Array(Array(Phase))
+, programs: Array[Array[Phase]]
 , tick: I32
 , pid: I32
 , quantum_left: I32
@@ -114,7 +114,7 @@ fn settle(
 fn run_compute(
 , pcb: proc.Pcb
 , q: queue.Queues
-, programs: Array(Array(Phase))
+, programs: Array[Array[Phase]]
 , tick: I32
 , hand: I32
 , pid: I32
@@ -140,7 +140,7 @@ fn run_touch(
 , pcb: proc.Pcb
 , mem: memory.Mem
 , q: queue.Queues
-, programs: Array(Array(Phase))
+, programs: Array[Array[Phase]]
 , tick: I32
 , hand: I32
 , pid: I32
@@ -186,7 +186,7 @@ fn execute(
 , pcb: proc.Pcb
 , mem: memory.Mem
 , q: queue.Queues
-, programs: Array(Array(Phase))
+, programs: Array[Array[Phase]]
 , tick: I32
 , hand: I32
 , pid: I32
@@ -204,7 +204,7 @@ rec(loop) fn tick_loop(
 , pcb: proc.Pcb
 , mem: memory.Mem
 , q: queue.Queues
-, programs: Array(Array(Phase))
+, programs: Array[Array[Phase]]
 , tick: I32
 , hand: I32
 , running: I32
@@ -263,6 +263,6 @@ rec(loop) fn tick_loop(
 
 /// Run to completion. Yields the ticks the run took and the ticks on which no
 /// process was runnable.
-pub fn simulate(pcb: proc.Pcb, mem: memory.Mem, q: queue.Queues, programs: Array(Array(Phase))) ->
+pub fn simulate(pcb: proc.Pcb, mem: memory.Mem, q: queue.Queues, programs: Array[Array[Phase]]) ->
   I32 & I32
    { tick_loop(pcb, mem, q, programs, 0, 0, config.nothing(), 0, 0) }

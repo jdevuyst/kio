@@ -16,11 +16,11 @@ import testapi/iter(loop);
 /// / `Item` / `Open` types and the `Cell` sum over them.
 pub labels Cell = { wall: . } | { item: . } | { open: . };
 
-pub fn wall_cell() -> Cell { {wall=}.>widen_sum(Cell) }
+pub fn wall_cell() -> Cell { ({wall=}.>widen_sum)[Cell] }
 
-pub fn item_cell() -> Cell { {item=}.>widen_sum(Cell) }
+pub fn item_cell() -> Cell { ({item=}.>widen_sum)[Cell] }
 
-pub fn open_cell() -> Cell { {open=}.>widen_sum(Cell) }
+pub fn open_cell() -> Cell { ({open=}.>widen_sum)[Cell] }
 
 /// Logical conjunction over `Bool`.
 pub fn and(a: Bool, b: Bool) -> Bool {

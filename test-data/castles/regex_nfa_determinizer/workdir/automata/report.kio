@@ -51,7 +51,7 @@ rec(loop) fn set_body(xs: Ints, lead: Bool, acc: String) -> String {
   match(xs.>List.unpack) {
     (
     , .(x: I32, rest: Ints) {
-        let sep = if(lead) { "" } else { "," };
+        let .(sep: String) = if(lead) { "" } else { "," };
         recur set_body(rest, .f, cat3(acc, sep, num(x)))
       }
     , .(_empty: .) { acc }
@@ -97,8 +97,8 @@ rec(loop) fn row_cells(d: dfa.Dfa, state: I32, sym: I32, acc: String) -> String 
 
 /// `>` marks the start state and `*` an accepting one; a state can be both.
 fn marker(d: dfa.Dfa, state: I32) -> String {
-  let entry = if(eq_i32(dfa.start(d), state)) { ">" } else { " " };
-  let final = if(dfa.is_accepting(d, state)) { "*" } else { " " };
+  let .(entry: String) = if(eq_i32(dfa.start(d), state)) { ">" } else { " " };
+  let .(final: String) = if(dfa.is_accepting(d, state)) { "*" } else { " " };
   cat(entry, final)
 }
 
