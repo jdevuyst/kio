@@ -136,6 +136,21 @@ import vec/vec(Vec, empty, push_back);
 Select only the names the application uses. The package source and generated
 Kiodoc remain the authority for exact signatures.
 
+For a fallback that should run only when needed, select a macro explicitly:
+`import option/core(macro or_else_lazy, macro unwrap_or_lazy);`,
+`import result/result(macro or_else_lazy, macro unwrap_or_lazy, macro unwrap_err_or_lazy);`,
+or `import dict/dict(macro get_or_lazy);`. Import only the names used in a
+module; the option and result names coincide, so use an alias if both are needed.
+For example, `unwrap_or_lazy(value) { default_value() }` extracts an option's
+present value or a result's success, invoking the block only on absence or
+error. `or_else_lazy` returns an alternative of the same option or result type.
+Result's `unwrap_err_or_lazy` extracts the error or invokes the block on
+success. `get_or_lazy(compare, dictionary, key) { default_value() }` returns
+the dictionary value or invokes the block when the key is absent. The default
+must have the extracted value or error type. These calls evaluate their input
+and thunk-producing expression once; only the selected fallback body runs.
+The corresponding eager functions and operators remain available.
+
 All six collection and value packages above live in the same Git repository.
 For example, create `list.dep.kio` at your consumer package root:
 
@@ -289,7 +304,8 @@ a consumer can import a narrow vocabulary:
   `concat`, `flatten`, `group`, `zip`, and `map`.
 - `match` supplies exhaustive, first-match structural dispatch through
   `match`.
-- `control` supplies lazy `if` branches and ordinary `scope` blocks.
+- `control` supplies lazy `if` branches, `scope` blocks, and Boolean
+  `and` / `or` macros with `&&` / `||` operator spellings, plus `not`.
 - `sequence` supplies `Bind` and `Sequence` types and `do` blocks that
   sequence actions through an explicitly supplied bind function.
 - `lookup` supplies the advanced conditional cross-sum helpers `lookup` and
@@ -316,7 +332,9 @@ import macros/spine_macros(macro fit, macro widen_sum);
 import macros/row_macros(macro record, macro record_, macro select, macro with, macro with_);
 ```
 
-`control` declares the concrete `Bool` host type used by `if`. Use that same
+`control` declares the concrete `Bool` host type used by its Boolean operations.
+The [operator guide](operators.md#delay-an-operand) shows the selective imports
+and delayed right operands for `&&` and `||`. Use that same
 imported type for conditions and Boolean-producing host functions. If your
 package already declares `Bool`, add `rehost macros/control to app/types;`
 to `macros.dep.kio`, where `app/types` is the provider module for that type,

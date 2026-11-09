@@ -2,7 +2,7 @@
 
 Companion to the prose pages [`../language.md`](../language.md) § Equivalence claims and [`../cli.md`](../cli.md) § kio test. This page pins down the reduction strategy and equivalence relation that `kio test` uses to discharge `equiv` items, as inference rules and meta-statements.
 
-The reduction relation is borrowed from [`prime.md`](prime.md) § 3 — the small-step rules apply uniformly. This page restricts attention to `equiv`-discharge specifics: the residual normal form, host-call atomicity, the literal-token recognition rule for `__if_then_else__`, and the equivalence relation on residual NFs.
+The reduction relation is borrowed from [`prime.md`](prime.md) § 3 — the small-step rules apply uniformly. This page restricts attention to `equiv`-discharge specifics: the residual normal form, host-call atomicity, the literal-token recognition rules for Boolean intrinsics, and the equivalence relation on residual NFs.
 
 ## 1. What `kio test` discharges
 
@@ -27,7 +27,7 @@ Termination: every body is a closed well-typed Kio' term (parameters substituted
 
 ## 2. Reduction rules
 
-The partial evaluator applies the small-step rules from [`prime.md`](prime.md) § 3 (β / ι), the `__if_then_else__` literal-recognition rule (§ 2.2), and the symbolic case-split over an opaque sum (§ 2.6). **No other rules fire**; in particular, host calls are opaque (§ 2.4) — the evaluator commits to nothing about what a host item computes.
+The partial evaluator applies the small-step rules from [`prime.md`](prime.md) § 3 (β / ι), the Boolean literal-recognition rules (§ 2.2), and the symbolic case-split over an opaque sum (§ 2.6). **No other rules fire**; in particular, host calls are opaque (§ 2.4) — the evaluator commits to nothing about what a host item computes.
 
 In the rules and residual grammar, a bracketed type vector such as `[T̄]` abbreviates successive singleton type applications, as in the [core notation](prime.md#22-term-typing-rules).
 
@@ -62,6 +62,21 @@ __if_then_else__[B][A](.f[B], t, e)   →  e(())     (ι-IfFalse)
 The two ι rules fire **only** when the condition slot is the parser-recognized bool literal `.t` or `.f` (carrying its mandatory `[B]` role(bool) annotation per [`prime.md`](prime.md) § 2.2). An `__if_then_else__` whose condition is a stuck host call (or any other residual) is itself a residual — no implementation knowledge of "what the host returns" is allowed to leak in.
 
 These reduction rules recognize Boolean literal syntax. They work because `.t` / `.f` are specific literal AST nodes, not host-supplied values: the partial evaluator can recognize them syntactically without consulting any `role(bool)` host type.
+
+The Boolean operand intrinsics use the same literal recognition:
+
+```text
+__and__[B](.f[B], r)  →  .f[B]   (ι-AndFalse)
+__and__[B](.t[B], r)  →  r(())   (ι-AndTrue)
+__or__[B](.t[B], r)   →  .t[B]   (ι-OrTrue)
+__or__[B](.f[B], r)   →  r(())   (ι-OrFalse)
+```
+
+Both operand values are evaluated before these rules apply. The right thunk's
+body runs only on the selected route. An opaque left operand leaves the call
+residual; neither operation executes host code to discover its truth value.
+The skipped route retains the original left value, as specified in
+[`prime.md`](prime.md#31-reduction-relation).
 
 ### 2.3. `__absurd__`
 
@@ -168,7 +183,7 @@ A **stuck residual** carries through composition: applying a stuck callee to
 further value or type arguments retains each successive stage. `StuckType` is
 notation for the semantic residual, not a source-language construct.
 
-**Stuck shapes the runner expects:** host calls applied to fully-evaluated arguments; `__if_then_else__` whose condition is a stuck host call; `__absurd__` whose argument is a stuck host call; newtype member access against an opaque atom. All four are valid residuals — the equivalence relation in § 4 compares them structurally.
+**Stuck shapes the runner expects:** host calls applied to fully-evaluated arguments; `__if_then_else__`, `__and__`, or `__or__` whose condition is a stuck host call; `__absurd__` whose argument is a stuck host call; newtype member access against an opaque atom. These are valid residuals — the equivalence relation in § 4 compares them structurally.
 
 ## 4. Equivalence relation
 

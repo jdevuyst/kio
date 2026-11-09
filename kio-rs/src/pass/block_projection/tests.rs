@@ -68,6 +68,21 @@ fn check_modules(
 }
 
 #[test]
+fn operator_macros_preserve_direct_call_stages_and_generated_node_identity() {
+    let provider = format!(
+        "{PROVIDER}\n pub op macro # _ {{ impl packet; }} pub op macro $$ ._ {{ impl packet; }}"
+    );
+    let consumer = "module consumer; import provider(op macro # _, op macro $$ ._, macro packet);
+        fn identity[A](value: A) -> A { value }
+        fn run() { (# identity)[.](packet(($$ ())())) }
+        fn shadow(packet: .) { ($$ packet)() }";
+    let mut input = modules(consumer);
+    input[0].1 = parse(&provider).unwrap();
+    let prime = check_modules(input).expect("operator, ordinary macro and callable-result stages");
+    prime_roundtrip(&prime);
+}
+
+#[test]
 fn block_splices_project_prefix_values_before_every_block_argument() {
     use crate::ast::{CallArg, Expr};
     for (body, expected) in [

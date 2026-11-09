@@ -280,8 +280,8 @@ fn find_function_name_in_tokens(tokens: &[Token], name: &str, item_span: Span) -
 }
 
 fn op_display_name(op: &crate::ast::Op) -> String {
-    let crate::ast::OpBody::Normal { pattern, .. } = &op.body;
-    crate::ast::OperatorGrammar::fixed(pattern).render()
+    let crate::ast::OpBody::Normal { kind, pattern, .. } = &op.body;
+    crate::ast::OperatorGrammar::fixed(*kind, pattern).render()
 }
 
 fn variadic_display_name(operator: &crate::ast::VariadicOperator) -> String {

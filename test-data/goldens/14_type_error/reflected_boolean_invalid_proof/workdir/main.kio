@@ -1,0 +1,7 @@
+module main;
+
+import __comptime__;
+
+pure fn invalid(value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_or__((), value, .() -> __Checked_term__ { value })
+}

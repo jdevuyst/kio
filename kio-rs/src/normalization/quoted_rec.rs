@@ -146,6 +146,43 @@ fn adapt<'a>(
                         let body = children[1].run(k.clone());
                         children[0].run(lambda(name.clone(), term_type(children[0].original), body))
                     }
+                    CheckedTermNode::IntrinsicBoolean { conjunction, .. } => {
+                        let body = if children[1].computation.is_none() {
+                            call(
+                                k.clone(),
+                                node(
+                                    CheckedTermNode::IntrinsicBoolean {
+                                        conjunction: *conjunction,
+                                        left: refs[0].clone(),
+                                        right: EvalRef::new(children[1].original.clone()),
+                                    },
+                                    term_type(term),
+                                ),
+                            )
+                        } else {
+                            let selected = children[1].run(k.clone());
+                            let skipped = call(k.clone(), refs[0].clone());
+                            let (true_body, false_body) = if *conjunction {
+                                (selected, skipped)
+                            } else {
+                                (skipped, selected)
+                            };
+                            node(
+                                CheckedTermNode::IntrinsicIfThenElse {
+                                    result_ty: type_traversal::clone_type(runtime),
+                                    condition: refs[0].clone(),
+                                    true_body,
+                                    false_body,
+                                },
+                                type_traversal::clone_type(runtime),
+                            )
+                        };
+                        children[0].run(lambda(
+                            names[0].clone(),
+                            term_type(children[0].original),
+                            body,
+                        ))
+                    }
                     CheckedTermNode::IntrinsicIfThenElse { .. } => {
                         let body = node(
                             CheckedTermNode::IntrinsicIfThenElse {
@@ -246,7 +283,8 @@ fn adapt<'a>(
                             | CheckedTermNode::TermLet { .. }
                             | CheckedTermNode::TermFn { .. }
                             | CheckedTermNode::IntrinsicEither { .. }
-                            | CheckedTermNode::IntrinsicIfThenElse { .. } => {
+                            | CheckedTermNode::IntrinsicIfThenElse { .. }
+                            | CheckedTermNode::IntrinsicBoolean { .. } => {
                                 unreachable!("handled above")
                             }
                         };
@@ -312,6 +350,7 @@ mod tests {
     enum Val {
         Unit,
         Bool(bool),
+        BoolCarrier(bool, usize),
         Pair(Box<Val>, Box<Val>),
         Sum(bool, Box<Val>),
         Closure(usize),
@@ -331,6 +370,7 @@ mod tests {
             Projection(bool),
             Injection(bool),
             If(&'a CheckedTerm, &'a CheckedTerm, EnvId),
+            Boolean(bool, &'a CheckedTerm, EnvId),
             Either(&'a str, &'a CheckedTerm, &'a str, &'a CheckedTerm, EnvId),
             Apply(Val),
         }
@@ -393,6 +433,14 @@ mod tests {
                     } => {
                         work.push(Work::Injection(intrinsic == "__left__"));
                         work.push(Work::Eval(value, env));
+                    }
+                    CheckedTermNode::IntrinsicBoolean {
+                        conjunction,
+                        left,
+                        right,
+                    } => {
+                        work.push(Work::Boolean(*conjunction, right, env));
+                        work.push(Work::Eval(left, env));
                     }
                     CheckedTermNode::IntrinsicIfThenElse {
                         condition,
@@ -470,10 +518,23 @@ mod tests {
                     values.push(Val::Sum(left, Box::new(value)));
                 }
                 Work::If(a, b, env) => {
-                    let Val::Bool(condition) = values.pop().unwrap() else {
-                        panic!("bool")
+                    let condition = match values.pop().unwrap() {
+                        Val::Bool(value) | Val::BoolCarrier(value, _) => value,
+                        _ => panic!("bool"),
                     };
                     work.push(Work::Eval(if condition { a } else { b }, env));
+                }
+                Work::Boolean(conjunction, right, env) => {
+                    let left = values.pop().unwrap();
+                    let truth = match &left {
+                        Val::Bool(value) | Val::BoolCarrier(value, _) => *value,
+                        _ => panic!("bool"),
+                    };
+                    if truth == conjunction {
+                        work.push(Work::Eval(right, env));
+                    } else {
+                        values.push(left);
+                    }
                 }
                 Work::Either(an, a, bn, b, env) => {
                     let Val::Sum(left, value) = values.pop().unwrap() else {
@@ -705,6 +766,100 @@ mod tests {
             ),
             (Val::Unit, vec![0, 3])
         );
+    }
+
+    #[test]
+    fn boolean_suspension_preserves_carriers_branch_effects_and_continuation() {
+        for conjunction in [false, true] {
+            let recipe = node(
+                CheckedTermNode::IntrinsicBoolean {
+                    conjunction,
+                    left: template(0, boolean()),
+                    right: template(1, boolean()),
+                },
+                boolean(),
+            );
+            for truth in [false, true] {
+                let left = Val::BoolCarrier(truth, 31);
+                let right = Val::BoolCarrier(!truth, 47);
+                let selected = truth == conjunction;
+                for marked in [[true, true], [true, false]] {
+                    let expected = if selected {
+                        right.clone()
+                    } else {
+                        left.clone()
+                    };
+                    let events = if selected && marked[1] {
+                        vec![0, 1]
+                    } else {
+                        vec![0]
+                    };
+                    assert_eq!(
+                        result(&recipe, &marked, &[left.clone(), right.clone()]),
+                        (expected, events)
+                    );
+                }
+                let (adapted, _) = adapt(&recipe, &[true, true, false], &unit()).unwrap();
+                let output = adapted.run(template(2, arrow(boolean(), unit())));
+                let events = if selected { vec![0, 1, 2] } else { vec![0, 2] };
+                assert_eq!(
+                    execute(
+                        &output,
+                        &[Val::Suspended(0), Val::Suspended(1), Val::Effect(2)],
+                        &[left, right, Val::Unit]
+                    ),
+                    (Val::Unit, events)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_terminal_callback_then_suspension_runs_one_continuation() {
+        for conjunction in [false, true] {
+            let unit_value = node(
+                CheckedTermNode::Raw(Expr::Unit {
+                    source_trivia: Default::default(),
+                    occurrence: Default::default(),
+                    meta: zero_meta(),
+                }),
+                unit(),
+            );
+            let recipe = node(
+                CheckedTermNode::IntrinsicBoolean {
+                    conjunction,
+                    left: template(0, boolean()),
+                    right: call(template(1, arrow(unit(), boolean())), unit_value),
+                },
+                boolean(),
+            );
+            let terminal = recipe.adapt_lifted_terminal_callbacks(
+                &[
+                    None,
+                    Some(ReflectedType::new_trusted(arrow(unit(), unit()))),
+                    None,
+                ],
+                ReflectedType::new_trusted(unit()),
+                template(2, arrow(boolean(), unit())),
+            );
+            let (adapted, _) = adapt(&terminal, &[true, false, false], &unit()).unwrap();
+            let output = adapted.run(lambda("done".into(), unit(), local("done", unit())));
+            for truth in [false, true] {
+                let events = if truth == conjunction {
+                    vec![0, 1]
+                } else {
+                    vec![0, 2]
+                };
+                assert_eq!(
+                    execute(
+                        &output,
+                        &[Val::Suspended(0), Val::Effect(1), Val::Effect(2)],
+                        &[Val::BoolCarrier(truth, 29), Val::Unit, Val::Unit]
+                    ),
+                    (Val::Unit, events)
+                );
+            }
+        }
     }
 
     #[test]

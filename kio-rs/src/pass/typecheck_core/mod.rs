@@ -208,6 +208,8 @@ pub(crate) use modules::TypecheckExecution;
 pub(crate) use modules::check_host_type_parameters;
 #[cfg(any(feature = "surface", feature = "prime"))]
 pub(crate) use modules::check_module_in_package_with_typecheck_scope_collect_errors;
+#[cfg(all(test, feature = "surface"))]
+pub(crate) use modules::check_module_sequential_for_test;
 #[cfg(feature = "cli")]
 pub(crate) use modules::check_module_signatures;
 pub(crate) use modules::check_no_alias_only_cycles;
@@ -811,15 +813,22 @@ where
     }
     if let crate::ast::Expr::Path { segments, .. } = e
         && segments.len() == 1
-        && segments[0].as_str() == "__if_then_else__"
+        && matches!(
+            segments[0].as_str(),
+            "__if_then_else__" | "__and__" | "__or__"
+        )
     {
         let synthesized = <P::Typer as Typer<P>>::synth_expr(e, tcx)?;
         if synthesized.specialization.is_some() {
             if !<P::Typer as Typer<P>>::ALLOW_ELIDED_UNIVERSAL_CALL_TYPE_ARGS {
                 return Err(synth::unspecialized_intrinsic_error(e.span()));
             }
-            let (specialized, boolean) =
-                synth::specialize_boolean_intrinsic_from_expected(expected, e.span(), tcx)?;
+            let (specialized, boolean) = synth::specialize_boolean_intrinsic_from_expected(
+                segments[0].as_str(),
+                expected,
+                e.span(),
+                tcx,
+            )?;
             <P::Typer as Typer<P>>::record_type_resolution(e.site(), 0, boolean, tcx);
             <P::Typer as Typer<P>>::record_position_type(e.span(), specialized.ty, tcx);
             return Ok(());

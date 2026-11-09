@@ -57,6 +57,8 @@
 (import_decl . (keyword_import) @keyword.declaration)
 (incomplete_import_decl (keyword_import) @keyword.declaration)
 (op_decl (keyword_op) @keyword.declaration)
+(op_decl (keyword_declaration) @keyword.declaration)
+(incomplete_op_decl (keyword_declaration) @keyword.declaration)
 (incomplete_op_decl (keyword_op) @keyword.declaration)
 (variadic_decl (keyword_varop) @keyword.declaration)
 (incomplete_variadic_decl (keyword_varop) @keyword.declaration)

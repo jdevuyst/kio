@@ -1,0 +1,9 @@
+  pass equiv `symbolic_unit_payload` in main
+  pass equiv `computed_unit_payload` in main
+  pass equiv `literal_unit_payload` in main
+  pass equiv `retained_unit_stage` in main
+  pass equiv `retained_projector_stage` in main
+  pass equiv `applied_unit_stage` in main
+  pass equiv `completed_unit_stage` in main
+
+result: 7/7 equiv blocks passed

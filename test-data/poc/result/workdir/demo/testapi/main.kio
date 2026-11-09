@@ -52,9 +52,7 @@ fn show(result: Result[I32][String]) -> String {
   )
 }
 
-// Render the library's pure `Bool` as `"true"` / `"false"`. The
-// library's `bool_to` eliminator keeps the label internals on its side of
-// the import — main never names the underlying labels.
+// Render the shared control Boolean as `"true"` / `"false"`.
 fn show_bool(b: Bool) -> String { bool_to("true", "false", b) }
 
 // `swap` flips the arms, so a swapped `Result(I32, String)` is a

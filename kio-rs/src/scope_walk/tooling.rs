@@ -71,8 +71,8 @@ pub(crate) fn expression_operators(
         }
         match item {
             Item::Op(op, _) => {
-                let crate::ast::OpBody::Normal { pattern, .. } = &op.body;
-                grammars.push(crate::ast::OperatorGrammar::fixed(pattern));
+                let crate::ast::OpBody::Normal { kind, pattern, .. } = &op.body;
+                grammars.push(crate::ast::OperatorGrammar::fixed(*kind, pattern));
             }
             Item::VariadicOperator(op, _) => {
                 grammars.push(crate::ast::OperatorGrammar::variadic(&op.open, &op.spec))

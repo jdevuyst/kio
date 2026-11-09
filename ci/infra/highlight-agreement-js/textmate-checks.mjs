@@ -622,6 +622,17 @@ fixture("declaration payload parents", "module m;\nliteral if = .t;\ntype T = if
   ["impl(fills)", "impl", keyword], ["fills)", "fills", keyword], ["if.let", "if", identifier],
   ["equiv do", "do", functionName], ["{ if(())", "if", functionName],
 ]);
+fixture("macro operator declarations and imports", "module m; import ops(op macro _ && .__ as _ %% .__);\nop macro _ && .__ { impl controls.and; }\nfn after(macro: .) -> . { macro }", [
+  ["(op macro _", "op", keyword], ["(op macro _", "macro", keyword], ["as _", "as", keyword],
+  ["&& .__ as", ".", "punctuation.separator.kio"], ["&& .__ as", "__", "variable.parameter.slot.kio"],
+  ["impl controls", "impl", keyword], ["macro:", "macro", identifier], ["{ macro }", "macro", identifier],
+]);
+fixture("malformed dot pair keeps punctuation and neighbor", "module source;\nimport ops(varop ..[ ]..);\nfn run() { id(..[ let(x) ]..) }\nfn after() { let(x) }", [
+  [".[ let(x)", ".", "punctuation.separator.kio"], ["fn after", "fn", keyword], ["after()", "after", functionName],
+]);
+fixture("incomplete macro operator recovers at next declaration", "module m;\nop macro _ && .\nfn after(value: .) -> . { value }", [
+  ["fn after", "fn", keyword], ["after(", "after", functionName], ["{ value }", "value", identifier],
+]);
 fixture("fixed operator body parents", "module m;\nop _ + _ { impl if.let; };", [
   ["op _", "op", keyword], ["impl if", "impl", keyword], ["if.let", "if", identifier], ["let;", "let", identifier],
 ]);

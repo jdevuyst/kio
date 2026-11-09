@@ -1,0 +1,7 @@
+module main;
+
+import __intrinsics__;
+
+fn value() {
+  __and__[.]((), .() -> . { () })
+}

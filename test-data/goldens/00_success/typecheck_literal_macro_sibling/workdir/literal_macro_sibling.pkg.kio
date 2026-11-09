@@ -1,0 +1,10 @@
+package literal_macro_sibling;
+
+build {
+  cache "out/.kio-cache/";
+
+  target js {
+    out "out/js/";
+    baseline es2020
+  }
+}

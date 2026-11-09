@@ -86,7 +86,7 @@ Nominal types are introduced by explicit singleton declarations such as `type { 
 
 ### Value construction and elimination
 
-Kio' has **no value-level syntax** for constructing or destructuring sums or products. Every introduction and elimination is an ordinary function call — either a compiler-provided intrinsic or the fixed `mk`/`get` pair declared by a nominal type. The six type-form intrinsics listed below, together with the branching intrinsic `__if_then_else__` (see [Branching intrinsic](#branching-intrinsic)) and the bottom-elimination intrinsic `__absurd__` (see [Bottom-elimination intrinsic](#bottom-elimination-intrinsic)), are not in scope by default; the magic phrase `import __intrinsics__;` at the top of a file brings all eight in at once. There is no per-name selective form: it's all or nothing.
+Kio' has **no value-level syntax** for constructing or destructuring sums or products. Every introduction and elimination is an ordinary function call — either a compiler-provided intrinsic or the fixed `mk`/`get` pair declared by a nominal type. The six type-form intrinsics listed below, the [branching intrinsic](#branching-intrinsic), the [Boolean operand intrinsics](#boolean-operand-intrinsics), and the [bottom-elimination intrinsic](#bottom-elimination-intrinsic) are not in scope by default. `import __intrinsics__;` brings them into scope together. There is no per-name selective form.
 
 | Type form | Introduce | Eliminate |
 |---|---|---|
@@ -334,9 +334,29 @@ result. Constructing both thunk values is eager; invoking the selected thunk
 is branch-dependent. The reference library's `if` macro constructs this
 ordinary Kio' operation.
 
+### Boolean operand intrinsics
+
+`__and__` and `__or__` have the checked specialization prefix
+`[B] (B & (. -> B)) -> B`. They require the same concrete `role(bool)` host
+type as `__if_then_else__`; fresh Kio' writes and validates that type argument.
+Neither accepts a rigid generic Boolean carrier or searches visible types.
+
+Both evaluate the left value and the expression producing the right thunk
+exactly once, left to right. `__and__` returns the original left value when
+it is false; otherwise it invokes the right thunk once. `__or__` returns the
+original left value when it is true; otherwise it invokes the right thunk
+once. The result of an invoked thunk is returned unchanged. Preserving the
+selected value matters for host carriers with information beyond their truth
+value: replacing it with a newly constructed Boolean literal is not equivalent.
+
+These are core operations. Later structural recovery may emit native Boolean
+operators or conditionals and eliminate inline thunk construction, provided
+it preserves the exact carrier values, evaluation order and conditionality.
+An opaque thunk-producing expression is evaluated even when its body is skipped.
+
 ### Bottom-elimination intrinsic
 
-An eighth intrinsic, `__absurd__ : [A] ! -> A`, is gated behind the same `import __intrinsics__;`. Given a value of the bottom type `!` — which can only come from a host function declared `-> !` — it produces a value of any type. There is no symmetric introduction: `!` has no values, so there is nothing to construct.
+The intrinsic `__absurd__ : [A] ! -> A` is gated behind the same `import __intrinsics__;`. Given a value of the bottom type `!` — which can only come from a host function declared `-> !` — it produces a value of any type. There is no symmetric introduction: `!` has no values, so there is nothing to construct.
 
 ### Existential introduction and elimination
 

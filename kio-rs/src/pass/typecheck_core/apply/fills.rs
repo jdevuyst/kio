@@ -646,11 +646,7 @@ impl<'m> MarkedProjection<'m> {
         if matches!(self.pre_inputs, PreInputCompletion::Unselected) {
             let mut ordinals = Vec::new();
             for producer in 0..self.next_producer {
-                if is_computed_pre_input(self.producer_state(producer))
-                    && self
-                        .producer_expected_snapshot(producer, span, frontier, tcx)?
-                        .is_none()
-                {
+                if is_computed_pre_input(self.producer_state(producer)) {
                     ordinals.push(producer);
                 }
             }
@@ -704,10 +700,7 @@ impl<'m> MarkedProjection<'m> {
                     if matches!(
                         self.producer_state(producer),
                         StagedOperand::OpenCompleted { accepted: true, .. }
-                    ) || self
-                        .producer_expected_snapshot(producer, span, frontier, tcx)?
-                        .is_some()
-                    {
+                    ) {
                         let PreInputCompletion::Producers { index, .. } = &mut self.pre_inputs
                         else {
                             unreachable!("pre-input continuation changed its active phase")
@@ -721,7 +714,7 @@ impl<'m> MarkedProjection<'m> {
                         producer_mode: *mode,
                         inherited_mode,
                         relation_probe: false,
-                        expected: None,
+                        expected: self.producer_expected_snapshot(producer, span, frontier, tcx)?,
                     }));
                 }
                 PreInputCompletion::Headers { next } => {
@@ -3657,6 +3650,33 @@ impl<'a, 'f, 'm, 'e> ProjectedRecipeCloser<'a, 'f, 'm, 'e> {
                     left: *left,
                 }
             }
+            ProjectedRecipeNode::IntrinsicBoolean {
+                conjunction,
+                left,
+                right,
+            } => {
+                let (left, left_closed) = self.close(left)?;
+                super::super::synth::check_boolean_specialization(
+                    left_closed.ty(),
+                    span,
+                    self.tcx,
+                )?;
+                self.relation(
+                    &closed,
+                    &left_closed,
+                    "a Boolean operation closed at another carrier type",
+                )?;
+                let right = self.close_expected(
+                    right,
+                    &closed,
+                    "a Boolean right operand had the wrong carrier type",
+                )?;
+                crate::normalization::ProjectedTermConstruction::Boolean {
+                    conjunction: *conjunction,
+                    left,
+                    right,
+                }
+            }
             ProjectedRecipeNode::IntrinsicIfThenElse {
                 condition,
                 true_body,
@@ -5167,6 +5187,11 @@ impl<'a> DeferredTailClassifier<'a> {
             ProjectedRecipeNode::TermTypeFn { body, .. }
             | ProjectedRecipeNode::IntrinsicInjection { value: body, .. } => {
                 self.fold(body, Escape);
+                Opaque
+            }
+            ProjectedRecipeNode::IntrinsicBoolean { left, right, .. } => {
+                self.fold(left, Escape);
+                self.fold(right, role.branch());
                 Opaque
             }
             ProjectedRecipeNode::IntrinsicIfThenElse {
@@ -6799,6 +6824,10 @@ fn snapshot_projected_recipe<'m>(
             snapshot_projected_type(sum_type, specialization, frontier, tcx)?;
             snapshot_projected_recipe(Arc::make_mut(value), specialization, frontier, tcx)?;
         }
+        ProjectedRecipeNode::IntrinsicBoolean { left, right, .. } => {
+            snapshot_projected_recipe(Arc::make_mut(left), specialization, frontier, tcx)?;
+            snapshot_projected_recipe(Arc::make_mut(right), specialization, frontier, tcx)?;
+        }
         ProjectedRecipeNode::IntrinsicIfThenElse {
             condition,
             true_body,
@@ -7009,6 +7038,37 @@ fn validate_projected_source_before_action<'m>(
     frontier: &mut impl super::OrdinaryFrontierReentry<'m>,
     tcx: &super::TypeCtx<'m, '_, crate::ast::Lowered>,
 ) -> Result<(), crate::error::Error> {
+    if let StagedOperand::Pair(pair) = operand {
+        let ProjectedRecipeNode::Pair(left, right) = recipe.node.as_ref() else {
+            unreachable!("a staged pair lost its sealed recipe topology")
+        };
+        let [left_operand, right_operand] = &pair.operands;
+        validate_projected_source_before_action(
+            left_operand
+                .state
+                .as_ref()
+                .expect("a staged pair left operand lost its state"),
+            left,
+            frontier,
+            tcx,
+        )?;
+        return validate_projected_source_before_action(
+            right_operand
+                .state
+                .as_ref()
+                .expect("a staged pair right operand lost its state"),
+            right,
+            frontier,
+            tcx,
+        );
+    }
+    if let StagedOperand::Ordinary(continuation, _) = operand {
+        continuation.cursor.require_completion_outside(
+            continuation.child.completion_delta(),
+            continuation.child.owner(),
+            frontier.store(),
+        )?;
+    }
     let progressed = {
         let (store, _, delta, _) = frontier.parts_mut();
         if store
@@ -7021,29 +7081,8 @@ fn validate_projected_source_before_action<'m>(
     };
 
     match operand {
-        StagedOperand::Pair(pair) => {
-            let ProjectedRecipeNode::Pair(left, right) = recipe.node.as_ref() else {
-                unreachable!("a staged pair lost its sealed recipe topology")
-            };
-            let [left_operand, right_operand] = &pair.operands;
-            validate_projected_source_before_action(
-                left_operand
-                    .state
-                    .as_ref()
-                    .expect("a staged pair left operand lost its state"),
-                left,
-                frontier,
-                tcx,
-            )?;
-            validate_projected_source_before_action(
-                right_operand
-                    .state
-                    .as_ref()
-                    .expect("a staged pair right operand lost its state"),
-                right,
-                frontier,
-                tcx,
-            )
+        StagedOperand::Pair(_) => {
+            unreachable!("projected pair admission recurses before inspecting the result type")
         }
         StagedOperand::Completed { source, leaf, .. }
         | StagedOperand::OpenCompleted { source, leaf, .. } => {
@@ -7480,7 +7519,7 @@ fn stage_existing_operand<'m>(
         planned => {
             let header_complete = matches!(
                 planned,
-                super::PlannedOrdinaryValue::Leaf(_) | super::PlannedOrdinaryValue::Literal
+                super::PlannedOrdinaryValue::Leaf(_) | super::PlannedOrdinaryValue::Literal(_)
             ) || matches!(source,
                 crate::ast::Expr::RecQuote { plan, .. }
                     if matches!(plan.as_ref(), crate::ast::RecQuotePlan::Operand { public_ty: Some(public_ty), .. }
@@ -7664,7 +7703,7 @@ fn prepare_projected_source_header<'m>(
         StagedOperand::Ordinary(continuation, leaf)
             if matches!(
                 continuation.cursor.planned,
-                super::PlannedOrdinaryValue::Literal
+                super::PlannedOrdinaryValue::Literal(_)
                     | super::PlannedOrdinaryValue::Call(_)
                     | super::PlannedOrdinaryValue::UserMacro(_)
                     | super::PlannedOrdinaryValue::ComputedCall(_)
@@ -8500,6 +8539,11 @@ pub(crate) enum ProjectedRecipeNode {
         value: Arc<ProjectedCheckedRecipe>,
         left: bool,
     },
+    IntrinsicBoolean {
+        conjunction: bool,
+        left: Arc<ProjectedCheckedRecipe>,
+        right: Arc<ProjectedCheckedRecipe>,
+    },
     IntrinsicIfThenElse {
         condition: Arc<ProjectedCheckedRecipe>,
         true_body: Arc<ProjectedCheckedRecipe>,
@@ -8520,7 +8564,7 @@ impl crate::normalization::ownership::Reclaim for ProjectedRecipeNode {
         match self {
             Self::Closed(term) => crate::normalization::ownership::shared(term, pending),
             Self::TemplateValue(_) | Self::Local { .. } => {}
-            Self::Pair(left, right) => {
+            Self::Pair(left, right) | Self::IntrinsicBoolean { left, right, .. } => {
                 recipe(left, pending);
                 recipe(right, pending);
             }
@@ -8580,7 +8624,8 @@ impl ProjectedCheckedRecipe {
         match self.node.as_ref() {
             ProjectedRecipeNode::Closed(term) => term.checked_error(),
             ProjectedRecipeNode::TemplateValue(_) | ProjectedRecipeNode::Local { .. } => None,
-            ProjectedRecipeNode::Pair(left, right) => {
+            ProjectedRecipeNode::Pair(left, right)
+            | ProjectedRecipeNode::IntrinsicBoolean { left, right, .. } => {
                 left.checked_error().or_else(|| right.checked_error())
             }
             ProjectedRecipeNode::ProductProjection { product, .. } => product.checked_error(),
@@ -9292,7 +9337,8 @@ impl ProjectedTypeAlignment {
                 *original = mapped;
             };
             match &mut node {
-                ProjectedRecipeNode::Pair(left, right) => {
+                ProjectedRecipeNode::Pair(left, right)
+                | ProjectedRecipeNode::IntrinsicBoolean { left, right, .. } => {
                     child(left);
                     child(right);
                 }
@@ -9431,7 +9477,8 @@ fn projected_recipe_children<'a>(
         ProjectedRecipeNode::Closed(_)
         | ProjectedRecipeNode::TemplateValue(_)
         | ProjectedRecipeNode::Local { .. } => {}
-        ProjectedRecipeNode::Pair(left, right) => {
+        ProjectedRecipeNode::Pair(left, right)
+        | ProjectedRecipeNode::IntrinsicBoolean { left, right, .. } => {
             visit(left);
             visit(right);
         }
@@ -10127,6 +10174,42 @@ pub(crate) fn projected_intrinsic_injection(
                 sum_type,
                 value: Arc::new(value),
                 left,
+            }),
+        },
+    )))
+}
+
+pub(crate) fn projected_intrinsic_boolean(
+    proof: &MarkedComptimeProof,
+    left: &Value,
+    right: &Value,
+    conjunction: bool,
+) -> Result<ProjectedValue, crate::error::Error> {
+    let helper = if conjunction {
+        "__intrinsic_and__"
+    } else {
+        "__intrinsic_or__"
+    };
+    let peer = first_projected_type([left, right]).ok_or_else(|| {
+        crate::error::Error::macro_error(
+            crate::span::Span::new(0, 0),
+            "a projected Boolean operation had no projected operand",
+        )
+    })?;
+    let left = authenticated_projected_recipe_operand(proof, left, peer, helper)?;
+    let right = authenticated_projected_recipe_operand(proof, right, &left.ty, helper)?;
+    let mut recipes = [left, right];
+    align_projected_recipe_operands(&mut recipes, &mut [])?;
+    let [left, right] = recipes;
+    let mut result = left.ty.clone();
+    result.producers = result.producers.union(&right.ty.producers);
+    Ok(ProjectedValue(ProjectedValueKind::CheckedRecipe(
+        ProjectedCheckedRecipe {
+            ty: result,
+            node: crate::normalization::EvalRef::new(ProjectedRecipeNode::IntrinsicBoolean {
+                conjunction,
+                left: Arc::new(left),
+                right: Arc::new(right),
             }),
         },
     )))
@@ -13155,6 +13238,32 @@ mod tests {
             deferred_tail_test_resolution(&decisions, 1),
             super::super::DeferredTailResolution::OrdinaryBypass
         );
+    }
+
+    #[test]
+    fn deferred_tail_boolean_rhs_is_terminal_and_left_operand_escapes() {
+        for conjunction in [false, true] {
+            let candidates = vec![deferred_tail_test_candidate(
+                0,
+                RecOrderTailRequirement::Required,
+            )];
+            let tail = deferred_tail_test_recipe(ProjectedRecipeNode::IntrinsicBoolean {
+                conjunction,
+                left: deferred_tail_test_local("left"),
+                right: deferred_tail_test_call(deferred_tail_test_template(0)),
+            });
+            let usage = deferred_tail_test_usage(&tail, &candidates);
+            assert!(usage[0].terminal && !usage[0].escape);
+            assert!(resolve_deferred_tail_decisions(&candidates, &usage).is_ok());
+            let escape = deferred_tail_test_recipe(ProjectedRecipeNode::IntrinsicBoolean {
+                conjunction,
+                left: deferred_tail_test_call(deferred_tail_test_template(0)),
+                right: deferred_tail_test_local("right"),
+            });
+            let usage = deferred_tail_test_usage(&escape, &candidates);
+            assert!(!usage[0].terminal && usage[0].escape);
+            assert!(resolve_deferred_tail_decisions(&candidates, &usage).is_err());
+        }
     }
 
     #[test]

@@ -12,7 +12,7 @@ The `macros` package is a **worked example of the macro mechanism itself**.
 Its modules are reusable library code; the demo is a worked application. The
 package defines, in plain Kio, the control,
 coercion, and dispatch macros used throughout the documentation —
-`if`, `scope`, `do`, the algebraic and spine source-to-target palettes,
+`if`, `scope`, `and`, `or`, `do`, the algebraic and spine source-to-target palettes,
 `match`, `derive`, and the
 reflected-type vocabulary they share. The demo exercises the coercion and
 dispatch forms end to end.
@@ -57,7 +57,7 @@ layout:
   each form's rule. This page is organized around that module.
 - The macro modules, each a reusable library:
   [`control.kio`](../../test-data/poc/macros/workdir/control.kio)
-  (`if` and `scope`),
+  (`Bool`, `if`, `scope`, `and`, `or`, `not`, `&&`, and `||`),
   [`sequence.kio`](../../test-data/poc/macros/workdir/sequence.kio)
   (`Bind`, `Sequence`, and `do`),
   [`spine_macros.kio`](../../test-data/poc/macros/workdir/spine_macros.kio)
@@ -127,9 +127,12 @@ how the written body becomes an ordinary value argument:
 | --- | --- |
 | `control.if` | `if(condition) { yes } else { no }` has two `thunk` blocks. Generated code evaluates the condition once and invokes only the selected branch. |
 | `control.scope` | `scope { body }` has one `thunk` block. Generated code invokes that body once and returns its result. |
+| `control.and`, `control.or` | `and(left) { right }` invokes the right thunk only if left is true; `or(left) { right }` invokes it only if left is false. The skipped result is the original left value. |
+| `control.&&`, `control.\|\|` | The operators `_ && .__` and `_ \|\| .__` give these macros right-chaining spellings with a delayed right operand. |
+| `control.not` | `not(value)` negates a `Bool`. |
 | `sequence.do` | `do(bind) { body }` has one `sequence` block. Its implementation applies that sequence to the supplied bind value. |
 
-Both control declarations use `impl(fills)`. `if_checked` constructs a
+The control macros use `impl(fills)`. `if_checked` constructs a
 branching term with `__intrinsic_if_then_else__`; its operands come from the
 checked condition and projected thunks. The generated `if` evaluates its
 input product once in order: the condition and both thunk-producing expressions.
@@ -139,6 +142,19 @@ builds an ordinary call to its thunk. Each returns its generated term paired wit
 The public types connect their body results to the overall result.
 They use ordinary reflected constructors, so neither declaration needs a
 compiler hook keyed to its name.
+
+`and` and `or` each take one product containing a `Bool` and a thunk. The
+product is evaluated once in order, including a thunk-producing expression;
+the body of the thunk is conditional. The symbolic forms wrap their entire
+right operand in a thunk. The [operator guide](../guides/operators.md#delay-an-operand)
+shows imports, chaining, and equivalent direct calls.
+For macro authors, [`checked_sum_dispatch`](../../test-data/poc/macros/workdir/control.kio)
+is a public pure compile-time helper used by the option, result, and dictionary
+fallback implementations. It takes a checked input packet, result type, fill
+context, and callbacks that construct the sum subject, its two branches, and
+fallback term. It returns the checked dispatch term and updated fill context;
+the generated dispatch evaluates the packet once. This is an authoring helper,
+not an application-level runtime function.
 
 `sequence` exports the transparent aliases
 `Bind[*F] = [A][B] (F[A] & (A -> F[B])) -> F[B]` and
@@ -995,7 +1011,7 @@ host calls. [Rehosting](../guides/pkg.md#rehosting-a-dependencys-host-items-with
 explains compatible provider declarations; [Using libraries](../guides/using-libraries.md#the-minimal-dependency-workflow)
 explains locks, materialized sources and contract discovery.
 
-Pick the macro modules your code calls — `control` for `if` and `scope`,
+Pick the macro modules your code calls — `control` for `if`, `scope`, and Boolean operations,
 `sequence` for `do`, `spine_macros` for the spine palette,
 `algebraic_macros` for the algebraic one, `match` for `match`,
 `derive` for `derive`, and so on. The coercion and dispatch modules pull in

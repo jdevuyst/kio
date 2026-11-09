@@ -312,12 +312,12 @@ RecFnDef       ::= Vis? 'fn' IDENT ValueSignature ('->' Type)? Block
 TypeRecMember += DocBlock? Vis? 'type' NominalGroup
                | DocBlock? Vis? 'type' IDENT TypeParamList? '=' NominalRhs
 
-Op             ::= Vis? 'op' OpBody
+Op             ::= Vis? 'op' 'macro'? OpBody
 OpBody         ::= OpPattern '{' SemiEntries<OpEntry> '}'                 (* fixed arity only *)
 OpEntry        ::= 'impl' GroupedValuePath                               (* exactly once *)
 OpPattern      ::= OpSlot? OpWord (OpSlot OpWord)* OpSlot?
                     (* at least one slot; structural slot restrictions below *)
-OpSlot         ::= '_' | '__' | '___'                 (* atom / self-chain / any-chain *)
+OpSlot         ::= '.'? ('_' | '__' | '___')           (* delay, then atom / self-chain / any-chain *)
 OpWord         ::= FixedOpToken | '(' FixedOpToken ')' (* quotation, not a slot group *)
 FixedOpToken   ::= OpToken                            (* no dots or brackets; bare '=' requires quotation *)
 VaropHead      ::= '[' ']' | '[' Marker ReverseMarker ']'
@@ -445,7 +445,7 @@ complete importing text, without consulting provider contents.
 ImportSelective  ::= 'import' ModulePath '(' ImportItem (',' ImportItem)* ')'
 ImportItem       ::= NamedImport | OperatorImport | MacroImport
 MacroImport      ::= 'macro' IDENT ('as' IDENT)?
-OperatorImport   ::= 'op' OpPattern ('as' OpPattern)?
+OperatorImport   ::= 'op' 'macro'? OpPattern ('as' OpPattern)?
                    | 'varop' VaropHead ('as' VaropHead)?
 ```
 
@@ -456,8 +456,10 @@ ordinary leading-comma rule in
 [style.md](style.md#import-block-ordering). An ordinary module import must have
 such a list or an explicit `as` alias; builtin block imports have neither.
 
-A fixed `OperatorImport` carries the whole `OpPattern`: every literal run, slot
-kind (`_`, `__`, `___`), and later slot. A variadic import carries
+A fixed `OperatorImport` carries its function/macro kind and the whole
+`OpPattern`: every literal run, slot kind (`_`, `__`, `___`), optional delay
+marker, and later slot. An alias preserves the kind and every slot marker.
+A variadic import carries
 its declaration's complete bare or marked square frame. For example:
 
 ```kio

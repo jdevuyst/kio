@@ -1,0 +1,18 @@
+module provider;
+
+import __comptime__;
+
+host type Bool role(bool);
+
+host type Other_bool role(bool);
+
+pure fn construct(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let typ = __term_type__(ct, inputs);
+  __intrinsic_or__(
+  , ct
+  , __intrinsic_fst__(ct, typ, inputs)
+  , .() -> __Checked_term__ { __intrinsic_snd__(ct, typ, inputs) }
+  )
+}
+
+pub macro combine : (Bool & Other_bool) -> Bool { impl construct }

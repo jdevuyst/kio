@@ -1,0 +1,36 @@
+module main;
+
+import macros/control(Bool, macro and, macro or, not, op macro _ && .__, op macro _ || .__);
+
+host fn condition() -> Bool;
+
+host fn factory() -> . -> Bool;
+
+host fn observed() -> Bool;
+
+pub fn inline_calls(left: Bool, middle: Bool, right: Bool) -> Bool {
+  and(
+  , left
+  , .() {
+      or(middle, .() { not(right) })
+    }
+  )
+}
+
+pub fn inline_blocks(left: Bool, middle: Bool, right: Bool) -> Bool {
+  and(left) {
+    or(middle) { not(right) }
+  }
+}
+
+pub fn inline_operators(left: Bool, middle: Bool, right: Bool) -> Bool {
+  left && (middle || not(right))
+}
+
+pub fn inline_effect(left: Bool) -> Bool {
+  and(left) { observed() }
+}
+
+pub fn opaque(left: Bool, right: . -> Bool) -> Bool { and(left, right) }
+
+pub fn staged() -> Bool { and(condition(), factory()) }

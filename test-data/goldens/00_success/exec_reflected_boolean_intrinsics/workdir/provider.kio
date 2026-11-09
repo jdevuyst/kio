@@ -1,0 +1,78 @@
+module provider;
+
+import __comptime__;
+import testapi(Bool);
+
+pure fn invoke(ct: __Comptime__, thunk: __Checked_term__) -> __Checked_term__ {
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn all_impl(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let typ = __term_type__(ct, inputs);
+  __term_let__(
+  , ct
+  , typ
+  , inputs
+  , .(bound: __Checked_term__) -> __Checked_term__ {
+      __intrinsic_and__(
+      , ct
+      , __intrinsic_fst__(ct, typ, bound)
+      , .() -> __Checked_term__ { invoke(ct, __intrinsic_snd__(ct, typ, bound)) }
+      )
+    }
+  )
+}
+
+pure fn any_impl(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let typ = __term_type__(ct, inputs);
+  __term_let__(
+  , ct
+  , typ
+  , inputs
+  , .(bound: __Checked_term__) -> __Checked_term__ {
+      __intrinsic_or__(
+      , ct
+      , __intrinsic_fst__(ct, typ, bound)
+      , .() -> __Checked_term__ { invoke(ct, __intrinsic_snd__(ct, typ, bound)) }
+      )
+    }
+  )
+}
+
+pure fn all_fills(ct: __Comptime__, fills: __Fill_ctx__, inputs: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (all_impl(ct, inputs), fills) }
+
+pure fn any_fills(ct: __Comptime__, fills: __Fill_ctx__, inputs: __Checked_term__) ->
+  __Checked_term__ & __Fill_ctx__
+   { (any_impl(ct, inputs), fills) }
+
+pub macro all : (Bool & (. -> Bool)) -> Bool { impl all_impl }
+
+pub macro any : (Bool & (. -> Bool)) -> Bool { impl any_impl }
+
+pub macro projected_all : (Bool & (. -> Bool)) -> Bool { impl(fills) all_fills }
+
+pub macro projected_any : (Bool & (. -> Bool)) -> Bool { impl(fills) any_fills }
+
+pure fn quote_all_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, left: __Checked_term__
+, right: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  (__intrinsic_and__(ct, left, .() -> __Checked_term__ { right }), fills)
+}
+
+pure fn quote_any_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, left: __Checked_term__
+, right: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  (__intrinsic_or__(ct, left, .() -> __Checked_term__ { right }), fills)
+}
+
+pub macro quote_all : Bool -> Bool -> Bool { impl(fills) quote_all_impl }
+
+pub macro quote_any : Bool -> Bool -> Bool { impl(fills) quote_any_impl }

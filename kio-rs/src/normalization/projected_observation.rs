@@ -69,7 +69,9 @@ fn requirements(
         | TermTypeFn
         | TermUnit
         | IntrinsicPair
-        | IntrinsicIfThenElse => return None,
+        | IntrinsicIfThenElse
+        | IntrinsicAnd
+        | IntrinsicOr => return None,
     })
 }
 

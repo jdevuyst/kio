@@ -6367,7 +6367,7 @@ fn intrinsic_arity(name: &str) -> usize {
         // `__if_then_else__(B, A, cond: B, t: . -> A, e: . -> A) -> A`
         "__if_then_else__" => 2,
         // `__absurd__(A, x: !) -> A`
-        "__absurd__" => 1,
+        "__absurd__" | "__and__" | "__or__" => 1,
         _ => 0,
     }
 }

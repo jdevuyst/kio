@@ -1,0 +1,6 @@
+The 5,000-step recursive fallback exceeds the dynamic interpreter's fixed
+evaluation budget. Bounded runs at 64, 128 and 256 steps complete and show
+roughly proportional incremental cost. The shared-source exec_lazy_fallbacks
+case retains dynamic coverage at 64 steps, including selected and skipped
+fallbacks and effect ordering. All backend stress runs and Prime validation
+remain applicable.

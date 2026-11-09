@@ -1,0 +1,31 @@
+module main;
+
+import __intrinsics__;
+
+host type Bool role(bool);
+
+equiv and_skips() {
+  __and__[Bool](.f[Bool], .() -> Bool { .t[Bool] });
+  .f[Bool]
+}
+
+equiv or_skips() {
+  __or__[Bool](.t[Bool], .() -> Bool { .f[Bool] });
+  .t[Bool]
+}
+
+equiv and_value() {
+  .() {
+    let selected = __and__[Bool];
+    selected(.t[Bool], .() -> Bool { .f[Bool] })
+  }();
+  .f[Bool]
+}
+
+equiv or_value() {
+  .() {
+    let selected = __or__[Bool];
+    selected(.f[Bool], .() -> Bool { .t[Bool] })
+  }();
+  .t[Bool]
+}

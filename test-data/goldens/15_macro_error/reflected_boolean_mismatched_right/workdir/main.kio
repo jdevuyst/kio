@@ -1,0 +1,5 @@
+module main;
+
+import provider(Bool, Other_bool, macro combine);
+
+fn check(left: Bool, right: Other_bool) -> Bool { combine(left, right) }

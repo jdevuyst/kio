@@ -805,7 +805,7 @@ fn gen_at<R: Rng>(
             _ => None,
         })
         .collect();
-    let weights: [u32; 15] = [
+    let weights: [u32; 17] = [
         if target_vars.is_empty() { 0 } else { 2 }, // 0: bound var
         2,                                          // 1: let
         if target_simple { 2 } else { 0 },          // 2: id
@@ -842,6 +842,16 @@ fn gen_at<R: Rng>(
         },
         if target_simple { 1 } else { 0 }, // 13: type-only named specialization
         if target_simple { 1 } else { 0 }, // 14: type-only captured lambda
+        if *target == Type::bool() && depth >= 2 {
+            1
+        } else {
+            0
+        }, // 15: __and__
+        if *target == Type::bool() && depth >= 2 {
+            1
+        } else {
+            0
+        }, // 16: __or__
     ];
     let total: u32 = weights.iter().sum();
     let mut pick = rng.gen_range(0..total);
@@ -1107,6 +1117,34 @@ fn gen_at<R: Rng>(
                 surface_mode,
                 user_macros,
             )],
+        },
+        15 | 16 => Term::PolyCall {
+            name: if choice == 15 { "__and__" } else { "__or__" }.to_string(),
+            type_args: vec![Type::bool()],
+            args: vec![
+                gen_at(
+                    rng,
+                    user_rng,
+                    target,
+                    env,
+                    depth - 1,
+                    surface_mode,
+                    user_macros,
+                ),
+                Term::Lambda {
+                    params: vec![],
+                    ret: Type::bool(),
+                    body: Box::new(gen_at(
+                        rng,
+                        user_rng,
+                        target,
+                        env,
+                        depth - 1,
+                        surface_mode,
+                        user_macros,
+                    )),
+                },
+            ],
         },
         8 => {
             // Sum eliminator with two-clause structure. When target

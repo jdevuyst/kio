@@ -4647,20 +4647,8 @@
         "type": "SEQ",
         "members": [
           {
-            "type": "ALIAS",
-            "content": {
-              "type": "TOKEN",
-              "content": {
-                "type": "PREC",
-                "value": 2,
-                "content": {
-                  "type": "STRING",
-                  "value": "macro"
-                }
-              }
-            },
-            "named": true,
-            "value": "keyword_declaration"
+            "type": "SYMBOL",
+            "name": "keyword_declaration"
           },
           {
             "type": "FIELD",
@@ -4728,6 +4716,18 @@
                 {
                   "type": "SYMBOL",
                   "name": "keyword_op"
+                },
+                {
+                  "type": "CHOICE",
+                  "members": [
+                    {
+                      "type": "SYMBOL",
+                      "name": "keyword_declaration"
+                    },
+                    {
+                      "type": "BLANK"
+                    }
+                  ]
                 },
                 {
                   "type": "REPEAT1",
@@ -4860,6 +4860,10 @@
         {
           "type": "SYMBOL",
           "name": "slot"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "delayed_slot"
         },
         {
           "type": "SYMBOL",
@@ -9976,6 +9980,18 @@
             "name": "keyword_op"
           },
           {
+            "type": "CHOICE",
+            "members": [
+              {
+                "type": "SYMBOL",
+                "name": "keyword_declaration"
+              },
+              {
+                "type": "BLANK"
+              }
+            ]
+          },
+          {
             "type": "REPEAT1",
             "content": {
               "type": "SYMBOL",
@@ -10003,11 +10019,44 @@
               "name": "keyword_op"
             },
             {
-              "type": "REPEAT1",
-              "content": {
-                "type": "SYMBOL",
-                "name": "_op_pattern_token"
-              }
+              "type": "CHOICE",
+              "members": [
+                {
+                  "type": "SEQ",
+                  "members": [
+                    {
+                      "type": "SYMBOL",
+                      "name": "keyword_declaration"
+                    },
+                    {
+                      "type": "REPEAT",
+                      "content": {
+                        "type": "SYMBOL",
+                        "name": "_op_pattern_token"
+                      }
+                    },
+                    {
+                      "type": "CHOICE",
+                      "members": [
+                        {
+                          "type": "SYMBOL",
+                          "name": "separator_dot"
+                        },
+                        {
+                          "type": "BLANK"
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "type": "REPEAT1",
+                  "content": {
+                    "type": "SYMBOL",
+                    "name": "_op_pattern_token"
+                  }
+                }
+              ]
             }
           ]
         }
@@ -10027,6 +10076,10 @@
         {
           "type": "SYMBOL",
           "name": "slot"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "delayed_slot"
         },
         {
           "type": "SYMBOL",
@@ -11389,15 +11442,8 @@
       "value": "."
     },
     "keyword_declaration": {
-      "type": "TOKEN",
-      "content": {
-        "type": "PREC",
-        "value": 2,
-        "content": {
-          "type": "STRING",
-          "value": "macro"
-        }
-      }
+      "type": "STRING",
+      "value": "macro"
     },
     "slot": {
       "type": "CHOICE",
@@ -11413,6 +11459,19 @@
         {
           "type": "STRING",
           "value": "_"
+        }
+      ]
+    },
+    "delayed_slot": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "SYMBOL",
+          "name": "separator_dot"
+        },
+        {
+          "type": "SYMBOL",
+          "name": "slot"
         }
       ]
     },

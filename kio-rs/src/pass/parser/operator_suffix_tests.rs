@@ -26,7 +26,7 @@ fn shape(expr: &Expr) -> String {
             .collect::<Vec<_>>()
             .join("."),
         Expr::OpChain {
-            kind: OpChainKind::Normal { pattern, slots },
+            kind: OpChainKind::Normal { pattern, slots, .. },
             ..
         } => {
             let tokens = pattern

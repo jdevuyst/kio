@@ -148,6 +148,7 @@ pub(super) fn is_direct(expr: &EvalExpr) -> bool {
             | EvalExpr::ReflTermFn { .. }
             | EvalExpr::ReflTermTypeFn { .. }
             | EvalExpr::ReflIntrinsicEither { .. }
+            | EvalExpr::ReflIntrinsicBoolean { .. }
             | EvalExpr::ReflIntrinsicIfThenElse { .. }
             | EvalExpr::ReflTypeProduct { .. }
             | EvalExpr::ReflTypeSum { .. }
@@ -185,6 +186,7 @@ pub(super) fn child(expr: &EvalExpr, index: usize) -> Option<&EvalRef<EvalExpr>>
             value,
             ..
         } => [Some(sum_type), Some(result_type), Some(value)],
+        EvalExpr::ReflIntrinsicBoolean { left, .. } => [Some(left), None, None],
         EvalExpr::ReflIntrinsicIfThenElse {
             result_type,
             condition,

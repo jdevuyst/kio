@@ -1,0 +1,32 @@
+module main;
+
+import __comptime__;
+
+host type I32 role(i32);
+
+host fn consume[T](known: T, value: T);
+
+pure fn natural_impl(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ {
+  value
+}
+
+macro natural : [Source] Source -> [Target] Target { impl natural_impl }
+
+pure fn ignore_impl(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _type: __Type__
+, _value: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+
+macro ignore : [A] A -> . { impl(fills) ignore_impl }
+
+fn run(known: I32) { consume(natural(known), 0) }
+
+fn hidden_left(known: I32) { ignore(consume(0, natural(known))) }
+
+fn hidden_right(known: I32) { ignore(consume(natural(known), 0)) }
+
+fn hidden_pair_left(known: I32) { ignore((consume(0, natural(known)), ())) }
+
+fn hidden_pair_right(known: I32) { ignore(((), consume(natural(known), 0))) }

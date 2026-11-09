@@ -120,8 +120,8 @@ e ::=
                                   qualified through an identity alias)
   | __left__ | __right__ | __either__
   | __pair__ | __fst__ | __snd__
-  | __if_then_else__ | __absurd__
-                                (the eight intrinsic identifiers,
+  | __if_then_else__ | __and__ | __or__ | __absurd__
+                                (the reserved intrinsic identifiers,
                                   brought into source scope by
                                   `import __intrinsics__;`)
   | h                          (host item — opaque)
@@ -367,23 +367,26 @@ __pair__       : ∀α. ∀β. (α, β) → α & β
 __fst__           : ∀α. ∀β. (α & β) → α
 __snd__           : ∀α. ∀β. (α & β) → β
 __if_then_else__[B] : ∀α. (B, . → α, . → α) → α   (B concrete; role(B) = bool)
+__and__[B]        : (B, . → B) → B               (B concrete; role(B) = bool)
+__or__[B]         : (B, . → B) → B               (B concrete; role(B) = bool)
 __absurd__        : ∀α. ! → α
 ```
 
-`__if_then_else__` first checks a Boolean specialization `B`. The type must
+`__if_then_else__`, `__and__`, and `__or__` first check a Boolean specialization `B`. The type must
 normalize to one concrete `role(bool)` host identity written in the explicit
 Boolean type argument. Surface
 inference must materialize that argument before this boundary. A rigid generic
 binder does not prove that role and is rejected. This is a checked intrinsic
-prefix, not an inferred role constraint. After specialization, the remaining
-`∀α` scheme is an ordinary value and admits generic result types. Unresolved
+prefix, not an inferred role constraint. After specialization, each is an
+ordinary value. The conditional retains its `∀α` result binder; AND and OR
+return the specialized Boolean carrier itself. Unresolved
 Boolean specialization is a type error; no visible-role search supplies it.
 The literal rules T-True / T-False independently validate their concrete
 annotations. The same rules hold on freshly parsed artifacts.
 
 `__absurd__` is well-typed at every `α`; it is sound because the bottom type `!` has no introduction form (see § 4 — Type safety), so its precondition can never be discharged at runtime.
 
-After the branching intrinsic's checked Boolean prefix, each remaining
+After each Boolean intrinsic's checked prefix, each remaining
 intrinsic scheme is an ordinary System F polymorphic constant: its `∀α`
 binders range over arbitrary types, and calls use the standard `apply_scheme`
 with positional substitution. The concrete Boolean role check precedes that
@@ -578,7 +581,26 @@ N.get[T̄](N.mk[T̄][Ū](v)) → Λρ. λ(k: ∀β̄. Payload[T̄][β̄] → ρ)
 
 __if_then_else__[B][A](.t[B], t, e)       →  t(())                              (ι-IfTrue)
 __if_then_else__[B][A](.f[B], t, e)       →  e(())                              (ι-IfFalse)
+
+__and__[B](.t[B], r)                    →  r(())                              (ι-AndTrue)
+__and__[B](.f[B], r)                    →  .f[B]                               (ι-AndFalse)
+__or__[B](.t[B], r)                     →  .t[B]                               (ι-OrTrue)
+__or__[B](.f[B], r)                     →  r(())                              (ι-OrFalse)
 ```
+
+The Boolean rules apply after the ordinary left-to-right operand evaluation,
+including evaluation of the expression producing `r`. The skipped case
+returns its original left operand; the literal on the right of each rule
+denotes that same value. At the host boundary a Boolean carrier can contain
+additional information, which must likewise be preserved. A neutral left
+operand leaves the operation stuck, as for the conditional intrinsic.
+
+AND and OR are definable using the existing conditional: bind both operands
+once in their ordinary order, then select between the bound left value and
+one invocation of the bound right thunk. This expansion preserves typing and
+evaluation without introducing recursion or another source of reductions;
+their safety and normalization arguments therefore reduce to those for
+ordinary binding, application and the conditional.
 
 `__absurd__` has no head-reduction rule: `!` has no introduction value to
 eliminate. Its operand subterms may still reduce. When the operand remains

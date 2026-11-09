@@ -24,24 +24,17 @@ import library/dict(
 , varop [% %]
 , yes
 );
-import library/macros/control(macro if);
 import library/macros/match(macro match);
 import library/macros/spine_macros(macro widen_sum);
-import testapi(Bool, I32, String);
+import testapi(I32, String);
 import testapi/arith(add, eq_i32, lt_i32);
 import testapi/fmt(bool_to_string, int_to_string);
 import testapi/io(print);
 import testapi/text(string_concat);
 
-fn host_bool(b: Bool) -> Flag {
-  if(b) { yes() } else { no() }
-}
-
 fn cmp_i32(pair: I32 & I32) -> Ordering {
   match(pair) {
-    .(a: I32, b: I32) {
-      bool_select(lt(), bool_select(eq(), gt(), host_bool(eq_i32(a, b))), host_bool(lt_i32(a, b)))
-    }
+    .(a: I32, b: I32) { bool_select(lt(), bool_select(eq(), gt(), eq_i32(a, b)), lt_i32(a, b)) }
   }
 }
 
@@ -54,7 +47,7 @@ fn cmp_i32_desc(pair: I32 & I32) -> Ordering {
   }
 }
 
-fn gt_flag(a: I32, b: I32) -> Flag { host_bool(lt_i32(b, a)) }
+fn gt_flag(a: I32, b: I32) -> Flag { lt_i32(b, a) }
 
 fn op_get(d: Dict[I32][I32], k: I32) -> I32 | . { get(cmp_i32, d, k) }
 
@@ -159,7 +152,7 @@ pub fn main() {
   show_int("size", size(d));
   show_lookup("get(d, 8)", get(cmp_i32, d, 8));
   show_lookup("get(d, 4)", get(cmp_i32, d, 4));
-  show("member(d, 2)", bool_to_string(bool_select(.t, .f, member(cmp_i32, d, 2))));
+  show("member(d, 2)", bool_to_string(member(cmp_i32, d, 2)));
   show_int("get_or(d, 4, 0)", get_or(cmp_i32, d, 4, 0));
   show_entries("insert(d, 7, 70)", insert(cmp_i32, d, 7, 70));
   show_entries("delete(d, 2)", delete(cmp_i32, d, 2));

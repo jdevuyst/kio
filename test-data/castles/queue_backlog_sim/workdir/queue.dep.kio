@@ -3,3 +3,5 @@ dependency queue;
 source {
   path "../../../poc/queue/workdir/queue.pkg.kio"
 }
+
+rehost queue/macros/control to testapi;

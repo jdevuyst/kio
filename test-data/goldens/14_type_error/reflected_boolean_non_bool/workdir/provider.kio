@@ -1,0 +1,11 @@
+module provider;
+
+import __comptime__;
+
+host type I32 role(i32);
+
+pure fn construct(ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_and__(ct, value, .() -> __Checked_term__ { value })
+}
+
+pub macro combine : I32 -> I32 { impl construct }

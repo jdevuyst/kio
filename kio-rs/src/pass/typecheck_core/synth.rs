@@ -3407,6 +3407,18 @@ where
             checked_term_ty(),
             span,
         ),
+        "__intrinsic_and__" | "__intrinsic_or__" => refl_scheme_from_parts(
+            vec![
+                vp("left", checked_term_ty(), span),
+                vp(
+                    "on_right",
+                    ty_func(Vec::new(), checked_term_ty(), span),
+                    span,
+                ),
+            ],
+            checked_term_ty(),
+            span,
+        ),
         "__intrinsic_if_then_else__" => refl_scheme_from_parts(
             vec![
                 vp("result_type", type_ty(), span),
@@ -3512,12 +3524,20 @@ where
                 a(),
             )
         }
+        "__and__" | "__or__" => (
+            vec![
+                tp("b", span),
+                vp("left", b(), span),
+                vp("right", ty_func(vec![], b(), span), span),
+            ],
+            b(),
+        ),
         _ => return None,
     };
     let mut synth = Synth::complete_scheme(crate::ast::Type::synth_scheme_from_signature_params(
         &params, ret, span,
     ));
-    if name == "__if_then_else__" {
+    if matches!(name, "__if_then_else__" | "__and__" | "__or__") {
         synth.specialization = Some(Box::new(super::IntrinsicSpecialization::BooleanPrefix(
             std::marker::PhantomData,
         )));
@@ -3526,8 +3546,8 @@ where
 }
 
 pub(crate) fn unspecialized_intrinsic_error(span: Span) -> Error {
-    Error::type_(span, "`__if_then_else__` needs a concrete Boolean type before it can be used as a value")
-        .with_help("specialize it as `__if_then_else__[Bool]` or supply a function type with a concrete Boolean condition")
+    Error::type_(span, "this intrinsic needs a concrete Boolean type before it can be used as a value")
+        .with_help("supply a concrete `role(bool)` type as its first type argument or a function type with a concrete Boolean input")
 }
 
 pub(crate) fn check_boolean_specialization<P>(
@@ -3546,7 +3566,7 @@ where
         Err(Error::type_(
             span,
             format!(
-                "`__if_then_else__` requires a concrete `role(bool)` host type; found `{}`",
+                "this intrinsic requires a concrete `role(bool)` host type; found `{}`",
                 display_type(ty.as_type()),
             ),
         ))
@@ -3554,8 +3574,9 @@ where
 }
 
 /// Select the Boolean prefix from an already checked whole function context.
-/// The remaining result binder retains the ordinary function scheme.
+/// Any remaining result binder retains the ordinary function scheme.
 pub(crate) fn specialize_boolean_intrinsic_from_expected<P>(
+    name: &str,
     expected: &super::InternedType<P>,
     span: Span,
     tcx: &TypeCtx<'_, '_, P>,
@@ -3576,7 +3597,8 @@ where
     let crate::ast::Type::Function { param, .. } = head else {
         return Err(unspecialized_intrinsic_error(span));
     };
-    let condition = crate::ast::Type::right_spine_take(&param, 3)[0];
+    let arity = if name == "__if_then_else__" { 3 } else { 2 };
+    let condition = crate::ast::Type::right_spine_take(&param, arity)[0];
     if !tcx
         .env
         .role_type_identity_in(condition, canonical, &tcx.binder_alias_ctx(&bound))
@@ -3585,11 +3607,11 @@ where
         return Err(unspecialized_intrinsic_error(span));
     }
     let condition = super::InternedType::fresh_with_identity(condition.clone(), canonical);
-    let scheme = intrinsic_scheme("__if_then_else__", span)
-        .expect("reserved conditional intrinsic")
+    let scheme = intrinsic_scheme(name, span)
+        .expect("reserved Boolean intrinsic")
         .expect("structural scheme");
     let crate::ast::Type::Forall { param, body, .. } = scheme.ty.as_type() else {
-        unreachable!("the conditional intrinsic begins with its Boolean specialization")
+        unreachable!("a Boolean intrinsic begins with its carrier specialization")
     };
     let specialized = super::types::subst_type(
         body,

@@ -32,6 +32,7 @@ impl<'code> Source<'code> {
                         on_right
                     }
                 }
+                EvalExpr::ReflIntrinsicBoolean { on_right, .. } => on_right,
                 EvalExpr::ReflIntrinsicIfThenElse {
                     on_true, on_false, ..
                 } => {

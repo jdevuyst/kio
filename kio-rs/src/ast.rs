@@ -2355,17 +2355,25 @@ pub enum UserMacroCallForm {
     },
 }
 
+/// The explicitly selected callable namespace of a fixed operator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum FixedOperatorKind {
+    Function,
+    Macro,
+}
+
 /// The body of a fixed-arity `op` declaration.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpBody {
-    /// Fixed-arity operator: `<pattern> { impl <function>; }`. `pattern`
+    /// Fixed-arity operator: `<pattern> { impl <callable>; }`. `pattern`
     /// is the full alternating slot/token sequence — the slot
     /// pattern conveys associativity (`[Plain, Op, Plain]` is
     /// non-assoc, `[Plain, Op, Recursive]` is right-assoc,
     /// `[Recursive, Op, Plain]` is left-assoc). `function` is the
-    /// bound function's lexical path (single name `add`, qualified `m.add`,
+    /// bound callable's lexical path (single name `add`, qualified `m.add`,
     /// or type-member `T.add`).
     Normal {
+        kind: FixedOperatorKind,
         pattern: Vec<OpPart>,
         function: LexicalCallablePath,
     },
@@ -2436,12 +2444,12 @@ impl CallableSpec {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OpPart {
     /// `_` — an atom slot. Grouping and a final fixed word complete atoms.
-    SlotPlain { span: Span },
+    SlotPlain { span: Span, delayed: bool },
     /// `__` — an atom or a chain rooted at this local operator binding.
-    SlotRecursive { span: Span },
+    SlotRecursive { span: Span, delayed: bool },
     /// `___` — an atom or an operator chain. Every nested operator still
     /// checks its own slots, and opposing chain claims require grouping.
-    SlotGreedy { span: Span },
+    SlotGreedy { span: Span, delayed: bool },
     /// One contiguous operator word. `quoted` records that the token was
     /// written in operator-token-quotation form `(token)` — the
     /// declaration-only `(...)` wrapper that distinguishes an
@@ -2456,6 +2464,27 @@ pub enum OpPart {
 }
 
 impl OpPart {
+    pub fn delayed(&self) -> bool {
+        match self {
+            Self::SlotPlain { delayed, .. }
+            | Self::SlotRecursive { delayed, .. }
+            | Self::SlotGreedy { delayed, .. } => *delayed,
+            Self::Token { .. } => false,
+        }
+    }
+
+    pub fn slot_spelling(&self) -> Option<&'static str> {
+        Some(match self {
+            Self::SlotPlain { delayed: false, .. } => "_",
+            Self::SlotPlain { delayed: true, .. } => "._",
+            Self::SlotRecursive { delayed: false, .. } => "__",
+            Self::SlotRecursive { delayed: true, .. } => ".__",
+            Self::SlotGreedy { delayed: false, .. } => "___",
+            Self::SlotGreedy { delayed: true, .. } => ".___",
+            Self::Token { .. } => return None,
+        })
+    }
+
     /// True if this token was declared in operator-token-quotation
     /// form `(token)`. Only `Token` variants can be quoted.
     pub fn is_quoted(&self) -> bool {
@@ -2642,7 +2671,10 @@ pub struct ImportAlias<T> {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OperatorGrammar {
-    Fixed(Vec<OpPart>),
+    Fixed {
+        kind: FixedOperatorKind,
+        pattern: Vec<OpPart>,
+    },
     Variadic {
         open: Vec<String>,
         close: Vec<String>,
@@ -2650,10 +2682,11 @@ pub enum OperatorGrammar {
 }
 
 impl OperatorGrammar {
-    pub fn fixed(pattern: &[OpPart]) -> Self {
+    pub fn fixed(kind: FixedOperatorKind, pattern: &[OpPart]) -> Self {
         let zero = Span::new(0, 0);
-        Self::Fixed(
-            pattern
+        Self::Fixed {
+            kind,
+            pattern: pattern
                 .iter()
                 .map(|part| match part {
                     OpPart::Token { content, .. } => OpPart::Token {
@@ -2661,12 +2694,21 @@ impl OperatorGrammar {
                         span: zero,
                         quoted: content == "=",
                     },
-                    OpPart::SlotPlain { .. } => OpPart::SlotPlain { span: zero },
-                    OpPart::SlotRecursive { .. } => OpPart::SlotRecursive { span: zero },
-                    OpPart::SlotGreedy { .. } => OpPart::SlotGreedy { span: zero },
+                    OpPart::SlotPlain { delayed, .. } => OpPart::SlotPlain {
+                        span: zero,
+                        delayed: *delayed,
+                    },
+                    OpPart::SlotRecursive { delayed, .. } => OpPart::SlotRecursive {
+                        span: zero,
+                        delayed: *delayed,
+                    },
+                    OpPart::SlotGreedy { delayed, .. } => OpPart::SlotGreedy {
+                        span: zero,
+                        delayed: *delayed,
+                    },
                 })
                 .collect(),
-        )
+        }
     }
 
     pub fn variadic(open: &[String], spec: &VariadicSpec) -> Self {
@@ -2678,7 +2720,7 @@ impl OperatorGrammar {
 
     pub fn dispatch_key(&self) -> OperatorDispatchKey {
         match self {
-            Self::Fixed(pattern) => OperatorDispatchKey::from_pattern(pattern),
+            Self::Fixed { pattern, .. } => OperatorDispatchKey::from_pattern(pattern),
             Self::Variadic { open, .. } => OperatorDispatchKey {
                 expr_start: true,
                 leading_run: open.clone(),
@@ -2687,7 +2729,17 @@ impl OperatorGrammar {
     }
 
     pub fn validate_rename(&self, local: &Self) -> Result<(), &'static str> {
-        let (Self::Fixed(source), Self::Fixed(destination)) = (self, local) else {
+        let (
+            Self::Fixed {
+                kind: source_kind,
+                pattern: source,
+            },
+            Self::Fixed {
+                kind: destination_kind,
+                pattern: destination,
+            },
+        ) = (self, local)
+        else {
             return if matches!(
                 (self, local),
                 (Self::Variadic { .. }, Self::Variadic { .. })
@@ -2697,12 +2749,18 @@ impl OperatorGrammar {
                 Err("an operator alias must preserve the fixed or variadic grammar kind")
             };
         };
+        if source_kind != destination_kind {
+            return Err("an operator alias must preserve its function or macro kind");
+        }
         if source.len() != destination.len() {
             return Err("an operator alias must preserve every token and operand position");
         }
         let mut tokens = std::collections::BTreeMap::new();
         let mut reverse_tokens = std::collections::BTreeMap::new();
         for (source, destination) in source.iter().zip(destination) {
+            if source.delayed() != destination.delayed() {
+                return Err("an operator alias must preserve every operand's delay marker");
+            }
             match (source, destination) {
                 (
                     OpPart::Token {
@@ -2740,14 +2798,15 @@ impl OperatorGrammar {
 
     pub fn render(&self) -> String {
         match self {
-            Self::Fixed(pattern) => {
+            Self::Fixed { kind, pattern } => {
                 let mut words = vec!["op".to_owned()];
+                if *kind == FixedOperatorKind::Macro {
+                    words.push("macro".to_owned());
+                }
                 words.extend(pattern.iter().map(|part| match part {
                     OpPart::Token { content, .. } if content == "=" => "(=)".to_owned(),
                     OpPart::Token { content, .. } => content.clone(),
-                    OpPart::SlotPlain { .. } => "_".to_owned(),
-                    OpPart::SlotRecursive { .. } => "__".to_owned(),
-                    OpPart::SlotGreedy { .. } => "___".to_owned(),
+                    slot => slot.slot_spelling().expect("operator slot").to_owned(),
                 }));
                 words.join(" ")
             }
@@ -5144,8 +5203,9 @@ pub enum Expr<P: Phase = Surface> {
         meta: Meta<P>,
         ext: P::ExprEnriched,
     },
-    /// First-class conditional recovered from
-    /// `__if_then_else__(c, then_thunk, else_thunk)`. Literal thunk
+    /// First-class conditional recovered from `__if_then_else__`,
+    /// `__and__`, or `__or__`. The Boolean operations return their retained
+    /// original left value on the skipped branch. Literal thunk
     /// wrappers are stripped and their bodies sit directly in the
     /// branches. Computed thunk expressions are staged in a surrounding
     /// `Let` spine before this node, and the selected branch invokes its
@@ -5580,6 +5640,7 @@ pub enum OpChainKind<P: Phase = Surface> {
     /// slot operands without consulting any out-of-band operator
     /// scope.
     Normal {
+        callable_kind: FixedOperatorKind,
         pattern: Vec<OpPart>,
         slots: Vec<Expr<P>>,
     },

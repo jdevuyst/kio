@@ -1037,6 +1037,15 @@ fn lsp_record_surface_declaration_positions(
                             name: def.name.clone(),
                         },
                     ),
+                    Item::Macro(def, _) => record(
+                        def.name_span,
+                        &def.name,
+                        TokenKind::EntityNameMacro,
+                        ResolvedBinder::Fn {
+                            module_path: module_path.clone(),
+                            name: def.name.clone(),
+                        },
+                    ),
                     Item::RecGroup(group, _) => {
                         for def in &group.members {
                             record(
@@ -1170,7 +1179,6 @@ fn lsp_record_surface_declaration_positions(
                     }
                     Item::LiteralAlias(_, _)
                     | Item::Equiv(_, _)
-                    | Item::Macro(_, _)
                     | Item::Op(_, _)
                     | Item::VariadicOperator(_, _) => {}
                 }
@@ -1306,6 +1314,9 @@ fn lsp_top_level_declaration_query(
             match entry.module.items.get(item_id.0 as usize)? {
                 Item::FnDef(def) if def.name == *name => {
                     Some((def.meta.span, name.clone(), TokenKind::EntityNameFunction))
+                }
+                Item::Macro(def, _) if def.name == *name => {
+                    Some((def.name_span, name.clone(), TokenKind::EntityNameMacro))
                 }
                 Item::RecGroup(group, _) => {
                     let def = group
@@ -1706,6 +1717,17 @@ fn lsp_record_callable_declaration_positions(
                     )
                 }
                 ModuleCallableKey::Function { name, .. } => match item {
+                    Item::Macro(def, _) => (
+                        ResolvedBinder::Fn {
+                            module_path: owner.clone(),
+                            name: name.clone(),
+                        },
+                        InternedType::fresh(crate::pass::resolve::qualify_contract_type_in_module(
+                            &def.call_ty,
+                            &entry.module,
+                            &HashMap::new(),
+                        )),
+                    ),
                     Item::FnDef(def) => (
                         ResolvedBinder::Fn {
                             module_path: owner.clone(),
@@ -1784,6 +1806,7 @@ fn lsp_record_callable_declaration_positions(
                     owner,
                     member,
                     source_type,
+                    ..
                 } => {
                     let owner_path = module_path_key(owner);
 
@@ -4402,6 +4425,77 @@ mod tests {
                 expected_spans.contains(span),
                 "synthetic fixed/variadic operator calls must not publish helper references"
             );
+        }
+    }
+
+    #[cfg(all(feature = "surface", feature = "lsp"))]
+    #[test]
+    fn lsp_macro_operator_target_retains_public_type_and_exact_macro_identity() {
+        use crate::pass::typecheck_full::ResolvedBinder;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("example.pkg.kio"), "package example;\n").unwrap();
+        let provider = "module provider; import __comptime__;
+            pure fn keep(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }
+            pub macro echo : [A] A -> A { impl keep; }";
+        std::fs::write(dir.path().join("provider.kio"), provider).unwrap();
+        let path = dir.path().join("main.kio");
+        for invocation in ["", " fn run() { (# ())() }"] {
+            let source = format!(
+                "module main; import provider as helper; op macro # ._ {{ impl helper.echo; }}{invocation}"
+            );
+            std::fs::write(&path, &source).unwrap();
+            let analysis = analyze_workspace_at_with_overlay_lsp(
+                dir.path(),
+                &crate::package_collection::SourceOverlay::empty(),
+            )
+            .unwrap();
+            let focused = analyze_module_at_with_overlay_lsp(
+                dir.path(),
+                &crate::package_collection::SourceOverlay::empty(),
+                &path,
+            )
+            .unwrap();
+            let module = &focused.file_to_module[&path.canonicalize().unwrap()];
+            if invocation.is_empty() {
+                assert!(
+                    focused
+                        .position_index
+                        .binders_iter()
+                        .all(|((owner, _), _)| owner == module),
+                    "focused navigation retains remote targets without provider occurrences"
+                );
+            }
+            let start = source.find("helper.echo").unwrap() + "helper.".len();
+            let span = crate::span::Span::new(start as u32, (start + "echo".len()) as u32);
+            let declaration_start = provider.find("macro echo").unwrap() + "macro ".len();
+            let declaration_span = crate::span::Span::new(
+                declaration_start as u32,
+                (declaration_start + "echo".len()) as u32,
+            );
+            for analysis in [&analysis, &focused] {
+                let binder = analysis
+                    .position_index
+                    .binder_at(module, span)
+                    .expect("resolved macro target");
+                assert!(
+                    matches!(binder, ResolvedBinder::Fn { module_path, name } if module_path == "provider" && name == "echo")
+                );
+                assert_eq!(
+                    analysis
+                        .position_index
+                        .semantic_declaration_site(module, binder),
+                    Some(("provider", declaration_span)),
+                    "navigation follows the macro declaration, not its implementation"
+                );
+                let ty = analysis
+                    .position_index
+                    .type_at(module, span)
+                    .expect("macro public type");
+                let mut rendered = String::new();
+                crate::pass::typecheck_core::write_type(ty, &mut rendered);
+                assert!(!rendered.contains("__Checked_term__"), "{rendered}");
+                assert!(rendered.contains("->"), "{rendered}");
+            }
         }
     }
 
@@ -8749,6 +8843,26 @@ mod typed_cache_dependency_fingerprint_tests {
         assert_eq!(actual, vec![module_key("helpers/selected")]);
     }
 
+    #[cfg(feature = "surface")]
+    #[test]
+    fn macro_operator_retains_its_qualified_target_as_an_impl_dependency() {
+        let module = crate::pass::parser::parse(
+            "module owner;
+            import helpers/selected as selected;
+            import helpers/unrelated as unrelated;
+            op macro # ._ { impl selected.echo; }",
+        )
+        .unwrap();
+        let known = ["helpers/selected", "helpers/unrelated"]
+            .into_iter()
+            .map(module_key)
+            .collect();
+        assert_eq!(
+            same_package_macro_import_targets(&module, None, &known),
+            vec![module_key("helpers/selected")]
+        );
+    }
+
     #[test]
     fn transitive_composition_tracks_reachable_dependency_changes() {
         let a = module_key("a");
@@ -9138,11 +9252,36 @@ fn same_package_macro_import_targets(
         .items
         .iter()
         .any(|item| matches!(item, crate::ast::Item::Macro(_, _)));
+    let operator_macro_qualifiers: BTreeSet<_> = module
+        .items
+        .iter()
+        .filter_map(|item| {
+            let crate::ast::Item::Op(operator, _) = item else {
+                return None;
+            };
+            let crate::ast::OpBody::Normal {
+                kind: crate::ast::FixedOperatorKind::Macro,
+                function,
+                ..
+            } = &operator.body
+            else {
+                return None;
+            };
+            match function.segments() {
+                [qualifier, _] => Some(qualifier.as_str()),
+                _ => None,
+            }
+        })
+        .collect();
     let mut targets = BTreeSet::new();
     for u in &module.imports {
         let target = match &u.kind {
             crate::ast::ImportKind::Selective { from, .. } => from,
-            crate::ast::ImportKind::Qualified { path, .. } if declares_macro => path,
+            crate::ast::ImportKind::Qualified { path, alias }
+                if declares_macro || operator_macro_qualifiers.contains(alias.as_str()) =>
+            {
+                path
+            }
             crate::ast::ImportKind::Qualified { .. }
             | crate::ast::ImportKind::Intrinsics
             | crate::ast::ImportKind::Comptime => continue,

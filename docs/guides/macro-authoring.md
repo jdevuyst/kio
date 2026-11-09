@@ -16,6 +16,8 @@ explicit imports from the [language tutorial](../tutorials/language.md).
 [Defining macros](macros.md) explains the declaration ABI and the
 detailed reflection, purity, block, and fill rules. Keep the
 [builtin reference](builtin-modules.md) nearby for helper signatures.
+For an operator spelling that delays an operand for a macro, see the
+[operator guide](operators.md#delay-an-operand).
 
 ## Set up a package you can inspect
 

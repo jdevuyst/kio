@@ -210,6 +210,9 @@ fn intrinsic_doc(label: &str) -> Option<BuiltinDoc> {
 }
 
 fn intrinsic_scheme(label: &str) -> Option<String> {
+    if matches!(label, "__and__" | "__or__") {
+        return Some("[B](B & (. -> B)) -> B".to_owned());
+    }
     if label == "__if_then_else__" {
         return Some("[B][A](B & (. -> A) & (. -> A)) -> A".to_owned());
     }
@@ -228,6 +231,8 @@ fn intrinsic_summary(name: &str) -> &'static str {
         "__pair__" => "Constructs a product value from its two fields.",
         "__fst__" => "Projects the first field from a product value.",
         "__snd__" => "Projects the second field from a product value.",
+        "__and__" => "Returns the original false left value, or invokes the right thunk once.",
+        "__or__" => "Returns the original true left value, or invokes the right thunk once.",
         "__if_then_else__" => {
             "Checks a concrete Boolean specialization before branching. The true and false branches are thunks so only the selected branch is invoked."
         }
@@ -255,6 +260,9 @@ fn intrinsic_details(name: &str) -> &'static str {
         }
         "__snd__" => {
             "The value must have exactly the product type `A & B`; the result is its right component. The helper does not search a wider product spine, so a different product shape is a type error."
+        }
+        "__and__" | "__or__" => {
+            "The type argument `B` must resolve to a concrete `role(bool)` host type from explicit or local typed call context. The left operand and the unit-domain right thunk's result must have that exact type. The intrinsic evaluates its operands in call order and invokes the thunk only when the left value does not determine the result. A skipped right thunk returns the original left carrier unchanged. A rigid generic Boolean parameter is rejected; there is no role constraint inference or visible-type search."
         }
         "__if_then_else__" => {
             "The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__[Bool]` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked."
@@ -321,7 +329,7 @@ fn comptime_group(builtin: ComptimeBuiltin) -> &'static str {
         | TermHostConvert | TermSpecialize => "Checked Terms",
         Fill | FillResult => "Fill Relations",
         IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
-        | IntrinsicEither | IntrinsicAbsurd | IntrinsicIfThenElse => {
+        | IntrinsicEither | IntrinsicAbsurd | IntrinsicIfThenElse | IntrinsicAnd | IntrinsicOr => {
             "Reflected Intrinsic Constructors"
         }
     }
@@ -441,6 +449,8 @@ fn comptime_summary(builtin: ComptimeBuiltin) -> &'static str {
         IntrinsicAbsurd => {
             "Constructs a checked term that calls the reflected bottom eliminator intrinsic."
         }
+        IntrinsicAnd => "Constructs a checked runtime short-circuit conjunction.",
+        IntrinsicOr => "Constructs a checked runtime short-circuit disjunction.",
         IntrinsicIfThenElse => {
             "Constructs a checked term that calls the reflected role-boolean conditional intrinsic."
         }
@@ -650,6 +660,9 @@ fn comptime_details(builtin: ComptimeBuiltin) -> &'static str {
         }
         IntrinsicAbsurd => {
             "Constructs a checked runtime bottom elimination from `bottom_value` to `result_type`. The value must have type `!`; any inhabited source type makes construction fail."
+        }
+        IntrinsicAnd | IntrinsicOr => {
+            "Constructs a checked runtime `__and__` or `__or__` call. The concrete `role(bool)` carrier is derived from `left`; the zero-argument construction callback must return a checked term of that same type. The callback executes purely during elaboration and its checked result becomes the runtime right thunk. Proof authentication, capture checking and standalone Prime validation apply. An unresolved or non-Boolean left type, or a mismatched callback result, makes construction fail."
         }
         IntrinsicIfThenElse => {
             "Constructs a checked runtime `__if_then_else__` call. The condition must have a concrete `role(bool)` host type, which is written as the Boolean specialization of the generated call. Both zero-argument callbacks must return `result_type`. An unresolved or non-Boolean condition type, or a branch mismatch, makes construction fail."

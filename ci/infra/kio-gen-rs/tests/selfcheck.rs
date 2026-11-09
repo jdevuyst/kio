@@ -63,6 +63,73 @@ fn type_param_payload_equality_is_deep() {
 const SAMPLE_SEEDS: u64 = 200;
 
 #[test]
+fn boolean_intrinsics_keep_the_concrete_carrier_and_thunk_domain() {
+    let env = HashMap::new();
+    let thunk = Term::Lambda {
+        params: vec![],
+        ret: Type::bool(),
+        body: Box::new(Term::BoolLit(false)),
+    };
+    for intrinsic in ["__and__", "__or__"] {
+        let valid = Term::PolyCall {
+            name: intrinsic.into(),
+            type_args: vec![Type::bool()],
+            args: vec![Term::BoolLit(true), thunk.clone()],
+        };
+        assert_eq!(type_of(&valid, &env).unwrap(), Type::bool());
+        for surface in [false, true] {
+            assert_eq!(
+                render::render_term_opts(&valid, &render::RenderOpts { surface }),
+                format!("{intrinsic}[Bool](.t[Bool], .() {{ .f[Bool] }})")
+            );
+        }
+        for (type_args, args) in [
+            (vec![], vec![Term::BoolLit(true), thunk.clone()]),
+            (vec![Type::Unit], vec![Term::BoolLit(true), thunk.clone()]),
+            (vec![Type::bool()], vec![Term::UnitLit, thunk.clone()]),
+            (
+                vec![Type::bool()],
+                vec![Term::BoolLit(true), Term::BoolLit(false)],
+            ),
+            (
+                vec![Type::bool()],
+                vec![
+                    Term::BoolLit(true),
+                    Term::Lambda {
+                        params: vec![],
+                        ret: Type::Unit,
+                        body: Box::new(Term::UnitLit),
+                    },
+                ],
+            ),
+            (
+                vec![Type::bool()],
+                vec![
+                    Term::BoolLit(true),
+                    Term::Lambda {
+                        params: vec![("input".into(), Type::bool())],
+                        ret: Type::bool(),
+                        body: Box::new(Term::BoolLit(false)),
+                    },
+                ],
+            ),
+        ] {
+            assert!(
+                type_of(
+                    &Term::PolyCall {
+                        name: intrinsic.into(),
+                        type_args,
+                        args,
+                    },
+                    &env
+                )
+                .is_err()
+            );
+        }
+    }
+}
+
+#[test]
 fn block_ufcs_directions_keep_the_receiver_before_projected_blocks() {
     let env = HashMap::from([
         ("condition".into(), Type::bool()),
@@ -466,6 +533,22 @@ fn type_of(t: &Term, env: &HashMap<String, Type>) -> Result<Type, String> {
                     return Err(format!("{name}: arg type {at:?} != type arg {t:?}"));
                 }
                 Ok(t.clone())
+            }
+            "__and__" | "__or__" => {
+                if type_args.len() != 1 || type_args[0] != Type::bool() || args.len() != 2 {
+                    return Err(format!(
+                        "{name}: expected the concrete Bool carrier and two values"
+                    ));
+                }
+                let left_ty = type_of(&args[0], env)?;
+                let right_ty = type_of(&args[1], env)?;
+                let thunk_ty = Type::Fun(vec![], Box::new(Type::bool()));
+                if left_ty != Type::bool() || right_ty != thunk_ty {
+                    return Err(format!(
+                        "{name}: expected Bool and a Unit-domain Bool thunk, got {left_ty:?} and {right_ty:?}"
+                    ));
+                }
+                Ok(Type::bool())
             }
             "__if_then_else__" => {
                 if type_args.len() != 2 || args.len() != 3 {

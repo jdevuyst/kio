@@ -14,3 +14,4 @@ derive polymorphic recursive: ok
 derive functor: ok
 type reflection: ok
 (show, 42, true)
+boolean operators: false, true, true, true

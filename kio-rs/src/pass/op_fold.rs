@@ -4,7 +4,8 @@
 //! placeholder in the module's operator scope (built from the
 //! module's own `Item::Op` entries plus the cross-module operator
 //! bindings selected by full grammar in `import provider(op ...);`), and
-//! replaces the placeholder with a concrete `Expr::Call`. The pass
+//! replaces the placeholder with an ordinary `Expr::Call` or selected
+//! `Expr::UserMacro`. The pass
 //! runs between parsing and desugar; after it completes, no
 //! `Expr::OpChain` nodes remain in the AST.
 //!
@@ -18,14 +19,15 @@
 // off the sequential arm needs no import and rayon is absent.
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
+use std::cell::Cell;
 #[cfg(feature = "lsp")]
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 
 use crate::ast::{
-    CallArg, CallableSpec, Equiv, Expr, FnDef, Import, ImportItem, ImportKind, Item, Labels,
-    LexicalCallablePath, Meta, Module, ModulePath, Op, OpBody, OpChainKind, OpPart,
+    CallArg, CallableSpec, Equiv, Expr, FixedOperatorKind, FnDef, Import, ImportItem, ImportKind,
+    Item, Labels, LexicalCallablePath, Meta, Module, ModulePath, Op, OpBody, OpChainKind, OpPart,
     OperatorDispatchKey, PackageFile, PathSegment, Signature, SignatureParam, Surface, Type,
     TypeAlias, VariadicOperator, VariadicSpec, Visibility,
 };
@@ -164,12 +166,10 @@ pub fn fold_package_file_in_package(
 /// Per-module fold. Builds the consumer module's operator scope
 /// (module-local ops + cross-module imports resolved against the
 /// `package` map), then walks every item replacing `Expr::OpChain`
-/// nodes with concrete `Expr::Call`. Injects synthetic
-/// collision-free qualified imports for the source modules referenced by
-/// operator-pattern imports, and strips the original
-/// operator-pattern items from the surviving imports so the
-/// post-fold AST contains only regular identifier imports plus the
-/// synthetic qualified-alias clauses.
+/// nodes with ordinary `Expr::Call` or selected `Expr::UserMacro` calls.
+/// Callable routing injects collision-free qualified imports for functions
+/// and selective macro imports for macros. The original operator-pattern
+/// selections are stripped after their targets have been resolved.
 fn fold_module(module: &mut Module<Surface>, package: &PackageOpScope) -> Result<(), Error> {
     fold_module_observed(
         module,
@@ -243,10 +243,14 @@ fn validate_callable_decls_observed(
     for (item_index, item) in module.items.iter().enumerate() {
         match item {
             Item::Op(d, _) => {
-                let OpBody::Normal { pattern, function } = &d.body;
+                let OpBody::Normal {
+                    kind,
+                    pattern,
+                    function,
+                } = &d.body;
                 let description = format!(
                     "operator `{}`",
-                    crate::ast::OperatorGrammar::fixed(pattern).render()
+                    crate::ast::OperatorGrammar::fixed(*kind, pattern).render()
                 );
                 let context = ImplValidationContext {
                     module,
@@ -255,7 +259,8 @@ fn validate_callable_decls_observed(
                     referrer_vis: &d.vis,
                     referrer: &description,
                 };
-                let target = validate_impl_path(&context, function)?;
+                let target = require_resolved_impl_path_kind(&context, function, *kind)?;
+                target.validate(&context, function.span())?;
                 observe(item_index, function, &target.callable);
             }
             Item::VariadicOperator(d, _) => {
@@ -339,14 +344,25 @@ fn require_resolved_impl_path(
     context: &ImplValidationContext<'_>,
     path: &LexicalCallablePath,
 ) -> Result<ResolvedImplTarget, Error> {
+    require_resolved_impl_path_kind(context, path, FixedOperatorKind::Function)
+}
+
+fn require_resolved_impl_path_kind(
+    context: &ImplValidationContext<'_>,
+    path: &LexicalCallablePath,
+    kind: FixedOperatorKind,
+) -> Result<ResolvedImplTarget, Error> {
     let span = path.span();
-    let Some(target) = resolve_impl_path(context, path) else {
+    let Some(target) =
+        resolve_impl_path(context, path).filter(|target| target.callable.kind() == kind)
+    else {
         return Err(Error::name_res(
             span,
             format!(
-                "{} implementation `{}` does not resolve to a function or newtype member",
+                "{} implementation `{}` does not resolve to {}",
                 context.referrer,
-                render_callable_path(path)
+                render_callable_path(path),
+                if kind == FixedOperatorKind::Macro { "a macro" } else { "a function or newtype member" },
             ),
         )
         .with_help(
@@ -380,13 +396,15 @@ fn render_callable_path(path: &LexicalCallablePath) -> String {
         .join(".")
 }
 
-fn resolved_fn_target(
+fn resolved_named_target(
     visibility: &Visibility,
     owner: &ModulePath,
     name: &str,
+    kind: FixedOperatorKind,
 ) -> ResolvedImplTarget {
     ResolvedImplTarget {
         callable: ResolvedCallableTarget::Module {
+            kind,
             owner: owner.clone(),
             member: vec![name.to_owned()],
             #[cfg(feature = "lsp")]
@@ -395,7 +413,14 @@ fn resolved_fn_target(
         visibilities: vec![(
             visibility.clone(),
             owner.clone(),
-            format!("function `{name}`"),
+            format!(
+                "{} `{name}`",
+                if kind == FixedOperatorKind::Macro {
+                    "macro"
+                } else {
+                    "function"
+                }
+            ),
         )],
     }
 }
@@ -442,6 +467,7 @@ fn resolved_newtype_target(
     }
     Some(ResolvedImplTarget {
         callable: ResolvedCallableTarget::Module {
+            kind: FixedOperatorKind::Function,
             owner: target.member_owner.clone(),
             member: vec![target.member_type_name.clone(), member.to_owned()],
             #[cfg(feature = "lsp")]
@@ -455,7 +481,7 @@ fn resolve_bare_impl_path(
     context: &ImplValidationContext<'_>,
     name: &str,
 ) -> Option<ResolvedImplTarget> {
-    if let Some(target) = resolve_local_module_fn(context, name) {
+    if let Some(target) = resolve_local_module_callable(context, name) {
         return Some(target);
     }
     if module_imports_intrinsic(context.module, name) {
@@ -471,48 +497,61 @@ fn resolve_bare_impl_path(
         let ImportKind::Selective { items, from } = &u.kind else {
             continue;
         };
-        let Some(source) = items
-            .iter()
-            .find(|item| item.as_local_name() == Some(name))
-            .and_then(ImportItem::as_name)
-        else {
+        let Some(item) = items.iter().find(|item| item.as_local_name() == Some(name)) else {
             continue;
         };
+        let source = item.as_name()?;
         let from_path = module_path_str(from);
         if from_path == module_path_str(&context.module.path) {
             continue;
         }
-        if let Some(target) = context.package.fn_target(&from_path, source) {
-            return Some(resolved_fn_target(&target.vis, from, source));
+        if let Some(target) = context.package.named_callable_target(&from_path, source) {
+            let macro_selected = matches!(
+                item,
+                ImportItem::Name {
+                    macro_span: Some(_),
+                    ..
+                }
+            );
+            if macro_selected == (target.kind == FixedOperatorKind::Macro) {
+                return Some(resolved_named_target(
+                    &target.vis,
+                    from,
+                    source,
+                    target.kind,
+                ));
+            }
         }
     }
     None
 }
 
-fn resolve_local_module_fn(
+fn resolve_local_module_callable(
     context: &ImplValidationContext<'_>,
     name: &str,
 ) -> Option<ResolvedImplTarget> {
-    if let Some(vis) = context.visible_items.iter().find_map(|item| match item {
-        Item::FnDef(d) if d.name == name => Some(&d.vis),
+    if let Some((vis, kind)) = context.visible_items.iter().find_map(|item| match item {
+        Item::FnDef(d) if d.name == name => Some((&d.vis, FixedOperatorKind::Function)),
+        Item::Macro(d, _) if d.name == name => Some((&d.vis, FixedOperatorKind::Macro)),
         Item::RecGroup(group, _) => group
             .members
             .iter()
             .find(|d| d.name == name)
-            .map(|d| &d.vis),
+            .map(|d| (&d.vis, FixedOperatorKind::Function)),
         _ => None,
     }) {
-        return Some(resolved_fn_target(vis, &context.module.path, name));
+        return Some(resolved_named_target(vis, &context.module.path, name, kind));
     }
     if context
         .visible_items
         .iter()
         .any(|item| matches!(item, Item::HostFn(host) if host.name == name))
     {
-        return Some(resolved_fn_target(
+        return Some(resolved_named_target(
             &Visibility::Public,
             &context.module.path,
             name,
+            FixedOperatorKind::Function,
         ));
     }
     None
@@ -600,10 +639,15 @@ fn resolve_qualified_impl_path(
         }
         let from_path = module_path_str(path);
         if from_path == module_path_str(&context.module.path) {
-            return resolve_local_module_fn(context, member);
+            return resolve_local_module_callable(context, member);
         }
-        if let Some(target) = context.package.fn_target(&from_path, member) {
-            return Some(resolved_fn_target(&target.vis, path, member));
+        if let Some(target) = context.package.named_callable_target(&from_path, member) {
+            return Some(resolved_named_target(
+                &target.vis,
+                path,
+                member,
+                target.kind,
+            ));
         }
     }
     None
@@ -702,6 +746,7 @@ fn strip_import_op_patterns(imports: &mut Vec<Import>) {
 #[derive(Clone)]
 pub(crate) enum ResolvedCallableTarget {
     Module {
+        kind: FixedOperatorKind,
         owner: ModulePath,
         member: Vec<String>,
         /// The source-visible type declaration that qualified a terminal
@@ -716,6 +761,15 @@ pub(crate) enum ResolvedCallableTarget {
         kind: ResolvedBuiltinKind,
         name: String,
     },
+}
+
+impl ResolvedCallableTarget {
+    fn kind(&self) -> FixedOperatorKind {
+        match self {
+            Self::Module { kind, .. } => *kind,
+            Self::Builtin { .. } => FixedOperatorKind::Function,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -779,6 +833,7 @@ struct ResolvedPubOpRecord {
 #[derive(Clone)]
 enum ResolvedPubOpRecordBody {
     Normal {
+        kind: FixedOperatorKind,
         pattern: Vec<OpPart>,
         target: ResolvedCallableTarget,
     },
@@ -796,7 +851,7 @@ enum ResolvedPubOpRecordBody {
 /// import identities.
 pub struct PackageOpScope {
     by_module: HashMap<String, Vec<ResolvedPubOpRecord>>,
-    fn_targets_by_module: HashMap<String, HashMap<String, FnTarget>>,
+    named_targets_by_module: HashMap<String, HashMap<String, NamedCallableTarget>>,
     newtype_targets_by_module: HashMap<String, HashMap<String, NewtypeTarget>>,
     resolved_callable_targets_by_item: HashMap<(String, u32), Vec<ResolvedCallableTarget>>,
     #[cfg(feature = "lsp")]
@@ -805,8 +860,9 @@ pub struct PackageOpScope {
     resolved_callable_declaration_ranges: HashMap<String, std::ops::Range<usize>>,
 }
 
-struct FnTarget {
+struct NamedCallableTarget {
     vis: Visibility,
+    kind: FixedOperatorKind,
 }
 
 #[derive(Clone)]
@@ -1017,27 +1073,50 @@ fn insert_label_newtype_targets(
 
 impl PackageOpScope {
     fn resolution_index(modules: &[(PathBuf, Module<Surface>)]) -> Self {
-        let mut fn_targets_by_module: HashMap<String, HashMap<String, FnTarget>> = HashMap::new();
+        let mut named_targets_by_module: HashMap<String, HashMap<String, NamedCallableTarget>> =
+            HashMap::new();
         let mut newtype_targets_by_module: HashMap<String, HashMap<String, NewtypeTarget>> =
             HashMap::new();
         for (_, module) in modules {
             let path = module_path_str(&module.path);
-            let fn_entry = fn_targets_by_module.entry(path.clone()).or_default();
+            let named_entry = named_targets_by_module.entry(path.clone()).or_default();
             let newtype_entry = newtype_targets_by_module.entry(path.clone()).or_default();
             for item in &module.items {
                 match item {
                     Item::FnDef(d) => {
-                        fn_entry.insert(d.name.clone(), FnTarget { vis: d.vis.clone() });
+                        named_entry.insert(
+                            d.name.clone(),
+                            NamedCallableTarget {
+                                vis: d.vis.clone(),
+                                kind: FixedOperatorKind::Function,
+                            },
+                        );
                     }
                     Item::RecGroup(group, _) => {
                         for d in &group.members {
-                            fn_entry.insert(d.name.clone(), FnTarget { vis: d.vis.clone() });
+                            named_entry.insert(
+                                d.name.clone(),
+                                NamedCallableTarget {
+                                    vis: d.vis.clone(),
+                                    kind: FixedOperatorKind::Function,
+                                },
+                            );
                         }
                     }
+                    Item::Macro(d, _) => {
+                        named_entry.insert(
+                            d.name.clone(),
+                            NamedCallableTarget {
+                                vis: d.vis.clone(),
+                                kind: FixedOperatorKind::Macro,
+                            },
+                        );
+                    }
                     Item::HostFn(host) => {
-                        fn_entry.insert(
+                        named_entry.insert(
                             host.name.clone(),
-                            FnTarget {
+                            NamedCallableTarget {
+                                kind: FixedOperatorKind::Function,
                                 vis: Visibility::Public,
                             },
                         );
@@ -1082,7 +1161,7 @@ impl PackageOpScope {
         }
         Self {
             by_module: HashMap::new(),
-            fn_targets_by_module,
+            named_targets_by_module,
             newtype_targets_by_module,
             resolved_callable_targets_by_item: HashMap::new(),
             #[cfg(feature = "lsp")]
@@ -1151,13 +1230,14 @@ impl PackageOpScope {
             for (item_index, item) in module.items.iter().enumerate() {
                 match item {
                     Item::Op(d, _) if d.vis.is_pub() => {
-                        let OpBody::Normal { pattern, .. } = &d.body;
+                        let OpBody::Normal { kind, pattern, .. } = &d.body;
                         let [target] = scope.resolved_callable_targets(module, item_index) else {
                             unreachable!("validated operator retains exactly one callable target")
                         };
                         records.push(ResolvedPubOpRecord {
                             name: OperatorDispatchKey::from_pattern(pattern),
                             body: ResolvedPubOpRecordBody::Normal {
+                                kind: *kind,
                                 pattern: pattern.clone(),
                                 target: target.clone(),
                             },
@@ -1195,8 +1275,8 @@ impl PackageOpScope {
         Ok(scope)
     }
 
-    fn fn_target(&self, module_path: &str, name: &str) -> Option<&FnTarget> {
-        self.fn_targets_by_module
+    fn named_callable_target(&self, module_path: &str, name: &str) -> Option<&NamedCallableTarget> {
+        self.named_targets_by_module
             .get(module_path)
             .and_then(|module| module.get(name))
     }
@@ -1254,6 +1334,7 @@ impl PackageOpScope {
 /// or by the complete variadic opening marker.
 struct OpScope {
     normal: HashMap<(Vec<String>, bool), NormalBinding>,
+    next_node_id: Cell<u64>,
     variadic: HashMap<Vec<String>, VariadicBinding>,
     #[cfg(feature = "lsp")]
     operator_uses: Option<RefCell<Vec<(Span, ResolvedOperatorOrigin)>>>,
@@ -1261,6 +1342,7 @@ struct OpScope {
 
 #[derive(Clone)]
 struct NormalBinding {
+    kind: FixedOperatorKind,
     /// Path naming the underlying function after imports have been routed.
     function: LexicalCallablePath,
     pattern: Vec<OpPart>,
@@ -1279,6 +1361,7 @@ impl OpScope {
     fn new(#[cfg(feature = "lsp")] capture_operator_uses: bool) -> Self {
         Self {
             normal: HashMap::new(),
+            next_node_id: Cell::new(0),
             variadic: HashMap::new(),
             #[cfg(feature = "lsp")]
             operator_uses: capture_operator_uses.then(|| RefCell::new(Vec::new())),
@@ -1287,12 +1370,13 @@ impl OpScope {
 
     fn insert_local_op(&mut self, d: &Op<Surface>, function: LexicalCallablePath) {
         match &d.body {
-            OpBody::Normal { pattern, .. } => {
+            OpBody::Normal { kind, pattern, .. } => {
                 let is_prefix = matches!(pattern.first(), Some(OpPart::Token { .. }));
                 let leading = leading_op_run(pattern);
                 self.normal.insert(
                     (leading, is_prefix),
                     NormalBinding {
+                        kind: *kind,
                         function,
                         pattern: pattern.clone(),
                         #[cfg(feature = "lsp")]
@@ -1325,6 +1409,7 @@ impl OpScope {
 
     fn insert_imported_normal(
         &mut self,
+        kind: FixedOperatorKind,
         source_pattern: &[OpPart],
         function: LexicalCallablePath,
         import_span: Span,
@@ -1338,12 +1423,13 @@ impl OpScope {
                 import_span,
                 format!(
                     "duplicate operator import `{}`",
-                    crate::ast::OperatorGrammar::fixed(source_pattern).render()
+                    crate::ast::OperatorGrammar::fixed(kind, source_pattern).render()
                 ),
             )
             .with_help("remove the repeated operator import"));
         }
         let binding = NormalBinding {
+            kind,
             function,
             pattern: source_pattern.to_vec(),
             #[cfg(feature = "lsp")]
@@ -1422,6 +1508,12 @@ fn build_module_scope(
     let mut scope = OpScope::new(
         #[cfg(feature = "lsp")]
         capture_operator_uses,
+    );
+    scope.next_node_id.set(
+        crate::scope_walk::macro_calls(module)
+            .max_node_id
+            .checked_add(1)
+            .expect("source NodeId space exhausted"),
     );
     let mut occupied = module_binding_names(module);
     let mut builtin_imports = RoutedBuiltinImports::from_module(module);
@@ -1529,8 +1621,8 @@ fn build_module_scope(
                 ));
             };
             let provided_grammar = match &matched.body {
-                ResolvedPubOpRecordBody::Normal { pattern, .. } => {
-                    crate::ast::OperatorGrammar::fixed(pattern)
+                ResolvedPubOpRecordBody::Normal { kind, pattern, .. } => {
+                    crate::ast::OperatorGrammar::fixed(*kind, pattern)
                 }
                 ResolvedPubOpRecordBody::VariadicOperator { open, spec, .. } => {
                     crate::ast::OperatorGrammar::variadic(open, spec)
@@ -1604,10 +1696,10 @@ fn build_module_scope(
                         &mut builtin_imports,
                         *span,
                     );
-                    let crate::ast::OperatorGrammar::Fixed(pattern) = local else {
+                    let crate::ast::OperatorGrammar::Fixed { kind, pattern } = local else {
                         unreachable!("operator aliases preserve their grammar category");
                     };
-                    scope.insert_imported_normal(pattern, function, local_span)?;
+                    scope.insert_imported_normal(*kind, pattern, function, local_span)?;
                 }
             }
         }
@@ -1682,6 +1774,27 @@ fn routed_callable_path(
     import_span: Span,
 ) -> LexicalCallablePath {
     match target {
+        ResolvedCallableTarget::Module {
+            kind: FixedOperatorKind::Macro,
+            owner,
+            member,
+            ..
+        } => {
+            let [name] = member.as_slice() else {
+                unreachable!("resolved macro target has one declaration name")
+            };
+            let owner = module_path_str(owner);
+            let (alias, _) = builtin_imports
+                .macros
+                .entry((owner.clone(), name.clone()))
+                .or_insert_with(|| {
+                    (
+                        allocate_synthetic_alias(&format!("{owner}/{name}"), occupied),
+                        import_span,
+                    )
+                });
+            LexicalCallablePath::synth([alias.clone()], import_span)
+        }
         ResolvedCallableTarget::Module { owner, member, .. } => {
             let owner = module_path_str(owner);
             let alias = aliases
@@ -1705,6 +1818,7 @@ fn routed_callable_path(
 }
 
 struct RoutedBuiltinImports {
+    macros: BTreeMap<(String, String), (String, Span)>,
     has_intrinsics: bool,
     has_comptime: bool,
     intrinsic_span: Option<Span>,
@@ -1714,6 +1828,7 @@ struct RoutedBuiltinImports {
 impl RoutedBuiltinImports {
     fn from_module(module: &Module<Surface>) -> Self {
         Self {
+            macros: BTreeMap::new(),
             has_intrinsics: module
                 .imports
                 .iter()
@@ -1736,6 +1851,32 @@ impl RoutedBuiltinImports {
     }
 
     fn append_synthetic(&self, imports: &mut Vec<Import>) {
+        for ((owner, name), (alias, span)) in &self.macros {
+            imports.push(Import {
+                kind: ImportKind::Selective {
+                    from: ModulePath {
+                        segments: owner
+                            .split('/')
+                            .map(|name| PathSegment::synth(name, *span))
+                            .collect(),
+                        span: *span,
+                    },
+                    items: vec![ImportItem::Name {
+                        macro_span: Some(*span),
+                        name: name.clone(),
+                        span: *span,
+                        alias: Some(crate::ast::ImportAlias {
+                            local: alias.clone(),
+                            span: *span,
+                        }),
+                        leading_trivia: Vec::new(),
+                    }],
+                },
+                span: *span,
+                leading_trivia: Vec::new(),
+                trailing_trivia: Vec::new(),
+            });
+        }
         if !self.has_intrinsics
             && let Some(span) = self.intrinsic_span
         {
@@ -2186,7 +2327,11 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
         unreachable!("resolve_op_chain called with non-OpChain expression");
     };
     match kind {
-        OpChainKind::Normal { pattern, slots } => {
+        OpChainKind::Normal {
+            callable_kind,
+            pattern,
+            slots,
+        } => {
             let prefix = matches!(pattern.first(), Some(OpPart::Token { .. }));
             let tokens = leading_op_run(&pattern);
             let Some(binding) = scope.normal.get(&(tokens.clone(), prefix)) else {
@@ -2194,7 +2339,7 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
                     meta.span,
                     format!(
                         "operator `{}` is not in scope at this position",
-                        crate::ast::OperatorGrammar::fixed(&pattern).render()
+                        crate::ast::OperatorGrammar::fixed(callable_kind, &pattern).render()
                     ),
                 ));
             };
@@ -2215,15 +2360,64 @@ fn resolve_op_chain(expr: Expr<Surface>, scope: &OpScope) -> Result<Expr<Surface
                     meta.span,
                     format!(
                         "operator `{}` expects {pattern_slot_count} operand(s); got {}",
-                        crate::ast::OperatorGrammar::fixed(&pattern).render(),
+                        crate::ast::OperatorGrammar::fixed(callable_kind, &pattern).render(),
                         slots.len()
                     ),
                 ));
             }
-            let callee = path_to_expr(&binding.function, meta.span);
-            let args: Vec<CallArg<Surface>> = slots.into_iter().map(CallArg::Value).collect();
+            let args: Vec<CallArg<Surface>> = slots
+                .into_iter()
+                .zip(
+                    binding
+                        .pattern
+                        .iter()
+                        .filter(|part| !matches!(part, OpPart::Token { .. })),
+                )
+                .map(|(operand, slot)| {
+                    CallArg::Value(if slot.delayed() {
+                        let span = operand.span();
+                        Expr::FnExpr {
+                            occurrence: Default::default(),
+                            sig: Signature::from_groups(vec![crate::ast::SignatureGroup::Value(
+                                Vec::new(),
+                            )]),
+                            ret_ty: None,
+                            body: Box::new(operand),
+                            meta: Meta::new(span),
+                            caps: (),
+                        }
+                    } else {
+                        operand
+                    })
+                })
+                .collect();
             #[cfg(feature = "lsp")]
             scope.record_use(meta.span, binding.origin);
+            if binding.kind == FixedOperatorKind::Macro {
+                let [head] = binding.function.segments() else {
+                    unreachable!("resolved macro operator has a bare selected macro binding")
+                };
+                let id = scope.next_node_id.get();
+                assert!(
+                    id < crate::ast::SYNTHESIZED_NODE_ID_START,
+                    "source NodeId space exhausted"
+                );
+                scope.next_node_id.set(id + 1);
+                return Ok(Expr::UserMacro {
+                    occurrence: Default::default(),
+                    name: head.name.clone(),
+                    stages: vec![crate::ast::CallStage {
+                        occurrence: Default::default(),
+                        args,
+                        source_trivia: Default::default(),
+                        meta: meta.clone(),
+                    }],
+                    form: crate::ast::UserMacroCallForm::Ordinary,
+                    meta,
+                    ext: crate::ast::NodeId(id),
+                });
+            }
+            let callee = path_to_expr(&binding.function, meta.span);
             Ok(Expr::Call {
                 source_trivia: Default::default(),
                 occurrence: Default::default(),
@@ -2824,6 +3018,7 @@ mod tests {
                 ResolvedCallableTarget::Module {
                     owner,
                     member,
+                    kind: FixedOperatorKind::Function,
                     source_type: Some(ResolvedCallableTypeHead::TypeAlias {
                         owner: source_owner,
                         name,
@@ -3752,6 +3947,106 @@ mod tests {
         }
     }
 
+    #[test]
+    fn delayed_operands_wrap_complete_grouped_expressions_once() {
+        let source = "module m;
+            fn choose(left: . -> ., right: . -> .) -> . { left() }
+            op ._ && .__ { impl choose; }
+            fn run(left: ., middle: ., right: .) -> . { left && middle && right }";
+        let body = folded_fn_def_body(source, 2);
+        let (args, _) = call_parts(&body, "choose");
+        let Expr::FnExpr { body: left, .. } = value_arg(&args[0]) else {
+            panic!("left thunk")
+        };
+        assert!(
+            matches!(left.as_ref(), Expr::Path { segments, .. } if segments[0].as_str() == "left")
+        );
+        let Expr::FnExpr {
+            body: right, meta, ..
+        } = value_arg(&args[1])
+        else {
+            panic!("right thunk")
+        };
+        assert_eq!(meta.span, right.span());
+        assert_eq!(
+            &source[meta.span.start as usize..meta.span.end as usize],
+            "middle && right"
+        );
+        let (nested_args, _) = call_parts(right, "choose");
+        assert!(
+            nested_args
+                .iter()
+                .all(|arg| matches!(arg, CallArg::Value(Expr::FnExpr { .. })))
+        );
+    }
+
+    #[test]
+    fn macro_operator_routes_exact_target_and_preserves_one_product_stage() {
+        let provider = p("module syntax;
+            pure fn keep(_ct: ., value: .) -> . { value }
+            pub macro echo : [A] A -> A { impl keep; }
+            pub op macro ._ && .__ { impl echo; }");
+        let consumer = p(
+            "module consumer; import syntax(op macro ._ && .__ as ._ %% .__);
+            fn run(echo: ., right: .) { echo %% right }",
+        );
+        let folded = fold_package(vec![
+            (PathBuf::from("syntax.kio"), provider),
+            (PathBuf::from("consumer.kio"), consumer),
+        ])
+        .unwrap();
+        let consumer = &folded[1].1;
+        let Item::FnDef(run) = &consumer.items[0] else {
+            panic!("function")
+        };
+        let Expr::UserMacro {
+            name, stages, form, ..
+        } = &run.body
+        else {
+            panic!("selected macro call")
+        };
+        assert_eq!(*form, crate::ast::UserMacroCallForm::Ordinary);
+        assert_eq!(stages.len(), 1);
+        assert_eq!(stages[0].args.len(), 2);
+        assert!(
+            stages[0]
+                .args
+                .iter()
+                .all(|arg| matches!(arg, CallArg::Value(Expr::FnExpr { .. })))
+        );
+        assert!(consumer.imports.iter().any(|import| match &import.kind {
+            ImportKind::Selective { from, items } if module_path_str(from) == "syntax" =>
+                items.iter().any(|item| matches!(item,
+                ImportItem::Name { name: selected, macro_span: Some(_), alias: Some(alias), .. }
+                    if selected == "echo" && &alias.local == name)),
+            _ => false,
+        }));
+    }
+
+    #[test]
+    fn operator_kind_and_delay_mismatches_reject_without_body_uses() {
+        for selected in ["op _ && __", "op macro _ && __", "op ._ && .__"] {
+            let provider = p("module syntax;
+                pure fn keep(value: .) -> . { value }
+                pub macro echo : . -> . { impl keep; }
+                pub op macro _ && .__ { impl echo; }");
+            let consumer = p(&format!("module consumer; import syntax({selected});"));
+            let (_, error) = fold_package(vec![
+                (PathBuf::from("syntax.kio"), provider),
+                (PathBuf::from("consumer.kio"), consumer),
+            ])
+            .unwrap_err();
+            assert!(matches!(error, Error::Import(_)), "{error:?}");
+        }
+        for declaration in ["op _ && _ { impl echo; }", "op macro _ && _ { impl keep; }"] {
+            let module = p(&format!(
+                "module m; pure fn keep(value: .) -> . {{ value }} macro echo : . -> . {{ impl keep; }} {declaration}"
+            ));
+            let (_, error) = fold_package(vec![(PathBuf::from("m.kio"), module)]).unwrap_err();
+            assert!(matches!(error, Error::NameRes(_)), "{error:?}");
+        }
+    }
+
     fn call_parts<'a>(
         expr: &'a Expr<Surface>,
         expected_callee: &str,
@@ -4367,7 +4662,10 @@ mod tests {
             let provided = match &provider.items[2] {
                 Item::Op(declaration, _) => {
                     let OpBody::Normal { pattern, .. } = &declaration.body;
-                    crate::ast::OperatorGrammar::fixed(pattern)
+                    crate::ast::OperatorGrammar::fixed(
+                        crate::ast::FixedOperatorKind::Function,
+                        pattern,
+                    )
                 }
                 Item::VariadicOperator(declaration, _) => {
                     crate::ast::OperatorGrammar::variadic(&declaration.open, &declaration.spec)

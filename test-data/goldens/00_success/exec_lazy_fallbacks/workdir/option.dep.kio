@@ -1,0 +1,8 @@
+dependency option;
+
+source {
+  path "../../../../poc/option/workdir/option.pkg.kio"
+}
+
+rehost option/macros/control to testapi;
+rehost option/macros/testapi to testapi;

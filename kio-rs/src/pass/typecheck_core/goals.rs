@@ -1458,7 +1458,7 @@ pub(crate) struct PreparedCloseType {
     value: ScopedType,
 }
 
-/// A completed derivation blocked only by a goal in its retained ancestor chain.
+/// A retained derivation blocked only by a goal in its strict ancestor chain.
 /// This witnesses suspension, never a solved type or publication permission.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CompletionWait {

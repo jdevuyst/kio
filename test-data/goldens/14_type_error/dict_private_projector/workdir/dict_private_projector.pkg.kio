@@ -50,5 +50,6 @@ build {
 
 bridge {
   dict/dict;
+  dict/macros/control;
   dict/macros/testapi
 }

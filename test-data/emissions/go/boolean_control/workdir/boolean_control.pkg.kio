@@ -1,0 +1,15 @@
+package boolean_control;
+
+build {
+  cache "out/cache";
+
+  target go {
+    out "out/go";
+    baseline v1_26
+  }
+}
+
+bridge {
+  main;
+  macros/control
+}

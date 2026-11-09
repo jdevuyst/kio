@@ -53,8 +53,8 @@ closures use their checked executable structure, with lexical binders tracked
 separately from exact local, selective-import, and qualified-import function
 declarations. Types and source arrow identity gain no purity classification.
 
-Structural recovery consumes that proof for both `__if_then_else__` and
-`__either__`: a proved-pure computed handler may be evaluated in its selected
+Structural recovery consumes that proof for `__if_then_else__`, `__and__`,
+`__or__`, and `__either__`: a proved-pure computed handler may be evaluated in its selected
 branch or arm. Other computed handlers retain eager bindings in original
 argument order, including a preceding computed condition or scrutinee. The
 optimizer shares the analysis for let fusion and dead-code elimination.
@@ -63,7 +63,7 @@ enter each consumer's enriched-cache key. Ordinary exact resolution and lexical
 shadowing determine the facts, so unrelated added declarations cannot change
 the meaning of an existing call.
 
-This rule applies to both dispatch occurrences on JS, TypeScript, Python, Java,
+This rule applies to these dispatch occurrences on JS, TypeScript, Python, Java,
 Rust, Go, Swift, and Haskell: they consume the same recovered and optimized
 artifact. The Kio' backend bypasses host preparation and retains the original
 strict calls. The runtime workflows are
@@ -78,6 +78,43 @@ retains the avoided-work counts and bounded compiler-cost evidence. Each
 queried expression is visited once by the proof; declaration facts are indexed
 per consumer module, without traversing callee bodies or solving a package-wide
 effect graph.
+
+### Native Boolean and branch recovery
+
+`__and__` and `__or__` recover through the same `EnrichedConditional` used by
+`__if_then_else__`. The left operand supplies the test and the skipped-branch
+result, so stage a computed value once and reuse the exact carrier. Keep an
+effectful right-thunk factory after that evaluation and before selection; only
+invoking the obtained thunk is conditional. Inline nullary lambdas contribute
+their bodies directly. Reuse tuple-slot propagation, let fusion and beta
+reduction when macro expansion introduces an administrative product or let.
+Recognition follows validated structure, including ordinary library NOT
+expressed as a conditional, without a library-name or producer-identity hook.
+
+Native operator syntax is a representation capability, not a language-family
+property. The shared [Boolean classifier](../../kio-rs/src/backends/boolean.rs)
+serves bodies with primitive Boolean representations: JS/TypeScript,
+statement-free Go operands, and pure Haskell expressions. Statement-bearing Go
+operands and effectful Haskell branches use native `if`; preserve Haskell's
+strict operand staging. Rust and Swift retain their exact associated carriers
+through native conditionals. Python and Java retain exact host objects, inspect
+truth through their adapters, and execute the selected recovered child in their
+existing runtimes. Their branch evaluation needs no Kio thunk object. An
+expression-result wrapper required by a host emitter is distinct
+from a delayed branch closure. Prime emission bypasses recovery and retains
+the explicit intrinsic.
+
+Pin wrapper removal through realistic nested macro/operator expansions as well
+as direct intrinsic calls. Keep opaque callbacks as negative controls, and
+exercise a custom carrier with payload beyond truth where the backend retains
+one. Assert that payload independently of its truth equality. Pair native-form
+and thunk-elimination firing checks with compile/runtime measurements at the
+[backend evidence boundary](#backend-evidence-boundary); correct final values
+alone cannot show that an avoidable closure disappeared. Runtime order and
+single-invocation coverage includes
+[`exec_boolean_operand_intrinsics`](../../test-data/goldens/00_success/exec_boolean_operand_intrinsics/).
+The [Boolean recovery measurement](../../evidence/backend-performance.md#boolean-operand-recovery)
+records the source comparison, closure counts, runtime profiles and claim limits.
 
 ## Runtime model — the body and the FFI skin
 

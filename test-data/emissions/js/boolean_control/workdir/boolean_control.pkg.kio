@@ -1,0 +1,15 @@
+package boolean_control;
+
+build {
+  cache "out/cache";
+
+  target js {
+    out "out/js";
+    baseline es2020
+  }
+}
+
+bridge {
+  main;
+  macros/control
+}

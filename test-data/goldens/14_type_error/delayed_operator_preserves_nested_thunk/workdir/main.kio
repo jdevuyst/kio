@@ -1,0 +1,9 @@
+module main;
+
+fn ignore(left: ., _right: . -> .) { left }
+
+op _ && ._ { impl ignore }
+
+fn run() {
+  () && .() { () }
+}

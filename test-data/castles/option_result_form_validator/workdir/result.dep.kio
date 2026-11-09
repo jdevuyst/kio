@@ -4,4 +4,5 @@ source {
   path "../../../poc/result/workdir/result.pkg.kio"
 }
 
+rehost result/macros/control to testapi;
 rehost result/macros/testapi to testapi;

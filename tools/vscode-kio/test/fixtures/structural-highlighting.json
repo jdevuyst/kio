@@ -1152,5 +1152,59 @@
         ]
       }
     ]
-  }
+  },
+{
+  "name": "macro_operator_declaration_and_import",
+  "source": "module m; import ops(op macro _ && .__ as _ %% .__); op macro _ && .__ { impl controls.and; }",
+  "targets": [
+    {
+      "text": "macro",
+      "start": 24,
+      "end": 29,
+      "kind": "keyword.declaration",
+      "owners": [
+        "import_operator_item"
+      ],
+      "textmate": [
+        "keyword.declaration.kio"
+      ]
+    },
+    {
+      "text": "macro",
+      "start": 56,
+      "end": 61,
+      "kind": "keyword.declaration",
+      "owners": [
+        "op_decl"
+      ],
+      "textmate": [
+        "keyword.declaration.kio"
+      ]
+    },
+    {
+      "text": "&&",
+      "start": 64,
+      "end": 66,
+      "kind": "operator.user",
+      "owners": [
+        "op_decl"
+      ],
+      "textmate": [
+        "keyword.operator.user.kio"
+      ]
+    },
+    {
+      "text": "impl",
+      "start": 73,
+      "end": 77,
+      "kind": "keyword.declaration",
+      "owners": [
+        "callable_impl_block"
+      ],
+      "textmate": [
+        "keyword.declaration.kio"
+      ]
+    }
+  ]
+}
 ]

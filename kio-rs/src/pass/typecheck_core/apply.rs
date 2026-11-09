@@ -3335,7 +3335,11 @@ impl<'m> PreparedOrdinaryValue<'m> {
         }
         let expected = expected
             .ok_or_else(|| super::synth::unspecialized_intrinsic_error(self.source.span()))?;
+        let crate::ast::Expr::Path { segments, .. } = self.source else {
+            unreachable!("an unspecialized intrinsic value is its reserved path")
+        };
         let (specialized, boolean) = super::synth::specialize_boolean_intrinsic_from_expected(
+            segments[0].as_str(),
             expected,
             self.source.span(),
             tcx,
@@ -6680,7 +6684,7 @@ enum PlannedOrdinaryValue<'m> {
     Leaf(PlannedOrdinaryLeaf<'m>),
     PendingRecOrderPath,
     PendingRecOrderSource(OrdinaryChildContinuation<'m>),
-    Literal,
+    Literal(Option<Box<RetainedCompletionWait>>),
     ConnectedCall {
         direct: PreparedDirectCallee,
         layers: SelectedPathUnitCallLayers<'m>,
@@ -6995,9 +6999,16 @@ impl<'m> OrdinaryValueCursor<'m> {
                             child.child.completion_delta(),
                         ));
                     }
+                    PlannedOrdinaryValue::Literal(Some(wait)) => {
+                        #[cfg(test)]
+                        record_completion_work(|work| work.origin_visits += 1);
+                        if visit(wait.0, delta)? {
+                            return Ok(true);
+                        }
+                    }
                     PlannedOrdinaryValue::Leaf(_)
                     | PlannedOrdinaryValue::PendingRecOrderPath
-                    | PlannedOrdinaryValue::Literal
+                    | PlannedOrdinaryValue::Literal(None)
                     | PlannedOrdinaryValue::ConnectedCall { .. }
                     | PlannedOrdinaryValue::ComputedCall(
                         ComputedCallContinuation::PlannedLambda(_)
@@ -7330,7 +7341,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 | crate::ast::Expr::FloatLit { .. }
                 | crate::ast::Expr::BoolLit { .. }
         ) {
-            PlannedOrdinaryValue::Literal
+            PlannedOrdinaryValue::Literal(None)
         } else {
             PlannedOrdinaryValue::Recursive(OrdinaryRecursiveFamily::ComputedCall)
         };
@@ -7520,7 +7531,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 equation_progress: EquationProgress::Initial,
             }),
             OrdinaryValueSeed::PendingRecOrderPath => PlannedOrdinaryValue::PendingRecOrderPath,
-            OrdinaryValueSeed::Literal => PlannedOrdinaryValue::Literal,
+            OrdinaryValueSeed::Literal => PlannedOrdinaryValue::Literal(None),
             OrdinaryValueSeed::ConnectedCall { .. } => {
                 unreachable!("connected calls are selected while reserving their real owner")
             }
@@ -7744,7 +7755,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     | OrdinaryCallContinuation::AwaitingReturnedForall { completed, .. },
                 ) if checked_callable => return completed.call.shape.specialization.is_none(),
                 PlannedOrdinaryValue::PendingRecOrderPath
-                | PlannedOrdinaryValue::Literal
+                | PlannedOrdinaryValue::Literal(_)
                 | PlannedOrdinaryValue::Lambda(PlannedOrdinaryLambda {
                     state: OrdinaryLambdaState::Unselected,
                     ..
@@ -7880,7 +7891,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     },
                 ..
             }) => self.expected.is_none(),
-            PlannedOrdinaryValue::Literal
+            PlannedOrdinaryValue::Literal(_)
             | PlannedOrdinaryValue::PendingRecOrderSource(_)
             | PlannedOrdinaryValue::ConnectedCall { .. }
             | PlannedOrdinaryValue::Call(_)
@@ -7999,7 +8010,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                     return;
                 }
                 PlannedOrdinaryValue::PendingRecOrderPath
-                | PlannedOrdinaryValue::Literal
+                | PlannedOrdinaryValue::Literal(_)
                 | PlannedOrdinaryValue::Lambda(PlannedOrdinaryLambda {
                     state: OrdinaryLambdaState::Unselected,
                     ..
@@ -8060,10 +8071,10 @@ impl<'m> OrdinaryValueCursor<'m> {
             PlannedOrdinaryValue::Leaf(leaf) => {
                 Self::advance_planned_leaf(source, expected, leaf, mode, frontier, tcx)
             }
-            PlannedOrdinaryValue::Literal => Self {
+            PlannedOrdinaryValue::Literal(completion_wait) => Self {
                 source,
                 expected,
-                planned: PlannedOrdinaryValue::Literal,
+                planned: PlannedOrdinaryValue::Literal(completion_wait),
             }
             .advance_literal(mode, frontier, tcx),
             PlannedOrdinaryValue::ConnectedCall {
@@ -8227,7 +8238,7 @@ impl<'m> OrdinaryValueCursor<'m> {
                 Self::advance_rec_quote_step(source, expected, None, mode, frontier, tcx)
             }
             planned @ (PlannedOrdinaryValue::Leaf(_)
-            | PlannedOrdinaryValue::Literal
+            | PlannedOrdinaryValue::Literal(_)
             | PlannedOrdinaryValue::ConnectedCall { .. }) => Self {
                 source,
                 expected,
@@ -14920,9 +14931,8 @@ impl<'m> OrdinaryValueCursor<'m> {
                     let advanced = (|| {
                         if public_header_only {
                             let body_free = match cursor.planned.observed() {
-                                PlannedOrdinaryValue::Leaf(_) | PlannedOrdinaryValue::Literal => {
-                                    true
-                                }
+                                PlannedOrdinaryValue::Leaf(_)
+                                | PlannedOrdinaryValue::Literal(_) => true,
                                 PlannedOrdinaryValue::Call(call) => {
                                     call.open_goal_call().is_some_and(|call| {
                                         call.immediate_lambda.is_none()
@@ -16305,7 +16315,7 @@ impl<'m> OrdinaryValueCursor<'m> {
     }
 
     fn advance_literal(
-        self,
+        mut self,
         mode: frontier::FrontierMode,
         frontier: &mut impl OrdinaryFrontierReentry<'m>,
         tcx: &mut TypeCtx<'m, '_, crate::ast::Lowered>,
@@ -16313,6 +16323,14 @@ impl<'m> OrdinaryValueCursor<'m> {
         let (shape, annotation, span) = super::literal_check_parts(self.source)
             .expect("the literal cursor admitted another Lowered expression family");
         let (store, owner, delta, publication) = frontier.parts_mut();
+        let PlannedOrdinaryValue::Literal(completion_wait) = &mut self.planned else {
+            unreachable!("the literal cursor lost its retained state")
+        };
+        if let Some(wait) = completion_wait
+            && !store.completion_wait_changed(wait.0, delta, span)?
+        {
+            return Ok(OrdinaryValueAdvance::Waiting(Box::new(self)));
+        }
         let scoped_expected = self
             .expected
             .clone()
@@ -16324,6 +16342,32 @@ impl<'m> OrdinaryValueCursor<'m> {
             .transpose()?
             .flatten();
         let explicit = annotation.is_some_and(|ty| !matches!(ty, crate::ast::Type::Infer { .. }));
+        if ready.is_none()
+            && !explicit
+            && mode.is_final_check()
+            && let Some(expected) = scoped_expected
+        {
+            let progress = store.zonk_for_progress(delta, expected, tcx)?;
+            let bound = tcx.in_scope_type_param_binders();
+            let (normalized, _) = super::aliases::unfold_and_qualify_state(
+                progress.ty().as_type(),
+                &tcx.binder_alias_ctx(&bound),
+                progress.ty().identity_is_canonical(),
+            );
+            // A sibling's unconsumed action may still determine this carrier.
+            // Only its existing ancestor goal can suspend the literal; a known
+            // structural type or an unresolved local goal cannot admit one.
+            if matches!(normalized, crate::ast::Type::Goal { goal, ref args, .. }
+                if args.is_empty() && goal.owner() != owner)
+            {
+                let prepared = store.zonk_for_close(delta, progress, tcx)?;
+                let wait = store
+                    .prepared_completion_wait(&prepared)?
+                    .expect("an unresolved ancestor carrier retains its completion blocker");
+                RetainedCompletionWait::retain(completion_wait, wait);
+                return Ok(OrdinaryValueAdvance::Waiting(Box::new(self)));
+            }
+        }
         let resolved = match ready {
             Some(ready) => super::synth::resolve_literal_against_unrecorded(
                 shape,
@@ -27280,7 +27324,7 @@ mod tests {
             let mut cursor = Box::new(OrdinaryValueCursor {
                 source: &source,
                 expected: None,
-                planned: PlannedOrdinaryValue::Literal,
+                planned: PlannedOrdinaryValue::Literal(None),
             });
             for _ in 0..DEPTH {
                 let (reservation, ()) = frontier
@@ -27325,7 +27369,7 @@ mod tests {
                         attached += 1;
                         cursor = child.cursor;
                     }
-                    PlannedOrdinaryValue::Literal => break,
+                    PlannedOrdinaryValue::Literal(_) => break,
                     _ => panic!("the expectation fixture changed continuation family"),
                 }
             }

@@ -770,6 +770,25 @@
     }
   },
   {
+    "type": "delayed_slot",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": true,
+      "types": [
+        {
+          "type": "separator_dot",
+          "named": true
+        },
+        {
+          "type": "slot",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
     "type": "dependency_file",
     "named": true,
     "fields": {},
@@ -2065,6 +2084,10 @@
       "required": true,
       "types": [
         {
+          "type": "delayed_slot",
+          "named": true
+        },
+        {
           "type": "import_pattern_group",
           "named": true
         },
@@ -2430,7 +2453,15 @@
           "named": true
         },
         {
+          "type": "delayed_slot",
+          "named": true
+        },
+        {
           "type": "import_pattern_group",
+          "named": true
+        },
+        {
+          "type": "keyword_declaration",
           "named": true
         },
         {
@@ -2447,6 +2478,10 @@
         },
         {
           "type": "operator_run",
+          "named": true
+        },
+        {
+          "type": "separator_dot",
           "named": true
         },
         {
@@ -2669,11 +2704,6 @@
         }
       ]
     }
-  },
-  {
-    "type": "keyword_declaration",
-    "named": true,
-    "fields": {}
   },
   {
     "type": "labelled_block",
@@ -3976,7 +4006,15 @@
           "named": true
         },
         {
+          "type": "delayed_slot",
+          "named": true
+        },
+        {
           "type": "import_pattern_group",
+          "named": true
+        },
+        {
+          "type": "keyword_declaration",
           "named": true
         },
         {
@@ -6679,6 +6717,10 @@
     "named": true
   },
   {
+    "type": "keyword_declaration",
+    "named": true
+  },
+  {
     "type": "keyword_dependency",
     "named": true
   },
@@ -6777,10 +6819,6 @@
   {
     "type": "kind_annotation",
     "named": true
-  },
-  {
-    "type": "macro",
-    "named": false
   },
   {
     "type": "operator_arrow_type",

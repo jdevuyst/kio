@@ -349,8 +349,8 @@ fn project_module(file_path: &Path, module: &Module<Surface>) -> ModuleProjectio
                 );
             }
             Item::Op(op, _) => {
-                let crate::ast::OpBody::Normal { pattern, .. } = &op.body;
-                let grammar = crate::ast::OperatorGrammar::fixed(pattern);
+                let crate::ast::OpBody::Normal { kind, pattern, .. } = &op.body;
+                let grammar = crate::ast::OperatorGrammar::fixed(*kind, pattern);
                 let dispatch_key = grammar.dispatch_key().render();
                 let name = grammar.render();
                 add_visibility(&op.vis, op.meta.span, format!("operator `{name}`"));

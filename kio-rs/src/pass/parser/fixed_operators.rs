@@ -41,6 +41,7 @@ impl Frame {
             expr: Expr::OpChain {
                 occurrence: Default::default(),
                 kind: OpChainKind::Normal {
+                    callable_kind: self.binding.kind,
                     pattern: self.binding.pattern,
                     slots: self.operands,
                 },
@@ -405,7 +406,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("."),
             Expr::OpChain {
-                kind: OpChainKind::Normal { pattern, slots },
+                kind: OpChainKind::Normal { pattern, slots, .. },
                 ..
             } => {
                 let words = pattern

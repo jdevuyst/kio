@@ -1,0 +1,4 @@
+module main;
+
+import other(op macro _ && _);
+import provider(op _ && .__);

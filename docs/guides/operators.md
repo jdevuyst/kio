@@ -1,6 +1,6 @@
 # Operators
 
-`op` gives a function a symbolic spelling. Operators such as `+` and `::`
+`op` gives a function or macro a symbolic spelling. Operators such as `+` and `::`
 come from declarations or explicit imports. This guide assumes familiarity
 with [functions and modules](../tutorials/language.md).
 
@@ -11,7 +11,7 @@ bridge {
 
 module kiodoc;
 
-import control(Bool, macro if);
+import control(Bool, macro if, macro and, op macro _ && .__, op macro _ || .__);
 
 host type Int role(i32);
 host fn add(a: Int, b: Int) -> Int;
@@ -95,6 +95,39 @@ are already atoms. It is also rejected in a later slot immediately followed
 by the same word that starts a non-prefix pattern, as in `_ ? __ ? _`.
 The [specification](../../specs/language.md#operators) gives the full rule.
 
+## Delay an operand
+
+The [macro library](using-libraries.md#the-macro-library) exports `and` and
+`or` with symbolic spellings. After setting up the dependency as `macros`,
+select the names and patterns you use with, for example,
+`import macros/control(Bool, macro and, op macro _ && .__, op macro _ || .__);`.
+Use the imported `Bool` for the values and predicates in this example:
+
+```kio {@module}
+fn both(a: Bool, b: Bool, c: Bool) -> Bool { a && b && c }
+
+fn either(a: Bool, b: Bool) -> Bool { a || b }
+
+fn named(a: Bool, b: Bool) -> Bool {
+  and(a) { b }
+}
+```
+
+`&&` evaluates its left operand once and evaluates its right operand only
+when the left is true; `||` evaluates the right only when the left is false.
+When the right side is skipped, the result is the original left value. The
+`.__` slot permits a chain of the same operator, so `a && b && c` groups
+as `a && (b && c)`. As with other operators, use parentheses to combine
+different operand-ending operators.
+
+The dot in `._`, `.__`, or `.___` makes the entire parsed operand an ordinary
+unit-domain thunk; the underscores retain the grouping rules above. Thus
+`a && b` supplies the same product argument as `and(a, .() { b })` or
+`and(a) { b }`. This wrapping is determined by the operator slot independently
+of any trailing-block descriptor on the macro. In a direct call with a thunk
+factory, the factory is evaluated once with the other product component; the
+thunk body runs only when selected.
+
 ## Multi-token patterns
 
 A pattern can contain several symbols and operands. This example also uses a
@@ -147,11 +180,15 @@ is rejected. Whitespace cannot split a word into interchangeable pieces.
 
 ## Export and import
 
-Use `pub op` to export an operator and make its directly named target public
+Use `pub op` to export a function operator and make its directly named target public
 too. For example, `pub op _ + __ { impl add_int }` requires `pub fn add_int`.
 For `pub(path)`, the target must be visible throughout that path. A nominal type
 member target requires both its type or identity alias and the member to meet
 the same visibility requirement.
+
+Use `op macro` for a macro target, for example the control library declares
+`pub op macro _ && .__ { impl and }`. Its target is a macro; an ordinary
+`op` targets a function. Both follow the same visibility rules.
 
 Import the complete pattern, including its slot kinds and token quotation:
 `import math(op _ + __);`. For example, the dictionary library exports `=>`

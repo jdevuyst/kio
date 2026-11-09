@@ -10275,8 +10275,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         );
         assert_eq!(
             scope.memo().user_macro_template_executions(),
-            4,
-            "the outer call, two nested arguments, and the helper body each execute once"
+            5,
+            "the four subject calls and control.not's conditional each execute once"
         );
         validate_substituted_package(checked.substituted())
             .expect("nested projected conditions produce ordinary Prime");
@@ -10780,10 +10780,19 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
             "module scope/inside; import scope/origin as o; host type Number role(i32); fn value() -> o.Item[Number] { o.Item.mk(7) }",
         ]).expect("ordinary scoped visibility admits the constructor in its subtree");
 
-        let error = check_package_sources(&[
-            "module main; host type Number role(i32); type { Pack <U>: U { mk; get; }; }; fn bad() -> Pack { Pack.mk(7) }",
-        ]).expect_err("an existential result does not determine its hidden literal carrier");
-        assert!(error.diag().1.contains("cannot determine"), "{error:?}");
+        let source = "module main; host type Number role(i32); type { Pack <U>: U { mk; get; }; }; fn bad() -> Pack { Pack.mk(7) }";
+        let error = check_package_sources(&[source])
+            .expect_err("an existential result does not determine its hidden literal carrier");
+        assert!(matches!(error, Error::Type(_)), "{error:?}");
+        assert!(
+            error.diag().1.contains("cannot infer type argument"),
+            "{error:?}"
+        );
+        let span = error.diagnostic().span;
+        assert_eq!(
+            &source[span.start as usize..span.end as usize],
+            "Pack.mk(7)"
+        );
         for body in [
             "(First.mk(7), Second.mk(\"second\"))",
             "(First.mk(7[Number]), Second.mk(\"second\"[String]))",
@@ -10946,7 +10955,7 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 "keep(\"wrong\")(1[Number])",
                 "string literal cannot have the expected type",
             ),
-            ("let result = keep(1)(2); ()", "cannot determine"),
+            ("let result = keep(1)(2); ()", "cannot infer type argument"),
         ] {
             let result = if expression.starts_with("let") {
                 "."
@@ -10962,6 +10971,11 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
                 error.diag().1.contains(diagnostic),
                 "{expression}: {error:?}"
             );
+            if expression.starts_with("let") {
+                assert!(matches!(error, Error::Type(_)), "{error:?}");
+                let span = error.diagnostic().span;
+                assert_eq!(&source[span.start as usize..span.end as usize], "keep(1)");
+            }
         }
     }
 
@@ -11022,6 +11036,46 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
         for arms in ["\"\" } else { separator", "separator } else { \"\""] {
             check_package_sources(&[&format!("module main; import control(Bool, macro if); host type String role(str); fn choose(flag: Bool, separator: String) -> String {{ let lead = if(flag) {{ {arms} }}; lead }}")])
                 .expect("a known sibling determines the common conditional result");
+        }
+    }
+
+    #[test]
+    fn boolean_operand_intrinsics_specialize_from_local_evidence() {
+        for intrinsic in ["__and__", "__or__"] {
+            for body in [
+                format!("{intrinsic}(flag, .() {{ other }})"),
+                format!("{intrinsic}[Flag](flag, .() {{ other }})"),
+                format!("let selected = {intrinsic}[Flag]; selected(flag, .() {{ other }})"),
+                format!(
+                    "let .(selected: (Flag & (. -> Flag)) -> Flag) = {intrinsic}; selected(flag, .() {{ other }})"
+                ),
+                format!("let packet = (flag, .() {{ other }}); {intrinsic}[Flag](packet)"),
+                format!("apply({intrinsic}, flag, .() {{ other }})"),
+            ] {
+                let source = format!(
+                    "module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); fn apply(operation: (Flag & (. -> Flag)) -> Flag, left: Flag, right: . -> Flag) -> Flag {{ operation(left, right) }} fn run(flag: Flag, other: Flag) -> Flag {{ {body} }}"
+                );
+                check_package_sources(&[&source])
+                    .unwrap_or_else(|error| panic!("{body}: {error:?}"));
+            }
+            for declaration in [
+                format!("fn run() -> . {{ let selected = {intrinsic}; () }}"),
+                format!("fn run() -> . {{ let selected = {intrinsic}[String]; () }}"),
+                format!("fn run[B]() -> . {{ let selected = {intrinsic}[B]; () }}"),
+                format!("fn run[B](flag: B) -> B {{ {intrinsic}(flag, .() {{ flag }}) }}"),
+            ] {
+                let source = format!(
+                    "module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); host type String role(str); {declaration}"
+                );
+                let error = check_package_sources(&[&source]).expect_err(&declaration);
+                assert!(
+                    error.diag().1.contains("Boolean") || error.diag().1.contains("role(bool)"),
+                    "{declaration}: {error:?}"
+                );
+            }
+            check_package_sources(&[&format!(
+                "module main; import __intrinsics__; host type Flag role(bool); host type Other role(bool); fn run(flag: Flag, other: Other) -> Flag {{ {intrinsic}[Flag](flag, .() {{ other }}) }}"
+            )]).expect_err("both operands retain the same exact Boolean carrier");
         }
     }
 
@@ -12045,7 +12099,8 @@ pub macro common3 : [First] First -> [Second] Second -> [Third] Third -> [Target
     fn fills_nested_recursive_branches_use_the_lexical_continuation_result() {
         let provider = include_str!("../../../test-data/poc/macros/workdir/control.kio")
             .replace("module control;", "module alternate;")
-            .replace("pub macro if :", "pub macro choose :");
+            .replace("pub macro if :", "pub macro choose :")
+            .replace("if(value)", "choose(value)");
         let main = "module main; import alternate(Bool, macro choose); \
                  host type Data; \
                  host fn loop[S][R](step: S -> (S | R), initial: S) -> R; \
@@ -14327,9 +14382,10 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             return;
         }
         crate::pass::typecheck_core::apply::fills::reset_fill_relation_work();
-        let (error, scope) = check_retained_error_with_scope(&package);
+        let (_, scope, errors) = check_retained_module_error(&package, "main");
+        let error = errors.first().expect("conflicting caller returns an error");
         assert!(
-            matches!(&error, Error::Type(diagnostic) if diagnostic.message.contains("type mismatch")),
+            matches!(error, Error::Type(diagnostic) if diagnostic.message.contains("type mismatch")),
             "independent product orders must conflict: {error:#?}"
         );
         let expected_updates = if action { 1 } else { 2 };
@@ -14474,8 +14530,8 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
                 scope.memo().user_macro_template_executions(),
-                2,
-                "the {label} relation must execute the independent action exactly once"
+                3,
+                "the {label} relation, its independent action, and control.not each execute once"
             );
             validate_substituted_package(checked.substituted())
                 .expect("the relation-probed conditional survives Prime validation");
@@ -14512,8 +14568,8 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             let (checked, scope) = check_retained_success(&package);
             assert_eq!(
                 scope.memo().user_macro_template_executions(),
-                3,
-                "the {label} relation must execute each arm action exactly once"
+                4,
+                "the {label} relation, both arm actions, and control.not each execute once"
             );
             validate_substituted_package(checked.substituted())
                 .expect("the causal required-source conditional survives Prime validation");
@@ -15030,6 +15086,144 @@ fn run[A](first: Left, second: Right) -> Box[Right] {
             );
             assert_eq!(scope.memo().user_macro_template_executions(), 0);
         }
+    }
+
+    #[test]
+    fn literal_carrier_waits_for_a_macro_sibling_without_replay() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn natural_checked(_ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pub macro natural : [Source] Source -> [Target] Target {
+                impl natural_checked
+            }
+        "#;
+        for (role, literal) in [
+            ("i32", "0"),
+            ("f64", "0.5"),
+            ("bool", ".t"),
+            ("str", "\"text\""),
+        ] {
+            for arguments in [
+                format!("natural(known), {literal}"),
+                format!("{literal}, natural(known)"),
+                format!("identity({literal}), identity(natural(known))"),
+                format!("natural(identity(known)), {literal}[_]"),
+            ] {
+                let main = format!(
+                    "module main; import macros(macro natural); \
+                     host type Carrier role({role}); \
+                     host type Unrelated role({role}); \
+                     pub type Identity[T] = T; \
+                     host fn consume[T](left: Identity[T], right: Identity[T]); \
+                     fn identity[T](value: T) -> T {{ value }} \
+                     fn run(known: Carrier) {{ consume({arguments}) }}"
+                );
+                let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+                let (checked, scope) = check_retained_success(&package);
+                assert_eq!(
+                    scope.memo().user_macro_template_executions(),
+                    1,
+                    "{arguments}"
+                );
+                validate_substituted_package(checked.substituted())
+                    .expect("the inferred carrier is materialized in standalone Prime");
+            }
+        }
+    }
+
+    #[test]
+    fn literal_carrier_hidden_source_completes_its_sibling_before_outer_action() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn natural_checked(_ct: __Comptime__, _source: __Type__, value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pub macro natural : [Source] Source -> [Target] Target { impl natural_checked }
+            pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) }
+            pub macro ignore : [A] A -> . { impl(fills) ignore_impl }
+        "#;
+        for arguments in ["0, natural(known)", "natural(known), 0"] {
+            for argument in [
+                format!("consume({arguments})"),
+                format!("(consume({arguments}), ())"),
+            ] {
+                let main = format!(
+                    "module main; import macros(macro natural, macro ignore); host type Carrier role(i32); fn consume[T](_left: T, _right: T) {{ () }} fn run(known: Carrier) {{ ignore({argument}) }}"
+                );
+                let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+                let (checked, scope) = check_retained_success(&package);
+                assert_eq!(
+                    scope
+                        .memo()
+                        .user_macro_template_executions_for("macros", "natural"),
+                    1,
+                    "{argument}"
+                );
+                assert_eq!(
+                    scope
+                        .memo()
+                        .user_macro_template_executions_for("macros", "ignore"),
+                    1,
+                    "{argument}"
+                );
+                validate_substituted_package(checked.substituted())
+                    .expect("source completion preserves independent Prime validity");
+            }
+        }
+    }
+
+    #[test]
+    fn literal_carrier_wait_preserves_local_boundaries_and_preflight() {
+        let macros = r#"module macros; import __comptime__;
+            pure fn natural_checked(_ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: .) -> __Checked_term__ { value }
+            pure fn required_checked(_ct: __Comptime__, _source: __Type__,
+                value: __Checked_term__, _target: __Type__) -> __Checked_term__ { value }
+            pub macro natural : [Source] Source -> [Target] Target {
+                impl natural_checked
+            }
+            pub macro required : [Source] Source -> [Target] Target {
+                impl required_checked
+            }
+        "#;
+        for (body, executions) in [
+            ("consume(0, 0)", 0),
+            ("let value = 0; consume(natural(known), value)", 0),
+            ("consume(0, required(known))", 0),
+            ("consume_three(natural(known), 0, ())", 0),
+            ("consume_pair(natural((known, known)), 0)", 0),
+            ("consume(natural(boolean), 0)", 1),
+        ] {
+            let main = format!(
+                "module main; import macros(macro natural, macro required); \
+                 host type I32 role(i32); host type Bool role(bool); \
+                 host fn consume[T](left: T, right: T); \
+                 host fn consume_three[T](first: T, second: T, third: T); \
+                 host fn consume_pair[T](left: T & T, right: T & T); \
+                 fn run(known: I32, boolean: Bool) {{ {body} }}"
+            );
+            let package = lowered_package(&[("macros.kio", macros), ("main.kio", &main)]);
+            let (error, scope) = check_retained_error_with_scope(&package);
+            assert!(matches!(error, Error::Type(_)), "{body}: {error:?}");
+            assert_eq!(
+                scope.memo().user_macro_template_executions(),
+                executions,
+                "{body}: {error:?}"
+            );
+        }
+
+        let main = "module main; import macros(macro natural); \
+            host type I32 role(i32); \
+            host fn consume[T](left: T, right: T); \
+            fn run[A](known: A) { consume(natural(known), 0) }";
+        let package = lowered_package(&[("macros.kio", macros), ("main.kio", main)]);
+        let (error, scope) = check_retained_error_with_scope(&package);
+        assert!(matches!(error, Error::Type(_)), "{error:?}");
+        assert!(
+            error
+                .diag()
+                .1
+                .contains("integer literal cannot have the expected type"),
+            "{error:?}"
+        );
+        assert_eq!(scope.memo().user_macro_template_executions(), 1);
     }
 
     #[test]
@@ -15934,7 +16128,15 @@ fn generic_last() -> . {
     #[test]
     fn inference_only_unanchored_macro_input_rejects_before_action() {
         let macros = "module macros; import __comptime__; pure fn ignore_impl(ct: __Comptime__, fills: __Fill_ctx__, _type: __Type__, _value: __Checked_term__) -> __Checked_term__ & __Fill_ctx__ { (__term_unit__(ct), fills) } pub macro ignore : [A] A -> . { impl(fills) ignore_impl; };";
-        for argument in ["1", "identity(1)", "discard(1)", "discard(identity(1))"] {
+        for argument in [
+            "1",
+            "identity(1)",
+            "discard(1)",
+            "discard(identity(1))",
+            "(discard(1), ())",
+            "((), discard(1))",
+            "((), (discard(identity(1)), ()))",
+        ] {
             let call = format!("ignore({argument})");
             let main = format!(
                 "module main; import macros(macro ignore); fn identity[A](value: A) -> A {{ value }} fn discard[A](_value: A) -> . {{ () }} fn run() -> . {{ {call} }}"
@@ -15948,15 +16150,16 @@ fn generic_last() -> . {
                 "{argument}: {:?}",
                 errors[0]
             );
+            let diagnostic_span = errors[0].diag().0;
+            let argument_span = source_span(&main, argument);
+            let literal_span = source_span(&main, "1");
             assert!(
-                errors[0]
-                    .diag()
-                    .1
-                    .contains("cannot determine the type of this integer literal"),
-                "{argument}: {:?}",
-                errors[0]
+                argument_span.start <= diagnostic_span.start
+                    && diagnostic_span.start <= literal_span.start
+                    && literal_span.end <= diagnostic_span.end
+                    && diagnostic_span.end <= argument_span.end,
+                "{argument}: {diagnostic_span:?}"
             );
-            assert_eq!(errors[0].diag().0, source_span(&main, "1"), "{argument}");
             assert_eq!(
                 scope.memo().user_macro_template_executions(),
                 0,
@@ -24066,13 +24269,13 @@ fn generic_last() -> . {
         (elaborations, scope, result)
     }
 
-    fn check_retained_module_error(
+    fn check_retained_module(
         package: &Package,
         module_path: &str,
     ) -> (
         Elaborations,
         std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>,
-        Vec<Error>,
+        Result<(), Vec<Error>>,
     ) {
         let normalized = crate::pass::alpha_normalize::normalize_package(package);
         let scope =
@@ -24082,25 +24285,31 @@ fn generic_last() -> . {
                     crate::pass::typecheck_core::TypeInterner::<Lowered>::default(),
                 ),
             );
-        let package = normalized.package();
-        let module = &package
-            .module(module_path)
-            .expect("test module exists")
-            .module;
         let mut elaborations = Elaborations::new();
-        let errors =
-            crate::pass::typecheck_core::check_module_in_package_with_typecheck_scope_collect_errors(
-                module,
-                package.package_file().map(|entry| &entry.package_file),
-                package
-                    .package_file()
-                    .map(|entry| entry.package_name.as_str()),
-                Some(package),
-                &mut elaborations,
-                scope.clone(),
-            )
-            .expect_err("retained module is rejected");
-        (elaborations, scope, errors)
+        // These causal oracles use thread-local observations, like the full-package helper.
+        let result = crate::pass::typecheck_core::check_module_sequential_for_test(
+            normalized.package(),
+            module_path,
+            &mut elaborations,
+            scope.clone(),
+        );
+        (elaborations, scope, result)
+    }
+
+    fn check_retained_module_error(
+        package: &Package,
+        module_path: &str,
+    ) -> (
+        Elaborations,
+        std::sync::Arc<crate::pass::typecheck_core::PackageTypecheckScope<Lowered>>,
+        Vec<Error>,
+    ) {
+        let (elaborations, scope, result) = check_retained_module(package, module_path);
+        (
+            elaborations,
+            scope,
+            result.expect_err("retained module is rejected"),
+        )
     }
 
     fn assert_retained_call_unpublished(
@@ -28018,14 +28227,15 @@ fn generic_last() -> . {
             let original = retained_call_at(package, "main", source_span(&spanned_source, call));
             let (projected_span, _) = retained_match_packet_spans(&original);
             reset_observations(projected_span);
-            let (checked, scope) = check_retained_success(package);
+            let (elaborations, scope, result) = check_retained_module(package, "main");
+            result.expect("the caller closes independently of support-library body checks");
 
             assert_eq!(
                 scope.memo().user_macro_template_executions(),
                 1,
                 "{label} must evaluate match exactly once"
             );
-            assert_retained_call_published(checked.elaborations(), "main", &original);
+            assert_retained_call_published(&elaborations, "main", &original);
             assert_source_topology(label, projected_span, expected_leaves);
             assert_eq!(
                 crate::pass::typecheck_core::apply::fills::pair_wrapper_finalizations(),
@@ -28038,6 +28248,7 @@ fn generic_last() -> . {
                 lambda_needles,
                 expected_body_executions,
             );
+            let (checked, _) = check_retained_success(package);
             validate_substituted_package(checked.substituted()).unwrap_or_else(|error| {
                 panic!("{label} must survive Prime validation: {error:#?}")
             });
@@ -28449,15 +28660,17 @@ fn generic_last() -> . {
             lowered_macro_package(&success_source).expect("lower authored-order success package");
         let (success_original, success_observer) =
             observed_call(&success_package, &success_source, success_call);
-        let (checked, scope) = check_retained_success(&success_package);
+        let (elaborations, scope, result) = check_retained_module(&success_package, "main");
+        result.expect("the authored-order caller closes");
         assert_eq!(scope.memo().user_macro_template_executions(), 1);
-        assert_retained_call_published(checked.elaborations(), "main", &success_original);
+        assert_retained_call_published(&elaborations, "main", &success_original);
         assert_transcript(
             "permuted three-branch match",
             success_observer.take(),
             &["main.String", "main.String", "main.String", "main.String"],
             false,
         );
+        let (checked, _) = check_retained_success(&success_package);
         validate_substituted_package(checked.substituted())
             .expect("the authored-order match survives standalone Prime validation");
 

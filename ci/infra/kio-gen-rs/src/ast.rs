@@ -154,7 +154,7 @@ pub enum Term {
         body: Box<Term>,
     },
     /// Call a built-in polymorphic helper or intrinsic (`id`,
-    /// `__if_then_else__`, `__pair__`, `__fst__`, `__snd__`,
+    /// `__if_then_else__`, `__and__`, `__or__`, `__pair__`, `__fst__`, `__snd__`,
     /// `__left__`, `__right__`, `__either__`, `const1`,
     /// `const2`). Renders as `name[T1]...[Tk](a1, ..., aN)` — type
     /// application followed by one product argument. Module-level

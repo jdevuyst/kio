@@ -378,6 +378,7 @@ pub(super) fn local_types(
         | CheckedTermNode::TermLet { .. }
         | CheckedTermNode::TermCall { .. }
         | CheckedTermNode::IntrinsicPair { .. }
+        | CheckedTermNode::IntrinsicBoolean { .. }
         | CheckedTermNode::MacroError { .. } => {}
     }
 }
@@ -684,6 +685,15 @@ fn map_node(
         } => IntrinsicAbsurd {
             result_ty: transform(result_ty, &bound),
             bottom_value: child(bottom_value),
+        },
+        IntrinsicBoolean {
+            conjunction,
+            left,
+            right,
+        } => IntrinsicBoolean {
+            conjunction: *conjunction,
+            left: child(left),
+            right: child(right),
         },
         IntrinsicIfThenElse {
             result_ty,

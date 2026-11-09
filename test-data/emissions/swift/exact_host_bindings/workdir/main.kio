@@ -1,5 +1,7 @@
 module main;
 
+import __intrinsics__;
+
 import control(macro if);
 
 host type Text role(str);
@@ -92,3 +94,15 @@ pub fn choose_inferred_closure(flag: Flag, yes: Token, no: Token) -> Token {
 pub fn choose_destructured((flag: Flag, yes: Token), no: Token) -> Token {
   if(flag) { yes } else { no }
 }
+
+pub fn and_inline(left: Flag, right: Flag) -> Flag {
+  __and__[Flag](left, .() { right })
+}
+
+pub fn or_inline(left: Flag, right: Flag) -> Flag {
+  __or__[Flag](left, .() { right })
+}
+
+pub fn and_callback(left: Flag, right: . -> Flag) -> Flag { __and__[Flag](left, right) }
+
+pub fn or_callback(left: Flag, right: . -> Flag) -> Flag { __or__[Flag](left, right) }

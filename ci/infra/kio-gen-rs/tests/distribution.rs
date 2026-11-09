@@ -160,10 +160,15 @@ fn corpus_is_non_degenerate() {
 }
 
 #[test]
-fn type_only_helpers_are_generated_in_both_modes() {
-    let names = ["kio_gen_type_only_id", "kio_gen_type_only_capture"];
-    let mut counts = [[0; 2]; 3];
-    let mut first_seeds = [[None; 2]; 3];
+fn type_only_helpers_and_boolean_intrinsics_are_generated_in_both_modes() {
+    let names = [
+        "kio_gen_type_only_id",
+        "kio_gen_type_only_capture",
+        "__and__",
+        "__or__",
+    ];
+    let mut counts = [[0; 4]; 3];
+    let mut first_seeds = [[None; 4]; 3];
     for prime_only in [false, true] {
         let opts = generate::GenOpts { prime_only };
         for i in 0..N {

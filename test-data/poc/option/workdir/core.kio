@@ -2,14 +2,16 @@
 /// A ready-to-use library module for your own Kio package.
 module core;
 
+import __comptime__;
+import macros/control(checked_sum_dispatch);
 import macros/match(macro match);
 import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro one_sum, macro widen_sum);
 
-// `Option(A)` is the native sum `Present[A] | .`, not a nominal wrapper, so
+// `Option[A]` is the native sum `Present[A] | .`, not a nominal wrapper, so
 // `match` / `widen_sum` / `narrow_sum` / `flatten_sum` work on it
 // directly. Labeling the present arm — rather than using a bare `A | .` —
 // restores the "this `A` is the present case" signal a reader wants at a
-// callsite while keeping `Option(A)` a genuine sum.
+// callsite while keeping `Option[A]` a genuine sum.
 //
 // Kio' is strongly normalizing (no in-language recursion), so the fold-
 // driven collection helpers iterate via the host `loop`. That loop-driven
@@ -19,10 +21,8 @@ import macros/spine_macros(macro flatten_sum, macro narrow_sum, macro one_sum, m
 // =====================================================================
 // The type
 // =====================================================================
-/// The `present` label mints a `present` projector over `a`. The
-/// user-facing constructor `some` is the fn below; the underlying label is
-/// `present` so the two names never collide (the label mints a `present`
-/// projector, leaving `some` free for the constructor function).
+/// The `Present` nominal type supplies `Present.mk` and `Present.get`;
+/// `some` is the convenience constructor below.
 pub type { Present[A]: A }
 
 /// Option shape whose labeled present arm distinguishes a value from the bare absent unit.
@@ -36,7 +36,7 @@ pub type Option[A] = Present[A] | .;
 /// `Present[A] | .` sum (target inferred from the return type).
 pub fn some[A](x: A) -> Option[A] { widen_sum(Present.mk(x)) }
 
-/// `none(A)` is the absent case - the bare `()` arm on the right.
+/// `none[A]` is the absent case - the bare `()` arm on the right.
 pub fn none[A] -> Option[A] { widen_sum(()) }
 
 // =====================================================================
@@ -71,7 +71,7 @@ pub fn map[A][B](f: A -> B, m: Option[A]) -> Option[B] {
   }
 }
 
-/// `bind` (monadic `>>=`) chains an `A -> Option(B)` over `Option(A)`.
+/// `bind` (monadic `>>=`) chains an `A -> Option[B]` over `Option[A]`.
 pub fn bind[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] {
   match(m) {
     (.(p: Present[A]) { f(Present.get(p)) }, .(_u: .) { none[B] })
@@ -79,7 +79,7 @@ pub fn bind[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] {
 }
 
 /// `apply` is applicative `<*>`: an `Option(A -> B)` applied to an
-/// `Option(A)`. Present only when both operands are present.
+/// `Option[A]`. Present only when both operands are present.
 pub fn apply[A][B](mf: Option[A -> B], m: Option[A]) -> Option[B] {
   bind(mf, .(f: A -> B) -> Option[B] { map(f, m) })
 }
@@ -102,6 +102,62 @@ pub fn or_else[A](m: Option[A], alt: Option[A]) -> Option[A] {
   }
 }
 
+pure fn recovery_source(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_fst__(ct, __term_type__(ct, inputs), inputs)
+}
+
+pure fn recovery_fallback(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let thunk = __intrinsic_snd__(ct, __term_type__(ct, inputs), inputs);
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn or_else_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, value: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let result = __term_type__(ct, recovery_source(ct, inputs));
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , result
+  , inputs
+  , .(packet: __Checked_term__) { recovery_source(ct, packet) }
+  , .(packet: __Checked_term__, _value: __Checked_term__) { recovery_source(ct, packet) }
+  , .(packet: __Checked_term__, _unit: __Checked_term__) { recovery_fallback(ct, packet) }
+  , .(packet: __Checked_term__) { recovery_fallback(ct, packet) }
+  )
+}
+
+pure fn unwrap_or_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, getter: __Checked_term__
+, value: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let get = __term_type_app__(ct, getter, value);
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , value
+  , inputs
+  , .(packet: __Checked_term__) { recovery_source(ct, packet) }
+  , .(_packet: __Checked_term__, present: __Checked_term__) {
+      __term_call__(ct, __term_type__(ct, get), get, present)
+    }
+  , .(packet: __Checked_term__, _unit: __Checked_term__) { recovery_fallback(ct, packet) }
+  , .(packet: __Checked_term__) { recovery_fallback(ct, packet) }
+  )
+}
+
+/// Keeps a present value or calls the alternative thunk when absent.
+pub macro or_else_lazy : [A] (Option[A] & (. -> Option[A])) -> Option[A] { trailing thunk; impl(fills) or_else_lazy_checked }
+
+/// Extracts a present value or calls the default thunk when absent.
+pub macro unwrap_or_lazy : [A] (Option[A] & (. -> A)) -> A { captures Present.get; trailing thunk; impl(fills) unwrap_or_lazy_checked }
+
 /// `and_then` is `bind` with the arguments named for the fluent
 /// "if present, continue with" reading common at callsites.
 pub fn and_then[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] { bind(m, f) }
@@ -109,14 +165,14 @@ pub fn and_then[A][B](m: Option[A], f: A -> Option[B]) -> Option[B] { bind(m, f)
 // =====================================================================
 // Bridge to native sums
 // =====================================================================
-/// `to_sum(m)` drops the `present` label, yielding the bare `A | .`.
+/// `to_sum(m)` unwraps `Present`, yielding the bare `A | .`.
 pub fn to_sum[A](m: Option[A]) -> A | . {
   match(m) {
     (.(p: Present[A]) { widen_sum(Present.get(p))[A | .] }, .(_u: .) { widen_sum(())[A | .] })
   }
 }
 
-/// `from_sum(s)` re-labels a bare `A | .` as an `Option(A)`.
+/// `from_sum(s)` re-labels a bare `A | .` as an `Option[A]`.
 pub fn from_sum[A](s: A | .) -> Option[A] {
   match(s) {
     (.(v: A) { some(v) }, .(_u: .) { none[A] })

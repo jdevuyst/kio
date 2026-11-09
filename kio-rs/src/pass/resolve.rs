@@ -57,6 +57,8 @@ pub const PRIME_INTRINSICS: &[&str] = &[
     "__fst__",
     "__snd__",
     "__if_then_else__",
+    "__and__",
+    "__or__",
     "__absurd__",
 ];
 // Higher-kinded types are expressed directly — `F(A)` for a kind-`*→*`

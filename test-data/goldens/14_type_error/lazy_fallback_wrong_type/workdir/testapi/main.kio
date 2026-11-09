@@ -1,0 +1,11 @@
+module testapi/main;
+
+import option/core as o;
+import option/core(macro unwrap_or_lazy);
+import testapi(I32, String);
+
+pub fn main() {
+  let value = o.some(1[I32]);
+  let _result = unwrap_or_lazy(value) { "wrong"[String] };
+  ()
+}

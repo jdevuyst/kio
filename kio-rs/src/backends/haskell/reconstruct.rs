@@ -586,6 +586,10 @@ mod tests {
     #[test]
     fn qualified_nominal_projection_keeps_declaring_owner_despite_alias_collision() {
         let control = include_str!("../../../../test-data/poc/macros/workdir/control.kio")
+            .lines()
+            .filter(|line| !line.trim_start().starts_with("///"))
+            .collect::<Vec<_>>()
+            .join("\n")
             .replace("host type Bool role(bool);", "import testapi(Bool);");
         let package = routed_package(&[
             ("control.kio", &control),

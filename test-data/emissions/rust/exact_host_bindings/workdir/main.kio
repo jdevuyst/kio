@@ -1,5 +1,7 @@
 module main;
 
+import __intrinsics__;
+
 import control(macro if);
 
 host type Text role(str);
@@ -70,3 +72,15 @@ pub fn choose_closure(flag: Unused, yes: Token, no: Token) -> Token {
 pub fn choose_destructured((flag: Unused, yes: Token), no: Token) -> Token {
   if(flag) { yes } else { no }
 }
+
+pub fn and_inline(left: Unused, right: Unused) -> Unused {
+  __and__[Unused](left, .() { right })
+}
+
+pub fn or_inline(left: Unused, right: Unused) -> Unused {
+  __or__[Unused](left, .() { right })
+}
+
+pub fn and_callback(left: Unused, right: . -> Unused) -> Unused { __and__[Unused](left, right) }
+
+pub fn or_callback(left: Unused, right: . -> Unused) -> Unused { __or__[Unused](left, right) }

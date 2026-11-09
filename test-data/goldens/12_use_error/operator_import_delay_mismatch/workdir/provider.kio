@@ -1,0 +1,5 @@
+module provider;
+
+pub fn choose(left: ., _right: . -> .) { left }
+
+pub op _ && .__ { impl choose }

@@ -379,6 +379,11 @@ enum CheckedTermNode {
         result_ty: EvalAstType,
         bottom_value: EvalRef<CheckedTerm>,
     },
+    IntrinsicBoolean {
+        conjunction: bool,
+        left: EvalRef<CheckedTerm>,
+        right: EvalRef<CheckedTerm>,
+    },
     IntrinsicIfThenElse {
         result_ty: EvalAstType,
         condition: EvalRef<CheckedTerm>,
@@ -442,6 +447,11 @@ pub(crate) enum ProjectedTermConstruction {
         right_ty: ReflectedType,
         value: EvalRef<CheckedTerm>,
         left: bool,
+    },
+    Boolean {
+        conjunction: bool,
+        left: EvalRef<CheckedTerm>,
+        right: EvalRef<CheckedTerm>,
     },
     IfThenElse {
         condition: EvalRef<CheckedTerm>,
@@ -598,6 +608,15 @@ impl CheckedTerm {
                 left_ty: types.import(&left_ty).take(),
                 right_ty: types.import(&right_ty).take(),
                 value,
+            },
+            ProjectedTermConstruction::Boolean {
+                conjunction,
+                left,
+                right,
+            } => CheckedTermNode::IntrinsicBoolean {
+                conjunction,
+                left,
+                right,
             },
             ProjectedTermConstruction::IfThenElse {
                 condition,
@@ -1412,6 +1431,37 @@ impl RuntimeCallbackAdapter<'_> {
                     RuntimeCallbackResult::Public,
                 )
             }
+            CheckedTermNode::IntrinsicBoolean {
+                conjunction,
+                left,
+                right,
+            } => {
+                let changed_left = self.transport(left);
+                let changed_right = self.transport(right);
+                if changed_left.result != RuntimeCallbackResult::Public
+                    || changed_right.result != RuntimeCallbackResult::Public
+                {
+                    unreachable!(
+                        "authenticated recursive callback escaped through a non-tail Boolean operation"
+                    );
+                }
+                if changed_left.changed.is_none() && changed_right.changed.is_none() {
+                    return RuntimeCallbackTransport::public();
+                }
+                let left = self.materialize(changed_left, left);
+                let right = self.materialize(changed_right, right);
+                RuntimeCallbackTransport::rebuilt(
+                    self.rebuilt(
+                        CheckedTermNode::IntrinsicBoolean {
+                            conjunction: *conjunction,
+                            left,
+                            right,
+                        },
+                        term.ty.clone(),
+                    ),
+                    RuntimeCallbackResult::Public,
+                )
+            }
             CheckedTermNode::IntrinsicIfThenElse {
                 result_ty,
                 condition,
@@ -1584,6 +1634,48 @@ impl RuntimeCallbackAdapter<'_> {
                     ty,
                 )
             }
+            CheckedTermNode::IntrinsicBoolean {
+                conjunction,
+                left,
+                right,
+            } => {
+                let changed_left = self.transport(left);
+                if changed_left.result != RuntimeCallbackResult::Public {
+                    unreachable!(
+                        "authenticated recursive callback escaped through a Boolean left operand"
+                    );
+                }
+                let left = self.materialize(changed_left, left);
+                let name = fresh_checked_term_value_name("boolean_left");
+                let local = self.rebuilt(
+                    CheckedTermNode::Local { name: name.clone() },
+                    left.ty.clone(),
+                );
+                let skipped = self.ordinary_value(local.clone());
+                let selected = self.tail(right);
+                let (true_body, false_body) = if *conjunction {
+                    (selected, skipped)
+                } else {
+                    (skipped, selected)
+                };
+                let body = self.rebuilt(
+                    CheckedTermNode::IntrinsicIfThenElse {
+                        result_ty: type_traversal::clone_type(self.runtime_result.as_type()),
+                        condition: local,
+                        true_body,
+                        false_body,
+                    },
+                    self.runtime_result.clone(),
+                );
+                (
+                    CheckedTermNode::TermLet {
+                        name,
+                        value: left,
+                        body,
+                    },
+                    self.runtime_result.clone(),
+                )
+            }
             CheckedTermNode::IntrinsicIfThenElse {
                 condition,
                 true_body,
@@ -1682,6 +1774,11 @@ fn checked_term_template_value_counts(node: &CheckedTermNode) -> HashMap<usize, 
             | CheckedTermNode::IntrinsicPair {
                 left: fn_value,
                 right: arg_packet,
+            }
+            | CheckedTermNode::IntrinsicBoolean {
+                left: fn_value,
+                right: arg_packet,
+                ..
             } => {
                 collect(&fn_value.node, out);
                 collect(&arg_packet.node, out);
@@ -2283,6 +2380,27 @@ fn checked_term_node_expr_with(
             vec![
                 CallArg::Type(result_ty.clone()),
                 CallArg::Value(child(bottom_value)),
+            ],
+        ),
+        CheckedTermNode::IntrinsicBoolean {
+            conjunction,
+            left,
+            right,
+        } => intrinsic_expr(
+            if *conjunction { "__and__" } else { "__or__" },
+            vec![
+                CallArg::Type(left.ty().clone()),
+                CallArg::Value(child(left)),
+                CallArg::Value(Expr::FnExpr {
+                    occurrence: Default::default(),
+                    sig: Signature::from_groups(vec![
+                        crate::ast::SignatureGroup::Value(Vec::new()),
+                    ]),
+                    ret_ty: None,
+                    body: Box::new(child(right)),
+                    meta: zero_meta(),
+                    caps: (),
+                }),
             ],
         ),
         CheckedTermNode::IntrinsicIfThenElse {
@@ -3524,6 +3642,11 @@ enum EvalExpr {
     ReflIntrinsicAbsurd {
         bottom_value: EvalRef<EvalExpr>,
         result_type: EvalRef<EvalExpr>,
+    },
+    ReflIntrinsicBoolean {
+        conjunction: bool,
+        left: EvalRef<EvalExpr>,
+        on_right: EvalRef<EvalExpr>,
     },
     ReflIntrinsicIfThenElse {
         result_type: EvalRef<EvalExpr>,
@@ -5332,12 +5455,16 @@ fn compile_direct_newtype_call(
     args: &[EvalAstCallArg],
     state: &mut EvalCompileState<'_, '_>,
 ) -> Option<EvalExpr> {
+    if !args.is_empty() && args.iter().all(|arg| matches!(arg, CallArg::Type(_))) {
+        let callee = EvalRef::new(EvalExpr::NewtypeMember(member));
+        return compile_staged_eval_call(callee, args, state).map(|call| call.as_ref().clone());
+    }
     let mut values = compile_value_arg_exprs_without_fn(args, zero_span(), state)?;
     match member.kind {
         NewtypeMemberKind::Constructor { payload_abi_arity } => {
-            let payload_start = if payload_abi_arity == 0 {
-                values.len()
-            } else if values.len() == 1 {
+            // One source argument is the payload even when its Unit type
+            // occupies no private ABI slots.
+            let payload_start = if values.len() == 1 {
                 0
             } else {
                 values.len().checked_sub(payload_abi_arity)?
@@ -5807,6 +5934,7 @@ fn inline_small_eval_expr(
         | EvalExpr::ReflTermFn { .. }
         | EvalExpr::ReflTermTypeFn { .. }
         | EvalExpr::ReflIntrinsicEither { .. }
+        | EvalExpr::ReflIntrinsicBoolean { .. }
         | EvalExpr::ReflIntrinsicIfThenElse { .. } => None,
     }
 }
@@ -6238,6 +6366,19 @@ fn compile_direct_comptime_operands(
                 result_type: compile_eval_expr(result_type, state)?,
             })
         }
+        "__intrinsic_and__" | "__intrinsic_or__" => {
+            let (left, on_right) = trailing_value_arg2(args)?;
+            let left = compile_eval_expr(left, state)?;
+            let on_right = compile_eval_expr(on_right, state)?;
+            if !is_obvious_eval_value(&on_right) {
+                return None;
+            }
+            Some(EvalExpr::ReflIntrinsicBoolean {
+                conjunction: name == "__intrinsic_and__",
+                left,
+                on_right,
+            })
+        }
         "__intrinsic_if_then_else__" => {
             let (result_type, condition, on_true, on_false) = trailing_value_arg4(args)?;
             let result_type = compile_eval_expr(result_type, state)?;
@@ -6274,7 +6415,7 @@ fn direct_comptime_runtime_arity(builtin: ComptimeBuiltin) -> Option<usize> {
         TypeProduct | TypeSum | TypeEqual | TypeNameEqual | TypeVarEqual | TypeArityEqual
         | TypeInstantiate | DiagnosticConcat | TermFn | TermTypeFn | TermTypeApp
         | IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
-        | IntrinsicAbsurd => 2,
+        | IntrinsicAbsurd | IntrinsicAnd | IntrinsicOr => 2,
         TypeProductSpineFold | TypeSumSpineFold | TypeArgsFold | TypeForallPrefixFold | TermLet
         | TermCall => 3,
         IntrinsicIfThenElse => 4,
@@ -6289,7 +6430,7 @@ fn projected_capable_direct_runtime_arity(builtin: ComptimeBuiltin) -> Option<us
     Some(match builtin {
         TypeProduct | TypeSum | TypeEqual | TypeInstantiate | TermFn | TermTypeFn | TermTypeApp
         | IntrinsicPair | IntrinsicFst | IntrinsicSnd | IntrinsicLeft | IntrinsicRight
-        | IntrinsicAbsurd => 2,
+        | IntrinsicAbsurd | IntrinsicAnd | IntrinsicOr => 2,
         TypeView | TypeIsProductRoot | TypeIsSumRoot | TermType => 1,
         TypeProductSpineFold | TypeSumSpineFold | TypeArgsFold | TypeForallPrefixFold | TermLet
         | TermCall => 3,
@@ -6554,6 +6695,7 @@ fn is_memo_candidate_expr_inner(expr: &EvalExpr, budget: &mut usize) -> bool {
         | EvalExpr::ReflIntrinsicInjection { .. }
         | EvalExpr::ReflIntrinsicEither { .. }
         | EvalExpr::ReflIntrinsicAbsurd { .. }
+        | EvalExpr::ReflIntrinsicBoolean { .. }
         | EvalExpr::ReflIntrinsicIfThenElse { .. } => true,
         EvalExpr::Let { value, body } | EvalExpr::Seq { value, body } => {
             is_memo_candidate_expr_inner(value, budget)
@@ -6883,6 +7025,7 @@ fn intrinsic_elim_value_arity(name: &str) -> Option<usize> {
         "__either__" => Some(3),
         "__fst__" | "__snd__" => Some(1),
         "__if_then_else__" => Some(3),
+        "__and__" | "__or__" => Some(2),
         _ => None,
     }
 }
@@ -7299,6 +7442,7 @@ fn unfold_reflected_carrier(ty: &ReflectedType, ctx: &EvalCtx<'_>) -> ReflectedT
 
 fn erases_type_stage(value: &Value) -> bool {
     match value {
+        Value::Atom(name) => matches!(name.as_str(), "__and__" | "__or__"),
         Value::Primitive(builtin) => *builtin != ComptimeBuiltin::ReflectType,
         Value::NewtypeMember(_) => true,
         Value::Data(data) => matches!(
@@ -8375,7 +8519,7 @@ fn projected_builtin_class(builtin: ComptimeBuiltin) -> ProjectedBuiltinClass {
         | TypeArgsFold | TypeForallPrefixFold | TermType | TermLet | TermFn | TermCall
         | TermTypeFn | TermTypeApp | TermUnit | IntrinsicPair | IntrinsicFst | IntrinsicSnd
         | IntrinsicLeft | IntrinsicRight | IntrinsicEither | IntrinsicAbsurd
-        | IntrinsicIfThenElse => ProjectedHelperClass::FocusStructural,
+        | IntrinsicIfThenElse | IntrinsicAnd | IntrinsicOr => ProjectedHelperClass::FocusStructural,
     };
     ProjectedBuiltinClass::Helper(helper)
 }
@@ -11526,7 +11670,9 @@ mod tests {
             | ComptimeBuiltin::IntrinsicRight
             | ComptimeBuiltin::IntrinsicEither
             | ComptimeBuiltin::IntrinsicAbsurd
-            | ComptimeBuiltin::IntrinsicIfThenElse => ComptimeEvalSurface::DirectTerm,
+            | ComptimeBuiltin::IntrinsicIfThenElse
+            | ComptimeBuiltin::IntrinsicAnd
+            | ComptimeBuiltin::IntrinsicOr => ComptimeEvalSurface::DirectTerm,
             ComptimeBuiltin::StructuralRecur => ComptimeEvalSurface::StructuralRecur,
             ComptimeBuiltin::TypeIsHost
             | ComptimeBuiltin::TypeHostConverters
@@ -11903,6 +12049,22 @@ mod tests {
                 invalid_args: Some(vec![Value::Unit, refl_type_value(unit.clone())]),
             },
             DirectComptimeCase {
+                builtin: ComptimeBuiltin::IntrinsicAnd,
+                valid_args: vec![
+                    checked(unit.clone()),
+                    nullary_checked_handler("right_branch"),
+                ],
+                invalid_args: Some(vec![Value::Unit, nullary_checked_handler("right_branch")]),
+            },
+            DirectComptimeCase {
+                builtin: ComptimeBuiltin::IntrinsicOr,
+                valid_args: vec![
+                    checked(unit.clone()),
+                    nullary_checked_handler("right_branch"),
+                ],
+                invalid_args: Some(vec![Value::Unit, nullary_checked_handler("right_branch")]),
+            },
+            DirectComptimeCase {
                 builtin: ComptimeBuiltin::IntrinsicIfThenElse,
                 valid_args: vec![
                     refl_type_value(unit.clone()),
@@ -12164,10 +12326,29 @@ mod tests {
                     "if false handler result was swapped or lost"
                 );
             }
+            (
+                ComptimeBuiltin::IntrinsicAnd | ComptimeBuiltin::IntrinsicOr,
+                CheckedTermNode::IntrinsicBoolean {
+                    conjunction,
+                    left,
+                    right,
+                },
+            ) => {
+                assert_eq!(*conjunction, builtin == ComptimeBuiltin::IntrinsicAnd);
+                assert!(matches!(
+                    left.node.as_ref(),
+                    CheckedTermNode::Raw(Expr::Unit { .. })
+                ));
+                assert!(
+                    matches!(right.node.as_ref(), CheckedTermNode::Raw(Expr::Path { segments, .. })
+                    if matches!(segments.as_slice(), [segment] if segment.as_str() == "right_branch"))
+                );
+            }
             (ComptimeBuiltin::TermLet, _)
             | (ComptimeBuiltin::TermFn, _)
             | (ComptimeBuiltin::IntrinsicEither, _)
-            | (ComptimeBuiltin::IntrinsicIfThenElse, _) => {
+            | (ComptimeBuiltin::IntrinsicIfThenElse, _)
+            | (ComptimeBuiltin::IntrinsicAnd | ComptimeBuiltin::IntrinsicOr, _) => {
                 panic!(
                     "{} produced the wrong checked-term node",
                     builtin.public_name()
@@ -13233,6 +13414,8 @@ mod tests {
                 ComptimeBuiltin::TermTypeFn,
                 ComptimeBuiltin::IntrinsicEither,
                 ComptimeBuiltin::IntrinsicIfThenElse,
+                ComptimeBuiltin::IntrinsicAnd,
+                ComptimeBuiltin::IntrinsicOr,
             ],
         )
         .with_root_module(&module)
@@ -13303,6 +13486,22 @@ mod tests {
                 Expr::synth_call(
                     path_expr("__intrinsic_if_then_else__"),
                     vec![unit(), unit(), thunk(), reject()],
+                    zero_span(),
+                ),
+            ),
+            (
+                "reflected conjunction thunk",
+                Expr::synth_call(
+                    path_expr("__intrinsic_and__"),
+                    vec![unit(), reject()],
+                    zero_span(),
+                ),
+            ),
+            (
+                "reflected disjunction thunk",
+                Expr::synth_call(
+                    path_expr("__intrinsic_or__"),
+                    vec![unit(), reject()],
                     zero_span(),
                 ),
             ),
@@ -15926,11 +16125,12 @@ mod tests {
             IntrinsicEither,
             IntrinsicAbsurd,
             IntrinsicIfThenElse,
+            IntrinsicBoolean,
             MacroError,
         }
 
         impl CheckedTermNodeKind {
-            const ALL: [Self; 14] = [
+            const ALL: [Self; 15] = [
                 Self::Raw,
                 Self::TemplateValue,
                 Self::Local,
@@ -15944,6 +16144,7 @@ mod tests {
                 Self::IntrinsicEither,
                 Self::IntrinsicAbsurd,
                 Self::IntrinsicIfThenElse,
+                Self::IntrinsicBoolean,
                 Self::MacroError,
             ];
         }
@@ -15966,6 +16167,7 @@ mod tests {
                 }
                 CheckedTermNode::IntrinsicEither { .. } => CheckedTermNodeKind::IntrinsicEither,
                 CheckedTermNode::IntrinsicAbsurd { .. } => CheckedTermNodeKind::IntrinsicAbsurd,
+                CheckedTermNode::IntrinsicBoolean { .. } => CheckedTermNodeKind::IntrinsicBoolean,
                 CheckedTermNode::IntrinsicIfThenElse { .. } => {
                     CheckedTermNodeKind::IntrinsicIfThenElse
                 }
@@ -16454,6 +16656,25 @@ mod tests {
                 ));
             }
 
+            for (conjunction, name) in [(true, "__and__"), (false, "__or__")] {
+                cases.push(replay_case!(
+                    name,
+                    IntrinsicBoolean,
+                    CheckedTerm::from_node(
+                        CheckedTermNode::IntrinsicBoolean {
+                            conjunction,
+                            left: local("left", type_path("Bool")),
+                            right: local("right", type_path("Bool")),
+                        },
+                        type_path("Bool"),
+                    ),
+                    if conjunction {
+                        "__and__(T:Bool,V:left,V:fn<V0>(){right})"
+                    } else {
+                        "__or__(T:Bool,V:left,V:fn<V0>(){right})"
+                    },
+                ));
+            }
             cases.extend([
                 replay_case!(
                     "either",
@@ -17693,6 +17914,72 @@ mod tests {
         let v = eval_each(&equiv_terms(&m), &ctx);
         let (a, b) = first_two(&v);
         assert!(nf_eq(a, b, &ctx), "NFs were {a:?} vs {b:?}");
+    }
+
+    #[test]
+    fn boolean_operand_intrinsics_reduce_only_the_selected_body() {
+        for (intrinsic, left, expected) in [
+            ("__and__", ".f", ".f"),
+            ("__and__", ".t", "rhs()"),
+            ("__or__", ".t", ".t"),
+            ("__or__", ".f", "rhs()"),
+        ] {
+            for call in [
+                format!("{intrinsic}({left}, .() {{ rhs() }})"),
+                format!(
+                    "(.() {{ let selected = {intrinsic}; selected({left}, .() {{ rhs() }}) }})()"
+                ),
+                format!("{intrinsic}(__pair__({left}, .() {{ rhs() }}))"),
+                format!("{intrinsic}[Bool]({left}, .() {{ rhs() }})"),
+                format!(
+                    "(.() {{ let selected = {intrinsic}[Bool]; selected({left}, .() {{ rhs() }}) }})()"
+                ),
+            ] {
+                let m = parse_module(&format!(
+                    "module x; import __intrinsics__; equiv choose {{ {call}; {expected} }}"
+                ));
+                let ctx = EvalCtx::new();
+                let values = eval_each(&equiv_terms(&m), &ctx);
+                let [actual, expected_value] = values.as_slice() else {
+                    panic!("expected exactly two comparison arms, got {values:?}");
+                };
+                match expected {
+                    ".f" => assert!(matches!(actual, Value::Bool(false)), "{call}: {actual:?}"),
+                    ".t" => assert!(matches!(actual, Value::Bool(true)), "{call}: {actual:?}"),
+                    "rhs()" => assert!(
+                        matches!(actual, Value::Stuck(callee, _)
+                        if matches!(&**callee, Value::Atom(name) if name == "rhs")),
+                        "{call}: {actual:?}"
+                    ),
+                    _ => unreachable!("the fixture table names every expected result"),
+                }
+                assert!(
+                    nf_eq(actual, expected_value, &ctx),
+                    "{call}: {actual:?} vs {expected_value:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn boolean_operand_intrinsics_keep_unknown_conditions_structural() {
+        for intrinsic in ["__and__", "__or__"] {
+            let m = parse_module(&format!(
+                "module x; import __intrinsics__; equiv choose {{ {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ rhs() }}); {intrinsic}(condition(), .() {{ other() }}) }}"
+            ));
+            let ctx = EvalCtx::new();
+            let values = eval_each(&equiv_terms(&m), &ctx);
+            let [left, same, changed] = values.as_slice() else {
+                panic!("three residuals")
+            };
+            let Value::Stuck(callee, args) = left else {
+                panic!("expected an intrinsic residual: {left:?}")
+            };
+            assert!(matches!(&**callee, Value::Atom(name) if name == intrinsic));
+            assert_eq!(args.len(), 2);
+            assert!(nf_eq(left, same, &ctx));
+            assert!(!nf_eq(left, changed, &ctx));
+        }
     }
 
     #[test]
@@ -22025,6 +22312,49 @@ mod tests {
             function: test_eval_function(&[], EvalExpr::Local(0)),
             captured: vec![value].into(),
         };
+        for builtin in [ComptimeBuiltin::IntrinsicAnd, ComptimeBuiltin::IntrinsicOr] {
+            let direct = apply(
+                Value::Primitive(builtin),
+                vec![
+                    proof.clone(),
+                    unit_recipe.clone(),
+                    nullary_returning(unit_recipe.clone()),
+                ],
+                &ctx,
+            );
+            assert!(
+                matches!(direct, Value::Projected(_)),
+                "projected {builtin:?} stayed residual: {direct:?}"
+            );
+            let ordinary = checked_term_value(path_expr("left"), unit.clone());
+            let callback_only = apply(
+                Value::Primitive(builtin),
+                vec![
+                    proof.clone(),
+                    ordinary,
+                    nullary_returning(unit_recipe.clone()),
+                ],
+                &ctx,
+            );
+            assert!(
+                matches!(callback_only, Value::Projected(_)),
+                "callback-only projected {builtin:?} stayed residual: {callback_only:?}"
+            );
+            let (foreign_proof, foreign_fills, _) =
+                crate::pass::typecheck_core::apply::fills::specialization_term_for_test();
+            let (foreign_proof, _) = fills_capability_values(foreign_proof, foreign_fills);
+            let invalid = apply(
+                Value::Primitive(builtin),
+                vec![
+                    foreign_proof,
+                    unit_recipe.clone(),
+                    nullary_returning(unit_recipe.clone()),
+                ],
+                &ctx,
+            );
+            assert_builtin_stuck(&invalid, builtin);
+        }
+
         let direct = apply(
             Value::Primitive(ComptimeBuiltin::IntrinsicIfThenElse),
             vec![
@@ -23248,6 +23578,11 @@ mod tests {
                 | CheckedTermNode::IntrinsicPair {
                     left: fn_value,
                     right: arg_packet,
+                }
+                | CheckedTermNode::IntrinsicBoolean {
+                    left: fn_value,
+                    right: arg_packet,
+                    ..
                 } => {
                     visit(fn_value, expected, occurrences);
                     visit(arg_packet, expected, occurrences);

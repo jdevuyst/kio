@@ -167,7 +167,7 @@ brackets retain their variadic-operator meaning. A value frame is passed as
 and comma lists without retrying another interpretation. Types inside brackets
 use the full type grammar, including `f[[A] A -> A](identity)`.
 
-**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and macro names (such as `iso`, `fit`, `match`, `derive`, or a package-defined `checked` after the corresponding import) are all looked up by name and expose a declared polytype. Macro names use direct local call syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the macro's declared call type by the ordinary call-type rules. `__if_then_else__` has a checked Boolean-specialization prefix: its first type argument must resolve to a concrete `role(bool)` host type before the intrinsic becomes an ordinary value. Its result-type argument then follows the ordinary call rules; see [Conditionals](#conditionals).
+**Named callables share a uniform user-facing contract.** Top-level `fn`s, intrinsics (`__left__`, `__right__`, …, `__absurd__`, `__if_then_else__`), and macro names (such as `iso`, `fit`, `match`, `derive`, or a package-defined `checked` after the corresponding import) are all looked up by name and expose a declared polytype. Macro names use direct local call syntax and run compile-time implementation code over reflected arguments; from the caller's perspective, explicit type arguments, `_` placeholders, value arguments, and surrounding expected types are solved against the macro's declared call type by the ordinary call-type rules. `__if_then_else__`, `__and__` and `__or__` have a checked Boolean-specialization prefix: their first type argument must resolve to a concrete `role(bool)` host type before the intrinsic becomes an ordinary value. The conditional's result-type argument then follows the ordinary call rules; see [Conditionals](#conditionals).
 
 A macro implementation produces checked Kio' terms through its
 compile-time interface rather than making a runtime call. Those terms replace
@@ -999,6 +999,14 @@ A macro call in a `pure fn` is therefore not accepted or rejected from a purity 
 - the reflected term constructors are split into core `__term_*__` constructors (for core-language terms) and intrinsic-call `__intrinsic_*__` constructors (for the reserved intrinsic values);
 - the `__intrinsic_*__` constructor names mirror the `__intrinsics__` value names — each `__name__` intrinsic has the constructor `__intrinsic_<name>__` (`__pair__` → `__intrinsic_pair__`).
 
+The Boolean constructors `__intrinsic_and__` and `__intrinsic_or__` take
+`(__Comptime__ & __Checked_term__ & (. -> __Checked_term__))` and return
+`__Checked_term__`. The checked left operand supplies the concrete Boolean
+carrier; the callback constructs a right operand of that same type. As with
+the conditional constructor, this callback builds code at compile time:
+only the resulting runtime right operand is conditional. Both constructors
+retain the ordinary checked-term purity, capture and validation requirements.
+
 **Target type-argument.** A source-to-target macro takes its target as a
 type argument *after* the value application — `name(e)[T]` — subject to the
 general `_`-or-elide rule (see § Type-argument inference and the `_`
@@ -1358,7 +1366,7 @@ Per-keyword semantics are documented at the declaration sites; this is the conso
 
 A user-declared identifier may freely have any of these names — `fn id[A](x: A) -> A { x }` declares a value named `id`, and `fn pub()` would declare one named `pub`. The contextual recognition only fires at the positions above; in any other position the same word is an ordinary identifier reference.
 
-- **Reserved intrinsic values** — provided by the compiler, not imported by default; brought in as a block by `import __intrinsics__;`: `__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__absurd__`.
+- **Reserved intrinsic values** — provided by the compiler, not imported by default; brought in as a block by `import __intrinsics__;`: `__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__and__`, `__or__`, `__absurd__`.
 - **Reserved import targets** — `__intrinsics__`, recognized only inside `import __intrinsics__;`, and `__comptime__`, recognized only inside `import __comptime__;`. Neither is ever a regular module name.
 
 Two type-level literal tokens — `.` (the unit type) and `!` (the bottom type) — are grammar tokens rather than identifiers, so they aren't user-declared names but are worth listing alongside the reserved set.
@@ -2876,10 +2884,10 @@ and `r.>f() { B }` reject; omit the list for no extra prefix value, or write
 
 *Surface only; desugars to Kio'.*
 
-Kio supports user-defined fixed operators via top-level `op` declarations and
-variadic operators via `varop` declarations. An operator
-binds to ordinary callables in scope. Parsing records an operator expression
-under its explicit grammar; operator lowering replaces it with ordinary calls:
+Kio supports function-backed fixed operators via top-level `op` declarations,
+macro-backed fixed operators via `op macro`, and variadic operators via `varop`.
+Parsing records an operator expression under its explicit grammar; operator
+lowering replaces it with a call to the explicitly selected function or macro:
 
 ```kio
 fn add(a: Int, b: Int) -> Int { … }
@@ -2896,6 +2904,12 @@ imported function, select through an explicit module alias, or select a
 constructor/projector on a local or imported nominal type, directly or through an
 identity alias. It is not an arbitrary expression and does not admit a
 slash-qualified package FQN.
+
+An `op macro` target is an earlier same-module macro or an explicitly imported
+macro. The kind is part of the declaration and import contract: an ordinary
+`op` cannot select a macro, and `op macro` cannot select a function. Macro
+operators expand through the ordinary macro-call rules and introduce no
+compiler privilege for a particular library or operation name.
 
 These callable fields use ordinary path-expression source-order classes. A
 same-module ordinary or host `fn`, `rec` member, nominal head, or identity-alias
@@ -2929,6 +2943,23 @@ Each nested operator still obeys its own slot permissions. An any-chain slot
 does not establish precedence between operators inside it. Patterns may have
 any number of these slots, subject to the structural restrictions below.
 Runs of four or more underscores are reserved.
+
+**Delayed operands.** Prefixing a slot with a dot (`._`, `.__`, or `.___`)
+preserves its parsing permission and wraps the entire parsed operand in an
+ordinary Unit-argument lambda. For example, `op macro _ && .__ { impl and; };`
+makes `a && b && c` call `and(a, .() { and(b, .() { c }) })`. The same
+markers work with function-backed operators. All transformed operands form
+one ordinary product argument in written order; a delayed slot does not add
+a function-application stage. The dot accepts ordinary token trivia and is
+formatted adjacent to its underscores.
+
+Wrapping occurs exactly once, even when the written operand is already a
+thunk. There is no type-directed unwrapping. Constructing a projected lambda
+does not execute its body; the selected callable determines whether and how
+often it invokes that lambda. An unmarked operand retains ordinary call
+semantics. Macro trailing-block descriptors do not affect operator operands:
+they govern only direct block syntax, such as `and(a) { b }`. That spelling
+and `a && b` both supply `and(a, .() { b })` under the declarations above.
 
 **Atoms and final words.** Native atomic expressions, grouped expressions,
 variadic literals, and completed native calls or forward-UFCS expressions are
@@ -3081,14 +3112,16 @@ resolution and lowering.
 
 {:#operator-grammar}
 **Complete operator grammar.** The public identity of an operator selection is
-its complete tagged grammar. Fixed forms include every literal run, every slot
-kind, and all later slots. Variadic forms contain
+its complete tagged grammar. Fixed forms include function/macro kind, every
+literal run, every slot's extent and delay marker, and all later slots.
+Variadic forms contain
 the same OPEN and CLOSE in declarations and imports; the import omits only
 the callable body. For example:
 
 | Declaration | Import selection |
 |---|---|
 | `op _ + __ { impl add; };` | `op _ + __` |
+| `op macro _ && .__ { impl and; };` | `op macro _ && .__` |
 | `op _ ? _ : ___ { impl cond; };` | `op _ ? _ : ___` |
 | `op _ <\| ___ \|> { impl index; };` | `op _ <\| ___ \|>` |
 | `varop [* *] { foldr cons nil; };` | `varop [* *]` |
@@ -3103,7 +3136,8 @@ and marker; the comma separator is implicit and is not written in the head.
 position and first fixed word; variadic bindings dispatch on their marker. This
 shorter key is deliberately distinct from the complete public grammar. It
 prevents two incompatible parses in one scope: two bindings with the same
-position and first word conflict even if their tails or slot kinds differ.
+position and first word conflict even if their tails, slot kinds, delay
+markers, or function/macro kinds differ.
 Two variadic bindings with the same OPEN also conflict; CLOSE is fixed by its
 mirror. Fixed and variadic keys cannot collide because fixed tokens exclude
 square brackets. Public imports, diagnostics, and
@@ -3142,7 +3176,7 @@ changes the already-written consumer grammar. The selected declaration supplies
 the callable paths, fold mode, and finalizer for lowering. Changing those fields
 does not change the grammar a consumer must write.
 
-The implementation function need not be co-imported. The operator import itself
+The implementation function or macro need not be co-imported. The operator import itself
 is the explicit dependency; lowering records the exact resolved implementation
 and the ordinary qualified imports needed by the resulting calls. A provider's
 callable field reaches another module only through an ordinary selective import
@@ -3151,7 +3185,7 @@ Visibility is checked on every directly named callable as described above.
 
 **Import aliases.** `import arithmetic(op _ + __ as _ ++ __);` selects the
 complete source grammar and installs only the complete destination grammar.
-Every token/slot position, slot kind, and word boundary
+The function/macro kind, every token/slot position, slot kind, delay marker, and word boundary
 is preserved. Literal tokens may change by a consistent injective substitution:
 each repeated token keeps one replacement and distinct tokens stay distinct.
 `import collections(varop [] as [* *]);` similarly changes only the admitted

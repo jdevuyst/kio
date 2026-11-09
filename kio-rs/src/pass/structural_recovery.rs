@@ -8,7 +8,7 @@
 //! right-leaning chains of the
 //! intrinsics (`__pair__` / `__fst__` / `__snd__` /
 //! `__left__` / `__right__` / `__either__` /
-//! `__if_then_else__`). That shape is faithful but verbose: every
+//! `__if_then_else__` / `__and__` / `__or__`). That shape is faithful but verbose: every
 //! conditional is an IIFE-wrapped thunk pair, every n-arm match a
 //! nest of `__either__` dispatch wrappers.
 //!
@@ -56,10 +56,14 @@
 //!   and applied via `Call(thunk, [])` only on the selected branch.
 //!   Staging keeps the intrinsic call's eager left-to-right argument
 //!   evaluation separate from its lazy thunk invocation.
+//! - **Short-circuit Boolean** — `__and__(B, left, right_thunk)` and
+//!   `__or__(B, left, right_thunk)` use the same conditional node. A computed
+//!   left is bound once and is also the unchanged result of the skipped
+//!   branch. The right thunk follows the same construction/invocation rules.
 //!
 //! The pass is **total over saturated, directly recoverable structural
 //! roots**: every matching `__pair__`, `__fst__` / `__snd__`, `__left__` /
-//! `__right__`, `__either__`, or `__if_then_else__` root collapses to one of
+//! `__right__`, `__either__`, `__if_then_else__`, `__and__`, or `__or__` root collapses to one of
 //! the seven `Enriched*` nodes. Residual applications — including partially
 //! applied and type-only application stages — and indirect uses do not match
 //! that root shape. They retain their generic core shape as children recover
@@ -409,6 +413,7 @@ impl<'a> Recoverer<'a> {
                         "__left__" | "__right__" => self.recover_injection(e),
                         "__either__" => self.recover_either(e),
                         "__if_then_else__" => self.recover_conditional(e),
+                        "__and__" | "__or__" => self.recover_short_circuit(name, e),
                         _ => None,
                     };
                     if let Some(node) = recovered {
@@ -608,6 +613,9 @@ impl<'a> Recoverer<'a> {
         };
         if intrinsic == "__pair__" {
             return Some(self.recover_expr(packet));
+        }
+        if matches!(intrinsic, "__and__" | "__or__") {
+            return Some(self.recover_boolean_packet(intrinsic, &args[0], packet, span));
         }
         let ty = |index| convert_type::<Prime, Enriched>(type_arg_type(&args[index]).as_ref());
         let (first_ty, left_ty, right_ty, result_ty) = match intrinsic {
@@ -1201,6 +1209,80 @@ impl<'a> Recoverer<'a> {
 
     // ---- pattern: conditional ---------------------------------------
 
+    /// The strict packet owns both operand evaluations. Reusing its first
+    /// projection preserves the exact selected carrier without rebuilding it.
+    fn recover_boolean_packet(
+        &mut self,
+        intrinsic: &str,
+        bool_arg: &CallArg<Prime>,
+        packet: &Expr<Prime>,
+        span: Span,
+    ) -> Expr<Enriched> {
+        let result_ty = convert_type::<Prime, Enriched>(type_arg_type(bool_arg).as_ref());
+        let thunk_ty = Type::synth_function(
+            vec![Type::Unit {
+                meta: Meta::new(span),
+            }],
+            result_ty.clone(),
+            span,
+        );
+        let packet_ty =
+            crate::ast::build_product_right_fold(vec![result_ty.clone(), thunk_ty], span);
+        let name = self.fresh_name();
+        let value = self.recover_expr(packet);
+        let project = |index| Expr::EnrichedProject {
+            occurrence: Default::default(),
+            target: Box::new(enriched_local_path(&name, span)),
+            index,
+            arity: 2,
+            target_ty: packet_ty.clone(),
+            meta: Meta::new(span),
+            ext: (),
+        };
+        let right = Expr::Call {
+            source_trivia: Default::default(),
+            occurrence: Default::default(),
+            diagnostic: Default::default(),
+            callee: Box::new(project(1)),
+            args: Vec::new(),
+            meta: Meta::new(span),
+            ext: (),
+        };
+        let body = short_circuit_conditional(intrinsic, project(0), right, result_ty, span);
+        wrap_staged_values(vec![StagedValue { name, span, value }], body)
+    }
+
+    fn recover_short_circuit(
+        &mut self,
+        intrinsic: &str,
+        e: &Expr<Prime>,
+    ) -> Option<Expr<Enriched>> {
+        let call = classify_intrinsic(intrinsic, call_args(e)?)?;
+        let result_ty =
+            convert_type::<Prime, Enriched>(type_arg_type(call.type_part.first()?).as_ref());
+        let left = value_arg(call.value_part, 0)?;
+        let right = value_arg(call.value_part, 1)?;
+        let mut staged = Vec::new();
+        // Even a literal's host construction belongs to this one evaluation:
+        // only a bound value can be reused as both condition and exact result.
+        let left = if matches!(left, Expr::Path { .. }) {
+            self.recover_expr(left)
+        } else {
+            let name = self.stage_call_value(left, &mut staged);
+            enriched_local_path(&name, left.span())
+        };
+        let right_binding = if self.evaluation_is_pure(right) {
+            None
+        } else {
+            Some(self.stage_call_value(right, &mut staged))
+        };
+        let right = self.recover_branch_thunk(right, right_binding.as_deref());
+        Some(wrap_staged_values(
+            staged,
+            short_circuit_conditional(intrinsic, left, right, result_ty, e.span()),
+        ))
+    }
+
     /// `__if_then_else__(B, A, c, then_thunk, else_thunk)` →
     /// [`Expr::EnrichedConditional`]. A literal `.() { body }` thunk
     /// has its wrapper stripped (`body` becomes the branch
@@ -1322,6 +1404,29 @@ impl<'a> Recoverer<'a> {
                 .is_some_and(|head| self.locals.iter().any(|name| name == head.as_str()))
                 && self.ctx.pure_functions.contains(path)
         })
+    }
+}
+
+fn short_circuit_conditional(
+    intrinsic: &str,
+    left: Expr<Enriched>,
+    right: Expr<Enriched>,
+    result_ty: Type<Enriched>,
+    span: Span,
+) -> Expr<Enriched> {
+    let (then_branch, else_branch) = match intrinsic {
+        "__and__" => (right, left.clone()),
+        "__or__" => (left.clone(), right),
+        _ => unreachable!("short-circuit recovery accepts only Boolean intrinsics"),
+    };
+    Expr::EnrichedConditional {
+        occurrence: Default::default(),
+        cond: Box::new(left),
+        then_branch: Box::new(then_branch),
+        else_branch: Box::new(else_branch),
+        result_ty,
+        meta: Meta::new(span),
+        ext: (),
     }
 }
 
@@ -1768,6 +1873,7 @@ fn intrinsic_arity(name: &str) -> Option<(usize, usize)> {
         "__left__" | "__right__" => (2, 1),
         "__either__" => (3, 3),
         "__if_then_else__" => (2, 3),
+        "__and__" | "__or__" => (1, 2),
         _ => return None,
     })
 }
@@ -2941,6 +3047,79 @@ mod tests {
             };
             assert!(is_local_path(callee, binding.0));
             assert!(args.is_empty());
+        }
+    }
+
+    #[test]
+    fn boolean_recovery_stages_left_then_factory_and_retains_left() {
+        for intrinsic in ["__and__", "__or__"] {
+            let module = recover_one(
+                "main",
+                &format!(
+                    "module main; import __intrinsics__; \
+                     host type Bool role(bool); \
+                     host fn left() -> Bool; \
+                     host fn right_factory() -> . -> Bool; \
+                     fn choose() -> Bool {{ {intrinsic}[Bool](left(), right_factory()) }}"
+                ),
+                None,
+            );
+            let (bindings, terminal) = leading_let_spine(fn_body(&module, "choose"));
+            assert_eq!(bindings.len(), 2, "{intrinsic}: strict operand staging");
+            assert_eq!(direct_call_name(bindings[0].1), Some("left"));
+            assert_eq!(direct_call_name(bindings[1].1), Some("right_factory"));
+            let Expr::EnrichedConditional {
+                cond,
+                then_branch,
+                else_branch,
+                ..
+            } = terminal
+            else {
+                panic!("expected a recovered conditional: {terminal:?}");
+            };
+            assert!(is_local_path(cond, bindings[0].0));
+            let (taken, skipped) = if intrinsic == "__and__" {
+                (then_branch, else_branch)
+            } else {
+                (else_branch, then_branch)
+            };
+            assert!(
+                is_local_path(skipped, bindings[0].0),
+                "return the original left carrier"
+            );
+            assert_eq!(direct_call_name(taken), Some(bindings[1].0));
+        }
+    }
+
+    #[test]
+    fn boolean_recovery_removes_inline_rhs_and_keeps_opaque_rhs() {
+        for intrinsic in ["__and__", "__or__"] {
+            let module = recover_one(
+                "main",
+                &format!(
+                    "module main; import __intrinsics__; \
+                     host type Bool role(bool); host fn right() -> Bool; \
+                     fn inline(left: Bool) -> Bool {{ {intrinsic}[Bool](left, .() {{ right() }}) }} \
+                     fn opaque(left: Bool, rhs: . -> Bool) -> Bool {{ {intrinsic}[Bool](left, rhs) }} \
+                     fn packet(input: Bool & (. -> Bool)) -> Bool {{ {intrinsic}[Bool](input) }}"
+                ),
+                None,
+            );
+            let inline = fn_body(&module, "inline");
+            assert_eq!(count(inline, &|e| matches!(e, Expr::FnExpr { .. })), 0);
+            assert_eq!(count(inline, &|e| direct_call_name(e) == Some("right")), 1);
+            let opaque = fn_body(&module, "opaque");
+            assert_eq!(count(opaque, &|e| direct_call_name(e) == Some("rhs")), 1);
+            let packet = fn_body(&module, "packet");
+            assert_eq!(
+                count(packet, &|e| matches!(e, Expr::EnrichedConditional { .. })),
+                1
+            );
+            assert_eq!(
+                count(packet, &|e| matches!(e, Expr::Call { callee, .. }
+                if matches!(callee.as_ref(), Expr::EnrichedProject { index: 1, arity: 2, .. }))),
+                1
+            );
         }
     }
 

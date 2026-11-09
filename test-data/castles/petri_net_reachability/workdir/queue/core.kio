@@ -3,11 +3,12 @@
 module queue/core;
 
 import queue/list/core(List, cons, head, nil, uncons);
+import queue/macros/control(Bool as Control_bool, macro if);
 import queue/macros/match(macro match);
 import queue/macros/spine_macros(macro widen_sum);
 
 // The representation is Okasaki's two-list queue (Purely Functional Data
-// Structures §5.2): a `Queue(A)` is a `front` cons-list we dequeue from and
+// Structures §5.2): a `Queue[A]` is a `front` cons-list we dequeue from and
 // a `back` we enqueue onto (stored reversed, newest at its head). When the
 // front would empty, the back is reversed onto it in one batch, so each
 // element moves between the lists at most once and both ends amortize to
@@ -24,35 +25,21 @@ import queue/macros/spine_macros(macro widen_sum);
 // declares the host `loop`. This pure file keeps the two spines, their O(1)
 // constructors and destructors, the queue type, the pure O(1) operations,
 // the invariant predicate, and the per-element step functions.
+/// Boolean values shared with the control library.
+pub type Bool = Control_bool;
 
-// =====================================================================
-// A pure two-state truth value
-// =====================================================================
-//
-// The two arms are labeled so `match` can tell them apart — a bare `. | .`
-// has no labels to branch on.
-/// Defines the two labels that make the module-local boolean shape matchable.
-pub type { Btrue: .; Bfalse: . }
+/// Returns true.
+pub fn yes() -> Bool { .t }
 
-/// Boolean-like result type used by pure predicates in this module.
-pub type Bool = Btrue | Bfalse;
+/// Returns false.
+pub fn no() -> Bool { .f }
 
-/// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
-
-/// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
-
-/// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
-/// labels inside this module — a consumer never names `Btrue` /
-/// `Bfalse` to branch on a predicate's result.
+/// Selects between already evaluated values.
 pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
-  match(b) {
-    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
-  }
+  if(b) { on_true } else { on_false }
 }
 
-/// Returns logical conjunction for the module-local boolean shape.
+/// Returns the conjunction of two already evaluated values.
 pub fn band(x: Bool, y: Bool) -> Bool { bool_to(y, no(), x) }
 
 fn present[A](value: A) -> A | . { widen_sum(value)[A | .] }
@@ -104,7 +91,7 @@ pub fn back[A](q: Queue[A]) -> List[A] {
 // =====================================================================
 // O(1) pure operations
 // =====================================================================
-/// `empty(A)` is the canonical empty queue: both spines `nil`. It
+/// `empty[A]` is the canonical empty queue: both spines `nil`. It
 /// trivially satisfies the invariant (front empty, back empty).
 pub fn empty[A] -> Queue[A] { Queue.mk((nil[A], nil[A])) }
 

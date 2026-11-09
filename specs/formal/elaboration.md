@@ -125,7 +125,7 @@ Variables in the local context synthesize their bound type. Three categories of 
 
 **Local binders.** `x` bound by a `fn` value-parameter, a `let`, or a `match` clause's parameter list. E-Var as above, with the type read from Γ.
 
-**Module-scoped identifiers** — top-level `fn`s and intrinsics (`__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__absurd__`) — share a single **scope-aware scheme registry** keyed by name:
+**Module-scoped identifiers** — top-level `fn`s and intrinsics (`__left__`, `__right__`, `__either__`, `__pair__`, `__fst__`, `__snd__`, `__if_then_else__`, `__and__`, `__or__`, `__absurd__`) — share a single **scope-aware scheme registry** keyed by name:
 
 ```text
 (name ↦ scheme(name)) ∈ Registry
@@ -133,10 +133,11 @@ Variables in the local context synthesize their bound type. Three categories of 
 Γ ⊢ name ⇑ scheme(name) ↪ name
 ```
 
-Most entries expose their ordinary resolved polytype. The branching intrinsic
-first checks its Boolean-specialization prefix against a concrete `role(bool)`
+Most entries expose their ordinary resolved polytype. The Boolean intrinsics
+first check their Boolean-specialization prefix against a concrete `role(bool)`
 host type, using explicit or finite local contextual evidence; after that check
-its result-type scheme is ordinary. A rigid generic Boolean parameter cannot
+their callable types are ordinary. The conditional's result type may remain
+generic; AND and OR return their Boolean carrier. A rigid generic Boolean parameter cannot
 satisfy the prefix. This requirement searches no ambient declaration set and
 introduces no role constraint or dictionary.
 

@@ -81,6 +81,9 @@ import docs_loader/token(tk_punct, toks_cons, toks_nil, un_token, un_toks);
 //     `__if_then_else__[B][A](c, .() { t }, .() { e })` retains the checked
 //     concrete Boolean descriptor B. Partially applied intrinsic values use
 //     the same lambda/application terms as other functions.
+//     `__and__[B](left, right)` and `__or__[B](left, right)` retain the same
+//     descriptor and dispatch through a conditional over the evaluated packet;
+//     the short-circuit branch returns its original left component.
 //   - a host-item call uses the same staged syntax as any other value;
 //     polymorphic host items carry bracketed type arguments whose erased,
 //     evaluator-internal encoding uses Unit applications before their
@@ -803,7 +806,7 @@ fn word_starts_type_name(w: String) -> Bool {
 // callee value and applies it to the collected args (left-associated;
 // zero args means apply to the unit value, the `t()` zero-arg call). A host
 // fn is just a seeded variable, so a host call is an ordinary `Tg_app` — no
-// dedicated host-call target. The eight intrinsic tags build the matching
+// dedicated host-call target. The intrinsic tags build the matching
 // `Term` node from the collected args.
 /// Defines the apply-to-value target (the callee already in hand).
 pub type { Tg_app: Term }
@@ -860,6 +863,17 @@ fn tg_right() -> Tg { Tg.mk(widen_sum(Tg_right.mk(()))[Tg_shape]) }
 fn tg_either() -> Tg { Tg.mk(widen_sum(Tg_either.mk(()))[Tg_shape]) }
 
 fn tg_ite(ty: Host_type) -> Tg { Tg.mk(widen_sum(Tg_ite.mk(ty))[Tg_shape]) }
+
+fn tg_boolean(ty: Host_type, conjunction: Bool) -> Tg {
+  let packet = var(nz());
+  let original = lam(fst(var(ns(nz()))));
+  let right = snd(packet);
+  tg_app(if(conjunction) {
+    lam(ite(ty, fst(packet), right, original))
+  } else {
+    lam(ite(ty, fst(packet), original, right))
+  })
+}
 
 fn tg_absurd() -> Tg { Tg.mk(widen_sum(Tg_absurd.mk(()))[Tg_shape]) }
 
@@ -930,7 +944,7 @@ pub type { Hc_call: Tg }
 /// Defines the variable classification (the head is an ordinary variable reference).
 pub type { Hc_var: . }
 
-/// A conditional head whose first type argument identifies its Boolean carrier.
+/// A Boolean intrinsic head whose first type argument identifies its carrier.
 pub type { Hc_ite: . }
 
 /// A call head is a node-building call or an ordinary variable.
@@ -946,6 +960,10 @@ fn classify_intrinsic2(w: String) -> . | Headclass {
   } else if(string_eq(w, "__either__"[String])) {
     widen_sum(hc_call(tg_either()))[. | Headclass]
   } else if(string_eq(w, "__if_then_else__"[String])) {
+    widen_sum(widen_sum(Hc_ite.mk(()))[Headclass])[. | Headclass]
+  } else if(string_eq(w, "__and__"[String])) {
+    widen_sum(widen_sum(Hc_ite.mk(()))[Headclass])[. | Headclass]
+  } else if(string_eq(w, "__or__"[String])) {
     widen_sum(widen_sum(Hc_ite.mk(()))[Headclass])[. | Headclass]
   } else if(string_eq(w, "__absurd__"[String])) {
     widen_sum(hc_call(tg_absurd()))[. | Headclass]
@@ -1057,7 +1075,7 @@ fn target_value(tg: Tg) -> Term {
 }
 
 // The reserved intrinsic schemes determine their unary forall stages.
-// The conditional's checked B prefix is consumed before reaching this helper.
+// Each Boolean intrinsic's checked B prefix is consumed before reaching this helper.
 fn target_type_stages(tg: Tg) -> I32 {
   match(un_tg(tg)) {
     (
@@ -1982,6 +2000,7 @@ fn conditional_role(ty: Host_type) -> Bool {
 
 fn start_conditional(
 , resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, name: String
 , ts: Toks
 , sc: Scope
 , k: Pk
@@ -1998,11 +2017,21 @@ fn start_conditional(
           , .(message: String) { perr_halt(message, type_tokens) }
           , .(ty: Host_type) {
               if(conditional_role(ty)) {
-                yield_primary(target_polymorphic_value(tg_ite(ty)), after, sc, k, fuel, nt)
+                let target = if(string_eq(name, "__if_then_else__"[String])) {
+                  tg_ite(ty)
+                } else {
+                  tg_boolean(ty, string_eq(name, "__and__"[String]))
+                };
+                yield_primary(target_polymorphic_value(target), after, sc, k, fuel, nt)
               } else {
                 perr_halt(
-                , "`__if_then_else__` requires a concrete `role(bool)` type as its first "
-                  "type argument"[String]
+                , string_concat(
+                  , "`"[String]
+                  , string_concat(
+                    , name
+                    , "` requires a concrete `role(bool)` type as its first type argument"[String]
+                    )
+                  )
                 , type_tokens
                 )
               }
@@ -2037,6 +2066,7 @@ fn enclosing_group(k: Pk) -> . | (Scope & Pk) {
 
 fn require_conditional_type(
 , resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, name: String
 , ts: Toks
 , sc: Scope
 , k: Pk
@@ -2044,9 +2074,15 @@ fn require_conditional_type(
 , nt: Ntab
 ) -> Pstate | Pres {
   if(head_is_punct(ts, c_lbrack())) {
-    start_conditional(resolve_host_type, rest(ts), sc, k, fuel, nt)
+    start_conditional(resolve_host_type, name, rest(ts), sc, k, fuel, nt)
   } else {
-    perr_halt("expected `[` with the concrete Boolean type after `__if_then_else__`"[String], ts)
+    perr_halt(
+    , string_concat(
+      , "expected `[` with the concrete Boolean type after `"[String]
+      , string_concat(name, "`"[String])
+      )
+    , ts
+    )
   }
 }
 
@@ -2055,6 +2091,7 @@ fn require_conditional_type(
 // its argument-collection frame.
 fn parse_conditional_head(
 , resolve_host_type: (Toks & Type_scope) -> (Host_type | String)
+, name: String
 , ts: Toks
 , sc: Scope
 , k: Pk
@@ -2080,6 +2117,7 @@ fn parse_conditional_head(
         , .(_not_grouped: .) {
             widen_sum(require_conditional_type(
             , resolve_host_type
+            , name
             , current
             , current_scope
             , current_k
@@ -2112,7 +2150,7 @@ fn parse_word_classified(
   match(un_pheadclass(classify_head(w, sc))) {
     (
     , .(c: Hc_call) { yield_primary(target_polymorphic_value(Hc_call.get(c)), ts, sc, k, fuel, nt) }
-    , .(_conditional: Hc_ite) { parse_conditional_head(resolve_host_type, ts, sc, k, fuel, nt) }
+    , .(_conditional: Hc_ite) { parse_conditional_head(resolve_host_type, w, ts, sc, k, fuel, nt) }
     , .(_v: Hc_var) {
         match(scope_index(w, sc)) {
           (

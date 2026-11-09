@@ -677,6 +677,10 @@ impl Reclaim for EvalExpr {
                 shared(bottom_value, pending);
                 shared(result_type, pending);
             }
+            Self::ReflIntrinsicBoolean { left, on_right, .. } => {
+                shared(left, pending);
+                shared(on_right, pending);
+            }
             Self::ReflIntrinsicIfThenElse {
                 result_type,
                 condition,
@@ -719,7 +723,7 @@ impl Reclaim for CheckedTermNode {
                 shared(fn_value, pending);
                 pending.push(arg.into());
             }
-            Self::IntrinsicPair { left, right } => {
+            Self::IntrinsicPair { left, right } | Self::IntrinsicBoolean { left, right, .. } => {
                 shared(left, pending);
                 shared(right, pending);
             }

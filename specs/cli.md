@@ -832,11 +832,12 @@ The disambiguation rule is "shortest parse wins for the name kind": `foo` typed 
 
 **Declaration selectors.** `:doc`, `:signature`, `:source`, `:which`, and `:refs`
 accept exactly one declaration selector: an ordinary identifier or a complete
-tagged `op` / `varop` grammar. Nominal entries and compact owner aliases use ordinary names, such as `Color` or `pkg/main.Red`. An unqualified selector uses the
+tagged `op` / `op macro` / `varop` grammar. Nominal entries and compact owner aliases use ordinary names, such as `Color` or `pkg/main.Red`. An unqualified selector uses the
 current module's declarations and selective imports. Qualification is a loaded
 module path or current-module alias, a dot, and the selector; a qualified
 operator requires outer parentheses, as in `math/arith.(op _ + _)` or
-`collections.(varop [* *])`. Ordinary names remain `math/arith.add`; wrapping them in parentheses is rejected. Inner
+`collections.(varop [* *])`. Ordinary names remain `math/arith.add`; wrapping them in parentheses is rejected. The selector retains each slot's extent and delay marker, for example
+`control.(op macro _ && .__)`. Inner
 operator-pattern parentheses retain token quotation such as `(=)`; they cannot
 contain slots. Unparenthesized qualified operators, selector lists, import
 statements, renaming clauses and `macro name` tags are rejected. Macro declarations remain inspectable by their ordinary local

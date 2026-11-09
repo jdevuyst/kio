@@ -233,8 +233,11 @@ pub fn documented_entries_for_item(item: &Item<Surface>) -> Vec<DocEntry<'_>> {
         Item::Newtype(n) => vec![DocEntry::Newtype(n, None)],
         Item::Labels(t, _) => labels_entries(t, None),
         Item::Op(o, _) => {
-            let OpBody::Normal { pattern, .. } = &o.body;
-            vec![DocEntry::Op(o, OperatorGrammar::fixed(pattern).render())]
+            let OpBody::Normal { kind, pattern, .. } = &o.body;
+            vec![DocEntry::Op(
+                o,
+                OperatorGrammar::fixed(*kind, pattern).render(),
+            )]
         }
         Item::VariadicOperator(o, _) => vec![DocEntry::VariadicOperator(
             o,

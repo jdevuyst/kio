@@ -1,0 +1,13 @@
+module provider;
+
+import __comptime__;
+
+host type Bool role(bool);
+
+host fn effect();
+
+pure fn construct(ct: __Comptime__, value: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_and__(ct, value, .() -> __Checked_term__ { effect(); value })
+}
+
+pub macro combine : Bool -> Bool { impl construct }

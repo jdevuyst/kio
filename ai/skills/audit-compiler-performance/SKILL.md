@@ -588,6 +588,17 @@ retain the measurement's stated limits.
   The [dispatch evidence](../../../evidence/backend-performance.md#callable-purity-dispatch-recovery)
   records avoided work and bounded compiler cost; retain all-backend runtime
   controls for the semantic boundary.
+- **Boolean control recovery** follows
+  [Native Boolean and branch recovery](../../topics/emit.md#native-boolean-and-branch-recovery).
+  Inspect realistic nested macro/operator expansion, including product
+  projections and administrative lets: native control must also remove
+  avoidable branch-thunk construction and invocation. Keep opaque callbacks,
+  effectful thunk factories, repeated computed conditions, and custom carriers
+  as no-op or staging controls. Check both a primitive native-operator consumer
+  and a serialized-runtime consumer; retain the exact-carrier conditional path.
+  Pair deterministic firing assertions with separate compiler and runtime
+  measurements. An unchanged truth result, a native operator token, or a claim
+  that the host optimizer removes closures does not discharge this check.
 - **Imported newtype-variance memo** (`pass/typecheck_core/variance.rs`) — strict-positivity checking derives an exact imported provider module's newtype variance table once per request and reuses the ready table at every branching occurrence. Variance composition and the in-progress fail-closed guard are correctness-primary; retaining and reusing a ready provider table is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#imported-newtype-variance-memo).
 
 - **User-macro artifact/implementation pairing and analysis reuse** (`pass/typecheck_full.rs`, `pass/typecheck_core/{intern,memo}.rs`) — retains each validated evaluator artifact together with its exact staged implementation and singleflights it by provider module, macro name, and ordered capture imports for one immutable analysis. Eager result inference and deferred consumer batches therefore reuse the same exact artifact without carrying it into another analysis. Structural types may be interned across package versions, while all content-dependent `MemoCtx` state belongs to an opaque package-version revision selected by the LSP's package fingerprint and the artifact table belongs to a fresh scope bound to the current package analysis. This is perf-only. [Recorded comparison and controls](../../../evidence/compiler-performance.md#macro-artifactimplementation-pairing-and-analysis-reuse).   Also check artifact-miss selection before copying: both `filtered_eval_package`

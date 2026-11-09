@@ -18,8 +18,9 @@ pub(crate) fn project_module(
         scope,
         module: &module_path,
         macros,
-        next_node_id: macros
+        next_node_id: crate::scope_walk::macro_calls(module)
             .max_node_id
+            .max(macros.max_node_id)
             .checked_add(1)
             .expect("source NodeId space exhausted"),
     };
@@ -126,6 +127,38 @@ impl Projection<'_> {
 
     fn expr(&mut self, expr: &mut Expr<Surface>) -> Result<(), Error> {
         Self::normalize_call_spine(expr);
+        let mut head = &*expr;
+        while let Expr::Call { callee, .. } = head {
+            head = callee;
+        }
+        if matches!(head, Expr::UserMacro { .. }) && matches!(expr, Expr::Call { .. }) {
+            let span = expr.span();
+            let outer_meta = expr.meta().clone();
+            let mut current = std::mem::replace(expr, unit(span));
+            let mut suffix = Vec::new();
+            while let Expr::Call {
+                callee,
+                args,
+                source_trivia,
+                meta,
+                ..
+            } = current
+            {
+                suffix.push(CallStage {
+                    occurrence: Default::default(),
+                    args,
+                    source_trivia,
+                    meta,
+                });
+                current = *callee;
+            }
+            let Expr::UserMacro { stages, meta, .. } = &mut current else {
+                unreachable!("the operator call spine ends at its selected macro")
+            };
+            stages.extend(suffix.into_iter().rev());
+            *meta = outer_meta;
+            *expr = current;
+        }
         let mut head = &*expr;
         while let Expr::Call { callee, .. } = head {
             head = callee;

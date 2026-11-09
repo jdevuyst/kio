@@ -1,0 +1,5 @@
+module main;
+
+import __intrinsics__;
+
+fn value() { let selected = __and__; () }

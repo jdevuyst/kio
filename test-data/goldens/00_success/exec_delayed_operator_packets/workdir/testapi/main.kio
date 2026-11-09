@@ -1,0 +1,42 @@
+module testapi/main;
+
+import syntax(
+, op !! ._
+, op ._ ?? _
+, op @@ ._
+, op _ || ._
+, op macro # _
+, op macro $$ ._
+, op macro _ %% ._ as _ && ._
+);
+import testapi(Int);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn show(value: Int) { print(int_to_string(value)); print("\n") }
+
+fn mark(value: Int) -> Int { show(value); value }
+
+fn identity[A](value: A) -> A { value }
+
+fn keep[A](value: A) -> . -> A { $$ value }
+
+fn factory() -> Int -> Int {
+  show(98);
+  .(value: Int) -> Int { mark(value) }
+}
+
+pub fn main() {
+  show(mark(1) ?? mark(2));
+  show(!! mark(3));
+  let captured = 7[Int];
+  show(captured ?? mark(4));
+  show(@@ .() { mark(5) });
+  show(mark(6) && mark(99));
+  show((# identity)[Int](mark(8)));
+  show(($$ mark(9))());
+  show(.() { let shadowed = 10[Int]; mark(shadowed) }() ?? mark(11));
+  show(keep(12)());
+  show(mark(13) && factory()(14));
+  show(mark(15) || factory()(16))
+}

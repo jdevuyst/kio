@@ -1121,6 +1121,30 @@ pub(crate) fn check_host_type_parameters<P: crate::ast::Phase>(
     Ok(())
 }
 
+#[cfg(all(test, feature = "surface"))]
+pub(crate) fn check_module_sequential_for_test(
+    package: &Package<crate::ast::Lowered>,
+    module_path: &str,
+    elaborations: &mut crate::pass::typecheck_full::Elaborations,
+    typecheck_scope: std::sync::Arc<PackageTypecheckScope<crate::ast::Lowered>>,
+) -> Result<(), Vec<Error>> {
+    let module = &package
+        .module(module_path)
+        .expect("test module exists")
+        .module;
+    check_module_in_package_with_typecheck_scope_collect_errors_with_execution(
+        module,
+        package.package_file().map(|entry| &entry.package_file),
+        package
+            .package_file()
+            .map(|entry| entry.package_name.as_str()),
+        Some(package),
+        elaborations,
+        typecheck_scope,
+        TypecheckExecution::Sequential,
+    )
+}
+
 struct ModuleCheckResult<E> {
     module_path: String,
     file_path: PathBuf,

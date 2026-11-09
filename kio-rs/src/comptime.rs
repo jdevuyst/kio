@@ -71,6 +71,8 @@ pub enum ComptimeBuiltin {
     IntrinsicEither,
     IntrinsicAbsurd,
     IntrinsicIfThenElse,
+    IntrinsicAnd,
+    IntrinsicOr,
     FillCtx,
     Fill,
     TermSpecialize,
@@ -151,6 +153,8 @@ impl ComptimeBuiltin {
             "__intrinsic_either__" => Self::IntrinsicEither,
             "__intrinsic_absurd__" => Self::IntrinsicAbsurd,
             "__intrinsic_if_then_else__" => Self::IntrinsicIfThenElse,
+            "__intrinsic_and__" => Self::IntrinsicAnd,
+            "__intrinsic_or__" => Self::IntrinsicOr,
             "__Fill_ctx__" => Self::FillCtx,
             "__fill__" => Self::Fill,
             "__fill_result__" => Self::FillResult,
@@ -225,6 +229,8 @@ impl ComptimeBuiltin {
             Self::IntrinsicEither => "__intrinsic_either__",
             Self::IntrinsicAbsurd => "__intrinsic_absurd__",
             Self::IntrinsicIfThenElse => "__intrinsic_if_then_else__",
+            Self::IntrinsicAnd => "__intrinsic_and__",
+            Self::IntrinsicOr => "__intrinsic_or__",
             Self::FillCtx => "__Fill_ctx__",
             Self::Fill => "__fill__",
             Self::FillResult => "__fill_result__",
@@ -318,6 +324,8 @@ impl ComptimeBuiltin {
             | Self::IntrinsicEither
             | Self::IntrinsicAbsurd
             | Self::IntrinsicIfThenElse
+            | Self::IntrinsicAnd
+            | Self::IntrinsicOr
             | Self::Fill
             | Self::FillResult
             | Self::TermSpecialize => None,
@@ -355,6 +363,8 @@ impl ComptimeBuiltin {
                 | Self::IntrinsicEither
                 | Self::IntrinsicAbsurd
                 | Self::IntrinsicIfThenElse
+                | Self::IntrinsicAnd
+                | Self::IntrinsicOr
                 | Self::TermSpecialize
         )
     }
@@ -427,6 +437,8 @@ pub const PUBLIC_COMPTIME_NAMES: &[&str] = &[
     "__intrinsic_either__",
     "__intrinsic_absurd__",
     "__intrinsic_if_then_else__",
+    "__intrinsic_and__",
+    "__intrinsic_or__",
     "__fill__",
     "__fill_result__",
 ];
@@ -502,6 +514,8 @@ mod tests {
             IntrinsicEither,
             IntrinsicAbsurd,
             IntrinsicIfThenElse,
+            IntrinsicAnd,
+            IntrinsicOr,
             FillCtx,
             Fill,
             TermSpecialize,

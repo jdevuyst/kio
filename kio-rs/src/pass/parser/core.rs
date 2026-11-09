@@ -1249,17 +1249,25 @@ impl OpRegistry {
         Ok(self.seen_keys.insert(key.clone()))
     }
 
-    fn insert(&mut self, pattern: Vec<OpPart>) -> Result<(), String> {
+    fn insert(
+        &mut self,
+        kind: crate::ast::FixedOperatorKind,
+        pattern: Vec<OpPart>,
+    ) -> Result<(), String> {
         let name = OperatorDispatchKey::from_pattern(&pattern);
         if !self.begin_local_shape(&name, || {
-            crate::ast::OperatorGrammar::fixed(&pattern).render()
+            crate::ast::OperatorGrammar::fixed(kind, &pattern).render()
         })? {
             return Ok(());
         }
-        self.insert_pattern_shape(pattern)
+        self.insert_pattern_shape(kind, pattern)
     }
 
-    fn insert_pattern_shape(&mut self, pattern: Vec<OpPart>) -> Result<(), String> {
+    fn insert_pattern_shape(
+        &mut self,
+        kind: crate::ast::FixedOperatorKind,
+        pattern: Vec<OpPart>,
+    ) -> Result<(), String> {
         let words = if matches!(pattern.first(), Some(OpPart::Token { .. })) {
             &mut self.prefix
         } else {
@@ -1275,10 +1283,10 @@ impl OpRegistry {
         if words.contains_key(&key) {
             return Err(format!(
                 "operator `{}` is already defined in this scope",
-                crate::ast::OperatorGrammar::fixed(&pattern).render()
+                crate::ast::OperatorGrammar::fixed(kind, &pattern).render()
             ));
         }
-        words.insert(key, OperatorBinding { pattern });
+        words.insert(key, OperatorBinding { kind, pattern });
         Ok(())
     }
 
@@ -1370,8 +1378,8 @@ fn insert_consumer_grammars(scope: &mut OpRegistry, import_clause: &Import) -> R
             continue;
         }
         let result = match grammar {
-            crate::ast::OperatorGrammar::Fixed(pattern) => {
-                scope.insert_pattern_shape(pattern.clone())
+            crate::ast::OperatorGrammar::Fixed { kind, pattern } => {
+                scope.insert_pattern_shape(*kind, pattern.clone())
             }
             crate::ast::OperatorGrammar::Variadic { .. } => Ok(()),
         };
@@ -1389,9 +1397,9 @@ fn build_operator_scope(module: &Module, local_end: usize) -> Result<OpRegistry,
     for item in module.items.iter().take(local_end) {
         match item {
             Item::Op(op, _) => {
-                let OpBody::Normal { pattern, .. } = &op.body;
+                let OpBody::Normal { kind, pattern, .. } = &op.body;
                 scope
-                    .insert(pattern.clone())
+                    .insert(*kind, pattern.clone())
                     .map_err(|message| Error::parse(op.meta.span, message))?;
             }
             Item::VariadicOperator(fold, _) => {
@@ -1409,6 +1417,7 @@ fn build_operator_scope(module: &Module, local_end: usize) -> Result<OpRegistry,
 /// separately against the explicitly selected provider.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct OperatorBinding {
+    kind: crate::ast::FixedOperatorKind,
     /// Exact locally written declaration or import-destination pattern.
     pattern: Vec<OpPart>,
 }
@@ -6007,7 +6016,8 @@ impl<'a> Parser<'a> {
                 crate::ast::OperatorGrammar::Variadic { open, close }
             } else {
                 self.expect_ident_named("op")?;
-                crate::ast::OperatorGrammar::fixed(&self.parse_op_pattern(true)?)
+                let kind = self.parse_op_kind();
+                crate::ast::OperatorGrammar::fixed(kind, &self.parse_op_pattern(true)?)
             };
             let span = Span::new(start, self.syntax_end);
             if allow_alias {
@@ -6019,8 +6029,8 @@ impl<'a> Parser<'a> {
                 let alias_start = self.peek_span().start;
                 self.suppress_current_cursor(CursorSuppressionKind::Binder);
                 let local = match &grammar {
-                    crate::ast::OperatorGrammar::Fixed(_) => {
-                        crate::ast::OperatorGrammar::fixed(&self.parse_op_pattern(true)?)
+                    crate::ast::OperatorGrammar::Fixed { kind, .. } => {
+                        crate::ast::OperatorGrammar::fixed(*kind, &self.parse_op_pattern(true)?)
                     }
                     crate::ast::OperatorGrammar::Variadic { .. } => {
                         let (open, close) = self.parse_variadic_delimiters()?;
@@ -6458,9 +6468,9 @@ impl<'a> Parser<'a> {
             // Imported grammars enter through their explicit selection lists.
             let op = self.op(modifiers)?;
             let span = op.meta.span;
-            let OpBody::Normal { pattern, .. } = &op.body;
+            let OpBody::Normal { kind, pattern, .. } = &op.body;
             self.operator_scope
-                .insert(pattern.clone())
+                .insert(*kind, pattern.clone())
                 .map_err(|message| self.err(span, message))?;
             Ok(Item::Op(Box::new(op), ()))
         } else if let Some(old) = self.peek_renamed_item_keyword() {
@@ -7515,27 +7525,59 @@ impl<'a> Parser<'a> {
     fn op(&mut self, modifiers: ItemModifiers) -> Result<Op, Error> {
         let start = self.peek_span().start;
         self.expect_ident_named("op")?;
+        let kind = self.parse_op_kind();
         let pattern = self.parse_op_pattern(false)?;
         let function = self.parse_normal_op_body()?;
         let end = self.syntax_end;
         Ok(Op {
             vis: modifiers.vis.clone(),
-            body: OpBody::Normal { pattern, function },
+            body: OpBody::Normal {
+                kind,
+                pattern,
+                function,
+            },
             body_trivia: Vec::new(),
             meta: Meta::new(Span::new(start, end)),
             doc: None,
         })
     }
 
+    fn parse_op_kind(&mut self) -> crate::ast::FixedOperatorKind {
+        self.cursor_choices(CursorSlot::Grammar, &["macro"]);
+        if self.peek_ident_named("macro") {
+            self.advance();
+            crate::ast::FixedOperatorKind::Macro
+        } else {
+            crate::ast::FixedOperatorKind::Function
+        }
+    }
+
     fn parse_op_pattern(&mut self, import_item: bool) -> Result<Vec<OpPart>, Error> {
         let start = self.peek_span().start;
         let mut pattern = Vec::new();
         loop {
-            let span = self.peek_span();
+            let start = self.peek_span().start;
+            let delayed = self.peek().is_some_and(|kind| kind.is_sym("."));
+            if delayed {
+                self.advance();
+            }
+            let span = Span::new(start, self.peek_span().end);
+            if delayed
+                && !matches!(
+                    self.peek(),
+                    Some(TokenKind::Slot1 | TokenKind::Slot2 | TokenKind::Slot3)
+                )
+                && !matches!(self.peek(), Some(TokenKind::Ident(word)) if word.chars().all(|c| c == '_') && word.len() >= 4)
+            {
+                return Err(self.err(
+                    span,
+                    "a delayed operator operand requires `_`, `__`, or `___` after `.`",
+                ));
+            }
             let part = match self.peek() {
-                Some(TokenKind::Slot1) => OpPart::SlotPlain { span },
-                Some(TokenKind::Slot2) => OpPart::SlotRecursive { span },
-                Some(TokenKind::Slot3) => OpPart::SlotGreedy { span },
+                Some(TokenKind::Slot1) => OpPart::SlotPlain { span, delayed },
+                Some(TokenKind::Slot2) => OpPart::SlotRecursive { span, delayed },
+                Some(TokenKind::Slot3) => OpPart::SlotGreedy { span, delayed },
                 Some(TokenKind::Ident(s)) if s.chars().all(|c| c == '_') && s.len() >= 4 => {
                     return Err(self.err(
                         span,
@@ -13256,7 +13298,7 @@ fn find_next_item_start(
         if matches!(
             children.get(i.wrapping_sub(1)),
             Some(SkeletonNode::Leaf(prev))
-                if matches!(&prev.kind, TokenKind::Ident(prev_name) if prev_name == "fn")
+                if matches!(&prev.kind, TokenKind::Ident(prev_name) if matches!(prev_name.as_str(), "fn" | "macro"))
         ) {
             i += 1;
             continue;
@@ -13271,7 +13313,7 @@ fn find_next_item_start(
 
 /// Does the identifier `s` at `idx` have the token shape of a
 /// top-level item start? `find_next_item_start` excludes contextual
-/// names immediately after `fn`; parenthesized operator patterns
+/// names immediately after `fn` or `macro`; parenthesized operator patterns
 /// remain ordinary declaration heads here.
 fn item_keyword_starts_here(
     children: &[crate::pass::tree_skeleton::SkeletonNode],
@@ -13353,7 +13395,13 @@ fn item_keyword_starts_here(
         "fn" => leaf_value_name(1),
         "type" => leaf_ident(1) || brace_group(1),
         "literal" | "equiv" | "macro" => leaf_ident(1),
-        "op" => op_pattern_lead(1),
+        "op" => {
+            op_pattern_lead(1)
+                || matches!(
+                    children.get(idx + 1),
+                    Some(SkeletonNode::Leaf(token)) if matches!(&token.kind, TokenKind::Ident(name) if name == "macro")
+                )
+        }
         "varop" => matches!(
             children.get(idx + 1),
             Some(SkeletonNode::Group {
@@ -13441,7 +13489,7 @@ fn op_part_span(p: &OpPart) -> Span {
     match p {
         OpPart::SlotPlain { span, .. }
         | OpPart::SlotRecursive { span, .. }
-        | OpPart::SlotGreedy { span }
+        | OpPart::SlotGreedy { span, .. }
         | OpPart::Token { span, .. } => *span,
     }
 }
@@ -13531,8 +13579,8 @@ impl OperatorDispatchKey {
 /// Render a fixed operator's complete tagged public grammar.
 #[cfg(any(feature = "repl", feature = "repl-core"))]
 pub(crate) fn op_name(body: &OpBody) -> String {
-    let OpBody::Normal { pattern, .. } = body;
-    crate::ast::OperatorGrammar::fixed(pattern).render()
+    let OpBody::Normal { kind, pattern, .. } = body;
+    crate::ast::OperatorGrammar::fixed(*kind, pattern).render()
 }
 
 #[cfg(any(feature = "repl", feature = "repl-core"))]
@@ -13617,7 +13665,7 @@ fn validate_op_pattern(pattern: &[OpPart], span: Span) -> Result<(), Error> {
         ));
     }
     for (index, part) in pattern.iter().enumerate() {
-        let OpPart::SlotRecursive { span } = part else {
+        let OpPart::SlotRecursive { span, .. } = part else {
             continue;
         };
         if closed {

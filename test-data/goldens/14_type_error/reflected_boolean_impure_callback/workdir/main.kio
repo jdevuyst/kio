@@ -1,0 +1,5 @@
+module main;
+
+import provider(Bool, macro combine);
+
+fn check(value: Bool) -> Bool { combine(value) }

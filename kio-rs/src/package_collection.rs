@@ -363,6 +363,7 @@ pub struct PubOpRecord {
 #[derive(Clone)]
 pub enum PubOpRecordBody {
     Normal {
+        kind: crate::ast::FixedOperatorKind,
         pattern: Vec<OpPart>,
         function: crate::ast::LexicalCallablePath,
     },
@@ -379,10 +380,15 @@ pub fn collect_pub_ops(modules: &[(PathBuf, Module<Surface>)]) -> Vec<PubOpRecor
             if let Item::Op(d, _) = item
                 && d.vis.is_pub()
             {
-                let crate::ast::OpBody::Normal { pattern, function } = &d.body;
+                let crate::ast::OpBody::Normal {
+                    kind,
+                    pattern,
+                    function,
+                } = &d.body;
                 records.push(PubOpRecord {
                     name: OperatorDispatchKey::from_pattern(pattern),
                     body: PubOpRecordBody::Normal {
+                        kind: *kind,
                         pattern: pattern.clone(),
                         function: function.clone(),
                     },
@@ -6810,7 +6816,7 @@ mod tests {
             panic!("expected consumer function");
         };
         let crate::ast::Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { pattern, slots },
+            kind: crate::ast::OpChainKind::Normal { pattern, slots, .. },
             ..
         } = &definition.body
         else {

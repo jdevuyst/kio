@@ -1,0 +1,15 @@
+package boolean_control;
+
+build {
+  cache "out/cache";
+
+  target haskell {
+    out "out/haskell";
+    baseline ghc9_10
+  }
+}
+
+bridge {
+  main;
+  macros/control
+}

@@ -113,7 +113,8 @@ these interfaces without becoming builtins themselves. See
 
 **Operator word, slot, atom, frame.** A fixed operator alternates whole symbol
 words with value slots: `_` accepts an atom, `__` also its own operator's
-chain, and `___` also another operator's chain. An *atom* is a syntactically
+chain, and `___` also another operator's chain. A dotted slot (`._`, `.__`, `.___`)
+wraps its operand in a thunk without changing that parsing permission. An *atom* is a syntactically
 bounded expression, including a fixed operator completed by a final symbol
 word; a pattern ending in an operand needs declared chain permission or
 grouping to compose in that position. A variadic *frame* is a bare or marked

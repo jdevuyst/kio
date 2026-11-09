@@ -574,7 +574,7 @@ fn module_scope_from_surface_impl(module: &crate::ast::Module<crate::ast::Surfac
                     {
                         let grammar = alias.as_ref().map_or(grammar, |alias| &alias.local);
                         scope.imported.push(grammar.render());
-                        if let crate::ast::OperatorGrammar::Fixed(pattern) = grammar
+                        if let crate::ast::OperatorGrammar::Fixed { pattern, .. } = grammar
                             && let Some(name) = operator_pattern_token_name(pattern)
                         {
                             scope.imported.push(name);
@@ -847,6 +847,8 @@ const INTRINSICS: &[&str] = &[
     "__fst__",
     "__snd__",
     "__if_then_else__",
+    "__and__",
+    "__or__",
     "__absurd__",
 ];
 

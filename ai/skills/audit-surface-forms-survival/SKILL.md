@@ -121,6 +121,13 @@ Known examples in the current tree to use as exemplars (counterfactual-failures 
 Counterfactual-survivors (fields with surface flavour that round-trip via source text — keep them as-is):
 
 - `Type::Function.abi_arity: usize` — runtime/signature packet metadata used to bind definition bodies and adapt host calling conventions. It is not type identity, and equal semantic function types need not preserve the same declaration grouping. Neither this field nor a boundary-local signature artifact may select source call completion, grouping, residualization, or UFCS placement; those decisions use the resolved type and written syntax alone. A signature artifact may be consulted only after that public call plan is fixed, for representation or body-binding work that cannot alter source semantics.
+
+Compare direct and first-class calls, nominal members, and generic-at-Unit
+against literal Unit domains. A Unit-typed expression remains an argument,
+including its effects or opaque symbolic identity; zero ABI slots do not erase
+it. A type-only application retains its value stage, whereas an explicit empty
+value call supplies Unit. For computed products, native slot adaptation must
+evaluate the whole packet once rather than recompute it per projection.
 - `Param.ty: Option<Type<P>>` / `Expr::FnExpr.ret_ty: Option<Type<P>>` — `Some(t)` means the user wrote the annotation, `None` means the typer infers from context. Kio' admits both shapes (`.(x) { … }` and `.(x: T) { … }` are distinct source spellings), the pretty-printer respects the `Option`, and a fresh re-parse re-derives the same `Some`/`None`. The optionality is a genuine Kio' syntactic distinction ("this slot is inferred from context"), not hidden provenance. The only narrowing that would work for these requires filling `None` from a side table at substitute time — which the phase-boundary side-channel rule above rejects, since the inferred type is canonically re-derivable from the surrounding context at re-parse.
 
 For each candidate field on a Prime-surviving node, answer in order:

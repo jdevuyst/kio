@@ -1,0 +1,16 @@
+module fallback/countdown;
+
+import option/core as o;
+import option/core(macro unwrap_or_lazy);
+import option/macros/control(macro if);
+import testapi(I32);
+import testapi/arith(leq_i32, sub_i32);
+import testapi/iter(loop);
+
+fn stop_at_zero(n: I32) -> o.Option[I32] {
+  if(leq_i32(n, 0)) { o.some(42[I32]) } else { o.none[I32] }
+}
+
+pub rec(loop) fn countdown(n: I32) -> I32 {
+  unwrap_or_lazy(stop_at_zero(n)) { recur countdown(sub_i32(n, 1)) }
+}

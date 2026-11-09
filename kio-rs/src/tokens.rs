@@ -1420,13 +1420,25 @@ fn mark_operator_head(raw: &[LexToken], span: Span, variadic: bool, overrides: &
         return;
     };
     overrides.insert(raw[index].span.start, TokenKind::KeywordDeclaration);
+    if !variadic
+        && raw
+            .get(index + 1)
+            .is_some_and(|token| is_ident_named(token, "macro"))
+    {
+        overrides.insert(raw[index + 1].span.start, TokenKind::KeywordDeclaration);
+    }
 }
 
 fn walk_op(o: &ast::Op<ast::Surface>, raw: &[LexToken], overrides: &mut AstOverrides) {
-    mark_declaration_keyword(raw, o.meta.span, "op", overrides);
-    let ast::OpBody::Normal { function, .. } = &o.body;
+    mark_operator_head(raw, o.meta.span, false, overrides);
+    let ast::OpBody::Normal { kind, function, .. } = &o.body;
     mark_variadic_clause_head(raw, function, overrides);
     mark_callable_path(function, overrides);
+    if *kind == ast::FixedOperatorKind::Macro
+        && let Some(last) = function.last()
+    {
+        overrides.insert(last.span.start, TokenKind::EntityNameMacroReference);
+    }
 }
 
 fn walk_variadic_operator(
@@ -3357,6 +3369,29 @@ mod tests {
         assert_eq!(at("op(import:", 3), TokenKind::VariableParameter);
         assert_eq!(at("{ import }", 2), TokenKind::Identifier);
         assert_eq!(at("fn import", 3), TokenKind::EntityNameFunction);
+    }
+
+    #[test]
+    fn macro_operator_tags_and_implementation_have_distinct_roles() {
+        let source = "module app; import syntax(op macro _ && .__); op macro # ._ { impl selected; } fn run(value: .) { # value }";
+        let module = crate::pass::parser::parse(source).unwrap();
+        let tokens = dump_with_module(source, &module).unwrap();
+        for (needle, kind) in [
+            ("macro _", TokenKind::KeywordDeclaration),
+            ("macro #", TokenKind::KeywordDeclaration),
+            ("selected", TokenKind::EntityNameMacroReference),
+        ] {
+            let start = source.find(needle).unwrap() as u32;
+            assert_eq!(
+                tokens
+                    .iter()
+                    .find(|token| token.span.start == start)
+                    .unwrap()
+                    .kind,
+                kind,
+                "{needle}"
+            );
+        }
     }
 
     #[test]

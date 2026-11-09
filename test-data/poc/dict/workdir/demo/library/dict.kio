@@ -2,9 +2,11 @@
 /// A ready-to-use library module for your own Kio package.
 module library/dict;
 
+import __comptime__;
 import dict_host as _rehost_gegjgdhefpgigphdhe;
+import library/macros/control(Bool as Control_bool, checked_sum_dispatch, macro if);
 import library/macros/match(macro match);
-import library/macros/spine_macros(macro flatten_sum, macro narrow_sum, macro widen_sum);
+import library/macros/spine_macros(macro narrow_sum, macro widen_sum);
 
 pub type I32 = _rehost_gegjgdhefpgigphdhe.I32;
 
@@ -34,29 +36,22 @@ pub fn ord_select[A](on_lt: A, on_eq: A, on_gt: A, o: Ordering) -> A {
   }
 }
 
-/// Defines the two labels that make the module-local boolean shape matchable.
-pub type { Btrue: .; Bfalse: . }
+/// Boolean values shared with the control library.
+pub type Flag = Control_bool;
 
-/// Boolean-like result type used by pure predicates in the dictionary.
-pub type Flag = Btrue | Bfalse;
+/// Returns true.
+pub fn yes() -> Flag { .t }
 
-/// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Flag { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
+/// Returns false.
+pub fn no() -> Flag { .f }
 
-/// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Flag { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
-
-/// Eliminates a dictionary `Flag` without exposing the label internals to callers.
+/// Selects between already evaluated values.
 pub fn bool_select[A](on_true: A, on_false: A, b: Flag) -> A {
-  match(b) {
-    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
-  }
+  if(b) { on_true } else { on_false }
 }
 
-/// Collapses two explicit Flag arms into one Flag.
-pub fn collapse_bool(doubled: Flag | Flag) -> Flag {
-  narrow_sum(flatten_sum(doubled)[Btrue | Bfalse | Btrue | Bfalse])
-}
+/// Collapses two Boolean arms into one.
+pub fn collapse_bool(doubled: Flag | Flag) -> Flag { narrow_sum(doubled)[Flag] }
 
 // Red-black trees colour each node red or black to bound the longest
 // root-to-leaf path at twice the shortest — O(log n) operations.
@@ -378,6 +373,49 @@ pub fn get_or[K][V](cmp: Compare[K], d: Dict[K][V], target: K, default: V) -> V 
     (.(value: V) { value }, .(_absent: .) { default })
   }
 }
+
+pure fn get_or_lazy_source(ct: __Comptime__, get: __Checked_term__, inputs: __Checked_term__) -> __Checked_term__ {
+  let inputs_type = __term_type__(ct, inputs);
+  let cmp = __intrinsic_fst__(ct, inputs_type, inputs);
+  let tail = __intrinsic_snd__(ct, inputs_type, inputs);
+  let tail_type = __term_type__(ct, tail);
+  let dict = __intrinsic_fst__(ct, tail_type, tail);
+  let last = __intrinsic_snd__(ct, tail_type, tail);
+  let key = __intrinsic_fst__(ct, __term_type__(ct, last), last);
+  let args = __intrinsic_pair__(ct, cmp, __intrinsic_pair__(ct, dict, key));
+  __term_call__(ct, __term_type__(ct, get), get, args)
+}
+
+pure fn get_or_lazy_fallback(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let tail = __intrinsic_snd__(ct, __term_type__(ct, inputs), inputs);
+  let last = __intrinsic_snd__(ct, __term_type__(ct, tail), tail);
+  let thunk = __intrinsic_snd__(ct, __term_type__(ct, last), last);
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn get_or_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, getter: __Checked_term__
+, key: __Type__
+, value: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let get = __term_type_app__(ct, __term_type_app__(ct, getter, key), value);
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , value
+  , inputs
+  , .(packet: __Checked_term__) { get_or_lazy_source(ct, get, packet) }
+  , .(_packet: __Checked_term__, present: __Checked_term__) { present }
+  , .(packet: __Checked_term__, _unit: __Checked_term__) { get_or_lazy_fallback(ct, packet) }
+  , .(packet: __Checked_term__) { get_or_lazy_fallback(ct, packet) }
+  )
+}
+
+/// Returns the value at the target key, or calls the default thunk when absent.
+pub macro get_or_lazy : [K][V] (Compare[K] & Dict[K][V] & K & (. -> V)) -> V { captures get; trailing thunk; impl(fills) get_or_lazy_checked }
 
 // Insertion records only the ancestors and sibling subtrees needed to
 // rebuild one search path, then restores the black root invariant.

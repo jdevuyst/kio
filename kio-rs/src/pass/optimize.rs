@@ -1170,7 +1170,14 @@ fn propagate_bound_tuple_slots(mut e: Expr<Enriched>, changed: &mut bool) -> Exp
         else {
             return None;
         };
-        if !tuple_slots_preserve_literal_boundary(items) {
+        // A Boolean literal paired with a closure remains the sole retained
+        // slot below: its exact host construction stays in this eager binding.
+        // Only the inert closure moves into the conditional branch.
+        let retained_boolean_literal = matches!(
+            items.as_slice(),
+            [Expr::BoolLit { .. }, Expr::FnExpr { .. }]
+        );
+        if !retained_boolean_literal && !tuple_slots_preserve_literal_boundary(items) {
             return None;
         }
         let slot_types = explicit_tuple_slots(synth_ty, items.len())?;
@@ -5676,6 +5683,102 @@ mod tests {
                 if segments.last().is_some_and(|part| part.name == "condition"))));
         assert!(is_path_ref(then_branch, "left"));
         assert!(is_path_ref(else_branch, "right"));
+    }
+
+    #[test]
+    fn boolean_packet_removes_inline_rhs_without_reconstructing_left() {
+        for intrinsic in ["__and__", "__or__"] {
+            for left in ["left()", ".f[Bool]"] {
+                let module = optimize_one(
+                    "x/main",
+                    &format!(
+                        "module x/main; import __intrinsics__; \
+                         host type Bool role(bool); \
+                         host fn left() -> Bool; host fn right() -> Bool; \
+                         fn choose() -> Bool {{ \
+                           let packet = ({left}, .() {{ right() }}); \
+                           {intrinsic}[Bool](packet) \
+                         }}"
+                    ),
+                );
+                let body = fn_body(&module, "choose");
+                assert!(!contains(body, &|e| matches!(e, Expr::FnExpr { .. })));
+                assert!(!contains(body, &|e| matches!(
+                    e,
+                    Expr::EnrichedTuple { .. } | Expr::EnrichedProject { .. }
+                )));
+                let Expr::Let {
+                    name,
+                    value,
+                    body: dispatch,
+                    ..
+                } = body
+                else {
+                    panic!("left must remain bound once: {body:?}");
+                };
+                assert_eq!(
+                    matches!(value.as_ref(), Expr::BoolLit { .. }),
+                    left == ".f[Bool]"
+                );
+                let Expr::EnrichedConditional {
+                    cond,
+                    then_branch,
+                    else_branch,
+                    ..
+                } = dispatch.as_ref()
+                else {
+                    panic!("expected a conditional: {dispatch:?}");
+                };
+                assert!(is_path_ref(cond, name));
+                let (taken, skipped) = if intrinsic == "__and__" {
+                    (then_branch, else_branch)
+                } else {
+                    (else_branch, then_branch)
+                };
+                assert!(is_path_ref(skipped, name));
+                assert!(
+                    matches!(taken.as_ref(), Expr::Call { callee, .. } if is_path_ref(callee, "right"))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn canonical_boolean_macros_and_operators_remove_inline_rhs_thunks() {
+        let module = optimize_one(
+            "x/main",
+            "module x/main; \
+             import control(Bool, macro and, macro or, not, op macro _ && .__, op macro _ || .__); \
+             fn direct(left: Bool, middle: Bool, right: Bool) -> Bool { \
+               and(left, .() { or(middle, .() { not(right) }) }) \
+             } \
+             fn blocks(left: Bool, middle: Bool, right: Bool) -> Bool { \
+               and(left) { or(middle) { not(right) } } \
+             } \
+             fn operators(left: Bool, middle: Bool, right: Bool) -> Bool { \
+               left && (middle || not(right)) \
+             } \
+             fn opaque(left: Bool, right: . -> Bool) -> Bool { and(left, right) }",
+        );
+        for name in ["direct", "blocks", "operators"] {
+            let body = fn_body(&module, name);
+            assert!(
+                contains(body, &|e| matches!(e, Expr::EnrichedConditional { .. })),
+                "{name}: {body:?}"
+            );
+            assert!(
+                !contains(body, &|e| matches!(e, Expr::FnExpr { .. })),
+                "{name}: inline thunk survived: {body:?}"
+            );
+        }
+        let opaque = fn_body(&module, "opaque");
+        assert!(
+            contains(
+                opaque,
+                &|e| matches!(e, Expr::Call { callee, .. } if is_path_ref(callee, "right"))
+            ),
+            "the opaque callback remains selected invocation: {opaque:?}"
+        );
     }
 
     #[test]

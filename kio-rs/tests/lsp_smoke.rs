@@ -2725,6 +2725,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
         "import pkg/provider as helper;\n",
         "\n",
         "op _ + _ { impl helper.combine; };\n",
+        "op macro # ._ { impl helper.echo; };\n",
         "varop [* *] {\n",
         "  foldr helper.push helper.empty;\n",
         "  finalize helper.finish;\n",
@@ -2733,6 +2734,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
         "\n",
         "fn direct() -> . { helper.combine((), ()) }\n",
         "fn use_operator() -> . { () + () }\n",
+        "fn use_macro_operator() -> . { (# ())() }\n",
     );
     let main_path = dir.write("pkg/main.kio", source);
     let provider = concat!(
@@ -2744,6 +2746,8 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
         "pub fn empty() -> . { () }\n",
         "pub fn push(left: ., right: .) -> . { left }\n",
         "pub fn finish(value: .) -> . { value }\n",
+        "pure fn echo_impl(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ { value }\n",
+        "pub macro echo : [A] A -> A { impl echo_impl; }\n",
         "pub pure fn elab_impl(ct: __Comptime__) -> __Checked_term__ {\n",
         "  __term_unit__(ct)\n",
         "}\n",
@@ -2757,7 +2761,7 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
     let provider_uri = path_to_file_uri(&provider_path);
     open_and_wait_for_analysis(&mut lsp, &uri, source);
 
-    for target in ["combine", "empty", "push", "finish"] {
+    for target in ["combine", "empty", "push", "finish", "echo"] {
         let written = format!("helper.{target}");
         let path_start = source.find(&written).expect("declaration target");
         let leaf_start = path_start + "helper.".len();
@@ -2780,7 +2784,11 @@ fn lsp_callable_declaration_targets_use_exact_semantic_leaf_positions() {
             definition_start(&definition),
             source_position(
                 provider,
-                provider.find(target).expect("provider declaration name")
+                if target == "echo" {
+                    provider.find("macro echo").expect("macro declaration") + "macro ".len()
+                } else {
+                    provider.find(target).expect("provider declaration name")
+                }
             ),
             "`{written}` must resolve to the exact provider declaration token"
         );

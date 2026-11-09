@@ -299,7 +299,7 @@ equiv to_from_absent[A]() {
   widen_sum(())[A | .]
 }
 
-// `from_sum . to_sum ≡ id` on both arms of `Option(A)`.
+// `from_sum . to_sum ≡ id` on both arms of `Option[A]`.
 equiv from_to_present[A](x: A) {
   from_sum(to_sum(some(x)));
   some(x)

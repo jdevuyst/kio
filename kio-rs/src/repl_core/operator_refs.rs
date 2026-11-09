@@ -33,8 +33,12 @@ pub(super) fn uses(module: &Module<Surface>, source: &str, grammar: &OperatorGra
         match expr {
             Expr::OpChain { kind, .. } => {
                 let (actual, children, first) = match kind {
-                    OpChainKind::Normal { pattern, slots } => (
-                        OperatorGrammar::fixed(pattern),
+                    OpChainKind::Normal {
+                        callable_kind,
+                        pattern,
+                        slots,
+                    } => (
+                        OperatorGrammar::fixed(*callable_kind, pattern),
                         slots,
                         pattern.iter().find_map(|part| match part {
                             OpPart::Token { content, .. } => Some(content.as_str()),
@@ -146,6 +150,25 @@ fn values<'a>(args: &'a [CallArg<Surface>], pending: &mut Vec<&'a Expr<Surface>>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn macro_operator_queries_keep_kind_and_delay_identity() {
+        let source =
+            "module app; import ops(op macro _ && .__ as _ %% .__); fn run(a: ., b: .) { a %% b }";
+        let module = crate::pass::parser::parse(source).unwrap();
+        for (selector, count) in [
+            ("op macro _ %% .__", 1),
+            ("op _ %% .__", 0),
+            ("op macro _ %% __", 0),
+            ("op macro _ && .__", 0),
+        ] {
+            let grammar = crate::pass::parser::parse_operator_grammar(selector).unwrap();
+            assert_eq!(
+                super::uses(&module, source, &grammar).len(),
+                count,
+                "{selector}"
+            );
+        }
+    }
     use super::*;
     use crate::pass::parser::{parse, parse_operator_grammar};
 

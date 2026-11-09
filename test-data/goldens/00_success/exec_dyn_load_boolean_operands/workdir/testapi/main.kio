@@ -1,0 +1,136 @@
+module testapi/main;
+
+import host_descriptor(Host_type, bool_role, host_id_local, host_type_id);
+import host_descriptor(host_types_cons, host_types_nil, mk_host_id, mk_role_host_type);
+import hostrec(serve_default);
+import loader(Apply, Lookup, Str_in, Str_out, diag_message, un_load_outcome);
+import loader(Diag, Loaded, Lr_diag, Lr_image, Surface);
+import loader(Host_adapter, host_fn_bindings_nil, instantiate, mk_host_adapter);
+import loader/scan(load_package);
+import macros/control(macro if);
+import macros/match(macro match);
+import macros/row_macros(macro select);
+import testapi(Scalar, String);
+import testapi/io(print);
+import testapi/scalar(scalar_as_str, scalar_of_str);
+import testapi/text(string_concat, string_eq);
+import value(Side, Value, s_left, s_right, vhost);
+
+fn adapter() -> Host_adapter {
+  mk_host_adapter(
+  , host_types_cons(
+    , mk_role_host_type(mk_host_id("hostapi", "Flag"), bool_role())
+    , host_types_cons(
+      , mk_role_host_type(mk_host_id("hostapi", "Other"), bool_role())
+      , host_types_nil()
+      )
+    )
+  , host_fn_bindings_nil()
+  )
+}
+
+fn make_literal(text: String, ty: Host_type) -> Value {
+  vhost(scalar_of_str(string_concat(host_id_local(host_type_id(ty)), text)))
+}
+
+fn test_boolean(ty: Host_type, scalar: Scalar) -> Side {
+  match(scalar_as_str(scalar)) {
+    (
+    , .(text: String) {
+        if(string_eq(text, "left:true:tag")) {
+          s_right()
+        } else if(string_eq(text, string_concat(host_id_local(host_type_id(ty)), "t"))) {
+          s_right()
+        } else {
+          s_left()
+        }
+      }
+    , .(_wrong_representation: .) { s_left() }
+    )
+  }
+}
+
+fn call_value[P](surface: Surface[P], input: String) -> String {
+  match((surface.>select { Lookup.get[P] })("value")) {
+    (
+    , .(callee: P) {
+        match((surface.>select { Apply.get[P] })((
+        , callee
+        , (surface.>select { Str_in.get[P] })(input)
+        ))) {
+          (
+          , .(answer: P) {
+              match((surface.>select { Str_out.get[P] })(answer)) {
+                (.(value: String) { value }, .(diag: Diag) { diag_message(diag) })
+              }
+            }
+          , .(diag: Diag) { diag_message(diag) }
+          )
+        }
+      }
+    , .(diag: Diag) { diag_message(diag) }
+    )
+  }
+}
+
+fn evaluated(body: String, input: String) {
+  let source =
+    string_concat(
+    , "module hostapi; host type Flag role(bool); host type Other role(bool); "
+      "module guest; import __intrinsics__; import hostapi(Flag, Other); type "
+      "Alias = Flag; pub fn value(left: Flag) -> Flag { "
+    , string_concat(body, " } package guest; bridge { guest; hostapi; }")
+    );
+  match(un_load_outcome(load_package(source))) {
+    (
+    , .(image: Lr_image) {
+        match(instantiate(adapter(), serve_default, make_literal, test_boolean, Lr_image.get(image))) {
+          (
+          , .(loaded: Loaded) {
+              Loaded.get(loaded)(.[P](surface: Surface[P]) { print(call_value(surface, input)) })
+            }
+          , .(diag: Diag) { print(diag_message(diag)) }
+          )
+        }
+      }
+    , .(diag: Lr_diag) { print(diag_message(Lr_diag.get(diag))) }
+    )
+  };
+  print("\n")
+}
+
+fn rejected(body: String) {
+  let source =
+    string_concat(
+    , "module hostapi; host type Flag role(bool); module guest; import "
+      "__intrinsics__; import hostapi(Flag); fn invalid[B](left: B) -> B { "
+    , string_concat(body, " } package guest; bridge { guest; hostapi; }")
+    );
+  match(un_load_outcome(load_package(source))) {
+    (
+    , .(_accepted: Lr_image) { print("unexpected acceptance\n") }
+    , .(_rejected: Lr_diag) { print("rejected\n") }
+    )
+  }
+}
+
+pub fn main() {
+  evaluated("__and__[Alias](left, .() -> Flag { .t[Flag] })", "left:false:tag");
+  evaluated(
+  , "let selected = ((__and__))[Alias]; selected(left, .() -> Flag { .f[Flag] "
+    "})"
+  , "left:true:tag"
+  );
+  evaluated(
+  , "__or__[Flag](__pair__[Flag][(. -> Flag)](left, .() -> Flag { .f[Flag] "
+    "}))"
+  , "left:true:tag"
+  );
+  evaluated(
+  , "let selected = __or__[Flag]; selected(left, .() -> Flag { .t[Flag] })"
+  , "left:false:tag"
+  );
+  rejected("__and__[.]((), .() -> . { () })");
+  rejected("__or__[B](left, .() -> B { left })");
+  rejected("let selected = __and__; left")
+}

@@ -220,6 +220,16 @@ If no such improvement exists, do not report taste as a defect.
 
 ## 4. Cross-backend decision propagation
 
+For [Boolean and branch recovery](../../topics/emit.md#native-boolean-and-branch-recovery),
+classify each backend by its actual Boolean body representation. Check both
+inline operands and opaque callbacks, eager factory order, and returned exact
+carriers. A tagged custom carrier whose truth equality ignores the tag must
+retain that tag on a skipped branch; asserting only truth is insufficient.
+Do not infer primitive Boolean representation from a family label or a
+`role(bool)` annotation. Inspect the selected recovered child in serialized
+runtimes as well as native emitter output, and distinguish necessary expression
+wrappers from avoidable branch closures.
+
 Build the candidate set from every normative shared heading in
 `specs/backends/README.md` (including every `**Applies when:**` clause), plus
 each backend-local rule or defect whose cause may be reusable, especially one

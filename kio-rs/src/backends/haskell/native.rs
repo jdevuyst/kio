@@ -2760,6 +2760,20 @@ impl NativeExprEmitter<'_> {
             } => {
                 self.require_condition_type(cond)?;
                 let c = self.emit_pure(cond)?;
+                if let Some(native) =
+                    crate::backends::boolean::native_boolean(cond, then_branch, else_branch)
+                {
+                    use crate::backends::boolean::NativeBoolean;
+                    return match native {
+                        NativeBoolean::And(right) => {
+                            Ok(format!("(({c}) && ({}))", self.emit_pure(right)?))
+                        }
+                        NativeBoolean::Or(right) => {
+                            Ok(format!("(({c}) || ({}))", self.emit_pure(right)?))
+                        }
+                        NativeBoolean::Not => Ok(format!("(not ({c}))")),
+                    };
+                }
                 let t = self.emit_pure(then_branch)?;
                 let e = self.emit_pure(else_branch)?;
                 Ok(format!("(if {c} then ({t}) else ({e}))"))

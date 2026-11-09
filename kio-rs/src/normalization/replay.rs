@@ -147,6 +147,11 @@ where
                         pending.push(Work::Type(result_ty));
                         pending.push(Work::Node(&bottom_value.node));
                     }
+                    CheckedTermNode::IntrinsicBoolean { left, right, .. } => {
+                        pending.push(Work::Type(left.ty()));
+                        pending.push(Work::Node(&left.node));
+                        pending.push(Work::Node(&right.node));
+                    }
                     CheckedTermNode::IntrinsicIfThenElse {
                         result_ty,
                         condition,
@@ -371,6 +376,27 @@ where
             checked_template_intrinsic_expr_at(
                 "__absurd__",
                 vec![CallArg::Type(result_ty), CallArg::Value(bottom_value)],
+                node_span,
+            )
+        }
+        CheckedTermNode::IntrinsicBoolean { conjunction, .. } => {
+            let bool_ty = read.ty();
+            let left = read.expr();
+            let right = read.expr();
+            checked_template_intrinsic_expr_at(
+                if *conjunction { "__and__" } else { "__or__" },
+                vec![
+                    CallArg::Type(bool_ty),
+                    CallArg::Value(left),
+                    CallArg::Value(Expr::FnExpr {
+                        occurrence: Default::default(),
+                        sig: Signature::from_groups(vec![crate::ast::SignatureGroup::Value(Vec::new())]),
+                        ret_ty: None,
+                        body: Box::new(right),
+                        meta: Meta::new(node_span),
+                        caps: (),
+                    }),
+                ],
                 node_span,
             )
         }

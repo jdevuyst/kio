@@ -513,7 +513,7 @@ module.exports = grammar({
     )),
 
     import_macro_item: ($) => prec.dynamic(25, seq(
-      alias(kw("macro"), $.keyword_declaration),
+      $.keyword_declaration,
       field("source", alias($._value_identifier_like, $.entity_name_function)),
       optional(seq(alias($.keyword_as, $.keyword_declaration),
         field("alias", alias($._value_identifier_like, $.entity_name_function)))),
@@ -523,7 +523,7 @@ module.exports = grammar({
       prec.dynamic(20,
         // Attach `as` to the complete pattern before ending this import item.
         prec.right(choice(
-          seq($.keyword_op, repeat1($._import_pattern_token),
+          seq($.keyword_op, optional($.keyword_declaration), repeat1($._import_pattern_token),
             optional(seq(alias($.keyword_as, $.keyword_declaration), repeat1($._import_pattern_token)))),
           seq($.keyword_varop, choice($.variadic_head, alias($._malformed_varop_head_open, $.variadic_open)),
             optional(seq(alias($.keyword_as, $.keyword_declaration), $.variadic_head))),
@@ -543,6 +543,7 @@ module.exports = grammar({
     _import_pattern_leaf: ($) =>
       choice(
         $.slot,
+        $.delayed_slot,
         $.operator_builtin,
         $.operator_arrow_type,
         $._operator_run,
@@ -1088,17 +1089,19 @@ module.exports = grammar({
         seq(
           optional($._visibility_modifier),
           $.keyword_op,
+          optional($.keyword_declaration),
           repeat1($._op_pattern_token),
           $.callable_impl_block,
         ),
       ),
-    incomplete_op_decl: ($) => prec.dynamic(10, prec.right(seq($.keyword_op, repeat1($._op_pattern_token)))),
+    incomplete_op_decl: ($) => prec.dynamic(10, prec.right(seq($.keyword_op, choice(seq($.keyword_declaration, repeat($._op_pattern_token), optional($.separator_dot)), repeat1($._op_pattern_token))))),
 
     _op_pattern_token: ($) =>
       choice(
         $.comment_doc,
         $.comment_line,
         $.slot,
+        $.delayed_slot,
         $.operator_builtin,
         $.operator_arrow_type,
         $._operator_run,
@@ -1270,8 +1273,9 @@ module.exports = grammar({
     separator_semicolon: ($) => ";",
     separator_comma: ($) => ",",
     separator_dot: ($) => ".",
-    keyword_declaration: ($) => kw("macro"),
+    keyword_declaration: ($) => "macro",
     slot: ($) => choice("___", "__", "_"),
+    delayed_slot: ($) => seq($.separator_dot, $.slot),
 
     bool_literal: ($) => seq(alias($.separator_dot, $.bool_prefix), $.bool_value),
     bool_value: ($) => token.immediate(choice("t", "f")),

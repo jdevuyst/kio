@@ -1,12 +1,14 @@
 /// Ready-to-use right-biased Result library with constructors, folds, mapping, binding, recovery, and operators.
 module result/result;
 
+import __comptime__;
+import result/macros/control(Bool as Control_bool, checked_sum_dispatch, macro if);
 import result/macros/match(macro match);
 import result/macros/spine_macros(macro widen_sum);
 
-// `Result(T, E)` is exactly the structural sum `T | E` — success on the
+// `Result[T][E]` is exactly the structural sum `T | E` — success on the
 // left, error on the right (Rust's convention). There is no nominal
-// wrapper: a `Result(T, E)` *is* a `T | E`, so `match`, the spine palette,
+// wrapper: a `Result[T][E]` *is* a `T | E`, so `match`, the spine palette,
 // and `widen_sum` / `narrow_sum` compose with these functions without any
 // unwrapping ceremony. The module just provides the *named* surface —
 // `ok`, `err`, `fold`, `map`, `bind`, … — a reader of Rust- or OCaml-style
@@ -18,27 +20,18 @@ import result/macros/spine_macros(macro widen_sum);
 /// Right-biased success-or-error sum with success in the left arm and error in the right arm.
 pub type Result[T][E] = T | E;
 
-/// A pure two-state truth value, so the predicates below return a
-/// proper boolean without reaching for a host `Bool`. The two arms are
-/// labeled so `match` can tell them apart (a bare `. | .` could not).
-pub type { Btrue: .; Bfalse: . }
+/// Boolean values shared with the control library.
+pub type Bool = Control_bool;
 
-/// Boolean-like result type used by pure predicates in this module.
-pub type Bool = Btrue | Bfalse;
+/// Returns true.
+pub fn yes() -> Bool { .t }
 
-/// Builds the true branch of the module-local boolean shape.
-pub fn yes() -> Bool { widen_sum(Btrue.mk(()))[Btrue | Bfalse] }
+/// Returns false.
+pub fn no() -> Bool { .f }
 
-/// Builds the false branch of the module-local boolean shape.
-pub fn no() -> Bool { widen_sum(Bfalse.mk(()))[Btrue | Bfalse] }
-
-/// Eliminate a `Bool` to a caller-chosen value, keeping the underlying
-/// labels inside this module — a consumer never has to name `Btrue` /
-/// `Bfalse` to branch on a predicate's result.
+/// Selects between already evaluated values.
 pub fn bool_to[A](on_true: A, on_false: A, b: Bool) -> A {
-  match(b) {
-    (.(_t: Btrue) { on_true }, .(_f: Bfalse) { on_false })
-  }
+  if(b) { on_true } else { on_false }
 }
 
 // =====================================================================
@@ -125,6 +118,82 @@ pub fn unwrap_err_or[T][E](default: E, result: Result[T][E]) -> E {
   fold(.(_v: T) { default }, .(x: E) { x }, result)
 }
 
+pure fn recovery_source(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_fst__(ct, __term_type__(ct, inputs), inputs)
+}
+
+pure fn recovery_fallback(ct: __Comptime__, inputs: __Checked_term__) -> __Checked_term__ {
+  let thunk = __intrinsic_snd__(ct, __term_type__(ct, inputs), inputs);
+  __term_call__(ct, __term_type__(ct, thunk), thunk, __term_unit__(ct))
+}
+
+pure fn or_else_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, value: __Type__
+, error: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  let result = __type_sum__(ct, value, error);
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , result
+  , inputs
+  , .(packet: __Checked_term__) { recovery_source(ct, packet) }
+  , .(packet: __Checked_term__, _value: __Checked_term__) { recovery_source(ct, packet) }
+  , .(packet: __Checked_term__, _error: __Checked_term__) { recovery_fallback(ct, packet) }
+  , .(packet: __Checked_term__) { recovery_fallback(ct, packet) }
+  )
+}
+
+pure fn unwrap_or_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, value: __Type__
+, _error: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , value
+  , inputs
+  , .(packet: __Checked_term__) { recovery_source(ct, packet) }
+  , .(_packet: __Checked_term__, present: __Checked_term__) { present }
+  , .(packet: __Checked_term__, _error: __Checked_term__) { recovery_fallback(ct, packet) }
+  , .(packet: __Checked_term__) { recovery_fallback(ct, packet) }
+  )
+}
+
+pure fn unwrap_err_or_lazy_checked(
+, ct: __Comptime__
+, fills: __Fill_ctx__
+, _value: __Type__
+, error: __Type__
+, inputs: __Checked_term__
+) -> __Checked_term__ & __Fill_ctx__ {
+  checked_sum_dispatch(
+  , ct
+  , fills
+  , error
+  , inputs
+  , .(packet: __Checked_term__) { recovery_source(ct, packet) }
+  , .(packet: __Checked_term__, _value: __Checked_term__) { recovery_fallback(ct, packet) }
+  , .(_packet: __Checked_term__, present: __Checked_term__) { present }
+  , .(packet: __Checked_term__) { recovery_fallback(ct, packet) }
+  )
+}
+
+/// Keeps a success or calls the alternative thunk on error.
+pub macro or_else_lazy : [T][E] (Result[T][E] & (. -> Result[T][E])) -> Result[T][E] { trailing thunk; impl(fills) or_else_lazy_checked }
+
+/// Extracts a success or calls the default thunk on error.
+pub macro unwrap_or_lazy : [T][E] (Result[T][E] & (. -> T)) -> T { trailing thunk; impl(fills) unwrap_or_lazy_checked }
+
+/// Extracts an error or calls the default thunk on success.
+pub macro unwrap_err_or_lazy : [T][E] (Result[T][E] & (. -> E)) -> E { trailing thunk; impl(fills) unwrap_err_or_lazy_checked }
+
 // =====================================================================
 // Bridge
 // =====================================================================
@@ -162,7 +231,7 @@ pub op _ <*> _ { impl apply }
 // Algebraic laws (`equiv`)
 // =====================================================================
 //
-// A bare `Result(T, E)` parameter is an opaque sum atom the reducer cannot
+// A bare `Result[T][E]` parameter is an opaque sum atom the reducer cannot
 // dispatch on — `match` on it is stuck — so the laws that walk the sum are
 // stated on the two concrete spines `ok(x)` and `err(y)`. That pair *is* the
 // universal statement: a `Result` is one of those two shapes, so the arm-wise

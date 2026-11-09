@@ -1,0 +1,58 @@
+module main;
+
+type { Unit_box: . { mk; get } }
+
+type { Generic_box[A]: A { mk; get } }
+
+type { Marker[A]: . { mk; get } }
+
+host fn opaque_unit();
+
+fn indirect(value: .) { let constructor = Unit_box.mk; Unit_box.get(constructor(value)) }
+
+fn marker_constructor() -> . -> Marker[.] { let constructor = Marker.mk; constructor[.] }
+
+fn marker_projector() -> Marker[.] -> . { let projector = Marker.get; projector[.] }
+
+equiv symbolic_unit_payload(value: .) {
+  Unit_box.get(Unit_box.mk(value));
+  indirect(value);
+  Generic_box.get(Generic_box.mk[.](value));
+  value
+}
+
+equiv computed_unit_payload() {
+  Unit_box.get(Unit_box.mk(opaque_unit()));
+  indirect(opaque_unit());
+  Generic_box.get(Generic_box.mk[.](opaque_unit()));
+  opaque_unit()
+}
+
+equiv literal_unit_payload() {
+  Unit_box.get(Unit_box.mk());
+  Unit_box.get(Unit_box.mk(()));
+  Generic_box.get(Generic_box.mk[.](()));
+  ()
+}
+
+equiv retained_unit_stage() {
+  Marker.mk[.];
+  marker_constructor()
+}
+
+equiv retained_projector_stage() {
+  Marker.get[.];
+  marker_projector()
+}
+
+equiv applied_unit_stage(value: .) {
+  Marker.get[.](Marker.mk[.](value));
+  Marker.get[.](marker_constructor()(value));
+  value
+}
+
+equiv completed_unit_stage() {
+  Marker.get[.](Marker.mk[.]());
+  Marker.get[.](marker_constructor()());
+  ()
+}

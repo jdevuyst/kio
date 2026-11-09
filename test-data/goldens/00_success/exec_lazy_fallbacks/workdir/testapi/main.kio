@@ -1,0 +1,72 @@
+module testapi/main;
+
+import dict/dict as d;
+import dict/dict(macro get_or_lazy);
+import fallback/countdown(countdown);
+import option/core as o;
+import option/core(
+, macro or_else_lazy as option_or_else_lazy
+, macro unwrap_or_lazy as option_unwrap_or_lazy
+);
+import result/result as r;
+import result/result(
+, macro or_else_lazy as result_or_else_lazy
+, macro unwrap_err_or_lazy
+, macro unwrap_or_lazy as result_unwrap_or_lazy
+);
+import testapi(I32, String);
+import testapi/fmt(int_to_string);
+import testapi/io(print);
+
+fn emit(value: I32) { print(int_to_string(value)); print("\n") }
+
+fn value_factory(value: I32) -> . -> I32 {
+  print("F");
+  .() { print("B"); value }
+}
+
+fn eager_result(value: I32) -> r.Result[I32][String] { print("E"); r.ok(value) }
+
+fn result_factory(value: I32) -> . -> r.Result[I32][String] {
+  print("F");
+  .() { print("B"); r.ok(value) }
+}
+
+fn option_factory(value: I32) -> . -> o.Option[I32] {
+  print("F");
+  .() { print("B"); o.some(value) }
+}
+
+fn result_receiver(value: r.Result[I32][String]) -> r.Result[I32][String] { print("R"); value }
+
+fn result_receiver_err(value: r.Result[String][I32]) -> r.Result[String][I32] { print("R"); value }
+
+fn option_receiver(value: o.Option[I32]) -> o.Option[I32] { print("R"); value }
+
+fn dict_receiver(value: d.Dict[I32][I32]) -> d.Dict[I32][I32] { print("R"); value }
+
+fn compare(_a: I32, _b: I32) -> d.Ordering { d.eq() }
+
+pub fn main() {
+  let good = r.ok[_][String](1[I32]);
+  let bad = r.err[I32][_]("error"[String]);
+  emit(r.unwrap_or(0, result_or_else_lazy(result_receiver(good), result_factory(9))));
+  emit(r.unwrap_or(0, result_or_else_lazy(result_receiver(bad), result_factory(9))));
+  emit(result_unwrap_or_lazy(result_receiver(bad), value_factory(9)));
+  emit(result_unwrap_or_lazy(result_receiver(good), value_factory(8)));
+  let good_text = r.ok[_][I32]("success"[String]);
+  let bad_number = r.err[String][_](3[I32]);
+  emit(unwrap_err_or_lazy(result_receiver_err(bad_number), value_factory(7)));
+  emit(unwrap_err_or_lazy(result_receiver_err(good_text), value_factory(7)));
+  emit(o.from_option(0, option_or_else_lazy(option_receiver(o.some(4[I32])), option_factory(6))));
+  emit(o.from_option(0, option_or_else_lazy(option_receiver(o.none[I32]), option_factory(6))));
+  emit(option_unwrap_or_lazy(option_receiver(o.some(5[I32])), value_factory(5)));
+  emit(option_unwrap_or_lazy(option_receiver(o.none[I32]), value_factory(5)));
+  let present = d.singleton(1[I32], 6[I32]);
+  emit(get_or_lazy(compare, dict_receiver(present), 1[I32], value_factory(4)));
+  emit(get_or_lazy(compare, dict_receiver(d.empty[I32][I32]), 1[I32], value_factory(4)));
+  emit(result_unwrap_or_lazy(result_receiver(bad)) { print("B"); 8[I32] });
+  emit(option_unwrap_or_lazy(option_receiver(o.some(5[I32]))) { print("bad"); 0[I32] });
+  emit(r.unwrap_or(0, r.or_else(result_receiver(good), eager_result(8))));
+  emit(countdown(64))
+}

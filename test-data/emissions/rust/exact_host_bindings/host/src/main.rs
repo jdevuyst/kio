@@ -46,12 +46,18 @@ impl From<String> for OwnedText {
 #[derive(Clone, Debug, PartialEq)]
 struct Token(u8);
 
-#[derive(Clone, Debug, PartialEq)]
-struct Unused(bool);
+#[derive(Clone, Debug)]
+struct Unused(bool, u8);
+
+impl PartialEq for Unused {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
 
 impl From<bool> for Unused {
     fn from(value: bool) -> Self {
-        Self(value)
+        Self(value, 0)
     }
 }
 
@@ -163,49 +169,91 @@ fn main() {
         OwnedText("owned literal".to_owned()),
     );
     assert_eq!(
-        package.main.choose(Unused(true), Token(1), Token(2)),
+        package.main.choose(Unused(true, 0), Token(1), Token(2)),
         Token(1),
     );
     assert_eq!(
-        package.main.choose(Unused(false), Token(1), Token(2)),
+        package.main.choose(Unused(false, 0), Token(1), Token(2)),
         Token(2),
     );
     assert_eq!(
-        package.main.chooseCall(Unused(true), Token(3), Token(4)),
+        package.main.chooseCall(Unused(true, 0), Token(3), Token(4)),
         Token(3),
     );
     assert_eq!(
         package
             .main
-            .chooseHostCall(Unused(true), Token(11), Token(12)),
+            .chooseHostCall(Unused(true, 0), Token(11), Token(12)),
         Token(11),
     );
     assert_eq!(
         package
             .main
-            .chooseHostCall(Unused(false), Token(13), Token(14)),
+            .chooseHostCall(Unused(false, 0), Token(13), Token(14)),
         Token(14),
     );
     assert_eq!(
-        package.main.chooseLet(Unused(false), Token(3), Token(4)),
+        package.main.chooseLet(Unused(false, 0), Token(3), Token(4)),
         Token(4),
     );
     assert_eq!(package.main.chooseLiteral(Token(5), Token(6)), Token(5));
     assert_eq!(
         package
             .main
-            .chooseClosure(Unused(false), Token(7), Token(8)),
+            .chooseClosure(Unused(false, 0), Token(7), Token(8)),
         Token(8),
     );
     let choice =
         ffi_rust_exact_host_bindings::ffi::exp::main__chooseDestructured::arg0::<ExactHost> {
-            _0: Unused(true),
+            _0: Unused(true, 0),
             _1: Token(9),
         };
-    assert_eq!(
-        package.main.chooseDestructured(choice, Token(10)),
-        Token(9),
-    );
+    assert_eq!(package.main.chooseDestructured(choice, Token(10)), Token(9),);
+
+    for (truth, expected_and, expected_or) in [(false, 41, 73), (true, 73, 41)] {
+        assert_eq!(
+            package
+                .main
+                .andInline(Unused(truth, 41), Unused(!truth, 73))
+                .1,
+            expected_and
+        );
+        assert_eq!(
+            package
+                .main
+                .orInline(Unused(truth, 41), Unused(!truth, 73))
+                .1,
+            expected_or
+        );
+
+        let invoked = Rc::new(std::cell::Cell::new(0));
+        let and_calls = Rc::clone(&invoked);
+        let and_rhs =
+            ffi_rust_exact_host_bindings::ffi::exp::main__andCallback::arg1::<ExactHost>::new(
+                move || {
+                    and_calls.set(and_calls.get() + 1);
+                    Unused(!truth, 73)
+                },
+            );
+        assert_eq!(
+            package.main.andCallback(Unused(truth, 41), and_rhs).1,
+            expected_and
+        );
+        assert_eq!(invoked.get(), usize::from(truth));
+        let or_calls = Rc::clone(&invoked);
+        let or_rhs =
+            ffi_rust_exact_host_bindings::ffi::exp::main__orCallback::arg1::<ExactHost>::new(
+                move || {
+                    or_calls.set(or_calls.get() + 1);
+                    Unused(!truth, 73)
+                },
+            );
+        assert_eq!(
+            package.main.orCallback(Unused(truth, 41), or_rhs).1,
+            expected_or
+        );
+        assert_eq!(invoked.get(), 1);
+    }
 
     package.a.call();
     package.a_.call();

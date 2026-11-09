@@ -53,6 +53,7 @@ build {
 bridge {
   core;
   queue;
+  macros/control;
   macros/testapi;
   list/core;
   list/macros/testapi

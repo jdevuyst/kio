@@ -1,0 +1,11 @@
+module main;
+
+import __intrinsics__;
+
+host type First role(bool);
+
+host type Second role(bool);
+
+fn value(left: First, right: Second) -> First {
+  __or__[First](left, .() -> Second { right })
+}

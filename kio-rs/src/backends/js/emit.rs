@@ -2582,6 +2582,27 @@ fn lower_enriched_conditional(
         then_branch,
         else_branch,
     } = conditional;
+    if let Some(native) = crate::backends::boolean::native_boolean(cond, then_branch, else_branch) {
+        use crate::backends::boolean::NativeBoolean;
+        out.push('(');
+        if matches!(native, NativeBoolean::Not) {
+            out.push('!');
+        }
+        ctx.lower_expr(cond, out)?;
+        match native {
+            NativeBoolean::And(right) | NativeBoolean::Or(right) => {
+                out.push_str(if matches!(native, NativeBoolean::And(_)) {
+                    " && "
+                } else {
+                    " || "
+                });
+                ctx.lower_expr(right, out)?;
+            }
+            NativeBoolean::Not => {}
+        }
+        out.push(')');
+        return Ok(());
+    }
     out.push('(');
     ctx.lower_expr(cond, out)?;
     out.push_str(" ? ");
@@ -2692,40 +2713,15 @@ fn push_js_escaped(s: &str, out: &mut String) {
 /// fn parameter, a let local, or a match-arm payload binder. JS
 /// reserved-word mangling applies in identifier position.
 ///
-/// Returns an emit error when `name` is one of the eight intrinsics
-/// (`__pair__` / `__fst__` / `__snd__` / `__left__` /
-/// `__right__` / `__either__` / `__if_then_else__` / `__absurd__`):
-/// the typer rejects an intrinsic used in value position (the
-/// polymorphic value isn't monomorphisable), and the recovery pass is
-/// total over them at call position, so anything reaching here is a
-/// pipeline regression, so fail as a compiler bug rather than fall through to
-/// an undefined-symbol JS source.
+/// Checked first-class intrinsics have ordinary callable wrappers, whose
+/// saturated bodies are recovered or routed before emission. A remaining
+/// bare intrinsic reference violates that earlier-phase contract.
 fn emit_bound_ref(name: &str, out: &mut String) -> Result<(), EmitError> {
-    if is_intrinsic_name(name) {
+    if crate::pass::resolve::PRIME_INTRINSICS.contains(&name) {
         unreachable!("intrinsic `{name}` reached JavaScript lowering in value position");
     }
     out.push_str(&mangle_js_ident(name));
     Ok(())
-}
-
-/// True for the eight intrinsic names. The seven structural
-/// intrinsics are collapsed into `Enriched*` nodes by
-/// `crate::pass::structural_recovery`; `__absurd__` is classified into
-/// `Expr::LowAbsurdCall` by `crate::pass::route::route_package`. Either
-/// one reaching the JS lowering as a bare reference is a pipeline
-/// regression — see [`emit_bound_ref`].
-fn is_intrinsic_name(name: &str) -> bool {
-    matches!(
-        name,
-        "__left__"
-            | "__right__"
-            | "__either__"
-            | "__pair__"
-            | "__fst__"
-            | "__snd__"
-            | "__if_then_else__"
-            | "__absurd__"
-    )
 }
 
 /// `LowHostFnValueRef { name, sig, ret_ty }` → a JS function that
@@ -5452,6 +5448,34 @@ mod tests {
         );
         assert!(js.contains("(c ? null : null)"), "got: {js}");
         assert!(!js.contains("__c, __t, __e"), "IIFE wrapper survived: {js}");
+    }
+
+    #[test]
+    fn boolean_intrinsics_recover_native_operators_without_inline_thunks() {
+        for (intrinsic, operator) in [("__and__", "&&"), ("__or__", "||")] {
+            let js = lower_typed(&format!(
+                "module main; import __intrinsics__; host type Bool role(bool); \
+                 fn choose(left: Bool, right: Bool) -> Bool {{ \
+                   {intrinsic}[Bool](left, .() {{ right }}) \
+                 }}"
+            ));
+            assert!(js.contains(&format!("left {operator} right")), "{js}");
+            let function = js
+                .lines()
+                .find(|line| line.contains("const choose ="))
+                .expect("the subject function is emitted");
+            assert!(
+                !function.contains("() =>"),
+                "inline RHS thunk survived: {function}"
+            );
+        }
+        let js = lower_typed(
+            "module main; import __intrinsics__; host type Bool role(bool); \
+             fn invert(value: Bool) -> Bool { \
+               __if_then_else__[Bool][Bool](value, .() { .f }, .() { .t }) \
+             }",
+        );
+        assert!(js.contains("(!value)"), "ordinary structural NOT: {js}");
     }
 
     #[test]

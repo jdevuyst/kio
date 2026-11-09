@@ -112,6 +112,24 @@ mod facade_consumer_tests {
         assert!(emitted.host_go.contains("*big.Int"));
     }
 
+    #[test]
+    fn boolean_inline_operands_use_native_operators() {
+        let package = package(
+            "module api; import __intrinsics__; host type Bool role(bool); \
+             pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } \
+             pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
+        );
+        let emitted = lower_package(&package, "pkg").expect("emit native Boolean operations");
+        for (name, operator) in [("conjunction", " && "), ("disjunction", " || ")] {
+            let method = emitted_method(&emitted.pkg_go, &module_fn_method_name("api", name));
+            assert!(method.contains(operator), "{method}");
+            assert!(
+                !method.contains("func() any"),
+                "inline RHS thunk survived: {method}"
+            );
+        }
+    }
+
     fn package(source: &str) -> Package<Routed> {
         let parsed = parse(source).expect("parse Go facade test module");
         let package_file = parse_package_file("package pkg; bridge { api; }", None)
@@ -4912,6 +4930,31 @@ impl<'a, 'p> BodyEmitter<'a, 'p> {
         destination: GoDestination<'_>,
         out: &mut GoBlock,
     ) -> Result<(), EmitError> {
+        if let Some(native) =
+            crate::backends::boolean::native_boolean(cond, then_branch, else_branch)
+        {
+            use crate::backends::boolean::NativeBoolean;
+            let inline = |value: &Expr<Routed>| match value {
+                Expr::BoolLit { value, .. } => Some(value.to_string()),
+                Expr::LowBoundRef { name, .. } => Some(format!("{}.(bool)", self.local_name(name))),
+                _ => None,
+            };
+            let suffix = match native {
+                NativeBoolean::And(right) => inline(right).map(|right| format!(" && ({right})")),
+                NativeBoolean::Or(right) => inline(right).map(|right| format!(" || ({right})")),
+                NativeBoolean::Not => Some(String::new()),
+            };
+            if let Some(suffix) = suffix {
+                let c = self.emit_bool(cond, out)?;
+                let prefix = if matches!(native, NativeBoolean::Not) {
+                    "!"
+                } else {
+                    ""
+                };
+                destination.write(out, format!("{prefix}({c}){suffix}"));
+                return Ok(());
+            }
+        }
         let c = self.emit_bool(cond, out)?;
         out.open(format!("if {c}"));
         self.emit_into(then_branch, destination, out)?;

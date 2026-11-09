@@ -58,9 +58,20 @@ struct Token: Equatable {
 struct Flag: ExpressibleByBooleanLiteral, Equatable {
     typealias BooleanLiteralType = Bool
     let raw: Bool
+    let tag: UInt8
 
     init(booleanLiteral value: Bool) {
         raw = value
+        tag = 0
+    }
+
+    init(raw: Bool, tag: UInt8) {
+        self.raw = raw
+        self.tag = tag
+    }
+
+    static func == (left: Flag, right: Flag) -> Bool {
+        left.raw == right.raw
     }
 }
 
@@ -189,3 +200,21 @@ precondition(package.main.chooseClosure(false, Token(raw: 11), Token(raw: 12)) =
 precondition(package.main.chooseInferredClosure(true, Token(raw: 15), Token(raw: 16)) == Token(raw: 15))
 let destructured = package.main.flagPair(true, Token(raw: 13))
 precondition(package.main.chooseDestructured(destructured, Token(raw: 14)) == Token(raw: 13))
+
+for truth in [false, true] {
+    let left = Flag(raw: truth, tag: 41)
+    let right = Flag(raw: !truth, tag: 73)
+    precondition(package.main.andInline(left, right).tag == (truth ? 73 : 41))
+    precondition(package.main.orInline(left, right).tag == (truth ? 41 : 73))
+    var invoked = 0
+    precondition(package.main.andCallback(left, { _ in
+        invoked += 1
+        return right
+    }).tag == (truth ? 73 : 41))
+    precondition(invoked == (truth ? 1 : 0))
+    precondition(package.main.orCallback(left, { _ in
+        invoked += 1
+        return right
+    }).tag == (truth ? 41 : 73))
+    precondition(invoked == 1)
+}

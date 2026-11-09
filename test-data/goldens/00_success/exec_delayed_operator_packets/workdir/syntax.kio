@@ -1,0 +1,39 @@
+module syntax;
+
+import __comptime__;
+import testapi(Int);
+import testapi/arith(add);
+
+pure fn first_checked(ct: __Comptime__, _left: __Type__, _right: __Type__, packet: __Checked_term__) -> __Checked_term__ {
+  __intrinsic_fst__(ct, __term_type__(ct, packet), packet)
+}
+
+pure fn identity_checked(_ct: __Comptime__, _type: __Type__, value: __Checked_term__) -> __Checked_term__ {
+  value
+}
+
+pub macro first : [A][B] (A & B) -> A { impl first_checked }
+
+pub macro identity : [A] A -> A { impl identity_checked }
+
+pub fn right_before_left(left: . -> Int, _right: Int) -> Int { left() }
+
+pub fn skip(left: Int, _right: . -> Int) -> Int { left }
+
+pub fn twice(body: . -> Int) -> Int { add(body(), body()) }
+
+pub fn nested(body: . -> . -> Int) -> Int { body()() }
+
+pub op ._ ?? _ { impl right_before_left }
+
+pub op _ || ._ { impl skip }
+
+pub op !! ._ { impl twice }
+
+pub op @@ ._ { impl nested }
+
+pub op macro _ %% ._ { impl first }
+
+pub op macro # _ { impl identity }
+
+pub op macro $$ ._ { impl identity }

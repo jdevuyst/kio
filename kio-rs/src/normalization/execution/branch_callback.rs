@@ -6,6 +6,7 @@ pub(super) struct Callback<'code> {
 }
 
 pub(super) enum Finish {
+    Boolean,
     Either {
         left_ty: ReflectedType,
         right_ty: ReflectedType,
@@ -38,6 +39,15 @@ pub(super) fn prepare(
     ctx: &EvalCtx<'_>,
 ) -> Option<(Finish, EvalArgs)> {
     let args = source.runtime();
+    if matches!(
+        source.builtin,
+        ComptimeBuiltin::IntrinsicAnd | ComptimeBuiltin::IntrinsicOr
+    ) {
+        if args.len() != 1 + usize::from(source.code.is_none()) {
+            return None;
+        }
+        return Some((Finish::Boolean, EvalArgs::Empty));
+    }
     let header = if source.builtin == ComptimeBuiltin::IntrinsicEither {
         3
     } else {
@@ -126,6 +136,7 @@ pub(super) fn prepare(
 impl Finish {
     pub fn resume(self, source: &callback::Source<'_>, body: Value, ctx: &EvalCtx<'_>) -> Step {
         match self {
+            Finish::Boolean => Step::Done(finish_boolean(source, body, ctx)),
             Finish::Either {
                 left_ty,
                 right_ty,
@@ -279,6 +290,36 @@ fn finish_conditional(
             condition,
             true_body,
             false_body,
+        },
+        result_ty,
+    )
+}
+
+fn finish_boolean(source: &callback::Source<'_>, right: Value, ctx: &EvalCtx<'_>) -> Option<Value> {
+    let args = source.runtime();
+    let conjunction = source.builtin == ComptimeBuiltin::IntrinsicAnd;
+    #[cfg(feature = "surface")]
+    if matches!(args[0], Value::Projected(_)) || matches!(right, Value::Projected(_)) {
+        return crate::pass::typecheck_core::apply::fills::projected_intrinsic_boolean(
+            source.proof()?,
+            &args[0],
+            &right,
+            conjunction,
+        )
+        .ok()
+        .map(projected_value);
+    }
+    let left = as_checked_term(&args[0])?;
+    let right = as_checked_term(&right)?;
+    let result_ty = left.reflected_type().clone();
+    if !checked_reflected_type_equiv(&right, &result_ty, source.builtin, ctx) {
+        return None;
+    }
+    reflected_checked_value(
+        ProjectedTermConstruction::Boolean {
+            conjunction,
+            left,
+            right,
         },
         result_ty,
     )

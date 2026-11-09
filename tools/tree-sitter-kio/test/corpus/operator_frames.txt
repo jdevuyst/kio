@@ -231,3 +231,155 @@ op _ (=) _ { impl equality }
       (callable_path
         (entity_name_function))
       (bracket_rbrace))))
+
+================================================================================
+macro operator declarations, selective aliases, and incomplete recovery
+================================================================================
+module m;
+import ops(op macro _ && .__ as _ %% .__);
+op macro _ && .__ { impl controls.and; }
+op macro _ || .
+fn after(value: .) -> . { value }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_op)
+      (keyword_declaration)
+      (slot)
+      (operator_run)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (keyword_declaration)
+      (slot)
+      (operator_run)
+      (delayed_slot
+        (separator_dot)
+        (slot)))
+    (bracket_rparen)
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (keyword_declaration)
+    (slot)
+    (operator_run)
+    (delayed_slot
+      (separator_dot)
+      (slot))
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace)))
+  (incomplete_op_decl
+    (keyword_op)
+    (keyword_declaration)
+    (slot)
+    (operator_run)
+    (separator_dot))
+  (function_definition
+    (fn_decl_head
+      (keyword_fn)
+      (entity_name_function)
+      (fn_signature
+        (value_param_group
+          (bracket_lparen)
+          (value_param_binder
+            (binding_pattern
+              (variable_parameter)
+              (operator_builtin)
+              (separator_dot)))
+          (bracket_rparen)))
+      (operator_arrow_type)
+      (separator_dot))
+    (expression_block
+      (bracket_lbrace)
+      (expression_path
+        (identifier))
+      (bracket_rbrace))))
+
+================================================================================
+delayed slots preserve extent and trivia
+================================================================================
+module m;
+import ops(op macro ._ ? . __ : .___ as ._ ?? . __ :: .___);
+op macro ._ ? . __ : .___ { impl controls.choose; }
+--------------------------------------------------------------------------------
+
+(source_file
+  (module_decl
+    (keyword_module)
+    (module_path
+      (entity_name_module))
+    (separator_semicolon))
+  (import_decl
+    (keyword_import)
+    (module_path
+      (entity_name_module))
+    (bracket_lparen)
+    (import_operator_item
+      (keyword_op)
+      (keyword_declaration)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (operator_run)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (operator_builtin)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (keyword_declaration)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (operator_run)
+      (delayed_slot
+        (separator_dot)
+        (slot))
+      (operator_run)
+      (delayed_slot
+        (separator_dot)
+        (slot)))
+    (bracket_rparen)
+    (separator_semicolon))
+  (op_decl
+    (keyword_op)
+    (keyword_declaration)
+    (delayed_slot
+      (separator_dot)
+      (slot))
+    (operator_run)
+    (delayed_slot
+      (separator_dot)
+      (slot))
+    (operator_builtin)
+    (delayed_slot
+      (separator_dot)
+      (slot))
+    (callable_impl_block
+      (bracket_lbrace)
+      (keyword_declaration)
+      (callable_path
+        (identifier)
+        (separator_dot)
+        (entity_name_function))
+      (separator_semicolon)
+      (bracket_rbrace))))

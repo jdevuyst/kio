@@ -5,3 +5,4 @@ source {
 }
 
 rehost dict/dict to dict_host;
+rehost dict/macros/control to testapi;

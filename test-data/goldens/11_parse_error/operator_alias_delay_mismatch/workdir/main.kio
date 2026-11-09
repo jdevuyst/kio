@@ -1,0 +1,3 @@
+module main;
+
+import provider(op _ && .__ as _ %% __);

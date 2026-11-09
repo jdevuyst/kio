@@ -1519,7 +1519,10 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
         }
         if matches!(
             builtin,
-            ComptimeBuiltin::IntrinsicEither | ComptimeBuiltin::IntrinsicIfThenElse
+            ComptimeBuiltin::IntrinsicEither
+                | ComptimeBuiltin::IntrinsicIfThenElse
+                | ComptimeBuiltin::IntrinsicAnd
+                | ComptimeBuiltin::IntrinsicOr
         ) {
             let source = callback::Source {
                 builtin,
@@ -1662,6 +1665,21 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
                 handler: Handler::Value(if left { on_left } else { right }),
                 args: EvalArgs::Empty,
             });
+        }
+        if matches!(name, "__and__" | "__or__")
+            && let [Value::Bool(left), _] = args.as_slice()
+        {
+            let invoke_right = *left == (name == "__and__");
+            let right = args.pop().expect("right thunk");
+            let left = args.pop().expect("left Boolean value");
+            if invoke_right {
+                return self.task(Task::Handler {
+                    handler: Handler::Value(right),
+                    args: EvalArgs::Empty,
+                });
+            }
+            *result = left;
+            return Control::Return;
         }
         if name == "__either__" && args.len() == 3 {
             let right = args.pop().expect("right handler");
@@ -1875,6 +1893,11 @@ impl<'code, 'slots, 'values, 'ctx, 'artifact, Observer: StorageObserver>
             }
             let branch = match code.expr() {
                 EvalExpr::ReflIntrinsicEither { .. } => Some(ComptimeBuiltin::IntrinsicEither),
+                EvalExpr::ReflIntrinsicBoolean { conjunction, .. } => Some(if *conjunction {
+                    ComptimeBuiltin::IntrinsicAnd
+                } else {
+                    ComptimeBuiltin::IntrinsicOr
+                }),
                 EvalExpr::ReflIntrinsicIfThenElse { .. } => {
                     Some(ComptimeBuiltin::IntrinsicIfThenElse)
                 }

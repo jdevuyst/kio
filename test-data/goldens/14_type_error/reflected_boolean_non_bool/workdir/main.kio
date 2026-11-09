@@ -1,0 +1,5 @@
+module main;
+
+import provider(I32, macro combine);
+
+fn check(value: I32) -> I32 { combine(value) }

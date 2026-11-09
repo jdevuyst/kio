@@ -1920,11 +1920,16 @@
         { "include": "#identifier" }
       ]
     },
+    "operator-macro-modifier": {
+      "match": "\\bmacro\\b",
+      "name": "keyword.declaration.kio"
+    },
     "import-fixed-tag": {
-      "begin": "\\bop\\b(?=\\s*(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
+      "begin": "\\bop\\b(?=\\s*(?:macro\\b\\s*)?(?!//)[_+\\-*/%^~?@#$\\\\'`<>=!&|:.(\"])",
       "beginCaptures": { "0": { "name": "keyword.declaration.kio" } },
       "end": "(?=[,)])",
       "patterns": [
+        { "include": "#operator-macro-modifier" },
         { "include": "#import-selection-alias" },
         { "include": "#import-selection-tokens" }
       ]
@@ -2033,7 +2038,7 @@
       ]
     },
     "op-decl-head": {
-      "begin": "(?:^|(?<=[;{}]))[ \\t]*(?:(pub)(?:\\([^\\n)]*\\))?\\s+)?(op)\\b(?![^\\r\\n{]*//)(?=[^\\r\\n{]*(?:[+\\-*/%^~?@#$\\\\'`<>=!&|:.]|\"))(?=(?:\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|[+\\-*/%^~?@#$\\\\'`<>=!&|:.]+|_{1,3}(?!_)|[() \\t])+\\{)",
+      "begin": "(?:^|(?<=[;{}]))[ \\t]*(?:(pub)(?:\\([^\\n)]*\\))?\\s+)?(op)\\b(?![^\\r\\n{]*//)(?=[^\\r\\n{]*(?:[+\\-*/%^~?@#$\\\\'`<>=!&|:.]|\"))(?=[ \\t]*(?:macro\\b[ \\t]+)?(?:\"(?:[^\"\\\\\\r\\n]|\\\\.)*\"|[+\\-*/%^~?@#$\\\\'`<>=!&|:.]+|_{1,3}(?!_)|[() \\t])+\\{)",
       "beginCaptures": {
         "1": { "name": "keyword.declaration.kio" },
         "2": { "name": "keyword.declaration.kio" }
@@ -2043,9 +2048,11 @@
         { "include": "#comment-doc" },
         { "include": "#comment" },
         { "include": "#fixed-op-body" },
+        { "include": "#operator-macro-modifier" },
         { "include": "#string" },
         { "include": "#slot" },
         { "include": "#operator-user" },
+        { "include": "#punctuation-separator" },
         { "include": "#punctuation-bracket" }
       ]
     },

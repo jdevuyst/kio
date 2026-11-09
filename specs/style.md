@@ -373,25 +373,28 @@ aliases and transparent grouping do not change that ownership.
 
 ## `op` patterns
 
-An `op` declaration introduces a user operator by binding a pattern of operator-character tokens and `_` / `__` / `___` placeholders to an in-scope `fn` (see [`language.md`](language.md#operators)). The pattern and compact body fit on one line:
+An `op` declaration binds a fixed operator pattern to a function; `op macro`
+binds it to a macro (see [`language.md`](language.md#operators)). The pattern
+and compact body fit on one line:
 
 ```kio
 op _ + _ { impl add }
 op _ + __ { impl add }
 op _ ? _ : __ { impl if_then_else }
 op _ <| ___ |> { impl index }
+op macro _ && .__ { impl and }
 ```
 
 Layout rules:
 
-- **One space between pattern units.** Each placeholder slot (`_`, `__`, `___`) and its neighboring whole symbol word are separated by exactly one space. `_+_` is rewritten to `_ + _`, and `_<|___|>` to `_ <| ___ |>`. A fused word such as `&&++` stays intact. Adjacent words, dots, brackets, and slot-containing pattern groups are rejected by the grammar.
+- **One space between pattern units.** Each placeholder slot (`_`, `__`, `___`) and its neighboring whole symbol word are separated by exactly one space. A delay marker stays attached to its slot: `._`, `.__`, `.___`. `_+_` is rewritten to `_ + _`, and `_<|___|>` to `_ <| ___ |>`. A fused word such as `&&++` stays intact. Adjacent words, dots within words, brackets, and slot-containing pattern groups are rejected by the grammar.
 - **Compact body spacing.** `op _ + _ { impl add }` is the canonical form; `op _+_{impl add;};` is rewritten to it.
 - **Always single-line.** An `op` declaration emits on one line. The 100-column budget does not apply: an over-budget operator declaration stays on one line rather than breaking — operator patterns aren't comma-separated, so there's no A1-style fallback layout. The outer declaration ends at its closing body brace.
 
 Top-level item spacing (one blank line between items per [§ Indent and blank lines](#indent-and-blank-lines)) applies to `op` like every other top-level item.
 
 **Operator import selections** retain the complete tagged grammar. Fixed
-selections render every slot kind and whole word,
+selections retain `op` or `op macro` and render every slot kind, delay marker and whole word,
 with the same spacing and necessary quotation as the declaration:
 `import syntax(op _ + __, op _ <| ___ |>);`. A variadic selection renders
 `varop` and its canonical frame, bare `[]` or a spaced marked pair:

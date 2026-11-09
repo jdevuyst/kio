@@ -1,0 +1,64 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import provider(
+, macro all
+, macro any
+, macro projected_all
+, macro projected_any
+, macro quote_all
+, macro quote_any
+);
+import testapi(Bool);
+import testapi/io as io;
+import testapi/iter(loop);
+
+fn show(value: Bool) {
+  __if_then_else__(value, .() { io.print("true\n") }, .() { io.print("false\n") })
+}
+
+fn right(value: Bool) -> Bool { io.print("right\n"); value }
+
+fn factory(captured: Bool) -> . -> Bool {
+  io.print("factory\n");
+  .() -> Bool { io.print("body\n"); captured }
+}
+
+fn after_true(_value: .) -> Bool { .t }
+
+fn after_false(_value: .) -> Bool { .f }
+
+rec(loop) {
+  fn source() { io.print("source\n") };
+  fn quoted_and(left: Bool) { show(quote_all(left)(after_true(recur(cont) source()))) };
+  fn quoted_or(left: Bool) { show(quote_any(left)(after_false(recur(cont) source()))) };
+  fn terminal_and(left: Bool) {
+    show(projected_all(left, .() -> Bool { after_true(recur(cont) source()) }))
+  };
+  fn terminal_or(left: Bool) {
+    show(projected_any(left, .() -> Bool { after_false(recur(cont) source()) }))
+  }
+}
+
+pub fn main() {
+  show(all(.f, .() { right(.t) }));
+  show(all(.t, .() { right(.f) }));
+  show(any(.t, .() { right(.f) }));
+  show(any(.f, .() { right(.t) }));
+  let captured = .t[Bool];
+  show(projected_all(.t, .() { right(captured) }));
+  show(projected_any(.f, .() { right(captured) }));
+  show(projected_all(.f, .() { right(captured) }));
+  show(projected_any(.t, .() { right(captured) }));
+  show(all(.f, factory(captured)));
+  show(any(.t, factory(captured)));
+  quoted_and(.f);
+  quoted_and(.t);
+  quoted_or(.t);
+  quoted_or(.f);
+  terminal_and(.f);
+  terminal_and(.t);
+  terminal_or(.t);
+  terminal_or(.f)
+}

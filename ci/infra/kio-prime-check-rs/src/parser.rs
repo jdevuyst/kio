@@ -3020,6 +3020,15 @@ mod tests {
     }
 
     #[test]
+    fn boolean_operand_intrinsics_are_ordinary_explicit_core_calls() {
+        for intrinsic in ["__and__", "__or__"] {
+            ok(&format!(
+                "module m; import __intrinsics__; host type Flag role(bool); fn f(x: Flag) -> Flag {{ let selected = {intrinsic}[Flag]; selected(x, .() -> Flag {{ x }}) }}"
+            ));
+        }
+    }
+
+    #[test]
     fn explicit_type_stage_accepts_bottom_type() {
         ok("module m; import __intrinsics__; fn a(b: !) -> . { __absurd__[.](b) }");
     }

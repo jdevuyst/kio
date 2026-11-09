@@ -167,6 +167,13 @@ generated code evaluates a product input, its components evaluate in order.
 Pass a component as a thunk when it must be independently skippable; the
 generated code can choose whether to invoke it.
 
+An operator can also target a macro. A dotted operand slot wraps the whole
+parsed operand in a unit-domain thunk, independently of these block descriptors.
+For example, the control library's `op macro _ && .__ { impl and }` makes
+`a && b` supply the same product as `and(a) { b }`. See
+[delayed operator operands](operators.md#delay-an-operand) for imports,
+grouping, and evaluation.
+
 <!-- markdownlint-disable-next-line MD033 -->
 <a id="calling-a-block-macro"></a>
 

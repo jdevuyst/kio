@@ -141,6 +141,23 @@ module-end doc-comment examples, desktop/browser providers, and edits retracting
 an earlier macro classification. Shared classifier tests do not substitute for
 each provider boundary.
 
+## Fixed operator kinds and delayed operands
+
+A fixed operator's complete public grammar includes function/macro kind,
+slot extent and delay markers. Parser, formatter, imports/aliases, REPL
+selectors, LSP symbol/type displays and cache dependency discovery retain
+those distinctions; conflict checking still uses the existing body-independent
+dispatch key. The dot wraps the whole operand once before ordinary call
+preparation and does not consult a macro's trailing descriptors. Preserve
+comments around marker tokens when canonicalizing their spacing.
+
+Keep ordinary declarations named `op` distinct from `op macro` declarations,
+including incomplete editor text and lazy item splitting. Macro operator
+targets carry the actually resolved macro identity into ordinary expansion;
+user spelling and generated names confer no primitive authority. Exercise
+alias/provider edits and same-name function/macro controls as well as
+ordinary runtime effects and explicit nested-thunk operands.
+
 ## Impact checklist
 
 For literal inference changes, separate lexical admission from carrier inference.

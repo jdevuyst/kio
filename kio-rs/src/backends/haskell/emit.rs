@@ -521,6 +521,23 @@ mod facade_tests {
     }
 
     #[test]
+    fn boolean_pure_inline_operands_use_native_operators() {
+        let emitted = render(
+            "module api; import __intrinsics__; host type Bool role(bool); \
+             pub fn conjunction(left: Bool, right: Bool) -> Bool { __and__[Bool](left, .() { right }) } \
+             pub fn disjunction(left: Bool, right: Bool) -> Bool { __or__[Bool](left, .() { right }) }",
+        ).expect("emit pure native Boolean operations");
+        for (name, operator) in [("conjunction", " && "), ("disjunction", " || ")] {
+            let declaration = format!("{} _pkg", module_fn("api", name));
+            let body = emitted
+                .lines()
+                .find(|line| line.starts_with(&declaration) && line.contains(" = "))
+                .expect("the Boolean subject has an emitted body");
+            assert!(body.contains(operator), "{body}");
+        }
+    }
+
+    #[test]
     fn standard_import_alias_survives_a_data_text_facade_and_preserves_literals() {
         let package = routed_package_files_with_bridge(
             &[(

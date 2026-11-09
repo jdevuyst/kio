@@ -926,7 +926,7 @@ mod tests {
             panic!("selective")
         };
         assert!(items.iter().any(|item| matches!(item,
-            ImportItem::OperatorPattern { grammar: OperatorGrammar::Fixed(pattern), .. }
+            ImportItem::OperatorPattern { grammar: OperatorGrammar::Fixed { pattern, .. }, .. }
             if crate::ast::OperatorDispatchKey::from_pattern(pattern).leading_run == [operator])));
         assert_eq!(module.items.len(), 2);
         let Item::FnDef(run) = &module.items[1] else {
@@ -948,7 +948,7 @@ mod tests {
             panic!("pair element")
         };
         let Expr::OpChain {
-            kind: OpChainKind::Normal { pattern, slots },
+            kind: OpChainKind::Normal { pattern, slots, .. },
             ..
         } = &pair[1]
         else {

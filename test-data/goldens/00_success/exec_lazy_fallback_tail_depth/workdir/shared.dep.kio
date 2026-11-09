@@ -1,0 +1,12 @@
+dependency shared;
+
+source {
+  path "../../exec_lazy_fallbacks/workdir/exec_lazy_fallbacks.pkg.kio"
+}
+
+rehost shared/testapi to testapi;
+rehost shared/testapi/arith to testapi/arith;
+rehost shared/testapi/fmt to testapi/fmt;
+rehost shared/testapi/io to testapi/io;
+rehost shared/testapi/iter to testapi/iter;
+rehost shared/testapi/text to testapi/text;

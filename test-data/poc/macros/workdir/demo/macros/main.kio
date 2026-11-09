@@ -22,6 +22,7 @@ import library/algebraic_macros(
 , macro iso
 , macro onto
 );
+import library/control(macro and, macro or, not, op macro _ && .__, op macro _ || .__);
 import library/derive(macro derive);
 import library/lookup(Lookup_bool, macro contains, macro lookup);
 import library/match(macro match);
@@ -845,5 +846,14 @@ pub fn main() {
   print(derive_polymorphic_recursive_case());
   print(derive_functor_case());
   print(type_of_case());
-  print(show_case())
+  print(show_case());
+  print("boolean operators: ");
+  print(bool_to_string(.t && .f));
+  print(", ");
+  print(bool_to_string(.f || .t));
+  print(", ");
+  print(bool_to_string(and(.t) { .t }));
+  print(", ");
+  print(bool_to_string(or(.f) { not(.f) }));
+  print("\n")
 }

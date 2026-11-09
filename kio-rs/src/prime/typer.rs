@@ -1552,6 +1552,47 @@ mod tests {
     }
 
     #[test]
+    fn boolean_operand_intrinsics_check_fresh_prime_and_value_wrappers() {
+        for intrinsic in ["__and__", "__or__"] {
+            for body in [
+                format!("{intrinsic}[Flag](flag, .() -> Flag {{ flag }})"),
+                format!("let selected = {intrinsic}[Flag]; selected(flag, .() -> Flag {{ flag }})"),
+            ] {
+                let original = build_package(&format!(
+                    "module x; import __intrinsics__; host type Flag role(bool); host type Other role(bool); fn run(flag: Flag) -> Flag {{ {body} }}"
+                ));
+                let checked = check_package(&original).expect("a concrete Boolean prefix checks");
+                let text = crate::backends::kio_prime::emit_module(checked.module("x").unwrap());
+                let reparsed = build_package(&text);
+                assert_eq!(intrinsic_value_record_count(&reparsed), 0, "{text}");
+                let rechecked =
+                    check_package(&reparsed).expect("the emitted value wrapper rechecks");
+                assert_eq!(
+                    text,
+                    crate::backends::kio_prime::emit_module(rechecked.module("x").unwrap())
+                );
+            }
+            for declaration in [
+                format!("fn run() -> . {{ let selected = {intrinsic}; () }}"),
+                format!("fn selected() -> (Flag & (. -> Flag)) -> Flag {{ {intrinsic} }}"),
+                format!("fn run() -> . {{ let selected = {intrinsic}[.]; () }}"),
+                format!("fn run[B]() -> . {{ let selected = {intrinsic}[B]; () }}"),
+            ] {
+                let original = build_package(&format!(
+                    "module x; import __intrinsics__; host type Flag role(bool); {declaration}"
+                ));
+                let error = check_package(&original)
+                    .expect_err("fresh Prime requires explicit checked specialization");
+                assert!(
+                    error.error.diag().1.contains("Boolean")
+                        || error.error.diag().1.contains("role(bool)"),
+                    "{declaration}: {error:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn inferred_boolean_specialization_prime_requires_an_explicit_checked_prefix() {
         for body in [
             "__if_then_else__[Flag][.](flag, .() -> . { () }, .() -> . { () })",

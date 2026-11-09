@@ -475,7 +475,7 @@ pub(crate) fn import_grammar_assert_consumer(module: &Module) {
         }
     )));
     let Expr::OpChain {
-        kind: OpChainKind::Normal { pattern, slots },
+        kind: OpChainKind::Normal { pattern, slots, .. },
         ..
     } = &elements[0]
     else {
@@ -487,7 +487,7 @@ pub(crate) fn import_grammar_assert_consumer(module: &Module) {
     );
     assert_eq!(slots.len(), 2);
     let Expr::OpChain {
-        kind: OpChainKind::Normal { pattern, slots },
+        kind: OpChainKind::Normal { pattern, slots, .. },
         ..
     } = &slots[1]
     else {
@@ -2755,8 +2755,8 @@ mod tests {
         let module = p(&format!("module provider; {declaration}"));
         match &module.items[0] {
             Item::Op(op, _) => {
-                let OpBody::Normal { pattern, .. } = &op.body;
-                OperatorGrammar::fixed(pattern)
+                let OpBody::Normal { kind, pattern, .. } = &op.body;
+                OperatorGrammar::fixed(*kind, pattern)
             }
             Item::VariadicOperator(fold, _) => OperatorGrammar::variadic(&fold.open, &fold.spec),
             other => panic!("operator declaration: {other:?}"),
@@ -2865,6 +2865,22 @@ mod tests {
             let grammar =
                 import_grammar_declaration_grammar(&format!("op {pattern} {{ impl f; }};"));
             import_grammar_roundtrip(&grammar);
+            for kind in ["op", "op macro"] {
+                let delayed = pattern
+                    .split(' ')
+                    .map(|part| {
+                        if matches!(part, "_" | "__" | "___") {
+                            format!(".{part}")
+                        } else {
+                            part.to_owned()
+                        }
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let grammar =
+                    import_grammar_declaration_grammar(&format!("{kind} {delayed} {{ impl f; }};"));
+                import_grammar_roundtrip(&grammar);
+            }
         }
         let rejected = [
             "_ _",
@@ -2902,6 +2918,81 @@ mod tests {
             rejected.len(),
             admitted.len()
         );
+    }
+
+    #[test]
+    fn delayed_operator_alias_identity_and_recovery() {
+        for selected in ["op ._ && .__", "op macro ._ && .__"] {
+            let source = format!("module c; import m({selected} as ._ %% .__);");
+            let module = p(&source);
+            let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+                panic!("selective import")
+            };
+            let ImportItem::OperatorPattern {
+                grammar,
+                alias: Some(alias),
+                ..
+            } = &items[0]
+            else {
+                panic!("operator alias")
+            };
+            assert_eq!(grammar.render(), selected);
+            assert_eq!(alias.local.render(), selected.replace("&&", "%%"));
+            for alias in ["_ %% .__", "._ %% __", ".__ %% ._", "._ %% .___"] {
+                let bad = format!("module c; import m({selected} as {alias});");
+                assert!(parse(&bad).is_err(), "{bad}");
+            }
+        }
+        for bad in [
+            "op macro",
+            "op macro _ && .",
+            "op .",
+            "op .name + _",
+            "op (._) + _",
+        ] {
+            let source = format!("module c; import m({bad}, good); fn after() -> . {{ () }}");
+            assert!(parse(&source).is_err(), "{source}");
+            let (module, errors) = parse_recover_imports(&source).expect("recover selection");
+            assert!(!errors.is_empty(), "{source}");
+            if let Some(dot) = bad.find('.')
+                && !bad.contains("(._)")
+            {
+                let span = errors[0].diag().0;
+                let start = source.find(bad).unwrap() + dot;
+                assert!(
+                    span.start as usize <= start && start < span.end as usize,
+                    "{source}: {span:?}"
+                );
+                assert!(
+                    span.end as usize <= source.find(", good").unwrap() + 1,
+                    "{source}: {span:?}"
+                );
+            }
+            assert!(matches!(&module.items[0], Item::FnDef(def) if def.name == "after"));
+            let ImportKind::Selective { items, .. } = &module.imports[0].kind else {
+                panic!("selective")
+            };
+            assert!(
+                items.iter().any(|item| item.as_name() == Some("good")),
+                "{source}"
+            );
+        }
+        let reserved_source = "module c; import m(op .____ + _, good); fn after() -> . { () }";
+        let reserved_start = reserved_source.find("____").unwrap() as u32;
+        let reserved_span = crate::span::Span::new(reserved_start, reserved_start + 4);
+        for error in [
+            parse(reserved_source).unwrap_err(),
+            probe_tooling_source(reserved_source, None)
+                .lexical_error
+                .expect("reserved slot is a lexical error"),
+        ] {
+            assert_eq!(error.diag().0, reserved_span);
+            assert!(error.diag().1.contains("reserved"));
+        }
+        let source = "module c; macro op : . -> . { impl helper; } op macro ._ && .__ { impl op; } fn after() -> . { () }";
+        let parsed = p(source);
+        assert_eq!(parse_lazy(source).unwrap().force_all().unwrap(), parsed);
+        assert!(matches!(&parsed.items[0], Item::Macro(def, _) if def.name == "op"));
     }
 
     #[test]
@@ -4711,7 +4802,7 @@ fn ok() -> . { () }
             panic!("expected function definition");
         };
         let Expr::OpChain {
-            kind: OpChainKind::Normal { pattern, slots },
+            kind: OpChainKind::Normal { pattern, slots, .. },
             ..
         } = &def.body
         else {
@@ -4750,7 +4841,7 @@ fn ok() -> . { () }
         assert_eq!(elements.len(), 2);
         for element in elements {
             let Expr::OpChain {
-                kind: OpChainKind::Normal { pattern, slots },
+                kind: OpChainKind::Normal { pattern, slots, .. },
                 ..
             } = element
             else {
@@ -4794,8 +4885,23 @@ fn ok() -> . { () }
 
     #[test]
     fn import_operator_dots_are_reserved() {
-        for word in [".+", ".+.", "..", "+.", "<.>"] {
+        for word in [".+", ".+.", "..", "<.>", "(+.)", "(.+)"] {
             assert!(parse(&format!("module x; import syntax(op _ {word} _);")).is_err());
+        }
+    }
+
+    #[test]
+    fn delayed_slot_dot_terminates_the_preceding_symbol_word() {
+        for tag in ["op", "op macro"] {
+            let expected = format!("{tag} _ + ._");
+            for pattern in ["_ +. _", "_ +._", "_ + . _", "_ + ._"] {
+                let declaration = import_grammar_declaration_grammar(&format!(
+                    "{tag} {pattern} {{ impl target; }}"
+                ));
+                assert_eq!(declaration.render(), expected);
+                let imported = import_grammar_import_grammar(&format!("{tag} {pattern}"));
+                assert_eq!(imported, declaration);
+            }
         }
     }
 
@@ -7630,7 +7736,9 @@ fn ok() -> . { () }
         let Item::Op(d, _) = &m.items[1] else {
             panic!("expected Op, got {:?}", m.items[1])
         };
-        let OpBody::Normal { pattern, function } = &d.body;
+        let OpBody::Normal {
+            pattern, function, ..
+        } = &d.body;
         assert_eq!(
             function.iter().map(PathSegment::as_str).collect::<Vec<_>>(),
             ["add"]
@@ -8287,7 +8395,7 @@ fn ok() -> . { () }
     fn op_leading_dot_one_dot_rejected() {
         let msg = p_err("module x; fn f(a: A, b: A) -> A { a } op _ .+ _ { impl f; };");
         assert!(
-            msg.contains("reserved") || msg.contains("must alternate"),
+            msg.contains("a delayed operator operand requires"),
             "got: {msg}"
         );
     }
@@ -8308,7 +8416,7 @@ fn ok() -> . { () }
                 "module x; fn f(a: A, b: A) -> A {{ a }} op _ {spelling} _ {{ impl f; }};"
             ));
             assert!(
-                msg.contains("reserved") || msg.contains("must alternate"),
+                msg.contains("a delayed operator operand requires"),
                 "{spelling}: {msg}"
             );
         }
@@ -8321,7 +8429,7 @@ fn ok() -> . { () }
 
     #[test]
     fn op_internal_or_trailing_dot_rejected() {
-        for word in ["+.", "<.>"] {
+        for word in ["(+.)", "<.>", "(<.)"] {
             assert!(parse(&format!("module x; op _ {word} _ {{ impl f; }};")).is_err());
         }
     }
@@ -9425,9 +9533,9 @@ fn ok() -> . { () }
             let Item::Op(declaration, _) = &module.items[1] else {
                 panic!("separate quoted operator declaration");
             };
-            let crate::ast::OpBody::Normal { pattern, .. } = &declaration.body;
+            let crate::ast::OpBody::Normal { kind, pattern, .. } = &declaration.body;
             assert_eq!(
-                crate::ast::OperatorGrammar::fixed(pattern).render(),
+                crate::ast::OperatorGrammar::fixed(*kind, pattern).render(),
                 "op _ ? _"
             );
             assert!(matches!(&module.items[2], Item::FnDef(def) if def.name == "run"));
@@ -11261,8 +11369,7 @@ fn ok() -> . { () }
 
     #[test]
     fn package_file_requires_leading_header() {
-        let err = parse_package_file("bridge { main }", None)
-            .expect_err("expected parse error");
+        let err = parse_package_file("bridge { main }", None).expect_err("expected parse error");
         let Error::Parse(Diagnostic { message, .. }) = err else {
             panic!("expected Parse error");
         };
@@ -12420,23 +12527,34 @@ mod operator_grammar_proptests {
 
     fn grammar() -> impl Strategy<Value = OperatorGrammar> {
         prop_oneof![
-            (any::<bool>(), prop::collection::vec(token(), 1..6)).prop_map(|(prefix, words)| {
-                let span = Span::new(0, 0);
-                let slot = OpPart::SlotPlain { span };
-                let mut pattern = Vec::new();
-                if !prefix {
-                    pattern.push(slot.clone());
-                }
-                for content in words {
-                    pattern.push(OpPart::Token {
-                        content,
-                        span,
-                        quoted: false,
-                    });
-                    pattern.push(slot.clone());
-                }
-                OperatorGrammar::fixed(&pattern)
-            }),
+            (
+                any::<bool>(),
+                any::<bool>(),
+                any::<bool>(),
+                prop::collection::vec(token(), 1..6)
+            )
+                .prop_map(|(prefix, delayed, is_macro, words)| {
+                    let span = Span::new(0, 0);
+                    let slot = OpPart::SlotPlain { span, delayed };
+                    let mut pattern = Vec::new();
+                    if !prefix {
+                        pattern.push(slot.clone());
+                    }
+                    for content in words {
+                        pattern.push(OpPart::Token {
+                            content,
+                            span,
+                            quoted: false,
+                        });
+                        pattern.push(slot.clone());
+                    }
+                    let kind = if is_macro {
+                        crate::ast::FixedOperatorKind::Macro
+                    } else {
+                        crate::ast::FixedOperatorKind::Function
+                    };
+                    OperatorGrammar::fixed(kind, &pattern)
+                }),
             prop::collection::vec(
                 prop::sample::select(vec!['+', '-', '*', '%', '<', '>', '?', ':']),
                 0..16

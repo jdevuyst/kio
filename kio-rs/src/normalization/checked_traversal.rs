@@ -22,7 +22,8 @@ pub(super) fn children<'a>(node: &'a CheckedTermNode, mut visit: impl FnMut(&'a 
             visit(arg_packet);
         }
         CheckedTermNode::TermTypeApp { fn_value, .. } => visit(fn_value),
-        CheckedTermNode::IntrinsicPair { left, right } => {
+        CheckedTermNode::IntrinsicPair { left, right }
+        | CheckedTermNode::IntrinsicBoolean { left, right, .. } => {
             visit(left);
             visit(right);
         }
@@ -531,6 +532,14 @@ pub(super) fn node_equal<'a>(
             },
         ) => ll == rl && lr == rr && lt == rt && ln == rn && lm == rm,
         (
+            IntrinsicBoolean {
+                conjunction: left, ..
+            },
+            IntrinsicBoolean {
+                conjunction: right, ..
+            },
+        ) => left == right,
+        (
             IntrinsicAbsurd {
                 result_ty: left, ..
             },
@@ -666,6 +675,15 @@ impl<'a> CanonicalFrame<'a> {
                 result_ty: names.ty(result_ty),
                 bottom_value: bottom_value.clone(),
             },
+            CheckedTermNode::IntrinsicBoolean {
+                conjunction,
+                left,
+                right,
+            } => CheckedTermNode::IntrinsicBoolean {
+                conjunction: *conjunction,
+                left: left.clone(),
+                right: right.clone(),
+            },
             CheckedTermNode::IntrinsicIfThenElse {
                 result_ty,
                 condition,
@@ -731,12 +749,8 @@ impl<'a> CanonicalFrame<'a> {
                 }
             }
             TermTypeApp { fn_value, .. } => fn_value,
-            IntrinsicPair { left, right } => {
-                if self.next == 0 {
-                    left
-                } else {
-                    right
-                }
+            IntrinsicPair { left, right } | IntrinsicBoolean { left, right, .. } => {
+                if self.next == 0 { left } else { right }
             }
             IntrinsicProjection { value, .. } | IntrinsicInjection { value, .. } => value,
             IntrinsicEither {

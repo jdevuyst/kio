@@ -1,0 +1,5 @@
+module testapi;
+
+host type String role(str);
+
+host type Int role(i32);

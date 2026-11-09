@@ -228,6 +228,15 @@ Trace body and facade demand, and obtain bounded pure-data retention evidence
 alongside effect-order checks. An optimized-only pass or ordered IO alone does
 not establish the required evaluation behavior.
 
+For conditional and Boolean operations, apply
+[Native Boolean and branch recovery](../../topics/emit.md#native-boolean-and-branch-recovery).
+Trace the actual body representation before choosing native operators. Exercise
+inline nested macro/operator branches with no avoidable thunk construction or
+call, plus an opaque callback that remains conditional and an eager effectful
+thunk factory. Where the host retains an exact custom Boolean carrier, verify
+its extra payload survives the skipped branch. Record firing and compile/runtime
+cost separately; a native operator spelling alone does not establish either.
+
 ### Generated call-depth check
 
 Follow [Generated call depth](../../topics/emit.md#generated-call-depth) in

@@ -1,0 +1,7 @@
+module main;
+
+import __intrinsics__;
+
+fn value[B](left: B) -> B {
+  __or__[B](left, .() -> B { left })
+}

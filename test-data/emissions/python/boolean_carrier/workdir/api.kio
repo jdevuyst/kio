@@ -1,0 +1,25 @@
+module api;
+
+import __intrinsics__;
+
+host type Flag role(bool);
+
+host fn left() -> Flag;
+
+host fn factory() -> . -> Flag;
+
+pub fn and_inline(left: Flag, right: Flag) -> Flag {
+  __and__[Flag](left, .() { right })
+}
+
+pub fn or_inline(left: Flag, right: Flag) -> Flag {
+  __or__[Flag](left, .() { right })
+}
+
+pub fn and_callback(left: Flag, right: . -> Flag) -> Flag { __and__[Flag](left, right) }
+
+pub fn or_callback(left: Flag, right: . -> Flag) -> Flag { __or__[Flag](left, right) }
+
+pub fn and_factory() -> Flag { __and__[Flag](left(), factory()) }
+
+pub fn or_factory() -> Flag { __or__[Flag](left(), factory()) }

@@ -569,8 +569,16 @@ fn import_item_display(item: &crate::ast::ImportItem) -> String {
             let mut rendered = grammar.render();
             if let Some(alias) = alias {
                 let local = alias.local.render();
-                let (_, spelling) = local
-                    .split_once(' ')
+                let tag = match &alias.local {
+                    crate::ast::OperatorGrammar::Fixed {
+                        kind: crate::ast::FixedOperatorKind::Macro,
+                        ..
+                    } => "op macro ",
+                    crate::ast::OperatorGrammar::Fixed { .. } => "op ",
+                    crate::ast::OperatorGrammar::Variadic { .. } => "varop ",
+                };
+                let spelling = local
+                    .strip_prefix(tag)
                     .expect("operator rendering has a namespace tag");
                 rendered.push_str(" as ");
                 rendered.push_str(spelling);
@@ -1061,13 +1069,20 @@ fn doc_op(d: &Op) -> Doc {
     parts.push(doc_vis(&d.vis));
     parts.push(text("op"));
     match &d.body {
-        OpBody::Normal { pattern, function } => {
+        OpBody::Normal {
+            kind,
+            pattern,
+            function,
+        } => {
+            if *kind == crate::ast::FixedOperatorKind::Macro {
+                parts.push(text(" macro"));
+            }
             for part in pattern {
                 parts.push(text(" "));
                 match part {
-                    OpPart::SlotPlain { .. } => parts.push(text("_")),
-                    OpPart::SlotRecursive { .. } => parts.push(text("__")),
-                    OpPart::SlotGreedy { .. } => parts.push(text("___")),
+                    OpPart::SlotPlain { .. }
+                    | OpPart::SlotRecursive { .. }
+                    | OpPart::SlotGreedy { .. } => parts.push(text(part.slot_spelling().unwrap())),
                     OpPart::Token {
                         content, quoted, ..
                     } => {
@@ -2393,7 +2408,9 @@ fn doc_expr_for_postfix_receiver(receiver: &Expr) -> Doc {
 /// pretty-printer never consults the operator scope.
 fn doc_op_chain(kind: &crate::ast::OpChainKind) -> Doc {
     match kind {
-        crate::ast::OpChainKind::Normal { pattern, slots } => doc_normal_op_chain(pattern, slots),
+        crate::ast::OpChainKind::Normal { pattern, slots, .. } => {
+            doc_normal_op_chain(pattern, slots)
+        }
         crate::ast::OpChainKind::Variadic {
             open_tokens,
             close_tokens,
@@ -2464,6 +2481,7 @@ fn append_normal_op_segments<'a>(
                                 crate::ast::OpChainKind::Normal {
                                     pattern: child_pattern,
                                     slots: child_slots,
+                                    ..
                                 },
                             ..
                         },
@@ -2603,7 +2621,7 @@ fn expr_symbol_edges(expr: &Expr) -> (bool, bool) {
             )
         }
         Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { pattern, slots },
+            kind: crate::ast::OpChainKind::Normal { pattern, slots, .. },
             ..
         } => {
             let starts = matches!(pattern.first(), Some(OpPart::Token { .. }))
@@ -2671,6 +2689,7 @@ impl std::hash::Hash for OperatorPatternShape<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.0.len().hash(state);
         for part in self.0 {
+            part.delayed().hash(state);
             match part {
                 OpPart::SlotPlain { .. } => 0u8.hash(state),
                 OpPart::SlotRecursive { .. } => 1u8.hash(state),
@@ -2822,7 +2841,7 @@ fn exposes_operator_boundary_inner<'a>(
             exposes_operator_boundary(receiver, boundary, cache)
         }
         Expr::OpChain {
-            kind: crate::ast::OpChainKind::Normal { pattern, slots },
+            kind: crate::ast::OpChainKind::Normal { pattern, slots, .. },
             ..
         } => {
             let is_slot = |part: Option<&OpPart>| {
@@ -2871,12 +2890,15 @@ fn op_patterns_equal(a: &[crate::ast::OpPart], b: &[crate::ast::OpPart]) -> bool
     if a.len() != b.len() {
         return false;
     }
-    a.iter().zip(b.iter()).all(|(x, y)| match (x, y) {
-        (OpPart::Token { content: c1, .. }, OpPart::Token { content: c2, .. }) => c1 == c2,
-        (OpPart::SlotPlain { .. }, OpPart::SlotPlain { .. }) => true,
-        (OpPart::SlotRecursive { .. }, OpPart::SlotRecursive { .. }) => true,
-        (OpPart::SlotGreedy { .. }, OpPart::SlotGreedy { .. }) => true,
-        _ => false,
+    a.iter().zip(b.iter()).all(|(x, y)| {
+        x.delayed() == y.delayed()
+            && match (x, y) {
+                (OpPart::Token { content: c1, .. }, OpPart::Token { content: c2, .. }) => c1 == c2,
+                (OpPart::SlotPlain { .. }, OpPart::SlotPlain { .. }) => true,
+                (OpPart::SlotRecursive { .. }, OpPart::SlotRecursive { .. }) => true,
+                (OpPart::SlotGreedy { .. }, OpPart::SlotGreedy { .. }) => true,
+                _ => false,
+            }
     })
 }
 
@@ -4844,7 +4866,7 @@ import p( // opening selection
                 ))
                 .unwrap();
                 let Expr::OpChain {
-                    kind: crate::ast::OpChainKind::Normal { pattern, slots },
+                    kind: crate::ast::OpChainKind::Normal { pattern, slots, .. },
                     ..
                 } = function_body(&module, "run")
                 else {
@@ -5390,7 +5412,7 @@ import p( // opening selection
                 format!("call[{}]({args})", op_topology(callee))
             }
             Expr::OpChain {
-                kind: crate::ast::OpChainKind::Normal { pattern, slots },
+                kind: crate::ast::OpChainKind::Normal { pattern, slots, .. },
                 ..
             } => {
                 let pattern = pattern
@@ -5907,6 +5929,36 @@ macro demo : Box[
         assert!(rendered.contains("import syntax(op < _, op <! _, op _ <, op _ <!);"));
         crate::pass::parser::parse_lazy(&rendered)
             .expect("formatted operator-import header reparses");
+    }
+
+    #[test]
+    fn delayed_operator_headers_canonicalize_dots_and_preserve_comments() {
+        for head in ["op", "op macro"] {
+            let source = format!(
+                "module m; {head} . // first operand\n _ && . // chain operand\n __ {{ impl target; }} fn run(left: A, right: A) {{ left && right }}"
+            );
+            let formatted = roundtrip(&source);
+            assert!(
+                formatted.contains(&format!("{head} ._ && .__")),
+                "{formatted}"
+            );
+            for comment in ["first operand", "chain operand"] {
+                assert_eq!(formatted.matches(comment).count(), 1, "{formatted}");
+            }
+            let source = format!(
+                "module m; import absent({head} . // import operand\n _ && . __ as . _ %% . __);"
+            );
+            let formatted = roundtrip(&source);
+            assert!(
+                formatted.contains(&format!("{head} ._ && .__ as ._ %% .__")),
+                "{formatted}"
+            );
+            assert_eq!(
+                formatted.matches("import operand").count(),
+                1,
+                "{formatted}"
+            );
+        }
     }
 
     #[test]

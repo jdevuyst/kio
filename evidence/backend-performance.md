@@ -11,6 +11,115 @@ Any omitted source revision, toolchain version, invocation or raw-log location
 remains unrecorded; it cannot be inferred from the current checkout. The results
 apply to the stated experiments and assumptions.
 
+## Boolean operand recovery
+
+The measured compiler is the full ordinary-dev `kio 0.2.3-dev` build from
+`dd28a743` plus the Boolean implementation, with unoptimized code, debug
+information and assertions. Its executable SHA-256 is
+`4a3548c5320a9ddaef2f6daf3c9ae0a895b642e5407eb1ae67aa587e727d6b37`.
+These measurements compile source directly; they do not measure reparsed Prime
+or dynamic loading. This is a same-compiler comparison of two source shapes,
+not a before/after compiler comparison: the earlier compiler rejects the new
+Boolean operations.
+
+Both packages import the same canonical `macros/control` dependency. The
+inline export takes three runtime Booleans and executes this eight-operation
+body:
+
+```kio
+let a = not(left) && (middle || not(right));
+let b = not(middle) || (right && not(left));
+let c = a && (b || right);
+let d = b || (c && left);
+d
+```
+
+The opaque control replaces each operator with an ordinary Kio helper call and
+an equivalent nullary RHS lambda. The helpers accept `(Bool & (. -> Bool))`
+and call `__and__[Bool]` or `__or__[Bool]`. Neither arm adds host callbacks or
+host effects. The source-module hashes are
+`ab84e177339d3e086ae1b95dec6f8956f87c2c45e181aeed596d0a369605da11`
+(inline) and
+`2da0003d9e26d10b38f1a6b71c7a512f6f6bd28fa2939ccb62803fa29cd543a1`
+(opaque). The shared control module hashes to
+`033530c1740fe407c2e8cb2e42340babf25bf96025bec0ef9babbf36e7a31eb7`.
+The full materialized macro-module closure hashes to
+`6f91bb76ba5ba0631d7e5553de5705c5b87bec9ce24a588d6135bff92ca73862`,
+using sorted filenames, NUL, original file bytes and NUL for each `.kio` file.
+Generation baselines are `es2020`, `v3_10` and `ghc9_10`.
+
+The inline probe contains zero delayed RHS functions on all three measured
+backends; the opaque probe contains eight. JS has eight native Boolean
+operators in the inline body. Its eight immediate expression wrappers remain
+and are counted separately; the opaque body has one such wrapper. Python's
+serialized probe body has eight `EnrichedConditional` nodes and zero `FnExpr`
+nodes, versus zero local conditionals and eight `FnExpr` nodes in the opaque
+probe; the ordinary helper bodies retain conditional callback invocation.
+Haskell has zero versus eight nullary branch lambdas.
+
+| Artifact measure, bytes | Inline | Opaque |
+| --- | ---: | ---: |
+| JS probe body | 761 | 716 |
+| JS complete module | 5,974 | 6,275 |
+| Python probe IR, compact JSON | 3,685 | 5,930 |
+| Python complete module | 44,688 | 48,454 |
+| Haskell probe equation | 1,258 | 2,401 |
+| Haskell complete module | 26,973 | 29,580 |
+
+The [JS emission guard](../test-data/emissions/js/boolean_control/) passes for
+canonical direct calls, trailing blocks and operators. Replacing only its
+`inline_calls` subject with an equivalent ordinary helper retaining the RHS
+thunk makes the unchanged guard fail for a surviving delayed branch function.
+This is causal firing evidence at the source-structure seam, not a claim that
+the helper is eligible for elimination. The corresponding
+[Go](../test-data/emissions/go/boolean_control/),
+[Haskell](../test-data/emissions/haskell/boolean_control/) and
+[Python](../test-data/emissions/python/boolean_control/) artifact guards also
+pass, including opaque callback and strict factory-order controls.
+
+Each runtime process first checks all eight input combinations, warms 1,000
+calls, then times a fixed loop cycling those combinations. Every sample
+checks checksum `5 * calls / 8`; printing and runtime startup are outside the
+monotonic timer. Seven samples per arm alternate execution order. The host
+loop, public facade and conversions are inside the measurement.
+
+| Runtime/profile | Calls/sample | Inline median seconds (range) | Opaque median seconds (range) |
+| --- | ---: | ---: | ---: |
+| Node 24.21.0 | 1,000,000 | 0.04154 (0.03382–0.04763) | 0.08072 (0.06788–0.09896) |
+| Python 3.12.15 | 10,000 | 0.41561 (0.39564–0.43170) | 0.69499 (0.65458–0.72566) |
+| GHC 9.10.3, `-O0` | 200,000 | 0.08169 (0.07289–0.09534) | 0.27333 (0.26988–0.28497) |
+| GHC 9.10.3, `-O2` | 1,000,000 | 0.00176 (0.00083–0.00267) | 0.86277 (0.84145–0.90102) |
+
+Separate single GHC `+RTS -s` observations at 200,000 calls, including startup,
+warmup and the host loop, allocate 272,684,496/1,054,605,304 bytes at `-O0`
+and 111,128/676,101,104 bytes at `-O2` (inline/opaque). The ordinary Haskell
+runner uses `-O0`. The opaque helper's unknown callback retains monadic effect
+threading, while the inline body is proven pure. These results include that
+effect abstraction and host optimization, not just Boolean operator spelling
+or isolated closure allocation. The very short optimized inline samples do
+not support a precise speedup ratio. The tiny finite-input workload also
+allows host optimization; none of these figures predicts a whole application.
+
+Five alternating `kio build --no-cache` pairs generate all three targets with
+the same frozen compiler and dependency closure. Inline wall time has median
+2.74 seconds (2.30–6.85), versus 2.35 (2.25–3.97) for opaque; peak RSS ranges
+are 158,668–165,060 and 158,344–162,684 KiB. Timing starts after scheduler
+admission, but other checks ran concurrently. One cache-population build and
+one subsequent warm build per arm take 4.06/0.34 seconds inline and 3.56/0.43
+opaque; warm peak RSS is 94,056/97,200 KiB. Macro expansion and helper calls
+have different compiler costs, and these observations establish no compiler
+speedup or statistically bounded regression.
+
+The independent exact-carrier hosts pass for
+[Rust](../test-data/emissions/rust/exact_host_bindings/),
+[Swift](../test-data/emissions/swift/exact_host_bindings/),
+[Python](../test-data/emissions/python/boolean_carrier/) and
+[Java](../test-data/emissions/java/boolean_carrier/). They check selected tags
+or object identity without inspecting generated source. Those correctness
+results are separate from timing. TypeScript shares JS executable emission,
+but this measurement uses Node directly and grants no TypeScript, Go, Rust,
+Swift, Java, Prime or dynamic-Prime runtime-performance claim.
+
 ## Sequential statement call depth
 
 This correctness-primary comparison starts from compiler revision

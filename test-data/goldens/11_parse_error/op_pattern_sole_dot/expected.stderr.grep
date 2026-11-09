@@ -1,1 +1,1 @@
-reserved dot; dots belong to native syntax and cannot occur in operator words
+pattern must include at least one operator word

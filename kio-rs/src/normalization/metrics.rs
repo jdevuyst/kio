@@ -886,9 +886,10 @@ fn reflection_term_metric_kind(name: &str) -> Option<ReflectionTermMetricKind> {
             ReflectionTermMetricKind::IntrinsicInjection
         }
         "__intrinsic_either__" => ReflectionTermMetricKind::IntrinsicEither,
-        "__intrinsic_absurd__" | "__intrinsic_if_then_else__" => {
-            ReflectionTermMetricKind::IntrinsicOther
-        }
+        "__intrinsic_absurd__"
+        | "__intrinsic_if_then_else__"
+        | "__intrinsic_and__"
+        | "__intrinsic_or__" => ReflectionTermMetricKind::IntrinsicOther,
         _ => return None,
     })
 }

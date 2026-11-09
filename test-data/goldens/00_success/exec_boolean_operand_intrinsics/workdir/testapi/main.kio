@@ -1,0 +1,49 @@
+module testapi/main;
+
+import __intrinsics__;
+
+import testapi(Bool, String);
+import testapi/io(print);
+
+fn left(value: Bool) -> Bool { print("L"); value }
+
+fn factory(value: Bool) -> . -> Bool {
+  print("F");
+  .() { print("R"); value }
+}
+
+fn emit(value: Bool) {
+  print(__if_then_else__[Bool][String](value, .() { "true\n" }, .() { "false\n" }))
+}
+
+fn indirect(operation: (Bool & (. -> Bool)) -> Bool, first: Bool, second: Bool) -> Bool {
+  operation(first, .() { second })
+}
+
+pub fn main() {
+  emit(__and__(left(.f), factory(.t)));
+  emit(__or__(left(.t), factory(.f)));
+  emit(__and__(left(.t), factory(.f)));
+  emit(__or__(left(.f), factory(.t)));
+  let and = __and__[Bool];
+  let .(or: (Bool & (. -> Bool)) -> Bool) = __or__;
+  emit(and(.f, .() { print("bad"); .t }));
+  emit(or(.t, .() { print("bad"); .f }));
+  emit(indirect(__and__, .t, .t));
+  emit(__or__(
+  , .f
+  , .() {
+      __and__(.t, .() { .t })
+    }
+  ))
+}
+
+equiv and_false() {
+  __and__[Bool](.f, .() { .t });
+  .f[Bool]
+}
+
+equiv or_true() {
+  __or__[Bool](.t, .() { .f });
+  .t[Bool]
+}

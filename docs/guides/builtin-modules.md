@@ -91,6 +91,26 @@ Checks a concrete Boolean specialization before branching. The true and false br
 
 The first type argument `B` must resolve to a concrete `role(bool)` host type from an explicit argument, a typed condition or an expected callable type. A rigid generic Boolean parameter is rejected; there is no inferred role constraint or visible-type search. After `__if_then_else__[Bool]` is checked, the remaining `[A] (Bool & (. -> A) & (. -> A)) -> A` is an ordinary callable type, and its result `A` may remain generic. Both branches are unit-domain functions returning that same `A`; only the chosen thunk is invoked.
 
+#### `__and__`
+
+```kio {ignore}
+__and__ : [B](B & (. -> B)) -> B
+```
+
+Returns the original false left value, or invokes the right thunk once.
+
+The type argument `B` must resolve to a concrete `role(bool)` host type from explicit or local typed call context. The left operand and the unit-domain right thunk's result must have that exact type. The intrinsic evaluates its operands in call order and invokes the thunk only when the left value does not determine the result. A skipped right thunk returns the original left carrier unchanged. A rigid generic Boolean parameter is rejected; there is no role constraint inference or visible-type search.
+
+#### `__or__`
+
+```kio {ignore}
+__or__ : [B](B & (. -> B)) -> B
+```
+
+Returns the original true left value, or invokes the right thunk once.
+
+The type argument `B` must resolve to a concrete `role(bool)` host type from explicit or local typed call context. The left operand and the unit-domain right thunk's result must have that exact type. The intrinsic evaluates its operands in call order and invokes the thunk only when the left value does not determine the result. A skipped right thunk returns the original left carrier unchanged. A rigid generic Boolean parameter is rejected; there is no role constraint inference or visible-type search.
+
 #### `__absurd__`
 
 ```kio {ignore}
@@ -875,6 +895,26 @@ __intrinsic_if_then_else__ : (__Comptime__ & __Type__ & __Checked_term__ & (. ->
 Constructs a checked term that calls the reflected role-boolean conditional intrinsic.
 
 Constructs a checked runtime `__if_then_else__` call. The condition must have a concrete `role(bool)` host type, which is written as the Boolean specialization of the generated call. Both zero-argument callbacks must return `result_type`. An unresolved or non-Boolean condition type, or a branch mismatch, makes construction fail.
+
+#### `__intrinsic_and__`
+
+```kio {ignore}
+__intrinsic_and__ : (__Comptime__ & __Checked_term__ & (. -> __Checked_term__)) -> __Checked_term__
+```
+
+Constructs a checked runtime short-circuit conjunction.
+
+Constructs a checked runtime `__and__` or `__or__` call. The concrete `role(bool)` carrier is derived from `left`; the zero-argument construction callback must return a checked term of that same type. The callback executes purely during elaboration and its checked result becomes the runtime right thunk. Proof authentication, capture checking and standalone Prime validation apply. An unresolved or non-Boolean left type, or a mismatched callback result, makes construction fail.
+
+#### `__intrinsic_or__`
+
+```kio {ignore}
+__intrinsic_or__ : (__Comptime__ & __Checked_term__ & (. -> __Checked_term__)) -> __Checked_term__
+```
+
+Constructs a checked runtime short-circuit disjunction.
+
+Constructs a checked runtime `__and__` or `__or__` call. The concrete `role(bool)` carrier is derived from `left`; the zero-argument construction callback must return a checked term of that same type. The callback executes purely during elaboration and its checked result becomes the runtime right thunk. Proof authentication, capture checking and standalone Prime validation apply. An unresolved or non-Boolean left type, or a mismatched callback result, makes construction fail.
 
 ### Fill Relations
 

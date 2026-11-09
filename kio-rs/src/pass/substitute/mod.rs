@@ -1695,7 +1695,10 @@ impl<'a> LoweredToPrePrime for SubstituteVisitor<'a> {
             ext: (),
         };
         if segments.len() == 1
-            && segments[0].as_str() == "__if_then_else__"
+            && matches!(
+                segments[0].as_str(),
+                "__if_then_else__" | "__and__" | "__or__"
+            )
             && let Some(resolved) = self
                 .semantic_occurrence(e)
                 .and_then(|id| self.elabs.type_resolution_for(&self.module_path, id, 0))
@@ -2551,7 +2554,9 @@ mod tests {
             panic!("expected the replacement type binder");
         };
         assert_eq!(inner.name, "A");
-        let mut elaborations = Elaborations::new();
+        let mut elaborations = check_package_preserving_normalization(&package)
+            .expect("canonical support bodies typecheck before substitution")
+            .into_elaborations();
         elaborations.record_elaboration("main", &normalized_target.body, raw_replacement);
 
         let substituted = substitute_normalized_package(normalized, &elaborations);
